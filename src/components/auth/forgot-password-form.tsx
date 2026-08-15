@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,7 +58,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         {/* motion-safe:animate-pop-in: this state replaces the form in place with
             no navigation, so without an entrance the card silently becomes a
             different card. */}
-        <CheckCircle2 className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
+        <StatusIcons.success className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
         <div className="space-y-1.5">
           {/* text-heading (18px) — this was text-xl (20px) under a 30px page h1,
               a third size for the serif-heading role inside one card. */}

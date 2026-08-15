@@ -6,7 +6,8 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { Camera, Download, Loader2, MessageSquare, TriangleAlert } from "lucide-react";
+import { Camera, Loader2, MessageSquare } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -210,17 +211,17 @@ function AccountCard({ email }: { email: string }) {
         <div className="flex shrink-0 flex-wrap gap-2">
           <Button variant="outline" size="sm" asChild>
             <a href="/api/account/export" download>
-              <Download className="h-3.5 w-3.5" /> JSON
+              <ActionIcons.download className="size-3.5" /> JSON
             </a>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <a href="/api/account/export?format=juno" download>
-              <Download className="h-3.5 w-3.5" /> Juno package
+              <ActionIcons.download className="size-3.5" /> Juno package
             </a>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <a href="/api/account/export?format=csv" download>
-              <Download className="h-3.5 w-3.5" /> CSV
+              <ActionIcons.download className="size-3.5" /> CSV
             </a>
           </Button>
         </div>
@@ -287,7 +288,7 @@ function AccountCard({ email }: { email: string }) {
             <Button variant="destructive" disabled={!match || deleting} onClick={deleteAccount}>
               {deleting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+                  <Loader2 className="size-4 animate-spin" /> Deleting…
                 </>
               ) : (
                 "Delete permanently"
@@ -361,7 +362,7 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
               aria-label="Change profile picture"
             >
               {avatar ? (
-                <Image src={avatar} unoptimized={requiresViewerCredentials(avatar)} alt="" width={64} height={64} className="h-full w-full object-cover" />
+                <Image src={avatar} unoptimized={requiresViewerCredentials(avatar)} alt="" width={64} height={64} className="size-full object-cover" />
               ) : (
                 <span>{(user.name || user.email || "U").slice(0, 2).toUpperCase()}</span>
               )}
@@ -406,7 +407,7 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
             tone="error"
             size="panel"
             className="mt-5"
-            icon={TriangleAlert}
+            icon={StatusIcons.error}
             title="Couldn't load your stats"
             description="Your activity, model mix and lifetime ledger all come from one request, and it didn't come back."
             action={
@@ -475,7 +476,7 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
                       const accent = info ? providerAccent(info.provider) : "hsl(var(--primary))";
                       return (
                         <li key={m.model} className="flex items-center gap-2.5">
-                          {info && <ProviderLogo provider={info.provider} className="h-5 w-5" />}
+                          {info && <ProviderLogo provider={info.provider} className="size-5" />}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
                               <span className="truncate text-xs font-medium text-foreground">{info?.name ?? m.model}</span>
@@ -654,7 +655,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
                     <li key={row.model} className="min-w-0">
                       <div className="flex items-baseline justify-between gap-3">
                         <span className="flex min-w-0 items-center gap-2">
-                          {info ? <ProviderLogo provider={info.provider} className="h-4 w-4 shrink-0" /> : null}
+                          {info ? <ProviderLogo provider={info.provider} className="size-4 shrink-0" /> : null}
                           <span className="truncate text-sm">{info?.name ?? row.model}</span>
                         </span>
                         <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">

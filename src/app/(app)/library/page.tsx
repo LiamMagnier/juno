@@ -5,23 +5,16 @@ import { FilePreview } from "@/components/chat/file-preview";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  Check,
-  Download,
   History,
   LayoutGrid,
   List as ListIcon,
   MessageCircle,
   Minus,
-  MoreHorizontal,
-  Pencil,
-  RefreshCw,
-  RotateCcw,
   Search,
-  Trash2,
-  X,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,9 +136,9 @@ function SelectCheck({
       )}
     >
       {checked === "mixed" ? (
-        <Minus className="size-3.5" strokeWidth={2.5} aria-hidden />
+        <Minus className="size-3.5" aria-hidden />
       ) : (
-        <Check className="size-3.5" strokeWidth={2} aria-hidden />
+        <StatusIcons.success className="size-3.5" aria-hidden />
       )}
     </button>
   );
@@ -172,7 +165,7 @@ function ItemAction({
   tone,
   motion = "lift",
 }: {
-  icon: typeof Pencil;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   tone?: "danger";
@@ -223,7 +216,7 @@ function DownloadAction({ item }: { item: LibItem }) {
         aria-label={`Download ${item.fileName}`}
         title="Download"
       >
-        <Download className="size-4 transition-transform duration-fast ease-out-soft group-hover/action:translate-y-0.5 motion-reduce:transition-none" />
+        <ActionIcons.download className="size-4 transition-transform duration-fast ease-out-soft group-hover/action:translate-y-0.5 motion-reduce:transition-none" />
       </a>
     </Button>
   );
@@ -352,24 +345,24 @@ function MobileItemMenu({
           aria-label={`Actions for ${item.fileName}`}
           className={cn("text-muted-foreground", triggerClassName ?? "sm:hidden")}
         >
-          <MoreHorizontal className="size-4" />
+          <ActionIcons.more className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
         {item.deletedAt ? (
           <DropdownMenuItem onSelect={onRestore}>
-            <RotateCcw /> Restore
+            <ActionIcons.restore /> Restore
           </DropdownMenuItem>
         ) : (
           <DropdownMenuItem onSelect={onRename}>
-            <Pencil /> Rename
+            <ActionIcons.edit /> Rename
           </DropdownMenuItem>
         )}
         {item.versionCount > 0 && <DropdownMenuItem onSelect={onVersions}><History /> Versions</DropdownMenuItem>}
         {!item.deletedAt && (
           <DropdownMenuItem asChild>
             <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
-              <Download /> Download
+              <ActionIcons.download /> Download
             </a>
           </DropdownMenuItem>
         )}
@@ -386,7 +379,7 @@ function MobileItemMenu({
             {/* Tint on focus, matching Projects and Artifacts — this had no ground
                 at all, so arrow-keying to Delete looked different on every page. */}
             <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-              <Trash2 /> Delete
+              <ActionIcons.delete /> Delete
             </DropdownMenuItem>
           </>
         )}
@@ -792,7 +785,7 @@ export default function LibraryPage() {
                 }}
                 className="shrink-0 gap-1.5 text-muted-foreground"
               >
-                <RotateCcw className="size-3.5" />
+                <ActionIcons.restore className="size-3.5" />
                 {showDeleted ? "Back to library" : "Recently deleted"}
               </Button>
             </>
@@ -855,7 +848,7 @@ export default function LibraryPage() {
                       aria-label="Clear search"
                       className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <X className="size-3.5" />
+                      <ActionIcons.dismiss className="size-3.5" />
                     </button>
                   )}
                 </div>
@@ -900,7 +893,7 @@ export default function LibraryPage() {
                   className="gap-1.5 text-muted-foreground hover:text-foreground"
                   onClick={() => openRename(selectedItems[0])}
                 >
-                  <Pencil className="size-3.5" />
+                  <ActionIcons.edit className="size-3.5" />
                   <span className="hidden sm:inline">Rename</span>
                 </Button>
               )}
@@ -910,11 +903,11 @@ export default function LibraryPage() {
                 className="danger-hover gap-1.5 text-muted-foreground"
                 onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
               >
-                {showDeleted ? <RotateCcw className="size-3.5" /> : <Trash2 className="size-3.5" />}
+                {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
                 <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
               </Button>
               <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection">
-                <X className="size-4" />
+                <ActionIcons.dismiss className="size-4" />
               </Button>
             </div>
           </div>
@@ -928,7 +921,7 @@ export default function LibraryPage() {
             description="Check your connection and try once more."
             action={
               <Button variant="outline" size="sm" onClick={() => load()} className="group/retry gap-2">
-                <RefreshCw className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
+                <ActionIcons.refresh className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
                 Try again
               </Button>
             }
@@ -1119,13 +1112,13 @@ export default function LibraryPage() {
                     </time>
 
                     <div className="hidden items-center justify-end gap-0.5 sm:flex">
-                      <ItemAction icon={Pencil} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
+                      <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
                       {item.versionCount > 0 && (
                         <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
                       )}
                       <DownloadAction item={item} />
                       <ItemAction
-                        icon={showDeleted ? RotateCcw : Trash2}
+                        icon={showDeleted ? ActionIcons.restore : ActionIcons.delete}
                         label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
                         tone={showDeleted ? undefined : "danger"}
                         motion={showDeleted ? "lift" : "delete"}

@@ -9,7 +9,6 @@ import {
   AudioLines,
   Blocks,
   NotebookPen,
-  Check,
   ChevronDown,
   Cpu,
   FileText,
@@ -20,7 +19,6 @@ import {
   Loader2,
   MessageSquarePlus,
   Mic,
-  Pencil,
   Paperclip,
   Plug,
   Plus,
@@ -30,11 +28,10 @@ import {
   SquarePen,
   Telescope,
   TextQuote,
-  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -1341,7 +1338,7 @@ export function Composer({
   // label — a disclosure over one item is just a lid.
   const toolsLabel = (
     <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label">
-      <Blocks className="h-3.5 w-3.5" />
+      <Blocks className="size-3.5" />
       Tools
     </DropdownMenuLabel>
   );
@@ -1378,7 +1375,7 @@ export function Composer({
       {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-2.5 py-1 text-caption text-muted-foreground shadow-soft">
-            <AppIcons.projects className="h-3 w-3 text-primary" />
+            <AppIcons.projects className="size-3 text-primary" />
             <span>
               {"New chat in "}
               <span className="font-medium text-foreground">{selectedProject.name}</span>
@@ -1389,7 +1386,7 @@ export function Composer({
               aria-label="Remove from project"
               className="pressable ml-0.5 rounded-full p-0.5 text-muted-foreground/70 hover:text-foreground coarse:p-1.5"
             >
-              <X className="h-3 w-3" />
+              <ActionIcons.dismiss className="size-3" />
             </button>
           </span>
         </div>
@@ -1477,7 +1474,7 @@ export function Composer({
         >
         {dragging && !privateMode && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
-            <FileUp className="h-6 w-6 text-primary" />
+            <FileUp className="size-6 text-primary" />
             <span className="font-mono text-label text-primary">Drop to attach</span>
           </div>
         )}
@@ -1535,9 +1532,9 @@ export function Composer({
                     )}
                   >
                     {u.attachment?.kind === "IMAGE" ? (
-                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded-xs object-cover" />
+                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="size-8 rounded-xs object-cover" />
                     ) : (
-                      <FileText className="h-5 w-5 text-muted-foreground" />
+                      <FileText className="size-5 text-muted-foreground" />
                     )}
                     <div className="max-w-[140px]">
                       <p className="truncate text-ui font-medium">{u.fileName}</p>
@@ -1547,14 +1544,14 @@ export function Composer({
                         {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
                       </p>
                     </div>
-                    {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    {u.status === "uploading" && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
                     <button
                       type="button"
                       onClick={() => removeUpload(u.localId)}
                       className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
                       aria-label="Remove attachment"
                     >
-                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                      <ActionIcons.dismiss className="size-3 coarse:size-4" />
                     </button>
                   </div>
                 ))}
@@ -1575,12 +1572,12 @@ export function Composer({
             {/* Same size-6 tile as PaletteIcon, so the same rounded-xs corner. */}
             <span
               aria-hidden
-              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border border-primary/25 bg-primary/10 text-primary"
+              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-xs border border-primary/25 bg-primary/10 text-primary"
             >
               {quote.kind === "element" ? (
-                <SquareDashedMousePointer className="h-3.5 w-3.5" />
+                <SquareDashedMousePointer className="size-3.5" />
               ) : (
-                <TextQuote className="h-3.5 w-3.5" />
+                <TextQuote className="size-3.5" />
               )}
             </span>
             <div className="min-w-0 flex-1">
@@ -1605,7 +1602,7 @@ export function Composer({
               aria-label="Remove quoted selection"
               className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 transition-colors duration-fast hover:bg-accent hover:text-foreground coarse:p-2"
             >
-              <X className="h-3.5 w-3.5" />
+              <ActionIcons.dismiss className="size-3.5" />
             </button>
           </div>
         )}
@@ -1646,7 +1643,7 @@ export function Composer({
                   requestAnimationFrame(autoresize);
                 }}
               >
-                <X className="h-3.5 w-3.5" />
+                <ActionIcons.dismiss className="size-3.5" />
               </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1667,11 +1664,11 @@ export function Composer({
                   });
                 }}
               >
-                <Pencil className="h-3.5 w-3.5" /> Expand to edit
+                <ActionIcons.edit className="size-3.5" /> Expand to edit
               </Button>
               {features.storage && !privateMode && (
                 <Button type="button" variant="outline" size="sm" onClick={attachAsFile} className="h-7 gap-1.5">
-                  <FileUp className="h-3.5 w-3.5" /> Attach as file
+                  <FileUp className="size-3.5" /> Attach as file
                 </Button>
               )}
             </div>
@@ -1684,7 +1681,7 @@ export function Composer({
               That’s a long one — attach it as a file to keep the chat tidy?
             </span>
             <Button type="button" variant="outline" size="sm" onClick={attachAsFile} className="h-7 shrink-0 gap-1.5">
-              <FileUp className="h-3.5 w-3.5" /> Attach as file
+              <FileUp className="size-3.5" /> Attach as file
             </Button>
           </div>
         )}
@@ -1735,7 +1732,7 @@ export function Composer({
                       <span className="shrink-0 text-caption text-muted-foreground">
                         {PROVIDERS[m.provider].label.split(" · ")[0]}
                       </span>
-                      {m.id === model && <Check className="size-3.5 shrink-0 text-primary" />}
+                      {m.id === model && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                     </div>
                   ))}
                 </div>
@@ -1856,7 +1853,7 @@ export function Composer({
                       aria-label={armedSummary ? `Add — ${armedSummary}` : "Add"}
                       disabled={controlsLocked}
                       className={cn(
-                        "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:h-11 coarse:w-11",
+                        "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
                         plusOpen && "bg-accent border-border text-foreground ring-1 ring-border/50"
                       )}
                     >
@@ -1999,7 +1996,7 @@ export function Composer({
                           <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1 space-y-0.5">
                             {loadingProjects && projects.length === 0 ? (
                               <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
                               </div>
                             ) : projects.length === 0 ? (
                               <p className="px-2 py-3 text-center text-micro text-muted-foreground">
@@ -2016,7 +2013,7 @@ export function Composer({
                                   >
                                     <AppIcons.projects className={cn("size-3.5 mr-2", active ? "text-primary" : "text-muted-foreground")} />
                                     <span className="flex-1 truncate">{project.name}</span>
-                                    {active && <Check className="size-3 text-primary" />}
+                                    {active && <StatusIcons.success className="size-3 text-primary" />}
                                   </DropdownMenuItem>
                                 );
                               })
@@ -2224,7 +2221,7 @@ export function Composer({
                             <span className="min-w-0 flex-1 truncate text-center">
                               {compactEffortLabel}
                             </span>
-                            <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                            <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
                           </Button>
                         </TooltipTrigger>
                       </PopoverTrigger>
@@ -2262,9 +2259,9 @@ export function Composer({
                     disabled={controlsLocked || dictating || voiceActive}
                     aria-label="Dictate"
                     aria-pressed={dictating}
-                    className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11"
+                    className="composer-mic-button rounded-composer-control coarse:size-11"
                   >
-                    <Mic className="composer-mic-icon h-4 w-4" />
+                    <Mic className="composer-mic-icon size-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Dictate</TooltipContent>
@@ -2306,7 +2303,7 @@ export function Composer({
                     // in place below. `opacity` rides the transition list so the
                     // disabled → enabled flip fades instead of snapping, and
                     // nothing in the list touches layout.
-                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
+                    "composer-primary-action size-9 rounded-composer-action coarse:size-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
                     isBusy && status !== "checking" && "ring-2 ring-primary/15"
                   )}
                 >
@@ -2321,7 +2318,7 @@ export function Composer({
                   <span aria-hidden="true" className="grid place-items-center">
                     <Loader2
                       className={cn(
-                        "col-start-1 row-start-1 h-4 w-4 transition-[opacity,transform] duration-exit ease-out-soft",
+                        "col-start-1 row-start-1 size-4 transition-[opacity,transform] duration-exit ease-out-soft",
                         primaryFace === "checking" ? "scale-100 animate-spin opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
                       )}
                     />
@@ -2332,7 +2329,7 @@ export function Composer({
                         over the stop square for as long as the hover lasts. */}
                     <Square
                       className={cn(
-                        "col-start-1 row-start-1 h-3.5 w-3.5 fill-current transition-[opacity,transform] duration-exit ease-out-soft",
+                        "col-start-1 row-start-1 size-3.5 fill-current transition-[opacity,transform] duration-exit ease-out-soft",
                         primaryFace === "stop"
                           ? "composer-stop-icon scale-100 opacity-100"
                           : "scale-75 opacity-0 motion-reduce:scale-100"
@@ -2348,7 +2345,7 @@ export function Composer({
                     </span>
                     <ArrowUp
                       className={cn(
-                        "col-start-1 row-start-1 h-4 w-4 transition-[opacity,transform] duration-exit ease-out-soft",
+                        "col-start-1 row-start-1 size-4 transition-[opacity,transform] duration-exit ease-out-soft",
                         primaryFace === "send"
                           ? "composer-send-icon scale-100 opacity-100"
                           : "scale-75 opacity-0 motion-reduce:scale-100"

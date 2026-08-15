@@ -34,6 +34,10 @@ const FIRST_ATTEMPT_TIMEOUT_MS = 2000;
 // One question keeps the interruption cheap: the single highest-impact
 // unknown, answerable in one click (or one line via the "Other" input).
 const MAX_QUESTIONS = 1;
+/** A research run is scoped by several answers at once — see RESEARCH_TRIAGE_SYSTEM. */
+const MAX_RESEARCH_QUESTIONS = 4;
+const RESEARCH_TOTAL_DEADLINE_MS = 6_000;
+const RESEARCH_ATTEMPT_TIMEOUT_MS = 4_500;
 const MAX_OPTIONS = 5;
 const MAX_CONTEXT_MESSAGES = 6;
 const DEAD_MODEL_COOLDOWN_MS = 10 * 60_000;
@@ -114,6 +118,50 @@ or
 
 Question "type" is one of: single-choice, multi-choice, text, text-long. Use text/text-long only when options genuinely can't cover the answer (e.g. "What is the site about?"). Write the title, description, question, options, elseLabel and elsePlaceholder in the SAME language as the user's message.`;
 
+/**
+ * The same step, for a deep-research turn — with the defaults inverted.
+ *
+ * `TRIAGE_SYSTEM` above says DEFAULT TO NOT ASKING, and it is right to: an
+ * ordinary turn costs a few seconds, so interrupting to ask is usually a worse
+ * trade than guessing. A research run is the opposite trade in every dimension.
+ * It runs for minutes, spends real money, reads dozens of pages, and produces a
+ * long document whose SHAPE — who it is for, how deep, what period, what it must
+ * contain — cannot be recovered afterwards without paying for the whole thing
+ * again. Asking three questions to avoid that is cheap.
+ *
+ * It also asks about a different KIND of unknown. The engine already decomposes
+ * the subject into sub-questions on its own; what it cannot infer is the brief:
+ * audience, depth, timeframe, and which sources count. So these questions are
+ * about the deliverable and the scope, never about the subject matter — a
+ * research triage that asks "what do you already know about X?" has simply moved
+ * the research onto the user.
+ */
+const RESEARCH_TRIAGE_SYSTEM = `You are the scoping step for Juno's Deep Research. The user has asked for a full research run: it will take several minutes, read dozens of sources, cost real money, and produce a long cited report. Before it starts, you ask a few quick questions that determine the SHAPE of that report.
+
+DEFAULT TO ASKING. Unlike a normal answer, a research run cannot be cheaply redone, and the user cannot tell from the request alone what they will get. Ask unless the request already specifies the deliverable precisely.
+
+Ask 2 to 4 questions, chosen from the unknowns that actually change the output:
+- Scope and angle: which parts of this subject to cover, or which to leave out.
+- Audience and depth: who reads this, and at what level (a decision-maker's brief, a practitioner's deep dive, an academic review).
+- Format: executive summary, full report with data tables, comparison matrix, annotated source list.
+- Timeframe: how recent the evidence must be, or which period the question is about.
+- Sources: which kinds count — peer-reviewed, official/regulatory, industry analyst, primary reporting, community.
+- Geography, market, or jurisdiction, when the answer differs by region.
+
+NEVER ask:
+- About the subject matter itself. You are scoping the report, not researching it. Do not ask what the user already knows, believes, or has read, and never ask a question whose answer is the thing they are paying Juno to find out.
+- Anything the request already answers, or the conversation already pins down.
+- More than four questions, or any question the user cannot answer in one click.
+
+Every question must be answerable by picking an option. Options must be concrete and mutually distinct, and must reference THIS request rather than being reusable boilerplate. The user can always skip.
+
+Respond with ONLY a JSON object, no markdown fences, no commentary:
+{"needsClarification": false, "reason": "<one short sentence>"}
+or
+{"needsClarification": true, "reason": "<one short sentence>", "title": "<2-4 word card title>", "description": "<one short sentence shown under the title>", "questions": [{"id": "<snake_case>", "question": "<the question>", "type": "single-choice", "options": ["<opt>", "<opt>", "<opt>"], "elseLabel": "<short label for choosing a custom answer>", "elsePlaceholder": "<hint for a custom answer>"}]}
+
+Question "type" is one of: single-choice, multi-choice, text, text-long. Prefer single-choice and multi-choice; use text only when options genuinely cannot cover the answer. Write the title, description, questions, options, elseLabel and elsePlaceholder in the SAME language as the user's message.`;
+
 function buildTriageUserMessage(message: string, recentMessages: TriageContextMessage[]): string {
   const parts: string[] = [];
   const context = recentMessages.slice(-MAX_CONTEXT_MESSAGES).filter((m) => m.content.trim());
@@ -176,7 +224,7 @@ function sanitizeQuestion(value: unknown, index: number): PreflightClarification
   };
 }
 
-function sanitizeTriageOutput(raw: string): PreflightClarificationResult | null {
+function sanitizeTriageOutput(raw: string, maxQuestions: number): PreflightClarificationResult | null {
   const obj = extractJsonObject(raw);
   if (!obj || typeof obj.needsClarification !== "boolean") return null;
   const reason = cleanLine(obj.reason, 300) || "Triage decision.";
@@ -184,7 +232,7 @@ function sanitizeTriageOutput(raw: string): PreflightClarificationResult | null 
   const questions = (Array.isArray(obj.questions) ? obj.questions : [])
     .map((q, i) => sanitizeQuestion(q, i))
     .filter(Boolean)
-    .slice(0, MAX_QUESTIONS) as PreflightClarificationQuestion[];
+    .slice(0, maxQuestions) as PreflightClarificationQuestion[];
   // The popover keys its answer map by question id — colliding ids would make
   // one answer silently overwrite another, so uniquify defensively.
   const seenIds = new Set<string>();
@@ -202,7 +250,13 @@ function sanitizeTriageOutput(raw: string): PreflightClarificationResult | null 
   };
 }
 
-async function attemptTriage(model: ModelInfo, system: string, userMsg: string, timeoutMs: number): Promise<PreflightClarificationResult | null> {
+async function attemptTriage(
+  model: ModelInfo,
+  system: string,
+  userMsg: string,
+  timeoutMs: number,
+  maxQuestions: number
+): Promise<PreflightClarificationResult | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let out = "";
@@ -211,7 +265,10 @@ async function attemptTriage(model: ModelInfo, system: string, userMsg: string, 
       model,
       system,
       history: [{ role: "USER", content: userMsg, attachments: [] }],
-      maxTokens: 600,
+      // Four questions with options do not fit in the one-question budget, and a
+      // truncated JSON object is discarded whole by the parser — the scoping
+      // card would silently never appear.
+      maxTokens: maxQuestions > 1 ? 1_200 : 600,
       signal: ctrl.signal,
     })) {
       if (ev.type === "text") out += ev.text;
@@ -227,20 +284,30 @@ async function attemptTriage(model: ModelInfo, system: string, userMsg: string, 
   } finally {
     clearTimeout(timer);
   }
-  const parsed = sanitizeTriageOutput(out);
+  const parsed = sanitizeTriageOutput(out, maxQuestions);
   if (!parsed) console.error(`[clarify-triage] ${model.id} unusable output (${out.length} chars)`);
   return parsed;
 }
+
+/** Which triage this is: an ordinary answer, or a deep-research run's scoping step. */
+export type TriageMode = "answer" | "research";
 
 /**
  * Decide whether to show pre-answer clarification questions for this message.
  * Fails open — anything short of a confident, well-formed "ask" from the triage
  * model means Juno just answers.
+ *
+ * Research mode gets a longer deadline as well as a different prompt. 2.8s is
+ * budgeted against a turn that would otherwise already be streaming; a research
+ * turn is about to spend minutes, so waiting another two seconds to scope it
+ * correctly is not a latency trade worth making the other way.
  */
 export async function triagePreflightClarification(input: {
   message: string;
   recentMessages?: TriageContextMessage[];
+  mode?: TriageMode;
 }): Promise<PreflightClarificationResult> {
+  const research = input.mode === "research";
   const all = triageModelCandidates();
   if (!all.length) return noPreflightClarification("No fast model is configured for the clarification check.");
   const now = Date.now();
@@ -248,12 +315,17 @@ export async function triagePreflightClarification(input: {
   // If everything is cooling down, try anyway — failing open still needs an attempt.
   const candidates = healthy.length ? healthy : all;
 
+  const system = research ? RESEARCH_TRIAGE_SYSTEM : TRIAGE_SYSTEM;
+  const maxQuestions = research ? MAX_RESEARCH_QUESTIONS : MAX_QUESTIONS;
+  const totalDeadline = research ? RESEARCH_TOTAL_DEADLINE_MS : TOTAL_DEADLINE_MS;
+  const attemptTimeout = research ? RESEARCH_ATTEMPT_TIMEOUT_MS : FIRST_ATTEMPT_TIMEOUT_MS;
+
   const userMsg = buildTriageUserMessage(input.message, input.recentMessages ?? []);
   const started = Date.now();
   for (const model of candidates) {
-    const remaining = TOTAL_DEADLINE_MS - (Date.now() - started);
+    const remaining = totalDeadline - (Date.now() - started);
     if (remaining < 800) break;
-    const result = await attemptTriage(model, TRIAGE_SYSTEM, userMsg, Math.min(FIRST_ATTEMPT_TIMEOUT_MS, remaining));
+    const result = await attemptTriage(model, system, userMsg, Math.min(attemptTimeout, remaining), maxQuestions);
     if (result) return result;
   }
   return noPreflightClarification("Clarification triage was unavailable — answering directly.");

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, FileText } from "lucide-react";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import type { RunPhase } from "@/components/work/detail/work-rail";
 import { RailDisclosure, RailLiveCount, RailSection } from "@/components/work/detail/work-rail";
 import type { PerformedActions } from "@/components/work/work-timeline";
@@ -174,10 +174,10 @@ function FileMark({ name }: { name: string }) {
       // of thing. `rounded-lg` is 24px in this config, not a small rung.
       // 10px, not 9px — 9px was the smallest type anywhere in Work, two rungs
       // under caption, for a three-letter extension.
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground"
       aria-hidden="true"
     >
-      {extension ?? <FileText className="h-3.5 w-3.5" />}
+      {extension ?? <CodeIcons.file className="size-3.5" />}
     </span>
   );
 }
@@ -243,9 +243,9 @@ function CopyAffordance({ value, label }: { value: string; label: string }) {
       )}
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5 text-success-ink" aria-hidden="true" />
+        <StatusIcons.success className="size-3.5 text-success-ink" aria-hidden="true" />
       ) : (
-        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+        <ActionIcons.copy className="size-3.5" aria-hidden="true" />
       )}
       <span className="sr-only" aria-live="polite">
         {copied ? "Copied" : ""}

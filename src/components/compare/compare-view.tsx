@@ -337,7 +337,7 @@ export function CompareView() {
                       // The two derived composer rungs, not one flat radius: the corner
                       // has to fall as the box widens into Stop or the button visibly
                       // inflates. Both move with the composer shell above them.
-                      "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color] duration-fast ease-out-soft motion-reduce:transition-none",
+                      "coarse:size-11 transition-[width,border-radius,color,background-color,border-color] duration-fast ease-out-soft motion-reduce:transition-none",
                       anyStreaming ? "w-12 rounded-composer-control" : "rounded-composer-action"
                     )}
                   >

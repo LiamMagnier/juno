@@ -10,30 +10,51 @@
  * whatever the last person typed.
  */
 
-/** px -> token. Exactly the ladder declared in tailwind.config.ts. */
+/**
+ * px -> token. The ladder as `tailwind.config.ts` actually declares it, and as
+ * `src/lib/design/tokens.generated.ts` (RADIUS) generates it from there.
+ *
+ * THIS TABLE HAD DRIFTED, and because the rule is `fixable: "code"` and wired as
+ * an error, the drift was not merely unhelpful — `eslint --fix` was rewriting
+ * correct code to wrong values. Eleven of the fifteen rungs were off, most of
+ * them by naming a token whose real value is a different size: `rounded-[16px]`
+ * was "fixed" to `rounded-card`, which is 14px, so a correct radius silently
+ * became a 2px-smaller one. Others named the right size under the wrong token
+ * (`12px` -> `field`, which is 10px).
+ *
+ * Values that are genuinely NOT on the ladder (11, 13, 20, 22, 24, 28px) are
+ * deliberately absent rather than mapped to their nearest neighbour: the rule
+ * reports those as `offScale` with `fix: null`, which asks a human to pick a
+ * rung or name a new token. An autofix is only ever correct when the px value
+ * and the token's value are the same number.
+ *
+ * Where several tokens share a value the general-purpose one is the suggestion:
+ * 12px is `menu` (not `composer-control`), 14px is `card` (not `popover` or
+ * `composer-action`), 16px is `surface` (not the generic `lg`). All of those
+ * remain valid to write by hand; this is only what the fixer reaches for.
+ *
+ * If the ladder moves, `npm run design:tokens` regenerates RADIUS from the
+ * Tailwind config — this table must be updated to match it in the same change.
+ */
 const RADIUS_TOKENS = {
   "2px": "micro",
   "4px": "sm",
   "6px": "xs",
   "8px": "md",
-  "10px": "control",
-  "11px": "composer-control",
-  "12px": "field",
-  "13px": "composer-action",
-  "14px": "menu",
-  "16px": "card",
-  "18px": "popover",
-  "20px": "surface",
-  "22px": "composer",
-  "24px": "lg",
-  "28px": "panel",
+  "9px": "control",
+  "10px": "field",
+  "12px": "menu",
+  "14px": "card",
+  "16px": "surface",
+  "18px": "panel",
+  "26px": "composer",
   inherit: "inherit",
 };
 
 const SCALE_HELP =
-  "micro 2 · sm 4 · xs 6 · md 8 · control 10 · composer-control 11 · field 12 · " +
-  "composer-action 13 · menu 14 · card 16 · popover 18 · surface 20 · composer 22 · " +
-  "lg 24 · panel 28 · full · logo (24%)";
+  "micro 2 · sm 4 · xs 6 · md 8 · control 9 · field 10 · menu 12 · composer-control 12 · " +
+  "card 14 · popover 14 · composer-action 14 · surface 16 · panel 18 · composer 26 · " +
+  "full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 

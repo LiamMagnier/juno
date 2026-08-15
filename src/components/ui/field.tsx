@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -73,7 +73,7 @@ const Field = React.forwardRef<HTMLInputElement, FieldProps>(
           // role="alert" so the message is announced when it appears mid-form,
           // and it sits AFTER the input so `aria-describedby` reads in order.
           <p id={errorId} role="alert" className="flex items-center gap-1.5 text-caption text-destructive">
-            <AlertCircle className="size-3.5 shrink-0" aria-hidden />
+            <StatusIcons.error className="size-3.5 shrink-0" aria-hidden />
             {error}
           </p>
         )}

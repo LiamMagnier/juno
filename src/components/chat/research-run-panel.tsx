@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { BookOpenText, Check, ChevronDown, Loader2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn, truncate } from "@/lib/utils";
 import { PlanReview, SteerControls } from "@/components/research/run-controls";
 import { formatMicroUsd } from "@/components/research/run-format";
@@ -26,9 +25,11 @@ import {
  * turn is over and the run is still going, or when the user comes back to it.
  *
  * The stage rail, the plan gate, the steering controls and the polling all live
- * in src/components/research/, shared with the standalone /research surface:
- * the panel is the run seen from its conversation, the reader is the same run
- * seen as a document, and the pieces must not fork.
+ * in src/components/research/. There is no longer a standalone research surface
+ * to share them with: a run is read where it was asked for, and the report it
+ * produces is a canvas artifact on the message rather than a page of its own.
+ * This panel is the run's machinery — plan, sources, cost, steering — and the
+ * artifact beside it is the run's output.
  */
 
 export function ResearchRunPanel({ conversationId }: { conversationId: string | null }) {
@@ -84,11 +85,11 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
     >
       <header className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             {run.live ? (
-              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
             ) : (
-              <Check className="h-4 w-4" />
+              <StatusIcons.success className="size-4" />
             )}
           </span>
           <div className="min-w-0 flex-1">
@@ -112,31 +113,23 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          {run.report && (
-            <Button asChild size="sm" variant="default" className="h-7 gap-1 px-2.5 text-xs">
-              <Link href={`/research/${run.id}`}>
-                <BookOpenText className="size-3" aria-hidden />
-                <span>Read Full Report</span>
-              </Link>
-            </Button>
-          )}
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
             aria-label={expanded ? "Hide research details" : "Show research details"}
-            className="pressable inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="pressable inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", expanded && "rotate-180")} />
+            <ChevronDown className={cn("size-3.5 transition-transform duration-200", expanded && "rotate-180")} />
           </button>
           {!run.live && (
             <button
               type="button"
               onClick={() => setDismissed(run.id)}
               aria-label="Hide this research run"
-              className="pressable inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="pressable inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
             >
-              <X className="h-3.5 w-3.5" />
+              <ActionIcons.dismiss className="size-3.5" />
             </button>
           )}
         </div>
@@ -180,7 +173,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
                       <span
                         aria-hidden
                         className={cn(
-                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          "size-1.5 shrink-0 rounded-full",
                           objective.status === "covered" ? "bg-primary" : "bg-warning"
                         )}
                       />

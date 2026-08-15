@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, RefreshCw, Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -9,6 +9,7 @@ import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { ActionIcons } from "@/lib/app-icons";
 import { PLANS } from "@/lib/plans";
 import {
   buildCodeVoiceBriefing,
@@ -320,7 +321,7 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
               This has moved on since Juno was briefed
             </p>
             <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2 coarse:h-11">
-              <RefreshCw className="size-3.5" aria-hidden="true" />
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
               Bring Juno up to date
             </Button>
           </div>

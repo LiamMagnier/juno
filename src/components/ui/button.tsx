@@ -50,8 +50,8 @@ const buttonVariants = cva(
         // text-body IS 0.9375rem — the arbitrary value was the token spelled out
         // longhand, minus the 1.6 line-height that comes with it.
         lg: "h-11 px-6 text-body",
-        icon: "h-9 w-9 coarse:h-11 coarse:w-11",
-        "icon-sm": "h-8 w-8 rounded-control coarse:h-10 coarse:w-10",
+        icon: "size-9 coarse:size-11",
+        "icon-sm": "size-8 rounded-control coarse:size-10",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

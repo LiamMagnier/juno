@@ -303,12 +303,42 @@ async function searchTavily(query: string, maxResults: number, signal?: AbortSig
 /**
  * SearXNG Public Meta-Search API
  */
-async function searchSearxng(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
-  const instances = [
+/**
+ * Where SearXNG lives — yours first, if you run one.
+ *
+ * This used to be three hardcoded public instances and nothing else. Public
+ * SearXNG aggressively rate-limits anonymous JSON traffic (most instances
+ * disable the JSON API outright), so on a deployment with no commercial key the
+ * fan-out was effectively falling through to scraped DuckDuckGo and Wikipedia's
+ * five-result index — the real reason "deep" research bottomed out at a handful
+ * of sites.
+ *
+ * A SearXNG you host yourself is the answer for anyone who does not want to pay
+ * for a search API: it queries Google, Bing, Brave and DuckDuckGo on your
+ * behalf, you own the rate limit, and it needs no key. One container:
+ *
+ *   docker run -d -p 8080:8080 -e SEARXNG_BASE_URL=http://localhost:8080/ \
+ *     -v ./searxng:/etc/searxng searxng/searxng
+ *
+ * then set SEARXNG_URL=http://localhost:8080 and enable the JSON format in
+ * settings.yml (`search.formats: [html, json]`). The public instances stay as a
+ * last resort rather than the primary path.
+ */
+function searxngInstances(): string[] {
+  const configured = process.env.SEARXNG_URL?.trim();
+  const own = configured
+    ? [`${configured.replace(/\/+$/, "")}/search`]
+    : [];
+  return [
+    ...own,
     "https://searx.be/search",
     "https://search.sapti.me/search",
     "https://priv.au/search",
   ];
+}
+
+async function searchSearxng(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const instances = searxngInstances();
 
   for (const instance of instances) {
     try {
@@ -460,14 +490,139 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
 }
 
 /**
- * Check if search capability is available in any form.
+ * One search backend, as the fan-out sees it.
+ *
+ * `weight` is how much this engine's ranking is trusted when engines disagree —
+ * it multiplies the reciprocal-rank score below, so a keyed commercial index
+ * outvotes a scraped one without ever silencing it. Nothing is a "fallback"
+ * any more: every available engine runs, and the merge decides.
  */
-export function isSearchEngineAvailable(): boolean {
-  return true; // DuckDuckGo direct fallback and meta-search engines are always available.
+interface EngineSpec {
+  name: string;
+  weight: number;
+  available(): boolean;
+  run(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]>;
+}
+
+const ENGINES: EngineSpec[] = [
+  { name: "tavily", weight: 1, available: () => !!process.env.TAVILY_API_KEY?.trim(), run: searchTavily },
+  { name: "serper", weight: 1, available: () => !!process.env.SERPER_API_KEY?.trim(), run: searchSerper },
+  {
+    name: "brave",
+    weight: 0.95,
+    available: () => !!(process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim()),
+    run: searchBrave,
+  },
+  { name: "exa", weight: 0.95, available: () => !!process.env.EXA_API_KEY?.trim(), run: searchExa },
+  { name: "searxng", weight: 0.7, available: () => true, run: searchSearxng },
+  { name: "duckduckgo", weight: 0.7, available: () => true, run: searchDuckDuckGo },
+  { name: "wikipedia", weight: 0.35, available: () => true, run: searchWikipedia },
+];
+
+/**
+ * What this deployment can actually reach.
+ *
+ * `hasGoodIndex` is the question worth asking, and it is deliberately NOT "is a
+ * paid key set". A self-hosted SearXNG is a first-class answer here: it queries
+ * the same engines a commercial API resells, needs no key, and is not subject to
+ * the anonymous rate limits that make the PUBLIC instances close to useless. A
+ * deployment with neither is running on scraped endpoints and should say so
+ * rather than quietly returning eight results.
+ */
+export function searchProviderStatus(): {
+  keyed: string[];
+  keyless: string[];
+  selfHostedSearxng: boolean;
+  hasKeyedProvider: boolean;
+  hasGoodIndex: boolean;
+} {
+  const keyedNames = ["tavily", "serper", "brave", "exa"];
+  const keyed = ENGINES.filter((e) => keyedNames.includes(e.name) && e.available()).map((e) => e.name);
+  const keyless = ENGINES.filter((e) => !keyedNames.includes(e.name)).map((e) => e.name);
+  const selfHostedSearxng = !!process.env.SEARXNG_URL?.trim();
+  return {
+    keyed,
+    keyless,
+    selfHostedSearxng,
+    hasKeyedProvider: keyed.length > 0,
+    hasGoodIndex: keyed.length > 0 || selfHostedSearxng,
+  };
 }
 
 /**
- * Multi-Engine Web Search: Cascading fallback through best-available search backends (Tavily, Serper, Brave, Exa, SearXNG, DuckDuckGo, Wikipedia).
+ * Check if search capability is available in any form.
+ *
+ * Always true: SearXNG, DuckDuckGo and Wikipedia need no key. Whether the
+ * deployment has a *good* index is `searchProviderStatus().hasKeyedProvider`,
+ * which is a different question and the one worth surfacing to a user.
+ */
+export function isSearchEngineAvailable(): boolean {
+  return true;
+}
+
+/**
+ * The dedupe key for a result.
+ *
+ * Two engines almost never return the same URL byte-for-byte — one keeps the
+ * tracking parameters, one resolves the redirect, one adds the trailing slash —
+ * so deduping on the raw string leaves the corpus full of the same page three
+ * times, which then reads to the synthesis model as three independent sources
+ * corroborating each other. That is the specific failure this prevents.
+ */
+function canonicalUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    u.hash = "";
+    u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
+    for (const key of [...u.searchParams.keys()]) {
+      if (/^(utm_|fbclid|gclid|mc_[ce]id|ref|source|_hs)/i.test(key)) u.searchParams.delete(key);
+    }
+    const path = u.pathname.replace(/\/+$/, "") || "/";
+    const qs = u.searchParams.toString();
+    return `${u.protocol}//${u.hostname}${path}${qs ? `?${qs}` : ""}`;
+  } catch {
+    return raw.trim().toLowerCase();
+  }
+}
+
+/** Aborts with the parent OR after `ms`, so one hung engine cannot stall the fan-out. */
+function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, ms: number, parent?: AbortSignal): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  const onAbort = () => ctrl.abort();
+  if (parent?.aborted) ctrl.abort();
+  else parent?.addEventListener("abort", onAbort, { once: true });
+  return work(ctrl.signal).finally(() => {
+    clearTimeout(timer);
+    parent?.removeEventListener("abort", onAbort);
+  });
+}
+
+/** One engine is allowed this long before the merge proceeds without it. */
+const ENGINE_TIMEOUT_MS = 12_000;
+
+/**
+ * The constant in reciprocal-rank fusion. 60 is the value from the original
+ * Cormack et al. paper and the one every IR implementation uses; it flattens
+ * the head of each list enough that a result ranked #1 by one engine does not
+ * automatically beat a result ranked #2 by three engines.
+ */
+const RRF_K = 60;
+
+/**
+ * Multi-engine web search: every available backend, in parallel, merged.
+ *
+ * This was a cascade — it returned the first engine that answered and never
+ * asked the others. That made the result set as narrow as whichever backend
+ * happened to be configured, and on a deployment with no API keys at all it
+ * meant scraped DuckDuckGo or, worse, Wikipedia's five-item index: the real
+ * reason a "deep" research run bottomed out at a handful of sites regardless
+ * of how many queries it planned.
+ *
+ * Now every engine runs concurrently and the lists are merged by reciprocal-rank
+ * fusion, so breadth is the union rather than the best single source, and a page
+ * several engines agree on outranks one that only the cheapest engine found.
+ * Engines that fail or time out simply do not vote.
  */
 export async function executeMultiEngineSearch({
   query,
@@ -480,38 +635,50 @@ export async function executeMultiEngineSearch({
 }): Promise<SearchResult[]> {
   if (!query.trim()) return [];
 
-  // 1. Try Tavily Search API (Fast, deep research native)
-  if (process.env.TAVILY_API_KEY?.trim()) {
-    const hits = await searchTavily(query, count, signal).catch(() => []);
-    if (hits.length > 0) return hits;
+  const active = ENGINES.filter((engine) => engine.available());
+  if (active.length === 0) return [];
+
+  // Ask each engine for more than the caller wants: the merge discards
+  // duplicates, and asking for exactly `count` per engine would leave the union
+  // short of `count` as soon as two engines agree on anything.
+  const perEngine = Math.min(20, Math.max(10, count));
+
+  const settled = await Promise.all(
+    active.map(async (engine) => {
+      try {
+        const hits = await withDeadline((s) => engine.run(query, perEngine, s), ENGINE_TIMEOUT_MS, signal);
+        return { engine, hits };
+      } catch {
+        return { engine, hits: [] as SearchResult[] };
+      }
+    })
+  );
+
+  const scored = new Map<string, { result: SearchResult; score: number; engines: Set<string> }>();
+  for (const { engine, hits } of settled) {
+    hits.forEach((hit, rank) => {
+      if (!hit.url || !hit.url.startsWith("http") || isDisallowedHost(hit.url)) return;
+      const key = canonicalUrl(hit.url);
+      const contribution = engine.weight / (RRF_K + rank + 1);
+      const existing = scored.get(key);
+      if (!existing) {
+        scored.set(key, { result: { ...hit, engine: engine.name }, score: contribution, engines: new Set([engine.name]) });
+        return;
+      }
+      existing.score += contribution;
+      existing.engines.add(engine.name);
+      // Keep the richest copy: a snippet beats nothing, a fetched body beats a
+      // snippet, and a date from any engine beats no date at all.
+      if (!existing.result.rawContent && hit.rawContent) existing.result.rawContent = hit.rawContent;
+      if (!existing.result.publishedAt && hit.publishedAt) existing.result.publishedAt = hit.publishedAt;
+      if (!existing.result.author && hit.author) existing.result.author = hit.author;
+      if (hit.snippet.length > existing.result.snippet.length) existing.result.snippet = hit.snippet;
+      if (!existing.result.title && hit.title) existing.result.title = hit.title;
+    });
   }
 
-  // 2. Try Serper Google Search
-  if (process.env.SERPER_API_KEY?.trim()) {
-    const hits = await searchSerper(query, count, signal).catch(() => []);
-    if (hits.length > 0) return hits;
-  }
-
-  // 3. Try Brave Search API
-  if (process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim()) {
-    const hits = await searchBrave(query, count, signal).catch(() => []);
-    if (hits.length > 0) return hits;
-  }
-
-  // 4. Try Exa Neural Search
-  if (process.env.EXA_API_KEY?.trim()) {
-    const hits = await searchExa(query, count, signal).catch(() => []);
-    if (hits.length > 0) return hits;
-  }
-
-  // 5. Try SearXNG Meta-Search
-  const searxHits = await searchSearxng(query, count, signal).catch(() => []);
-  if (searxHits.length > 0) return searxHits;
-
-  // 6. Try DuckDuckGo
-  const ddgHits = await searchDuckDuckGo(query, count, signal).catch(() => []);
-  if (ddgHits.length > 0) return ddgHits;
-
-  // 7. Fallback to Wikipedia encyclopedia index
-  return searchWikipedia(query, count, signal).catch(() => []);
+  return [...scored.values()]
+    .sort((a, b) => b.score - a.score || a.result.title.localeCompare(b.result.title))
+    .slice(0, count)
+    .map(({ result, engines }) => ({ ...result, engine: [...engines].sort().join("+") }));
 }

@@ -4,7 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, Play, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Play } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,10 +16,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkHost, ClientWorkRun } from "@/lib/work/serializers";
 import { WorkPageFrame } from "@/components/work/work-nav";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import {
   deleteWorkSchedule,
@@ -29,7 +30,6 @@ import {
   WORK_SYNC_EVENT,
 } from "@/components/work/work-transport";
 import { WorkStateNote, WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 
 /**
  * One schedule: what it does, and what it has actually done.
@@ -139,22 +139,10 @@ export default function WorkSchedulePage() {
         title="Schedule"
         back={{ href: "/work/schedules", label: "Back to schedules" }}
       >
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this schedule. Nothing has been changed by the attempt, and it is still
           running to whatever clock it was set to.
-        </WorkStateNote>
+        </WorkLoadError>
       </WorkPageFrame>
     );
   }
@@ -162,15 +150,7 @@ export default function WorkSchedulePage() {
   if (schedule === null) {
     return (
       <WorkPageFrame title="Schedule" back={{ href: "/work/schedules", label: "Back to schedules" }}>
-        <div className="space-y-3">
-          {[...Array(4)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-16 w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons count={4} height={64} className="space-y-3" />
       </WorkPageFrame>
     );
   }
@@ -190,9 +170,9 @@ export default function WorkSchedulePage() {
             className="gap-1.5"
           >
             {busy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              <Play className="size-3.5" aria-hidden="true" />
             )}
             Run now
           </Button>
@@ -203,7 +183,7 @@ export default function WorkSchedulePage() {
             onClick={() => setConfirmingDelete(true)}
             className="gap-1.5"
           >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+            <ActionIcons.delete className="size-3.5" aria-hidden="true" /> Delete
           </Button>
         </div>
       }
@@ -233,7 +213,7 @@ export default function WorkSchedulePage() {
             onClick={() => void loadRuns()}
             className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
           >
-            <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
+            <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
           </Button>
         </div>
         {runs === null ? (

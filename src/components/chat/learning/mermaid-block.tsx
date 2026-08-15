@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { buildSandboxDoc } from "@/components/canvas/sandbox-frame";
 
 /**
@@ -81,7 +81,7 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
           aria-label={copied ? "Copied" : "Copy diagram source"}
           className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
         >
-          {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <StatusIcons.success className="size-3.5 text-success" /> : <ActionIcons.copy className="size-3.5" />}
           <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>

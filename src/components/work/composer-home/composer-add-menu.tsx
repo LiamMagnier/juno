@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, FileUp, Plus, RefreshCw, Sparkles } from "lucide-react";
+import { FileUp, Plus, Sparkles } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -189,7 +190,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                 have none.
               </p>
               <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>
           ) : (
@@ -209,7 +210,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                       /{skill.slug}
                     </span>
                   </span>
-                  {active && <Check className="!size-3.5 shrink-0 text-primary" />}
+                  {active && <StatusIcons.success className="!size-3.5 shrink-0 text-primary" />}
                 </DropdownMenuItem>
               );
             })

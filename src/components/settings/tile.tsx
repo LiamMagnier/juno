@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Check, Loader2, TriangleAlert } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { staggerDelay } from "@/lib/motion";
@@ -96,19 +97,19 @@ export function TileSaveStatus({
     >
       {state === "saving" && (
         <>
-          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
           Saving…
         </>
       )}
       {state === "saved" && (
         <>
-          <Check className="h-3.5 w-3.5 text-primary" aria-hidden />
+          <StatusIcons.success className="size-3.5 text-primary" aria-hidden />
           Saved
         </>
       )}
       {state === "failed" && (
         <>
-          <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
+          <StatusIcons.error className="size-3.5" aria-hidden />
           {failedMessage}
         </>
       )}

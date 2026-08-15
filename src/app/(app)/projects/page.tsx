@@ -4,14 +4,14 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff } from "lucide-react";
+import { FileText, MessageSquare, Plus, Search, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
@@ -177,7 +177,7 @@ export default function ProjectsPage() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <ActionIcons.filter className="size-3.5" />
                     Sort by: <span className="font-semibold text-foreground">{sortBy === "updated" ? "Last updated" : sortBy === "name" ? "Name" : "Conversations"}</span>
                   </Button>
                 </DropdownMenuTrigger>
@@ -195,7 +195,7 @@ export default function ProjectsPage() {
               </DropdownMenu>
 
               <Button onClick={() => { setName(""); setOpen(true); }} size="sm" className="gap-1.5">
-                <Plus className="h-4 w-4" /> New project
+                <Plus className="size-4" /> New project
               </Button>
             </>
           }
@@ -207,7 +207,7 @@ export default function ProjectsPage() {
             message after a failed load. */}
         {!loading && !empty && !error && (
           <div className="relative mt-6">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -262,7 +262,7 @@ export default function ProjectsPage() {
             description="Create one to keep a topic’s chats, instructions, and files together."
             action={
               <Button onClick={() => { setName(""); setOpen(true); }} className="gap-1.5">
-                <Plus className="h-4 w-4" /> New project
+                <Plus className="size-4" /> New project
               </Button>
             }
           />
@@ -300,7 +300,7 @@ export default function ProjectsPage() {
                   {/* Render Cover Image only if explicitly set */}
                   {p.coverUrl && (
                     <div className="relative h-28 w-full overflow-hidden bg-muted border-b shrink-0">
-                      <img src={p.coverUrl} className="h-full w-full object-cover" alt="" />
+                      <img src={p.coverUrl} className="size-full object-cover" alt="" />
                     </div>
                   )}
 
@@ -327,34 +327,34 @@ export default function ProjectsPage() {
                               variant="ghost"
                               size="icon-sm"
                               aria-label={`Actions for ${p.name}`}
-                              className="relative z-10 h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                              className="relative z-10 size-6 shrink-0 text-muted-foreground hover:text-foreground"
                             >
-                              <MoreVertical className="h-3.5 w-3.5" />
+                              <ActionIcons.more className="size-3.5" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
                             <DropdownMenuItem onSelect={() => setStarred(toggleStarredProject(p.id))}>
                               {starred.includes(p.id) ? (
                                 <>
-                                  <PinOff className="h-4 w-4 mr-2" />
+                                  <PinOff className="size-4 mr-2" />
                                   <span>Unpin</span>
                                 </>
                               ) : (
                                 <>
-                                  <Pin className="h-4 w-4 mr-2" />
+                                  <Pin className="size-4 mr-2" />
                                   <span>Pin</span>
                                 </>
                               )}
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => { setEditingProject(p); setRenameName(p.name); }}>
-                              <Pencil className="h-4 w-4 mr-2" />
+                              <ActionIcons.edit className="size-4 mr-2" />
                               <span>Rename</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             {/* Tint, not an inverted fill — the family's one destructive
                                 focus treatment until DropdownMenuItem gains a variant. */}
                             <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                              <Trash2 className="h-4 w-4 mr-2" />
+                              <ActionIcons.delete className="size-4 mr-2" />
                               <span>Delete</span>
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -377,9 +377,9 @@ export default function ProjectsPage() {
                 <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-5 pb-4 pt-3 font-mono text-caption text-muted-foreground">
                   <span>Updated {timeAgo(p.updatedAt)}</span>
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-0.5" title={`${p.conversationCount} chats`}><MessageSquare className="h-3 w-3" /> {p.conversationCount}</span>
+                    <span className="flex items-center gap-0.5" title={`${p.conversationCount} chats`}><MessageSquare className="size-3" /> {p.conversationCount}</span>
                     <span>•</span>
-                    <span className="flex items-center gap-0.5" title={`${p.fileCount} files`}><FileText className="h-3 w-3" /> {p.fileCount - (p.coverUrl ? 1 : 0)}</span>
+                    <span className="flex items-center gap-0.5" title={`${p.fileCount} files`}><FileText className="size-3" /> {p.fileCount - (p.coverUrl ? 1 : 0)}</span>
                   </div>
                 </div>
               </Card>

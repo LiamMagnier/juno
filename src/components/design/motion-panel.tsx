@@ -6,9 +6,11 @@
  * It docks under the canvas rather than joining Layers and History in the left
  * rail, and that is not a stylistic preference. A timeline is a *time axis* —
  * tracks are rows and milliseconds are the horizontal dimension — and the left
- * rail is 208 points wide. A keyframe grid squeezed into 208 points would be a
- * picture of a timeline rather than one you can place a keyframe on, so the
- * dock takes the canvas's full width and the rails keep their full height.
+ * rail starts at 208 points and is not meant to hold a time axis at any width a
+ * rail is worth. A keyframe grid squeezed in there would be a picture of a
+ * timeline rather than one you can place a keyframe on, so the dock takes the
+ * canvas's full width and the rails keep their full height. Its own height is
+ * the editor's to set — see `panel-layout.tsx`.
  *
  * Every edit here is an ordinary operation on an ordinary transaction:
  * `setKeyframes` for anything inside a track, and `createAnimation` under the
@@ -27,7 +29,8 @@
  */
 
 import * as React from "react";
-import { Pause, Play, Plus, Repeat, SkipBack, Trash2, X } from "lucide-react";
+import { Pause, Play, Plus, Repeat, SkipBack, X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import {
   ANIMATABLE_PROPERTIES,
   animationSpanMs,
@@ -37,6 +40,7 @@ import {
   sampleTrack,
   sortedKeyframes,
 } from "@/components/design/motion-model";
+import { ColorField, PanelSelect, fieldClass } from "@/components/design/effects-panel";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import type {
   AnimatableProperty,
@@ -102,6 +106,7 @@ export function MotionPanel({
   onPreview,
   onClose,
   readOnly,
+  height = 244,
 }: {
   /** The committed document. The panel never reads the preview it produces. */
   document: DesignDocument;
@@ -113,6 +118,10 @@ export function MotionPanel({
   onPreview: (preview: MotionPreview | null) => void;
   onClose: () => void;
   readOnly?: boolean;
+  /** Set by the editor's resize grip. How much of the window a timeline is
+   *  worth depends on how many tracks the animation has, which is not a number
+   *  this panel — or the shell — can guess. */
+  height?: number;
 }) {
   const animations = React.useMemo(() => Object.values(doc.animations), [doc.animations]);
   const [animationId, setAnimationId] = React.useState<AnimationId | null>(null);
@@ -331,7 +340,7 @@ export function MotionPanel({
     : null;
 
   return (
-    <section className="flex min-h-0 flex-col border-t border-border/60 bg-card/40" aria-label="Motion timeline" style={{ height: 244 }}>
+    <section className="flex min-h-0 shrink-0 flex-col border-t border-border/60 bg-card/40" aria-label="Motion timeline" style={{ height }}>
       {/* Transport and the animation being edited */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/60 px-2 py-1.5">
         <button
@@ -364,24 +373,19 @@ export function MotionPanel({
 
         <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
 
-        <select
-          aria-label="Animation"
-          value={animation?.id ?? ""}
-          onChange={(event) => {
-            setAnimationId(event.target.value);
+        <PanelSelect
+          ariaLabel="Animation"
+          value={animation?.id}
+          placeholder="No animations"
+          options={animations.map((item) => ({ value: item.id, label: item.name }))}
+          disabled={animations.length === 0}
+          onChange={(next) => {
+            setAnimationId(next);
             setSelectedKeyframe(null);
             setTimeMs(0);
           }}
-          disabled={animations.length === 0}
-          className={cn(fieldClass, "h-6 w-40 py-0")}
-        >
-          {animations.length === 0 && <option value="">No animations</option>}
-          {animations.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
+          className="w-40"
+        />
 
         {animation && (
           <>
@@ -431,7 +435,7 @@ export function MotionPanel({
             }}
             className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
           >
-            <Trash2 className="size-3.5" aria-hidden />
+            <ActionIcons.delete className="size-3.5" aria-hidden />
           </button>
         )}
 
@@ -476,19 +480,14 @@ export function MotionPanel({
           {/* Track list */}
           <div className="flex w-56 shrink-0 flex-col border-r border-border/60">
             <div className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2" style={{ height: ROW_HEIGHT }}>
-              <select
-                aria-label="Property to animate"
+              <PanelSelect
+                ariaLabel="Property to animate"
                 value={activeProperty}
-                onChange={(event) => setNewProperty(event.target.value as AnimatableProperty)}
+                options={selectableProperties.map((info) => ({ value: info.property, label: info.label }))}
                 disabled={readOnly}
-                className={cn(fieldClass, "h-5 min-w-0 flex-1 py-0 text-micro")}
-              >
-                {selectableProperties.map((info) => (
-                  <option key={info.property} value={info.property}>
-                    {info.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => setNewProperty(next as AnimatableProperty)}
+                className="h-5 min-w-0 flex-1 text-micro"
+              />
               <button
                 type="button"
                 disabled={readOnly || selection.length === 0}
@@ -718,20 +717,21 @@ export function MotionPanel({
               }
             />
           ) : (
-            <label className="block">
-              <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Value</span>
-              <input
-                type="color"
-                aria-label="Keyframe colour"
-                value={rgbaToHex(selected.keyframe.value).slice(0, 7)}
+            // `ColorField`, not a bare `<input type="color">`: the OS draws that
+            // control's well and its popup, and this one sat inches from the
+            // Radix animation picker in the same strip.
+            <div className="w-44">
+              <ColorField
+                label="Value"
+                ariaLabel="Keyframe colour"
+                value={rgbaToHex(selected.keyframe.value)}
                 disabled={readOnly}
-                onChange={(event) => {
-                  const color = hexToRgba(event.target.value);
+                onCommit={(hex) => {
+                  const color = hexToRgba(hex);
                   if (color) editKeyframe(selected.track, selected.index, { value: color }, "Set keyframe colour");
                 }}
-                className="size-6 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
               />
-            </label>
+            </div>
           )}
           <EasingEditor
             label="Easing out of this keyframe"
@@ -807,8 +807,17 @@ function rulerTicks(span: number): number[] {
  *  particular is the same control in both places — a keyframe's easing and a
  *  transition's easing are one `EasingCurve` — and two copies of it would drift
  *  the moment the model gained a curve. */
-export const fieldClass =
-  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+/**
+ * Re-exported, not redeclared.
+ *
+ * This was a second, byte-identical copy of the string in `effects-panel.tsx`,
+ * which is where the module note already says the generic field primitives
+ * live. Two definitions of one control's appearance is a guarantee that the
+ * panels drift: whichever one the next person edits, half the editor's fields
+ * keep the old look, and nothing about that failure is visible in review.
+ * `interactions-panel.tsx` imports it from here, so the name stays.
+ */
+export { fieldClass };
 
 export function InlineNumber({
   label,
@@ -881,22 +890,20 @@ export function SmallSelect({
   onChange: (value: string) => void;
   className?: string;
 }) {
+  // The same Radix dropdown the inspector uses — see `PanelSelect`. This was a
+  // native `<select>`, so the timeline's pickers were drawn by the OS while the
+  // menus beside them were the product's own.
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
-      <select
-        className={cn(fieldClass, "h-6 py-0", className)}
+      <PanelSelect
+        ariaLabel={label}
         value={value}
+        options={options}
         disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        className={className}
+      />
     </label>
   );
 }

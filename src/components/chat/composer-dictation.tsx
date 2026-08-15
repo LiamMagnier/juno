@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, MicOff, Square, X } from "lucide-react";
+import { ArrowUp, Loader2, MicOff, Square } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
@@ -400,7 +401,7 @@ export function ComposerDictation({
             )}
             {transcribing && (
               <span className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="size-3 animate-spin" />
                 Transcribing…
               </span>
             )}
@@ -411,7 +412,7 @@ export function ComposerDictation({
           /* Graceful fallback: no Web Speech support, or mic denied. */
           <div className="flex h-16 items-center justify-between gap-3 rounded-composer border border-border/80 bg-card px-3 pl-5 shadow-float">
             <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
-              <MicOff className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+              <MicOff className="size-4 shrink-0 text-muted-foreground/60" />
               <span className="truncate">
                 {micError
                   ? "Microphone access was denied — allow it in your browser to dictate."
@@ -419,7 +420,7 @@ export function ComposerDictation({
               </span>
             </span>
             <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Close dictation" className={CAPSULE_CIRCLE}>
-              <X className="h-4 w-4" />
+              <ActionIcons.dismiss className="size-4" />
             </Pressable>
           </div>
         ) : (
@@ -431,7 +432,7 @@ export function ComposerDictation({
           // it is the composer's own hairline, not a floating panel's.
           <div className="flex h-16 items-center gap-3 rounded-composer border border-border/80 bg-card px-3 shadow-float">
             <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Cancel dictation" className={cn(CAPSULE_CIRCLE, "border border-border")}>
-              <X className="h-4 w-4" />
+              <ActionIcons.dismiss className="size-4" />
             </Pressable>
 
             {/* Live frequency dots — driven by the analyser rAF loop above. */}
@@ -456,7 +457,7 @@ export function ComposerDictation({
               aria-label="Stop and edit"
               className={cn(CAPSULE_CIRCLE, "bg-muted text-foreground")}
             >
-              <Square className="h-3.5 w-3.5 fill-current" />
+              <Square className="size-3.5 fill-current" />
             </Pressable>
 
             {/* The same action as the composer's Send, one 220ms cross-fade away,
@@ -475,7 +476,7 @@ export function ComposerDictation({
               aria-label="Send dictation"
               className={CAPSULE_CIRCLE}
             >
-              {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
+              {transcribing ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4.5" />}
             </Button>
           </div>
         )}

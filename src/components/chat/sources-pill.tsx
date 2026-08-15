@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import {
   AUDIT_COPY,
   ScoreMeter,
@@ -154,7 +155,7 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
           </span>
           <span className="truncate font-mono text-caption text-muted-foreground">{hostOf(source.url)}</span>
         </span>
-        <ArrowUpRight
+        <ActionIcons.external
           aria-hidden="true"
           className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60 motion-reduce:transition-none"
         />

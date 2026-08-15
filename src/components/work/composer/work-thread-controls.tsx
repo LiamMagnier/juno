@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Loader2, RefreshCw } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -277,7 +278,7 @@ function ThreadProjectChip({
             {value === null ? "Project" : (selected?.name ?? "In a project")}
           </span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
+            className="size-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -296,7 +297,7 @@ function ThreadProjectChip({
                 you have none.
               </p>
               <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>
           ) : (
@@ -311,7 +312,7 @@ function ThreadProjectChip({
                     className={cn(active ? "text-primary" : "text-muted-foreground")}
                   />
                   <span className="flex-1 truncate">{project.name}</span>
-                  {active && <Check className="!size-3.5 text-primary" />}
+                  {active && <StatusIcons.success className="!size-3.5 text-primary" />}
                 </DropdownMenuItem>
               );
             })

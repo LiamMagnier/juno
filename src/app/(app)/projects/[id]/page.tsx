@@ -10,21 +10,17 @@ import {
   FileText,
   MessagesSquare,
   Image as ImageIcon,
-  Info,
   Loader2,
   Maximize2,
-  Pencil,
   Plus,
   Table,
-  Trash2,
   Pin,
-  MoreVertical,
   FolderClosed,
   FolderInput,
-  X,
   NotebookPen,
   FileUp,
 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -469,7 +465,7 @@ export default function ProjectDetailPage() {
   // the error tone gets the solid destructive fence and role="status".
   if (error === "notfound") {
     return (
-      <div className="mx-auto flex h-full w-full max-w-xl items-center px-4">
+      <div className="mx-auto flex size-full max-w-xl items-center px-4">
         <EmptyState
           className="w-full motion-safe:animate-rise-in"
           icon={FolderClosed}
@@ -486,7 +482,7 @@ export default function ProjectDetailPage() {
   }
   if (error === "error") {
     return (
-      <div className="mx-auto flex h-full w-full max-w-xl items-center px-4">
+      <div className="mx-auto flex size-full max-w-xl items-center px-4">
         <EmptyState
           tone="error"
           className="w-full motion-safe:animate-rise-in"
@@ -545,7 +541,7 @@ export default function ProjectDetailPage() {
           className="-ml-3 mb-6 gap-1.5 text-muted-foreground hover:text-foreground"
         >
           <Link href="/projects">
-            <ArrowLeft className="h-4 w-4" /> All projects
+            <ArrowLeft className="size-4" /> All projects
           </Link>
         </Button>
 
@@ -586,7 +582,7 @@ export default function ProjectDetailPage() {
                     className="pressable shrink-0 rounded-control p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
                     aria-label="Rename project"
                   >
-                    <Pencil className="h-4 w-4" />
+                    <ActionIcons.edit className="size-4" />
                   </button>
                 </>
               )}
@@ -606,7 +602,7 @@ export default function ProjectDetailPage() {
               aria-label={isStarred ? "Unpin project" : "Pin project"}
               aria-pressed={isStarred}
             >
-              <Pin className={cn("h-4 w-4", isStarred && "fill-primary text-primary")} />
+              <Pin className={cn("size-4", isStarred && "fill-primary text-primary")} />
             </Button>
 
             <DropdownMenu>
@@ -617,16 +613,16 @@ export default function ProjectDetailPage() {
                   className="text-muted-foreground hover:text-foreground"
                   aria-label="Project actions"
                 >
-                  <MoreVertical className="h-4 w-4" />
+                  <ActionIcons.more className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem onSelect={() => { setNameDraft(data.project.name); setEditingName(true); }}>
-                  <Pencil className="mr-2 h-4 w-4" />
+                  <ActionIcons.edit className="mr-2 size-4" />
                   <span>Rename project</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setInstructionsOpen(true)}>
-                  <NotebookPen className="mr-2 h-4 w-4" />
+                  <NotebookPen className="mr-2 size-4" />
                   <span>Edit instructions</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -634,7 +630,7 @@ export default function ProjectDetailPage() {
                     variant yet, and the tint is the one of the three treatments in
                     use that keeps the destructive text legible on focus. */}
                 <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
+                  <ActionIcons.delete className="mr-2 size-4" />
                   <span>Delete project</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -708,9 +704,9 @@ export default function ProjectDetailPage() {
                               onClick={() => togglePin(c.id, c.pinned)}
                               aria-label={c.pinned ? "Unpin chat" : "Pin chat"}
                               aria-pressed={c.pinned}
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              className="size-7 text-muted-foreground hover:text-foreground"
                             >
-                              <Pin className={cn("h-4 w-4", c.pinned && "fill-primary text-primary")} />
+                              <Pin className={cn("size-4", c.pinned && "fill-primary text-primary")} />
                             </Button>
 
                             <DropdownMenu>
@@ -719,9 +715,9 @@ export default function ProjectDetailPage() {
                                   variant="ghost"
                                   size="icon-sm"
                                   aria-label="Move chat to another project"
-                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  className="size-7 text-muted-foreground hover:text-foreground"
                                 >
-                                  <FolderInput className="h-4 w-4" />
+                                  <FolderInput className="size-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-56">
@@ -731,12 +727,12 @@ export default function ProjectDetailPage() {
                                 <DropdownMenuSeparator />
                                 {allProjects.filter((p) => p.id !== data.project.id).map((p) => (
                                   <DropdownMenuItem key={p.id} onSelect={() => moveChat(c.id, p.id)}>
-                                    <FolderClosed className="mr-2 h-4 w-4" />
+                                    <FolderClosed className="mr-2 size-4" />
                                     <span className="truncate">{p.name}</span>
                                   </DropdownMenuItem>
                                 ))}
                                 <DropdownMenuItem onSelect={() => moveChat(c.id, null)}>
-                                  <X className="mr-2 h-4 w-4" />
+                                  <ActionIcons.dismiss className="mr-2 size-4" />
                                   <span>Remove from project</span>
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
@@ -747,9 +743,9 @@ export default function ProjectDetailPage() {
                               size="icon-sm"
                               onClick={() => setChatToDelete({ id: c.id, title: c.title })}
                               aria-label="Delete chat"
-                              className="h-7 w-7 text-muted-foreground danger-hover"
+                              className="size-7 text-muted-foreground danger-hover"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <ActionIcons.delete className="size-4" />
                             </Button>
                           </div>
                         </li>
@@ -771,7 +767,7 @@ export default function ProjectDetailPage() {
                 <Card className="overflow-hidden">
                   {coverUrl ? (
                     <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
-                      <img src={coverUrl} className="h-full w-full object-cover" alt="" />
+                      <img src={coverUrl} className="size-full object-cover" alt="" />
                       {/* bg-scrim — the one dim value every backdrop in the product
                           shares. A hardcoded bg-black/40 here made a fifth treatment. */}
                       {/* coarse:opacity-100 — this overlay is the ONLY way to change
@@ -797,7 +793,7 @@ export default function ProjectDetailPage() {
                       // behind it. Named rungs give it a plate and a real hover.
                       className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-secondary transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
-                      <Plus className="mb-1 h-5 w-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
+                      <Plus className="mb-1 size-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
                       <span className="font-mono text-caption text-muted-foreground">
                         Add project image
                       </span>
@@ -820,7 +816,7 @@ export default function ProjectDetailPage() {
                     <section className="pb-5">
                       <div className="mb-2.5 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
-                          <NotebookPen className="h-3.5 w-3.5 text-muted-foreground" />
+                          <NotebookPen className="size-3.5 text-muted-foreground" />
                           <CardEyebrow>Memory</CardEyebrow>
                         </div>
                         <div className="flex items-center gap-1">
@@ -832,7 +828,7 @@ export default function ProjectDetailPage() {
                             className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                             aria-label="Manage memories"
                           >
-                            <Pencil className="h-3.5 w-3.5" />
+                            <ActionIcons.edit className="size-3.5" />
                           </button>
                         </div>
                       </div>
@@ -863,7 +859,7 @@ export default function ProjectDetailPage() {
                           className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           aria-label="Edit project instructions"
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <ActionIcons.edit className="size-3.5" />
                         </button>
                       </div>
                       {instructions ? (
@@ -913,7 +909,7 @@ export default function ProjectDetailPage() {
                           className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                           aria-label="Add file"
                         >
-                          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-4" />}
                         </button>
                       </div>
                       {workspaceFiles.length === 0 ? (
@@ -953,7 +949,7 @@ export default function ProjectDetailPage() {
                                 rel="noopener noreferrer"
                                 className="flex min-w-0 flex-1 items-center gap-2 rounded-xs"
                               >
-                                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                <FileText className="size-4 shrink-0 text-muted-foreground" />
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-caption font-medium text-foreground">{f.fileName}</p>
                                   <p className="font-mono text-caption text-muted-foreground">{formatBytes(f.size)}</p>
@@ -964,9 +960,9 @@ export default function ProjectDetailPage() {
                                 size="icon-sm"
                                 onClick={() => deleteFile(f.id)}
                                 aria-label={`Remove ${f.fileName}`}
-                                className="danger-hover h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
+                                className="danger-hover size-6 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <ActionIcons.delete className="size-3.5" />
                               </Button>
                             </li>
                           ))}
@@ -994,7 +990,7 @@ export default function ProjectDetailPage() {
                     onClick={() => setInstructionsOpen(true)}
                     className="shrink-0 gap-1.5"
                   >
-                    <Maximize2 className="h-3.5 w-3.5" />
+                    <Maximize2 className="size-3.5" />
                     Full editor
                   </Button>
                 </div>
@@ -1026,7 +1022,7 @@ export default function ProjectDetailPage() {
                       disabled={!instructionsDirty || savingInstructions}
                       className="gap-1.5"
                     >
-                      {savingInstructions && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
                       Save
                     </Button>
                   </div>
@@ -1036,7 +1032,7 @@ export default function ProjectDetailPage() {
                     the Card this note sits in was 1.2 points of fill, which on the
                     black ground is an unfenced paragraph. */}
                 <div className="mt-4 flex items-start gap-2 rounded-field bg-secondary p-3 text-caption leading-relaxed text-muted-foreground">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                  <StatusIcons.info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
                   <p>
                     These instructions are prepended to every chat in this project — Juno reads them
                     before your first message, alongside the referenced files.
@@ -1071,9 +1067,9 @@ export default function ProjectDetailPage() {
                     className="shrink-0 gap-1.5"
                   >
                     {uploading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <FileUp className="h-3.5 w-3.5" />
+                      <FileUp className="size-3.5" />
                     )}
                     Add file
                   </Button>
@@ -1254,7 +1250,7 @@ export default function ProjectDetailPage() {
                 disabled={!instructionsDirty || savingInstructions}
                 className="gap-1.5"
               >
-                {savingInstructions && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {savingInstructions && <Loader2 className="size-3.5 animate-spin" />}
                 Save instructions
               </Button>
             </div>
@@ -1340,7 +1336,7 @@ function WorkspaceFileRow({
       className="group relative flex items-center gap-3 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
       style={staggerDelay(index)}
     >
-      <Icon className={cn("h-4 w-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
+      <Icon className={cn("size-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
 
       <div className="min-w-0 flex-1">
         <a
@@ -1380,9 +1376,9 @@ function WorkspaceFileRow({
         size="icon-sm"
         onClick={onDelete}
         aria-label={`Remove ${file.fileName}`}
-        className="danger-hover h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:h-11 coarse:w-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
+        className="danger-hover size-7 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:size-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
       >
-        <Trash2 className="h-3.5 w-3.5" />
+        <ActionIcons.delete className="size-3.5" />
       </Button>
     </li>
   );

@@ -324,7 +324,16 @@
        step deeper than the raw #526ef0/#ef4444/#f59e0b they replace so they
        hold on 97%-lightness paper. */
     --canvas-selection: 229 78% 60%;
-    --canvas-handle: 11 72% 50%;
+    /* Renamed from --canvas-handle, which is what it was called and never what
+       it drew: the handles are selection-coloured, and this hue has always been
+       the SNAP GUIDE. A token whose name disagrees with its only call site is
+       how the next person picks the wrong one. */
+    --canvas-guide: 11 72% 50%;
+    /* Measurements only — dimension and spacing labels. It used to double as the
+       hover outline, which put a warning hue on "your pointer is over this" and
+       meant a canvas at rest showed three accents before you had selected
+       anything. Hover is now the selection colour, so this appears only when a
+       number is actually being reported. */
     --canvas-measure: 40 85% 45%;
   }
 
@@ -449,7 +458,7 @@
     /* Design-canvas selection chrome — lifted like every other state colour,
        because a 1px stroke on #000 dies at light-theme lightness. */
     --canvas-selection: 229 86% 68%;
-    --canvas-handle: 11 78% 60%;
+    --canvas-guide: 11 78% 60%;
     --canvas-measure: 40 88% 55%;
   }
 
@@ -533,6 +542,7 @@
   svg.lucide.h-3,    svg.lucide.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
   svg.lucide.h-3\.5, svg.lucide.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
   svg.lucide.h-4,    svg.lucide.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
+  svg.lucide.h-4\.5, svg.lucide.size-4\.5 { stroke-width: 2.10; }  /* 18px → 1.575px */
   svg.lucide.h-5,    svg.lucide.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
   svg.lucide.h-6,    svg.lucide.size-6    { stroke-width: 1.75; }  /* reference      */
   svg.lucide.h-7,    svg.lucide.size-7    { stroke-width: 1.60; }
@@ -639,6 +649,16 @@
   .ui-button svg:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
     width: 1rem;
     height: 1rem;
+  }
+  /* …and the matching optical weight for that 1rem.
+     The ladder above keys on a size class present ON the svg, which an icon
+     sized by its BUTTON never has — that is the whole point of the rule above.
+     So those icons kept `svg.lucide`'s 24px-reference 1.75 while an identical
+     16px icon that spelled `size-4` out got 2.25: the same glyph, two visibly
+     different stroke weights, decided by whether the author happened to write
+     the size. Same value as the `size-4` row, and it must move with it. */
+  .ui-button svg.lucide:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
+    stroke-width: 2.25;
   }
 
   /* Tactile press feedback for buttons/chips/cards — not large surfaces. Covers the

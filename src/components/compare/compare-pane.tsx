@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, RefreshCw, X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/chat/markdown";
@@ -106,7 +106,7 @@ export function ComparePane({
                   aria-label={`Remove ${model?.name ?? "this model"} from the comparison`}
                   className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none coarse:p-2.5 coarse:opacity-100"
                 >
-                  <X className="size-3.5" />
+                  <ActionIcons.dismiss className="size-3.5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent>Remove model</TooltipContent>
@@ -139,7 +139,7 @@ export function ComparePane({
                   onClick={() => router.push("/upgrade")}
                   className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <ArrowUpRight className="h-3.5 w-3.5" /> See plans
+                  <ActionIcons.external className="size-3.5" /> See plans
                 </Button>
               ) : (
                 <Button
@@ -148,7 +148,7 @@ export function ComparePane({
                   onClick={onRetry}
                   className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <RefreshCw className="h-3.5 w-3.5" /> Try again
+                  <ActionIcons.refresh className="size-3.5" /> Try again
                 </Button>
               )}
             </div>
@@ -201,7 +201,7 @@ export function ComparePane({
             onClick={onContinue}
             className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
-            Continue in chat <ArrowUpRight className="h-3 w-3" />
+            Continue in chat <ActionIcons.external className="size-3" />
           </button>
         )}
       </footer>

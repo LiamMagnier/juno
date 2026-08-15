@@ -96,7 +96,7 @@ export function LandingPage() {
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/72 backdrop-blur-xl backdrop-saturate-150">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
-            <JunoMark className="h-7 w-7" />
+            <JunoMark className="size-7" />
             <AsciiWordmark />
           </Link>
           <nav aria-label="Account" className="flex items-center gap-2">
@@ -202,7 +202,7 @@ export function LandingPage() {
           <div className="flex flex-col justify-between gap-8 sm:flex-row">
             <div>
               <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
-                <JunoMark className="h-6 w-6" />
+                <JunoMark className="size-6" />
                 <AsciiWordmark />
               </Link>
               <p className="mt-3 max-w-xs text-caption text-muted-foreground">

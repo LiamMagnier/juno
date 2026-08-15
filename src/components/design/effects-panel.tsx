@@ -33,6 +33,10 @@
  */
 
 import * as React from "react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
 import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
@@ -353,7 +357,7 @@ function PaintListSection({
                 disabled={readOnly}
                 onClick={() => setPaint(index, { ...paint, visible: hidden }, hidden ? `Show ${title.toLowerCase()}` : `Hide ${title.toLowerCase()}`)}
               >
-                {hidden ? "○" : "●"}
+                {hidden ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
               </IconButton>
               <IconButton
                 label={`Remove ${title.toLowerCase()} ${index + 1}`}
@@ -364,7 +368,7 @@ function PaintListSection({
                   setExpanded(null);
                 }}
               >
-                −
+                <ActionIcons.delete className="size-3.5" aria-hidden />
               </IconButton>
             </div>
 
@@ -603,7 +607,10 @@ function StopEditor({
 
   return (
     <div className="space-y-1.5">
-      <div className="grid grid-cols-[1fr_auto] gap-1.5">
+      {/* Two equal columns, not `1fr auto`: an `auto` track sizes to the number
+          input's intrinsic width, which is wide enough to squeeze the swatch
+          beside it down to its label. */}
+      <div className="grid grid-cols-2 gap-1.5">
         <ColorField
           label={`Stop ${selected + 1}`}
           value={rgbaToHex(stop.color)}
@@ -615,6 +622,7 @@ function StopEditor({
         />
         <NumberField
           label="Pos"
+          ariaLabel="Gradient stop position"
           suffix="%"
           value={Math.round(stop.position * 100)}
           min={0}
@@ -981,16 +989,22 @@ function EffectRow({
             disabled={disabled}
             onClick={() => onChange({ ...effect, visible: hidden }, hidden ? `Show ${label}` : `Hide ${label}`)}
           >
-            {hidden ? "○" : "●"}
+            {hidden ? <EyeOff className="size-3.5" aria-hidden /> : <Eye className="size-3.5" aria-hidden />}
           </IconButton>
-          <IconButton label={`Move ${label} down the stack`} disabled={disabled || index === 0} onClick={() => onMove(-1)}>
-            ↑
+          {/* The labels used to say "down the stack" on the up arrow and "up the
+              stack" on the down arrow. Both readings are defensible in the
+              abstract — index 0 paints first, so it is the BOTTOM of the paint
+              stack — but the list above renders index 0 at the TOP, so the arrow
+              and the words disagreed about the direction of the same click. The
+              visible list is what a person is aiming at, so the words follow it. */}
+          <IconButton label={`Move ${label} up`} disabled={disabled || index === 0} onClick={() => onMove(-1)}>
+            <ChevronUp className="size-3.5" aria-hidden />
           </IconButton>
-          <IconButton label={`Move ${label} up the stack`} disabled={disabled || index === count - 1} onClick={() => onMove(1)}>
-            ↓
+          <IconButton label={`Move ${label} down`} disabled={disabled || index === count - 1} onClick={() => onMove(1)}>
+            <ChevronDown className="size-3.5" aria-hidden />
           </IconButton>
           <IconButton label={`Remove ${label}`} disabled={disabled} destructive onClick={onRemove}>
-            −
+            <ActionIcons.delete className="size-3.5" aria-hidden />
           </IconButton>
         </div>
       </div>
@@ -1025,9 +1039,13 @@ function EffectFields({
               if (color) onChange({ ...effect, color }, "Set shadow colour");
             }}
           />
-          <div className="grid grid-cols-4 gap-1.5">
-            <NumberField label="X" value={effect.offsetX} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetX: v }, "Set shadow offset")} />
-            <NumberField label="Y" value={effect.offsetY} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetY: v }, "Set shadow offset")} />
+          {/* Two-up, not four. An effect row is inset inside the rail, so a
+              four-column grid leaves each field about 37px of content — enough
+              for a leading "X" and nothing at all for "Spread". Two columns is
+              the widest grid whose labels still fit inside the fields. */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumberField label="X" ariaLabel="Shadow X offset" value={effect.offsetX} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetX: v }, "Set shadow offset")} />
+            <NumberField label="Y" ariaLabel="Shadow Y offset" value={effect.offsetY} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetY: v }, "Set shadow offset")} />
             <NumberField
               label="Blur"
               value={effect.blur}
@@ -1113,7 +1131,7 @@ function EffectFields({
     case "texture":
       return (
         <>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <NumberField
               label="Scale"
               value={effect.scale}
@@ -1133,6 +1151,7 @@ function EffectFields({
             />
             <NumberField
               label="Rough"
+              ariaLabel="Texture roughness"
               value={effect.roughness}
               min={1}
               max={4}
@@ -1149,7 +1168,7 @@ function EffectFields({
               if (color) onChange({ ...effect, color }, "Set texture colour");
             }}
           />
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
             <NumberField
               label="Amount"
               suffix="%"
@@ -1222,9 +1241,13 @@ function EffectFields({
               if (tint) onChange({ ...effect, tint }, "Set glass tint");
             }}
           />
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5">
+            {/* Not "Tint": the swatch a row above already carries that label,
+                and two adjacent rows reading "Tint" say nothing about which one
+                is the colour and which one is how much of it. */}
             <NumberField
-              label="Tint"
+              label="Opacity"
+              ariaLabel="Tint opacity"
               suffix="%"
               value={Math.round(effect.tintOpacity * 100)}
               min={0}
@@ -1308,8 +1331,50 @@ export function Section({ title, action, children }: { title: string; action?: R
   );
 }
 
+/**
+ * A boxed, label-less control.
+ *
+ * What is left of the old stacked field once the inspector's own fields moved
+ * their labels inside the box (see `FIELD_ROW`): the paint row's inline hex box,
+ * and the timeline and prototype panels next door, which re-export this string
+ * rather than declaring a second copy of it.
+ */
 export const fieldClass =
   "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+
+/**
+ * The row every inspector field is built on: the label INSIDE the control's
+ * left edge, on the same line as the value.
+ *
+ * Every field used to stack a 10.5px mono label above a 24px box, so the two-up
+ * X/Y grid at the top of the inspector spent four rows of text saying two
+ * numbers, and the right rail was already scrolling before it reached Fill.
+ * Reading down it meant alternating between a band of labels and a band of
+ * values instead of running an eye down one column of numbers. Figma puts the
+ * label in the field for exactly this reason, and so does this: one property is
+ * one line, and a two-up grid is one row rather than two.
+ *
+ * The label is the half that shrinks. `FieldLabel` truncates and carries the
+ * full text in `title`, because the value is what you came to read — and the
+ * rails are resizable now, so a label clipped in a narrow rail is one drag from
+ * being legible again rather than permanently lost.
+ */
+const FIELD_ROW =
+  "flex h-6 w-full min-w-0 items-center gap-1 rounded-md border border-border/60 bg-background px-1.5 transition-colors duration-fast focus-within:border-primary/60 focus-within:ring-2 focus-within:ring-primary/20 coarse:h-9";
+
+/** The control inside a `FIELD_ROW`. No border and no padding of its own: the
+ *  row draws those, and a bordered input inside a bordered row reads as a field
+ *  that has been dropped into another field. */
+const FIELD_CONTROL =
+  "min-w-0 flex-1 border-0 bg-transparent p-0 text-xs tabular-nums outline-none placeholder:text-muted-foreground/70";
+
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <span title={children} className="min-w-0 shrink truncate font-mono text-micro leading-none text-muted-foreground">
+      {children}
+    </span>
+  );
+}
 
 /** "Mixed" as a badge rather than a value, because the section below it shows
  *  the first layer's state and a badge is the only honest way to say so. */
@@ -1480,6 +1545,7 @@ function isTypedInput(event: React.ChangeEvent<HTMLElement>): boolean {
  */
 export function NumberField({
   label,
+  ariaLabel,
   value,
   mixed,
   min,
@@ -1490,6 +1556,10 @@ export function NumberField({
   onCommit,
 }: {
   label: string;
+  /** The full name when the visible label had to be shortened to fit inside the
+   *  row — "T" reads fine beside three other padding fields and is useless to a
+   *  screen reader on its own. */
+  ariaLabel?: string;
   value: number;
   /** The selected layers disagree: show nothing rather than the first one's. */
   mixed?: boolean;
@@ -1511,14 +1581,12 @@ export function NumberField({
   const changed = (parsed: number) => Number.isFinite(parsed) && (mixed === true || parsed !== value);
 
   return (
-    <label className="block">
-      <span className="block truncate pb-0.5 font-mono text-micro text-muted-foreground">
-        {label}
-        {suffix ? ` (${suffix})` : ""}
-      </span>
+    <label className={cn(FIELD_ROW, disabled && "opacity-50")}>
+      <FieldLabel>{label}</FieldLabel>
       <input
         type="number"
-        className={fieldClass}
+        aria-label={ariaLabel ?? label}
+        className={FIELD_CONTROL}
         value={shown}
         placeholder={mixed ? "Mixed" : undefined}
         min={min}
@@ -1555,18 +1623,25 @@ export function NumberField({
           e.stopPropagation(); // canvas shortcuts must not fire while typing
         }}
       />
+      {suffix && (
+        <span aria-hidden className="shrink-0 font-mono text-micro leading-none text-muted-foreground">
+          {suffix}
+        </span>
+      )}
     </label>
   );
 }
 
 export function TextField({
   label,
+  ariaLabel,
   value,
   multiline,
   disabled,
   onCommit,
 }: {
   label: string;
+  ariaLabel?: string;
   value: string;
   multiline?: boolean;
   disabled?: boolean;
@@ -1575,7 +1650,7 @@ export function TextField({
   const [draft, setDraft] = React.useState<string | null>(null);
   const shown = draft ?? value;
   const shared = {
-    className: fieldClass,
+    "aria-label": ariaLabel ?? label,
     value: shown,
     disabled,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
@@ -1595,10 +1670,23 @@ export function TextField({
       e.stopPropagation();
     },
   };
+  // A paragraph cannot share a 24px row with its label, so multiline keeps the
+  // stacked form. It is the one field in the inspector that is taller than a
+  // line by nature, and pretending otherwise would give it a one-line box.
+  if (multiline) {
+    return (
+      <label className="block">
+        <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
+        <textarea rows={3} {...shared} className={cn(fieldClass, "resize-y")} />
+      </label>
+    );
+  }
   return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
-      {multiline ? <textarea rows={3} {...shared} className={cn(fieldClass, "resize-y")} /> : <input type="text" {...shared} />}
+    <label className={cn(FIELD_ROW, disabled && "opacity-50")}>
+      <FieldLabel>{label}</FieldLabel>
+      {/* `normal-nums`, not the row's tabular default: a layer name is prose,
+          and tabular figures inside one look like a spreadsheet cell. */}
+      <input type="text" {...shared} className={cn(FIELD_CONTROL, "normal-nums")} />
     </label>
   );
 }
@@ -1609,6 +1697,7 @@ const MIXED_OPTION = " mixed";
 
 export function SelectField({
   label,
+  ariaLabel,
   value,
   mixed,
   options,
@@ -1616,6 +1705,7 @@ export function SelectField({
   onChange,
 }: {
   label: string;
+  ariaLabel?: string;
   value: string;
   mixed?: boolean;
   options: { value: string; label: string }[];
@@ -1623,43 +1713,122 @@ export function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="block min-w-0 flex-1">
-      <span className="block truncate pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
-      <select
-        className={fieldClass}
-        value={mixed ? MIXED_OPTION : value}
-        disabled={disabled}
-        onChange={(e) => e.target.value !== MIXED_OPTION && onChange(e.target.value)}
-      >
-        {mixed && <option value={MIXED_OPTION}>Mixed</option>}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <PanelSelect
+      // The label goes inside the trigger, for the reason in `FIELD_ROW` — a
+      // dropdown that kept its label on a line of its own would be the one
+      // control in the inspector still costing two rows.
+      leading={label}
+      ariaLabel={ariaLabel ?? label}
+      value={mixed ? MIXED_OPTION : value}
+      disabled={disabled}
+      onChange={(next) => next !== MIXED_OPTION && onChange(next)}
+      options={mixed ? [{ value: MIXED_OPTION, label: "Mixed" }, ...options] : options}
+    />
   );
 }
 
 /**
- * A colour, as a swatch and as text.
+ * The panel's dropdown — Radix, not a native `<select>`.
  *
- * Both halves had the fault `NumberField` had, from the other direction: they
- * committed on every change, and the hex box had no draft at all.
+ * Every dropdown in this editor was a bare `<select>`, which means the operating
+ * system draws it: macOS gives it its own bevel and its own popup, Windows gives
+ * it a different one, and neither matches the Radix menus and popovers sitting a
+ * few pixels away in the same panel. That inconsistency is one of the clearest
+ * ways a surface reads as assembled from parts rather than designed — and it is
+ * not only cosmetic, because the native popup ignores the app's theme entirely
+ * and renders light chrome over a dark editor.
  *
- * Half of "#22cc88" is "#22c", which `hexToRgba` accepts as shorthand — so
+ * Sized to the panel rather than the page: the shared `SelectTrigger` is a 36px
+ * form control, and these sit in 24px inspector rows.
+ */
+export function PanelSelect({
+  value,
+  options,
+  disabled,
+  onChange,
+  className,
+  ariaLabel,
+  placeholder,
+  leading,
+}: {
+  /**
+   * Undefined when there is nothing to select. Deliberately not `""`: Radix
+   * reserves the empty string for "no value" and throws if an item carries it,
+   * which is the trap a native `<select value="">` walks straight into.
+   */
+  value?: string;
+  options: { value: string; label: string }[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  className?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  /** Drawn inside the trigger's left edge, so a labelled dropdown is one row. */
+  leading?: string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger
+        aria-label={ariaLabel}
+        // The canvas owns Delete, ⌘Z and the single-key tool shortcuts. Without
+        // this a keystroke aimed at the open dropdown also reached the artwork.
+        onKeyDown={(event) => event.stopPropagation()}
+        className={cn(
+          // `justify-start` + `[&>svg]:ml-auto`: the shared trigger spreads its
+          // children apart, which would leave a leading label pinned left and
+          // its own value stranded in the middle of the row.
+          "h-6 w-full min-w-0 justify-start gap-1 rounded-md border-border/60 px-1.5 py-0 text-xs [&>span]:min-w-0 [&>svg]:ml-auto [&>svg]:size-3",
+          className
+        )}
+      >
+        {leading && (
+          <span title={leading} className="min-w-0 shrink truncate font-mono text-micro leading-none text-muted-foreground">
+            {leading}
+          </span>
+        )}
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} className="text-xs">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The chequerboard behind a swatch, drawn from the border token rather than a
+ *  literal grey — without it a fully transparent colour and a missing colour
+ *  are the same empty square. */
+const SWATCH_CHECKER = "repeating-conic-gradient(hsl(var(--border)) 0% 25%, transparent 0% 50%)";
+
+/**
+ * A colour: a swatch and its hex at rest, the picker behind a click.
+ *
+ * `<input type="color">` used to BE the resting control, and the operating
+ * system draws that one — macOS puts a bevelled well and its own popup where
+ * the Radix menus and popovers sit a few pixels away, and Windows draws a third
+ * thing. It is the same inconsistency `PanelSelect` exists to remove, in the
+ * one place it was left. So the swatch is now an ordinary button opening an
+ * ordinary Popover; the native input still exists, nested inside that popover,
+ * because it is the only route to the OS eyedropper and system palettes and
+ * dropping it would take capability away to gain consistency.
+ *
+ * Both editors keep the drafting `NumberField` needed, from the other
+ * direction: they committed on every change, and the hex box had no draft at
+ * all. Half of "#22cc88" is "#22c", which `hexToRgba` accepts as shorthand — so
  * typing a hex code set the layer to two wrong colours on the way to the right
  * one, and the re-render each of those caused replaced the text mid-word.
  * Measured before the fix: selecting "#22cc88" and typing "f0a" over it left
- * the field reading "#22cc88" with the keystrokes gone. A hex code could not be
- * typed into this field at all.
- *
- * The swatch is the same problem at sixty hertz: the system picker streams a
- * value per frame while the cursor moves across it.
+ * the field reading "#22cc88" with the keystrokes gone. The native picker is
+ * the same problem at sixty hertz — it streams a value per frame while the
+ * cursor moves across it — so it is coalesced rather than dropped.
  */
 export function ColorField({
   label,
+  ariaLabel,
   value,
   mixed,
   disabled,
@@ -1667,6 +1836,7 @@ export function ColorField({
   onClear,
 }: {
   label: string;
+  ariaLabel?: string;
   value: string;
   mixed?: boolean;
   disabled?: boolean;
@@ -1676,54 +1846,84 @@ export function ColorField({
   const [draft, setDraft] = React.useState<string | null>(null);
   const { schedule, flush } = useCoalescedCommit<string>();
   const shown = draft ?? (mixed ? "" : value);
+  const name = ariaLabel ?? label;
+  const swatch = !mixed && value ? value : null;
+
   return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="color"
-          value={!mixed && value ? value.slice(0, 7) : "#000000"}
-          disabled={disabled}
-          // Coalesced, not dropped: a pause anywhere in the sweep commits, so
-          // the canvas still follows the picker — a few times a second instead
-          // of a transaction per frame.
-          onChange={(e) => schedule(e.target.value, onCommit)}
-          onBlur={flush}
-          className="size-7 shrink-0 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
-          aria-label={`${label} colour`}
-        />
-        <input
-          type="text"
-          className={fieldClass}
-          value={shown}
-          placeholder={mixed ? "Mixed" : "none"}
-          disabled={disabled}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => {
-            if (draft !== null && draft !== value) onCommit(draft);
-            setDraft(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") {
-              setDraft(null);
-              (e.target as HTMLInputElement).blur();
-            }
-            e.stopPropagation();
-          }}
-        />
-        {onClear && (
+    <div className={cn(FIELD_ROW, disabled && "opacity-50")}>
+      <FieldLabel>{label}</FieldLabel>
+      <Popover>
+        <PopoverTrigger asChild>
           <button
             type="button"
             disabled={disabled}
-            onClick={onClear}
-            aria-label={`Remove ${label.toLowerCase()}`}
-            className="pressable shrink-0 rounded-sm px-1 font-mono text-micro text-muted-foreground hover:text-destructive"
+            aria-label={`${name} — choose a colour`}
+            className="pressable flex min-w-0 flex-1 items-center gap-1.5 rounded-xs text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none"
           >
-            ×
+            <span
+              aria-hidden
+              className="size-3.5 shrink-0 rounded-micro border border-border/60"
+              style={{
+                backgroundImage: swatch ? `linear-gradient(${swatch}, ${swatch}), ${SWATCH_CHECKER}` : SWATCH_CHECKER,
+                backgroundSize: "auto, 6px 6px",
+              }}
+            />
+            <span className="min-w-0 flex-1 truncate font-mono text-micro uppercase tabular-nums text-foreground">
+              {mixed ? "Mixed" : value || "None"}
+            </span>
           </button>
-        )}
-      </div>
-    </label>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-56 space-y-2 p-3" onKeyDown={(event) => event.stopPropagation()}>
+          <p className="font-mono text-micro text-muted-foreground">{name}</p>
+          <input
+            type="text"
+            aria-label={`${name} hex value`}
+            className={fieldClass}
+            value={shown}
+            placeholder={mixed ? "Mixed" : "none"}
+            disabled={disabled}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              if (draft !== null && draft !== value) onCommit(draft);
+              setDraft(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") {
+                setDraft(null);
+                (e.target as HTMLInputElement).blur();
+              }
+              e.stopPropagation();
+            }}
+          />
+          <label className="flex items-center gap-2">
+            <input
+              type="color"
+              value={!mixed && value ? value.slice(0, 7) : "#000000"}
+              disabled={disabled}
+              // Coalesced, not dropped: a pause anywhere in the sweep commits, so
+              // the canvas still follows the picker — a few times a second instead
+              // of a transaction per frame.
+              onChange={(e) => schedule(e.target.value, onCommit)}
+              onBlur={flush}
+              className="size-7 shrink-0 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
+              aria-label={`${name} — system colour picker`}
+            />
+            <span className="text-caption text-muted-foreground">System picker</span>
+          </label>
+        </PopoverContent>
+      </Popover>
+      {onClear && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onClear}
+          aria-label={`Remove ${name.toLowerCase()}`}
+          className="pressable shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
+        >
+          <X className="size-3" aria-hidden />
+        </button>
+      )}
+    </div>
   );
 }

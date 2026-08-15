@@ -74,7 +74,7 @@ export function AppPageHeader({
       <div className="mb-3 flex items-center gap-2">
         <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel}>
           <Link href={backHref}>
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <ArrowLeft className="size-4" aria-hidden="true" />
           </Link>
         </Button>
         {/* The mono kicker this component's own prop doc promises. It was set in
@@ -97,7 +97,6 @@ export function AppPageHeader({
               // to track it through the display scale's responsive steps.
               <Icon
                 className="size-[0.78em] shrink-0 text-muted-foreground/75"
-                strokeWidth={1.7}
                 aria-hidden="true"
               />
             )}

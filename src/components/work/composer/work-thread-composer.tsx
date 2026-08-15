@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Check, FileText, Loader2, Mic, Plus, X } from "lucide-react";
+import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { ComposerShell } from "@/components/ui/composer-shell";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -393,10 +394,10 @@ export function WorkThreadComposer({
                           // the same correction as the home composer's chips. On a
                           // pure-black ground the chip was darker than the shell it
                           // sits in and its shadow was black ink on black.
-                          className="flex items-center gap-2 rounded-control border border-border/60 bg-secondary px-2.5 py-2 text-xs motion-safe:animate-rise-in"
+                          className="flex items-center gap-2 rounded-control border border-border/60 bg-secondary px-2.5 py-2 text-caption motion-safe:animate-rise-in"
                         >
-                          <FileText
-                            className="h-5 w-5 shrink-0 text-muted-foreground"
+                          <CodeIcons.file
+                            className="size-5 shrink-0 text-muted-foreground"
                             aria-hidden="true"
                           />
                           <div className="max-w-[140px]">
@@ -413,12 +414,12 @@ export function WorkThreadComposer({
                           </div>
                           {upload.status === "uploading" && (
                             <Loader2
-                              className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+                              className="size-3.5 animate-spin text-muted-foreground"
                               aria-hidden="true"
                             />
                           )}
                           {added ? (
-                            <Check className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                            <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                           ) : (
                             <Pressable
                               kind="icon"
@@ -427,7 +428,7 @@ export function WorkThreadComposer({
                               className="-mr-1 shrink-0"
                               aria-label={`Remove ${upload.fileName}`}
                             >
-                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                              <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
                             </Pressable>
                           )}
                         </div>
@@ -447,7 +448,7 @@ export function WorkThreadComposer({
                         className="gap-1.5"
                       >
                         {context.saving && (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                         )}
                         {files.pending.length === 1
                           ? "Give it this file"
@@ -503,17 +504,17 @@ export function WorkThreadComposer({
                       size="icon-sm"
                       aria-label="Add a file, an app or a skill to this task"
                       className={cn(
-                        // `coarse:h-11 coarse:w-11` to match the home composer's
+                        // `coarse:size-11` to match the home composer's
                         // [+]. Without it this button tops out at 32px on touch,
                         // under the 44px the coarse variant exists to guarantee.
-                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:h-11 coarse:w-11",
+                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:size-11",
                         addOpen && "bg-accent"
                       )}
                     >
                       <Plus
                         aria-hidden="true"
                         strokeWidth={1.75}
-                        className="composer-add-icon h-4 w-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                        className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                       />
                     </Button>
                   </PopoverTrigger>
@@ -556,9 +557,9 @@ export function WorkThreadComposer({
                         disabled={dictating || voiceActive}
                         aria-label="Dictate this message"
                         aria-pressed={dictating}
-                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:h-11 coarse:w-11"
+                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:size-11"
                       >
-                        <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
+                        <Mic className="composer-mic-icon size-4" aria-hidden="true" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Dictate</TooltipContent>
@@ -586,7 +587,7 @@ export function WorkThreadComposer({
                         // radius the token file reserves for the primary at its 36px
                         // rest size, and the button reached only 32px before, which
                         // is under the touch floor its neighbours already clear.
-                        "composer-primary-action h-9 w-9 shrink-0 rounded-composer-action coarse:h-11 coarse:w-11",
+                        "composer-primary-action size-9 shrink-0 rounded-composer-action coarse:size-11",
                         "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                       )}
                     >
@@ -597,7 +598,7 @@ export function WorkThreadComposer({
                         // `checking` spinner rather than to its Square.
                         <Loader2
                           key="sending"
-                          className="h-3.5 w-3.5 animate-spin motion-safe:animate-fade-in"
+                          className="size-3.5 animate-spin motion-safe:animate-fade-in"
                           aria-hidden="true"
                         />
                       ) : showVoiceButton ? (
@@ -611,7 +612,7 @@ export function WorkThreadComposer({
                       ) : (
                         <ArrowUp
                           key="send"
-                          className="composer-send-icon h-3.5 w-3.5 motion-safe:animate-fade-in"
+                          className="composer-send-icon size-3.5 motion-safe:animate-fade-in"
                           aria-hidden="true"
                         />
                       )}

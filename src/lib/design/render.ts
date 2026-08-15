@@ -73,6 +73,9 @@ interface Defs {
 interface PaintedChunk {
   markup: string;
   box: LayoutBox | null;
+  /** A copy of what is already beneath, re-emitted under a filter. Never sampled
+   *  again — see `pushBackdrop`. */
+  backdrop?: boolean;
 }
 
 interface RenderContext {
@@ -152,6 +155,84 @@ function paintOpacityAttr(paint: Paint | undefined): string {
 function radiusAttrs(radius: CornerRadius): string {
   const r = typeof radius === "number" ? radius : Math.max(...radius);
   return r > 0 ? ` rx="${num(r)}" ry="${num(r)}"` : "";
+}
+
+/** Per-corner radii, top-left clockwise. */
+function cornerValues(radius: CornerRadius): [number, number, number, number] {
+  return typeof radius === "number"
+    ? [radius, radius, radius, radius]
+    : [radius[0], radius[1], radius[2], radius[3]];
+}
+
+const uniformRadius = (radius: CornerRadius): boolean => {
+  const [tl, tr, br, bl] = cornerValues(radius);
+  return tl === tr && tr === br && br === bl;
+};
+
+/**
+ * Two adjacent radii cannot together exceed the edge they share.
+ *
+ * `<rect rx>` clamps this for you; a hand-built path does not, and an unclamped
+ * corner produces an arc that doubles back and renders as a bow-tie. The scale
+ * is uniform across all four corners, which is what CSS `border-radius` does, so
+ * an over-specified box shrinks proportionally instead of losing one corner.
+ */
+function clampCorners(width: number, height: number, corners: [number, number, number, number]) {
+  const [tl, tr, br, bl] = corners.map((r) => Math.max(0, r)) as [number, number, number, number];
+  const ratio = (available: number, sum: number) => (sum > available ? available / sum : 1);
+  const scale = Math.min(
+    ratio(width, tl + tr),
+    ratio(width, bl + br),
+    ratio(height, tl + bl),
+    ratio(height, tr + br)
+  );
+  return [tl * scale, tr * scale, br * scale, bl * scale] as [number, number, number, number];
+}
+
+/**
+ * The `d` for a rectangle whose corners differ.
+ *
+ * `cornerRadius` has been `number | [number, number, number, number]` in the
+ * schema from the start, and the validator accepts the tuple — but every drawing
+ * path collapsed it with `Math.max(...radius)` and emitted one `rx`, so a
+ * per-corner radius authored by the AI, by the host bridge or by an imported
+ * document silently drew as four equal corners on the canvas, in the SVG export
+ * and in the PNG taken from it. A card with only its top corners rounded is one
+ * of the most ordinary shapes in interface design and the product could not
+ * draw it.
+ */
+function roundedRectPathData(box: LayoutBox, radius: CornerRadius): string {
+  const [tl, tr, br, bl] = clampCorners(box.width, box.height, cornerValues(radius));
+  const { x, y, width: w, height: h } = box;
+  const arc = (r: number, dx: number, dy: number) => `a${num(r)} ${num(r)} 0 0 1 ${num(dx)} ${num(dy)}`;
+  return [
+    `M${num(x + tl)} ${num(y)}`,
+    `H${num(x + w - tr)}`,
+    tr > 0 ? arc(tr, tr, tr) : "",
+    `V${num(y + h - br)}`,
+    br > 0 ? arc(br, -br, br) : "",
+    `H${num(x + bl)}`,
+    bl > 0 ? arc(bl, -bl, -bl) : "",
+    `V${num(y + tl)}`,
+    tl > 0 ? arc(tl, tl, -tl) : "",
+    "Z",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * A box, as the cheapest element that can draw it.
+ *
+ * Uniform corners stay a `<rect>`: it is smaller, it is what every existing
+ * snapshot contains, and the browser clamps its radii for us. Only a genuinely
+ * per-corner radius pays for a path.
+ */
+function boxMarkup(box: LayoutBox, radius: CornerRadius, attrs: string): string {
+  if (uniformRadius(radius)) {
+    return `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(radius)}${attrs}/>`;
+  }
+  return `<path d="${roundedRectPathData(box, radius)}"${attrs}/>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +452,7 @@ function silhouette(node: DesignNode, box: LayoutBox, attrs: string): string {
     case "path":
       return `<path transform="translate(${num(box.x)} ${num(box.y)})" d="${escapeXml(node.d)}"${attrs}/>`;
     default:
-      return `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(node.cornerRadius)}${attrs}/>`;
+      return boxMarkup(box, node.cornerRadius, attrs);
   }
 }
 
@@ -408,7 +489,8 @@ function backdropCopy(ctx: RenderContext, box: LayoutBox, radius: number): strin
     width: box.width + bleed * 2,
     height: box.height + bleed * 2,
   };
-  const behind = ctx.painted.filter((chunk) => !chunk.box || intersects(chunk.box, region));
+  // `!chunk.backdrop` is what stops backdrops compounding — see `pushBackdrop`.
+  const behind = ctx.painted.filter((chunk) => !chunk.backdrop && (!chunk.box || intersects(chunk.box, region)));
   if (behind.length === 0) return null;
   return behind.map((chunk) => chunk.markup).join("").replace(/ data-juno-node="[^"]*"/g, "");
 }
@@ -550,14 +632,30 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   // Each one samples what has been painted so far, so a glass panel over a
   // background blur sees the blur — which is the whole reason they are pushed
   // one at a time rather than gathered and emitted together.
+  /**
+   * A backdrop copy renders, but is never itself copied again.
+   *
+   * `backdropCopy` re-emits every painted chunk under the node — so once a glass
+   * card's copy of the page was in the paint list, the NEXT glass card copied
+   * that copy along with the original, and a third copied both. Size, canvas
+   * parse time and export weight grew multiplicatively in the number of
+   * overlapping backdrop layers: the exact effect the product markets was the
+   * one that made a document unusable.
+   *
+   * Marking them is enough to stop it and costs no fidelity, because a copy is
+   * by definition a duplicate of chunks that are still in the list on their own
+   * account — a later sampler sees the real content either way.
+   */
+  const pushBackdrop = (markup: string) => ctx.painted.push({ markup, box, backdrop: true });
+
   const surfaces: string[] = [];
   for (const effect of effects) {
     if (effect.type === "background-blur") {
       const backdrop = backgroundBlurMarkup(ctx, resolved, box, effect);
-      if (backdrop) push(backdrop);
+      if (backdrop) pushBackdrop(backdrop);
     } else if (effect.type === "glass") {
       const glass = glassMarkup(ctx, resolved, box, effect);
-      if (glass.backdrop) push(glass.backdrop);
+      if (glass.backdrop) pushBackdrop(glass.backdrop);
       if (glass.surface) surfaces.push(glass.surface);
     }
   }
@@ -570,9 +668,53 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
     resolved.rotation % 360 !== 0
       ? ` transform="rotate(${num(resolved.rotation)} ${num(box.x + box.width / 2)} ${num(box.y + box.height / 2)})"`
       : "";
-  const strokeAttrs = stroke
-    ? ` stroke="${paintFill(stroke.paint, ctx.defs, doc)}" stroke-width="${num(stroke.weight)}"${stroke.dash?.length ? ` stroke-dasharray="${stroke.dash.map(num).join(" ")}"` : ""}`
-    : "";
+  /**
+   * Stroke alignment, which the model has always carried and the renderer never
+   * honoured.
+   *
+   * `Stroke.align` is `inside | center | outside` and every one of them drew as
+   * `center`, because that is the only thing SVG does natively: a stroke always
+   * straddles its path. So a 4pt inside stroke on a button — the single most
+   * common stroke in interface design, and what CSS `border` means — overflowed
+   * its own box by 2pt on every side, and `outside` was indistinguishable from
+   * it. The two non-centre cases are drawn at double weight and then cut in
+   * half, which is the standard construction:
+   *
+   *  - **inside**: clip the stroke to the shape, keeping the inner half.
+   *  - **outside**: mask the interior away, keeping the outer half. This one has
+   *    to be a separate element painted over the shape, because a mask that
+   *    removed the interior from the shape itself would remove its fill too.
+   *
+   * A line and a text run have no interior for a stroke to fall inside of, so
+   * they stay centred rather than being given a meaningless treatment.
+   */
+  const strokeRender = (() => {
+    if (!stroke) return { attrs: "", overlay: "" };
+    const paint = paintFill(stroke.paint, ctx.defs, doc);
+    const dash = stroke.dash?.length ? ` stroke-dasharray="${stroke.dash.map(num).join(" ")}"` : "";
+    const align = stroke.align ?? "center";
+    const centred = ` stroke="${paint}" stroke-width="${num(stroke.weight)}"${dash}`;
+    if (align === "center" || resolved.type === "line" || resolved.type === "text") {
+      return { attrs: centred, overlay: "" };
+    }
+    const doubled = ` stroke="${paint}" stroke-width="${num(stroke.weight * 2)}"${dash}`;
+    if (align === "inside") {
+      const clipId = ctx.defs.next();
+      ctx.defs.entries.push(`<clipPath id="${clipId}">${clipShape(resolved, box)}</clipPath>`);
+      return { attrs: `${doubled} clip-path="url(#${clipId})"`, overlay: "" };
+    }
+    // outside — the mask's white ground has to reach past the stroke it keeps.
+    const maskId = ctx.defs.next();
+    const pad = stroke.weight + 2;
+    ctx.defs.entries.push(
+      `<mask id="${maskId}" maskUnits="userSpaceOnUse"><rect x="${num(box.x - pad)}" y="${num(box.y - pad)}" width="${num(box.width + pad * 2)}" height="${num(box.height + pad * 2)}" fill="white"/>${silhouette(resolved, box, ' fill="black"')}</mask>`
+    );
+    return {
+      attrs: "",
+      overlay: silhouette(resolved, box, ` fill="none"${doubled} mask="url(#${maskId})"`),
+    };
+  })();
+  const strokeAttrs = strokeRender.attrs;
 
   /**
    * Fills past the first, painted as their own silhouettes over the shape.
@@ -615,7 +757,7 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
       const hasBox = resolved.type !== "group" || resolved.fills.length > 0 || !!stroke || !!filterId || surfaces.length > 0;
       if (hasBox) {
         pushShape(
-          `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(resolved.cornerRadius)} fill="${fill}"${fillOpacity}${strokeAttrs}${common}/>`
+          boxMarkup(box, resolved.cornerRadius, ` fill="${fill}"${fillOpacity}${strokeAttrs}${common}`)
         );
       }
       break;
@@ -671,6 +813,12 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
     }
   }
 
+  // An outside-aligned stroke, painted over the shape it belongs to. It cannot
+  // ride on the shape element itself — the mask that keeps only its outer half
+  // would take the fill with it — so it is a sibling drawn immediately after,
+  // carrying the same rotation and opacity as the layer it outlines.
+  if (strokeRender.overlay) push(`<g${rotateAttr}${opacityAttr}>${strokeRender.overlay}</g>`);
+
   // The glass surface sits on the layer and *under* its children: a card's
   // contents are on the glass, not behind it. It carries the node's own rotation
   // so a tilted panel's rim light tilts with it, and no `data-juno-node`, because
@@ -693,7 +841,10 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   const chunk = ctx.painted.splice(start);
   const clipId = ctx.defs.next();
   ctx.defs.entries.push(
-    `<clipPath id="${clipId}"><rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(resolved.cornerRadius)}/></clipPath>`
+    // The clip has to agree with the shape it clips, corner for corner —
+    // otherwise a card with only its top corners rounded clips its children
+    // against a different silhouette than the one it draws.
+    `<clipPath id="${clipId}">${boxMarkup(box, resolved.cornerRadius, "")}</clipPath>`
   );
   ctx.painted.push({ markup: `<g clip-path="url(#${clipId})">${chunk.map((c) => c.markup).join("")}</g>`, box });
 }

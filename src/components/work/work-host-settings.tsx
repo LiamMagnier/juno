@@ -426,7 +426,7 @@ export function WorkHostSettings({
                     key={grant.id}
                     className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                   >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-ui text-foreground">
                       {grant.displayName}
                     </span>
@@ -457,19 +457,19 @@ export function WorkHostSettings({
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Apps and sites</h2>
         <div className="space-y-2">
           <NameList
-            icon={<Plug className="h-3.5 w-3.5" aria-hidden="true" />}
+            icon={<Plug className="size-3.5" aria-hidden="true" />}
             title="Apps it may drive"
             names={allowedApps}
             empty="No app is singled out, so screen control is bounded only by the switch above."
           />
           <NameList
-            icon={<Plug className="h-3.5 w-3.5" aria-hidden="true" />}
+            icon={<Plug className="size-3.5" aria-hidden="true" />}
             title="Apps it may never touch"
             names={blockedApps}
             empty="Nothing is blocked by name."
           />
           <NameList
-            icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />}
+            icon={<Link2 className="size-3.5" aria-hidden="true" />}
             title="Sites the browser may visit"
             names={allowedDomains}
             empty="No site list, so the browser switch above is the whole answer."

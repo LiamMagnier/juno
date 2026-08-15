@@ -39,11 +39,12 @@ import {
   EyeOff,
   Lock,
   LockOpen,
-  MoreHorizontal,
   Plus,
+  Square,
   X,
   Zap,
 } from "lucide-react";
+import { ActionIcons, DesignIcons, type DesignIconName } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,22 +52,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ColorField, NumberField, PanelSelect, SelectField, TextField } from "@/components/design/effects-panel";
+import { activeModeId, hexToRgba, resolveVariable, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
+import {
+  isContainer,
+  type DesignDocument,
+  type DesignVariable,
+  type NodeId,
+  type Rgba,
+  type VariableCollection,
+  type VariableValue,
+} from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
 
-const TYPE_GLYPH: Record<string, string> = {
-  frame: "▣",
-  group: "▢",
-  component: "◈",
-  instance: "◇",
-  rectangle: "▭",
-  ellipse: "◯",
-  line: "╱",
-  path: "✎",
-  text: "T",
-  image: "▤",
-};
+/**
+ * What kind of layer this row is.
+ *
+ * The marks come from `DesignIcons`, the shared registry, rather than from a
+ * local map — the canvas toolbar, the context menu and this tree all name the
+ * same ten kinds, and a private table is how three surfaces end up drawing a
+ * frame three ways. This replaced Unicode box-drawing characters, which at this
+ * size could not distinguish a frame from a group or a component from an
+ * instance, and which took the row's text colour so a selected row's type mark
+ * turned accent-coloured along with its name.
+ */
+function LayerTypeIcon({ type }: { type: string }) {
+  const Icon = DesignIcons[type as DesignIconName] ?? Square;
+  return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground" />;
+}
 
 let pageCounter = 0;
 const nextPageId = () => `page-${Date.now().toString(36)}-${(pageCounter++).toString(36)}`;
@@ -342,9 +357,8 @@ export function LayersPanel({
                   !node.visible && "opacity-40"
                 )}
               >
-                <span aria-hidden className="w-3 shrink-0 text-center font-mono text-micro text-muted-foreground">
-                  {TYPE_GLYPH[node.type] ?? "▪"}
-                </span>
+                <LayerTypeIcon type={node.type} />
+
                 <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
               </button>
 
@@ -380,7 +394,7 @@ export function LayersPanel({
                     aria-label={`Layer actions for ${node.name}`}
                     className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100 disabled:pointer-events-none disabled:opacity-30"
                   >
-                    <MoreHorizontal className="size-3.5" aria-hidden />
+                    <ActionIcons.more className="size-3.5" aria-hidden />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
@@ -449,6 +463,406 @@ export function LayersPanel({
           );
         })}
       </div>
+
+      <ComponentLibrary document={doc} pageId={pageId} onApply={onApply} onSelect={onSelect} readOnly={readOnly} />
+      <VariableLibrary document={doc} onApply={onApply} readOnly={readOnly} />
     </div>
+  );
+}
+
+/**
+ * The document's components, and the only way to place one.
+ *
+ * `createInstance` had no call site in the entire UI: a document could hold
+ * components — the AI makes them, and the operation layer has supported them
+ * since the first slice — and there was no gesture anywhere in the product that
+ * could put a second copy of one on the canvas. A component you cannot instance
+ * is a naming convention, not a component.
+ *
+ * It sits under the layer tree rather than in a tab of its own because the left
+ * rail is the "what is in this document" column, and a component IS in the
+ * document. Hidden entirely when there are none, so a document that never uses
+ * them never pays for the section.
+ */
+function ComponentLibrary({
+  document: doc,
+  pageId,
+  onApply,
+  onSelect,
+  readOnly,
+}: {
+  document: DesignDocument;
+  pageId: string;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  onSelect: (ids: NodeId[], mode?: "replace" | "toggle" | "add") => void;
+  readOnly?: boolean;
+}) {
+  const components = React.useMemo(() => Object.values(doc.components ?? {}), [doc.components]);
+  const [open, setOpen] = React.useState(true);
+  if (components.length === 0) return null;
+
+  const place = (componentId: string) => {
+    if (readOnly) return;
+    const instanceId = `inst-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    onApply(
+      [{ op: "createInstance", componentId, parentId: null, pageId, instanceId, x: 40, y: 40 }],
+      "Place instance"
+    );
+    // Selecting what you just made is the difference between placing a layer and
+    // wondering whether the click did anything.
+    onSelect([instanceId]);
+  };
+
+  return (
+    <div className="shrink-0 border-t border-border/60">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 px-2 py-1.5 text-left font-mono text-micro uppercase tracking-wider text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
+        Components
+        <span className="ml-auto tabular-nums">{components.length}</span>
+      </button>
+      {open && (
+        <ul className="max-h-40 overflow-y-auto pb-1">
+          {components.map((component) => (
+            <li key={component.id}>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => place(component.id)}
+                title={component.description || `Place an instance of ${component.name}`}
+                className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+              >
+                <DesignIcons.component className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-xs text-foreground">{component.name}</span>
+                <Plus className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Variables
+// ---------------------------------------------------------------------------
+
+/** A fresh collection's single mode. Named, not "mode-1": the mode picker shows
+ *  this string the moment a second mode exists, and "Default" is the honest
+ *  name for the one every other mode inherits from. */
+const FIRST_MODE = { id: "mode-default", name: "Default" };
+
+const NEW_VARIABLE_COLOR: Rgba = { r: 0.55, g: 0.6, b: 0.95, a: 1 };
+
+let tokenCounter = 0;
+const nextTokenId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(tokenCounter++).toString(36)}`;
+
+/** The value a variable of each type starts at, and what its existing values
+ *  are rewritten to when its type changes. A variable typed `number` whose
+ *  modes still hold `{ kind: "color" }` resolves to a colour and gets written
+ *  onto whatever numeric property is bound to it. */
+function defaultValue(type: DesignVariable["type"]): VariableValue {
+  switch (type) {
+    case "color":
+      return { kind: "color", value: NEW_VARIABLE_COLOR };
+    case "number":
+      return { kind: "number", value: 0 };
+    case "string":
+      return { kind: "string", value: "" };
+    case "boolean":
+      return { kind: "boolean", value: false };
+  }
+}
+
+const TYPE_OPTIONS = [
+  { value: "color", label: "Colour" },
+  { value: "number", label: "Number" },
+  { value: "string", label: "Text" },
+  { value: "boolean", label: "Boolean" },
+];
+
+/**
+ * The variable a type change produces.
+ *
+ * EVERY mode is rewritten, not just the one on screen. `DesignVariable.type` and
+ * the `kind` of each entry in `valuesByMode` are separate fields and the schema
+ * does not tie them together, so a half-converted variable is a legal document
+ * that resolves to a colour in Dark and a number in Light — and
+ * `applyBoundVariables` writes whichever it finds onto the bound property. A
+ * document that renders differently per mode because of a retype nobody
+ * finished is a bug with no visible cause.
+ */
+export function retypedVariable(variable: DesignVariable, type: DesignVariable["type"]): DesignVariable {
+  if (type === variable.type) return variable;
+  return {
+    ...variable,
+    type,
+    valuesByMode: Object.fromEntries(Object.keys(variable.valuesByMode).map((mode) => [mode, defaultValue(type)])),
+  };
+}
+
+/** The name a new token gets: the first `token-N` nothing else is using. Not
+ *  `token-${count + 1}` on its own — deleting the middle of a run would hand the
+ *  next one a name already on screen. */
+export function nextVariableName(taken: Iterable<string>, count: number): string {
+  const used = new Set(taken);
+  let index = Math.max(1, count + 1);
+  while (used.has(`token-${index}`)) index++;
+  return `token-${index}`;
+}
+
+/**
+ * The document's variables, and the only way to author one.
+ *
+ * `createVariable` and `deleteVariable` had zero call sites in the product.
+ * Every path into the token library ran through the AI: Juno could mint a
+ * `primary` colour and bind a fill to it, the inspector's Variables section
+ * would then offer that token in a dropdown — and nobody could add a second one,
+ * rename the first, change what it resolves to, or take it away again. A token
+ * system you can only extend by asking for it in prose is a demo of a token
+ * system.
+ *
+ * It sits under Components in the same rail for the same reason that one does:
+ * the left rail is the "what is in this document" column, and a variable is in
+ * the document. Unlike Components it renders even when empty, because when it is
+ * empty is precisely when the **+** is the only thing on screen that matters.
+ *
+ * Every edit is a `createVariable` carrying the whole variable. The operation
+ * layer already treats that as an upsert with the previous value as its inverse,
+ * so rename, retype and re-value are one undo step each and no second operation
+ * had to be invented for them.
+ */
+function VariableLibrary({
+  document: doc,
+  onApply,
+  readOnly,
+}: {
+  document: DesignDocument;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const variables = React.useMemo(() => Object.values(doc.variables ?? {}), [doc.variables]);
+  const collections = React.useMemo(() => Object.values(doc.collections ?? {}), [doc.collections]);
+
+  /** The collection a new variable joins, invented if the document has none.
+   *  Passing it to `createVariable` is safe either way — the operation only
+   *  creates a collection it cannot already find. */
+  const target: VariableCollection = collections[0] ?? { id: nextTokenId("col"), name: "Tokens", modes: [FIRST_MODE] };
+  const modeId = doc.collections?.[target.id] ? activeModeId(doc, target.id) ?? target.modes[0].id : target.modes[0].id;
+
+  const add = () => {
+    if (readOnly) return;
+    const variable: DesignVariable = {
+      id: nextTokenId("var"),
+      collectionId: target.id,
+      name: nextVariableName(variables.map((v) => v.name), variables.length),
+      type: "color",
+      valuesByMode: { [modeId]: defaultValue("color") },
+    };
+    onApply([{ op: "createVariable", variable, collection: target }], "Add variable");
+  };
+
+  return (
+    <div className="shrink-0 border-t border-border/60">
+      <div className="flex items-center gap-1 pr-1">
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left font-mono text-micro uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        >
+          <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
+          Variables
+          <span className="ml-auto tabular-nums">{variables.length}</span>
+        </button>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => {
+            setOpen(true);
+            add();
+          }}
+          aria-label="Add a variable"
+          title="Add a variable"
+          className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+        >
+          <Plus className="size-3" aria-hidden />
+        </button>
+      </div>
+
+      {open && (
+        <div className="pb-1">
+          {/* Which mode the values below belong to. Shown only when there is a
+              choice: on a single-mode collection this picker would be a control
+              with one option, which reads as a setting rather than a fact. */}
+          {collections.map((collection) =>
+            collection.modes.length > 1 ? (
+              <div key={collection.id} className="px-2 pb-1">
+                <PanelSelect
+                  ariaLabel={`${collection.name} mode`}
+                  leading={collection.name}
+                  value={activeModeId(doc, collection.id) ?? collection.modes[0].id}
+                  options={collection.modes.map((mode) => ({ value: mode.id, label: mode.name }))}
+                  disabled={readOnly}
+                  onChange={(next) => onApply([{ op: "setVariableMode", collectionId: collection.id, modeId: next }], "Switch mode")}
+                />
+              </div>
+            ) : null
+          )}
+
+          {variables.length === 0 && (
+            <p className="px-3 py-3 text-center text-caption text-muted-foreground">
+              No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying.
+            </p>
+          )}
+
+          <ul className="max-h-56 overflow-y-auto">
+            {variables.map((variable) => (
+              <li key={variable.id}>
+                <VariableRow document={doc} variable={variable} onApply={onApply} readOnly={readOnly} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One token: what it resolves to, and a popover that edits all of it. */
+function VariableRow({
+  document: doc,
+  variable,
+  onApply,
+  readOnly,
+}: {
+  document: DesignDocument;
+  variable: DesignVariable;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const resolved = resolveVariable(doc, variable.id);
+  const modeId = activeModeId(doc, variable.collectionId) ?? Object.keys(variable.valuesByMode)[0] ?? FIRST_MODE.id;
+  const entry = variable.valuesByMode[modeId];
+
+  /** Write the whole variable back. `createVariable` upserts, and its inverse is
+   *  the variable as it was, so one of these is one undo step. */
+  const write = (next: DesignVariable, summary: string) => {
+    if (readOnly) return;
+    onApply([{ op: "createVariable", variable: next }], summary);
+  };
+
+  const setValue = (value: VariableValue, summary: string) =>
+    write({ ...variable, valuesByMode: { ...variable.valuesByMode, [modeId]: value } }, summary);
+
+  const preview =
+    resolved.ok && resolved.type === "color"
+      ? rgbaToHex(resolved.value as Rgba)
+      : resolved.ok
+        ? String(resolved.value)
+        : "unresolved";
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left transition-colors hover:bg-accent"
+          title={`${variable.name} — ${preview}`}
+        >
+          {resolved.ok && resolved.type === "color" ? (
+            <span
+              aria-hidden
+              className="size-3 shrink-0 rounded-micro border border-border/60"
+              style={{ background: rgbaToCss(resolved.value as Rgba) }}
+            />
+          ) : (
+            <span aria-hidden className="size-3 shrink-0 rounded-micro border border-dashed border-border/60" />
+          )}
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{variable.name}</span>
+          <span className="max-w-[6rem] shrink-0 truncate font-mono text-micro uppercase text-muted-foreground">{preview}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 space-y-2 p-3" onKeyDown={(event) => event.stopPropagation()}>
+        <TextField
+          label="Name"
+          value={variable.name}
+          disabled={readOnly}
+          onCommit={(name) => name.trim() && name !== variable.name && write({ ...variable, name: name.trim() }, "Rename variable")}
+        />
+        <SelectField
+          label="Type"
+          value={variable.type}
+          options={TYPE_OPTIONS}
+          disabled={readOnly}
+          onChange={(type) => {
+            const next = retypedVariable(variable, type as DesignVariable["type"]);
+            if (next !== variable) write(next, "Set variable type");
+          }}
+        />
+
+        {variable.type === "color" && (
+          <ColorField
+            label="Value"
+            ariaLabel={`${variable.name} value`}
+            value={entry?.kind === "color" ? rgbaToHex(entry.value) : ""}
+            disabled={readOnly}
+            onCommit={(hex) => {
+              const color = hexToRgba(hex);
+              if (color) setValue({ kind: "color", value: color }, "Set variable value");
+            }}
+          />
+        )}
+        {variable.type === "number" && (
+          <NumberField
+            label="Value"
+            ariaLabel={`${variable.name} value`}
+            value={entry?.kind === "number" ? entry.value : 0}
+            disabled={readOnly}
+            onCommit={(value) => setValue({ kind: "number", value }, "Set variable value")}
+          />
+        )}
+        {variable.type === "string" && (
+          <TextField
+            label="Value"
+            ariaLabel={`${variable.name} value`}
+            value={entry?.kind === "string" ? entry.value : ""}
+            disabled={readOnly}
+            onCommit={(value) => setValue({ kind: "string", value }, "Set variable value")}
+          />
+        )}
+        {variable.type === "boolean" && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={entry?.kind === "boolean" ? entry.value : false}
+              disabled={readOnly}
+              onChange={(event) => setValue({ kind: "boolean", value: event.target.checked }, "Set variable value")}
+            />
+            On
+          </label>
+        )}
+
+        <p className="font-mono text-micro text-muted-foreground">
+          {doc.collections[variable.collectionId]?.name ?? "Tokens"} · {variable.valuesByMode[modeId] ? "this mode" : "inherited"}
+        </p>
+
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => onApply([{ op: "deleteVariable", variableId: variable.id }], "Remove variable")}
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-control border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
+        >
+          <ActionIcons.delete className="size-3" aria-hidden />
+          Delete variable
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }

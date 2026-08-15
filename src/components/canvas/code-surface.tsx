@@ -346,7 +346,7 @@ export function CodeSurface({
             wrap={wrap ? "soft" : "off"}
             aria-label={ariaLabel ?? "Source code"}
             className={cn(
-              "absolute inset-0 h-full w-full cursor-text resize-none overflow-hidden bg-transparent px-3 py-3 pr-8",
+              "absolute inset-0 size-full cursor-text resize-none overflow-hidden bg-transparent px-3 py-3 pr-8",
               "text-transparent caret-foreground outline-none",
               "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               metrics,

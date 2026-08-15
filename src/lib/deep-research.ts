@@ -98,13 +98,22 @@ const MAX_SOURCES = 250;
  * The per-run ceiling for research started from chat.
  *
  * A chat turn cannot ask the user what they are willing to spend — they pressed
- * a toggle and sent a message — so it gets a fixed, conservative ceiling rather
- * than none. $0.60 covers a plan, five searches and a handful of page fetches
- * with room to spare; a run that reaches it stops at `partially_completed` with
- * its sources intact, and the turn still answers from what it gathered. Runs
- * started from the research surface set their own.
+ * a toggle and sent a message — so it gets a fixed ceiling rather than none. A
+ * run that reaches it stops at `partially_completed` with its sources intact,
+ * and the turn still answers from what it gathered.
+ *
+ * This was $0.60, sized for "a plan, five searches and a handful of page
+ * fetches". That is a search, not an investigation: with the planner now
+ * drafting up to fourteen queries against a merged multi-engine index and four
+ * follow-up rounds behind them, $0.60 was itself one of the ceilings a user hit
+ * as "it stopped early". The default is the ceiling for a genuinely deep run;
+ * deployments that want a tighter or looser one set `RESEARCH_CHAT_BUDGET_USD`.
  */
-const CHAT_RUN_BUDGET_MICRO_USD = BigInt(600_000);
+const CHAT_RUN_BUDGET_MICRO_USD = (() => {
+  const raw = Number(process.env.RESEARCH_CHAT_BUDGET_USD?.trim());
+  const usd = Number.isFinite(raw) && raw > 0 ? Math.min(25, raw) : 2;
+  return BigInt(Math.round(usd * 1_000_000));
+})();
 
 /** How often the live activity feed drains the run's event log while it works. */
 const EVENT_POLL_MS = 700;

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, FileUp, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { FileUp, Loader2, Sparkles } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -103,7 +104,7 @@ export function WorkThreadAddPanel({
               it. Nothing has changed.
             </p>
             <Button variant="outline" size="sm" onClick={context.reload} className="gap-1.5">
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again
             </Button>
           </div>
         )}
@@ -180,7 +181,7 @@ function FilesSection({
           disabled={context.saving}
           className="gap-1.5"
         >
-          <FileUp className="h-3.5 w-3.5" aria-hidden="true" /> Add a file
+          <FileUp className="size-3.5" aria-hidden="true" /> Add a file
         </Button>
         {/* The home composer offers Files AND the library behind its [+]; this
             one offered only Files, so the same act — give this task a document
@@ -193,7 +194,7 @@ function FilesSection({
           disabled={context.saving}
           className="gap-1.5"
         >
-          <AppIcons.library className="h-3.5 w-3.5" aria-hidden="true" /> From your library
+          <AppIcons.library className="size-3.5" aria-hidden="true" /> From your library
         </Button>
       </div>
     </div>
@@ -259,7 +260,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
             Couldn’t read your connected apps, so there is nothing to switch here.
           </p>
           <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+            <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
           </Button>
         </div>
       ) : (
@@ -336,7 +337,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
             have none.
           </p>
           <Button variant="outline" size="sm" onClick={reload} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+            <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
           </Button>
         </div>
       ) : (
@@ -368,7 +369,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
                       /{skill.slug}
                     </span>
                   </span>
-                  {active && <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
+                  {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
                 </Pressable>
               </li>
             );

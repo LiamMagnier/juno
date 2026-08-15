@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +52,7 @@ export const DialogCloseButton = React.forwardRef<
       // which is what the note above already says.
       className={cn("absolute right-4 top-4", className)}
     >
-      <X className="h-4 w-4" />
+      <ActionIcons.dismiss className="size-4" />
       <span className="sr-only">Close</span>
     </Pressable>
   </DialogPrimitive.Close>

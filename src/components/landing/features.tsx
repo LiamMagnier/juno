@@ -1,4 +1,5 @@
-import { ArrowUpRight, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Card } from "@/components/ui/card";
 import { staggerDelay } from "@/lib/motion";
 import { Section } from "@/components/landing/section";
@@ -76,7 +77,7 @@ export function Features() {
                 className="group mt-2.5 inline-flex items-center gap-1 rounded-xs text-body underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary focus-visible:text-primary"
               >
                 {link.label}
-                <ArrowUpRight
+                <ActionIcons.external
                   className="size-3.5 transition-transform duration-fast ease-out-soft group-hover:translate-x-px group-hover:-translate-y-px group-focus-visible:translate-x-px group-focus-visible:-translate-y-px motion-reduce:transition-none motion-reduce:group-hover:translate-x-0 motion-reduce:group-hover:translate-y-0"
                   aria-hidden
                 />

@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { History, Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { History, Loader2 } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +18,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -26,6 +26,7 @@ import {
   type ClientWorkSkillVersion,
 } from "@/lib/work/skills";
 import { WorkPageFrame } from "@/components/work/work-nav";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { trustLabel } from "@/components/work/work-skill-row";
 import {
   deleteWorkSkill,
@@ -37,7 +38,6 @@ import {
   type PatchWorkSkillInput,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 
 interface SkillSecurityFindingView {
   code: string;
@@ -258,21 +258,9 @@ export default function WorkSkillPage() {
   if (failed) {
     return (
       <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this skill. Nothing has been changed by the attempt.
-        </WorkStateNote>
+        </WorkLoadError>
       </WorkPageFrame>
     );
   }
@@ -280,15 +268,7 @@ export default function WorkSkillPage() {
   if (skill === null) {
     return (
       <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
-        <div className="space-y-3">
-          {[...Array(3)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-20 w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons count={3} height={80} className="space-y-3" />
       </WorkPageFrame>
     );
   }
@@ -319,7 +299,7 @@ export default function WorkSkillPage() {
           onClick={() => setConfirmingDelete(true)}
           className="gap-1.5"
         >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+          <ActionIcons.delete className="size-3.5" aria-hidden="true" /> Delete
         </Button>
       }
     >
@@ -510,7 +490,7 @@ export default function WorkSkillPage() {
               onClick={() => void saveInstructions()}
               className="gap-1.5"
             >
-              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+              {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
               Save as a new version
             </Button>
             {instructionsChanged && (
@@ -545,7 +525,7 @@ export default function WorkSkillPage() {
                   key={entry.id}
                   className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                 >
-                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="shrink-0 font-mono text-micro text-foreground">
                     v{entry.version}
                   </span>
@@ -563,7 +543,7 @@ export default function WorkSkillPage() {
                       onClick={() => void restore(entry.version)}
                       className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
                     >
-                      <RotateCcw className="h-3 w-3" aria-hidden="true" /> Restore
+                      <ActionIcons.restore className="size-3" aria-hidden="true" /> Restore
                     </Button>
                   )}
                 </li>

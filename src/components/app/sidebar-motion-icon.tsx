@@ -1,13 +1,11 @@
 import {
   Folder,
   FolderOpen,
-  MoreVertical,
   PanelLeft,
   PanelLeftClose,
-  X,
   type LucideIcon,
 } from "lucide-react";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 export type SidebarMotionIconKind =
@@ -60,10 +58,10 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   search: AppIcons.search,
   "panel-open": PanelLeft,
   "panel-close": PanelLeftClose,
-  close: X,
+  close: ActionIcons.dismiss,
   folder: Folder,
   conversation: AppIcons.conversation,
-  more: MoreVertical,
+  more: ActionIcons.more,
 };
 
 const OPENS_ON_HOVER: ReadonlySet<SidebarMotionIconKind> = new Set(["folder", "projects"]);
@@ -85,15 +83,13 @@ export function SidebarMotionIcon({
     >
       <Icon
         focusable="false"
-        strokeWidth={1.75}
-        className="sidebar-motion-icon__glyph h-full w-full"
+        className="sidebar-motion-icon__glyph size-full"
       />
 
       {opens ? (
         <FolderOpen
           focusable="false"
-          strokeWidth={1.75}
-          className="sidebar-motion-icon__glyph sidebar-motion-icon__glyph--alternate absolute inset-0 h-full w-full"
+          className="sidebar-motion-icon__glyph sidebar-motion-icon__glyph--alternate absolute inset-0 size-full"
         />
       ) : null}
     </span>

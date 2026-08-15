@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Coins, ExternalLink, FileText, Link2, ShieldCheck, Sigma, Timer } from "lucide-react";
+import { Coins, Link2, ShieldCheck, Sigma, Timer } from "lucide-react";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import {
   WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
@@ -198,10 +199,10 @@ function ReferenceGroup({
         {references.map((reference) => (
           <li key={reference.id} className="flex items-start gap-2">
             {reference.url !== null ? (
-              <Link2 className="mt-[3px] h-3.5 w-3.5 shrink-0 text-source" aria-hidden="true" />
+              <Link2 className="mt-[3px] size-3.5 shrink-0 text-source" aria-hidden="true" />
             ) : (
-              <FileText
-                className="mt-[3px] h-3.5 w-3.5 shrink-0 text-muted-foreground"
+              <CodeIcons.file
+                className="mt-[3px] size-3.5 shrink-0 text-muted-foreground"
                 aria-hidden="true"
               />
             )}
@@ -214,8 +215,8 @@ function ReferenceGroup({
                   className="inline-flex min-w-0 max-w-full items-center gap-1 text-ui leading-relaxed text-foreground underline-offset-2 hover:underline"
                 >
                   <span className="min-w-0 truncate">{reference.label}</span>
-                  <ExternalLink
-                    className="h-3 w-3 shrink-0 text-muted-foreground"
+                  <ActionIcons.external
+                    className="size-3 shrink-0 text-muted-foreground"
                     aria-hidden="true"
                   />
                 </a>
@@ -608,7 +609,7 @@ function Meter({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <Icon className="h-3 w-3 text-muted-foreground/70" aria-hidden="true" />
+      <Icon className="size-3 text-muted-foreground/70" aria-hidden="true" />
       <dt className="sr-only">{label}</dt>
       <dd>{value}</dd>
     </div>
@@ -683,10 +684,10 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
       {actions.map((action) => (
         <li key={action.id} className="flex items-start gap-2 text-ui leading-relaxed">
           {action.approved ? (
-            <ShieldCheck className="mt-[3px] h-3.5 w-3.5 shrink-0 text-success-ink" aria-hidden="true" />
+            <ShieldCheck className="mt-[3px] size-3.5 shrink-0 text-success-ink" aria-hidden="true" />
           ) : (
             <span
-              className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/70"
+              className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground/70"
               aria-hidden="true"
             />
           )}

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from "@/components/app/app-provider";
@@ -146,7 +146,7 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
         {loadError ? (
           <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
-              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your memory. Check your connection and try again.</p>
             </div>
             <Button
@@ -155,7 +155,7 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
               onClick={() => void load()}
               className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <RefreshCw className="size-3.5" /> Retry
+              <ActionIcons.refresh className="size-3.5" /> Retry
             </Button>
           </div>
         ) : memories === null ? (
@@ -179,7 +179,7 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
                 aria-live="polite"
                 className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-2xl border border-white/10 bg-[#161616] px-4 py-3 text-sm"
               >
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-neutral-400" aria-hidden="true" />
+                <StatusIcons.info className="mt-0.5 size-4 shrink-0 text-neutral-400" aria-hidden="true" />
                 <p className="min-w-0 flex-1 text-neutral-300">{policyNotice}</p>
                 <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
                   Open settings

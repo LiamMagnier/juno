@@ -51,7 +51,7 @@ function MenuRow({
 }) {
   const rowCls = "group h-9 gap-2.5 px-2.5";
   const iconCls = cn(
-    "flex h-4 w-4 shrink-0 items-center justify-center transition-transform duration-fast ease-out-soft group-data-[highlighted]:scale-110",
+    "flex size-4 shrink-0 items-center justify-center transition-transform duration-fast ease-out-soft group-data-[highlighted]:scale-110",
     accent ? "text-primary" : "text-muted-foreground"
   );
   const inner = (
@@ -104,12 +104,12 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             aria-label="Account menu"
             title={user.name ?? user.email ?? "Account"}
           >
-            <span className="transition-transform duration-fast ease-out-soft group-hover:scale-105">{avatar("h-8 w-8")}</span>
+            <span className="transition-transform duration-fast ease-out-soft group-hover:scale-105">{avatar("size-8")}</span>
           </Pressable>
         ) : (
           <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-accent">
             <span className="shrink-0 transition-transform duration-fast ease-out-soft group-hover:scale-105">
-              {avatar("h-8 w-8")}
+              {avatar("size-8")}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
@@ -122,7 +122,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-72">
         {/* Identity header — who you are, on what plan, reachable where. */}
         <div className="flex items-center gap-3 px-2.5 pb-3 pt-2.5">
-          {avatar("h-9 w-9")}
+          {avatar("size-9")}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="min-w-0 truncate text-sm font-medium text-foreground">
@@ -166,12 +166,12 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         {/* Account */}
         <MenuRow
           onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "profile" }))}
-          icon={<User className="h-4 w-4" />}
+          icon={<User className="size-4" />}
           label="Profile"
         />
         <MenuRow
           onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
-          icon={<Settings className="h-4 w-4" />}
+          icon={<Settings className="size-4" />}
           label="Settings"
         />
 
@@ -182,7 +182,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           onSelect={() => void signOutToSignIn()}
           className="group h-9 gap-2.5 px-2.5 text-destructive transition-colors duration-fast ease-out-soft focus:bg-destructive focus:text-destructive-foreground data-[highlighted]:bg-destructive data-[highlighted]:text-destructive-foreground"
         >
-          <LogOut className="h-4 w-4 shrink-0 transition-transform duration-fast ease-out-soft group-data-[highlighted]:translate-x-0.5" />
+          <LogOut className="size-4 shrink-0 transition-transform duration-fast ease-out-soft group-data-[highlighted]:translate-x-0.5" />
           <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

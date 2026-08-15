@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Loader2, PenLine, Trash2, Undo2 } from "lucide-react";
+import { ChevronDown, Loader2, Undo2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -90,7 +91,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         className="group flex w-full items-center justify-between gap-3 rounded-card border border-border/60 bg-card px-4 py-3 text-left surface-raised transition-[border-color,box-shadow] duration-fast ease-out-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span className="flex items-center gap-2.5 text-sm font-medium">
-          <PenLine className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <ActionIcons.edit className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           Manage edits
         </span>
         <span className="flex items-center gap-2">
@@ -162,10 +163,10 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                               disabled={busy}
                               aria-label="Delete this edit"
                             >
-                              <Trash2 className="size-4" />
+                              <ActionIcons.delete className="size-4" />
                             </Button>
                             <Button size="sm" className="gap-1.5" onClick={() => onAccept(edit)} disabled={busy}>
-                              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
                               {busy ? "Applying…" : "Accept"}
                             </Button>
                           </>
@@ -189,7 +190,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                             onClick={() => deleteAndRefocus(edit.id)}
                             aria-label="Delete this edit"
                           >
-                            <Trash2 className="size-4" />
+                            <ActionIcons.delete className="size-4" />
                           </Button>
                         )}
                       </div>

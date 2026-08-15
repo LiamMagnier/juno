@@ -20,6 +20,8 @@ const bodySchema = z.object({
   conversationId: z.string().cuid().optional().nullable(),
   hasAttachments: z.boolean().optional(),
   privateMode: z.boolean().optional(),
+  /** Scope a deep-research run rather than triage an ordinary answer. */
+  deepResearch: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -34,7 +36,11 @@ export async function POST(req: Request) {
   }
   const input = parsed.data;
 
-  const skip = quickPreflightSkip({ message: input.message, hasAttachments: input.hasAttachments });
+  const skip = quickPreflightSkip({
+    message: input.message,
+    hasAttachments: input.hasAttachments,
+    deepResearch: input.deepResearch,
+  });
   if (skip) return NextResponse.json(noPreflightClarification(skip));
 
   if (!isOwnerEmail(user.email)) {
@@ -81,7 +87,11 @@ export async function POST(req: Request) {
         ? input.message.slice(0, TRIAGE_MESSAGE_CHARS)
         : input.message;
 
-    const result = await triagePreflightClarification({ message: triageMessage, recentMessages });
+    const result = await triagePreflightClarification({
+      message: triageMessage,
+      recentMessages,
+      mode: input.deepResearch ? "research" : "answer",
+    });
     return NextResponse.json(result);
   } catch (err) {
     console.error("[chat/clarify] check failed, answering directly:", err instanceof Error ? err.message : err);

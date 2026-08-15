@@ -4,9 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Pause, Play, RefreshCw, Square } from "lucide-react";
+import { ArrowLeft, Pause, Play, Square } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { cn } from "@/lib/utils";
 import { isTerminalStatus } from "@/lib/work/domain";
 import type {
@@ -37,7 +38,6 @@ import { WorkContextSection } from "@/components/work/detail/work-context";
 import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { WorkOutputsSection } from "@/components/work/detail/work-outputs";
 import { WorkProgressChecklist, planTally } from "@/components/work/detail/work-progress";
-import { staggerDelay } from "@/lib/motion";
 import {
   WorkConversation,
   deriveTurns,
@@ -518,19 +518,14 @@ export default function WorkThreadPage() {
   if (loadFailure !== null) {
     return (
       <ThreadFrame>
-        <WorkStateNote
-          tone="error"
-          action={
-            loadFailure === "not_found" || loadFailure === "unauthorized" ? undefined : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void load()}
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-              </Button>
-            )
+        {/* No Retry on the two that answer the same way every time: a task that
+            is gone stays gone, and a signed-out tab needs a sign-in rather than
+            a second request. */}
+        <WorkLoadError
+          onRetry={
+            loadFailure === "not_found" || loadFailure === "unauthorized"
+              ? undefined
+              : () => void load()
           }
         >
           {loadFailure === "not_found"
@@ -538,7 +533,7 @@ export default function WorkThreadPage() {
             : loadFailure === "unauthorized"
               ? "You are signed out, so this task can’t be loaded."
               : "Couldn’t load this task. Nothing has been changed by the attempt."}
-        </WorkStateNote>
+        </WorkLoadError>
       </ThreadFrame>
     );
   }
@@ -546,15 +541,10 @@ export default function WorkThreadPage() {
   if (session === null) {
     return (
       <ThreadFrame>
-        <div className="space-y-3">
-          {[...Array(4)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-16 w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        {/* Four short blocks rather than four task-row-shaped ones: what resolves
+            here is a header and a transcript, not a list, so the placeholder is
+            sized to the paragraphs it stands in for. */}
+        <WorkRowSkeletons count={4} height={64} className="space-y-3" />
       </ThreadFrame>
     );
   }
@@ -785,7 +775,7 @@ export default function WorkThreadPage() {
                 so back behaved differently here than on every sibling page. */}
             <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
               <Link href="/work">
-                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                <ArrowLeft className="size-4" aria-hidden="true" />
               </Link>
             </Button>
             {/* Identical to ThreadFrame's eyebrow below. The same word in the
@@ -826,7 +816,7 @@ export default function WorkThreadPage() {
                   onClick={() => void dispatch("manual")}
                   className="h-8 gap-1.5"
                 >
-                  <Play className="h-3.5 w-3.5" aria-hidden="true" /> Start
+                  <Play className="size-3.5" aria-hidden="true" /> Start
                 </Button>
               )}
               {run !== null && run.status === "paused" && (
@@ -836,7 +826,7 @@ export default function WorkThreadPage() {
                   onClick={() => void control("resume")}
                   className="h-8 gap-1.5"
                 >
-                  <Play className="h-3.5 w-3.5" aria-hidden="true" /> Resume
+                  <Play className="size-3.5" aria-hidden="true" /> Resume
                 </Button>
               )}
               {run !== null && !isTerminalStatus(run.status) && run.status !== "paused" && (
@@ -847,7 +837,7 @@ export default function WorkThreadPage() {
                   onClick={() => void control("pause")}
                   className="h-8 gap-1.5"
                 >
-                  <Pause className="h-3.5 w-3.5" aria-hidden="true" /> Pause
+                  <Pause className="size-3.5" aria-hidden="true" /> Pause
                 </Button>
               )}
               {run !== null && !isTerminalStatus(run.status) && (
@@ -858,7 +848,7 @@ export default function WorkThreadPage() {
                   onClick={() => void control("cancel")}
                   className="h-8 gap-1.5"
                 >
-                  <Square className="h-3.5 w-3.5" aria-hidden="true" /> Stop
+                  <Square className="size-3.5" aria-hidden="true" /> Stop
                 </Button>
               )}
               {run !== null && isTerminalStatus(run.status) && (
@@ -869,7 +859,7 @@ export default function WorkThreadPage() {
                   onClick={() => void dispatch("retry")}
                   className="h-8 gap-1.5"
                 >
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again
                 </Button>
               )}
             </div>
@@ -910,7 +900,7 @@ export default function WorkThreadPage() {
                     }}
                     className="gap-1.5"
                   >
-                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Reconnect
+                    <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Reconnect
                   </Button>
                 }
               >
@@ -988,9 +978,7 @@ export default function WorkThreadPage() {
             >
               {questions.length > 0 && (
                 <div>
-                  <h2 className="mb-2.5 font-mono text-label text-foreground">
-                    Waiting on you
-                  </h2>
+                  <NeedsYouHeading count={questions.length}>Waiting on you</NeedsYouHeading>
                   <div className="space-y-2.5">
                     {questions.map((question) => (
                       <WorkQuestionCard
@@ -1006,9 +994,9 @@ export default function WorkThreadPage() {
 
               {openApprovals.length > 0 && (
                 <div>
-                  <h2 className="mb-2.5 font-mono text-label text-foreground">
+                  <NeedsYouHeading count={openApprovals.length}>
                     {openApprovals.length === 1 ? "Approval needed" : "Approvals needed"}
-                  </h2>
+                  </NeedsYouHeading>
                   <WorkApprovals
                     approvals={openApprovals}
                     busyId={busyApprovalId}
@@ -1056,6 +1044,33 @@ export default function WorkThreadPage() {
 }
 
 /**
+ * A heading in the block that is holding the task up.
+ *
+ * Amber, and it is the only amber heading in Work — the same ink the home list's
+ * "Needs you" section takes, so a reader who has learned the colour on the list
+ * meets it again on the task it sent them to. The rail's own headings a few
+ * pixels below are `text-foreground/80` and stay that way: this block and that
+ * rail are the same visual column, and if both were coloured the column would
+ * have no rank in it at all.
+ *
+ * The count is the rail's `meta` idiom — mono, `caption`, tabular — rather than
+ * a second thing to learn. Two open approvals and one are a different amount of
+ * work, and the heading is where that is cheapest to say.
+ */
+function NeedsYouHeading({ count, children }: { count: number; children: React.ReactNode }) {
+  return (
+    <h2 className="mb-2.5 flex items-baseline gap-2">
+      <span className="font-mono text-label text-warning-foreground">{children}</span>
+      {count > 1 && (
+        <span className="font-mono text-caption tabular-nums text-warning-foreground/80">
+          {count}
+        </span>
+      )}
+    </h2>
+  );
+}
+
+/**
  * A link down the page, on the layout where down the page is a long way.
  *
  * `lg:hidden` lives here rather than at the call sites because it is the whole
@@ -1099,7 +1114,7 @@ function ThreadFrame({ children }: { children: React.ReactNode }) {
         <div className="mb-1 flex items-center gap-2">
           <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
             <Link href="/work">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              <ArrowLeft className="size-4" aria-hidden="true" />
             </Link>
           </Button>
           <span className="font-mono text-label text-muted-foreground">Work</span>

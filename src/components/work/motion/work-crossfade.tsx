@@ -76,7 +76,16 @@ export function WorkCrossfade({
         // aria-hidden: the placeholder has already been announced once, and a
         // screen reader meeting it a second time — after the real content — is
         // told the list is still loading when it is not.
-        <div className="work-crossfade-ghost" aria-hidden="true">
+        //
+        // `animate-none` on everything inside it, and this is not a nicety. The
+        // ghost is a SECOND mount of the placeholder, so every keyframe in it
+        // starts again from frame zero at the exact moment the thing is supposed
+        // to be leaving: the skeletons' entrance replays, drifting the ghost
+        // upward while it fades, and their shimmer runs on a layer nobody will
+        // see for more than 220ms. A ghost is pixels of the past — the only
+        // animation it is allowed is its own fade, which is declared on this
+        // element rather than inside it and so survives the reset.
+        <div className="work-crossfade-ghost [&_*]:animate-none" aria-hidden="true">
           {placeholder}
         </div>
       )}

@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileSearch, RefreshCw, Search, TriangleAlert } from "lucide-react";
+import { ArrowLeft, FileSearch, Search } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -113,12 +114,12 @@ export default function KnowledgeDocumentPage() {
           <EmptyState
             className="mt-6"
             tone="error"
-            icon={TriangleAlert}
+            icon={StatusIcons.error}
             title="This document could not be read."
             description="The extractor could not open it, or the request did not come back."
             action={
               <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-                <RefreshCw className="size-3.5" /> Try again
+                <ActionIcons.refresh className="size-3.5" /> Try again
               </Button>
             }
           />
@@ -175,7 +176,7 @@ export default function KnowledgeDocumentPage() {
         <Card variant="flat" className="p-5">
           {document.error ? (
             <div className="mb-4 flex items-start gap-2 rounded-field border border-warning/30 bg-warning/10 px-3.5 py-3 text-sm text-muted-foreground">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+              <StatusIcons.error className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
               <span>{document.error}</span>
             </div>
           ) : null}

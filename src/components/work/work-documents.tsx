@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ChevronRight, Download, Link2, Loader2, RefreshCw } from "lucide-react";
+import { ChevronRight, Link2, Loader2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ARTIFACT_EXTENSION } from "@/lib/work/domain";
 import type { ClientWorkArtifact } from "@/lib/work/serializers";
 import type { WorkProducedArtifact } from "@/components/work/work-detail-panels";
@@ -14,9 +14,9 @@ import {
   workArtifactDownloadUrl,
   type WorkArtifactDetail,
 } from "@/components/work/work-transport";
-import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { cn, formatBytes } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
 
 /*
  * The documents a task produced, and the bytes behind them.
@@ -82,38 +82,18 @@ export function WorkDocuments({
   }, [load, produced]);
 
   if (artifacts === null && !failed) {
-    return (
-      <div className="space-y-2">
-        {[...Array(2)].map((_, index) => (
-          <Skeleton
-            key={index}
-            className="h-[58px] w-full rounded-field"
-            style={staggerDelay(index, "tight")}
-          />
-        ))}
-      </div>
-    );
+    // 58px, not the list rung: a document row is two lines and a badge, not the
+    // three-line task row `WorkRowSkeletons` is sized for by default.
+    return <WorkRowSkeletons count={2} height={58} className="space-y-2" />;
   }
 
   if (failed && artifacts === null) {
     return (
       <div className="space-y-2.5">
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this task’s documents, so nothing here can be downloaded yet. The files
           themselves are unaffected.
-        </WorkStateNote>
+        </WorkLoadError>
         {/* The transcript still knows what was written, even when the list of it
             could not be read. Naming them without offering a download is the
             honest half of the answer rather than none of it. */}
@@ -176,7 +156,7 @@ function KindBadge({ extension }: { extension: string }) {
     // none here — the parity that file's comment claims was only ever applied to
     // its own side. 9px was also the smallest type anywhere in Work, two rungs
     // under `caption`, for three letters lifted off a filename.
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground">
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground">
       {extension}
     </span>
   );
@@ -235,7 +215,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             </span>
             <ChevronRight
               className={cn(
-                "h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out",
+                "size-3 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -257,7 +237,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             // than the one the file was written under.
             aria-label={`Download ${artifact.title}`}
           >
-            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            <ActionIcons.download className="size-3.5" aria-hidden="true" />
           </a>
         </Pressable>
       </div>
@@ -266,7 +246,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
         <div className="border-t border-border/60 px-3 py-2.5 motion-safe:animate-fade-in-up">
           {loading ? (
             <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Reading its history…
+              <Loader2 className="size-3 animate-spin" aria-hidden="true" /> Reading its history…
             </p>
           ) : failed ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -274,14 +254,14 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                 Couldn’t read this document’s history. The download above is unaffected.
               </p>
               <Button variant="outline" size="sm" onClick={() => void load()} className="h-7 gap-1.5">
-                <RefreshCw className="h-3 w-3" aria-hidden="true" /> Retry
+                <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
               </Button>
             </div>
           ) : detail === null ? null : (
             <div className="space-y-2.5">
               {detail.warning !== null && (
                 <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
+                  <StatusIcons.warning className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden="true" />
                   {detail.warning}
                 </p>
               )}
@@ -316,11 +296,11 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                           >
                             {entry.url === null ? (
                               <span
-                                className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/70"
+                                className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground/70"
                                 aria-hidden="true"
                               />
                             ) : (
-                              <Link2 className="mt-[3px] h-3 w-3 shrink-0 text-source" aria-hidden="true" />
+                              <Link2 className="mt-[3px] size-3 shrink-0 text-source" aria-hidden="true" />
                             )}
                             {entry.url === null ? (
                               <span className="min-w-0 truncate">{entry.label}</span>

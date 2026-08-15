@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { SlidersHorizontal, X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -101,9 +101,9 @@ function ParamRow({ label, value, min, max, step, fallback, format, onChange, on
                 type="button"
                 onClick={onReset}
                 aria-label={`Reset ${label.toLowerCase()} to auto`}
-                className="pressable flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/60 hover:bg-accent hover:text-foreground coarse:h-7 coarse:w-7"
+                className="pressable flex size-4 items-center justify-center rounded-full text-muted-foreground/60 hover:bg-accent hover:text-foreground coarse:size-7"
               >
-                <X className="h-3 w-3" aria-hidden="true" />
+                <ActionIcons.dismiss className="size-3" aria-hidden="true" />
               </button>
             </>
           )}
@@ -219,7 +219,7 @@ export function ModelParamsPanel({
                 disabled && "pointer-events-none opacity-50"
               )}
             >
-              <SlidersHorizontal className="h-[18px] w-[18px]" />
+              <ActionIcons.parameters className="size-4.5" />
               {customized && <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary" aria-hidden="true" />}
             </Button>
           </PopoverTrigger>

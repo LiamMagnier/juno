@@ -25,15 +25,22 @@ import { applyBoundVariables, exportTokens, rgbaToCss, rgbaToHex, type TokenExpo
 import { effectLabel } from "@/lib/design/operations";
 import {
   isContainer,
+  type AnimatableProperty,
+  type AnimationId,
   type DesignDocument,
   type DesignNode,
   type DropShadowEffect,
+  type EasingCurve,
   type GlassEffect,
   type InnerShadowEffect,
+  type Keyframe,
+  type MotionAnimation,
+  type MotionTrack,
   type NodeId,
   type NoiseEffect,
   type PageId,
   type Paint,
+  type Rgba,
   type TextureEffect,
 } from "@/lib/design/types";
 
@@ -232,9 +239,51 @@ function pdfColor(color: { r: number; g: number; b: number }): string {
   return `${num(color.r)} ${num(color.g)} ${num(color.b)}`;
 }
 
-/** Escape for a PDF literal string. */
+/**
+ * Typographic characters that have a plain equivalent, mapped before encoding.
+ *
+ * These are the ones real design copy is full of — smart quotes, dashes,
+ * ellipses — and they sit in the 0x80–0x9F range where WinAnsi and Latin-1
+ * disagree. Folding them to ASCII first means the octal escape below only ever
+ * has to handle 0xA0–0xFF, where the two encodings are identical.
+ */
+const PDF_TEXT_FOLD: Record<string, string> = {
+  "‘": "'", "’": "'", "‚": ",", "‛": "'",
+  "“": '"', "”": '"', "„": '"', "‟": '"',
+  "‐": "-", "‑": "-", "‒": "-", "–": "-", "—": "-", "―": "-",
+  "…": "...", "•": "-", " ": " ", " ": " ", " ": " ", " ": " ",
+  "‹": "<", "›": ">", "«": '"', "»": '"', "′": "'", "″": '"',
+  "€": "EUR", "™": "(TM)", "‰": "%%",
+};
+
+/**
+ * Escape for a PDF literal string — and transcode it to WinAnsi.
+ *
+ * This used to escape only `\`, `(` and `)`, which left the string carrying
+ * whatever the author typed. Two things then went wrong at once. The file is
+ * served as UTF-8, so a single accented character made the byte length differ
+ * from the JS string length and `assemblePdf`'s cross-reference offsets pointed
+ * into the middle of an object; and the content stream is drawn with a Type1
+ * Helvetica, whose literal strings are single-byte WinAnsi, so the raw UTF-8
+ * bytes would have rendered as mojibake even if the offsets had been right.
+ *
+ * The output is therefore ASCII by construction: anything above 0x7F is written
+ * as a `\ooo` octal escape of its WinAnsi byte, and anything WinAnsi has no
+ * glyph for degrades to `?` rather than silently corrupting the stream. Keeping
+ * the whole file single-byte is also what makes the offset arithmetic in
+ * `assemblePdf` provably correct instead of accidentally correct.
+ */
 function pdfString(value: string): string {
-  return value.replace(/[\\()]/g, (c) => `\\${c}`).replace(/[\r\n]/g, " ");
+  let out = "";
+  for (const char of value.replace(/[\r\n]/g, " ").replace(/[ -› «»€™‰]/g, (c) => PDF_TEXT_FOLD[c] ?? c)) {
+    const code = char.codePointAt(0) ?? 0;
+    if (char === "\\" || char === "(" || char === ")") out += `\\${char}`;
+    else if (code >= 0x20 && code <= 0x7e) out += char;
+    // 0xA0–0xFF is Latin-1, which WinAnsi matches exactly in that range.
+    else if (code >= 0xa0 && code <= 0xff) out += `\\${code.toString(8).padStart(3, "0")}`;
+    else out += "?";
+  }
+  return out;
 }
 
 /** Four Bézier arcs — PDF has no ellipse operator. */
@@ -253,23 +302,37 @@ function ellipsePath(x: number, y: number, width: number, height: number): strin
   ].join("\n");
 }
 
+/**
+ * Bytes, not UTF-16 code units.
+ *
+ * Every offset in a PDF is a byte offset into the file, and the file is served
+ * as UTF-8. `String.length` counts code units, so it agreed with the byte count
+ * only while the document happened to be pure ASCII — which is exactly the case
+ * that gets tested and never the case that ships. `pdfString` now guarantees
+ * ASCII, so these two measures agree again; measuring properly anyway means a
+ * future non-ASCII escape hatch cannot silently corrupt the xref table.
+ */
+const PDF_BYTES = new TextEncoder();
+const byteLength = (value: string): number => PDF_BYTES.encode(value).length;
+
 /** Minimal single-page PDF 1.4 with a correct cross-reference table. */
 function assemblePdf(stream: string, width: number, height: number): string {
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(width)} ${num(height)}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>`,
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    // /Length is likewise a byte count of the stream data.
+    `<< /Length ${byteLength(stream)} >>\nstream\n${stream}\nendstream`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
   ];
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];
   objects.forEach((body, index) => {
-    offsets.push(pdf.length);
+    offsets.push(byteLength(pdf));
     pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
   });
-  const xref = pdf.length;
+  const xref = byteLength(pdf);
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   for (const offset of offsets) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
@@ -601,12 +664,364 @@ function styleString(style: Record<string, string>): string {
     .join("; ");
 }
 
+// ---------------------------------------------------------------------------
+// Motion → CSS
+// ---------------------------------------------------------------------------
+
+/**
+ * The document's animations, as real `@keyframes`.
+ *
+ * Motion reached no export target at all. React and SwiftUI push a note saying
+ * the animations are "described in the handoff bundle", and the HTML prototype
+ * — the one target that actually runs — emitted nothing, so the timeline was
+ * the only surface in the entire product where a keyframe could ever be seen
+ * moving. A designer could spend an afternoon on a spring and then have no
+ * artifact to show for it.
+ *
+ * CSS is a genuine fit for this model rather than a stand-in. A keyframe's
+ * easing governs the segment that *starts* at it, which is exactly what a
+ * per-stop `animation-timing-function` means; a track that stops short of the
+ * animation's end holds its last value, which is what `animation-fill-mode:
+ * both` plus a synthesised 100% stop gives. The two places CSS cannot follow —
+ * springs, and two transform components keyframed at different instants — are
+ * reported rather than quietly approximated.
+ *
+ * Names are generated (`juno-k0`, `juno-a0`, `a0`) rather than derived from
+ * document ids. A node id is an arbitrary string from a JSON file; putting one
+ * in a CSS selector or a `querySelectorAll` argument is an escaping problem with
+ * no upside, and generated tokens are safe by construction.
+ */
+interface MotionCss {
+  /** Rules for the prototype's `<style>` block. */
+  rules: string[];
+  /** The class that carries a node's `animation` shorthand. */
+  classByNode: Map<NodeId, string>;
+  /** Generated tokens on a node, for the runtime's `~=` lookup. */
+  tokensByNode: Map<NodeId, string[]>;
+  /** Generated token per animation, for a `play-animation` interaction. */
+  tokenByAnimation: Map<AnimationId, string>;
+}
+
+/** Where the static CSS put this node, so an `x`/`y` track can move it from
+ *  there. The track carries authored coordinates; `left`/`top` are relative to
+ *  the parent box, and for an auto-laid-out child the two are not the same
+ *  number — the delta is right in both cases where the static position is. */
+function motionBase(doc: DesignDocument, boxes: LayoutMap, node: DesignNode): { left: number; top: number } | null {
+  const box = boxes.get(node.id);
+  if (!box) return null;
+  // A root frame is emitted inside a wrapper of its own size, so it sits at 0,0.
+  const parent = node.parentId ? boxes.get(node.parentId) : box;
+  return { left: round(box.x - (parent?.x ?? 0)), top: round(box.y - (parent?.y ?? 0)) };
+}
+
+function motionDeclaration(
+  node: DesignNode,
+  base: { left: number; top: number },
+  property: AnimatableProperty,
+  value: number | Rgba
+): string | null {
+  const n = typeof value === "number" ? value : null;
+  const color = typeof value === "object" ? value : null;
+  switch (property) {
+    case "x":
+      return n === null ? null : `left: ${round(base.left + (n - node.x))}px`;
+    case "y":
+      return n === null ? null : `top: ${round(base.top + (n - node.y))}px`;
+    case "width":
+      return n === null ? null : `width: ${round(n)}px`;
+    case "height":
+      return n === null ? null : `height: ${round(n)}px`;
+    case "opacity":
+      return n === null ? null : `opacity: ${round(n)}`;
+    case "cornerRadius":
+      return n === null ? null : `border-radius: ${round(n)}px`;
+    case "blur":
+      return n === null ? null : `filter: blur(${round(Math.max(0, n))}px)`;
+    case "fontSize":
+      return n === null ? null : `font-size: ${round(n)}px`;
+    case "letterSpacing":
+      return n === null ? null : `letter-spacing: ${round(n)}px`;
+    case "fillColor":
+      // A text layer's fill is its glyph colour, exactly as `cssFor` decides.
+      return color === null ? null : `${node.type === "text" ? "color" : "background-color"}: ${rgbaToCss(color)}`;
+    case "strokeColor":
+      return color === null ? null : `border-color: ${rgbaToCss(color)}`;
+    case "rotation":
+    case "scale":
+      // Both are `transform`, which is one property and cannot be written twice.
+      // Merged below instead.
+      return null;
+  }
+}
+
+function cssTiming(easing: EasingCurve, label: string, unsupported: string[]): string {
+  switch (easing.type) {
+    case "linear":
+      return "linear";
+    case "ease-in":
+    case "ease-out":
+    case "ease-in-out":
+      // The keywords, not the control points: `NAMED_BEZIERS` in the motion
+      // model is CSS's own table, so these two describe one curve.
+      return easing.type;
+    case "cubic-bezier":
+      return `cubic-bezier(${round(easing.x1)}, ${round(easing.y1)}, ${round(easing.x2)}, ${round(easing.y2)})`;
+    case "spring":
+      // A spring overshoots and settles over a duration the physics chooses.
+      // `linear()` could approximate it point by point, but it is a 2023
+      // addition and this file is opened locally in whatever browser is to
+      // hand. Saying so beats shipping motion that is subtly wrong.
+      unsupported.push(`${label}: a spring has no CSS timing function — the prototype eases out instead`);
+      return "ease-out";
+  }
+}
+
+const sortFrames = (keyframes: Keyframe[]): Keyframe[] => [...keyframes].sort((a, b) => a.time - b.time);
+
+/** A numeric track sampled linearly. Only reached when two transform components
+ *  are keyframed at different instants and one has to be filled in at the
+ *  other's stop; the caller reports it. */
+function sampleLinear(frames: Keyframe[], timeMs: number): number | null {
+  if (frames.length === 0) return null;
+  const first = frames[0];
+  const last = frames[frames.length - 1];
+  if (typeof first.value !== "number" || typeof last.value !== "number") return null;
+  if (timeMs <= first.time) return first.value;
+  if (timeMs >= last.time) return last.value;
+  let index = 0;
+  while (index < frames.length - 1 && frames[index + 1].time <= timeMs) index++;
+  const from = frames[index];
+  const to = frames[index + 1];
+  if (typeof from.value !== "number" || typeof to.value !== "number") return null;
+  const span = to.time - from.time;
+  if (span <= 0) return to.value;
+  return from.value + (to.value - from.value) * ((timeMs - from.time) / span);
+}
+
+/** The body of one `@keyframes` rule: every stop this node's tracks name, with
+ *  only the properties that actually have a keyframe there. CSS interpolates
+ *  each property across the stops that declare it and ignores the rest, which
+ *  is what makes tracks of different lengths compose without sampling. */
+function keyframesBody(
+  node: DesignNode,
+  base: { left: number; top: number },
+  tracks: MotionTrack[],
+  durationMs: number,
+  label: string,
+  unsupported: string[]
+): string | null {
+  const stops = new Map<number, { declarations: string[]; timing: string | null }>();
+  const percentOf = (time: number) => Math.round(Math.max(0, Math.min(1, time / durationMs)) * 10_000) / 100;
+
+  const at = (percent: number) => {
+    const existing = stops.get(percent);
+    if (existing) return existing;
+    const created = { declarations: [] as string[], timing: null as string | null };
+    stops.set(percent, created);
+    return created;
+  };
+
+  /**
+   * A stop's timing function, first writer wins.
+   *
+   * CSS has one `animation-timing-function` per stop and it governs every
+   * property leaving that stop, where this model gives each keyframe its own
+   * easing. Two tracks that ease differently out of the same instant cannot
+   * both be honoured, so the loser is named rather than lost quietly.
+   */
+  let timingConflict = false;
+  const proposeTiming = (stop: { timing: string | null }, timing: string) => {
+    if (stop.timing === null) stop.timing = timing;
+    else if (stop.timing !== timing) timingConflict = true;
+  };
+
+  const rotation = tracks.find((track) => track.property === "rotation");
+  const scale = tracks.find((track) => track.property === "scale");
+
+  for (const track of tracks) {
+    if (track.property === "rotation" || track.property === "scale") continue;
+    const frames = sortFrames(track.keyframes);
+    for (const [index, frame] of frames.entries()) {
+      const declaration = motionDeclaration(node, base, track.property, frame.value);
+      if (!declaration) continue;
+      const stop = at(percentOf(frame.time));
+      stop.declarations.push(declaration);
+      // The LAST keyframe's easing governs nothing — there is no segment after
+      // it — so it is not allowed to claim the stop's timing function.
+      if (index < frames.length - 1) proposeTiming(stop, cssTiming(frame.easing, label, unsupported));
+    }
+    // A track that starts late or ends early holds its end values, which is what
+    // `sampleTrack` does. Without these two stops CSS would tween from the
+    // element's static style instead, so a fade that begins at 100ms would start
+    // fading at 0.
+    const first = frames[0];
+    const last = frames[frames.length - 1];
+    if (first && first.time > 0) {
+      const declaration = motionDeclaration(node, base, track.property, first.value);
+      if (declaration) at(0).declarations.push(declaration);
+    }
+    if (last && last.time < durationMs) {
+      const declaration = motionDeclaration(node, base, track.property, last.value);
+      if (declaration) at(100).declarations.push(declaration);
+    }
+  }
+
+  if (rotation || scale) {
+    const rotationFrames = rotation ? sortFrames(rotation.keyframes) : [];
+    const scaleFrames = scale ? sortFrames(scale.keyframes) : [];
+    const times = new Set<number>([...rotationFrames, ...scaleFrames].map((frame) => frame.time));
+    if (rotationFrames.length > 0 && scaleFrames.length > 0) {
+      const rotationTimes = rotationFrames.map((frame) => frame.time).join(",");
+      const scaleTimes = scaleFrames.map((frame) => frame.time).join(",");
+      if (rotationTimes !== scaleTimes) {
+        unsupported.push(
+          `${label}: rotation and scale are one CSS \`transform\`, so the component without a keyframe at a shared stop is filled in linearly`
+        );
+      }
+    }
+    times.add(0);
+    times.add(durationMs);
+    // `transform` replaces the static one wholesale, so a layer rotated in the
+    // document and only scaled by the animation would spring upright the moment
+    // the animation applied. The authored angle is carried through instead.
+    const staticAngle = rotationFrames.length === 0 && node.rotation % 360 !== 0 ? node.rotation : null;
+    const lastTime = Math.max(rotationFrames[rotationFrames.length - 1]?.time ?? 0, scaleFrames[scaleFrames.length - 1]?.time ?? 0);
+    for (const time of [...times].sort((a, b) => a - b)) {
+      const angle = rotationFrames.length > 0 ? sampleLinear(rotationFrames, time) : staticAngle;
+      const factor = scaleFrames.length > 0 ? sampleLinear(scaleFrames, time) : null;
+      const parts: string[] = [];
+      if (angle !== null) parts.push(`rotate(${round(angle)}deg)`);
+      if (factor !== null) parts.push(`scale(${round(factor)})`);
+      if (parts.length === 0) continue;
+      const stop = at(percentOf(time));
+      stop.declarations.push(`transform: ${parts.join(" ")}`);
+      // Whichever of the two actually has a keyframe here owns the easing out of
+      // it; reading only the rotation track dropped a spring authored on scale.
+      const owner = rotationFrames.find((frame) => frame.time === time) ?? scaleFrames.find((frame) => frame.time === time);
+      if (owner && time < lastTime) proposeTiming(stop, cssTiming(owner.easing, label, unsupported));
+    }
+  }
+
+  if (timingConflict) {
+    unsupported.push(`${label}: two properties ease differently out of the same keyframe; CSS allows one curve per stop`);
+  }
+
+  if (stops.size === 0) return null;
+  return [...stops.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([percent, stop]) => {
+      const declarations = [...stop.declarations];
+      if (stop.timing) declarations.push(`animation-timing-function: ${stop.timing}`);
+      return `  ${percent}% { ${declarations.join("; ")}; }`;
+    })
+    .join("\n");
+}
+
+function buildMotionCss(doc: DesignDocument, boxes: LayoutMap, unsupported: string[]): MotionCss {
+  const rules: string[] = [];
+  const classByNode = new Map<NodeId, string>();
+  const tokensByNode = new Map<NodeId, string[]>();
+  const tokenByAnimation = new Map<AnimationId, string>();
+  const perNode = new Map<NodeId, { keyframes: string; animation: MotionAnimation }[]>();
+
+  /** Animations something in the prototype can start. Everything else runs on
+   *  load, because an animation nothing triggers and nothing plays is an
+   *  animation this file would never show. */
+  const triggered = new Set<AnimationId>(
+    Object.values(doc.interactions).flatMap((interaction) =>
+      interaction.action.type === "play-animation" ? [interaction.action.animationId] : []
+    )
+  );
+
+  let animationIndex = 0;
+  let keyframesIndex = 0;
+
+  for (const animation of Object.values(doc.animations)) {
+    const token = `a${animationIndex++}`;
+    tokenByAnimation.set(animation.id, token);
+    // A zero-length animation would divide by zero on the way to a percentage
+    // and render as nothing anyway.
+    const durationMs = Math.max(1, Math.round(animation.durationMs));
+
+    const byNode = new Map<NodeId, MotionTrack[]>();
+    for (const track of animation.tracks) {
+      // One keyframe is a value, not motion.
+      if (track.keyframes.length < 2) continue;
+      if (!doc.nodes[track.nodeId] || !boxes.has(track.nodeId)) continue; // a layer on another page
+      const list = byNode.get(track.nodeId);
+      if (list) list.push(track);
+      else byNode.set(track.nodeId, [track]);
+    }
+
+    for (const [nodeId, tracks] of byNode) {
+      const node = doc.nodes[nodeId];
+      const base = motionBase(doc, boxes, node);
+      if (!base) continue;
+      const body = keyframesBody(node, base, tracks, durationMs, `${animation.name} · ${node.name}`, unsupported);
+      if (!body) continue;
+      const name = `juno-k${keyframesIndex++}`;
+      rules.push(`@keyframes ${name} {\n${body}\n}`);
+      const entries = perNode.get(nodeId);
+      if (entries) entries.push({ keyframes: name, animation });
+      else perNode.set(nodeId, [{ keyframes: name, animation }]);
+      const tokens = tokensByNode.get(nodeId);
+      if (tokens) tokens.push(token);
+      else tokensByNode.set(nodeId, [token]);
+    }
+  }
+
+  /** Paused until something starts it — a hover, or a `play-animation` link. */
+  const restingState = (animation: MotionAnimation) =>
+    animation.state === "hover" || triggered.has(animation.id) ? "paused" : "running";
+
+  let classIndex = 0;
+  for (const [nodeId, entries] of perNode) {
+    const className = `juno-a${classIndex++}`;
+    classByNode.set(nodeId, className);
+    rules.push(
+      [
+        `.${className} {`,
+        `  animation-name: ${entries.map((entry) => entry.keyframes).join(", ")};`,
+        `  animation-duration: ${entries.map((entry) => `${Math.max(1, Math.round(entry.animation.durationMs))}ms`).join(", ")};`,
+        // linear at the shorthand level: the per-stop timing functions above are
+        // the real curves, and a shorthand easing would compose with them.
+        `  animation-timing-function: ${entries.map(() => "linear").join(", ")};`,
+        `  animation-iteration-count: ${entries.map((entry) => (entry.animation.loop ? "infinite" : "1")).join(", ")};`,
+        // `both`, so a paused animation shows its first keyframe rather than the
+        // layer's authored state and a finished one holds its last.
+        `  animation-fill-mode: ${entries.map(() => "both").join(", ")};`,
+        `  animation-play-state: ${entries.map((entry) => restingState(entry.animation)).join(", ")};`,
+        `}`,
+      ].join("\n")
+    );
+
+    if (entries.some((entry) => entry.animation.state === "hover")) {
+      rules.push(
+        `.${className}:hover { animation-play-state: ${entries
+          .map((entry) => (entry.animation.state === "hover" ? "running" : restingState(entry.animation)))
+          .join(", ")}; }`
+      );
+    }
+
+    // Restarting is per element, not per animation — the reflow trick clears the
+    // element's whole `animation-name`. Only worth saying when a layer actually
+    // carries more than one.
+    if (entries.length > 1 && entries.some((entry) => triggered.has(entry.animation.id))) {
+      unsupported.push(`${doc.nodes[nodeId]?.name ?? nodeId}: playing one animation on this layer restarts the others on it`);
+    }
+  }
+
+  return { rules, classByNode, tokensByNode, tokenByAnimation };
+}
+
 /**
  * A standalone, runnable HTML prototype.
  *
  * Interactions become data attributes plus one small inert script: navigating
  * between frames is showing one root and hiding the others, which is the honest
  * translation of what a prototype link means. No framework, no network.
+ *
+ * The document's animations become real `@keyframes` — see `buildMotionCss`.
  */
 export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): GeneratedCode {
   const boxes = layoutPage(doc, pageId);
@@ -617,6 +1032,7 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
 
   const lines: string[] = [];
   const push = (text: string) => lines.push(text);
+  const motion = buildMotionCss(doc, boxes, unsupported);
 
   const emit = (node: DesignNode, parent: LayoutBox | null, depth: number) => {
     const box = boxes.get(node.id);
@@ -625,19 +1041,52 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
     const indent = "  ".repeat(depth);
     const style = styleString(cssFor(doc, node, box, parent, unsupported));
     const interactions = Object.values(doc.interactions).filter((i) => i.sourceNodeId === node.id);
+    const animationClass = motion.classByNode.get(node.id);
     const attrs = [
       `id="${escapeXml(node.id)}"`,
       `data-juno-node="${escapeXml(node.id)}"`,
       `data-juno-name="${escapeXml(node.name)}"`,
+      ...(animationClass ? [`class="${animationClass}"`] : []),
+      ...(motion.tokensByNode.has(node.id) ? [`data-juno-animation="${motion.tokensByNode.get(node.id)!.join(" ")}"`] : []),
       `style="${escapeXml(style)}"`,
     ];
     for (const interaction of interactions) {
+      // The TRIGGER used to be dropped on the floor: every interaction became a
+      // click, so "after 2 seconds, go to Screen 2" exported as a prototype that
+      // waits for a click, and a hover link could not be tried at all. Emitting
+      // it lets the runtime below bind the right event, and lets an unsupported
+      // trigger say so instead of silently becoming a different one.
+      const trigger = interaction.trigger;
+      const bindable =
+        trigger.type === "click" ||
+        trigger.type === "press" ||
+        trigger.type === "hover" ||
+        trigger.type === "key" ||
+        trigger.type === "delay" ||
+        trigger.type === "scroll-into-view";
+      if (!bindable) {
+        unsupported.push(`${node.name}: ${trigger.type} trigger is not represented in the HTML prototype`);
+      }
+
       if (interaction.action.type === "navigate") {
         attrs.push(`data-navigate="${escapeXml(interaction.action.targetNodeId)}"`);
       } else if (interaction.action.type === "open-url") {
         attrs.push(`data-open-url="${escapeXml(interaction.action.url)}"`);
+      } else if (interaction.action.type === "play-animation" && motion.tokenByAnimation.has(interaction.action.animationId)) {
+        // Now that the animations are in the file, the action that starts one
+        // is expressible. It carries the generated token rather than the
+        // animation's id, so the runtime's selector is safe by construction.
+        attrs.push(`data-play-animation="${motion.tokenByAnimation.get(interaction.action.animationId)!}"`);
+        if (interaction.action.reverse) attrs.push(`data-play-reverse="1"`);
       } else {
         unsupported.push(`${node.name}: ${interaction.action.type} interaction not represented`);
+        continue;
+      }
+
+      if (bindable) {
+        attrs.push(`data-trigger="${escapeXml(trigger.type)}"`);
+        if (trigger.type === "key") attrs.push(`data-trigger-key="${escapeXml(trigger.key)}"`);
+        if (trigger.type === "delay") attrs.push(`data-trigger-ms="${Math.max(0, Math.round(trigger.ms))}"`);
       }
     }
 
@@ -679,7 +1128,13 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
   push(`body { margin: 0; background: ${rgbaToCss(page.backgroundColor)}; font-family: Inter, system-ui, sans-serif; }`);
   push(".juno-root { position: relative; }");
   push(".juno-root[hidden] { display: none; }");
-  push("[data-navigate], [data-open-url] { cursor: pointer; }");
+  push("[data-navigate], [data-open-url], [data-play-animation] { cursor: pointer; }");
+  if (motion.rules.length > 0) {
+    // Motion the reader did not ask for is motion that should not run. The
+    // keyframes stay in the file so the same document still describes them.
+    push("@media (prefers-reduced-motion: reduce) { [data-juno-animation] { animation: none !important; } }");
+    for (const rule of motion.rules) push(rule);
+  }
   push("</style>");
   push("</head>");
   push("<body>");
@@ -696,17 +1151,66 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
   // Inert by construction: it reads data attributes this generator wrote and
   // toggles `hidden`. It evaluates nothing and fetches nothing.
   push("<script>");
-  push(`document.addEventListener('click', function (event) {
-  var target = event.target.closest('[data-navigate], [data-open-url]');
-  if (!target) return;
-  var url = target.getAttribute('data-open-url');
-  if (url) { window.open(url, '_blank', 'noopener'); return; }
-  var destination = target.getAttribute('data-navigate');
-  var roots = document.querySelectorAll('.juno-root');
-  for (var i = 0; i < roots.length; i++) {
-    roots[i].hidden = roots[i].getAttribute('data-root') !== destination;
+  push(`(function () {
+  function play(token, reverse) {
+    var targets = document.querySelectorAll('[data-juno-animation~="' + token + '"]');
+    for (var t = 0; t < targets.length; t++) {
+      var el = targets[t];
+      // Clearing the name and reading a layout property forces the restart CSS
+      // otherwise refuses: an animation that has already run to its end will not
+      // run again just because its play-state was set to running.
+      el.style.animationName = 'none';
+      void el.offsetWidth;
+      el.style.animationName = '';
+      if (reverse) el.style.animationDirection = 'reverse';
+      el.style.animationPlayState = 'running';
+    }
   }
-});`);
+
+  function fire(target) {
+    var token = target.getAttribute('data-play-animation');
+    if (token) { play(token, target.hasAttribute('data-play-reverse')); return; }
+    var url = target.getAttribute('data-open-url');
+    if (url) { window.open(url, '_blank', 'noopener'); return; }
+    var destination = target.getAttribute('data-navigate');
+    if (!destination) return;
+    var roots = document.querySelectorAll('.juno-root');
+    for (var i = 0; i < roots.length; i++) {
+      roots[i].hidden = roots[i].getAttribute('data-root') !== destination;
+    }
+  }
+
+  var nodes = document.querySelectorAll('[data-navigate], [data-open-url], [data-play-animation]');
+  for (var i = 0; i < nodes.length; i++) {
+    (function (node) {
+      var trigger = node.getAttribute('data-trigger') || 'click';
+      if (trigger === 'hover') {
+        node.addEventListener('mouseenter', function () { fire(node); });
+      } else if (trigger === 'key') {
+        var key = node.getAttribute('data-trigger-key');
+        document.addEventListener('keydown', function (event) {
+          if (key && event.key === key) fire(node);
+        });
+      } else if (trigger === 'delay') {
+        var ms = parseInt(node.getAttribute('data-trigger-ms') || '0', 10);
+        window.setTimeout(function () { fire(node); }, isNaN(ms) ? 0 : ms);
+      } else if (trigger === 'scroll-into-view') {
+        // No IntersectionObserver fallback on purpose: an environment without it
+        // gets nothing rather than a link that fires at the wrong moment.
+        if (typeof IntersectionObserver === 'function') {
+          var seen = false;
+          new IntersectionObserver(function (entries) {
+            for (var e = 0; e < entries.length; e++) {
+              if (entries[e].isIntersecting && !seen) { seen = true; fire(node); }
+            }
+          }).observe(node);
+        }
+      } else {
+        node.addEventListener('click', function () { fire(node); });
+      }
+    })(nodes[i]);
+  }
+})();`);
   push("</script>");
   push("</body>");
   push("</html>");

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertCircle, Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,7 +20,7 @@ import type { TaskItem } from "@/components/tasks/task-model";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 
 export default function TasksPage() {
   const [tasks, setTasks] = React.useState<TaskItem[] | null>(null);
@@ -128,7 +128,7 @@ export default function TasksPage() {
         {loadError ? (
           <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
-              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your tasks. Check your connection and try again.</p>
             </div>
             <Button
@@ -137,7 +137,7 @@ export default function TasksPage() {
               onClick={() => load()}
               className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <RefreshCw className="size-3.5" /> Retry
+              <ActionIcons.refresh className="size-3.5" /> Retry
             </Button>
           </div>
         ) : loading ? (

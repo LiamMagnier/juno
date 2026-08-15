@@ -279,11 +279,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="group h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
+            className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open menu"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="size-5" />
           </Button>
           <AnimatedTitle
             title={activeTitle || "Juno"}
@@ -294,20 +294,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="group ml-auto h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
+            className="group ml-auto size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             aria-label="Search chats and projects"
           >
-            <SidebarMotionIcon kind="search" className="h-5 w-5" />
+            <SidebarMotionIcon kind="search" className="size-5" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="group h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
+            className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
             onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }}
             aria-label="New chat"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="size-5" />
           </Button>
         </div>
 

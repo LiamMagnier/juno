@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Maximize2, Pencil, RefreshCw, X } from "lucide-react";
+import { ArrowUp, Loader2, Maximize2 } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -112,7 +113,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               disabled={consolidating}
               aria-label="Rebuild the summary from your chats and projects"
             >
-              <RefreshCw className={cn("size-3.5", consolidating && "animate-spin")} />
+              <ActionIcons.refresh className={cn("size-3.5", consolidating && "animate-spin")} />
             </Button>
           </div>
         </div>
@@ -203,7 +204,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   onClick={() => setComposing(false)}
                   aria-label="Cancel editing"
                 >
-                  <X className="size-4" />
+                  <ActionIcons.dismiss className="size-4" />
                 </Button>
               )}
               <Button
@@ -238,7 +239,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 : "Edit memory — tell Juno what to remember, update, or forget"
             }
           >
-            <Pencil className="size-4" />
+            <ActionIcons.edit className="size-4" />
           </button>
         )}
       </div>

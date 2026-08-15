@@ -22,22 +22,37 @@ import type { ResearchPlan } from "@/lib/research/domain";
  * afterwards.
  */
 
+const BRIEF_TIMEOUT_MS = 20_000;
 const PLAN_TIMEOUT_MS = 25_000;
 const SEARCH_TIMEOUT_MS = 30_000;
 const FETCH_TIMEOUT_MS = 25_000;
-const RESULTS_PER_QUERY = 8;
+/**
+ * How many merged results one query contributes.
+ *
+ * This was 8, and 8 was the number a user actually felt: with the old cascading
+ * search returning a single engine's list, one query meant at most 8 sites and
+ * a whole run bottomed out around there. `executeMultiEngineSearch` now merges
+ * every available engine by rank fusion, so the union behind one query is much
+ * larger than any single engine's page — taking 18 of it is what makes a run
+ * read like research rather than a search-results page.
+ */
+const RESULTS_PER_QUERY = 18;
+/** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
+const PLANNED_QUERIES = 14;
 const PAGE_CONTENT_CHARS = 16_000;
 const REVISION_REPORT_CHARS = 48_000;
 
-const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. Break the user's request into comprehensive, multi-angle web search queries:
+const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. Break the user's request into comprehensive, multi-angle web search queries covering:
 1. Foundational concepts, official documentation, specifications, and primary sources
 2. Empirical evidence, statistics, benchmarks, case studies, and quantitative data
 3. Counter-arguments, conflicting perspectives, trade-offs, and critical debates
 4. Most recent developments, latest news, releases, and current status
+5. Adjacent and second-order angles: who is affected, what it is usually compared against, what the sceptics measure
 
 Reply with ONLY the sub-questions, one per line — no numbering, no bullets, no commentary.
 Each line must be a self-contained, high-intent web search query (repeat names, dates, and context; a query must make sense on its own).
-Generate 4 to 8 focused queries.`;
+Vary the phrasing and the vocabulary between lines — near-duplicate queries return the same pages and waste the run's budget.
+Generate 10 to ${PLANNED_QUERIES} focused queries.`;
 
 /** A signal that aborts with its parent OR after `ms`, whichever comes first. */
 function timeboxSignal(
@@ -85,7 +100,98 @@ function parsePlanLines(text: string, max: number): string[] {
 }
 
 /**
- * PLAN — one cheap fast completion turns the goal into sub-questions.
+ * The brief-expansion step, and why a second model call earns its keep.
+ *
+ * A user types one line. That line is what the planner used to see, and a
+ * one-line goal produces one-line-shaped queries: near-paraphrases of the
+ * request that all return the same first page of results. It is the single
+ * biggest reason a run reads as shallow no matter how many queries it is
+ * allowed — breadth in the query list cannot come from nowhere, and the model
+ * has to be given room to work out what the question actually contains before
+ * it is asked to decompose it.
+ *
+ * So the goal is expanded into an explicit brief first — entities, timeframe,
+ * what a complete answer must contain, which fields would argue about it — and
+ * the planner decomposes the BRIEF. This is the same clarify/rewrite/research
+ * split OpenAI documents for ChatGPT's deep research, where the rewritten brief
+ * rather than the user's prompt is what reaches the research model.
+ *
+ * Never throws, and degrades to the raw goal. An expansion that fails must cost
+ * the run nothing but a few seconds.
+ */
+const BRIEF_SYSTEM = `You turn a short research request into a precise research brief.
+
+Write 120-200 words of plain prose covering, in this order:
+- What is actually being asked, restated unambiguously — resolve vague pronouns and name the specific entities, products, organisations, places or people involved.
+- The timeframe that matters, and whether recency is critical.
+- What a COMPLETE answer must contain: the specific quantities, comparisons, mechanisms or decisions the reader needs.
+- Where the genuine disagreement or uncertainty is likely to be, and which communities or disciplines would argue about it.
+
+Do not answer the question. Do not speculate about facts you would need to look up — describe what must be found, not what it might say. Do not use headings or bullets. Output only the brief.`;
+
+/** One utility-model completion, billed. Returns empty text on any failure. */
+async function utilityCompletion(opts: {
+  userId: string;
+  model: ModelInfo;
+  system: string;
+  prompt: string;
+  maxTokens: number;
+  timeoutMs: number;
+  signal?: AbortSignal;
+  label: string;
+}): Promise<{ text: string; costMicroUsd: number }> {
+  const box = timeboxSignal(opts.signal, opts.timeoutMs);
+  let out = "";
+  let input: number | undefined;
+  let output: number | undefined;
+  try {
+    for await (const ev of streamChat({
+      model: opts.model,
+      system: opts.system,
+      history: [{ role: "USER", content: opts.prompt, attachments: [] }],
+      maxTokens: opts.maxTokens,
+      signal: box.signal,
+    })) {
+      if (ev.type === "text") out += ev.text;
+      else if (ev.type === "usage") {
+        input = ev.input ?? input;
+        output = ev.output ?? output;
+      }
+    }
+  } catch (e) {
+    console.error(`[research] ${opts.label} failed`, {
+      model: opts.model.id,
+      message: box.signal.aborted ? "timed out or aborted" : e instanceof Error ? e.message : String(e),
+    });
+  } finally {
+    box.release();
+  }
+
+  // Bill whatever was actually consumed, even when the output was unusable —
+  // the tokens were spent either way, and a ledger that omits its failures
+  // under-reports what research costs.
+  const billed = estimateGenerationCostUsd(opts.model, {
+    promptTokens: input,
+    completionTokens: output,
+    promptChars: opts.system.length + opts.prompt.length,
+    completionChars: out.length,
+  });
+  await recordSpend({
+    userId: opts.userId,
+    model: opts.model.id,
+    kind: "chat",
+    source: "web",
+    promptTokens: billed.promptTokens,
+    completionTokens: billed.completionTokens,
+    costUsd: billed.costUsd || undefined,
+    promptChars: opts.system.length + opts.prompt.length,
+    completionChars: out.length,
+  });
+  return { text: out.trim(), costMicroUsd: Math.round(billed.costUsd * 1_000_000) };
+}
+
+/**
+ * PLAN — expand the goal into a brief, then decompose the brief into queries.
  *
  * Never throws. A planner that fails returns no queries and the engine falls
  * back to searching the goal itself; a durable run that died because its
@@ -103,60 +209,43 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   // Constraints reach the planner as part of the request, not as a separate
   // instruction block: "only sources after 2024" has to shape the queries
   // themselves, and a constraint appended after the fact only shapes the prose.
-  const prompt = constraints.length
+  const request = constraints.length
     ? `${goal}\n\nConstraints the searches must respect:\n${constraints.map((c) => `- ${c}`).join("\n")}`
     : goal;
 
-  const box = timeboxSignal(signal, PLAN_TIMEOUT_MS);
-  let out = "";
-  let input: number | undefined;
-  let output: number | undefined;
-  try {
-    for await (const ev of streamChat({
-      model: planner,
-      system: PLANNER_SYSTEM,
-      history: [{ role: "USER", content: prompt.slice(0, 4_000), attachments: [] }],
-      maxTokens: 1024,
-      signal: box.signal,
-    })) {
-      if (ev.type === "text") out += ev.text;
-      else if (ev.type === "usage") {
-        input = ev.input ?? input;
-        output = ev.output ?? output;
-      }
-    }
-  } catch (e) {
-    console.error("[research] plan failed", {
-      model: planner.id,
-      message: box.signal.aborted ? "timed out or aborted" : e instanceof Error ? e.message : String(e),
-    });
-  } finally {
-    box.release();
-  }
-
-  // Bill whatever the planner actually consumed, even when parsing produced
-  // nothing usable — the tokens were spent either way, and a run whose ledger
-  // omits its failures under-reports what research costs.
-  const billed = estimateGenerationCostUsd(planner, {
-    promptTokens: input,
-    completionTokens: output,
-    promptChars: PLANNER_SYSTEM.length + prompt.length,
-    completionChars: out.length,
-  });
-  await recordSpend({
+  const brief = await utilityCompletion({
     userId,
-    model: planner.id,
-    kind: "chat",
-    source: "web",
-    promptTokens: billed.promptTokens,
-    completionTokens: billed.completionTokens,
-    costUsd: billed.costUsd || undefined,
-    promptChars: PLANNER_SYSTEM.length + prompt.length,
-    completionChars: out.length,
+    model: planner,
+    system: BRIEF_SYSTEM,
+    prompt: request.slice(0, 4_000),
+    maxTokens: 600,
+    timeoutMs: BRIEF_TIMEOUT_MS,
+    signal,
+    label: "brief",
   });
+
+  // The brief AUGMENTS the request rather than replacing it. An expansion that
+  // drifted would otherwise silently redirect the whole run, and the user's own
+  // words are the only part of this that is not a model's guess.
+  const prompt = brief.text
+    ? `${request}\n\nResearch brief:\n${brief.text}`
+    : request;
+
+  const planned = await utilityCompletion({
+    userId,
+    model: planner,
+    system: PLANNER_SYSTEM,
+    prompt: prompt.slice(0, 6_000),
+    maxTokens: 1024,
+    timeoutMs: PLAN_TIMEOUT_MS,
+    signal,
+    label: "plan",
+  });
+
   return {
-    queries: parsePlanLines(out, 8),
-    costMicroUsd: Math.round(billed.costUsd * 1_000_000),
+    queries: parsePlanLines(planned.text, PLANNED_QUERIES),
+    // Both calls are the plan step as far as the run's ledger is concerned.
+    costMicroUsd: brief.costMicroUsd + planned.costMicroUsd,
   };
 };
 

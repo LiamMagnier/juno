@@ -21,6 +21,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
+import { Minus, Plus } from "lucide-react";
 import { renderPageSvg } from "@/lib/design/render";
 import { rgbaToCss } from "@/lib/design/variables";
 import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";
@@ -163,7 +164,45 @@ export function DesignCanvas({
   const descentRef = React.useRef<{ path: NodeId[]; originClient: { x: number; y: number } } | null>(null);
 
   const boxes = React.useMemo(() => layoutPage(doc, pageId), [doc, pageId]);
-  const rendered = React.useMemo(() => renderPageSvg(doc, pageId, { includeNodeIds: true }), [doc, pageId]);
+  /**
+   * The scene, WITHOUT the page background.
+   *
+   * `renderPageSvg` paints the page colour across the content bounding box,
+   * which is right for an export (it crops to the artwork) and wrong for an
+   * editor: the bounding box grows and shifts as you drag a layer, so the thing
+   * that looked like the artboard visibly resized itself whenever you moved
+   * anything on it. The page has no width or height in the model — it is an
+   * infinite canvas — so the backdrop belongs to the VIEWPORT, and the frames on
+   * it are the artboards. That is Figma's model, and it is the one the document
+   * schema already describes.
+   */
+  const rendered = React.useMemo(
+    () => renderPageSvg(doc, pageId, { includeNodeIds: true, background: false }),
+    [doc, pageId]
+  );
+
+  /** The page colour, painted behind everything by the canvas host itself. */
+  const pageBackground = React.useMemo(() => {
+    const page = doc.pages.find((p) => p.id === pageId);
+    return page ? rgbaToCss(page.backgroundColor) : undefined;
+  }, [doc, pageId]);
+
+  /**
+   * Top-level frames get their name drawn above them, like every design tool.
+   *
+   * Without it a frame is an unlabelled rectangle among rectangles, which is
+   * most of why the canvas did not read as a design surface: the title is what
+   * says "this is an artboard, and it is called Login". It is also the affordance
+   * that makes a frame selectable as a whole from outside its own bounds.
+   */
+  const frameTitles = React.useMemo(() => {
+    const page = doc.pages.find((p) => p.id === pageId);
+    return (page?.children ?? []).flatMap((id) => {
+      const node = doc.nodes[id];
+      const box = boxes.get(id);
+      return node?.type === "frame" && box && node.visible ? [{ id, name: node.name, box }] : [];
+    });
+  }, [doc, pageId, boxes]);
 
   React.useEffect(() => {
     const host = hostRef.current;
@@ -322,18 +361,38 @@ export function DesignCanvas({
     [boxes]
   );
 
-  function snap(value: number, candidates: number[], zoom: number): { value: number; guide: number | null } {
+  /**
+   * The best correction for ONE axis, tested against every anchor of the moving
+   * selection rather than against its top-left corner alone.
+   *
+   * `anchors` are already-proposed positions (raw delta applied): for the x axis
+   * that is the selection's left edge, its centre and its right edge. The old
+   * version snapped `first.x` only, so a right edge could never meet a right
+   * edge and two objects could never be centred by dragging — the guide lines
+   * were drawn for alignments the drag was incapable of making. Returning a
+   * CORRECTION rather than an absolute value is what lets the caller apply the
+   * same nudge to a whole multi-node selection.
+   */
+  function snapAxis(
+    anchors: readonly number[],
+    candidates: readonly number[],
+    zoom: number
+  ): { correction: number; guide: number | null } {
     const threshold = SNAP_THRESHOLD / Math.max(zoom, 0.01);
-    let best: number | null = null;
+    let correction = 0;
+    let guide: number | null = null;
     let bestDistance = threshold;
-    for (const candidate of candidates) {
-      const distance = Math.abs(candidate - value);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = candidate;
+    for (const anchor of anchors) {
+      for (const candidate of candidates) {
+        const distance = Math.abs(candidate - anchor);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          correction = candidate - anchor;
+          guide = candidate;
+        }
       }
     }
-    return best === null ? { value, guide: null } : { value: best, guide: best };
+    return { correction, guide };
   }
 
   // ----------------------------------------------------------------- gestures
@@ -457,19 +516,30 @@ export function DesignCanvas({
     if (drag.kind === "move" && !event.metaKey) {
       const exclude = new Set(drag.startBoxes.keys());
       const candidates = guideCandidates(exclude);
-      const first = [...drag.startBoxes.values()][0];
-      if (first) {
+      // The whole moving selection, not its first box: a multi-select drag
+      // aligns by the outer bounds a user can actually see, and snapping one
+      // arbitrary member of the set moved everything by that member's offset.
+      const union = unionBoxes([...drag.startBoxes.values()]);
+      if (union) {
         const dx = scene.x - drag.originScene.x;
         const dy = scene.y - drag.originScene.y;
-        const left = snap(first.x + dx, candidates.vertical, viewport.zoom);
-        const top = snap(first.y + dy, candidates.horizontal, viewport.zoom);
-        if (left.guide !== null) guides.vertical.push(left.guide);
-        if (top.guide !== null) guides.horizontal.push(top.guide);
+        const x = snapAxis(
+          [union.x + dx, union.x + union.width / 2 + dx, union.x + union.width + dx],
+          candidates.vertical,
+          viewport.zoom
+        );
+        const y = snapAxis(
+          [union.y + dy, union.y + union.height / 2 + dy, union.y + union.height + dy],
+          candidates.horizontal,
+          viewport.zoom
+        );
+        if (x.guide !== null) guides.vertical.push(x.guide);
+        if (y.guide !== null) guides.horizontal.push(y.guide);
         // Fold the snap back into the pointer position so every selected node
         // moves by the same corrected delta.
         setDrag({
           ...drag,
-          current: { x: drag.originScene.x + (left.value - first.x), y: drag.originScene.y + (top.value - first.y) },
+          current: { x: scene.x + x.correction, y: scene.y + y.correction },
           guides,
         });
         return;
@@ -569,10 +639,12 @@ export function DesignCanvas({
 
       if (drag.kind === "resize" && drag.handle) {
         const operations: DesignOperation[] = [];
+        const resized = resizeSelection(drag.startBoxes, drag.handle, dx, dy, shiftKey, soleRotation(drag.startBoxes, doc));
         for (const [id, box] of drag.startBoxes) {
           const node = doc.nodes[id];
           if (!node || node.locked) continue;
-          const next = resizeBox(box, drag.handle, dx, dy, shiftKey);
+          const next = resized.get(id);
+          if (!next) continue;
           const patch: Record<string, number | string> = {
             x: round(node.x + (next.x - box.x)),
             y: round(node.y + (next.y - box.y)),
@@ -840,16 +912,68 @@ export function DesignCanvas({
   // Live preview of an in-flight drag, drawn as an outline only — the scene
   // itself is not re-rendered per frame, which is what keeps a drag smooth on a
   // large document.
+  // Computed once for the whole selection rather than per box: the group resize
+  // is defined by the union bounds, so asking each box independently is the very
+  // bug this shares a helper with `commitDrag` to avoid. Preview and commit must
+  // move the same pixels — an outline that disagrees with the result is worse
+  // than no preview.
+  const ghostResize =
+    drag && drag.kind === "resize" && drag.handle
+      ? resizeSelection(
+          drag.startBoxes,
+          drag.handle,
+          drag.current.x - drag.originScene.x,
+          drag.current.y - drag.originScene.y,
+          false,
+          soleRotation(drag.startBoxes, doc)
+        )
+      : null;
+
   const ghost =
     drag && (drag.kind === "move" || drag.kind === "resize" || drag.kind === "rotate")
       ? selectionBoxes.map(({ id, box }) => {
           const dx = drag.current.x - drag.originScene.x;
           const dy = drag.current.y - drag.originScene.y;
           if (drag.kind === "move") return { id, box: { ...box, x: box.x + dx, y: box.y + dy } };
-          if (drag.kind === "resize" && drag.handle) return { id, box: resizeBox(box, drag.handle, dx, dy, false) };
+          if (ghostResize) return { id, box: ghostResize.get(id) ?? box };
           return { id, box };
         })
       : null;
+
+  /**
+   * The bounds the selection chrome is drawn around.
+   *
+   * While a drag is in flight this follows the GHOST rather than the committed
+   * boxes, which is what lets the handles and the outline stay on screen for the
+   * whole gesture. They used to be hidden outright the moment a drag began
+   * (`bounds && !drag`), so the instant you grabbed a resize handle every handle
+   * vanished and you were dragging an unanchored outline with no indication of
+   * which corner you were holding — the single most disorienting thing about the
+   * canvas, and the reason a resize felt like a guess.
+   */
+  const chromeBounds = (ghost ? unionBoxes(ghost.map((entry) => entry.box)) : null) ?? bounds;
+
+  /** The angle the selection chrome is drawn at. Only a lone layer has one. */
+  const selectionRotation =
+    selection.length === 1 ? (doc.nodes[selection[0]]?.rotation ?? 0) % 360 : 0;
+
+  /**
+   * The live readout: size while resizing, position while moving.
+   *
+   * A design canvas that cannot tell you the number you are dragging towards is
+   * a drawing program. Figma, Sketch and Illustrator all put this on the drag
+   * itself rather than in a panel, because the panel is not where your eyes are.
+   */
+  const dragReadout = (() => {
+    if (!drag || !chromeBounds) return null;
+    if (drag.kind === "resize") {
+      return `${Math.round(chromeBounds.width)} × ${Math.round(chromeBounds.height)}`;
+    }
+    if (drag.kind === "move") {
+      return `${Math.round(chromeBounds.x)}, ${Math.round(chromeBounds.y)}`;
+    }
+    return null;
+  })();
 
   const viewBox = `${viewport.x} ${viewport.y} ${size.width / viewport.zoom} ${size.height / viewport.zoom}`;
   const strokeWidth = 1 / viewport.zoom;
@@ -872,7 +996,13 @@ export function DesignCanvas({
     <div
       ref={hostRef}
       className={cn("relative h-full w-full overflow-hidden bg-muted/40 outline-none", className)}
-      style={{ cursor: drag?.kind === "pan" ? "grabbing" : tool === "select" ? "default" : "crosshair", touchAction: "none" }}
+      style={{
+        cursor: drag?.kind === "pan" ? "grabbing" : tool === "select" ? "default" : "crosshair",
+        touchAction: "none",
+        // The page colour fills the viewport rather than the artwork's bounding
+        // box, so the backdrop is stable while layers move on top of it.
+        ...(pageBackground ? { backgroundColor: pageBackground } : null),
+      }}
       onPointerDown={(event) => {
         // Taking focus is what scopes the editor's keyboard shortcuts: without
         // it the canvas is never the active element, and Delete or ⌘Z had to be
@@ -893,6 +1023,27 @@ export function DesignCanvas({
     >
       {size.width > 0 && (
         <svg width={size.width} height={size.height} viewBox={viewBox} className="absolute inset-0 block">
+          {/* Frame titles sit UNDER the scene so artwork can never be obscured by
+              a label, and above the backdrop so they read as chrome. */}
+          <g pointerEvents="none">
+            {frameTitles.map(({ id, name, box }) => (
+              <text
+                key={`ft-${id}`}
+                x={box.x}
+                y={box.y - 6 / viewport.zoom}
+                fontSize={11 / viewport.zoom}
+                fontFamily="var(--font-mono, ui-monospace, monospace)"
+                fill={
+                  selection.includes(id)
+                    ? "hsl(var(--canvas-selection))"
+                    : "hsl(var(--muted-foreground))"
+                }
+              >
+                {name}
+              </text>
+            ))}
+          </g>
+
           {/* The scene, from the shared renderer. */}
           <g dangerouslySetInnerHTML={{ __html: stripSvgWrapper(rendered.svg) }} />
 
@@ -920,10 +1071,10 @@ export function DesignCanvas({
             ))}
 
             {drag?.guides.vertical.map((x, i) => (
-              <line key={`gv${i}`} x1={x} y1={viewport.y} x2={x} y2={viewport.y + size.height / viewport.zoom} stroke="hsl(var(--canvas-handle))" strokeWidth={strokeWidth} />
+              <line key={`gv${i}`} x1={x} y1={viewport.y} x2={x} y2={viewport.y + size.height / viewport.zoom} stroke="hsl(var(--canvas-guide))" strokeWidth={strokeWidth} />
             ))}
             {drag?.guides.horizontal.map((y, i) => (
-              <line key={`gh${i}`} x1={viewport.x} y1={y} x2={viewport.x + size.width / viewport.zoom} y2={y} stroke="hsl(var(--canvas-handle))" strokeWidth={strokeWidth} />
+              <line key={`gh${i}`} x1={viewport.x} y1={y} x2={viewport.x + size.width / viewport.zoom} y2={y} stroke="hsl(var(--canvas-guide))" strokeWidth={strokeWidth} />
             ))}
 
             {drag?.kind === "marquee" && (
@@ -939,10 +1090,26 @@ export function DesignCanvas({
             )}
           </g>
 
-          {/* Handles are interactive, so they sit outside the pointerEvents:none group. */}
-          {!readOnly && bounds && !drag && (
-            <g>
-              <rect {...rectProps(bounds)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
+          {/* Handles are interactive, so they sit outside the pointerEvents:none
+              group — except while a drag is in flight, when they are drawn for
+              orientation but must not intercept the pointer that is already
+              driving the gesture. */}
+          {!readOnly && chromeBounds && (
+            // Rotated with the layer when exactly one is selected, so the eight
+            // handles sit on that layer's real corners instead of on the corners
+            // of an axis-aligned box it no longer occupies. A multi-selection
+            // keeps the upright union box, which is the frame it resizes along.
+            <g
+              pointerEvents={drag ? "none" : undefined}
+              {...(selectionRotation
+                ? {
+                    transform: `rotate(${selectionRotation} ${chromeBounds.x + chromeBounds.width / 2} ${
+                      chromeBounds.y + chromeBounds.height / 2
+                    })`,
+                  }
+                : null)}
+            >
+              <rect {...rectProps(chromeBounds)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
               {/* The chip fill is literal white in both themes, on purpose: it is
                   not a theme surface but part of the trained handle glyph — a
                   white chip rimmed in selection blue — and it has to hold over
@@ -950,7 +1117,7 @@ export function DesignCanvas({
                   rim does the separating; see the canvas-chrome note in
                   globals.css. */}
               {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as Handle[]).map((handle) => {
-                const point = handlePoint(bounds, handle);
+                const point = handlePoint(chromeBounds, handle);
                 const s = 8 / viewport.zoom;
                 return (
                   <rect
@@ -971,8 +1138,8 @@ export function DesignCanvas({
                 );
               })}
               <circle
-                cx={bounds.x + bounds.width / 2}
-                cy={bounds.y - 24 / viewport.zoom}
+                cx={chromeBounds.x + chromeBounds.width / 2}
+                cy={chromeBounds.y - 24 / viewport.zoom}
                 r={5 / viewport.zoom}
                 fill="white"
                 stroke="hsl(var(--canvas-selection))"
@@ -983,6 +1150,32 @@ export function DesignCanvas({
                   beginDrag(event, "rotate");
                 }}
               />
+            </g>
+          )}
+
+          {/* The live size/position readout, pinned under the selection. Drawn
+              last so it is never covered by a handle, and in scene units so it
+              stays the same physical size at every zoom. */}
+          {dragReadout && chromeBounds && (
+            <g pointerEvents="none">
+              <rect
+                x={chromeBounds.x + chromeBounds.width / 2 - 34 / viewport.zoom}
+                y={chromeBounds.y + chromeBounds.height + 8 / viewport.zoom}
+                width={68 / viewport.zoom}
+                height={18 / viewport.zoom}
+                rx={4 / viewport.zoom}
+                fill="hsl(var(--canvas-measure))"
+              />
+              <text
+                x={chromeBounds.x + chromeBounds.width / 2}
+                y={chromeBounds.y + chromeBounds.height + 20 / viewport.zoom}
+                textAnchor="middle"
+                fontSize={11 / viewport.zoom}
+                fontFamily="var(--font-mono, ui-monospace, monospace)"
+                fill="hsl(var(--background))"
+              >
+                {dragReadout}
+              </text>
             </g>
           )}
         </svg>
@@ -1094,28 +1287,58 @@ export function hitPath(
   const page = doc.pages.find((p) => p.id === pageId);
   if (!page) return [];
 
-  const inside = (id: NodeId) => {
-    const box = boxes.get(id);
-    return !!box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
-  };
-
-  const search = (ids: readonly NodeId[], prefix: NodeId[]): NodeId[] | null => {
+  const search = (ids: readonly NodeId[], prefix: NodeId[], at: { x: number; y: number }): NodeId[] | null => {
     // Back-to-front array means the last match is the topmost.
     for (let i = ids.length - 1; i >= 0; i--) {
       const id = ids[i];
       const node = doc.nodes[id];
       if (!node || !node.visible || node.locked) continue;
-      if (!inside(id)) continue;
+      const box = boxes.get(id);
+      if (!box) continue;
+      // Rotation is applied by the renderer as a transform about the node's
+      // centre, while `layoutPage` deliberately reports axis-aligned boxes. So
+      // the pointer is taken INTO the node's own space rather than the box being
+      // taken out of it — otherwise a rotated layer is selected by clicking the
+      // empty corners of its bounding box and missed on the artwork itself.
+      const local = unrotatePoint(at, box, node.rotation);
+      if (local.x < box.x || local.x > box.x + box.width || local.y < box.y || local.y > box.y + box.height) continue;
       const here = [...prefix, id];
       if (isContainer(node) && node.children.length > 0) {
-        const deeper = search(node.children, here);
+        // Children inherit the parent's rotation in the rendered output, so the
+        // point handed down is the one already in this node's space. That is
+        // what makes a layer inside a rotated frame hit-test correctly instead
+        // of only the outermost rotation being accounted for.
+        const deeper = search(node.children, here, local);
         if (deeper) return deeper;
       }
       return here;
     }
     return null;
   };
-  return search(page.children, []) ?? [];
+  return search(page.children, [], point) ?? [];
+}
+
+/**
+ * A page-space point, expressed in a node's own unrotated space.
+ *
+ * The inverse of the `rotate(deg, cx, cy)` the renderer emits. Returns the point
+ * unchanged for the overwhelmingly common unrotated case, so this costs nothing
+ * on documents that never rotate anything.
+ */
+export function unrotatePoint(
+  point: { x: number; y: number },
+  box: LayoutBox,
+  rotation: number
+): { x: number; y: number } {
+  if (!rotation || rotation % 360 === 0) return point;
+  const radians = (-rotation * Math.PI) / 180;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const dx = point.x - cx;
+  const dy = point.y - cy;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
 }
 
 /** The end of a hit path a press acts on: the deepest layer when ⌘/Ctrl is
@@ -1198,7 +1421,11 @@ export function pressLandsInSelection(
     const node = doc.nodes[id];
     const box = boxes.get(id);
     if (!node || !box || !node.visible || node.locked) return false;
-    return point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+    // Rotated exactly as `hitPath` does it — these two answer the same question
+    // about the same pixel, and if they disagree a press on a rotated layer
+    // re-picks instead of dragging the selection you already had.
+    const local = unrotatePoint(point, box, node.rotation);
+    return local.x >= box.x && local.x <= box.x + box.width && local.y >= box.y && local.y <= box.y + box.height;
   });
 }
 
@@ -1315,6 +1542,143 @@ export function resizeBox(box: LayoutBox, handle: Handle, dx: number, dy: number
     height = -height;
   }
   return { x, y, width, height };
+}
+
+/**
+ * The rotation to resize along: a lone selected layer's own, or none.
+ *
+ * Zero for a multi-selection on purpose — see `resizeSelection`. Reading it from
+ * the drag's own `startBoxes` rather than from the live `selection` prop matters
+ * for the same reason `beginDrag` takes explicit node ids: the selection can
+ * change under an in-flight gesture, and the frame a drag resizes along has to
+ * be the one it started in.
+ */
+function soleRotation(startBoxes: ReadonlyMap<NodeId, LayoutBox>, doc: DesignDocument): number {
+  if (startBoxes.size !== 1) return 0;
+  const [id] = [...startBoxes.keys()];
+  return doc.nodes[id]?.rotation ?? 0;
+}
+
+/** The handle diagonally or laterally opposite this one — the corner a resize pins. */
+const OPPOSITE_HANDLE: Record<Exclude<Handle, "rotate">, Exclude<Handle, "rotate">> = {
+  nw: "se",
+  n: "s",
+  ne: "sw",
+  e: "w",
+  se: "nw",
+  s: "n",
+  sw: "ne",
+  w: "e",
+};
+
+/** Rotate a DELTA (a vector, so no centre) by `degrees`. */
+function rotateVector(dx: number, dy: number, degrees: number): { x: number; y: number } {
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+}
+
+/** A point rotated about a centre by `degrees`. */
+function rotateAbout(
+  point: { x: number; y: number },
+  centre: { x: number; y: number },
+  degrees: number
+): { x: number; y: number } {
+  const v = rotateVector(point.x - centre.x, point.y - centre.y, degrees);
+  return { x: centre.x + v.x, y: centre.y + v.y };
+}
+
+const boxCentre = (box: LayoutBox) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+
+/**
+ * Resize a single rotated layer along ITS OWN axes.
+ *
+ * `resizeBox` applies a page-space delta to an axis-aligned box, which is
+ * correct only while the layer is unrotated. On a rotated one it meant dragging
+ * the east handle to the right made the box wider along the PAGE's x axis while
+ * the handle you were holding pointed somewhere else entirely — so the layer
+ * grew in a direction unrelated to the one you were dragging, and the corner you
+ * were not touching wandered off.
+ *
+ * Two corrections, and both are needed:
+ *
+ *  1. The pointer delta is taken into the layer's own frame, so "wider" means
+ *     wider along the edge the handle sits on.
+ *  2. The corner OPPOSITE the handle is pinned in page space. Rotation happens
+ *     about the box centre, and resizing moves that centre — so a box that is
+ *     correct in local coordinates still visibly slides unless the anchor is
+ *     re-pinned afterwards. This is what makes a rotated resize feel like it is
+ *     hinged on the corner you are not holding, which is what every design tool
+ *     does.
+ */
+export function resizeRotatedBox(
+  box: LayoutBox,
+  handle: Exclude<Handle, "rotate">,
+  dx: number,
+  dy: number,
+  rotation: number,
+  preserveRatio: boolean
+): LayoutBox {
+  if (!rotation || rotation % 360 === 0) return resizeBox(box, handle, dx, dy, preserveRatio);
+  const local = rotateVector(dx, dy, -rotation);
+  const next = resizeBox(box, handle, local.x, local.y, preserveRatio);
+  const anchor = OPPOSITE_HANDLE[handle];
+  const before = rotateAbout(handlePoint(box, anchor), boxCentre(box), rotation);
+  const after = rotateAbout(handlePoint(next, anchor), boxCentre(next), rotation);
+  return { ...next, x: next.x + (before.x - after.x), y: next.y + (before.y - after.y) };
+}
+
+/**
+ * Resize a whole selection by dragging one handle on its union bounds.
+ *
+ * The handles are drawn around the union of the selection, so the gesture the
+ * user is making is "scale this group". Applying `resizeBox` per node with the
+ * same absolute delta — which is what this replaced — instead grew EVERY layer
+ * by the full delta, so a three-layer selection dragged 100pt wider became 300pt
+ * wider overall and the layers' relative positions and proportions were
+ * destroyed. Scaling the union and mapping each node into it proportionally is
+ * what makes the group behave like one object.
+ *
+ * For a single node the union IS the node, both scale factors are the direct
+ * result of the handle drag, and this reduces exactly to `resizeBox`.
+ */
+export function resizeSelection(
+  startBoxes: ReadonlyMap<NodeId, LayoutBox>,
+  handle: Handle,
+  dx: number,
+  dy: number,
+  preserveRatio: boolean,
+  /**
+   * The rotation of the ONLY selected layer, when there is only one.
+   *
+   * Deliberately not applied to a multi-selection: the handles there surround
+   * the union of several layers that may each be rotated differently, so there
+   * is no single frame to resize along and the union's own axes are the honest
+   * answer — which is what Figma does too.
+   */
+  rotation = 0
+): Map<NodeId, LayoutBox> {
+  const out = new Map<NodeId, LayoutBox>();
+  const union = unionBoxes([...startBoxes.values()]);
+  if (!union) return out;
+  const single = startBoxes.size === 1 && handle !== "rotate";
+  const next = single
+    ? resizeRotatedBox(union, handle as Exclude<Handle, "rotate">, dx, dy, rotation, preserveRatio)
+    : resizeBox(union, handle, dx, dy, preserveRatio);
+  // A zero-extent union cannot be scaled — a single line layer, or layers all on
+  // one axis. Translating them keeps the drag usable instead of dividing by zero.
+  const scaleX = union.width === 0 ? 1 : next.width / union.width;
+  const scaleY = union.height === 0 ? 1 : next.height / union.height;
+  for (const [id, box] of startBoxes) {
+    out.set(id, {
+      x: next.x + (box.x - union.x) * scaleX,
+      y: next.y + (box.y - union.y) * scaleY,
+      width: box.width * scaleX,
+      height: box.height * scaleY,
+    });
+  }
+  return out;
 }
 
 /** The shared renderer returns a complete `<svg>`; the canvas needs its body so
@@ -1521,18 +1885,67 @@ function CanvasZoomControls({
   onSelection: () => void;
   hasSelection: boolean;
 }) {
-  const button =
-    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
-    <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-field border border-border/60 bg-popover/90 p-1 backdrop-blur-md">
+    <ZoomBar
+      zoom={zoom}
+      onZoomBy={onZoomBy}
+      onReset={onReset}
+      onFit={onFit}
+      onSelection={onSelection}
+      hasSelection={hasSelection}
+      className="absolute bottom-3 left-3 rounded-field border border-border/60 bg-popover/90 p-1 backdrop-blur-md"
+    />
+  );
+}
+
+/**
+ * The zoom control itself, shared by both hosts.
+ *
+ * There were two of these — this one for canvases that show no chrome of their
+ * own, and one in `design-workspace.tsx` for the editor toolbar — with the same
+ * five buttons and the same `−`/`+` text glyphs copied between them. Two hosts
+ * is a real requirement; two implementations is not, and the copies had already
+ * diverged (only one had a separator, and their button classes differed).
+ *
+ * The glyphs are icons now. `−` and `+` are typographic characters, so they took
+ * the mono face and sat on the text baseline rather than the optical centre of
+ * their button — which is why this row never quite lined up with the icon
+ * buttons beside it.
+ */
+export function ZoomBar({
+  zoom,
+  onZoomBy,
+  onReset,
+  onFit,
+  onSelection,
+  hasSelection,
+  className,
+}: {
+  zoom: number;
+  onZoomBy: (factor: number) => void;
+  onReset: () => void;
+  onFit: () => void;
+  onSelection: () => void;
+  hasSelection: boolean;
+  className?: string;
+}) {
+  const button =
+    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40 coarse:min-h-9 coarse:px-2.5";
+  return (
+    <div className={cn("flex items-center gap-0.5", className)} role="group" aria-label="Zoom">
       <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">
-        −
+        <Minus className="size-3.5" aria-hidden />
       </button>
-      <button type="button" className={button} onClick={onReset} aria-label="Reset zoom to 100%">
+      <button
+        type="button"
+        className={cn(button, "min-w-11 tabular-nums")}
+        onClick={onReset}
+        aria-label="Reset zoom to 100%"
+      >
         {Math.round(zoom * 100)}%
       </button>
       <button type="button" className={button} onClick={() => onZoomBy(1.25)} aria-label="Zoom in">
-        +
+        <Plus className="size-3.5" aria-hidden />
       </button>
       <span aria-hidden className="mx-0.5 h-4 w-px bg-border/70" />
       <button type="button" className={button} onClick={onFit}>

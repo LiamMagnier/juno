@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronRight, Circle } from "lucide-react";
+import { ChevronRight, Circle } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -143,7 +144,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
       <DropdownMenuPrimitive.ItemIndicator>
-        <Check className="size-4" />
+        <StatusIcons.success className="size-4" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     {children}

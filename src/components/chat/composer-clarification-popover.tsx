@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -252,7 +253,7 @@ export function ComposerClarificationPopover({
           aria-label="Cancel clarification"
           className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
         >
-          <X className="size-4" />
+          <ActionIcons.dismiss className="size-4" />
         </Button>
       </header>
 
@@ -361,7 +362,7 @@ export function ComposerClarificationPopover({
                       aria-hidden
                     >
                       {selected ? (
-                        <Check className="size-3.5 motion-safe:animate-in motion-safe:zoom-in-75 motion-safe:duration-fast" strokeWidth={2.5} />
+                        <StatusIcons.success className="size-3.5 motion-safe:animate-in motion-safe:zoom-in-75 motion-safe:duration-fast" />
                       ) : (
                         optionIndex + 1
                       )}

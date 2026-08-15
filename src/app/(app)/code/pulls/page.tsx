@@ -1,7 +1,11 @@
+import Link from "next/link";
+
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { PullsList } from "@/components/code/pulls-list";
 import { AppPageHeader } from "@/components/app/app-page-header";
+import { Button } from "@/components/ui/button";
+import { AppIcons } from "@/lib/app-icons";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +22,18 @@ export default async function CodePullsPage() {
         <AppPageHeader
           eyebrow="Code"
           heading="Pull requests"
+          icon={AppIcons.pulls}
           lede="Review the pull requests Juno Code opens from your sessions."
+          // The page is a list of outcomes with no way back to the thing that
+          // produces them — and the list is empty until a cloud session has
+          // opened one, which is exactly when the way in matters most.
+          actions={
+            <Button asChild variant="outline" className="gap-1.5">
+              <Link href="/code/new">
+                <AppIcons.new className="size-4" aria-hidden="true" /> New session
+              </Link>
+            </Button>
+          }
         />
 
         {/* The disconnected state is PullsList's own `disconnected` phase — it

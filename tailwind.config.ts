@@ -106,7 +106,7 @@ const config: Config = {
         // design canvas should reach for these.
         canvas: {
           selection: "hsl(var(--canvas-selection) / <alpha-value>)",
-          handle: "hsl(var(--canvas-handle) / <alpha-value>)",
+          guide: "hsl(var(--canvas-guide) / <alpha-value>)",
           measure: "hsl(var(--canvas-measure) / <alpha-value>)",
         },
       },
@@ -204,6 +204,17 @@ const config: Config = {
         // Dot/ASCII signature unit.
         dot: "var(--dot-size)",
         "dot-gap": "var(--dot-gap)",
+        // 18px. Tailwind's default scale jumps 16 → 20 with nothing between, and
+        // 18px is a size this product genuinely uses for the slightly-larger
+        // interface glyph (the palette's search mark, the composer's send
+        // arrow, an onboarding tile's icon). With no rung to land on, call sites
+        // had split into two workarounds: seven wrote `h-[18px] w-[18px]`, and
+        // three wrote `size-4.5` — which Tailwind does not define, so it emitted
+        // NO css at all and those icons silently rendered at Lucide's intrinsic
+        // 24px. Naming the rung is what makes both spellings converge on one
+        // real value, and it gives the optical stroke ladder in globals.css a
+        // class to key 18px on.
+        "4.5": "1.125rem",
       },
       transitionTimingFunction: {
         "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
@@ -411,6 +422,22 @@ const config: Config = {
           "15%": { opacity: "0.95", boxShadow: "0 0 5px hsl(var(--foreground) / 0.12)" },
           "30%": { opacity: "0", boxShadow: "0 0 0 hsl(var(--foreground) / 0)" },
         },
+        // The reduced-motion substitute for the matrix above, and it did not
+        // exist. `thinking-dots.tsx` has always applied
+        // `motion-reduce:animate-thinking-pulse` to the centre dot and its
+        // docstring describes exactly this — "the centre point falls back to an
+        // opacity-only pulse … no translate, no scale" — but no such keyframe was
+        // ever written, so Tailwind emitted no class and a reduced-motion reader
+        // got a completely static dot grid while the model was still thinking.
+        // That is the one thing the signature exists to prevent, and it failed
+        // silently for precisely the users who cannot fall back to the animation.
+        //
+        // Opacity only, on the loop curve: an eased loop pulses at the seam
+        // where it turns around, which is the whole reason --ease-breathe exists.
+        "thinking-pulse": {
+          "0%, 100%": { opacity: "0.3" },
+          "50%": { opacity: "1" },
+        },
         // The sentence remains neutral and only breathes slightly toward the
         // foreground, matching the monochrome reference instead of using coral.
         "status-glow": {
@@ -572,6 +599,9 @@ const config: Config = {
         "dot-wave": "dot-wave 1.2s var(--ease-breathe) infinite",
         // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
         "thinking-matrix": "thinking-matrix 1.8s var(--ease-breathe) infinite",
+        // Same period as the matrix it stands in for, so the two read as one
+        // signature running at two fidelities rather than as two indicators.
+        "thinking-pulse": "thinking-pulse 1.8s var(--ease-breathe) infinite",
         "status-glow": "status-glow 2.8s var(--ease-breathe) infinite",
         "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
         "title-in": "title-in var(--dur-base) var(--ease-out-soft)",

@@ -301,16 +301,34 @@ export function createPrismaResearchStore(): ResearchStore {
       // adding an index to a landed schema.
       const existing = await prisma.researchSource.findFirst({
         where: { runId, userId, url },
-        select: { id: true },
+        select: { id: true, snapshot: true },
       });
       if (existing) {
+        /**
+         * A snapshot never shrinks.
+         *
+         * SEARCH upserts every hit with whatever body the engine returned, and a
+         * run re-searches on each follow-up round — so a source the READ stage
+         * had opened properly was overwritten, round after round, by the few
+         * hundred characters of lede the search API had originally handed back.
+         * The corpus, the passages and every citation checked against them then
+         * degraded silently between rounds, and the run reported the same source
+         * count throughout.
+         *
+         * `contentHash` moves with it or not at all: the hash attests to the
+         * snapshot, and keeping one while replacing the other would put a hash
+         * over text it was not computed from.
+         */
+        // `!= null` rather than `!== undefined`: an explicit null means "no text",
+        // and under the never-shrink rule that must not clear a snapshot either.
+        const keepsMoreText = snapshot != null && snapshot.length > (existing.snapshot?.length ?? 0);
         await prisma.researchSource.updateMany({
           where: { id: existing.id, userId },
           data: {
             title: title.slice(0, 500),
             ...(publishedAt !== undefined ? { publishedAt } : {}),
-            ...(contentHash !== undefined ? { contentHash } : {}),
-            ...(snapshot !== undefined ? { snapshot } : {}),
+            ...(keepsMoreText && contentHash !== undefined ? { contentHash } : {}),
+            ...(keepsMoreText ? { snapshot } : {}),
             ...(authority !== undefined ? { authority } : {}),
             ...(freshness !== undefined ? { freshness } : {}),
             ...(directness !== undefined ? { directness } : {}),

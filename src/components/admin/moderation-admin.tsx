@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight, RotateCcw, ShieldAlert } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -208,7 +209,7 @@ export function ModerationAdmin() {
           className="mb-0"
           eyebrow="Owner"
           heading="Moderation"
-          icon={ShieldAlert}
+          icon={StatusIcons.security}
           lede="Content flags, strikes, and bans across the platform."
           actions={<AdminNav current="moderation" />}
         />
@@ -246,7 +247,7 @@ export function ModerationAdmin() {
             <EmptyState
               tone="error"
               size="panel"
-              icon={ShieldAlert}
+              icon={StatusIcons.security}
               className="m-4"
               title="Couldn't load the flag log"
               description="The request didn't come back, so nothing is shown — an empty table here would read as an all-clear."
@@ -262,7 +263,7 @@ export function ModerationAdmin() {
             <EmptyState
               tone="empty"
               size="panel"
-              icon={ShieldAlert}
+              icon={StatusIcons.security}
               title={
                 filter === "unreviewed"
                   ? "Nothing needs review"
@@ -376,7 +377,7 @@ export function ModerationAdmin() {
                           <div className="flex items-center justify-end gap-1.5">
                             {f.user.bannedAt ? (
                               <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => unban(f)}>
-                                <RotateCcw className="h-3.5 w-3.5" />
+                                <ActionIcons.restore className="size-3.5" />
                                 Unban
                               </Button>
                             ) : (
@@ -389,7 +390,7 @@ export function ModerationAdmin() {
                                   setBanTarget(f);
                                 }}
                               >
-                                <Ban className="h-3.5 w-3.5" />
+                                <Ban className="size-3.5" />
                                 Ban
                               </Button>
                             )}
@@ -423,7 +424,7 @@ export function ModerationAdmin() {
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="size-4" />
                 Prev
               </Button>
               <Button
@@ -434,7 +435,7 @@ export function ModerationAdmin() {
                 onClick={() => setPage((p) => p + 1)}
               >
                 Next
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -465,7 +466,7 @@ export function ModerationAdmin() {
               Cancel
             </Button>
             <Button variant="destructive" onClick={confirmBan} disabled={banning} className="gap-1.5">
-              <Ban className="h-4 w-4" />
+              <Ban className="size-4" />
               {banning ? "Banning…" : "Ban user"}
             </Button>
           </DialogFooter>

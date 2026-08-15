@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { ArrowRight, CalendarClock, Edit3, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, Trash2, UploadCloud, Video, X } from "lucide-react";
+import { ArrowRight, CalendarClock, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, UploadCloud, Video } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -143,7 +144,7 @@ function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl"
         muted
         playsInline
         preload="metadata"
-        className={cn("h-full w-full bg-muted object-cover", className)}
+        className={cn("size-full bg-muted object-cover", className)}
       />
     );
   }
@@ -153,22 +154,22 @@ function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl"
       <img
         src={draft.imageUrl}
         alt=""
-        className={cn(logoLike ? "h-full w-full bg-muted object-contain p-8" : "h-full w-full object-cover", className)}
+        className={cn(logoLike ? "size-full bg-muted object-contain p-8" : "size-full object-cover", className)}
       />
     );
   }
   if (provider) {
     return (
-      <div className={cn("flex h-full w-full items-center justify-center bg-muted", className)}>
-        <ProviderLogo provider={provider} className="h-16 w-16" />
+      <div className={cn("flex size-full items-center justify-center bg-muted", className)}>
+        <ProviderLogo provider={provider} className="size-16" />
       </div>
     );
   }
   return (
-    <div className={cn("flex h-full w-full items-center justify-center bg-muted text-muted-foreground", className)}>
+    <div className={cn("flex size-full items-center justify-center bg-muted text-muted-foreground", className)}>
       <div className="flex flex-col items-center gap-2">
-        <ImageIcon className="h-8 w-8" />
-        <Video className="h-5 w-5 opacity-70" />
+        <ImageIcon className="size-8" />
+        <Video className="size-5 opacity-70" />
       </div>
     </div>
   );
@@ -293,9 +294,9 @@ function MediaDropzone({
           // page token — on the true-black theme it made the one control that
           // has to stay findable over a dark video a pure-black chip held by a
           // /60 hairline. The same fix DialogCloseButton already carries.
-          className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur transition-[color,background-color,border-color] duration-fast ease-out-soft hover:border-border hover:bg-popover hover:text-foreground"
+          className="absolute right-2 top-2 grid size-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur transition-[color,background-color,border-color] duration-fast ease-out-soft hover:border-border hover:bg-popover hover:text-foreground"
         >
-          <X className="size-4" />
+          <ActionIcons.dismiss className="size-4" />
         </button>
       </div>
     );
@@ -638,7 +639,7 @@ export function AnnouncementsAdmin() {
                   </Button>
                 )}
                 <Button onClick={submit} disabled={saving} className="gap-1.5">
-                  <Megaphone className="h-4 w-4" />
+                  <Megaphone className="size-4" />
                   {saving ? "Saving..." : editingId ? "Update popup" : "Publish popup"}
                 </Button>
               </div>
@@ -649,7 +650,7 @@ export function AnnouncementsAdmin() {
             <Card className="overflow-hidden p-0">
               <div className="border-b border-border/70 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  <Eye className="size-4 text-muted-foreground" />
                   Preview
                 </div>
               </div>
@@ -674,7 +675,7 @@ export function AnnouncementsAdmin() {
                         {draft.description || "Write a short release description for users here."}
                       </p>
                     </div>
-                    {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="h-9 w-9" />}
+                    {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="size-9" />}
                   </div>
                   {/* The popup's own action row: both controls right-aligned,
                       the news link an outline Button and the CTA the solid one
@@ -692,7 +693,7 @@ export function AnnouncementsAdmin() {
                     {draft.ctaLabel && (
                       <Button size="sm" className="group gap-1.5" tabIndex={-1}>
                         {draft.ctaLabel}
-                        <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                        <ArrowRight className="size-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none" />
                       </Button>
                     )}
                   </div>
@@ -754,7 +755,7 @@ export function AnnouncementsAdmin() {
                         className="rounded-field border border-border/60 bg-secondary p-3 transition-colors duration-fast ease-out-soft hover:border-border"
                       >
                         <div className="flex items-start gap-3">
-                          <div className="flex h-12 w-12 shrink-0 overflow-hidden rounded-control border border-border/60 bg-muted">
+                          <div className="flex size-12 shrink-0 overflow-hidden rounded-control border border-border/60 bg-muted">
                             <AnnouncementMedia
                               draft={{ imageUrl: item.imageUrl ?? "", videoUrl: item.videoUrl ?? "", provider: item.provider ?? "none" }}
                               className="p-2"
@@ -791,11 +792,11 @@ export function AnnouncementsAdmin() {
                               setDraft(draftFromAnnouncement(item));
                             }}
                           >
-                            <Edit3 className="h-3.5 w-3.5" />
+                            <ActionIcons.edit className="size-3.5" />
                             Edit
                           </Button>
                           <Button variant="ghost" size="sm" className="gap-1.5 text-destructive danger-hover" onClick={() => setDeleteTarget(item)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <ActionIcons.delete className="size-3.5" />
                             Delete
                           </Button>
                         </div>

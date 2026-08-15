@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, RefreshCw, RotateCcw, ShieldOff } from "lucide-react";
+import { Loader2, ShieldOff } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,10 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkCapability } from "@/lib/work/domain";
 import { WorkPageFrame } from "@/components/work/work-nav";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkHostStatePill, hostWorkloadSentence } from "@/components/work/work-host-row";
 import { WorkHostSettings } from "@/components/work/work-host-settings";
 import {
@@ -30,7 +31,6 @@ import {
   type WorkHostToggleKey,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 
 /**
  * One Mac: whether it is there, what it may do, and how to take that away.
@@ -197,22 +197,10 @@ export default function WorkHostPage() {
   if (failed && host === null) {
     return (
       <WorkPageFrame title="Mac" back={{ href: "/work/hosts", label: "Back to Macs" }}>
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this Mac. Nothing has been changed by the attempt — it still has whatever
           permissions it had, and this page not loading has not taken any of them away.
-        </WorkStateNote>
+        </WorkLoadError>
       </WorkPageFrame>
     );
   }
@@ -220,15 +208,7 @@ export default function WorkHostPage() {
   if (host === null) {
     return (
       <WorkPageFrame title="Mac" back={{ href: "/work/hosts", label: "Back to Macs" }}>
-        <div className="space-y-3">
-          {[...Array(4)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-16 w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons count={4} height={64} className="space-y-3" />
       </WorkPageFrame>
     );
   }
@@ -252,9 +232,9 @@ export default function WorkHostPage() {
             className="gap-1.5"
           >
             {busy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              <ActionIcons.restore className="size-3.5" aria-hidden="true" />
             )}
             Restore access
           </Button>
@@ -266,7 +246,7 @@ export default function WorkHostPage() {
             onClick={() => setConfirmingRevoke(true)}
             className="gap-1.5"
           >
-            <ShieldOff className="h-3.5 w-3.5" aria-hidden="true" /> Revoke
+            <ShieldOff className="size-3.5" aria-hidden="true" /> Revoke
           </Button>
         )
       }
@@ -316,7 +296,7 @@ export default function WorkHostPage() {
                 onClick={() => void load()}
                 className="gap-1.5"
               >
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
               </Button>
             }
           >
@@ -362,7 +342,7 @@ export default function WorkHostPage() {
               Cancel
             </Button>
             <Button variant="destructive" onClick={() => void revoke()} disabled={busy}>
-              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+              {busy && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
               Revoke access
             </Button>
           </DialogFooter>

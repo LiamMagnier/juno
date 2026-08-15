@@ -76,8 +76,8 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
         className="w-auto"
         optionClassName="gap-1.5 px-4 py-1.5 text-ui font-medium"
         options={[
-          { value: "chat", label: "Chat", icon: <AppIcons.home className="h-3.5 w-3.5" /> },
-          { value: "work", label: "Work", icon: <AppIcons.work className="h-3.5 w-3.5" /> },
+          { value: "chat", label: "Chat", icon: <AppIcons.home className="size-3.5" /> },
+          { value: "work", label: "Work", icon: <AppIcons.work className="size-3.5" /> },
         ]}
       />
     </div>

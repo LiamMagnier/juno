@@ -497,7 +497,7 @@ export function WorkScheduleEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => void save()} disabled={!canSave} className="gap-1.5">
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+          {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
           {schedule === null ? "Create schedule" : "Save changes"}
         </Button>
         <Button variant="ghost" onClick={onCancel} disabled={saving}>
@@ -560,7 +560,7 @@ function PolicyGroup<T extends string>({
               value={option.value}
               checked={value === option.value}
               onChange={() => onChange(option.value)}
-              className="mt-1 h-3.5 w-3.5 shrink-0 accent-primary"
+              className="mt-1 size-3.5 shrink-0 accent-primary"
             />
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">{option.label}</span>

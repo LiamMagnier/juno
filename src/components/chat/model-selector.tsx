@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   Brain,
-  Check,
   ChevronDown,
   Clock,
   Eye,
@@ -14,10 +13,10 @@ import {
   Lock,
   MessageCircle,
   Search,
-  TriangleAlert,
   Video,
   Zap,
 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -219,7 +218,7 @@ function ModelDetailPanel({
 
           {model.status === "deprecated" && (
             <div className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-caption font-medium text-warning">
-              <TriangleAlert className="mt-0.5 size-3 shrink-0" />
+              <StatusIcons.warning className="mt-0.5 size-3 shrink-0" />
               <span>
                 {model.retiresOn ? `Available until ${formatRetirementDate(model.retiresOn)}` : "Retiring soon"}
               </span>
@@ -433,7 +432,7 @@ export function ModelSelector({
           type="button"
           disabled={soon}
           onClick={() => select(m)}
-          className="flex min-w-0 flex-col items-start gap-1.5 text-left outline-none w-full h-full"
+          className="flex min-w-0 flex-col items-start gap-1.5 text-left outline-none size-full"
         >
           {/* Logo & Name Row */}
           <div className="flex items-center gap-2.5 w-full pr-6">
@@ -451,7 +450,7 @@ export function ModelSelector({
             <div className="flex min-w-0 flex-wrap items-center gap-1">
               {m.status === "deprecated" && (
                 <RowChip
-                  icon={TriangleAlert}
+                  icon={StatusIcons.warning}
                   label={m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
                   warn
                   title={m.deprecationNote ?? "Deprecated by the provider"}
@@ -473,7 +472,7 @@ export function ModelSelector({
                 <Lock className="size-2.5" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
               </span>
             ) : active ? (
-              <Check className="size-3.5 shrink-0 text-primary" />
+              <StatusIcons.success className="size-3.5 shrink-0 text-primary" />
             ) : null}
           </div>
         </button>
@@ -618,7 +617,7 @@ export function ModelSelector({
                                   Automatically routes each prompt to the optimal model
                                 </span>
                               </div>
-                              {autoSelected ? <Check className="size-4 shrink-0 text-primary" /> : null}
+                              {autoSelected ? <StatusIcons.success className="size-4 shrink-0 text-primary" /> : null}
                             </button>
                           </div>
                         )}

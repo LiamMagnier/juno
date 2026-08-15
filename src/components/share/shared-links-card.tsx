@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, Code2, Copy, MessagesSquare } from "lucide-react";
+import { Code2, MessagesSquare } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 
@@ -142,9 +143,9 @@ export function SharedLinksCard() {
                 className="text-muted-foreground hover:text-foreground"
               >
                 {copiedId === share.id ? (
-                  <Check className="size-4 text-success motion-safe:animate-pop-in" aria-hidden />
+                  <StatusIcons.success className="size-4 text-success motion-safe:animate-pop-in" aria-hidden />
                 ) : (
-                  <Copy className="size-4" aria-hidden />
+                  <ActionIcons.copy className="size-4" aria-hidden />
                 )}
               </Button>
               <Button

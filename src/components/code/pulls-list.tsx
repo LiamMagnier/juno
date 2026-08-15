@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AlertCircle, ExternalLink, GitPullRequest, GitPullRequestDraft, Plug, RefreshCw } from "lucide-react";
+import { GitPullRequestDraft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -91,7 +92,20 @@ export function PullsList({ account, connected = true }: { account: string | nul
 
   if (state.phase === "loading") {
     return (
-      <div className="space-y-3">
+      // `aria-busy` + a polite line, because four grey rectangles say nothing
+      // at all to a screen reader — the page previously announced its heading
+      // and then went silent for the length of a GitHub round trip.
+      <div className="space-y-3" aria-busy="true">
+        <p className="sr-only" role="status">
+          Loading your pull requests…
+        </p>
+        {/* The header the rows arrive under, held open at its real height. It
+            used to appear with the data, so the whole list jumped down one row
+            the moment the fetch landed. */}
+        <div className="mb-5 flex items-center justify-between gap-2" aria-hidden="true">
+          <Skeleton className="h-4 w-52 rounded-sm" />
+          <Skeleton className="h-8 w-24 rounded-control" />
+        </div>
         {[...Array(4)].map((_, i) => (
           <Skeleton
             key={i}
@@ -102,6 +116,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
             // ::after and animation-delay is not inherited by pseudo-elements.
             className="h-[60px] w-full rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
             style={staggerDelay(i)}
+            aria-hidden="true"
           />
         ))}
       </div>
@@ -116,16 +131,16 @@ export function PullsList({ account, connected = true }: { account: string | nul
     return (
       <EmptyState
         tone="error"
-        icon={AlertCircle}
+        icon={StatusIcons.error}
         title="GitHub needs reconnecting"
-        description="Your GitHub connection expired or was revoked. Reconnect it to see your pull requests."
+        description="Your GitHub connection expired or was revoked. Reconnect it to see your pull requests — nothing was lost, and the sessions that opened them are unaffected."
         action={
           <Button asChild variant="outline" className="gap-1.5">
             <Link href="/connections">
-              {/* h-4, like every other icon in an EmptyState action slot. The
+              {/* size-4, like every other icon in an EmptyState action slot. The
                   same Plug glyph was h-3.5 here and h-4 in the Connect action
                   seventeen lines below — one icon, one size. */}
-              <Plug className="h-4 w-4" /> Reconnect GitHub
+              <AppIcons.connections className="size-4" /> Reconnect GitHub
             </Link>
           </Button>
         }
@@ -136,13 +151,13 @@ export function PullsList({ account, connected = true }: { account: string | nul
   if (state.phase === "disconnected") {
     return (
       <EmptyState
-        icon={GitPullRequest}
+        icon={AppIcons.pulls}
         title="Connect GitHub"
         description="Link your GitHub account so Juno can list and track the pull requests your code sessions open."
         action={
           <Button asChild className="gap-1.5">
             <Link href="/connections">
-              <Plug className="h-4 w-4" /> Connect GitHub
+              <AppIcons.connections className="size-4" /> Connect GitHub
             </Link>
           </Button>
         }
@@ -154,12 +169,12 @@ export function PullsList({ account, connected = true }: { account: string | nul
     return (
       <EmptyState
         tone="error"
-        icon={AlertCircle}
+        icon={StatusIcons.error}
         title="Couldn’t reach GitHub"
         description="GitHub may be rate-limiting or briefly down — the list is empty because the request failed, not because you have no pull requests."
         action={
           <Button variant="outline" onClick={() => void load()} className="gap-1.5">
-            <RefreshCw className="h-4 w-4" /> Retry
+            <ActionIcons.refresh className="size-4" /> Retry
           </Button>
         }
       />
@@ -171,7 +186,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-2">
+      <div className="mb-5 flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-sm text-muted-foreground">
           {data.account ?? account ? (
             <>
@@ -186,25 +201,41 @@ export function PullsList({ account, connected = true }: { account: string | nul
           size="sm"
           onClick={() => void load(true)}
           disabled={refreshing}
-          aria-label="Refresh pull requests"
-          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          // The label says which state the control is in, because the spinner
+          // is `aria-hidden` and a button that reads "Refresh pull requests"
+          // while it is already refreshing invites a second press.
+          aria-label={refreshing ? "Refreshing pull requests" : "Refresh pull requests"}
+          className="shrink-0 gap-1.5 text-muted-foreground hover:text-foreground"
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> Refresh
+          <ActionIcons.refresh
+            className={cn("size-3.5", refreshing && "animate-spin")}
+            aria-hidden="true"
+          />
+          Refresh
         </Button>
       </div>
 
       {empty ? (
         <EmptyState
-          icon={GitPullRequest}
+          icon={AppIcons.pulls}
           title="No open pull requests"
           description="Pull requests you open — including the ones Juno Code pushes from your sessions — show up here."
+          action={
+            <Button asChild variant="outline" className="gap-1.5">
+              <Link href="/code/new">
+                <AppIcons.code className="size-4" /> Start a code session
+              </Link>
+            </Button>
+          }
         />
       ) : (
         <>
-          <PullSection label="Yours" items={data.created} emptyNote="No open pull requests of your own right now." />
-          {data.involved.length > 0 && (
-            <PullSection label="Involving you" items={data.involved} />
-          )}
+          <PullSection
+            label="Yours"
+            items={data.created}
+            emptyNote="Pull requests you open yourself land here — including the ones Juno Code pushes from a cloud session."
+          />
+          {data.involved.length > 0 && <PullSection label="Involving you" items={data.involved} />}
         </>
       )}
     </div>
@@ -215,14 +246,24 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
   if (items.length === 0) {
     return emptyNote ? (
       <section>
-        <h2 className="mb-2 font-mono text-label text-muted-foreground">{label}</h2>
-        <p className="text-sm text-muted-foreground">{emptyNote}</p>
+        <SectionHeading label={label} />
+        {/* The last short state in this file still drawn by hand: a bare grey
+            sentence under a heading, on a page where every other "nothing
+            here" is an `EmptyState`. `size="panel"` is the rung for a state
+            inside a section rather than one owning the column — the page-scale
+            plate would have been taller than the list beside it. */}
+        <EmptyState
+          size="panel"
+          icon={AppIcons.pulls}
+          title="Nothing of your own right now"
+          description={emptyNote}
+        />
       </section>
     ) : null;
   }
   return (
     <section>
-      <h2 className="mb-2 font-mono text-label text-muted-foreground">{label}</h2>
+      <SectionHeading label={label} count={items.length} />
       <div className="space-y-5">
         {groupByRepo(items).map(([repo, pulls]) => (
           <div key={repo}>
@@ -263,6 +304,12 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     href={pr.url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    // The visible row is a title, a mono metadata line and an
+                    // arrow glyph; read in sequence that is "Fix the parser
+                    // hash 41 dot feature slash x". This names the whole row as
+                    // one link and says it leaves Juno, which the arrow says
+                    // only to people who can see it.
+                    aria-label={`${pr.title} — ${pr.repo} #${pr.number}${pr.draft ? ", draft" : ""}. Opens on GitHub.`}
                     className="pressable group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left hover:border-primary/40 hover:bg-accent"
                   >
                     <span
@@ -278,9 +325,9 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                       )}
                     >
                       {pr.draft ? (
-                        <GitPullRequestDraft className="h-4 w-4" aria-hidden="true" />
+                        <GitPullRequestDraft className="size-4" aria-hidden="true" />
                       ) : (
-                        <GitPullRequest className="h-4 w-4" aria-hidden="true" />
+                        <AppIcons.pulls className="size-4" aria-hidden="true" />
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -301,9 +348,15 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                       )}
                       {/* Full-strength: at /50 this glyph — the only affordance
                           saying the row opens off-site — composited to ~2.8:1 on
-                          black, under the 3:1 non-text minimum. */}
-                      <ExternalLink
-                        className="h-3.5 w-3.5 text-muted-foreground transition-colors duration-fast group-hover:text-foreground"
+                          black, under the 3:1 non-text minimum.
+
+                          `ActionIcons.external` (an arrow out of a corner), not
+                          Lucide's boxed `ExternalLink`: the registry names one
+                          mark for "this leaves Juno", and the session banner's
+                          own "View pull request" chip already draws it. Two
+                          drawings of one idea, two screens apart. */}
+                      <ActionIcons.external
+                        className="size-3.5 text-muted-foreground transition-colors duration-fast group-hover:text-foreground"
                         aria-hidden="true"
                       />
                     </span>
@@ -315,5 +368,25 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * A section heading with its own size on it.
+ *
+ * "Yours" and "Involving you" were two identical mono labels, so the only way
+ * to learn that one list had two rows and the other had thirty was to scroll
+ * both. The count is the cheapest possible answer and it belongs in the
+ * heading, not in a badge beside it — `tabular-nums` because this figure
+ * changes in place on every refresh.
+ */
+function SectionHeading({ label, count }: { label: string; count?: number }) {
+  return (
+    <h2 className="mb-2 flex items-baseline gap-2 font-mono text-label text-muted-foreground">
+      {label}
+      {typeof count === "number" && (
+        <span className="tabular-nums text-muted-foreground/70">{count}</span>
+      )}
+    </h2>
   );
 }

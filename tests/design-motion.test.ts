@@ -392,3 +392,34 @@ test("an interaction that plays an animation survives the round trip", () => {
   const removed = run(created.document, [{ op: "deleteAnimation", animationId: "anim1" }]);
   assert.equal(removed.document.interactions["int1"], undefined);
 });
+
+/**
+ * `applyMotionValue` wrote the new size onto the scaled node alone, so a scale
+ * track on a card grew the card and left its children at full size in their
+ * original places — the commonest UI motion there is, drawn wrong.
+ */
+test("scaling a container scales what is inside it", () => {
+  const doc = signInDocument();
+  const card = doc.nodes["card"];
+  const title = doc.nodes["title"];
+  assert.ok(card && title, "the fixture has a card with a title inside it");
+
+  const preview = derivePreviewDocument(
+    doc,
+    animation([track("card", "scale", [frame(0, 1), frame(1000, 2)])]),
+    1000
+  );
+
+  assert.equal(preview.nodes["card"].width, card.width * 2, "the container takes the factor");
+  assert.equal(preview.nodes["title"].width, title.width * 2, "and so does its child");
+  assert.equal(preview.nodes["title"].height, title.height * 2);
+  // Child coordinates are parent-relative, so the offset scales by the same factor.
+  assert.equal(preview.nodes["title"].x, title.x * 2);
+  assert.equal(preview.nodes["title"].y, title.y * 2);
+  // Type scales with its box, as it does when you scale a frame in Figma.
+  const previewTitle = preview.nodes["title"];
+  if (previewTitle.type === "text" && title.type === "text") {
+    assert.equal(previewTitle.typography.fontSize, title.typography.fontSize * 2);
+  }
+  assert.equal(JSON.stringify(doc.nodes["title"]), JSON.stringify(title), "and the committed scene is untouched");
+});

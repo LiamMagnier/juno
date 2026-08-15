@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Ban, ChevronLeft, ChevronRight, MoreHorizontal, RotateCcw, Search, Trash2, Users as UsersIcon } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Search, Users as UsersIcon } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import type { Plan, SubStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -355,9 +356,9 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 silhouettes depending on whether a photo existed. */}
                             {u.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={u.image} alt="" className="h-8 w-8 shrink-0 rounded-field object-cover" />
+                              <img src={u.image} alt="" className="size-8 shrink-0 rounded-field object-cover" />
                             ) : (
-                              <DotIdenticon seed={u.id} className="h-8 w-8 shrink-0 overflow-hidden rounded-field" />
+                              <DotIdenticon seed={u.id} className="size-8 shrink-0 overflow-hidden rounded-field" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -416,7 +417,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               {/* `size="icon-sm"`, not size="icon" cut down to
-                                  h-8 w-8 by hand: the override beat the base
+                                  size-8 by hand: the override beat the base
                                   size but not its `coarse:` pair, so the row's
                                   only action control was the one thing on the
                                   page that did not grow to a 40px target on a
@@ -427,13 +428,13 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 disabled={locked}
                                 aria-label={`Actions for ${u.email}`}
                               >
-                                <MoreHorizontal className="h-4 w-4" />
+                                <ActionIcons.more className="size-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               {u.bannedAt ? (
                                 <DropdownMenuItem onSelect={() => unban(u)}>
-                                  <RotateCcw className="h-4 w-4" />
+                                  <ActionIcons.restore className="size-4" />
                                   Unban
                                 </DropdownMenuItem>
                               ) : (
@@ -444,7 +445,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                     setBanTarget(u);
                                   }}
                                 >
-                                  <Ban className="h-4 w-4" />
+                                  <Ban className="size-4" />
                                   Ban…
                                 </DropdownMenuItem>
                               )}
@@ -456,7 +457,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                   setDeleteTarget(u);
                                 }}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <ActionIcons.delete className="size-4" />
                                 Delete…
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -482,7 +483,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                 disabled={page <= 1 || loading}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="size-4" />
                 Prev
               </Button>
               <Button
@@ -493,7 +494,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                 onClick={() => setPage((p) => p + 1)}
               >
                 Next
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="size-4" />
               </Button>
             </div>
           </div>
@@ -524,7 +525,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               Cancel
             </Button>
             <Button variant="destructive" onClick={confirmBan} disabled={banning} className="gap-1.5">
-              <Ban className="h-4 w-4" />
+              <Ban className="size-4" />
               {banning ? "Banning…" : "Ban user"}
             </Button>
           </DialogFooter>
@@ -563,7 +564,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               disabled={deleting || deleteConfirm.trim().toLowerCase() !== deleteTarget?.email.toLowerCase()}
               className="gap-1.5"
             >
-              <Trash2 className="h-4 w-4" />
+              <ActionIcons.delete className="size-4" />
               {deleting ? "Deleting…" : "Delete user"}
             </Button>
           </DialogFooter>

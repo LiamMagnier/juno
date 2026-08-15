@@ -53,14 +53,14 @@ export function PrivateChatToggle({
             // levitated instead read as a different species. The levitation
             // wasn't lost; it belongs to the mascot, and the SVG below already
             // floats on group-hover. Press dips at .97, same as `.pressable`.
-            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
+            "group inline-flex size-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 coarse:size-11",
             "motion-reduce:transition-none motion-reduce:active:scale-100",
             active && "text-primary"
           )}
         >
           <svg
             viewBox="0 0 48 48"
-            className="h-5 w-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100"
+            className="size-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100"
             aria-hidden="true"
           >
             <path

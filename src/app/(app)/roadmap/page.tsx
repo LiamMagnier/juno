@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, Inbox, PartyPopper, Plus, Search } from "lucide-react";
+import { Inbox, PartyPopper, Plus, Search } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -201,7 +202,7 @@ export default function RoadmapPage() {
           <EmptyState
             className="mt-8"
             tone="error"
-            icon={AlertTriangle}
+            icon={StatusIcons.error}
             title="Couldn’t load the roadmap."
             description="The board is still there — the request didn’t come back."
             action={

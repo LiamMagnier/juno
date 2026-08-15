@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, FileWarning, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -404,7 +405,7 @@ export function ArtifactInlineCard({
         <EmptyState
           tone="error"
           size="panel"
-          icon={FileWarning}
+          icon={StatusIcons.error}
           title="Source unavailable"
           description="This artifact was referenced in the message but its content isn’t available here yet."
           // Inset rather than full-bleed: the solid destructive border IS the

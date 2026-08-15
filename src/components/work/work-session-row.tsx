@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronRight, FileText, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, Pin, PinOff } from "lucide-react";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,7 +21,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { patchWorkSession, WORK_SYNC_EVENT } from "@/components/work/work-transport";
@@ -245,11 +245,17 @@ export function WorkSessionRow({
               // because that is when this element mounts — pinning is the only
               // thing that brings it into existence. No state needed.
               <Pin
-                className="h-3 w-3 shrink-0 text-muted-foreground motion-safe:animate-pop-in"
+                className="size-3 shrink-0 text-muted-foreground motion-safe:animate-pop-in"
                 aria-label="Pinned"
               />
             )}
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {/* `text-body`, not `text-sm`. Every Work list row is a title over a
+                subtitle over a mono meta line, and the title was 14px against
+                the subtitle's 13 — a one-pixel step, which at a glance is no
+                step at all, and 14 is not a rung on the scale in the first
+                place. 15/13/10.5 is a hierarchy the eye resolves before it
+                reads anything. */}
+            <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
               {session.title || "Untitled task"}
             </span>
             <WorkStatusPill
@@ -296,15 +302,20 @@ export function WorkSessionRow({
                     their own would rank them above the goal. */}
                 <span aria-hidden="true">·</span>
                 <span className="inline-flex items-center gap-1">
-                  <FileText className="h-3 w-3" aria-hidden="true" />
+                  <CodeIcons.file className="size-3" aria-hidden="true" />
                   {outputsLabel(outputCount)}
                 </span>
               </>
             )}
           </span>
         </span>
+        {/* `/70` and a two-property transition, which is what the schedule,
+            skill and Mac rows carry. This one was at full muted-foreground and
+            in a `[transform,color]` list — so the same chevron, in the same
+            corner of four sibling rows, was a shade darker on one of them and
+            was the only one whose colour actually eased. */}
         <ChevronRight
-          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
           aria-hidden="true"
         />
       </Link>
@@ -319,15 +330,15 @@ export function WorkSessionRow({
               // Always present rather than revealed on hover: a control that
               // only exists under a pointer is a control a touch device cannot
               // find at all, and this is the row's only way to unpin anything.
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="size-7 text-muted-foreground hover:text-foreground"
               aria-label={`Options for ${session.title || "this task"}`}
             >
-              <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+              <ActionIcons.more className="size-4" aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onSelect={() => setRenaming(true)}>
-              <Pencil className="text-muted-foreground" />
+              <ActionIcons.edit className="text-muted-foreground" />
               <span className="flex-1">Rename</span>
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -439,25 +450,28 @@ function RenameDialog({
   );
 }
 
-/** The list's own loading state — never a spinner, per the page idiom. */
-export function WorkSessionSkeletons({ count = 3 }: { count?: number }) {
-  return (
-    <div className="space-y-2.5">
-      {[...Array(count)].map((_, index) => (
-        <Skeleton
-          key={index}
-          className="h-[86px] w-full rounded-field"
-          style={staggerDelay(index, "tight")}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** A section header in the Work home column. */
+/**
+ * A section header in the Work home column.
+ *
+ * `meta` is the rail's idea brought to the list: a count in the heading, in mono,
+ * at `caption`. It is the same thing `RailSection` does one click away and for
+ * the same reason — a heading that says how much it holds is a heading somebody
+ * can act on without reading the rows under it — and "Needs you 2" is the single
+ * most useful two characters on this page.
+ *
+ * `tone="attention"` is spent on exactly one section, and the restraint is the
+ * point. Coral means "happening now" everywhere in Work and amber means "this
+ * has stopped and is waiting on a person"; if the running section were ALSO
+ * coloured there would be no colour left to mean the second thing. So Under way,
+ * Parked and Finished are muted like every other label in the product, and the
+ * one group that is about the reader rather than about Juno is the one that
+ * takes ink.
+ */
 export function WorkSection({
   title,
   hint,
+  meta,
+  tone = "neutral",
   action,
   /**
    * Overrides the gap above. The default is the rhythm the Work home is set in
@@ -470,15 +484,38 @@ export function WorkSection({
 }: {
   title: string;
   hint?: string;
+  /** A short mono fact — the count of rows below. Never a sentence. */
+  meta?: string | null;
+  tone?: "neutral" | "attention";
   action?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
 }) {
+  const attention = tone === "attention";
   return (
     <section className={cn("mt-9", className)}>
       <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="font-mono text-label text-muted-foreground">{title}</h2>
+          <h2 className="flex items-baseline gap-2">
+            <span
+              className={cn(
+                "font-mono text-label",
+                attention ? "text-warning-foreground" : "text-muted-foreground"
+              )}
+            >
+              {title}
+            </span>
+            {meta != null && meta.length > 0 && (
+              <span
+                className={cn(
+                  "font-mono text-caption tabular-nums",
+                  attention ? "text-warning-foreground/80" : "text-muted-foreground"
+                )}
+              >
+                {meta}
+              </span>
+            )}
+          </h2>
           {hint && <p className="mt-1 text-ui leading-relaxed text-muted-foreground">{hint}</p>}
         </div>
         {action != null && <div className="shrink-0">{action}</div>}

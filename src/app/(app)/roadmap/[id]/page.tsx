@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, BadgeCheck, MessageSquare, Pin, SearchX } from "lucide-react";
+import { ArrowLeft, MessageSquare, Pin, SearchX } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -269,7 +270,7 @@ export default function RoadmapDetailPage() {
                   <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
                   {c.official && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
-                      <BadgeCheck className="size-3 shrink-0" /> Juno team
+                      <StatusIcons.verified className="size-3 shrink-0" /> Juno team
                     </span>
                   )}
                   <span>· {timeAgo(c.createdAt)}</span>
@@ -332,7 +333,7 @@ function CenteredMessage({
     <div className="flex h-full items-center justify-center px-4">
       <EmptyState
         tone={retry ? "error" : "empty"}
-        icon={retry ? AlertTriangle : SearchX}
+        icon={retry ? StatusIcons.error : SearchX}
         title={title}
         description={body}
         action={

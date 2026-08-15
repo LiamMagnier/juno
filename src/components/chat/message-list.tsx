@@ -302,14 +302,14 @@ export function MessageList(props: MessageListProps) {
           // resolves to ~5% lightness while the blur has no colour to smear —
           // so the message text scrolling underneath showed straight through the
           // glyph. A floating layer takes the floating rung.
-          "absolute bottom-4 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 coarse:h-11 coarse:w-11",
+          "absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-popover text-muted-foreground shadow-float transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 coarse:size-11",
           "motion-reduce:transition-none motion-reduce:active:scale-100",
           atBottom
             ? "pointer-events-none translate-y-2 opacity-0"
             : "opacity-100 motion-safe:animate-rise-in hover:-translate-y-0.5"
         )}
       >
-        <ArrowDown className="h-4 w-4" />
+        <ArrowDown className="size-4" />
       </button>
     </div>
   );

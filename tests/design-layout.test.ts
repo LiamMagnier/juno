@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { layoutPage, layoutSubtree, measureText, resizeWithConstraints } from "../src/lib/design/layout";
+import { layoutPage, layoutSubtree, measureRun, measureText, resizeWithConstraints } from "../src/lib/design/layout";
 import { renderNodeSvg, renderSelectionSvg } from "../src/lib/design/render";
 import { PAGE_ID, run, signInDocument } from "./design-fixtures";
 
@@ -215,4 +215,49 @@ test("a selection render is cropped to the selection plus padding", () => {
   const box = layoutPage(doc, PAGE_ID).get("button")!;
   assert.equal(rendered.width, box.width + 20);
   assert.equal(rendered.height, box.height + 20);
+});
+
+/**
+ * Text was measured at one mean advance for every character, so "iiiii" and
+ * "WWWWW" were the same width. The renderer draws real glyphs and only the line
+ * BREAKING used the estimate, so wrapped lines broke in the wrong place and
+ * hug-sized labels came out the wrong size.
+ */
+test("text is measured per glyph, not per character count", () => {
+  const type = { fontSize: 100, fontFamily: "Inter, sans-serif", letterSpacing: 0, fontWeight: 400 };
+  const narrow = measureRun("iiiii", type);
+  const wide = measureRun("WWWWW", type);
+  assert.ok(wide > narrow * 3, `W should be far wider than i (got ${narrow} vs ${wide})`);
+  // Helvetica: i = 222/1000 em, W = 944/1000 em.
+  assert.ok(Math.abs(narrow - 5 * 22.2) < 0.5);
+  assert.ok(Math.abs(wide - 5 * 94.4) < 0.5);
+
+  // Monospace is genuinely uniform, and must stay that way.
+  const mono = { ...type, fontFamily: "ui-monospace, monospace" };
+  assert.equal(measureRun("iiiii", mono), measureRun("WWWWW", mono));
+
+  // Letter spacing is still added per character.
+  assert.equal(measureRun("abc", { ...type, letterSpacing: 10 }), measureRun("abc", type) + 30);
+
+  // Bold is wider than regular.
+  assert.ok(measureRun("Hamburgefons", { ...type, fontWeight: 700 }) > measureRun("Hamburgefons", type));
+
+  // Full-width scripts advance about one em, not half of one.
+  assert.ok(Math.abs(measureRun("日本語", type) - 300) < 1);
+});
+
+test("wrapping breaks where the glyphs actually run out of room", () => {
+  const type = {
+    fontSize: 20,
+    fontFamily: "Inter, sans-serif",
+    letterSpacing: 0,
+    fontWeight: 400,
+    lineHeight: { unit: "percent" as const, value: 120 },
+    verticalAlign: "top" as const,
+    textAlign: "left" as const,
+  };
+  // Same character count, very different widths — they must not wrap alike.
+  const narrow = measureText("llll llll llll llll", type, 120).lines;
+  const wide = measureText("WMWM WMWM WMWM WMWM", type, 120).lines;
+  assert.ok(wide > narrow, `wide glyphs must need more lines (${narrow} vs ${wide})`);
 });

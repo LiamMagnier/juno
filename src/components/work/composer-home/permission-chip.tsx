@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Hand } from "lucide-react";
+import { ChevronDown, Hand } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,7 +78,7 @@ export function WorkPermissionChip({
           />
           <span className="truncate">{WORK_APPROVAL_MODE_LABEL[value]}</span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
+            className="size-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -109,7 +110,7 @@ export function WorkPermissionChip({
                   {WORK_APPROVAL_MODE_SUMMARY[policy]}
                 </span>
               </span>
-              {active && <Check className="mt-0.5 !size-3.5 shrink-0 text-primary" />}
+              {active && <StatusIcons.success className="mt-0.5 !size-3.5 shrink-0 text-primary" />}
             </DropdownMenuItem>
           );
         })}

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, ShieldAlert, TriangleAlert } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
@@ -219,7 +219,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
         <EmptyState
           tone="error"
           size="panel"
-          icon={TriangleAlert}
+          icon={StatusIcons.error}
           title="Couldn't load your permissions"
           description="Nothing is shown rather than a guess."
           action={
@@ -244,7 +244,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
             // p-4, matching the spend-ceiling warning well on this same page:
             // the two warning states in settings share one chrome.
             <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+              <StatusIcons.security className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               Lockdown is on, so every connector action is refused right now. The choice below takes
               effect again when you turn it off.
             </p>
@@ -288,7 +288,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                 >
                   <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                     {option.label}
-                    {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />}
+                    {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden />}
                   </span>
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     {option.description}

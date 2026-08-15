@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Download, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,7 +95,7 @@ export function DownloadMenu({ className }: { className?: string }) {
                 className,
               )}
             >
-              <Download className="size-4" />
+              <ActionIcons.download className="size-4" />
             </button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -151,7 +152,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
         <span className="truncate">{download.label}</span>
         {/* Not a badge shouting "recommended" — just a mark that this is the one
             matching the machine you are on. */}
-        {isMine && <Check className="size-3 shrink-0 text-primary" aria-label="Your device" />}
+        {isMine && <StatusIcons.success className="size-3 shrink-0 text-primary" aria-label="Your device" />}
       </span>
       <span className="truncate font-mono text-caption text-muted-foreground">{detail}</span>
     </span>
@@ -164,7 +165,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
   if (!download.available || !download.url) {
     return (
       <DropdownMenuItem disabled className="h-auto gap-2.5 px-2.5 py-2">
-        <Download className="size-4 shrink-0 opacity-40" />
+        <ActionIcons.download className="size-4 shrink-0 opacity-40" />
         {body}
       </DropdownMenuItem>
     );
@@ -176,7 +177,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
           resumes, reports progress in the place people look for it, and survives
           the tab being closed. */}
       <a href={download.url} download>
-        <Download className="size-4 shrink-0" />
+        <ActionIcons.download className="size-4 shrink-0" />
         {body}
       </a>
     </DropdownMenuItem>

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { BlockShell, BlockTitle, CaptionLine, Reveal, TextToggle, LessonKicker, Microcap } from "@/components/chat/learning/block-shell";
 import { QuizInteraction } from "@/components/chat/learning/quiz-block";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type { StepLab, StepLabStep } from "@/lib/step-lab";
 
@@ -361,7 +362,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
     <div className="flex flex-col gap-2">
       {/* Arcs — SVG strokes don't scale (non-scaling-stroke); endpoint dot is HTML. */}
       <div className={cn("relative", compact ? "h-14" : "h-[72px]")}>
-        <svg aria-hidden className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 32" preserveAspectRatio="none">
+        <svg aria-hidden className="absolute inset-0 size-full overflow-visible" viewBox="0 0 100 32" preserveAspectRatio="none">
           {tokens.map((_, target) => {
             if (target === query) return null;
             const weight = row[target] ?? 0;
@@ -999,7 +1000,15 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
         {completed && onLast && (
           <div className="flex flex-col gap-2">
             <p className="flex items-baseline gap-2 font-serif text-body italic leading-6 text-foreground/85">
-              <span aria-hidden className="font-mono not-italic text-success motion-safe:animate-pop-in">✓</span>
+              {/* The registry's tick, not a "✓" in a font-mono span: a text glyph
+                  carries the text weight instead of the optical stroke ladder and
+                  resolves against whatever fallback font has the code point.
+                  inline-block + align-middle keeps this line's items-baseline
+                  alignment, which a block-level svg has no baseline to satisfy. */}
+              <StatusIcons.success
+                aria-hidden
+                className="inline-block size-3.5 align-middle text-success motion-safe:animate-pop-in"
+              />
               Lab complete
             </p>
             {lab.takeaway && (

@@ -46,7 +46,7 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
         preload="auto"
         // Clean hero clip — no player chrome. Tapping replays if a browser paused it.
         onClick={() => !reducedMotion && videoRef.current?.play().catch(() => {})}
-        className="h-full w-full cursor-default bg-muted object-cover"
+        className="size-full cursor-default bg-muted object-cover"
       />
     );
   }
@@ -57,7 +57,7 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
       <img
         src={announcement.imageUrl}
         alt=""
-        className={logoLike ? "h-full w-full bg-muted object-contain p-12" : "h-full w-full object-cover"}
+        className={logoLike ? "size-full bg-muted object-contain p-12" : "size-full object-cover"}
         draggable={false}
       />
     );
@@ -65,15 +65,15 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
 
   if (announcement.provider) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-muted">
-        <ProviderLogo provider={announcement.provider} className="h-20 w-20" />
+      <div className="flex size-full items-center justify-center bg-muted">
+        <ProviderLogo provider={announcement.provider} className="size-20" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-muted text-foreground/70">
-      <JunoMark className="h-14 w-14" />
+    <div className="flex size-full items-center justify-center bg-muted text-foreground/70">
+      <JunoMark className="size-14" />
     </div>
   );
 }
@@ -200,7 +200,7 @@ export function AnnouncementPopup() {
                   </DialogTitle>
                 </div>
                 {announcement.provider && (
-                  <ProviderLogo provider={announcement.provider} className="h-10 w-10 shrink-0 border-0 shadow-none" />
+                  <ProviderLogo provider={announcement.provider} className="size-10 shrink-0 border-0 shadow-none" />
                 )}
               </div>
               <DialogDescription className="max-w-xl pt-4 text-body leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">
@@ -224,7 +224,7 @@ export function AnnouncementPopup() {
               {announcement.ctaLabel && announcement.ctaHref && (
                 <Button onClick={() => followHref(announcement.ctaHref)} className="group gap-1.5">
                   {announcement.ctaLabel}
-                  <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />
+                  <ArrowRight className="size-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />
                 </Button>
               )}
             </div>

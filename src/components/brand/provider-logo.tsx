@@ -97,12 +97,12 @@ export function ProviderLogo({
         // front door. Dark takes the full token plus the 1px lit INSET edge every
         // raised surface on black uses (never an outer glow — that is the halo
         // the theme removed).
-        "inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/55 bg-card shadow-pop dark:border-border dark:shadow-[inset_0_1px_0_hsl(var(--sheen))]",
+        "inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/55 bg-card shadow-pop dark:border-border dark:shadow-[inset_0_1px_0_hsl(var(--sheen))]",
         className
       )}
     >
-      <img src={src.light} alt={alt} className="h-full w-full object-contain p-[12%] dark:hidden" draggable={false} loading="lazy" />
-      <img src={src.dark} alt="" className="hidden h-full w-full object-contain p-[12%] dark:block" draggable={false} loading="lazy" />
+      <img src={src.light} alt={alt} className="size-full object-contain p-[12%] dark:hidden" draggable={false} loading="lazy" />
+      <img src={src.dark} alt="" className="hidden size-full object-contain p-[12%] dark:block" draggable={false} loading="lazy" />
     </span>
   );
 }

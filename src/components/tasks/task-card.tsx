@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowUpRight, Globe, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Globe } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -106,19 +107,19 @@ export function TaskCard({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="size-7 text-muted-foreground hover:text-foreground" aria-label="Task options">
-                <MoreVertical className="size-3.5" />
+                <ActionIcons.more className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onSelect={onEdit}>
-                <Pencil className="size-4" /> Edit
+                <ActionIcons.edit className="size-4" /> Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={onDelete}
                 className="text-destructive focus:bg-destructive/10 focus:text-destructive"
               >
-                <Trash2 className="size-4" /> Delete
+                <ActionIcons.delete className="size-4" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -132,7 +133,7 @@ export function TaskCard({
             href={`/chat/${task.conversationId}`}
             className="group/results inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
           >
-            View results <ArrowUpRight className="size-3 shrink-0 transition-transform duration-fast ease-out-soft group-hover/results:-translate-y-0.5 group-hover/results:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+            View results <ActionIcons.external className="size-3 shrink-0 transition-transform duration-fast ease-out-soft group-hover/results:-translate-y-0.5 group-hover/results:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
           </Link>
         )}
       </div>

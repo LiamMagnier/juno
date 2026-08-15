@@ -4,10 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
-  Check,
-  Copy,
   Crosshair,
-  Download,
   Eraser,
   FileSpreadsheet,
   FileText,
@@ -17,16 +14,12 @@ import {
   Maximize2,
   MessageCircleQuestion,
   Minimize2,
-  MoreHorizontal,
-  Pencil,
   Play,
   Presentation,
-  RotateCcw,
-  RotateCw,
-  Share2,
   Terminal,
-  X,
+  type LucideIcon,
 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -64,7 +57,7 @@ const INSPECTABLE_LANG = new Set(["html", "tsx", "jsx", "svg", "css"]);
 
 type OfficeFormat = "docx" | "xlsx" | "pptx";
 
-const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: typeof Copy }> = {
+const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: LucideIcon }> = {
   docx: { label: "Word document (.docx)", icon: FileText },
   xlsx: { label: "Excel workbook (.xlsx)", icon: FileSpreadsheet },
   pptx: { label: "PowerPoint deck (.pptx)", icon: Presentation },
@@ -747,7 +740,7 @@ export function CanvasPanel({
                     historyOpen ? "text-primary" : "hover:bg-accent hover:text-foreground"
                   )}
                 >
-                  <History className="h-3 w-3" aria-hidden />
+                  <History className="size-3" aria-hidden />
                   v{artifact.currentVersion}
                 </button>
               </>
@@ -769,7 +762,7 @@ export function CanvasPanel({
 
         {shareable && (
           <Button variant="ghost" size="sm" onClick={() => setShareOpen(true)} className="h-8 gap-1.5 px-2.5 text-muted-foreground hover:text-foreground">
-            <Share2 className="h-3.5 w-3.5" aria-hidden />
+            <ActionIcons.share className="size-3.5" aria-hidden />
             Share
           </Button>
         )}
@@ -777,15 +770,15 @@ export function CanvasPanel({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label="More actions" className="text-muted-foreground hover:text-foreground">
-              {exportingFormat ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden /> : <MoreHorizontal className="h-4 w-4" aria-hidden />}
+              {exportingFormat ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ActionIcons.more className="size-4" aria-hidden />}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60">
             <DropdownMenuItem onSelect={copy}>
-              <Copy className="h-4 w-4" aria-hidden /> Copy source
+              <ActionIcons.copy className="size-4" aria-hidden /> Copy source
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={download}>
-              <Download className="h-4 w-4" aria-hidden /> Download source
+              <ActionIcons.download className="size-4" aria-hidden /> Download source
             </DropdownMenuItem>
             {/* Office export always renders the latest version — don't offer it while an
                 older one is on screen, or the file wouldn't match what you're reading. */}
@@ -797,7 +790,7 @@ export function CanvasPanel({
                   const Icon = exportingFormat === f ? Loader2 : FormatIcon;
                   return (
                     <DropdownMenuItem key={f} disabled={exportingFormat !== null} onSelect={() => downloadOffice(f)}>
-                      <Icon className={cn("h-4 w-4", exportingFormat === f && "motion-safe:animate-spin")} aria-hidden />
+                      <Icon className={cn("size-4", exportingFormat === f && "motion-safe:animate-spin")} aria-hidden />
                       {label}
                     </DropdownMenuItem>
                   );
@@ -808,7 +801,7 @@ export function CanvasPanel({
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={toggleHistory}>
-                  <History className="h-4 w-4" aria-hidden /> {historyOpen ? "Close history" : "Version history"}
+                  <History className="size-4" aria-hidden /> {historyOpen ? "Close history" : "Version history"}
                 </DropdownMenuItem>
               </>
             )}
@@ -827,13 +820,13 @@ export function CanvasPanel({
               aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
               className="hidden text-muted-foreground hover:text-foreground lg:inline-flex"
             >
-              {fullscreen ? <Minimize2 className="h-4 w-4" aria-hidden /> : <Maximize2 className="h-4 w-4" aria-hidden />}
+              {fullscreen ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
             </Button>
           </TooltipTrigger>
           <TooltipContent>{fullscreen ? "Exit fullscreen" : "Fullscreen"}</TooltipContent>
         </Tooltip>
         <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close canvas" className="text-muted-foreground hover:text-foreground">
-          <X className="h-4 w-4" aria-hidden />
+          <ActionIcons.dismiss className="size-4" aria-hidden />
         </Button>
       </header>
 
@@ -893,7 +886,7 @@ export function CanvasPanel({
 
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-              <GitCompare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <GitCompare className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span className="font-mono text-caption text-muted-foreground">
                 v{baseVersion} → v{targetVersion}
               </span>
@@ -905,11 +898,11 @@ export function CanvasPanel({
               )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={copyDiff} className={contextButton}>
-                {diffCopied ? <Check className="h-3.5 w-3.5 text-success" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+                {diffCopied ? <StatusIcons.success className="size-3.5 text-success" aria-hidden /> : <ActionIcons.copy className="size-3.5" aria-hidden />}
                 Copy diff
               </Button>
               <Button variant="ghost" size="icon-sm" onClick={() => setHistoryOpen(false)} aria-label="Close history" className="text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" aria-hidden />
+                <ActionIcons.dismiss className="size-4" aria-hidden />
               </Button>
             </div>
 
@@ -954,7 +947,7 @@ export function CanvasPanel({
               <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
                 <span className="text-caption text-muted-foreground">Restoring keeps history — v{targetVersion} becomes a new version.</span>
                 <Button size="sm" onClick={restore} disabled={restoring}>
-                  <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                  <ActionIcons.restore className="size-3.5" aria-hidden />
                   {restoring ? "Restoring…" : `Restore v${targetVersion}`}
                 </Button>
               </div>
@@ -967,7 +960,7 @@ export function CanvasPanel({
           <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
             <TabsList className="h-8">
               <TabsTrigger value="preview" className="gap-1.5">
-                {rt.mode === "console" ? <Terminal className="h-3.5 w-3.5" aria-hidden /> : null}
+                {rt.mode === "console" ? <Terminal className="size-3.5" aria-hidden /> : null}
                 {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}
               </TabsTrigger>
               <TabsTrigger value="code" className="gap-1.5">
@@ -1018,7 +1011,7 @@ export function CanvasPanel({
                         aria-pressed={inspecting}
                         className={cn(contextButton, inspecting && "bg-primary/10 text-primary hover:text-primary")}
                       >
-                        <Crosshair className="h-3.5 w-3.5" aria-hidden />
+                        <Crosshair className="size-3.5" aria-hidden />
                         {panelWide && <span>{inspecting ? "Selecting…" : "Select"}</span>}
                       </Button>
                     </TooltipTrigger>
@@ -1028,7 +1021,7 @@ export function CanvasPanel({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="ghost" size="sm" onClick={rerun} aria-label={rt.runVerb === "Run" ? "Run again" : "Reload preview"} className={contextButton}>
-                      {rt.mode === "console" ? <Play className="h-3.5 w-3.5" aria-hidden /> : <RotateCw className="h-3.5 w-3.5" aria-hidden />}
+                      {rt.mode === "console" ? <Play className="size-3.5" aria-hidden /> : <ActionIcons.refresh className="size-3.5" aria-hidden />}
                       {panelWide && <span>{rt.mode === "console" ? "Run" : "Reload"}</span>}
                     </Button>
                   </TooltipTrigger>
@@ -1038,7 +1031,7 @@ export function CanvasPanel({
             )}
             {tab === "code" && (
               <Button variant="ghost" size="sm" onClick={copy} aria-label="Copy source" className={contextButton}>
-                {copied ? <Check className="h-3.5 w-3.5 text-success" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+                {copied ? <StatusIcons.success className="size-3.5 text-success" aria-hidden /> : <ActionIcons.copy className="size-3.5" aria-hidden />}
                 {panelWide && <span>Copy</span>}
               </Button>
             )}
@@ -1200,12 +1193,12 @@ export function CanvasPanel({
             className="fixed z-toolbar flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
           >
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
-              <MessageCircleQuestion className="h-3.5 w-3.5 text-primary" aria-hidden />
+              <MessageCircleQuestion className="size-3.5 text-primary" aria-hidden />
               Ask
             </Button>
             <span aria-hidden className="h-4 w-px bg-border/70" />
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("modify")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
-              <Pencil className="h-3.5 w-3.5 text-primary" aria-hidden />
+              <ActionIcons.edit className="size-3.5 text-primary" aria-hidden />
               Modify
             </Button>
           </div>,

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Crop, ImageIcon, ImageOff, Info, MousePointer2, TriangleAlert, Wand2 } from "lucide-react";
+import { Crop, ImageIcon, ImageOff, MousePointer2, Wand2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -517,7 +518,7 @@ export function ImageEditOverlay({
 
               {support === "none" && (
                 <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-label leading-relaxed text-destructive dark:bg-destructive/[0.14]">
-                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <StatusIcons.error className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {editModel
                       ? `${editModel.name} does not support editing. Switch to GPT Image, Nano Banana, or Grok Imagine.`
@@ -528,7 +529,7 @@ export function ImageEditOverlay({
 
               {support === "prompt" && editModel && (
                 <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-secondary px-3.5 py-3 text-caption leading-relaxed text-muted-foreground">
-                  <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <StatusIcons.info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>{editModel.name} uses the selected area as guidance, so nearby details may also adjust.</span>
                 </div>
               )}

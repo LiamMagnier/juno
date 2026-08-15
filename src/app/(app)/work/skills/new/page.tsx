@@ -151,7 +151,7 @@ export default function NewWorkSkillPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={() => void save()} disabled={!canSave} className="gap-1.5">
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+            {saving && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
             Create skill
           </Button>
           <Button variant="ghost" onClick={() => router.push("/work/skills")} disabled={saving}>

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Trash2, X } from "lucide-react";
+import { ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -51,7 +52,7 @@ function ProvenanceLine({ memory }: { memory: Memory }) {
           href={`/chat/${memory.sourceRef}`}
           className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
         >
-          <MessageSquare className="h-3 w-3" aria-hidden="true" />
+          <MessageSquare className="size-3" aria-hidden="true" />
           Remembered from a chat
         </Link>
       ) : (
@@ -145,7 +146,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
             className="h-9"
           />
           <Button type="submit" size="icon-sm" variant="ghost" disabled={busy} aria-label="Save this memory">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <StatusIcons.success className="size-3.5" />}
           </Button>
           <Button
             type="button"
@@ -157,7 +158,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
               setEditing(false);
             }}
           >
-            <X className="h-3.5 w-3.5" />
+            <ActionIcons.dismiss className="size-3.5" />
           </Button>
         </form>
       ) : (
@@ -176,7 +177,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
                   className="gap-1"
                   title="Only chats in this project can see this memory."
                 >
-                  <FolderLock className="h-3 w-3" aria-hidden="true" />
+                  <FolderLock className="size-3" aria-hidden="true" />
                   {memory.projectName ?? "One project"}
                 </Badge>
               )}
@@ -201,7 +202,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
               onClick={() => setEditing(true)}
               disabled={busy}
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <ActionIcons.edit className="size-3.5" />
             </Button>
             {memory.status !== "suppressed" && (
               <Button
@@ -212,7 +213,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
                 onClick={() => onForget(memory)}
                 disabled={busy}
               >
-                <EyeOff className="h-3.5 w-3.5" />
+                <EyeOff className="size-3.5" />
               </Button>
             )}
             <Button
@@ -223,7 +224,7 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
               onClick={() => onDelete(memory)}
               disabled={busy}
             >
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
             </Button>
           </div>
         </div>
@@ -314,7 +315,7 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
           >
             <ChevronDown
               className={cn(
-                "h-3.5 w-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+                "size-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
                 showRetired && "rotate-180"
               )}
               aria-hidden="true"

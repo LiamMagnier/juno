@@ -1,38 +1,12 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowUp,
-  Cloud,
-  FileText,
-  FileUp,
-  GitBranch,
-  ImagePlus,
-  Library,
-  Loader2,
-  Mic,
-  Paperclip,
-  Plus,
-  X,
-} from "lucide-react";
+import { ArrowUp, Loader2, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ComposerShell } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { JunoMark } from "@/components/brand/logo";
@@ -42,15 +16,21 @@ import {
   type Target,
   type Workspace,
 } from "@/components/code/code-target-picker";
+import {
+  ComposerAddMenu,
+  ComposerAttachmentTray,
+  ComposerDropOverlay,
+  ComposerFileInputs,
+} from "@/components/code/code-composer-parts";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
-import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
@@ -77,11 +57,17 @@ function CodeGreeting() {
         <JunoMark className="size-3.5" />
         <span>Juno Code</span>
       </div>
-      <h1 className="text-center font-serif text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
+      {/* `text-display`, the same rung the session view's own hero uses. The
+          old `text-3xl sm:text-4xl` pair is not on the product type scale, and
+          it put the two Code screens' headings at two different sizes one
+          navigation apart — the token's clamp already does the responsive work
+          the breakpoint was hand-rolling. */}
+      <h1 className="text-center font-serif text-display font-normal tracking-tight text-foreground">
         What are we building today{firstName ? `, ${firstName}` : ""}?
       </h1>
-      <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-        Autonomous agent for your local workspace, repositories, and pull requests.
+      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground sm:text-base">
+        Juno Code works in a synced project on your Mac, or on a fresh cloud machine that opens a
+        pull request. Pick where it runs below, then say what to change.
       </p>
     </div>
   );
@@ -147,7 +133,6 @@ export default function NewCodeSessionPage() {
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
-  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const [dictating, setDictating] = React.useState(false);
   /*
    * THE MODEL PICKER AND THE THINKING SLIDER ARE GONE, and this is what they
@@ -223,17 +208,6 @@ export default function NewCodeSessionPage() {
   React.useEffect(() => {
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
-
-  const removeUpload = React.useCallback(
-    (localId: string) => {
-      setRemovingIds((prev) => [...prev, localId]);
-      window.setTimeout(() => {
-        remove(localId);
-        setRemovingIds((prev) => prev.filter((id) => id !== localId));
-      }, 180);
-    },
-    [remove],
-  );
 
   const hasTarget = target === "device" ? !!selectedWorkspace : !!selectedRepo;
   const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
@@ -605,90 +579,7 @@ export default function NewCodeSessionPage() {
                   <ComposerShell
                     className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
                     utilityLabel="Where this session runs"
-                    above={
-                      canAttach && (
-                        <div
-                          // `motion-reduce:transition-none` — the twin of this
-                          // collapse in code-session-view carries it, and this
-                          // one animates on every attach.
-                          className={cn(
-                            "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
-                            uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                          )}
-                        >
-                          <div className="min-h-0 overflow-hidden">
-                            {/* `p-3 pb-0`, the inset the session view's tray
-                                uses. The chip inside is deliberately identical
-                                across the two screens (see the note on it
-                                below); the tray around it was not — 12px flat
-                                there against 12/14px responsive here — so the
-                                same attachment sat at two different gutters one
-                                screen apart. */}
-                            <div className="flex flex-wrap gap-2 p-3 pb-0">
-                              {uploads.map((u) => (
-                                <div
-                                  key={u.localId}
-                                  className={cn(
-                                    // `bg-muted`, not `bg-background`: the chip
-                                    // sits inside ComposerShell's `bg-card`, and
-                                    // on true black a background-filled chip
-                                    // punches a 0%-lightness hole into a 6.5%
-                                    // panel. Radius is the shell's own seated
-                                    // control rung; `shadow-soft` is gone,
-                                    // being black ink on black here. Identical
-                                    // to the session view's chip on purpose —
-                                    // it is the same chip, one screen apart.
-                                    "group relative flex items-center gap-2 rounded-composer-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
-                                    removingIds.includes(u.localId)
-                                      ? "pointer-events-none motion-safe:animate-pop-out"
-                                      : "motion-safe:animate-rise-in",
-                                  )}
-                                >
-                                  {u.attachment?.kind === "IMAGE" ? (
-                                    <Image
-                                      src={u.attachment.url}
-                                      unoptimized={requiresViewerCredentials(u.attachment.url)}
-                                      alt={u.fileName}
-                                      width={32}
-                                      height={32}
-                                      className="h-8 w-8 rounded-sm object-cover"
-                                    />
-                                  ) : (
-                                    <FileText className="h-5 w-5 text-muted-foreground" />
-                                  )}
-                                  <div className="max-w-[140px]">
-                                    <p className="truncate font-medium">{u.fileName}</p>
-                                    <p className="text-muted-foreground">
-                                      {u.status === "uploading"
-                                        ? `${u.progress}%`
-                                        : u.status === "error"
-                                          ? "Failed"
-                                          : formatBytes(u.size)}
-                                    </p>
-                                  </div>
-                                  {u.status === "uploading" && (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                                  )}
-                                  {/* `bg-secondary`, not `bg-foreground` — see
-                                      the session view's twin. A 94%-lightness
-                                      disc on a 0% ground made a 20px
-                                      micro-control the brightest object on the
-                                      screen. */}
-                                  <button
-                                    type="button"
-                                    onClick={() => removeUpload(u.localId)}
-                                    className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-secondary p-0.5 text-foreground opacity-0 transition-[opacity,background-color,border-color,color] duration-fast ease-out-soft group-hover:opacity-100 hover:border-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                                    aria-label="Remove attachment"
-                                  >
-                                    <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
+                    above={canAttach && <ComposerAttachmentTray uploads={uploads} onRemove={remove} />}
                     field={
                       <textarea
                         ref={textareaRef}
@@ -717,51 +608,14 @@ export default function NewCodeSessionPage() {
                       <>
                         <div className="flex min-w-0 flex-1 items-center gap-1">
                           {canAttach && (
-                            <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label="Add"
-                                  disabled={submitting}
-                                  className={cn(
-                                    "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-                                    plusOpen && "bg-accent",
-                                  )}
-                                >
-                                  <Plus
-                                    aria-hidden="true"
-                                    strokeWidth={1.75}
-                                    className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                                  />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                                <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
-                                <DropdownMenuSub>
-                                  <DropdownMenuSubTrigger>
-                                    <Paperclip className="text-muted-foreground" />
-                                    <span className="flex-1">Attach</span>
-                                  </DropdownMenuSubTrigger>
-                                  <DropdownMenuSubContent className="w-52">
-                                    <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                                      <ImagePlus className="text-muted-foreground" />
-                                      <span className="flex-1">Photos</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                                      <FileUp className="text-muted-foreground" />
-                                      <span className="flex-1">Files</span>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                                      <Library className="text-muted-foreground" />
-                                      <span className="flex-1">From your library</span>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuSubContent>
-                                </DropdownMenuSub>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <ComposerAddMenu
+                              open={plusOpen}
+                              onOpenChange={setPlusOpen}
+                              disabled={submitting}
+                              onPickPhotos={() => imageInputRef.current?.click()}
+                              onPickFiles={() => fileInputRef.current?.click()}
+                              onPickLibrary={() => setLibraryOpen(true)}
+                            />
                           )}
                         </div>
 
@@ -886,7 +740,7 @@ export default function NewCodeSessionPage() {
                           <>
                             <span className={COMPOSER_DIVIDER} aria-hidden="true" />
                             <span className="flex min-w-0 items-center gap-1 font-mono">
-                              <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+                              <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
                               <span className="sr-only">Base branch </span>
                               <span className="min-w-0 truncate">
                                 {baseRef.trim() || selectedRepo.defaultBranch}
@@ -898,40 +752,12 @@ export default function NewCodeSessionPage() {
                     }
                   />
 
-                  {dragging && (
-                    // `bg-primary/15`, the alpha the session view's identical
-                    // overlay settled on: over the true-black ground /10 tints
-                    // to roughly 2% lightness, so the scrim vanished and the
-                    // dashed outline was left saying "drop here" alone — and
-                    // the same gesture then read differently on the two Code
-                    // screens.
-                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/15 backdrop-blur-sm motion-safe:animate-fade-in">
-                      <FileUp className="h-6 w-6 text-primary" />
-                      <span className="font-mono text-label text-primary">Drop to attach</span>
-                    </div>
-                  )}
+                  {dragging && <ComposerDropOverlay />}
 
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files?.length) addFiles(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept={ACCEPT_ATTRIBUTE}
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files?.length) addFiles(e.target.files);
-                      e.target.value = "";
-                    }}
+                  <ComposerFileInputs
+                    imageInputRef={imageInputRef}
+                    fileInputRef={fileInputRef}
+                    onFiles={addFiles}
                   />
                   {canAttach && (
                     <LibraryPicker
@@ -954,7 +780,7 @@ export default function NewCodeSessionPage() {
                 role="alert"
                 className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
               >
-                <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+                <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                 <span>
                   Cloud runs aren’t enabled on this server yet. Ask an admin to configure the cloud runner, or switch to{" "}
                   {/* rounded-xs so the global 2px focus outline traces a corner
@@ -978,9 +804,15 @@ export default function NewCodeSessionPage() {
               // recoverable one carrying the retry — it was the silent one.
               <div
                 role="alert"
-                className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
+                // `flex-wrap` + `gap-y-2`: at 320px the sentence and the retry
+                // shared one nowrap row, so the button was squeezed to its
+                // padding and the message truncated to nothing.
+                className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
               >
-                <span>Couldn’t start the cloud run — this is usually temporary.</span>
+                <span className="flex min-w-0 flex-1 items-start gap-2">
+                  <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  Couldn’t start the cloud run — this is usually temporary.
+                </span>
                 {/* The button's border matches the banner's: at /30 against the
                     frame's /40 the retry read as a lighter-weight edge inside a
                     heavier one, which is a hierarchy the two do not have. */}
@@ -991,7 +823,11 @@ export default function NewCodeSessionPage() {
                   disabled={submitting}
                   className="shrink-0 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/20 hover:text-destructive coarse:h-11"
                 >
-                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                  {submitting ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <CodeIcons.refresh className="size-3.5" aria-hidden="true" />
+                  )}
                   Try again
                 </Button>
               </div>

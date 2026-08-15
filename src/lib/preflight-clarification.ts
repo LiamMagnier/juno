@@ -35,6 +35,16 @@ export interface PendingPreflightClarification {
   originalUserMessage: string;
   attachments: ClientAttachment[];
   result: PreflightClarificationResult;
+  /**
+   * The send options the clarification interrupted, so they survive it.
+   *
+   * Deep research used to skip clarification entirely, and this field is why it
+   * no longer has to: a research turn asks its scoping questions and then
+   * resumes as a research turn. Without somewhere to park the flag, answering
+   * the questions would have started an ordinary chat turn — the run the user
+   * actually asked for would silently not happen.
+   */
+  deepResearch?: boolean;
 }
 
 export interface PreflightClarificationContext {
@@ -66,15 +76,30 @@ export function noPreflightClarification(reason: string): PreflightClarification
  * actual "is a question worth asking?" decision. These only catch cases where
  * asking is obviously wrong, so the user never pays triage latency for them.
  */
-export function quickPreflightSkip(input: { message: string; hasAttachments?: boolean }): string | null {
+export function quickPreflightSkip(input: {
+  message: string;
+  hasAttachments?: boolean;
+  /** A deep-research run's scoping step, which skips for fewer reasons. */
+  deepResearch?: boolean;
+}): string | null {
   const message = input.message.trim();
   if (!message) return "Empty message.";
   if (NO_CLARIFY_RE.test(message)) return "User asked Juno to answer without clarification.";
-  if (input.hasAttachments || CODE_OR_ERROR_RE.test(message)) return "The request includes concrete context.";
   if (SIMPLE_MATH_RE.test(message) && wordCount(message) <= 12) return "Simple direct question.";
   // Character-based, not word-based: CJK and Thai messages don't use spaces,
   // so a real request would count as "one word" and be wrongly skipped.
   if (message.length <= 8) return "Too short to need clarification — answer directly.";
+
+  // The remaining two skips are about a request already carrying enough context
+  // to answer. That reasoning holds for an answer and does not hold for a
+  // research run: attachments and a long brief say a great deal about the
+  // SUBJECT and nothing about the deliverable — who the report is for, how deep,
+  // over what period. Those are exactly what the research scoping step asks, and
+  // a detailed request is if anything the case where getting the shape wrong
+  // wastes the most time and money.
+  if (input.deepResearch) return null;
+
+  if (input.hasAttachments || CODE_OR_ERROR_RE.test(message)) return "The request includes concrete context.";
   if (message.length > 2000) return "Long, detailed request — it already carries its own context.";
   return null;
 }

@@ -43,8 +43,16 @@ const lucideDir = join(root, "node_modules/lucide-react/dist/esm/icons");
  * key renders as empty space with no error.
  */
 const ICONS = {
-  home: "home",
-  work: "briefcase",
+  // These two had NOT mirrored app-icons.ts, and they were the two marks it
+  // spends the most words rejecting: `home` was Lucide's house and `work` was
+  // the briefcase. So the iOS and macOS rails were rendering exactly the glyphs
+  // the web had considered and thrown out — the house because it names the
+  // route rather than the mode, the briefcase because it says "employment" and
+  // collapses to a filled rectangle at 14px. The pair is also the one place the
+  // switcher has to make a single distinction legible (talk versus act), and it
+  // cannot make it with a building and a bag.
+  home: "message-circle",
+  work: "zap",
   code: "code-2",
   library: "library",
   artifacts: "layers-3",

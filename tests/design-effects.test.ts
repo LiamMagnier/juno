@@ -563,3 +563,50 @@ test("an effect over stacked fills is applied once, to the whole stack", () => {
   assert.equal((svg.match(/filter="url\(#jd\d+\)"/g) ?? []).length, 1);
   assert.match(svg, /<g filter="url\(#jd\d+\)">/);
 });
+
+/**
+ * `backdropCopy` re-emits every painted chunk beneath a glass layer. Those
+ * copies were themselves in the paint list, so the second glass card copied the
+ * first card's copy as well as the original, and the third copied both —
+ * multiplicative growth in the number of overlapping backdrop layers.
+ *
+ * Measured on this exact fixture before the fix: 1 layer 4,488 bytes, 4 layers
+ * 93,903, 6 layers 812,695 — roughly 2.8x per added layer. After: 4,488 /
+ * 18,135 / 30,459, i.e. linear.
+ */
+test("overlapping glass layers do not compound each other's backdrops", () => {
+  const stack = (count: number) => {
+    let doc = signInDocument();
+    for (let i = 0; i < count; i += 1) {
+      doc = run(doc, [
+        {
+          op: "createNode",
+          parentId: null,
+          pageId: PAGE_ID,
+          node: {
+            type: "rectangle",
+            id: `glass${i}`,
+            name: `Glass ${i}`,
+            patch: {
+              x: 10 + i * 4,
+              y: 10 + i * 4,
+              width: 300,
+              height: 300,
+              effects: [GLASS],
+            },
+          },
+        },
+      ]).document;
+    }
+    return renderPageSvg(doc, PAGE_ID).svg.length;
+  };
+
+  const one = stack(1);
+  const four = stack(4);
+  // Linear-ish growth. Compounding copies used to make this ratio explode; the
+  // bound is deliberately loose so it tests the shape, not a byte count.
+  assert.ok(
+    four < one * 6,
+    `four glass layers should not cost multiplicatively (1 layer ${one} bytes, 4 layers ${four})`
+  );
+});

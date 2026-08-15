@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { User, CreditCard, Palette, MessageSquare, NotebookPen, ShieldCheck, Trash2 } from "lucide-react";
+import { User, CreditCard, Palette, MessageSquare, NotebookPen } from "lucide-react";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Dialog, DialogCloseButton, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import SettingsPage from "@/app/(app)/settings/page";
 import MemoryPage from "@/app/(app)/memory/page";
@@ -77,16 +78,21 @@ export function SettingsModal() {
               icon={<NotebookPen className="size-4" />}
               label="Memory"
             />
+            {/* The plug every other surface draws for connections, not the
+                ShieldCheck this row used to carry: a badged shield says
+                "verified", which is neither what the row navigates to nor what
+                it claims, and it was the only place in the product where
+                Connections wore a mark other than AppIcons.connections. */}
             <TabButton
               active={activeTab === "account"}
               onClick={() => setActiveTab("account")}
-              icon={<ShieldCheck className="size-4" />}
+              icon={<AppIcons.connections className="size-4" />}
               label="Connected Apps"
             />
             <TabButton
               active={activeTab === "danger"}
               onClick={() => setActiveTab("danger")}
-              icon={<Trash2 className="size-4 text-muted-foreground group-hover:text-destructive" />}
+              icon={<ActionIcons.delete className="size-4 text-muted-foreground group-hover:text-destructive" />}
               label="Data & Privacy"
             />
           </nav>

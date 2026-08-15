@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { LearningCardBlock } from "@/components/chat/learning/learning-card-block";
@@ -34,7 +34,7 @@ function BlockFallback({ kind, error }: { kind: ParsedLearningBlock["kind"]; err
   return (
     <div className="my-6 border-y border-border/60 py-4 motion-safe:animate-fade-in">
       <div className="flex items-center gap-2 text-sm text-foreground/85">
-        <AlertCircle className="size-4 shrink-0 text-warning" />
+        <StatusIcons.warning className="size-4 shrink-0 text-warning" />
         <span>
           This {LEARNING_BLOCK_LABELS[kind].toLowerCase()} couldn&apos;t be rendered
           {error ? <span className="text-muted-foreground">. {error}</span> : "."}

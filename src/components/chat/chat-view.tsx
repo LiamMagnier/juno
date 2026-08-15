@@ -4,8 +4,8 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, TriangleAlert, X } from "lucide-react";
-import { AppIcons } from "@/lib/app-icons";
+import { GitFork, GripVertical, Loader2 } from "lucide-react";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -1679,7 +1679,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           voiceSaving ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
         )}
       >
-        {voiceSaving ? <Loader2 className="size-4 animate-spin" /> : <TriangleAlert className="size-4" />}
+        {voiceSaving ? <Loader2 className="size-4 animate-spin" /> : <StatusIcons.error className="size-4" />}
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
@@ -1692,7 +1692,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             onClick={closeVoice}
             className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-xs font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
           >
-            <RefreshCw className="size-3.5" />
+            <ActionIcons.refresh className="size-3.5" />
             Retry
           </button>
           <Pressable
@@ -1707,7 +1707,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // and only made it look as though two rules were fighting.
             className="danger-hover"
           >
-            <Trash2 className="size-3.5" />
+            <ActionIcons.delete className="size-3.5" />
           </Pressable>
         </div>
       )}
@@ -1791,7 +1791,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     onClick={() => setShareOpen(true)}
                     className="text-foreground/75"
                   >
-                    <Share className="h-[18px] w-[18px]" />
+                    <ActionIcons.share className="size-4.5" />
                   </Pressable>
                 </TooltipTrigger>
                 <TooltipContent>Share chat</TooltipContent>
@@ -1856,8 +1856,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 on the black ground with nothing for the blur to smear — message
                 text scrolled straight through the project name. */}
             <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-popover py-1 pl-1 pr-1 shadow-soft motion-safe:animate-fade-in">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
-                <AppIcons.projects className="h-3 w-3 text-primary" />
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
+                <AppIcons.projects className="size-3 text-primary" />
               </span>
               <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
                 Project
@@ -1892,7 +1892,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     aria-label="Remove from project"
                     className="shrink-0"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <ActionIcons.dismiss className="size-3.5" />
                   </Pressable>
                 </TooltipTrigger>
                 <TooltipContent>Remove from project</TooltipContent>
@@ -1913,7 +1913,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 memoryLeaving ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]" : "motion-safe:animate-rise-in"
               )}
             >
-              <span className="relative flex h-1.5 w-1.5">
+              <span className="relative flex size-1.5">
                 {/* `pulse-ring`, not Tailwind's stock `ping`. Two reasons, both
                     about the system rather than this dot: ping runs a 2× scale on
                     `cubic-bezier(0,0,0.2,1)`, which is not on the ease ladder and
@@ -1921,8 +1921,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     in the product; and `pulse-ring` is the named keyframe every
                     other live dot here uses, so there is one place to tune them.
                     Same reasoning as the note at research-run-panel.tsx. */}
-                <span aria-hidden className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                <span aria-hidden className="absolute inline-flex size-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
               </span>
               <span className="font-mono text-label uppercase text-muted-foreground">Memory updated</span>
             </span>
@@ -1940,7 +1940,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-sm text-foreground/80 sm:px-5">
               {forkedFrom ? (
                 <div className="inline-flex min-w-0 items-center gap-2 font-medium">
-                  <GitFork className="h-4 w-4 shrink-0 text-primary" />
+                  <GitFork className="size-4 shrink-0 text-primary" />
                   <span className="min-w-0 truncate">
                     Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
                   </span>
@@ -1950,7 +1950,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-2 font-medium">
-                  <PrivateGhostMark className="h-4 w-4 text-foreground/70" />
+                  <PrivateGhostMark className="size-4 text-foreground/70" />
                   Incognito chat
                 </div>
               )}
@@ -1960,7 +1960,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-white/10 hover:text-foreground active:scale-95 transition-all duration-fast z-30 pointer-events-auto"
                 aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
               >
-                <X className="size-4" />
+                <ActionIcons.dismiss className="size-4" />
               </button>
             </div>
           </div>
@@ -2184,7 +2184,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           ref={setThoughtContainer}
           style={thoughtWidth != null ? ({ "--juno-thought-width": `${thoughtWidth}px` } as React.CSSProperties) : undefined}
           className={cn(
-            "relative z-40 h-full w-full shrink-0 border-border/70 bg-card",
+            "relative z-40 size-full shrink-0 border-border/70 bg-card",
             // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
             // silently overridden any drag below 416px and made the new minimum
             // unreachable. The real floor is enforced by thoughtWidthBounds.
@@ -2225,7 +2225,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 was its 1px border. It floats above two panels, so it takes the
                 floating rung. */}
             <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
-              <GripVertical className="h-3.5 w-3.5" />
+              <GripVertical className="size-3.5" />
             </span>
           </button>
         </div>
@@ -2240,7 +2240,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         <div
           style={{ "--juno-canvas-width": `${canvasWidth}px` } as React.CSSProperties}
           className={cn(
-            "relative z-40 h-full w-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
+            "relative z-40 size-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
             resizingCanvas ? "select-none transition-none" : "ease-out-expo",
             openArtifact
               ? !resizingCanvas && "duration-base animate-in fade-in slide-in-from-right-4"
@@ -2262,7 +2262,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
             >
               <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
-                <GripVertical className="h-3.5 w-3.5" />
+                <GripVertical className="size-3.5" />
               </span>
             </button>
           )}

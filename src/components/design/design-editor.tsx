@@ -24,16 +24,19 @@ import {
   Layers,
   Minus,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Redo2,
-  Share2,
   Slash,
   SlidersHorizontal,
   Square,
   Type,
   Undo2,
-  X,
   Zap,
 } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -49,6 +52,7 @@ import { InteractionsPanel } from "@/components/design/interactions-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
 import { MotionPanel, type MotionPreview } from "@/components/design/motion-panel";
 import { derivePreviewDocument } from "@/components/design/motion-model";
+import { PaneResizer, usePaneSize } from "@/components/design/panel-layout";
 import {
   useDesignDocument,
   type DesignEditorState,
@@ -187,6 +191,12 @@ export function DesignEditor({
    *  anything other than the document. */
   const [motionPreview, setMotionPreview] = React.useState<MotionPreview | null>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
+
+  // The three panes were fixed at 208 / 256 / 244. See `panel-layout.tsx` on
+  // why the right size for each of them is not knowable from in here.
+  const layersPane = usePaneSize("layers", "start");
+  const inspectorPane = usePaneSize("inspector", "end");
+  const timelinePane = usePaneSize("timeline", "top");
 
   const { document: doc, visibleDocument, pageId, selection, selectNodes, apply } = state;
 
@@ -392,6 +402,17 @@ export function DesignEditor({
         else apply([{ op: "groupNodes", nodeIds: selection }], "Group");
         return;
       }
+      // ⌥⌘K — make a component of the selected layer, on the shortcut every
+      // designer already has in their fingers. Checked before ⌘A so the Alt
+      // variant is not swallowed by a plainer binding.
+      if (mod && event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (selection.length !== 1) return;
+        const node = doc?.nodes[selection[0]];
+        if (!node || node.locked || node.type === "component" || node.type === "instance") return;
+        apply([{ op: "createComponent", nodeId: node.id, name: node.name }], "Create component");
+        return;
+      }
       if (mod && event.key.toLowerCase() === "a") {
         event.preventDefault();
         const page = doc?.pages.find((p) => p.id === pageId);
@@ -470,6 +491,12 @@ export function DesignEditor({
   if (!visibleDocument || !doc) {
     return <div className="flex h-full items-center justify-center text-caption text-muted-foreground">Loading design…</div>;
   }
+
+  // The responsive rule the rails have always followed, hoisted so the collapsed
+  // stub and the resize grip obey it too — a rail hidden by viewport width must
+  // not leave a grip or a re-open button floating where it used to be.
+  const leftRailVisibility = surface === "window" ? "flex" : "hidden md:flex";
+  const rightRailVisibility = surface === "window" ? "flex" : "hidden lg:flex";
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col" data-juno-design-editor="">
@@ -579,7 +606,7 @@ export function DesignEditor({
               aria-label="Export"
               className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground"
             >
-              <Share2 className="size-3.5" aria-hidden />
+              <ActionIcons.share className="size-3.5" aria-hidden />
               Export
             </Button>
           </DropdownMenuTrigger>
@@ -615,8 +642,19 @@ export function DesignEditor({
 
       {/* Body: layers · canvas · inspector */}
       <div className="flex min-h-0 flex-1">
-        <aside className={cn("w-52 shrink-0 flex-col border-r border-border/60", surface === "window" ? "flex" : "hidden md:flex")}>
-          <div className="flex border-b border-border/60">
+        {layersPane.collapsed && (
+          <CollapsedRail
+            side="left"
+            label="Show the layers rail"
+            className={leftRailVisibility}
+            onExpand={() => layersPane.setCollapsed(false)}
+          />
+        )}
+        <aside
+          style={{ width: layersPane.size }}
+          className={cn("shrink-0 flex-col border-r border-border/60", layersPane.collapsed ? "hidden" : leftRailVisibility)}
+        >
+          <div className="flex items-center border-b border-border/60">
             {(["layers", "history"] as const).map((value) => (
               <button
                 key={value}
@@ -624,7 +662,7 @@ export function DesignEditor({
                 onClick={() => setPanel(value)}
                 aria-pressed={panel === value}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
+                  "flex min-w-0 flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
                   panel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -632,6 +670,9 @@ export function DesignEditor({
                 {value === "layers" ? "Layers" : "History"}
               </button>
             ))}
+            <RailToggle label="Hide the layers rail" onClick={() => layersPane.setCollapsed(true)}>
+              <PanelLeftClose className="size-3.5" aria-hidden />
+            </RailToggle>
           </div>
           {panel === "layers" ? (
             <LayersPanel
@@ -657,6 +698,9 @@ export function DesignEditor({
             <HistoryList state={state} onSelect={selectNodes} />
           )}
         </aside>
+        {!layersPane.collapsed && (
+          <PaneResizer label="Resize the layers rail" orientation="vertical" pane={layersPane} className={leftRailVisibility} />
+        )}
 
         {/* The canvas column. The timeline docks under it rather than floating
             over it: a time axis needs the full width, and a keyframe you have to
@@ -693,20 +737,33 @@ export function DesignEditor({
             )}
           </div>
           {motionOpen && (
-            <MotionPanel
-              document={visibleDocument}
-              selection={selection}
-              onSelect={selectNodes}
-              onApply={(operations, summary) => apply(operations, summary)}
-              onPreview={handleMotionPreview}
-              onClose={() => setMotionOpen(false)}
-              readOnly={readOnly || !!state.pending}
-            />
+            <>
+              <PaneResizer label="Resize the motion timeline" orientation="horizontal" pane={timelinePane} />
+              <MotionPanel
+                document={visibleDocument}
+                selection={selection}
+                onSelect={selectNodes}
+                onApply={(operations, summary) => apply(operations, summary)}
+                onPreview={handleMotionPreview}
+                onClose={() => setMotionOpen(false)}
+                readOnly={readOnly || !!state.pending}
+                height={timelinePane.size}
+              />
+            </>
           )}
         </div>
 
-        <aside className={cn("w-64 shrink-0 flex-col border-l border-border/60", surface === "window" ? "flex" : "hidden lg:flex")}>
-          <div className="flex border-b border-border/60">
+        {!inspectorPane.collapsed && (
+          <PaneResizer label="Resize the inspector" orientation="vertical" pane={inspectorPane} className={rightRailVisibility} />
+        )}
+        <aside
+          style={{ width: inspectorPane.size }}
+          className={cn("shrink-0 flex-col border-l border-border/60", inspectorPane.collapsed ? "hidden" : rightRailVisibility)}
+        >
+          <div className="flex items-center border-b border-border/60">
+            <RailToggle label="Hide the inspector" onClick={() => inspectorPane.setCollapsed(true)}>
+              <PanelRightClose className="size-3.5" aria-hidden />
+            </RailToggle>
             {(["design", "prototype"] as const).map((value) => (
               <button
                 key={value}
@@ -714,7 +771,7 @@ export function DesignEditor({
                 onClick={() => setRightPanel(value)}
                 aria-pressed={rightPanel === value}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
+                  "flex min-w-0 flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
                   rightPanel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -729,7 +786,68 @@ export function DesignEditor({
             <InteractionsPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
           )}
         </aside>
+        {inspectorPane.collapsed && (
+          <CollapsedRail
+            side="right"
+            label="Show the inspector"
+            className={rightRailVisibility}
+            onExpand={() => inspectorPane.setCollapsed(false)}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** The toggle in a rail's tab strip. Deliberately the same size as the tabs it
+ *  sits beside rather than a floating chevron: it is one of the strip's
+ *  controls, not an overlay on top of it. */
+function RailToggle({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="pressable shrink-0 px-1.5 py-1.5 text-muted-foreground transition-colors hover:text-foreground coarse:min-h-9"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * What a collapsed rail leaves behind.
+ *
+ * Not nothing. A rail that vanishes entirely takes its own way back with it —
+ * the only remaining route would be a menu item somewhere else in the window,
+ * which is how a collapsed panel becomes a permanently lost one. Twenty-eight
+ * pixels is enough for the button and little enough that collapsing is still
+ * worth doing.
+ */
+function CollapsedRail({
+  side,
+  label,
+  className,
+  onExpand,
+}: {
+  side: "left" | "right";
+  label: string;
+  className?: string;
+  onExpand: () => void;
+}) {
+  const Icon = side === "left" ? PanelLeftOpen : PanelRightOpen;
+  return (
+    <div className={cn("w-7 shrink-0 flex-col items-center pt-1.5", side === "left" ? "border-r" : "border-l", "border-border/60", className)}>
+      <button
+        type="button"
+        onClick={onExpand}
+        aria-label={label}
+        title={label}
+        className="pressable rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Icon className="size-3.5" aria-hidden />
+      </button>
     </div>
   );
 }
@@ -769,7 +887,7 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
             }}
             className="gap-1.5"
           >
-            <X className="size-3.5" aria-hidden /> Reject
+            <ActionIcons.dismiss className="size-3.5" aria-hidden /> Reject
           </Button>
           <Button
             size="sm"

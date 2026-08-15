@@ -30,6 +30,8 @@ import {
   hitPath,
   pathHit,
   pressLandsInSelection,
+  resizeRotatedBox,
+  resizeSelection,
 } from "../src/components/design/design-canvas";
 import { layoutPage } from "../src/lib/design/layout";
 import type { DesignDocument } from "../src/lib/design/types";
@@ -339,4 +341,102 @@ test("double-clicking a text layer that sits in a frame still puts a caret in it
   assert.equal(descendSelection({ path, selection: ["screen"] }), "title");
   assert.equal(doubleClickTarget({ path, selection: ["title"] }), "title");
   assert.equal(doubleClickTarget({ path: ["title"], selection: ["title"] }), "title", "a top-level text layer is its own path");
+});
+
+/**
+ * Rotation is a render transform, and `layoutPage` deliberately reports
+ * axis-aligned boxes — so every hit test worked on the unrotated rectangle. A
+ * rotated layer was therefore selectable in the empty corners of its bounding
+ * box and NOT on parts of its own artwork.
+ */
+test("hit testing follows a layer's rotation, and its parent's", () => {
+  const doc = run(emptyDocument(), [
+    {
+      op: "createNode",
+      parentId: null,
+      pageId: PAGE_ID,
+      node: { type: "rectangle", id: "tall", name: "Tall", patch: { x: 100, y: 0, width: 40, height: 200, rotation: 90 } },
+    },
+  ]).document;
+  const boxes = layoutPage(doc, PAGE_ID);
+
+  // Rotated 90°, the 40×200 bar centred at (120,100) covers a 200×40 band.
+  // A point far out along the band is on the artwork…
+  assert.deepEqual(hitPath({ x: 30, y: 100 }, doc, PAGE_ID, boxes), ["tall"]);
+  // …and a point near the top of the UNROTATED box is now empty canvas.
+  assert.deepEqual(hitPath({ x: 120, y: 10 }, doc, PAGE_ID, boxes), []);
+  assert.equal(pressLandsInSelection({ x: 30, y: 100 }, ["tall"], boxes, doc), true);
+  assert.equal(pressLandsInSelection({ x: 120, y: 10 }, ["tall"], boxes, doc), false);
+});
+
+test("a child of a rotated frame inherits that rotation when hit tested", () => {
+  const doc = run(emptyDocument(), [
+    {
+      op: "createNode",
+      parentId: null,
+      pageId: PAGE_ID,
+      node: { type: "frame", id: "frame", name: "Frame", patch: { x: 0, y: 0, width: 200, height: 200, rotation: 90 } },
+    },
+    {
+      op: "createNode",
+      parentId: "frame",
+      pageId: PAGE_ID,
+      node: { type: "rectangle", id: "chip", name: "Chip", patch: { x: 0, y: 0, width: 40, height: 40 } },
+    },
+  ]).document;
+  const boxes = layoutPage(doc, PAGE_ID);
+
+  // The child sits at the frame's top-left unrotated. With the frame turned 90°
+  // about its centre, that corner swings to the top-RIGHT.
+  assert.deepEqual(hitPath({ x: 180, y: 20 }, doc, PAGE_ID, boxes), ["frame", "chip"]);
+  // Its unrotated position is inside the frame but no longer on the child.
+  assert.deepEqual(hitPath({ x: 20, y: 20 }, doc, PAGE_ID, boxes), ["frame"]);
+});
+
+/**
+ * A resize on a rotated layer used to apply the page-space delta to an unrotated
+ * box, so the layer grew along the page's axes rather than its own and the
+ * corner you were not holding wandered off.
+ */
+test("resizing a rotated layer works along its own axes and pins the opposite corner", () => {
+  const box = { x: 0, y: 0, width: 100, height: 100 };
+
+  // Unrotated, this is exactly the old behaviour.
+  assert.deepEqual(
+    resizeRotatedBox(box, "se", 20, 10, 0, false),
+    { x: 0, y: 0, width: 120, height: 110 }
+  );
+
+  // Turned 90°, dragging DOWN the page is dragging along the layer's own +x.
+  const turned = resizeRotatedBox(box, "se", 0, 20, 90, false);
+  assert.ok(Math.abs(turned.width - 120) < 1e-6, "the drag grows the layer's own width");
+  assert.ok(Math.abs(turned.height - 100) < 1e-6, "and leaves its height alone");
+
+  // The corner opposite the handle must not move on screen.
+  const centre = (b: { x: number; y: number; width: number; height: number }) => ({
+    x: b.x + b.width / 2,
+    y: b.y + b.height / 2,
+  });
+  const rotateAbout = (p: { x: number; y: number }, c: { x: number; y: number }, deg: number) => {
+    const r = (deg * Math.PI) / 180;
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    return { x: c.x + dx * Math.cos(r) - dy * Math.sin(r), y: c.y + dx * Math.sin(r) + dy * Math.cos(r) };
+  };
+  const before = rotateAbout({ x: box.x, y: box.y }, centre(box), 90);
+  const after = rotateAbout({ x: turned.x, y: turned.y }, centre(turned), 90);
+  assert.ok(Math.abs(before.x - after.x) < 1e-6 && Math.abs(before.y - after.y) < 1e-6,
+    `the pinned corner moved: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+});
+
+test("a multi-selection resize scales the group and ignores any one layer's rotation", () => {
+  const boxes = new Map([
+    ["a", { x: 0, y: 0, width: 100, height: 100 }],
+    ["b", { x: 100, y: 0, width: 100, height: 100 }],
+  ]);
+  // Rotation is passed but must be ignored for more than one layer.
+  const out = resizeSelection(boxes, "e", 200, 0, false, 90);
+  assert.equal(out.get("a")!.width, 200, "each layer scales by the group's factor");
+  assert.equal(out.get("b")!.x, 200, "and keeps its relative position");
+  assert.equal(out.get("b")!.width, 200);
 });

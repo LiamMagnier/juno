@@ -106,6 +106,158 @@ test("PDF escapes text that would otherwise break a literal string", () => {
   assert.ok(result.content.includes("Sign \\(in\\) \\\\ now"));
 });
 
+/**
+ * The cross-reference table has to be right in BYTES.
+ *
+ * `assemblePdf` measured its offsets with `String.length`, which counts UTF-16
+ * code units — but the file is served as UTF-8, where any non-ASCII character is
+ * two or more bytes. One accented letter, curly quote or em dash in a text layer
+ * therefore shifted every subsequent object past its recorded offset, and the
+ * xref pointed into the middle of an object. Readers either silently repair the
+ * file or refuse it, and nothing in the export path noticed.
+ */
+test("the PDF cross-reference table points at real byte offsets, even with non-ASCII text", () => {
+  const doc = run(signInDocument(), [
+    // Every class of character that used to break it: an accent, an em dash, a
+    // curly apostrophe and a symbol outside Latin-1.
+    { op: "updateNode", nodeId: "buttonLabel", patch: { characters: "Café — l’été € ✓" } },
+  ]).document;
+  const result = exportPdf(doc, PAGE_ID);
+  const bytes = new TextEncoder().encode(result.content);
+
+  const startxref = Number(/startxref\n(\d+)/.exec(result.content)?.[1]);
+  assert.ok(Number.isFinite(startxref), "the trailer must carry a startxref offset");
+
+  const at = (offset: number, length: number) =>
+    new TextDecoder("latin1").decode(bytes.slice(offset, offset + length));
+  assert.equal(at(startxref, 4), "xref", "startxref must land on the xref keyword");
+
+  // Each 10-digit entry after the free record must land on "<n> 0 obj".
+  const table = /xref\n0 (\d+)\n0000000000 65535 f \n([\s\S]*?)trailer/.exec(result.content);
+  assert.ok(table, "the xref table must be present");
+  const offsets = [...table[2].matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+  assert.equal(offsets.length, Number(table[1]) - 1, "one entry per object");
+
+  offsets.forEach((offset, index) => {
+    const expected = `${index + 1} 0 obj`;
+    assert.equal(
+      at(offset, expected.length),
+      expected,
+      `object ${index + 1} must begin exactly at its recorded byte offset`
+    );
+  });
+});
+
+/**
+ * A Type1 Helvetica literal string cannot carry UTF-8. Text is transcoded to
+ * WinAnsi so the glyphs a reader draws are the glyphs that were authored, and
+ * anything with no WinAnsi equivalent degrades visibly rather than corrupting
+ * the stream.
+ */
+test("PDF text is WinAnsi, so the emitted file stays single-byte", () => {
+  const doc = run(signInDocument(), [
+    { op: "updateNode", nodeId: "buttonLabel", patch: { characters: "Café — l’été ✓" } },
+  ]).document;
+  const result = exportPdf(doc, PAGE_ID);
+  for (let i = 0; i < result.content.length; i += 1) {
+    assert.ok(
+      result.content.charCodeAt(i) < 128,
+      `every emitted character must be single-byte; found U+${result.content.charCodeAt(i).toString(16)} at ${i}`
+    );
+  }
+});
+
+/**
+ * `cornerRadius` accepts a per-corner tuple and every drawing path collapsed it
+ * with `Math.max(...)`, so a card rounded only at the top drew as four equal
+ * corners everywhere it was rendered.
+ */
+test("a per-corner radius draws as four different corners, and a uniform one stays a rect", () => {
+  const uniform = exportSvg(run(signInDocument(), [
+    { op: "updateNode", nodeId: "card", patch: { cornerRadius: 12 } },
+  ]).document, PAGE_ID);
+  assert.match(uniform.content, /<rect[^>]*rx="12"/, "a uniform radius stays the cheaper <rect rx>");
+
+  const perCorner = exportSvg(run(signInDocument(), [
+    { op: "updateNode", nodeId: "card", patch: { cornerRadius: [16, 16, 0, 0] } },
+  ]).document, PAGE_ID);
+  const path = /<path d="(M[^"]*Z)"/.exec(perCorner.content);
+  assert.ok(path, "a per-corner radius becomes a path");
+  // Two arcs, not four: the two zero corners emit none.
+  assert.equal((path[1].match(/a16 16/g) ?? []).length, 2, "only the rounded corners get an arc");
+  assert.ok(!/a0 0/.test(path[1]), "square corners emit no arc at all");
+});
+
+/**
+ * `Stroke.align` is in the schema and was drawn as `center` whatever it said, so
+ * a 4pt inside stroke overflowed its own box by 2pt and `outside` was identical
+ * to `inside`.
+ */
+test("stroke alignment is drawn, not just stored", () => {
+  const stroked = (align: "inside" | "center" | "outside") =>
+    exportSvg(run(signInDocument(), [
+      {
+        op: "updateNode",
+        nodeId: "card",
+        patch: { strokes: [{ paint: { type: "solid", color: { r: 0, g: 0, b: 0, a: 1 } }, weight: 4, align }] },
+      },
+    ]).document, PAGE_ID).content;
+
+  const centre = stroked("center");
+  assert.match(centre, /stroke-width="4"/, "a centred stroke is drawn at its own weight");
+  assert.ok(!/clip-path="url\(#/.test(centre) || !/stroke-width="8"/.test(centre));
+
+  const inside = stroked("inside");
+  assert.match(inside, /stroke-width="8"/, "inside is drawn double and then halved");
+  assert.match(inside, /clip-path="url\(#/, "…by clipping it to the shape");
+
+  const outside = stroked("outside");
+  assert.match(outside, /<mask id=/, "outside is drawn double and masked");
+  assert.match(outside, /mask="url\(#/);
+  assert.notEqual(inside, outside, "inside and outside must not render identically");
+});
+
+/**
+ * `emit` switched on `interaction.action.type` and never read
+ * `interaction.trigger`, so a hover, a key, a delay and a scroll-into-view all
+ * exported as the same global click handler.
+ */
+test("the HTML prototype binds the trigger that was authored", () => {
+  const withTrigger = (trigger: Record<string, unknown>) =>
+    exportHtmlPrototype(run(signInDocument(), [
+      {
+        op: "createInteraction",
+        interaction: {
+          id: "i1",
+          sourceNodeId: "button",
+          trigger: trigger as never,
+          action: { type: "navigate", targetNodeId: "screen" },
+          transition: { kind: "instant", direction: "left", durationMs: 0, delayMs: 0, easing: { type: "linear" }, matchStableIds: false },
+        },
+      },
+    ]).document, PAGE_ID);
+
+  const hover = withTrigger({ type: "hover" });
+  assert.match(hover.content, /data-trigger="hover"/);
+  assert.match(hover.content, /addEventListener\('mouseenter'/);
+
+  const delayed = withTrigger({ type: "delay", ms: 2000 });
+  assert.match(delayed.content, /data-trigger="delay"/);
+  assert.match(delayed.content, /data-trigger-ms="2000"/);
+  assert.match(delayed.content, /setTimeout/);
+
+  const keyed = withTrigger({ type: "key", key: "Enter" });
+  assert.match(keyed.content, /data-trigger-key="Enter"/);
+  assert.match(keyed.content, /addEventListener\('keydown'/);
+
+  const scroll = withTrigger({ type: "scroll-into-view" });
+  assert.match(scroll.content, /IntersectionObserver/);
+
+  // A trigger with no honest HTML equivalent is reported rather than downgraded.
+  const dragged = withTrigger({ type: "drag" });
+  assert.ok(dragged.unsupported.some((line) => /drag trigger/.test(line)));
+});
+
 // ---------------------------------------------------------------------------
 // HTML prototype
 // ---------------------------------------------------------------------------

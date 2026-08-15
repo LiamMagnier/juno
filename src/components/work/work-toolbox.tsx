@@ -2,15 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, RefreshCw, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
+import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSkills } from "@/components/work/work-transport";
 import { cn } from "@/lib/utils";
-import { staggerDelay } from "@/lib/motion";
 
 /*
  * What this task can reach for: the skills Juno may apply, and the apps the
@@ -66,17 +66,8 @@ export function WorkToolbox() {
   }, [load]);
 
   if (skills === null && connectors === null && !failed) {
-    return (
-      <div className="space-y-2">
-        {[...Array(2)].map((_, index) => (
-          <Skeleton
-            key={index}
-            className="h-9 w-full rounded-field"
-            style={staggerDelay(index, "tight")}
-          />
-        ))}
-      </div>
-    );
+    // 36px, the height of a `ToolboxRow` — a label over a note, at row density.
+    return <WorkRowSkeletons count={2} height={36} className="space-y-2" />;
   }
 
   // `autoSelect` and `trust` are written separately and only the pair is the
@@ -116,7 +107,7 @@ export function WorkToolbox() {
                   <ToolboxRow
                     key={skill.id}
                     href={`/work/skills/${skill.id}`}
-                    icon={<Sparkles className="h-3 w-3 text-primary" aria-hidden="true" />}
+                    icon={<Sparkles className="size-3 text-primary" aria-hidden="true" />}
                     label={skill.name}
                     note="Juno may apply this on its own"
                   />
@@ -129,7 +120,7 @@ export function WorkToolbox() {
                   <ToolboxRow
                     key={skill.id}
                     href={`/work/skills/${skill.id}`}
-                    icon={<Sparkles className="h-3 w-3 text-muted-foreground" aria-hidden="true" />}
+                    icon={<Sparkles className="size-3 text-muted-foreground" aria-hidden="true" />}
                     label={skill.name}
                     note={`Only when you type /${skill.slug}`}
                   />
@@ -161,7 +152,7 @@ export function WorkToolbox() {
                 <ToolboxRow
                   key={connector.id}
                   href="/connections"
-                  icon={<Check className="h-3 w-3 text-success-ink" aria-hidden="true" />}
+                  icon={<StatusIcons.success className="size-3 text-success-ink" aria-hidden="true" />}
                   label={connector.label}
                   note={connector.accountLabel ?? "Linked"}
                 />
@@ -186,7 +177,7 @@ export function WorkToolbox() {
           onClick={() => void load()}
           className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
         >
-          <RefreshCw className="h-3 w-3" aria-hidden="true" /> Try again
+          <ActionIcons.refresh className="size-3" aria-hidden="true" /> Try again
         </Button>
       )}
     </div>
@@ -211,7 +202,7 @@ function ToolboxRow({
           and hover fill. Nothing left here but the contents. */}
       <Pressable kind="row" size="sm" asChild>
         <Link href={href}>
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+          <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>
           <span className="min-w-0 flex-1 truncate text-ui text-foreground">{label}</span>
           <span className="shrink-0 font-mono text-micro text-muted-foreground">{note}</span>
         </Link>

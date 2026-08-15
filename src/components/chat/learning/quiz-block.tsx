@@ -2,10 +2,37 @@
 
 import * as React from "react";
 import { BlockLead, BlockShell, BlockTitle, LessonKicker, Microcap, Reveal, TextToggle } from "@/components/chat/learning/block-shell";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import type { QuizData } from "@/lib/learning-blocks";
 
 const LETTERS = "ABCDEFGH";
+
+/*
+ * The tick and the cross this block marks an answer with.
+ *
+ * They were "✓" and "✕" inside a font-mono span. A text glyph is a FONT, not an
+ * icon: it carries the text weight rather than the optical stroke ladder, sits
+ * on the text baseline rather than the icon's optical centre, and resolves
+ * against whatever fallback font on the reader's machine happens to have those
+ * code points — so the one mark that tells someone they were right was drawn
+ * differently on every platform, and differently from the tick every other
+ * surface in Juno uses.
+ *
+ * `inline-block` + `align-middle` rather than the svg's default block display:
+ * both call sites sit in an `items-baseline` grid whose other column is prose,
+ * and a block-level svg has no text baseline for that grid to align to, so the
+ * question would have shifted relative to its own marker.
+ */
+function RightMark({ className }: { className?: string }) {
+  return <StatusIcons.success aria-hidden className={cn("inline-block size-3.5 align-middle", className)} />;
+}
+
+/** The counterpart cross — the same X the registry already draws, not a second
+ *  cross invented for this block. */
+function WrongMark({ className }: { className?: string }) {
+  return <ActionIcons.dismiss aria-hidden className={cn("inline-block size-3.5 align-middle", className)} />;
+}
 
 type OptionState = "idle" | "correct" | "wrong" | "reveal" | "dim";
 
@@ -111,9 +138,9 @@ export function QuizInteraction({
               <li key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-2.5 py-2.5">
                 <span
                   aria-hidden
-                  className={cn("text-center font-mono text-ui font-semibold", right ? "text-success-ink" : "text-destructive-ink")}
+                  className={cn("text-center text-ui", right ? "text-success-ink" : "text-destructive-ink")}
                 >
-                  {right ? "✓" : "✕"}
+                  {right ? <RightMark /> : <WrongMark />}
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="font-serif text-body leading-6 text-foreground/90">{question.question}</span>
@@ -210,9 +237,9 @@ export function QuizInteraction({
                   />
                 )}
                 {state === "correct" || state === "reveal" ? (
-                  <span className="motion-safe:animate-pop-in">✓</span>
+                  <RightMark className="motion-safe:animate-pop-in" />
                 ) : state === "wrong" ? (
-                  <span className="motion-safe:animate-pop-in">✕</span>
+                  <WrongMark className="motion-safe:animate-pop-in" />
                 ) : (
                   LETTERS[index] ?? index + 1
                 )}

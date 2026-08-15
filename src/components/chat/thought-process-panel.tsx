@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { AicssCodeBlock } from "@/components/aicss/code-block";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { ThinkingState } from "@/components/aicss/thinking-state";
@@ -947,7 +948,7 @@ export function ThoughtProcessPanel({
       ref={rootRef}
       tabIndex={-1}
       aria-labelledby={`${id}-title`}
-      className="flex h-full w-full flex-col bg-card focus:outline-none"
+      className="flex size-full flex-col bg-card focus:outline-none"
     >
       <header className="flex shrink-0 items-start gap-4 border-b border-border/55 px-5 py-4">
         <div className="min-w-0 flex-1">
@@ -982,7 +983,7 @@ export function ThoughtProcessPanel({
             set `outline-none` and drew their own focus ring — all of them now
             defer to the global `:focus-visible` rule, which is the authority. */}
         <Pressable kind="icon" size="lg" onClick={onClose} className="shrink-0">
-          <X className="size-4" aria-hidden="true" />
+          <ActionIcons.dismiss className="size-4" aria-hidden="true" />
           <span className="sr-only">Close thought process</span>
         </Pressable>
       </header>

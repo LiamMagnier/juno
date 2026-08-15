@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,7 +73,7 @@ export function ResetPasswordForm() {
   if (complete) {
     return (
       <div className="space-y-5 text-center" role="status">
-        <CheckCircle2 className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
+        <StatusIcons.success className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
         <div className="space-y-1.5">
           {/* text-heading, not text-xl — see the same note in forgot-password-form. */}
           <h2 className="font-serif text-heading font-medium">Password updated</h2>
@@ -93,7 +94,7 @@ export function ResetPasswordForm() {
       // icon, no heading and no destructive tint, so the state that needs to be
       // read carefully was the quietest thing the card could render.
       <div className="space-y-5 text-center" role="alert">
-        <TriangleAlert className="mx-auto size-9 text-destructive motion-safe:animate-pop-in" aria-hidden />
+        <StatusIcons.error className="mx-auto size-9 text-destructive motion-safe:animate-pop-in" aria-hidden />
         <div className="space-y-1.5">
           <h2 className="font-serif text-heading font-medium">This link no longer works</h2>
           <p className="text-body text-muted-foreground">

@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import {
-  AlertTriangle,
   Ban,
-  Check,
   ChevronRight,
   CircleDashed,
   FileText,
@@ -15,11 +13,13 @@ import {
   Minus,
   PauseCircle,
   PlayCircle,
-  ShieldAlert,
   Sparkles,
   Wrench,
   X,
 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
+import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { staggerDelay } from "@/lib/motion";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import type { WorkEventKind } from "@/lib/work/domain";
 import {
@@ -199,7 +199,7 @@ export function derivePlan(events: readonly ClientWorkEvent[]): PlanStep[] {
 const STEP_ICON: Record<PlanStepState, React.ComponentType<{ className?: string }>> = {
   pending: CircleDashed,
   active: Loader2,
-  done: Check,
+  done: StatusIcons.success,
   skipped: Minus,
   failed: X,
   // Not an X. The step did not fail — the run stopped while it was open, and
@@ -236,7 +236,7 @@ export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
           <li key={step.id} className="flex items-start gap-2.5 text-ui leading-relaxed">
             <Icon
               className={cn(
-                "mt-[3px] h-3.5 w-3.5 shrink-0",
+                "mt-[3px] size-3.5 shrink-0",
                 STEP_CLASS[step.state],
                 step.state === "active" && "motion-safe:animate-spin"
               )}
@@ -369,7 +369,7 @@ export function WorkCurrentAction({ action }: { action: CurrentAction | null }) 
     // right now" was dimmer than the inert cards around it.
     <div className="flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/10 px-3.5 py-2.5">
       <Loader2
-        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary motion-safe:animate-spin"
+        className="mt-0.5 size-3.5 shrink-0 text-primary motion-safe:animate-spin"
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
@@ -559,7 +559,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
       const failed = refused || bool(payload, "isError") === true;
       const state: ActivityState = refused ? "refused" : failed ? "failed" : "done";
       const tone: EntryTone = refused ? "warning" : failed ? "bad" : "quiet";
-      const icon = refused ? Ban : failed ? AlertTriangle : Check;
+      const icon = refused ? Ban : failed ? StatusIcons.error : StatusIcons.success;
       const started = takeOpen(callId, str(payload, "tool", "name"));
       if (started !== undefined) {
         started.state = state;
@@ -776,6 +776,27 @@ export function WorkActivity({
   entries: readonly ActivityEntry[];
   phase: ActivityPhase;
 }) {
+  /*
+   * The feed is the one list in Work that grows while somebody is watching it,
+   * and until now it grew by repainting: a row appeared fully formed, with
+   * nothing to say it had just arrived rather than always having been there. On
+   * a live run that happens about once a second, which is the difference
+   * between a page that is working and a page that is flickering.
+   *
+   * `useWorkArrivals` is the same hook the task list uses, for the same reason
+   * and with the same trade. It answers "is this row new, and is it the nth new
+   * one" — a rank among the ARRIVALS rather than a position in the list — which
+   * is what stops a single row appended at position sixty from waiting out
+   * sixty rows' worth of stagger before it appears. Everything already on
+   * screen is handed `null` and does not move at all.
+   *
+   * Called before the early return, because a hook cannot be conditional: the
+   * empty-feed branch below is a state the same feed passes through on its way
+   * to having rows, and skipping the call there would change the hook order
+   * between two renders of the same component.
+   */
+  const arrivals = useWorkArrivals(entries.map((entry) => entry.id));
+
   if (entries.length === 0) {
     return (
       <p className="text-ui leading-relaxed text-muted-foreground">
@@ -809,9 +830,19 @@ export function WorkActivity({
           <ol className="relative space-y-2.5 border-l border-border/60 pl-4">
             {foldBatches(group.entries).map((piece) =>
               piece.kind === "row" ? (
-                <ActivityRow key={piece.entry.id} entry={piece.entry} phase={phase} />
+                <ActivityRow
+                  key={piece.entry.id}
+                  entry={piece.entry}
+                  phase={phase}
+                  arrivals={arrivals}
+                />
               ) : (
-                <ActivityBatch key={piece.entries[0].id} entries={piece.entries} phase={phase} />
+                <ActivityBatch
+                  key={piece.entries[0].id}
+                  entries={piece.entries}
+                  phase={phase}
+                  arrivals={arrivals}
+                />
               )
             )}
           </ol>
@@ -819,6 +850,42 @@ export function WorkActivity({
       ))}
     </div>
   );
+}
+
+/**
+ * The entrance for a feed row, frozen at mount.
+ *
+ * Two things are going on and both matter. The RANK comes from the list, which
+ * is the only thing that can know whether this row was on screen a moment ago;
+ * the DECISION is frozen in a ref, because `arrivals` says `null` for this row
+ * on the very next render, and taking an animation class off an element that is
+ * still playing it snaps it to its final frame mid-flight. Arriving is a fact
+ * about mounting, and a ref is what makes it one. The task row makes exactly
+ * this argument at more length.
+ *
+ * `fade-up` rather than `rise-in`: six pixels, not eight. These rows are 20px
+ * tall and arrive several a second, and the workhorse entrance at this density
+ * reads as the list jittering rather than as rows landing.
+ */
+/**
+ * The answer for a row that has no list behind it — every row inside an open
+ * fold. Hoisted so it is the same object on every render: a fresh literal would
+ * be a new identity each pass, and `useFeedEntrance` holds it in a ref.
+ */
+const NO_ARRIVALS: WorkArrivals = { rankFor: () => null };
+
+function useFeedEntrance(id: string, arrivals: WorkArrivals) {
+  const rank = React.useRef<number | null>(null);
+  const decided = React.useRef(false);
+  if (!decided.current) {
+    decided.current = true;
+    rank.current = arrivals.rankFor(id);
+  }
+  if (rank.current === null) return {};
+  return {
+    className: "[animation-fill-mode:backwards] motion-safe:animate-fade-in-up",
+    style: staggerDelay(rank.current, "tight"),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -907,10 +974,17 @@ function batchItem(entry: ActivityEntry, phase: ActivityPhase): BatchItem {
 function ActivityBatch({
   entries,
   phase,
+  arrivals,
 }: {
   entries: readonly ActivityEntry[];
   phase: ActivityPhase;
+  arrivals: WorkArrivals;
 }) {
+  // The fold enters on its FIRST call's arrival, because that is the moment the
+  // fold itself came into existence. Keying it off the newest call instead would
+  // replay the entrance every time a run of calls grew by one, which is once a
+  // second on a busy run — the whole fold flinching to report a row inside it.
+  const entrance = useFeedEntrance(entries[0].id, arrivals);
   const summary = React.useMemo(
     () => summariseBatch(entries.map((entry) => batchItem(entry, phase))),
     [entries, phase]
@@ -948,7 +1022,7 @@ function ActivityBatch({
       ? TONE_CLASS.warning
       : "text-muted-foreground";
   const Icon = failed
-    ? AlertTriangle
+    ? StatusIcons.error
     : summary.troubled
       ? CircleDashed
       : running
@@ -956,14 +1030,14 @@ function ActivityBatch({
         : Layers;
 
   return (
-    <li className="relative">
+    <li className={cn("relative", entrance.className)} style={entrance.style}>
       <span
-        className="absolute -left-[21px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+        className="absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full bg-background"
         aria-hidden="true"
       >
         <Icon
           className={cn(
-            "h-3 w-3",
+            "size-3",
             // The one place the marker departs from the line: a fold still
             // filling up ticks, exactly as the running row inside it would.
             // Collapsed, it is the only sign the run has not stalled.
@@ -986,7 +1060,7 @@ function ActivityBatch({
       >
         <ChevronRight
           className={cn(
-            "h-2.5 w-2.5 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-foreground",
+            "size-2.5 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-foreground",
             open && "rotate-90"
           )}
           aria-hidden="true"
@@ -1017,6 +1091,10 @@ function ActivityBatch({
 
       {open && (
         <ol className="mt-2.5 space-y-2.5 border-l border-border/50 pl-4">
+          {/* No `arrivals` inside an open fold. These rows mount when the reader
+              opens the disclosure, not when the calls happened, so an entrance
+              here would be twenty rows cascading in on a click — which is the
+              gesture reporting itself, not the run reporting anything. */}
           {entries.map((entry) => (
             <ActivityRow key={entry.id} entry={entry} phase={phase} />
           ))}
@@ -1026,21 +1104,31 @@ function ActivityBatch({
   );
 }
 
-function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPhase }) {
+function ActivityRow({
+  entry,
+  phase,
+  arrivals,
+}: {
+  entry: ActivityEntry;
+  phase: ActivityPhase;
+  /** Absent inside an open fold, where mounting is a click rather than an event. */
+  arrivals?: WorkArrivals;
+}) {
   const [open, setOpen] = React.useState(false);
+  const entrance = useFeedEntrance(entry.id, arrivals ?? NO_ARRIVALS);
   const Icon = entry.icon;
   const stranded = isStranded(entry, phase);
   const running = entry.state === "running" && !stranded;
 
   return (
-    <li className="relative">
+    <li className={cn("relative", entrance.className)} style={entrance.style}>
       <span
-        className="absolute -left-[21px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+        className="absolute -left-[21px] top-1 flex size-3.5 items-center justify-center rounded-full bg-background"
         aria-hidden="true"
       >
         <Icon
           className={cn(
-            "h-3 w-3",
+            "size-3",
             running
               ? "text-primary motion-safe:animate-spin"
               : stranded
@@ -1082,7 +1170,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
 
       {entry.warning !== null && (
         <p className="mt-1 flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
-          <ShieldAlert className="mt-[3px] h-3 w-3 shrink-0" aria-hidden="true" />
+          <StatusIcons.security className="mt-[3px] size-3 shrink-0" aria-hidden="true" />
           <span className="min-w-0">{entry.warning}</span>
         </p>
       )}
@@ -1101,7 +1189,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
           >
             <ChevronRight
               className={cn(
-                "h-2.5 w-2.5 transition-transform duration-base ease-in-out",
+                "size-2.5 transition-transform duration-base ease-in-out",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -1338,7 +1426,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: str(payload, "title", "label") ?? "Finished a step",
         detail: str(payload, "summary", "reason"),
         tone: "quiet",
-        icon: Check,
+        icon: StatusIcons.success,
       };
     case "assistant_message":
       return {
@@ -1359,7 +1447,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: str(payload, "summary") ?? toolPastLabel(str(payload, "tool", "name")),
         detail: null,
         tone: bool(payload, "isError") === true ? "bad" : "quiet",
-        icon: bool(payload, "isError") === true ? AlertTriangle : Check,
+        icon: bool(payload, "isError") === true ? StatusIcons.error : StatusIcons.success,
       };
     case "tool_denied":
       return {
@@ -1399,7 +1487,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: str(payload, "summary") ?? "Asked for approval",
         detail: str(payload, "action"),
         tone: "warning",
-        icon: ShieldAlert,
+        icon: StatusIcons.security,
       };
     case "approval_resolved":
       return {
@@ -1407,7 +1495,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
           str(payload, "decision") === "denied" ? "You refused an action" : "You allowed an action",
         detail: str(payload, "summary", "action"),
         tone: "quiet",
-        icon: ShieldAlert,
+        icon: StatusIcons.security,
       };
     case "artifact_created":
       return {
@@ -1455,7 +1543,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: size === null ? "Applied a batch of changes" : `Applied ${size} changes`,
         detail: str(payload, "summary"),
         tone: "good",
-        icon: Check,
+        icon: StatusIcons.success,
       };
     }
     case "batch_undone": {
@@ -1479,28 +1567,28 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: "Ran with less than you asked for",
         detail: str(payload, "explanation"),
         tone: "warning",
-        icon: AlertTriangle,
+        icon: StatusIcons.warning,
       };
     case "budget_warning":
       return {
         title: "Approaching a limit",
         detail: str(payload, "detail", "explanation"),
         tone: "warning",
-        icon: AlertTriangle,
+        icon: StatusIcons.warning,
       };
     case "host_disconnected":
       return {
         title: `${str(payload, "hostName") ?? "The Mac"} disconnected`,
         detail: str(payload, "detail"),
         tone: "warning",
-        icon: AlertTriangle,
+        icon: StatusIcons.warning,
       };
     case "host_reconnected":
       return {
         title: `${str(payload, "hostName") ?? "The Mac"} reconnected`,
         detail: null,
         tone: "good",
-        icon: Check,
+        icon: StatusIcons.success,
       };
     case "paused":
       return { title: "Paused", detail: str(payload, "reason"), tone: "quiet", icon: PauseCircle };
@@ -1518,7 +1606,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
           str(payload, "detail", "summary") ??
           (unmet !== null && unmet > 0 ? `${unmet} unmet` : null),
         tone: passed === false ? "warning" : "quiet",
-        icon: passed === false ? AlertTriangle : Check,
+        icon: passed === false ? StatusIcons.warning : StatusIcons.success,
       };
     }
     case "run_finished": {
@@ -1527,7 +1615,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: `Finished — ${reason ?? "no reason recorded"}`,
         detail: str(payload, "detail"),
         tone: reason === "completed" ? "good" : "warning",
-        icon: Check,
+        icon: StatusIcons.success,
       };
     }
     case "error":
@@ -1535,7 +1623,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: "Something went wrong",
         detail: str(payload, "message", "detail"),
         tone: "bad",
-        icon: AlertTriangle,
+        icon: StatusIcons.error,
       };
   }
 }

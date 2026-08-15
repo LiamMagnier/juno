@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChevronRight, Sparkles } from "lucide-react";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
-import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -48,18 +48,13 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
     >
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 truncate text-sm font-medium text-foreground">{skill.name}</span>
+          {/* `text-body`, matching the task row's title — see the note there. */}
+          <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
+            {skill.name}
+          </span>
           <span className="shrink-0 font-mono text-micro text-muted-foreground">/{skill.slug}</span>
-          {!skill.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
-              Off
-            </span>
-          )}
-          {auto && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
-              <Sparkles className="h-2.5 w-2.5" aria-hidden="true" /> Chosen for you
-            </span>
-          )}
+          {!skill.enabled && <WorkTag>Off</WorkTag>}
+          {auto && <WorkTag icon={Sparkles}>Chosen for you</WorkTag>}
         </span>
         {skill.description.length > 0 && (
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
@@ -71,7 +66,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
         </span>
       </span>
       <ChevronRight
-        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
         aria-hidden="true"
       />
     </Link>

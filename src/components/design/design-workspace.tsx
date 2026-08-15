@@ -18,7 +18,8 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, MessagesSquare, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,7 +34,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
-import type { DesignViewportHandle } from "@/components/design/design-canvas";
+import { ZoomBar, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { toPendingProposal, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignAdjustment } from "@/lib/design/ai";
 import type { NodeId } from "@/lib/design/types";
@@ -181,12 +182,12 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm" aria-label="Design actions" className="shrink-0 text-muted-foreground hover:text-foreground">
-              <MoreHorizontal className="size-4" aria-hidden />
+              <ActionIcons.more className="size-4" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
-              <Trash2 className="size-4" aria-hidden />
+              <ActionIcons.delete className="size-4" aria-hidden />
               Delete design
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -268,31 +269,17 @@ function ZoomControls({
   viewport: React.MutableRefObject<DesignViewportHandle | null>;
   hasSelection: boolean;
 }) {
-  const button =
-    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+  // The same control the canvas draws for chrome-less hosts — see `ZoomBar`.
+  // This used to be a second copy of the identical five buttons.
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label="Zoom">
-      <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1 / 1.25)} aria-label="Zoom out">
-        −
-      </button>
-      <button
-        type="button"
-        className={`${button} min-w-11 tabular-nums`}
-        onClick={() => viewport.current?.zoomTo100()}
-        aria-label="Reset zoom to 100%"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1.25)} aria-label="Zoom in">
-        +
-      </button>
-      <button type="button" className={button} onClick={() => viewport.current?.zoomToFit()}>
-        Fit
-      </button>
-      <button type="button" className={button} onClick={() => viewport.current?.zoomToSelection()} disabled={!hasSelection}>
-        Selection
-      </button>
-    </div>
+    <ZoomBar
+      zoom={zoom}
+      onZoomBy={(factor) => viewport.current?.zoomBy(factor)}
+      onReset={() => viewport.current?.zoomTo100()}
+      onFit={() => viewport.current?.zoomToFit()}
+      onSelection={() => viewport.current?.zoomToSelection()}
+      hasSelection={hasSelection}
+    />
   );
 }
 

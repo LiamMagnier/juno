@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, Info } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
@@ -158,7 +158,7 @@ export default function UpgradePage() {
             role="status"
             className="mt-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm"
           >
-            <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
             Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
           </div>
         )}
@@ -303,7 +303,7 @@ export default function UpgradePage() {
         </div>
 
         <p className="mt-6 flex items-center gap-1.5 text-caption text-muted-foreground">
-          <Info className="h-3.5 w-3.5" />
+          <StatusIcons.info className="size-3.5" />
           Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.
         </p>
         {/*
@@ -398,11 +398,11 @@ function PlanCard({
           <li key={f} className="flex items-start gap-2.5 text-sm">
             <span
               className={cn(
-                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
+                "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full",
                 popular || accent ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary"
               )}
             >
-              <Check className="h-3 w-3" />
+              <StatusIcons.success className="size-3" />
             </span>
             <span>{f}</span>
           </li>

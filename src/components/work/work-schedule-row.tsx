@@ -12,7 +12,7 @@ import {
   runWorkScheduleNow,
 } from "@/components/work/work-transport";
 import { describeTrigger } from "@/components/work/work-triggers";
-import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -171,14 +171,13 @@ export function WorkScheduleRow({
       >
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">
+            {/* `text-body`, matching the task row's title — see the note there.
+                Four sibling lists were all setting their primary line one pixel
+                off the scale and one pixel from their own subtitle. */}
+            <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
               {schedule.name}
             </span>
-            {!schedule.enabled && (
-              <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
-                Paused
-              </span>
-            )}
+            {!schedule.enabled && <WorkTag>Paused</WorkTag>}
           </span>
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
@@ -190,7 +189,7 @@ export function WorkScheduleRow({
           </span>
         </span>
         <ChevronRight
-          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+          className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
           aria-hidden="true"
         />
       </Link>
@@ -204,9 +203,9 @@ export function WorkScheduleRow({
           className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
         >
           {busy === "run" ? (
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
           ) : (
-            <Play className="h-3 w-3" aria-hidden="true" />
+            <Play className="size-3" aria-hidden="true" />
           )}
           Run now
         </Button>
@@ -216,14 +215,14 @@ export function WorkScheduleRow({
           disabled={busy !== null}
           onClick={() => void toggle()}
           aria-label={schedule.enabled ? `Pause ${schedule.name}` : `Resume ${schedule.name}`}
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className="size-7 text-muted-foreground hover:text-foreground"
         >
           {busy === "toggle" ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           ) : schedule.enabled ? (
-            <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+            <Pause className="size-3.5" aria-hidden="true" />
           ) : (
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            <Play className="size-3.5" aria-hidden="true" />
           )}
         </Button>
       </div>

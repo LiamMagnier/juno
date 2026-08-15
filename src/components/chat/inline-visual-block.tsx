@@ -2,10 +2,8 @@
 
 import * as React from "react";
 import {
-  AlertCircle,
   ArrowRight,
   Brain,
-  CheckCircle2,
   Circle,
   CornerDownRight,
   GitBranch,
@@ -16,8 +14,8 @@ import {
   Maximize2,
   Wand2,
   Table2,
-  XCircle,
 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { stepLabFromLegacySteps } from "@/lib/step-lab";
 import { cn } from "@/lib/utils";
@@ -226,8 +224,8 @@ function Header({ block }: { block: VisualBlock }) {
   return (
     <div className="border-b border-border/70 bg-card px-4 py-3">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-field border bg-primary/10 shadow-soft">
-          <Icon className="h-4 w-4 text-primary" />
+        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-field border bg-primary/10 shadow-soft">
+          <Icon className="size-4 text-primary" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -270,7 +268,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
             >
-              <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-caption font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
+              <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-caption font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
                 {item.label ?? index + 1}
               </span>
               <span className="min-w-0">
@@ -284,7 +282,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
       {/* Keyed so the focus panel animates on each selection. */}
       <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
         <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
-          <Maximize2 className="h-3.5 w-3.5" /> Focus
+          <Maximize2 className="size-3.5" /> Focus
         </div>
         <h4 className="mt-3 text-base font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
         {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{primaryText(selected)}</p>}
@@ -322,7 +320,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
             >
-              <Circle className={cn("mt-1 h-3.5 w-3.5 shrink-0 fill-muted text-muted-foreground", isActive && "fill-primary/25 text-primary")} />
+              <Circle className={cn("mt-1 size-3.5 shrink-0 fill-muted text-muted-foreground", isActive && "fill-primary/25 text-primary")} />
               <span className="min-w-0">
                 <span className="block text-sm font-semibold leading-5">{itemTitle(node, `Node ${index + 1}`)}</span>
                 {primaryText(node) && <span className="mt-1 line-clamp-2 block text-xs leading-5 text-muted-foreground">{primaryText(node)}</span>}
@@ -330,7 +328,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
             </button>
             {index < nodes.length - 1 && (
               <div className="hidden items-center justify-center text-muted-foreground sm:flex">
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight className="size-4" />
               </div>
             )}
           </React.Fragment>
@@ -340,7 +338,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       {/* Keyed so the detail panel animates on each selection. */}
       <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
         <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
-          <CornerDownRight className="h-3.5 w-3.5 text-primary" /> Selected node
+          <CornerDownRight className="size-3.5 text-primary" /> Selected node
         </div>
         <h4 className="mt-3 text-lg font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
         {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{primaryText(selected)}</p>}
@@ -439,8 +437,15 @@ function QuizBlock({ block }: { block: VisualBlock }) {
                 active && answered && !correct && "border-destructive/50 bg-destructive/10 shadow-soft"
               )}
             >
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-micro font-semibold">
-                {active && correct ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : active ? <XCircle className="h-3.5 w-3.5 text-destructive" /> : index + 1}
+              {/* The registry's tick and cross, not CheckCircle2/XCircle. The
+                  bordered badge IS the enclosure, so the circled pair drew a
+                  second ring inside the first, and it was the only place in the
+                  product where "correct" wore a different tick from every other
+                  confirmed state. `dismiss` is the registry's name for the mark,
+                  not for this usage — there is one X drawing, and inventing a
+                  second cross for the quiz is the drift being removed. */}
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-micro font-semibold">
+                {active && correct ? <StatusIcons.success className="size-3.5 text-success" /> : active ? <ActionIcons.dismiss className="size-3.5 text-destructive" /> : index + 1}
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-semibold leading-5">{itemTitle(option, `Option ${index + 1}`)}</span>
@@ -479,7 +484,7 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
             // callout sits in resolves ~1.2 points above it, i.e. the row had no
             // fill of its own and the bulleted list read as loose paragraphs.
             <div key={index} className="flex gap-2 rounded-field bg-secondary px-3 py-2">
-              <Wand2 className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
+              <Wand2 className="mt-1 size-3.5 shrink-0 text-primary" />
               <p className="text-sm leading-6">
                 <span className="font-semibold">{itemTitle(item, `Point ${index + 1}`)}</span>
                 {primaryText(item) ? <span className="text-muted-foreground"> - {primaryText(item)}</span> : null}
@@ -534,7 +539,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // that has to say "this did not render" had nothing behind its text.
       <div className="my-3 rounded-field border bg-card px-4 py-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
-          {streaming ? <Wand2 className="h-4 w-4 animate-pulse text-primary" /> : <AlertCircle className="h-4 w-4 text-warning" />}
+          {streaming ? <Wand2 className="size-4 animate-pulse text-primary" /> : <StatusIcons.warning className="size-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
         </div>
       </div>

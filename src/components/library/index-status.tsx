@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { CircleAlert, FileSearch, Loader2, TriangleAlert } from "lucide-react";
+import { FileSearch, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /**
@@ -57,7 +58,7 @@ export function IndexStatus({
   if (status.state === "failed") {
     return (
       <span className={cn(shared, "text-destructive-ink", className)} aria-live="polite">
-        <CircleAlert className="size-3 shrink-0" aria-hidden="true" />
+        <StatusIcons.error className="size-3 shrink-0" aria-hidden="true" />
         <span className="truncate" title={status.error ?? undefined}>
           {status.error ?? "This file could not be indexed."}
         </span>
@@ -68,7 +69,7 @@ export function IndexStatus({
   if (status.state === "degraded") {
     return (
       <span className={cn(shared, "text-warning-foreground", className)} aria-live="polite">
-        <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
+        <StatusIcons.warning className="size-3 shrink-0" aria-hidden="true" />
         <span className="truncate" title={status.error ?? undefined}>
           {status.error ?? "Only part of this file could be indexed."}
         </span>

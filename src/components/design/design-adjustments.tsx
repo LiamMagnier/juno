@@ -19,6 +19,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ColorField } from "@/components/design/effects-panel";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
 import type { DesignAdjustment } from "@/lib/design/ai";
 import type { DesignOperation } from "@/lib/design/operations";
@@ -103,22 +104,31 @@ function SliderRow({ adjustment, onCommit }: { adjustment: SliderAdjustment; onC
   );
 }
 
+/**
+ * The colour well Juno can attach to a change it just made.
+ *
+ * The same `ColorField` the inspector uses, rather than a second native
+ * `<input type="color">`. This card floats over the canvas a few pixels from
+ * the Ask Juno bar and the review card, both of which are the product's own
+ * material; an OS-drawn colour well in the middle of them was the one control
+ * on this surface the app did not draw. It also gains what that input never
+ * had — a typable hex field, and one transaction per pause instead of one per
+ * frame of a cursor sweep.
+ */
 function ColorRow({ adjustment, onCommit }: { adjustment: ColorAdjustment; onCommit: (value: string) => void }) {
   const [value, setValue] = React.useState(adjustment.value.slice(0, 7));
   return (
-    <label className="flex items-center gap-2">
-      <span className="min-w-0 flex-1 truncate text-xs">{adjustment.label}</span>
-      <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground">{value}</span>
-      <input
-        type="color"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={() => onCommit(value)}
-        onPointerUp={() => onCommit(value)}
-        className="size-7 shrink-0 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5"
-        aria-label={adjustment.label}
-      />
-    </label>
+    <ColorField
+      label={adjustment.label}
+      value={value}
+      onCommit={(hex) => {
+        // Kept locally as well as sent: the control is uncontrolled from the
+        // document's side, and re-reading the adjustment would show the value
+        // this card was created with rather than the one under the cursor.
+        setValue(hex);
+        onCommit(hex);
+      }}
+    />
   );
 }
 

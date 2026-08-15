@@ -1,19 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { WorkComposer } from "@/components/work/work-composer";
 import { WorkNav } from "@/components/work/work-nav";
 import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { WorkCrossfade } from "@/components/work/motion/work-crossfade";
-import {
-  WorkSection,
-  WorkSessionRow,
-  WorkSessionSkeletons,
-} from "@/components/work/work-session-row";
+import { WorkSection, WorkSessionRow } from "@/components/work/work-session-row";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import {
   WORK_GROUP_KEYS,
   groupWorkSessions,
@@ -26,7 +25,7 @@ import {
   fetchWorkHosts,
   fetchWorkSessions,
 } from "@/components/work/work-transport";
-import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
 import type { ClientWorkHost, ClientWorkSession } from "@/lib/work/serializers";
 import { cn } from "@/lib/utils";
@@ -87,12 +86,15 @@ const SECTIONS: readonly {
   title: string;
   hint?: string;
   explain: boolean;
+  /** Amber ink on the heading. See `WorkSection` — exactly one section gets it. */
+  attention?: boolean;
 }[] = [
   {
     key: "attention",
     title: "Needs you",
     hint: "These have stopped and cannot move until you decide something.",
     explain: true,
+    attention: true,
   },
   {
     key: "running",
@@ -289,7 +291,7 @@ export default function WorkHomePage() {
                   // heading is on `display` now, so the mark moves with it —
                   // otherwise it reads as a bullet beside the words rather than
                   // as part of the line.
-                  "block h-6 w-6 shrink-0 sm:h-9 sm:w-9",
+                  "block size-6 shrink-0 sm:size-9",
                   "[animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 )}
               />
@@ -324,22 +326,10 @@ export default function WorkHomePage() {
 
         {sessionsFailed ? (
           <WorkSection title="Your tasks">
-            <WorkStateNote
-              tone="error"
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void loadSessions()}
-                  className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-                </Button>
-              }
-            >
+            <WorkLoadError onRetry={() => void loadSessions()}>
               Couldn’t load your tasks. This list is empty because the request failed, not because
               there is nothing here.
-            </WorkStateNote>
+            </WorkLoadError>
           </WorkSection>
         ) : (
           // The skeleton fades out over whatever the load turned out to be —
@@ -350,7 +340,7 @@ export default function WorkHomePage() {
             pending={sessions === null}
             placeholder={
               <WorkSection title="Your tasks">
-                <WorkSessionSkeletons />
+                <WorkRowSkeletons />
               </WorkSection>
             }
           >
@@ -371,6 +361,14 @@ export default function WorkHomePage() {
                       key={section.key}
                       title={section.title}
                       hint={section.hint}
+                      tone={section.attention ? "attention" : "neutral"}
+                      /* The count of the whole GROUP, not of the rows rendered.
+                         The two differ only on Finished, where the fold shows
+                         eight of twenty-four — and a heading reading "Finished
+                         8" over a button offering "Show all 24" would be two
+                         counts of one list that disagree. The group's own size
+                         is the honest number in both places. */
+                      meta={String(groups[section.key].length)}
                       action={
                         section.key === "finished" &&
                         !showAllFinished &&
@@ -381,7 +379,7 @@ export default function WorkHomePage() {
                             onClick={() => setShowAllFinished(true)}
                             className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
                           >
-                            <ChevronDown className="h-3 w-3" aria-hidden="true" />
+                            <ChevronDown className="size-3" aria-hidden="true" />
                             Show all {groups.finished.length}
                           </Button>
                         ) : undefined
@@ -421,7 +419,7 @@ export default function WorkHomePage() {
                       onClick={() => void loadSessions()}
                       className="h-6 gap-1.5 px-1.5 font-mono text-micro text-muted-foreground"
                     >
-                      <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
+                      <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
                     </Button>
                   </div>
                 )}
@@ -450,42 +448,57 @@ export default function WorkHomePage() {
  * owns its own text and there is no honest way to put words in it from here, and
  * a chip that looks pressable and is not is worse than a line of prose.
  */
+const FIRST_RUN_EXAMPLES = [
+  "Tidy my Downloads folder into folders by month.",
+  "Reconcile last month’s expenses against the bank export.",
+  "Summarise this week’s support email in one page.",
+];
+
 function FirstRun() {
   return (
     <WorkSection title="Getting started">
-      <div className="border-t border-border/70 px-2 py-7 text-center">
-        {/* `text-heading` — 18px / 1.3 / -0.006em / 600, which is what this line
-            was hand-mixing one rung low out of `text-base`, `font-semibold` and
-            an arbitrary -0.01em. It is the only sentence on the screen somebody
-            with no tasks has to read, and it was set smaller than the section
-            headings above it. */}
-        <p className="text-heading">Give Juno an errand with a finish line</p>
-        <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">
-          It plans the work, shows you every step as it goes, and asks first before anything it
-          cannot undo.
-        </p>
-        <p className="mt-6 font-mono text-label text-muted-foreground">Tasks that work well</p>
-        <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-ui leading-relaxed text-muted-foreground">
-          {[
-            "Tidy my Downloads folder into folders by month.",
-            "Reconcile last month’s expenses against the bank export.",
-            "Summarise this week’s support email in one page.",
-          ].map((example, index) => (
-            <li
-              key={example}
-              className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-              // The same cascade the rows use, on the same step, so the one
-              // screen with no rows on it still moves the way the list does.
-              // Through `staggerDelay` rather than a hand-copied 26: the step
-              // was written out here by hand and had already drifted from the
-              // rung every other Work list runs on.
-              style={staggerDelay(index, "tight", 60)}
-            >
-              “{example}”
-            </li>
-          ))}
-        </ul>
-      </div>
+      {/*
+       * `EmptyState`, not a hand-rolled block.
+       *
+       * This is the first thing a new account sees under the composer, and it
+       * was the one empty state in Work that had not adopted the primitive: a
+       * `border-t` rule and centred prose, against a dashed `rounded-card` plate
+       * on the schedules, skills and Macs pages one click away. The dash is the
+       * whole point of that plate — it reads as a space waiting to be filled
+       * rather than as a finished thing — which is exactly what this screen is.
+       *
+       * The examples ride in `action` because they ARE the action, in the only
+       * form this screen can honestly offer one. They are deliberately not
+       * buttons: the composer owns its own text and there is no honest way to
+       * put words in it from here, and a chip that looks pressable and is not is
+       * worse than a line of prose.
+       */}
+      <EmptyState
+        icon={AppIcons.work}
+        title="Give Juno an errand with a finish line"
+        description="It plans the work, shows you every step as it goes, and asks first before anything it cannot undo."
+        action={
+          <div className="w-full">
+            <p className="font-mono text-label text-muted-foreground">Tasks that work well</p>
+            <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-ui leading-relaxed text-muted-foreground">
+              {FIRST_RUN_EXAMPLES.map((example, index) => (
+                <li
+                  key={example}
+                  className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                  // The same cascade the rows use, on the same step, so the one
+                  // screen with no rows on it still moves the way the list does.
+                  // Through `staggerDelay` rather than a hand-copied 26: the step
+                  // was written out here by hand and had already drifted from the
+                  // rung every other Work list runs on.
+                  style={staggerDelay(index, "tight", 60)}
+                >
+                  “{example}”
+                </li>
+              ))}
+            </ul>
+          </div>
+        }
+      />
     </WorkSection>
   );
 }

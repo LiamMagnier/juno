@@ -2,15 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSkill } from "@/lib/work/skills";
 import { WorkPageFrame } from "@/components/work/work-nav";
 import { WorkSkillRow } from "@/components/work/work-skill-row";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSkills } from "@/components/work/work-transport";
-import { WorkStateNote } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /**
@@ -49,46 +47,27 @@ export default function WorkSkillsPage() {
       action={
         <Button asChild size="sm" className="gap-1.5">
           <Link href="/work/skills/new">
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New skill
+            <Plus className="size-3.5" aria-hidden="true" /> New skill
           </Link>
         </Button>
       }
     >
       {failed ? (
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load your skills. This page is empty because the request failed, not because you
           have none.
-        </WorkStateNote>
+        </WorkLoadError>
       ) : skills === null ? (
-        <div className="space-y-2.5">
-          {[...Array(3)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-[76px] w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons />
       ) : skills.length === 0 ? (
         <EmptyState
+          icon={Sparkles}
           title="No skills yet"
           description="Write down the way you want something done once — how your invoices are filed, what a weekly summary has to contain — and hand it to Juno by name instead of describing it again each time."
           action={
             <Button asChild size="sm" className="gap-1.5">
               <Link href="/work/skills/new">
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New skill
+                <Plus className="size-3.5" aria-hidden="true" /> New skill
               </Link>
             </Button>
           }

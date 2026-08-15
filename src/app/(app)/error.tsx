@@ -15,7 +15,7 @@ import { JunoMark } from "@/components/brand/logo";
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
     <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 py-16 text-center">
-      <JunoMark className="h-9 w-9 opacity-70" />
+      <JunoMark className="size-9 opacity-70" />
       <p className="mt-6 font-mono text-label text-muted-foreground">Something broke</p>
       <h1 className="mt-2 font-serif text-heading font-medium">This view couldn&rsquo;t load</h1>
       <p className="mt-3 max-w-sm text-sm text-muted-foreground">

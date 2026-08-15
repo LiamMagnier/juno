@@ -143,5 +143,5 @@ export function DotField({
     };
   }, [interactive, spacing]);
 
-  return <canvas ref={ref} className={cn("pointer-events-none block h-full w-full", className)} aria-hidden="true" />;
+  return <canvas ref={ref} className={cn("pointer-events-none block size-full", className)} aria-hidden="true" />;
 }

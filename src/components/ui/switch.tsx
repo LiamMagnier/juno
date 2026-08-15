@@ -15,7 +15,7 @@ const Switch = React.forwardRef<
       // grows the HIT AREA to 24×44 (44×44 on touch) while the control itself stays
       // pixel-identical — the same trick as empty-state.tsx.
       // Focus is left to the global :focus-visible outline; see button.tsx.
-      "peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-base ease-out-soft before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] coarse:before:h-11 coarse:before:w-11 disabled:cursor-not-allowed disabled:opacity-50 data-[state=unchecked]:bg-input data-[state=unchecked]:[box-shadow:var(--well-inset)] data-[state=checked]:btn-glossy data-[state=checked]:bg-primary data-[state=checked]:[box-shadow:inset_0_1px_2px_hsl(0_0%_0%/0.16),0_1px_2px_hsl(var(--primary)/0.4)]",
+      "peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-base ease-out-soft before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] coarse:before:size-11 disabled:cursor-not-allowed disabled:opacity-50 data-[state=unchecked]:bg-input data-[state=unchecked]:[box-shadow:var(--well-inset)] data-[state=checked]:btn-glossy data-[state=checked]:bg-primary data-[state=checked]:[box-shadow:inset_0_1px_2px_hsl(0_0%_0%/0.16),0_1px_2px_hsl(var(--primary)/0.4)]",
       className
     )}
     {...props}
@@ -36,7 +36,7 @@ const Switch = React.forwardRef<
      * slid onto the accent — drawn in --shadow-ink so it stays dark ink in both
      * themes rather than inverting into a halo.
      */}
-    <SwitchPrimitives.Thumb className="pointer-events-none block h-4 w-4 rounded-full bg-background ring-0 transition-transform duration-base ease-out-strong [box-shadow:inset_0_-1px_0_hsl(var(--shadow-ink)/0.18),var(--shadow-pop)] motion-reduce:transition-none data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 dark:bg-foreground" />
+    <SwitchPrimitives.Thumb className="pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform duration-base ease-out-strong [box-shadow:inset_0_-1px_0_hsl(var(--shadow-ink)/0.18),var(--shadow-pop)] motion-reduce:transition-none data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 dark:bg-foreground" />
   </SwitchPrimitives.Root>
 ));
 Switch.displayName = SwitchPrimitives.Root.displayName;

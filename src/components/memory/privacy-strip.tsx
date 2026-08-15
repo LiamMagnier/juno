@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Download, Loader2, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 
@@ -48,7 +49,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
         </label>
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={onExport} disabled={empty}>
-            <Download className="h-3.5 w-3.5" /> Export
+            <ActionIcons.download className="size-3.5" /> Export
           </Button>
           {confirming ? (
             <Button
@@ -62,7 +63,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
               }}
               disabled={resetting}
             >
-              {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              {resetting ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.delete className="size-3.5" />}
               Confirm reset
             </Button>
           ) : (
@@ -74,14 +75,14 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
               onClick={() => setConfirming(true)}
               disabled={empty || resetting}
             >
-              {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              {resetting ? <Loader2 className="size-3.5 animate-spin" /> : <ActionIcons.restore className="size-3.5" />}
               {resetting ? "Resetting…" : "Reset"}
             </Button>
           )}
         </div>
       </div>
       <p id="memory-privacy-note" className="mt-2.5 flex items-start gap-1.5 text-caption text-muted-foreground/80">
-        <ShieldCheck className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <ShieldCheck className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         <span>
           Pausing stops Juno from saving or using memories. Private chats are never remembered. Resetting permanently
           erases every saved fact and the summary.

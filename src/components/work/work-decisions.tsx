@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Send, ShieldAlert } from "lucide-react";
+import { Clock, Send } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
@@ -112,7 +113,7 @@ export function WorkQuestionCard({
       <p className="font-mono text-micro text-warning-foreground">
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>
-      <p className="mt-1.5 text-sm leading-relaxed text-foreground">{question.question}</p>
+      <p className="mt-1.5 text-body leading-relaxed text-foreground">{question.question}</p>
       {question.why !== null && (
         <p className="mt-1 text-ui leading-relaxed text-muted-foreground">{question.why}</p>
       )}
@@ -152,9 +153,9 @@ export function WorkQuestionCard({
           disabled={busy || draft.trim().length === 0}
           onClick={() => answer(draft)}
           aria-label="Send answer"
-          className="h-9 w-9 shrink-0"
+          className="size-9 shrink-0"
         >
-          <Send className="h-3.5 w-3.5" aria-hidden="true" />
+          <Send className="size-3.5" aria-hidden="true" />
         </Button>
       </div>
     </div>
@@ -377,15 +378,22 @@ function ApprovalCard({
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ShieldAlert
-          className={cn("h-4 w-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
+        <StatusIcons.security
+          className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
+        {/* The same eyebrow the question card two inches away wears — mono,
+            `micro`, warning ink. This was `text-xs font-semibold` in the sans
+            face, so the two cards that make up "what needs you", stacked in one
+            column, labelled themselves in two different registers. */}
         {answerable && (
-          <span className="text-xs font-semibold text-warning-foreground">Your decision</span>
+          <span className="font-mono text-micro text-warning-foreground">Your decision</span>
         )}
         <RiskPill risk={approval.risk} />
-        <span className="ml-auto text-xs text-muted-foreground">
+        {/* `font-mono` + `tabular-nums`, which is what every other elapsed time in
+            Work is set in — and this one re-renders on the approval clock, so a
+            proportional "12m ago" nudged the row as it ticked. */}
+        <span className="ml-auto font-mono text-micro tabular-nums text-muted-foreground">
           {workTimeAgo(approval.createdAt)}
         </span>
       </div>
@@ -393,7 +401,7 @@ function ApprovalCard({
       <p
         className={cn(
           "mt-2 leading-relaxed text-foreground",
-          answerable ? "text-body font-medium" : "text-sm"
+          answerable ? "text-body font-medium" : "text-ui"
         )}
       >
         {approval.summary}
@@ -403,7 +411,7 @@ function ApprovalCard({
           sentence a person is being asked to authorise, in 10px monospace with
           `break-all`, which is the most consequential place in the product to
           show somebody a symbol instead of a phrase. */}
-      <p className="mt-1 text-xs text-muted-foreground">{actionLabel(approval.action)}</p>
+      <p className="mt-1 text-ui text-muted-foreground">{actionLabel(approval.action)}</p>
 
       {/* Exactly what is being authorised, spelled out rather than summarised.
           The digest the decision travels back with is computed over this action
@@ -498,14 +506,14 @@ function ApprovalCard({
           )}
           {approval.expiresAt !== null && (
             <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-              <Clock className="h-3 w-3" aria-hidden="true" />
+              <Clock className="size-3" aria-hidden="true" />
               Unanswered, this expires and Juno stops rather than acting on it.
             </p>
           )}
         </>
       ) : (
         <p className="mt-2.5 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
-          <Clock className="h-3 w-3" aria-hidden="true" />
+          <Clock className="size-3" aria-hidden="true" />
           {describeDecision(approval, expired)}
         </p>
       )}

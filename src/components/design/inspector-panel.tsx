@@ -25,16 +25,15 @@
 import * as React from "react";
 import { toast } from "sonner";
 import {
-  ColorField,
   EffectsSection,
   FillControl,
+  StrokeControl,
   NumberField,
   Section,
   SelectField,
   TextField,
 } from "@/components/design/effects-panel";
 import { readImageAsset } from "@/components/design/use-design-document";
-import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import { isContainer, type AutoLayout, type DesignDocument, type DesignNode, type ImageNode, type NodeId } from "@/lib/design/types";
 import type { DesignOperation, NodePatch } from "@/lib/design/operations";
 
@@ -80,16 +79,6 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
       summary
     );
 
-  /** Write a patch computed from each layer's own state, for fields that live
-   *  inside a structure the layer already owns (a stroke, its constraints). */
-  const patchEach = (build: (node: DesignNode) => NodePatch | null, summary: string) => {
-    const operations = editable.flatMap((n) => {
-      const patch = build(n);
-      return patch ? [{ op: "updateNode" as const, nodeId: n.id, patch }] : [];
-    });
-    if (operations.length) onApply(operations, summary);
-  };
-
   const first = nodes[0];
   const single = nodes.length === 1 ? first : null;
   const allSameType = nodes.every((n) => n.type === first.type);
@@ -105,9 +94,6 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
   const horizontal = shared(nodes, (n) => n.constraints.horizontal);
   const vertical = shared(nodes, (n) => n.constraints.vertical);
   const radius = shared(nodes, (n) => (typeof n.cornerRadius === "number" ? n.cornerRadius : n.cornerRadius[0]));
-  const strokeColor = shared(nodes, (n) => (n.strokes[0]?.paint.type === "solid" ? rgbaToHex(n.strokes[0].paint.color) : ""));
-  const strokeWeight = shared(nodes, (n) => n.strokes[0]?.weight ?? 0);
-  const hasStroke = nodes.some((n) => n.strokes.length > 0);
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
@@ -128,6 +114,7 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
           <NumberField label="Y" value={y.value} mixed={y.mixed} disabled={readOnly} onCommit={(v) => patchAll({ y: v }, "Set position")} />
           <NumberField
             label="W"
+            ariaLabel="Width"
             value={width.value}
             mixed={width.mixed}
             min={0}
@@ -136,6 +123,7 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
           />
           <NumberField
             label="H"
+            ariaLabel="Height"
             value={height.value}
             mixed={height.mixed}
             min={0}
@@ -161,9 +149,12 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             onCommit={(v) => patchAll({ opacity: Math.max(0, Math.min(1, v / 100)) }, "Set opacity")}
           />
         </div>
+        {/* The sizing behaviour sits directly under the number it governs, so
+            "W 320" and "W Fixed" read as two halves of one property. */}
         <div className="grid grid-cols-2 gap-1.5 pt-1.5">
           <SelectField
-            label="Width"
+            label="W"
+            ariaLabel="Width behaviour"
             value={widthMode.value}
             mixed={widthMode.mixed}
             options={SIZING_OPTIONS}
@@ -171,7 +162,8 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             onChange={(v) => patchAll({ widthMode: v as NodePatch["widthMode"] }, "Set width behaviour")}
           />
           <SelectField
-            label="Height"
+            label="H"
+            ariaLabel="Height behaviour"
             value={heightMode.value}
             mixed={heightMode.mixed}
             options={SIZING_OPTIONS}
@@ -184,7 +176,8 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
       <Section title="Constraints">
         <div className="grid grid-cols-2 gap-1.5">
           <SelectField
-            label="Horizontal"
+            label="Horiz"
+            ariaLabel="Horizontal constraint"
             value={horizontal.value}
             mixed={horizontal.mixed}
             options={CONSTRAINT_OPTIONS}
@@ -201,7 +194,8 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             }
           />
           <SelectField
-            label="Vertical"
+            label="Vert"
+            ariaLabel="Vertical constraint"
             value={vertical.value}
             mixed={vertical.mixed}
             options={CONSTRAINT_OPTIONS}
@@ -225,44 +219,14 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
       {allSameType && first.type !== "line" && (
         <Section title="Appearance">
           <NumberField
-            label="Corner radius"
+            label="Radius"
+            ariaLabel="Corner radius"
             value={radius.value}
             mixed={radius.mixed}
             min={0}
             disabled={readOnly}
             onCommit={(v) => patchAll({ cornerRadius: v }, "Set corner radius")}
           />
-          <div className="grid grid-cols-2 gap-1.5">
-            <ColorField
-              label="Stroke"
-              value={strokeColor.value}
-              mixed={strokeColor.mixed}
-              disabled={readOnly}
-              onCommit={(hex) => {
-                const color = hexToRgba(hex);
-                if (!color) return;
-                // Weight and alignment are each layer's own; only the colour was
-                // asked for.
-                patchEach(
-                  (n) => ({
-                    strokes: [{ paint: { type: "solid", color }, weight: n.strokes[0]?.weight ?? 1, align: n.strokes[0]?.align ?? "center" }],
-                  }),
-                  "Set stroke"
-                );
-              }}
-              onClear={hasStroke ? () => patchAll({ strokes: [] }, "Remove stroke") : undefined}
-            />
-            {hasStroke && (
-              <NumberField
-                label="Weight"
-                value={strokeWeight.value}
-                mixed={strokeWeight.mixed}
-                min={0}
-                disabled={readOnly}
-                onCommit={(v) => patchEach((n) => (n.strokes[0] ? { strokes: [{ ...n.strokes[0], weight: v }] } : null), "Set stroke weight")}
-              />
-            )}
-          </div>
         </Section>
       )}
 
@@ -270,6 +234,15 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
           on one is a control that does nothing. Effects are a different matter:
           a line casts a shadow like anything else. */}
       {first.type !== "line" && <FillControl nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />}
+
+      {/* Stroke, as the list it is in the model.
+          `StrokeControl` had been written in full — per-stroke paint, gradients,
+          weight and alignment — and never imported anywhere, while this panel
+          offered one colour swatch and one weight that assigned a fresh
+          one-element array. So a document could hold three strokes or a gradient
+          stroke, and touching the colour field silently flattened them; the
+          alignment control the renderer now honours did not exist at all. */}
+      <StrokeControl nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />
 
       <EffectsSection nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />
 
@@ -311,6 +284,7 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             />
             <SelectField
               label="Align"
+              ariaLabel="Text alignment"
               value={single.typography.textAlign}
               options={[
                 { value: "left", label: "Left" },
@@ -328,7 +302,8 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
       {Object.keys(doc.variables).length > 0 && single && (
         <Section title="Variables">
           <SelectField
-            label="Fill token"
+            label="Fill"
+            ariaLabel="Fill colour token"
             value={single.boundVariables["fills.0.color"] ?? ""}
             options={[
               { value: "", label: "None" },
@@ -421,7 +396,8 @@ function AutoLayoutSection({
     >
       <div className="grid grid-cols-2 gap-1.5">
         <SelectField
-          label="Direction"
+          label="Axis"
+          ariaLabel="Layout direction"
           value={layout.direction}
           options={[
             { value: "vertical", label: "Vertical" },
@@ -433,11 +409,16 @@ function AutoLayoutSection({
         />
         <NumberField label="Gap" value={layout.gap} min={0} disabled={readOnly} onCommit={(v) => patch({ gap: v }, "Set gap")} />
       </div>
+      {/* One letter each. Four labelled fields on one 232px row cannot each
+          carry "Top"; the accessible name is the whole word, and the four sit
+          in the order the CSS shorthand does so the letters are read as a
+          padding box rather than as four unrelated numbers. */}
       <div className="grid grid-cols-4 gap-1.5">
         {(["top", "right", "bottom", "left"] as const).map((side) => (
           <NumberField
             key={side}
-            label={side[0].toUpperCase() + side.slice(1, 3)}
+            label={side[0].toUpperCase()}
+            ariaLabel={`${side[0].toUpperCase()}${side.slice(1)} padding`}
             value={layout.padding[side]}
             min={0}
             disabled={readOnly}
@@ -448,6 +429,7 @@ function AutoLayoutSection({
       <div className="grid grid-cols-2 gap-1.5">
         <SelectField
           label="Align"
+          ariaLabel="Cross-axis alignment"
           value={layout.align}
           options={[
             { value: "start", label: "Start" },
@@ -459,15 +441,19 @@ function AutoLayoutSection({
           onChange={(v) => patch({ align: v as AutoLayout["align"] }, "Set alignment")}
         />
         <SelectField
-          label="Distribute"
+          label="Space"
+          ariaLabel="Distribution along the layout axis"
           value={layout.justify}
           options={[
             { value: "start", label: "Start" },
             { value: "center", label: "Center" },
             { value: "end", label: "End" },
-            { value: "space-between", label: "Space between" },
-            { value: "space-around", label: "Space around" },
-            { value: "space-evenly", label: "Space evenly" },
+            // "Space between" beside a leading label does not fit a half-rail
+            // dropdown; under a label that already says "Space", the second word
+            // is the only one carrying meaning.
+            { value: "space-between", label: "Between" },
+            { value: "space-around", label: "Around" },
+            { value: "space-evenly", label: "Evenly" },
           ]}
           disabled={readOnly}
           onChange={(v) => patch({ justify: v as AutoLayout["justify"] }, "Set distribution")}

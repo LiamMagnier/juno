@@ -5,7 +5,8 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
@@ -177,7 +178,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           // its 0.10em tracking has no business on a mixed-case verb.
           className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
-          <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+          <SquareDashed className="size-3.5" aria-hidden="true" /> Edit
         </button>
       )}
     </div>
@@ -238,7 +239,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
             setFailed(true);
           }}
           className={cn(
-            "absolute inset-0 h-full w-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
+            "absolute inset-0 size-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
             ready ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
           )}
         />
@@ -261,7 +262,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-95 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
-          <ExternalLink className="size-3" aria-hidden="true" />
+          <ActionIcons.external className="size-3" aria-hidden="true" />
         </a>
       </div>
     </div>
@@ -320,10 +321,10 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
             // so a file visibly turned into a stadium the instant it was sent.
             className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs transition-colors duration-fast hover:bg-accent"
           >
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="size-4 text-muted-foreground" />
             <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>
             <span className="text-muted-foreground">{formatBytes(a.size)}</span>
-            <Download className="h-3.5 w-3.5 text-muted-foreground" />
+            <ActionIcons.download className="size-3.5 text-muted-foreground" />
           </a>
         )
       )}
@@ -361,7 +362,7 @@ function VersionPager({
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
-            <ChevronLeft className="h-3.5 w-3.5" />
+            <ChevronLeft className="size-3.5" />
           </Pressable>
         </TooltipTrigger>
         <TooltipContent>Previous version</TooltipContent>
@@ -372,7 +373,7 @@ function VersionPager({
       <Tooltip>
         <TooltipTrigger asChild>
           <Pressable kind="icon" size="sm" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version">
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="size-3.5" />
           </Pressable>
         </TooltipTrigger>
         <TooltipContent>Next version</TooltipContent>
@@ -417,7 +418,7 @@ function IconAction({
           aria-busy={busy || undefined}
           className={cn(active && "text-primary")}
         >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
+          {busy ? <Loader2 className="size-4 animate-spin" /> : children}
         </Pressable>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -707,18 +708,18 @@ export function MessageItem({
             )}
             <div className="flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                {copied ? <Check className="h-4 w-4 motion-safe:animate-pop-in" /> : <Copy className="h-4 w-4" />}
+                {copied ? <StatusIcons.success className="size-4 motion-safe:animate-pop-in" /> : <ActionIcons.copy className="size-4" />}
               </IconAction>
               {onEdit && !busy && !privateMode && (
                 // Prefill from the DISPLAYED version, so paging back and editing
                 // is a one-step "resend an earlier wording".
                 <IconAction label="Edit" onClick={() => { setDraft(view.content); setEditing(true); }}>
-                  <Pencil className="h-4 w-4" />
+                  <ActionIcons.edit className="size-4" />
                 </IconAction>
               )}
               {onFork && !busy && !privateMode && (
                 <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="h-4 w-4" />
+                  <GitFork className="size-4" />
                 </IconAction>
               )}
             </div>
@@ -814,7 +815,7 @@ export function MessageItem({
                 onClick={onRegenerate}
                 className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
-                <RefreshCw className="h-3.5 w-3.5" /> Try again
+                <ActionIcons.refresh className="size-3.5" /> Try again
               </Button>
             )}
           </div>
@@ -895,7 +896,7 @@ export function MessageItem({
                 <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
                 {canContinue && (
                   <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
-                    <RefreshCw className="h-3.5 w-3.5" /> Continue
+                    <ActionIcons.refresh className="size-3.5" /> Continue
                   </Button>
                 )}
               </div>
@@ -943,12 +944,12 @@ export function MessageItem({
                 // than swapping silently — the confirmation is the entire
                 // feedback now that copying no longer raises a toast.
                 <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                  {copied ? <Check className="h-4 w-4 motion-safe:animate-pop-in" /> : <Copy className="h-4 w-4" />}
+                  {copied ? <StatusIcons.success className="size-4 motion-safe:animate-pop-in" /> : <ActionIcons.copy className="size-4" />}
                 </IconAction>
               )}
               {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
                 <IconAction label="Regenerate" onClick={onRegenerate}>
-                  <RefreshCw className="h-4 w-4" />
+                  <ActionIcons.refresh className="size-4" />
                 </IconAction>
               )}
               {message.conversationId && !busy && !privateMode && (
@@ -957,21 +958,21 @@ export function MessageItem({
                 // and no dimming, so a slow fork looked like a click that never
                 // landed and only an invisible guard stopped a second one.
                 <IconAction label="Branch from here" onClick={branch} busy={branching}>
-                  <GitBranch className="h-4 w-4" />
+                  <GitBranch className="size-4" />
                 </IconAction>
               )}
               {onFork && !busy && !privateMode && (
                 <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="h-4 w-4" />
+                  <GitFork className="size-4" />
                 </IconAction>
               )}
               {!privateMode && canFeedback && (
                 <>
                   <IconAction label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
-                    <ThumbsUp className="h-4 w-4" />
+                    <ThumbsUp className="size-4" />
                   </IconAction>
                   <IconAction label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
-                    <ThumbsDown className="h-4 w-4" />
+                    <ThumbsDown className="size-4" />
                   </IconAction>
                 </>
               )}
@@ -981,7 +982,7 @@ export function MessageItem({
                   onClick={() => onSpeak(message.id, view.content)}
                   active={speaking}
                 >
-                  {speaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
+                  {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
                 </IconAction>
               )}
             </div>

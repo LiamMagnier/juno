@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Lock, Search, SearchX } from "lucide-react";
+import { ChevronDown, Lock, Search, SearchX } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
@@ -78,16 +79,16 @@ export function CompareModelPicker({
           {current && (
             <ProviderLogo
               provider={current.provider}
-              className="h-4 w-4 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110"
+              className="size-4 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110"
             />
           )}
           <span className="truncate font-mono">{current?.name ?? "Select model"}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="flex w-80 flex-col overflow-hidden p-0">
         <div className="relative border-b border-border/60 p-2">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -126,7 +127,7 @@ export function CompareModelPicker({
                       <Lock className="size-3 shrink-0" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
                     </span>
                   ) : active ? (
-                    <Check className="size-3.5 shrink-0 text-primary" />
+                    <StatusIcons.success className="size-3.5 shrink-0 text-primary" />
                   ) : null}
                 </button>
               );

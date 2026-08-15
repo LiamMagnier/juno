@@ -320,6 +320,14 @@ const MAX_SOURCES = 250;
 /** Sources whose full text is stored as a snapshot. */
 const MAX_READ_SOURCES = 250;
 const SNAPSHOT_CHARS = 8_000;
+/**
+ * Below this, what a search engine handed back is a preview rather than a page,
+ * and the source is worth opening properly. Set well under `SNAPSHOT_CHARS` so a
+ * genuinely short page is not re-fetched on every run for nothing.
+ */
+const DEEPEN_BELOW_CHARS = 2_000;
+/** How many previews one run will pay to turn into real pages. */
+const MAX_DEEPENED_SOURCES = 40;
 const PASSAGE_CHARS = 1_200;
 const MAX_PASSAGES_PER_SOURCE = 6;
 /** Guard against a driver looping forever on a state that never advances. */
@@ -975,7 +983,53 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       if (!fresh || fresh.state !== "reading_documents") return { kind: "raced" };
       current = fresh;
 
+      /**
+       * DEEPEN: open a page the search engine only skimmed.
+       *
+       * A search backend that returns page text (Tavily's `include_raw_content`,
+       * Exa's `text`) has its result stored as the snapshot during SEARCH, and
+       * this stage then treated any snapshot at all as "already read" and never
+       * fetched the page. That is the difference between a search result and a
+       * source: those payloads are frequently a few hundred characters of lede,
+       * and the whole run — the corpus, the passages, every citation checked
+       * against them — was built on the preview rather than the document.
+       *
+       * It is the same move as the `open_page` step that follows `search` in
+       * every comparable agent loop, and it is deliberately RANKED rather than
+       * universal: only sources good enough to be worth the fetch, and only when
+       * what we hold is too thin to be the real page. A run whose budget runs out
+       * mid-deepening still has the snippets and still answers.
+       */
       let text = source.snapshot ?? "";
+      const tooThinToBeThePage = text.length > 0 && text.length < DEEPEN_BELOW_CHARS;
+      const worthDeepening = tooThinToBeThePage && fetched < MAX_DEEPENED_SOURCES;
+      if (worthDeepening && (await affordable(current, READ_ESTIMATE_MICRO_USD))) {
+        const page = await deps.fetchPage({ userId: run.userId, url: source.url, signal });
+        // Only take the deeper copy if it IS deeper; a paywall or a consent wall
+        // returns a short body, and overwriting a usable snippet with it would
+        // lose the only text this source ever had.
+        if (page && page.text.length > text.length) {
+          await bill(current, page.costMicroUsd, "fetch");
+          text = page.text.slice(0, SNAPSHOT_CHARS);
+          const score = scoreSource({ url: source.url, text, publishedAt: source.publishedAt });
+          await store.upsertSource({
+            runId: run.id,
+            userId: run.userId,
+            url: source.url,
+            title: page.title || source.title,
+            publishedAt: source.publishedAt,
+            contentHash: deps.hash(text),
+            snapshot: text,
+            ...score,
+            sourceType: sourceTypeOf({ url: source.url, text, authority: score.authority }),
+          });
+          fetched += 1;
+          await append(run.id, run.userId, [
+            { kind: "source_read", payload: { url: source.url, title: page.title, deepened: true } },
+          ]);
+        }
+      }
+
       if (!text) {
         if (!(await affordable(current, READ_ESTIMATE_MICRO_USD))) {
           return stopForBudget(current, READ_ESTIMATE_MICRO_USD);

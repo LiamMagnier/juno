@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, FolderOpen, Loader2, TriangleAlert } from "lucide-react";
+import { FolderOpen, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { FilePreview } from "@/components/chat/file-preview";
 import {
   Dialog,
@@ -119,44 +120,51 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Add from your library</DialogTitle>
-          <DialogDescription>Attach files and images you’ve shared with Juno before.</DialogDescription>
+      <DialogContent className="max-w-2xl overflow-hidden rounded-2xl border border-border/70 bg-card/95 p-6 backdrop-blur-xl shadow-2xl">
+        <DialogHeader className="gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+              <FolderOpen className="size-4.5" />
+            </div>
+            <div>
+              <DialogTitle className="font-serif text-xl font-normal tracking-tight text-foreground">
+                Add from your library
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Attach files and images you’ve previously shared with Juno.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        {/* `bg-secondary`. DialogContent is `.overlay-glass` (--popover), and
-            --card is BELOW it — so this tab track was a recess inside a floating
-            panel, which on black is a hole. Secondary is the rung the ladder
-            gives a well inside a popover. */}
-        <div className="flex w-fit items-center gap-1 rounded-full border bg-secondary p-1 shadow-soft">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              aria-pressed={tab === t.key}
-              className={cn(
-                "pressable rounded-full px-3.5 py-1.5 font-mono text-micro coarse:py-2.5",
-                tab === t.key ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Tab Filters */}
+        <div className="flex w-fit items-center gap-1 rounded-full border border-border/60 bg-secondary/80 p-1 shadow-xs">
+          {TABS.map((t) => {
+            const isActive = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                aria-pressed={isActive}
+                className={cn(
+                  "pressable rounded-full px-3.5 py-1 text-xs transition-all duration-200",
+                  isActive
+                    ? "bg-card font-medium text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="max-h-[52vh] min-h-[16rem] overflow-y-auto pr-1">
+        <div className="max-h-[50vh] min-h-[16rem] overflow-y-auto pr-1">
           {error ? (
-            /* Both states used to be the same centred grey block, which is the
-               exact failure EmptyState's own docstring cites this picker for:
-               a broken fetch and an untouched account were indistinguishable.
-               tone="error" is the difference — solid destructive rule instead of
-               a placeholder dash — and it carries role="status", which neither
-               hand-rolled block had. */
             <EmptyState
               tone="error"
-              icon={TriangleAlert}
+              icon={StatusIcons.error}
               title="Couldn’t load your library"
               description="The request didn’t come back. Nothing has been lost — try again."
               action={
@@ -166,28 +174,23 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               }
             />
           ) : loading ? (
-            /* Skeleton tiles in the real grid, so the dialog does not resize when
-               the data lands. role="status" because a silent wait announces
-               nothing to a screen reader. */
             <div role="status" className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               <span className="sr-only">Loading your library…</span>
               {[...Array(8)].map((_, i) => (
-                <div key={i} aria-hidden className="skeleton aspect-square rounded-field" style={staggerDelay(i)} />
+                <div key={i} aria-hidden className="skeleton aspect-square rounded-xl" style={staggerDelay(i)} />
               ))}
             </div>
           ) : empty ? (
-            <EmptyState
-              icon={FolderOpen}
-              title="Nothing here yet"
-              description="Files and images you send in chat collect here."
-            />
+            <div className="flex min-h-[16rem] flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-secondary/30 p-8 text-center">
+              <div className="flex size-11 items-center justify-center rounded-full border border-border/60 bg-secondary text-muted-foreground shadow-xs">
+                <FolderOpen className="size-5" />
+              </div>
+              <h3 className="mt-3 font-serif text-base font-normal text-foreground">Nothing here yet</h3>
+              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                Files and images you send in conversations collect here for quick reuse.
+              </p>
+            </div>
           ) : (
-            // ONE GRID, NOT TWO. Images were tiles and files were list rows, so
-            // the same dialog taught two different ways of picking depending on
-            // what you happened to have saved — and the file rows spent their
-            // width on a filename and a byte count while showing nothing of the
-            // file. Everything is a tile now; `FilePreview` decides what goes
-            // inside one.
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               {filtered.map((i) => {
                 const isSel = selected.has(i.id);
@@ -199,33 +202,23 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     aria-pressed={isSel}
                     aria-label={i.fileName}
                     className={cn(
-                      // `field` (10), the ladder's tile rung, on both the tile and the
-                      // skeleton above it. `rounded-lg` is `var(--radius)` — 16px, the
-                      // SURFACE rung — on a ~110px thumbnail.
-                      "group relative aspect-square overflow-hidden rounded-field border bg-muted shadow-soft",
-                      "transition-[transform,box-shadow,border-color] duration-base ease-out-soft hover:-translate-y-0.5 hover:shadow-lift active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
-                      isSel && "ring-2 ring-primary"
+                      "group relative aspect-square overflow-hidden rounded-xl border border-border/60 bg-secondary/50 shadow-xs",
+                      "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
+                      isSel && "border-primary ring-2 ring-primary/80 ring-offset-2 ring-offset-card"
                     )}
                   >
                     <FilePreview item={i} className="absolute inset-0" sizes="160px" />
                     <span
                       className={cn(
-                        // `bg-popover`, opaque, at the `xs` rung. This 20px checkbox floats
-                        // over an arbitrary photograph, and `bg-background/80` is the
-                        // PAGE colour — near-white in light, near-black in dark — so
-                        // the unchecked box inverted with the theme and vanished
-                        // against any image that happened to match it. `rounded-md`
-                        // (8px) is also off the ladder for a 20px square.
-                        "absolute left-1.5 top-1.5 flex size-5 items-center justify-center rounded-xs border bg-popover transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-                        isSel ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent group-hover:border-primary/70"
+                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-md border backdrop-blur-xs transition-colors duration-150",
+                        isSel
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/80 bg-background/80 text-transparent group-hover:border-primary/70"
                       )}
                     >
-                      <Check className="h-3.5 w-3.5" />
+                      <StatusIcons.success className="size-3.5 stroke-[2.5]" />
                     </span>
-                    {/* The name is the caption, not the content: it appears on
-                        hover over every tile, so an image and a document are
-                        identified the same way. */}
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65 to-transparent p-1.5 text-left text-caption text-white opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left text-micro font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100">
                       {i.fileName}
                     </span>
                   </button>
@@ -235,13 +228,17 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={attaching}>
             Cancel
           </Button>
-          <Button onClick={doAttach} disabled={attaching || selected.size === 0} className="gap-1.5">
-            {attaching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {selected.size > 0 ? `Attach ${selected.size}` : "Attach"}
+          <Button
+            onClick={doAttach}
+            disabled={attaching || selected.size === 0}
+            className="gap-1.5"
+          >
+            {attaching && <Loader2 className="size-3.5 animate-spin" />}
+            {selected.size > 0 ? `Attach ${selected.size} item${selected.size === 1 ? "" : "s"}` : "Attach"}
           </Button>
         </DialogFooter>
       </DialogContent>

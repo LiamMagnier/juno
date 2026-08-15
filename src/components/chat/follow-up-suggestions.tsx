@@ -161,7 +161,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               <Plus
                 aria-hidden="true"
                 className={cn(
-                  "h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity duration-base ease-out-strong group-hover/pill:opacity-100",
+                  "size-3.5 shrink-0 opacity-60 transition-opacity duration-base ease-out-strong group-hover/pill:opacity-100",
                   // 14px glyph on a 20px line: 3px centres it on the first line.
                   isOpen && "mt-[3px]"
                 )}
@@ -195,7 +195,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                   // chevron, and --border at 40% over --accent computes to a
                   // 1.2-point step — the chevron's own hover was invisible
                   // because it only ever fires on top of the pill's.
-                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground coarse:h-8 coarse:w-8 motion-reduce:transition-none",
+                  "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground coarse:size-8 motion-reduce:transition-none",
                   // Rides the first line when the pill is a tall wrapped block.
                   isOpen ? "self-start" : "self-center"
                 )}
@@ -203,7 +203,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                 <ChevronDown
                   aria-hidden="true"
                   className={cn(
-                    "h-3.5 w-3.5 transition-transform duration-base ease-out-strong motion-reduce:transition-none",
+                    "size-3.5 transition-transform duration-base ease-out-strong motion-reduce:transition-none",
                     isOpen && "rotate-180"
                   )}
                 />

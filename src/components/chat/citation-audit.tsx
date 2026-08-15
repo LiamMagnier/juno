@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, BadgeCheck, ChevronDown, CircleDashed, CircleSlash, Copy } from "lucide-react";
+import { ChevronDown, CircleDashed, CircleSlash } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
@@ -144,7 +145,7 @@ export function useCitationAudit(messageId: string | undefined, enabled: boolean
  */
 const STATES = {
   supported: {
-    Icon: BadgeCheck,
+    Icon: StatusIcons.verified,
     tone: "text-success-ink border-success/35 bg-success/10",
     dot: "bg-success",
     // `label`, not `word`: it is a COPY_PROPERTY, so the five state names reach
@@ -158,7 +159,7 @@ const STATES = {
     label: "Partly supported",
   },
   unsupported: {
-    Icon: AlertTriangle,
+    Icon: StatusIcons.warning,
     tone: "text-warning-foreground border-warning/45 bg-warning/10",
     dot: "bg-warning",
     label: "Unsupported",
@@ -273,7 +274,7 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
             "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
         >
-          <Copy aria-hidden="true" className="size-3.5" />
+          <ActionIcons.copy aria-hidden="true" className="size-3.5" />
         </button>
       </div>
 
@@ -409,8 +410,8 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
 
 /**
  * One honest sentence about a checked report. Takes the summary alone (not the
- * full audit) because the /research reader holds only the run-level counts —
- * the same numbers, and they must be phrased the same way in both places.
+ * full audit) because the callers that show a headline hold only the run-level
+ * counts — the same numbers, and they must be phrased the same way everywhere.
  */
 export function auditHeadline(s: CitationAudit["summary"]): string {
   const problems = s.unsupported + s.partiallySupported + s.contradicted;

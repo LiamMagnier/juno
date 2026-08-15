@@ -651,7 +651,7 @@ export function SandboxFrame({
       }}
       // Opaque origin (no allow-same-origin) so artifact code cannot touch the app, cookies, or storage.
       sandbox="allow-scripts"
-      className={className ?? `h-full w-full border-0 ${isDark ? "bg-[#0b0b0e]" : "bg-white"}`}
+      className={className ?? `size-full border-0 ${isDark ? "bg-[#0b0b0e]" : "bg-white"}`}
     />
   );
 }

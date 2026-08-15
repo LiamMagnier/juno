@@ -315,3 +315,38 @@ test("undoing an unlock passes the same gate it did", () => {
   const redone = run(unlock.document, unlock.inverse).document;
   assert.equal(redone.nodes.button.locked, true);
 });
+
+/**
+ * The operations the new authoring UI issues.
+ *
+ * `createComponent` and `createInstance` had existed in the operation layer from
+ * the first slice with no call site anywhere in `src/components` or `src/app` —
+ * a component could only be made by asking the AI, and an instance of one could
+ * not be placed by any gesture in the product. These are exactly the two calls
+ * the context menu and the layers panel's component list now make.
+ */
+test("promoting a layer to a component and placing an instance both round-trip", () => {
+  const start = signInDocument();
+  const promoted = run(start, [
+    { op: "createComponent", nodeId: "button", componentId: "cmp-btn", name: "Primary button" },
+  ]);
+  const components = Object.values(promoted.document.components ?? {});
+  assert.equal(components.length, 1, "the document gains a component");
+  assert.equal(components[0].name, "Primary button");
+
+  const placed = run(promoted.document, [
+    { op: "createInstance", componentId: "cmp-btn", parentId: null, pageId: PAGE_ID, instanceId: "inst-1", x: 40, y: 40 },
+  ]);
+  const instance = placed.document.nodes["inst-1"];
+  assert.ok(instance, "the instance exists as a real node");
+  assert.equal(instance.type, "instance");
+  assert.ok(
+    placed.document.pages.find((page) => page.id === PAGE_ID)?.children.includes("inst-1"),
+    "and is on the page it was placed on"
+  );
+  validateHierarchy(placed.document);
+
+  // Both are ordinary transactions, so both undo.
+  const undone = run(placed.document, placed.inverse).document;
+  assert.equal(undone.nodes["inst-1"], undefined, "placing an instance is undoable");
+});

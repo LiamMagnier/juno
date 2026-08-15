@@ -2,16 +2,15 @@
 
 import * as React from "react";
 import {
-  Check,
   ChevronDown,
   Mic,
   MicOff,
   MonitorUp,
   MonitorX,
   PhoneOff,
-  RotateCw,
   Square,
 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -114,7 +113,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               aria-label="Retry connection"
               className="inline-flex h-8 items-center gap-1.5 rounded-full bg-foreground px-3 text-xs font-medium text-background transition-all hover:bg-foreground/90 active:scale-95"
             >
-              <RotateCw className="size-3.5" />
+              <ActionIcons.refresh className="size-3.5" />
               <span>Retry</span>
             </button>
           ) : (
@@ -168,7 +167,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   className="rounded-control text-xs font-medium"
                 >
                   <span className="flex-1">{VOICE_PROVIDER_LABELS[provider]}</span>
-                  {provider === voice.provider && <Check className="size-3.5 text-primary" />}
+                  {provider === voice.provider && <StatusIcons.success className="size-3.5 text-primary" />}
                 </DropdownMenuItem>
               ))}
               {voice.capabilities?.screenInput && (
@@ -184,7 +183,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   >
                     {voice.screenSharing ? <MonitorX className="size-3.5" /> : <MonitorUp className="size-3.5" />}
                     <span className="flex-1">{voice.screenSharing ? "Stop Screen Share" : "Share Screen"}</span>
-                    {voice.screenSharing && <Check className="size-3.5 text-primary" />}
+                    {voice.screenSharing && <StatusIcons.success className="size-3.5 text-primary" />}
                   </DropdownMenuItem>
                 </>
               )}

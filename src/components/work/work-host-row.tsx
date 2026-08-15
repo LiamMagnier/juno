@@ -5,7 +5,7 @@ import { ChevronRight } from "lucide-react";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkHostState } from "@/lib/work/domain";
 import { HOST_STATE_LABEL, hostUnavailableReason } from "@/components/work/work-transport";
-import { workTimeAgo } from "@/components/work/work-vocabulary";
+import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 
@@ -72,6 +72,10 @@ export function WorkHostStatePill({
   return (
     <span
       className={cn(
+        // The same geometry `WorkStatusPill` and `WorkTag` carry, spelled out
+        // here rather than imported: those two take their tone from a Work
+        // status, and a host state is a different enum with its own five rows
+        // above. What has to match is the SHAPE, and it is one line.
         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
         revoked ? "border-destructive/35 bg-destructive/10 text-destructive" : STATE_PILL[host.state],
         className
@@ -80,7 +84,7 @@ export function WorkHostStatePill({
     >
       <span
         className={cn(
-          "h-1.5 w-1.5 rounded-full",
+          "size-1.5 rounded-full",
           revoked ? "bg-destructive" : STATE_DOT[host.state]
         )}
         aria-hidden="true"
@@ -135,18 +139,15 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
     >
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 truncate text-sm font-medium text-foreground">
+          {/* `text-body`, matching the task row's title — see the note there. */}
+          <span className="min-w-0 truncate text-body font-medium leading-snug text-foreground">
             {host.displayName}
           </span>
           <WorkHostStatePill host={host} />
           {/* Only when it adds something the chip has not. A revoked Mac is
               already switched off by the DELETE handler, and two chips saying
               the same thing would make the second one look like a second fact. */}
-          {!revoked && !host.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
-              Work off
-            </span>
-          )}
+          {!revoked && !host.enabled && <WorkTag>Work off</WorkTag>}
         </span>
         <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
           {revokedAt !== null
@@ -158,7 +159,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
         </span>
       </span>
       <ChevronRight
-        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+        className="mt-0.5 size-4 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
         aria-hidden="true"
       />
     </Link>

@@ -1,43 +1,17 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowUp,
-  Check,
-  ChevronDown,
-  FileText,
-  Loader2,
-  Mic,
-  Plus,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { ArrowUp, Loader2, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ComposerShell } from "@/components/ui/composer-shell";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Pressable } from "@/components/ui/pressable";
-import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { ConnectorStatus } from "@/components/connections/types";
 import { LibraryPicker } from "@/components/chat/library-picker";
-import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { AppIcons } from "@/lib/app-icons";
-import { requiresViewerCredentials } from "@/lib/image-source";
 import {
   clampReasoningEffort,
   defaultReasoning,
@@ -45,7 +19,6 @@ import {
   type ReasoningEffort,
 } from "@/lib/model-metrics";
 import { resolveModel, type ModelId } from "@/lib/models";
-import { DOC_MIME } from "@/lib/uploads";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
   WORK_APPROVAL_MODE_SUMMARY,
@@ -69,13 +42,24 @@ import {
   startWorkRun,
   workIdempotencyKey,
   type WorkBlocked,
-  type WorkTransportFailure,
 } from "@/components/work/work-transport";
-import { DegradationNotes, WorkStateNote } from "@/components/work/work-vocabulary";
 import { ComposerAddMenu } from "@/components/work/composer-home/composer-add-menu";
-import { COMPOSER_CHIP_CLASS } from "@/components/work/composer-home/composer-chip";
 import { WorkConnectorsChip } from "@/components/work/composer-home/connectors-chip";
 import { WorkPermissionChip } from "@/components/work/composer-home/permission-chip";
+import {
+  WORK_ACCEPT_ATTRIBUTE,
+  WorkComposerAttachments,
+} from "@/components/work/composer-home/composer-attachments";
+import { WorkDictationLayer } from "@/components/work/composer-home/dictation-layer";
+import { WorkEffortChip } from "@/components/work/composer-home/effort-chip";
+import { ProjectChip } from "@/components/work/composer-home/project-chip";
+import { WorkStartNotes } from "@/components/work/composer-home/start-notes";
+import {
+  describeFailure,
+  type StartAttempt,
+  type StartFailure,
+} from "@/components/work/composer-home/start-attempt";
+import { useConnectedApps } from "@/components/work/composer-home/use-connected-apps";
 import {
   WorkComposerVoicePanel,
   useWorkVoice,
@@ -97,7 +81,7 @@ import {
   runTargetLabel,
 } from "@/components/work/clarify/run-disclosure";
 import type { PreflightClarificationAnswer } from "@/lib/preflight-clarification";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /*
  * "Give Juno a task" — the Work home composer.
@@ -216,7 +200,30 @@ import { cn, formatBytes } from "@/lib/utils";
  * can refuse. Both are sent with idempotency keys held across retries, so
  * pressing the button again after a refusal reuses the draft instead of leaving
  * a trail of abandoned ones — for exactly as long as what the draft carries is
- * unchanged, which is what `StartAttempt` below is about.
+ * unchanged, which is what `StartAttempt` is about — see
+ * `composer-home/start-attempt.ts`.
+ *
+ * ── WHAT THIS FILE IS, AND WHAT IT IS NOT ──────────────────────────────────
+ *
+ * It is the arrangement: which controls exist, which tier each sits in, what a
+ * press does, and what is said when the press produces nothing. Everything that
+ * can be described without reference to that arrangement now lives beside it in
+ * `composer-home/`, because a two-thousand-line component is one where nobody
+ * can see the arrangement for the parts:
+ *
+ *   start-attempt.ts          what one press IS, and what to say when it failed
+ *   use-connected-apps.ts     the account's linked apps, fetched once
+ *   project-chip.tsx          the Project control, with its own list and create
+ *   composer-attachments.tsx  the document chips above the field, and the
+ *                             accept list the picker is opened with
+ *   effort-chip.tsx           the thinking-depth control and its Auto twin
+ *   dictation-layer.tsx       the capsule/composer cross-fade and its geometry
+ *   start-notes.tsx           every reason this will not run, newest last
+ *
+ * None of them was rewritten on the way out. The split is by QUESTION — each
+ * file answers one a reader might arrive with — rather than by size, which is
+ * why the pre-flight card, the run disclosure and the voice panel stay where
+ * they are: they already had files, under `clarify/` and `voice/`.
  */
 
 /**
@@ -230,134 +237,6 @@ import { cn, formatBytes } from "@/lib/utils";
  * arrived.
  */
 const MODEL_KEY = "juno:work:model";
-
-/**
- * What the file picker offers, which is deliberately narrower than the chat
- * composer's `ACCEPT_ATTRIBUTE`: the same list with every image type removed.
- *
- * A Work run is handed its attachments by `attachedSources` in
- * scripts/work-runner.ts, which reads `Attachment.extractedText` and nothing
- * else. That column is null for an image, so a photo reached the model as a file
- * name with no content behind it — the reader saw a thumbnail in the composer
- * and got an agent that had never seen the picture. Offering the picker and
- * then reporting that nothing could be read out of the file is a worse answer
- * than not offering it, because nothing in the menu distinguishes the two.
- *
- * The document types stay, PDFs included, even though a PDF has no extracted
- * text either. The difference is what is being promised: a document is handed
- * over to be worked from, the run now says out loud when it could not read one,
- * and the reader can act on that. "Photos" promised Juno would look at a
- * picture, which is the one thing this path can never do.
- *
- * The Code composer keeps its Photos entry. That path sends attachments to a
- * different runtime and is not affected by any of this.
- */
-const WORK_ACCEPT_ATTRIBUTE = [
-  ...DOC_MIME,
-  ".txt",
-  ".md",
-  ".csv",
-  ".json",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".py",
-].join(",");
-
-/**
- * One attempt at starting, carried across retries.
- *
- * The two keys are minted once per attempt rather than per press. A press that
- * created the draft and then failed to dispatch must, on the next press, land on
- * the same draft — `POST /sessions` replays an existing id for a repeated key —
- * or every refused start leaves another orphan in the user's task list. Changing
- * the model between presses is safe despite the replay: the model rides the run
- * as well as the session, and the run is dispatched fresh each time.
- *
- * `inputs` is everything the create writes and the dispatch cannot: the goal,
- * the project and the attachment ids. It was the goal alone, and the replay is
- * what turned that into a bug. A file attached after a refused press — or a
- * project picked, or an attachment taken back off — changed nothing the second
- * press sent, because the second press skips the create and the draft still held
- * the first press's list; and then `clear()` wiped the chips on success as
- * though they had been sent. There is no route that edits a session's grants
- * afterwards — `POST /sessions` refuses to re-grant on a replay, on purpose, so
- * that a retry cannot rewrite the grants of a session somebody is already
- * running — so a fresh key, and with it a fresh draft, is the only way to send
- * what is on the screen.
- */
-interface StartAttempt {
-  inputs: string;
-  sessionKey: string;
-  runKey: string;
-  session: ClientWorkSession | null;
-  confirmExpensive?: boolean;
-}
-
-/** A press that started nothing, and whether pressing again could. */
-interface StartFailure {
-  message: string;
-  /** False for a wall — a state where the button would ask the same question. */
-  retryable: boolean;
-}
-
-/**
- * What to say about a failed request, and whether to offer a button at all.
- *
- * `work-transport.tsx` separates 400 and 401/403 from `server` so that, in its
- * own words, "the UI can stop offering a button that cannot work"; this is the
- * half that honours it. A 400 is a client this deployment no longer agrees with,
- * a 403 is a plan, a 404 is something the task points at that is gone, and none
- * of the three answer differently the second time. Only a dropped connection and
- * a 5xx get a Try again, because only those two are about the moment rather than
- * the request.
- *
- * The server's sentence wins wherever there is one. It is the only thing in this
- * exchange that knows which model, which plan or which file, and the fallbacks
- * below exist for the routes that answer with a bare code — `requireUser`'s 401
- * is the common one. They say what is known and stop; a fallback that guessed at
- * the cause would be a second, quieter way of getting it wrong.
- */
-function describeFailure(failure: WorkTransportFailure, phase: "save" | "start"): StartFailure {
-  if (failure.cause === "offline") {
-    return {
-      retryable: true,
-      message:
-        phase === "save"
-          ? "Couldn’t reach Juno to save this task. Check your connection."
-          : "Couldn’t reach Juno to start this task. Check your connection.",
-    };
-  }
-  if (failure.cause === "server") {
-    return {
-      retryable: true,
-      message:
-        phase === "save"
-          ? "Couldn’t save this task, so nothing was started."
-          : "Couldn’t start this task, so nothing is running.",
-    };
-  }
-  if (failure.message !== null) return { retryable: false, message: failure.message };
-  if (failure.cause === "not_found") {
-    return {
-      retryable: false,
-      message:
-        "Something this task points at is no longer there — an attachment, the project, or the draft itself. Nothing was started.",
-    };
-  }
-  if (failure.cause === "rejected") {
-    return {
-      retryable: false,
-      message:
-        "Juno wouldn’t accept this request, and pressing the button again sends the same one. Reloading the page may help.",
-    };
-  }
-  return {
-    retryable: false,
-    message:
-      "Juno turned this down without saying why. You may have been signed out — reload the page to check.",
-  };
-}
 
 export function WorkComposer({
   hosts,
@@ -424,7 +303,6 @@ export function WorkComposer({
   const [draft, setDraft] = React.useState<ClientWorkSession | null>(null);
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
-  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const [dictating, setDictating] = React.useState(false);
   /** Set when dictation ends with "send"; consumed once the new goal is in state. */
@@ -556,17 +434,6 @@ export function WorkComposer({
   React.useEffect(() => {
     autoresize();
   }, [goal, autoresize]);
-
-  const removeUpload = React.useCallback(
-    (localId: string) => {
-      setRemovingIds((prev) => [...prev, localId]);
-      window.setTimeout(() => {
-        remove(localId);
-        setRemovingIds((prev) => prev.filter((id) => id !== localId));
-      }, 180);
-    },
-    [remove]
-  );
 
   /**
    * The skill the goal currently names, matched against the account's library.
@@ -1013,16 +880,6 @@ export function WorkComposer({
     }
   };
 
-  const draftLink =
-    draft === null ? null : (
-      <Link
-        href={`/work/${draft.id}`}
-        className="font-medium underline underline-offset-2 hover:text-foreground"
-      >
-        Open the draft
-      </Link>
-    );
-
   /*
    * The caption under the surface, at most two lines: what Juno read into the
    * goal, then what it will do about it. Each is suppressed rather than padded
@@ -1076,542 +933,289 @@ export function WorkComposer({
           />
         )}
 
-        {/*
-         * Dictation and the composer share one grid cell and cross-fade, which
-         * is how the chat, thread and Code composers all do it and is a change
-         * of arrangement here: this surface used to render the dictation capsule
-         * INSIDE the shell, above the field, so the shell grew and shrank around
-         * it. That was tolerable while the shell had one tier. With a utility
-         * strip attached underneath, a capsule pushing the field down also
-         * pushes the strip down, and the one element on the page that is
-         * supposed to sit still — the standing context of the run — moves every
-         * time somebody reaches for the microphone.
-         *
-         * `min-height` is the only animated layout property. The transcript
-         * preview floats above the capsule and needs the headroom; the two
-         * layers themselves move on opacity and transform, which stay on the
-         * compositor.
-         */}
-        <div
-          className={cn(
-            "relative grid w-full grid-cols-1 grid-rows-1 items-end justify-items-center",
-            "transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
-            dictating ? "min-h-[170px]" : "min-h-0"
-          )}
+        {/* Dictation and the composer share one grid cell and cross-fade — see
+            `composer-home/dictation-layer.tsx` for why the capsule is a sibling
+            of the shell rather than a child of it. */}
+        <WorkDictationLayer
+          active={dictating}
+          onCancel={() => setDictating(false)}
+          onClose={closeDictation}
         >
-          <div
-            // `inert` is what actually takes this half of the cross-fade out of the
-            // page. `opacity-0 pointer-events-none` hides it from the eye and the
-            // mouse and leaves it in the tab order and the accessibility tree, so a
-            // keyboard or screen-reader user could reach a composer that is not on
-            // screen — and, mid-dictation, type into it. Same defect the chat
-            // transcript's jump-to-latest button had.
-            inert={!dictating}
-            className={cn(
-              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-              dictating
-                ? "translate-y-0 scale-100 opacity-100"
-                : "pointer-events-none translate-y-1 scale-95 opacity-0"
-            )}
-          >
-            {/* Mounted only while active — ComposerDictation holds a microphone
-                stream and a recognition session for its whole life. */}
-            {dictating && (
-              <ComposerDictation
-                onCancel={() => setDictating(false)}
-                onStop={(t) => closeDictation(t, false)}
-                onSend={(t) => closeDictation(t, true)}
+          <ComposerShell
+            utilityLabel="What this task is filed under and where it runs"
+            /*
+             * ── Above the field ────────────────────────────────────────────
+             * The documents this task is handed, as chips, so they are visible
+             * without opening anything.
+             */
+            above={
+              canAttach ? (
+                <WorkComposerAttachments uploads={uploads} onRemove={remove} />
+              ) : null
+            }
+            field={
+              <textarea
+                ref={textareaRef}
+                value={goal}
+                onChange={(event) => setGoal(event.target.value)}
+                onKeyDown={onKeyDown}
+                rows={1}
+                disabled={submitting}
+                placeholder="Describe the task — what you want done, and what “done” looks like"
+                aria-label="Describe the task for Juno to carry out"
+                // `text-body` and 4px-grid padding. The field carried three
+                // arbitrary values — text-[1rem], sm:px-[18px], sm:pt-[17px] —
+                // and that 17/18px half-step matched nothing else in the shell,
+                // whose controls row sits on px-2/2.5 and its chip strip on px-3/3.5.
+                className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4 sm:pt-4"
               />
-            )}
-          </div>
+            }
+            /*
+             * ── The inline row: what you do to THIS message ────────────────
+             * Attach, name a skill, pick the model, set the thinking depth,
+             * dictate, start. Every one of them is spent on the sentence in
+             * the field. The same row, in the same order, at the same sizes as
+             * the chat and Code composers.
+             */
+            controls={
+              <>
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  {/* `ComposerAddMenu` rather than a third hand-rolled [+]. It
+                      holds the two things that are spent on this message — the
+                      documents and the skill — now that the apps it used to
+                      carry are on the strip below, where standing scope
+                      belongs. */}
+                  <ComposerAddMenu
+                    disabled={submitting}
+                    attach={
+                      canAttach
+                        ? {
+                            onFiles: () => fileInputRef.current?.click(),
+                            onLibrary: () => setLibraryOpen(true),
+                          }
+                        : undefined
+                    }
+                    skills={{
+                      skills: skills.skills,
+                      failed: skills.failed,
+                      onRetry: skills.reload,
+                      invokedSlug: invoked?.slug ?? null,
+                      onInvoke: invokeSkill,
+                    }}
+                  />
 
-          {/* The fade is on a wrapper rather than on the shell: `ComposerShell`
-              already declares `transition-[border-color,box-shadow]`, and a
-              second arbitrary `transition-[…]` on the same element is resolved
-              by stylesheet order rather than by class order — so one of the two
-              would silently win, and which one is not something this file gets
-              to decide. */}
-          <div
-            // `inert` is what actually takes this half of the cross-fade out of the
-            // page. `opacity-0 pointer-events-none` hides it from the eye and the
-            // mouse and leaves it in the tab order and the accessibility tree, so a
-            // keyboard or screen-reader user could reach a composer that is not on
-            // screen — and, mid-dictation, type into it. Same defect the chat
-            // transcript's jump-to-latest button had.
-            inert={dictating}
-            className={cn(
-              "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-              dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
-            )}
-          >
-            <ComposerShell
-              utilityLabel="What this task is filed under and where it runs"
-              /*
-               * ── Above the field ────────────────────────────────────────────
-               * The documents this task is handed, as chips, so they are visible
-               * without opening anything.
-               */
-              above={
-                canAttach ? (
+                  {/* One divider class, one height, one breakpoint — the form
+                      chat settled on after shipping two of each, which showed
+                      two different separators at once between 380 and 420px.
+                      Gated on `canAttach` still: the menu can render for
+                      skills alone, but a hairline with nothing on its left is
+                      worse than no hairline. */}
+                  {canAttach && (
+                    <span
+                      className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
+                      aria-hidden="true"
+                    />
+                  )}
+
                   <div
                     className={cn(
-                      "grid transition-[grid-template-rows] duration-base ease-out-soft",
-                      uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                      "min-w-0 flex-1 sm:flex-none",
+                      submitting && "pointer-events-none opacity-60"
                     )}
                   >
-                    <div className="min-h-0 overflow-hidden">
-                      <div className="flex flex-wrap gap-2 px-3 pb-0 pt-2.5 sm:px-3.5">
-                        {uploads.map((upload) => (
-                          <div
-                            key={upload.localId}
-                            className={cn(
-                              // `rounded-control`, the same rung the thread
-                              // composer's attachment rows sit on — these were
-                              // 8px there and 24px here for the same object in
-                              // the same product.
-                              // `bg-secondary`, not `bg-background` + `shadow-soft`.
-                              // The shell around this chip is `bg-card`; on a pure-
-                              // black ground `bg-background` made the chip darker
-                              // than the surface holding it, and `--shadow-soft` in
-                              // dark is black ink, so the elevation cue did nothing
-                              // at all. On black the lift has to come from lightness.
-                              "flex items-center gap-2 rounded-control border border-border/60 bg-secondary px-2.5 py-2 text-xs",
-                              removingIds.includes(upload.localId)
-                                ? "pointer-events-none motion-safe:animate-pop-out"
-                                : "motion-safe:animate-rise-in"
-                            )}
-                          >
-                            {upload.attachment?.kind === "IMAGE" ? (
-                              <Image
-                                src={upload.attachment.url}
-                                unoptimized={requiresViewerCredentials(upload.attachment.url)}
-                                alt={upload.fileName}
-                                width={32}
-                                height={32}
-                                className="h-8 w-8 rounded-field object-cover"
-                              />
-                            ) : (
-                              <FileText className="h-5 w-5 text-muted-foreground" />
-                            )}
-                            <div className="max-w-[140px]">
-                              <p className="truncate font-medium">{upload.fileName}</p>
-                              <p className="text-muted-foreground">
-                                {upload.status === "uploading"
-                                  ? `${upload.progress}%`
-                                  : upload.status === "error"
-                                    ? "Failed"
-                                    : formatBytes(upload.size)}
-                              </p>
-                            </div>
-                            {upload.status === "uploading" && (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                            )}
-                            {/* Taking a file back off is one affordance in both
-                                Work composers: a circular `Pressable kind="icon"`
-                                at one hit size, inline. This was an inverted
-                                badge floated outside the chip and hidden until
-                                hover, against an ~18px square glyph in the
-                                thread — two shapes and two target sizes for the
-                                same act. */}
-                            <Pressable
-                              kind="icon"
-                              size="sm"
-                              onClick={() => removeUpload(upload.localId)}
-                              className="-mr-1 shrink-0"
-                              aria-label={`Remove ${upload.fileName}`}
-                            >
-                              <X className="h-3.5 w-3.5" aria-hidden="true" />
-                            </Pressable>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null
-              }
-              field={
-                <textarea
-                  ref={textareaRef}
-                  value={goal}
-                  onChange={(event) => setGoal(event.target.value)}
-                  onKeyDown={onKeyDown}
-                  rows={1}
-                  disabled={submitting}
-                  placeholder="Describe the task — what you want done, and what “done” looks like"
-                  aria-label="Describe the task for Juno to carry out"
-                  // `text-body` and 4px-grid padding. The field carried three
-                  // arbitrary values — text-[1rem], sm:px-[18px], sm:pt-[17px] —
-                  // and that 17/18px half-step matched nothing else in the shell,
-                  // whose controls row sits on px-2/2.5 and its chip strip on px-3/3.5.
-                  className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4 sm:pt-4"
-                />
-              }
-              /*
-               * ── The inline row: what you do to THIS message ────────────────
-               * Attach, name a skill, pick the model, set the thinking depth,
-               * dictate, start. Every one of them is spent on the sentence in
-               * the field. The same row, in the same order, at the same sizes as
-               * the chat and Code composers.
-               */
-              controls={
-                <>
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
-                    {/* `ComposerAddMenu` rather than a third hand-rolled [+]. It
-                        holds the two things that are spent on this message — the
-                        documents and the skill — now that the apps it used to
-                        carry are on the strip below, where standing scope
-                        belongs. */}
-                    <ComposerAddMenu
-                      disabled={submitting}
-                      attach={
-                        canAttach
-                          ? {
-                              onFiles: () => fileInputRef.current?.click(),
-                              onLibrary: () => setLibraryOpen(true),
-                            }
-                          : undefined
-                      }
-                      skills={{
-                        skills: skills.skills,
-                        failed: skills.failed,
-                        onRetry: skills.reload,
-                        invokedSlug: invoked?.slug ?? null,
-                        onInvoke: invokeSkill,
-                      }}
+                    {/* Only the models the Work runner can actually drive.
+                        Plan-locked ones stay, wearing their lock — see the
+                        prop's own note.
+
+                        `showReasoning` is on now that the executor carries an
+                        effort, so the picker's own slider and the button
+                        beside it are the same control seen twice rather than
+                        two ideas — which is the arrangement chat has always
+                        had. */}
+                    <ModelSelector
+                      value={model}
+                      onChange={changeModel}
+                      reasoningEffort={reasoningEffort}
+                      onReasoningChange={setReasoningEffort}
+                      filter={isWorkCapableModel}
                     />
-
-                    {/* One divider class, one height, one breakpoint — the form
-                        chat settled on after shipping two of each, which showed
-                        two different separators at once between 380 and 420px.
-                        Gated on `canAttach` still: the menu can render for
-                        skills alone, but a hairline with nothing on its left is
-                        worse than no hairline. */}
-                    {canAttach && (
-                      <span
-                        className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                        aria-hidden="true"
-                      />
-                    )}
-
-                    <div
-                      className={cn(
-                        "min-w-0 flex-1 sm:flex-none",
-                        submitting && "pointer-events-none opacity-60"
-                      )}
-                    >
-                      {/* Only the models the Work runner can actually drive.
-                          Plan-locked ones stay, wearing their lock — see the
-                          prop's own note.
-
-                          `showReasoning` is on now that the executor carries an
-                          effort, so the picker's own slider and the button
-                          beside it are the same control seen twice rather than
-                          two ideas — which is the arrangement chat has always
-                          had. */}
-                      <ModelSelector
-                        value={model}
-                        onChange={changeModel}
-                        reasoningEffort={reasoningEffort}
-                        onReasoningChange={setReasoningEffort}
-                        filter={isWorkCapableModel}
-                      />
-                    </div>
-
-                    {/* Thinking effort, presented exactly as chat and /code/new
-                        present it: a fixed-width button naming the current tier,
-                        opening onto the same slider. Same component, same
-                        widths, same wording — a reader who has set this once
-                        anywhere in the product has set it everywhere, and a
-                        third arrangement of the same choice would be a second
-                        thing to learn for no new fact. */}
-                    {isAutoModelId(model) ? (
-                      <>
-                        <span
-                          className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                          aria-hidden="true"
-                        />
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            {/* The disabled twin of the trigger below, at that
-                                trigger's exact metrics — `rounded-composer-control`
-                                (the inline row's rung, which the mic and the [+]
-                                beside it already sit on), `coarse:h-11`, and the
-                                same three widths. It was `rounded-control` and
-                                auto-width, so switching the model to Auto both
-                                changed the corner radius of one chip in the row
-                                and resized the row under the reader's pointer. */}
-                            <span
-                              className="inline-flex h-8 w-[4.75rem] shrink-0 items-center justify-center gap-1 rounded-composer-control px-2 font-mono text-ui text-muted-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem]"
-                              aria-label="Thinking effort: Auto — chosen with the model"
-                            >
-                              <span className="truncate">Auto</span>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Thinking depth is chosen automatically with the model
-                          </TooltipContent>
-                        </Tooltip>
-                      </>
-                    ) : (
-                      effortOptions.length > 0 &&
-                      (() => {
-                        // Matched against the clamped value, never the raw
-                        // preference. The two disagree whenever a tier chosen
-                        // elsewhere is wider than this model offers, and matching
-                        // the raw one falls through to `effortOptions[0]` — the
-                        // LOWEST tier — while the run goes out at the highest
-                        // tier at or below it. The label would read "Instant" for
-                        // a task that thought hard.
-                        const current =
-                          effortOptions.find((option) => option.value === effort) ??
-                          effortOptions[0];
-                        const compact =
-                          current.label === "Extra high" ? "X-high" : current.label;
-                        const atTopTier =
-                          effortOptions.length > 1 &&
-                          current.value === effortOptions[effortOptions.length - 1].value;
-                        return (
-                          <>
-                            <span
-                              className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                              aria-hidden="true"
-                            />
-                            <Tooltip>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      disabled={submitting}
-                                      aria-label={`Thinking effort: ${current.label}`}
-                                      className={cn(
-                                        // `.composer-chip` + `rounded-composer-control`
-                                        // + `coarse:h-11`, which is verbatim what
-                                        // chat's identical trigger carries. The
-                                        // claim above — same component, same
-                                        // widths — was true of the widths and of
-                                        // nothing else: this was a bare ghost at
-                                        // `rounded-control` (9px) in a row whose
-                                        // [+] and mic are both 12px, and it topped
-                                        // out at 32px on touch beside two
-                                        // neighbours that grow to 44.
-                                        //
-                                        // The two `ring-0`s went with it: Button
-                                        // declares no ring at all — globals.css's
-                                        // `:focus-visible` outline is what draws
-                                        // keyboard focus here — so they cancelled
-                                        // nothing, while `focus-visible:bg-accent`
-                                        // beside them painted focus in the same
-                                        // fill as hover and as open, leaving the
-                                        // three states indistinguishable.
-                                        "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-ui tracking-tight focus-visible:ring-offset-card coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem]",
-                                        // Full strength, matching the model name
-                                        // beside it. `/80` put one of the two most
-                                        // consequential values on the row below
-                                        // the ink of everything around it.
-                                        atTopTier ? "text-ultra" : "text-foreground"
-                                      )}
-                                    >
-                                      <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
-                                        {compact}
-                                      </span>
-                                      <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
-                                        {current.label}
-                                      </span>
-                                      <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  align="start"
-                                  sideOffset={10}
-                                  className="w-[264px] origin-popper p-3"
-                                >
-                                  {/* No Flash-mode switch, unlike chat's. That
-                                      toggle swaps the transport for a
-                                      lower-latency one the Work runner does not
-                                      use, so offering it would be a control with
-                                      nothing behind it — the exact mistake this
-                                      whole surface was carrying until the
-                                      executor learned to carry an effort. */}
-                                  <ReasoningSlider
-                                    options={effortOptions}
-                                    value={effort}
-                                    onChange={setReasoningEffort}
-                                    disabled={submitting}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              <TooltipContent>Thinking effort</TooltipContent>
-                            </Tooltip>
-                          </>
-                        );
-                      })()
-                    )}
                   </div>
 
-                  <div className="ml-auto flex shrink-0 items-center gap-1">
-                    {/* Dictate. Sits immediately left of the primary action, the
-                        same place it occupies in the chat and Code composers — a
-                        control that means the same thing in three surfaces
-                        should not be in three positions. Hidden rather than
-                        disabled where the browser has no recognition: a
-                        permanently dead mic explains nothing. */}
-                    {speechSupported && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => setDictating(true)}
-                            // Dictation and the voice conversation want the same
-                            // microphone, and the browser hands it to whoever
-                            // asked last — so opening one while the other is live
-                            // steals the input stream from a session still
-                            // holding it. Chat and the thread composer lock the
-                            // same pair the same way.
-                            disabled={submitting || dictating || voice.open}
-                            aria-label="Dictate the task"
-                            aria-pressed={dictating}
-                            className="composer-mic-button shrink-0 rounded-composer-control coarse:h-11 coarse:w-11"
-                          >
-                            <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Dictate</TooltipContent>
-                      </Tooltip>
-                    )}
+                  {/* Thinking effort, presented exactly as chat and /code/new
+                      present it: a fixed-width button naming the current tier,
+                      opening onto the same slider. Same component, same
+                      widths, same wording — a reader who has set this once
+                      anywhere in the product has set it everywhere, and a
+                      third arrangement of the same choice would be a second
+                      thing to learn for no new fact. */}
+                  <WorkEffortChip
+                    auto={isAutoModelId(model)}
+                    options={effortOptions}
+                    value={effort}
+                    onChange={setReasoningEffort}
+                    disabled={submitting}
+                  />
+                </div>
 
-                    {/* One primary button, morphing in place: with nothing
-                        written and a voice session available it IS the launcher,
-                        and the first character typed turns it back into Start.
-                        Chat's `showVoiceButton` rule, in chat's shape.
-
-                        Gated on the DRAFT rather than on `canStart`, which is the
-                        one place this surface cannot copy chat verbatim: Work
-                        also refuses to start without an executor, so keying the
-                        morph off `canStart` would put wave bars on a composer
-                        with a written task in it the moment the host list was
-                        slow — offering a phone call in place of the Start button
-                        the reader was reaching for. */}
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {/* Dictate. Sits immediately left of the primary action, the
+                      same place it occupies in the chat and Code composers — a
+                      control that means the same thing in three surfaces
+                      should not be in three positions. Hidden rather than
+                      disabled where the browser has no recognition: a
+                      permanently dead mic explains nothing. */}
+                  {speechSupported && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <span className="shrink-0">
-                          <Button
-                            type="button"
-                            size="icon"
-                            onClick={
-                              showVoiceButton ? voice.onOpenVoiceMode : () => void submit()
-                            }
-                            disabled={showVoiceButton ? false : !canStart}
-                            aria-label={
-                              showVoiceButton
-                                ? "Talk to Juno about the task you are writing"
-                                : selection.target === null
-                                  ? selection.explanation
-                                  : "Start this task"
-                            }
-                            className={cn(
-                              "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11",
-                              // The same property list and easing chat morphs on.
-                              // `width` and `border-radius` are in it even though
-                              // this composer holds both fixed: dropping them
-                              // here is how the lists drift and a later shape
-                              // change animates on one surface only.
-                              "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
-                            )}
-                          >
-                            {submitting ? (
-                              <Loader2
-                                key="starting"
-                                className="h-4 w-4 animate-spin motion-safe:animate-fade-in"
-                                aria-hidden="true"
-                              />
-                            ) : showVoiceButton ? (
-                              <span
-                                key="voice"
-                                className="composer-voice-wave motion-safe:animate-fade-in"
-                                aria-hidden="true"
-                              >
-                                <span />
-                                <span />
-                                <span />
-                                <span />
-                                <span />
-                              </span>
-                            ) : (
-                              <ArrowUp
-                                key="start"
-                                className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </Button>
-                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => setDictating(true)}
+                          // Dictation and the voice conversation want the same
+                          // microphone, and the browser hands it to whoever
+                          // asked last — so opening one while the other is live
+                          // steals the input stream from a session still
+                          // holding it. Chat and the thread composer lock the
+                          // same pair the same way.
+                          disabled={submitting || dictating || voice.open}
+                          aria-label="Dictate the task"
+                          aria-pressed={dictating}
+                          className="composer-mic-button shrink-0 rounded-composer-control coarse:size-11"
+                        >
+                          <Mic className="composer-mic-icon size-4" aria-hidden="true" />
+                        </Button>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        {showVoiceButton ? "Voice conversation" : "Start task"}
-                      </TooltipContent>
+                      <TooltipContent>Dictate</TooltipContent>
                     </Tooltip>
-                  </div>
-                </>
-              }
-              /*
-               * ── The utility strip: the standing context of the run ─────────
-               *
-               * Everything here is still true after the task starts, and true of
-               * the task after that. Two of the three arrived from somewhere
-               * worse: the project and the approval mode were a chip strip ABOVE
-               * the field, which reads as part of the message being composed
-               * when it is the opposite of that, and the apps were two gestures
-               * deep inside a [+] that opens upward over the text.
-               *
-               * The executor is the odd one out and is not a control, because
-               * Work has no executor to choose — `selectForInferred` reads the
-               * goal and decides, and the dispatch route runs the same function
-               * over the same list. It is here because it answers the third
-               * question the strip exists to answer, and a reader is owed it
-               * before they press Start rather than after.
-               */
-              utility={
-                <>
-                  <ProjectChip value={projectId} onChange={setProject} disabled={submitting} />
-                  <WorkPermissionChip
-                    value={approvalMode}
-                    onChange={setApprovalMode}
-                    disabled={submitting}
+                  )}
+
+                  {/* One primary button, morphing in place: with nothing
+                      written and a voice session available it IS the launcher,
+                      and the first character typed turns it back into Start.
+                      Chat's `showVoiceButton` rule, in chat's shape.
+
+                      Gated on the DRAFT rather than on `canStart`, which is the
+                      one place this surface cannot copy chat verbatim: Work
+                      also refuses to start without an executor, so keying the
+                      morph off `canStart` would put wave bars on a composer
+                      with a written task in it the moment the host list was
+                      slow — offering a phone call in place of the Start button
+                      the reader was reaching for. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="shrink-0">
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={
+                            showVoiceButton ? voice.onOpenVoiceMode : () => void submit()
+                          }
+                          disabled={showVoiceButton ? false : !canStart}
+                          aria-label={
+                            showVoiceButton
+                              ? "Talk to Juno about the task you are writing"
+                              : selection.target === null
+                                ? selection.explanation
+                                : "Start this task"
+                          }
+                          className={cn(
+                            "composer-primary-action size-9 rounded-composer-action coarse:size-11",
+                            // The same property list and easing chat morphs on.
+                            // `width` and `border-radius` are in it even though
+                            // this composer holds both fixed: dropping them
+                            // here is how the lists drift and a later shape
+                            // change animates on one surface only.
+                            "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
+                          )}
+                        >
+                          {submitting ? (
+                            <Loader2
+                              key="starting"
+                              className="size-4 animate-spin motion-safe:animate-fade-in"
+                              aria-hidden="true"
+                            />
+                          ) : showVoiceButton ? (
+                            <span
+                              key="voice"
+                              className="composer-voice-wave motion-safe:animate-fade-in"
+                              aria-hidden="true"
+                            >
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                            </span>
+                          ) : (
+                            <ArrowUp
+                              key="start"
+                              className="composer-send-icon size-4 motion-safe:animate-fade-in"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {showVoiceButton ? "Voice conversation" : "Start task"}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </>
+            }
+            /*
+             * ── The utility strip: the standing context of the run ─────────
+             *
+             * Everything here is still true after the task starts, and true of
+             * the task after that. Two of the three arrived from somewhere
+             * worse: the project and the approval mode were a chip strip ABOVE
+             * the field, which reads as part of the message being composed
+             * when it is the opposite of that, and the apps were two gestures
+             * deep inside a [+] that opens upward over the text.
+             *
+             * The executor is the odd one out and is not a control, because
+             * Work has no executor to choose — `selectForInferred` reads the
+             * goal and decides, and the dispatch route runs the same function
+             * over the same list. It is here because it answers the third
+             * question the strip exists to answer, and a reader is owed it
+             * before they press Start rather than after.
+             */
+            utility={
+              <>
+                <ProjectChip value={projectId} onChange={setProject} disabled={submitting} />
+                <WorkPermissionChip
+                  value={approvalMode}
+                  onChange={setApprovalMode}
+                  disabled={submitting}
+                />
+                <WorkConnectorsChip
+                  connectors={apps.connectors}
+                  failed={apps.failed}
+                  onRetry={apps.reload}
+                  selected={connectorIds}
+                  onToggle={toggleConnector}
+                  disabled={submitting}
+                />
+                {/* Last and pushed right, so it is the item that gives up room
+                    first when the strip runs out of it: it is the only one of
+                    the four a reader can also get in full elsewhere, by
+                    opening the disclosure under the composer. */}
+                <span className="ml-auto flex min-w-0 justify-end">
+                  <WorkRunTarget
+                    target={selection.target}
+                    hostName={
+                      (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ??
+                      null
+                    }
+                    loading={loadingHosts}
+                    unknown={executorsUnknown}
                   />
-                  <WorkConnectorsChip
-                    connectors={apps.connectors}
-                    failed={apps.failed}
-                    onRetry={apps.reload}
-                    selected={connectorIds}
-                    onToggle={toggleConnector}
-                    disabled={submitting}
-                  />
-                  {/* Last and pushed right, so it is the item that gives up room
-                      first when the strip runs out of it: it is the only one of
-                      the four a reader can also get in full elsewhere, by
-                      opening the disclosure under the composer. */}
-                  <span className="ml-auto flex min-w-0 justify-end">
-                    <WorkRunTarget
-                      target={selection.target}
-                      hostName={
-                        (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ??
-                        null
-                      }
-                      loading={loadingHosts}
-                      unknown={executorsUnknown}
-                    />
-                  </span>
-                </>
-              }
-            />
-          </div>
-        </div>
+                </span>
+              </>
+            }
+          />
+        </WorkDictationLayer>
 
         <input
           ref={fileInputRef}
@@ -1712,376 +1316,23 @@ export function WorkComposer({
         </div>
       )}
 
-      {/* Everything below is the honest answer to "will this actually run",
-          newest fact last: the local preview, then whatever the server said when
-          it disagreed. */}
-      {executorsUnknown && (
-        <WorkStateNote
-          tone="error"
-          className="mt-2.5 motion-safe:animate-rise-in"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRetryHosts}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
-          Juno couldn’t check what is available to run this, so it can’t tell you whether anything
-          would pick it up. Starting is held back rather than queued into the dark.
-        </WorkStateNote>
-      )}
-      {blocked === null && !executorsUnknown && selection.target === null && !loadingHosts && (
-        <WorkStateNote tone="blocked" className="mt-2.5 motion-safe:animate-rise-in">
-          {selection.explanation}
-        </WorkStateNote>
-      )}
-      {/* `!loadingHosts` matters here now that the preview yields rather than
-          refuses: with the host list still in flight there is no Mac to serve a
-          local guess, so the selection carries a "the local part will not run"
-          degradation that a Mac two hundred milliseconds away would have
-          answered. Showing it and then withdrawing it is a warning the reader
-          cannot act on. */}
-      {blocked === null &&
-        !executorsUnknown &&
-        !loadingHosts &&
-        selection.target !== null &&
-        selection.degradation.length > 0 && (
-          // `bg-warning/10` and not `/5` — the same fill `WorkStateNote`'s
-          // warning tone uses, which is the box this one sits directly above in
-          // several states. `/5` composited to ~2.9% over the black ground, so
-          // two warning boxes in one column were drawn at visibly different
-          // weights for no difference in what they were saying.
-          <div className="mt-2.5 rounded-field border border-warning/35 bg-warning/10 px-3.5 py-2.5 motion-safe:animate-rise-in">
-            <DegradationNotes degradation={selection.degradation} />
-          </div>
-        )}
-      {blocked !== null && (
-        <WorkStateNote tone="blocked" className="mt-2.5 motion-safe:animate-rise-in">
-          <p>{blocked.explanation}</p>
-          <DegradationNotes degradation={blocked.degradation} className="mt-2" />
-          {blocked.confirmation?.kind === "expensive_work" && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={confirmExpensiveAndSubmit}
-                disabled={submitting || !canStart}
-                className="border-warning/40 text-foreground hover:bg-warning/10"
-              >
-                Confirm and start
-              </Button>
-              <span className="text-caption text-muted-foreground">
-                Estimate: ${(blocked.confirmation.estimatedCostMicroUsd / 1_000_000).toFixed(2)}
-              </span>
-            </div>
-          )}
-          {draftLink !== null && (
-            <p className="mt-2 text-ui">
-              Nothing was queued. The task is saved as a draft. {draftLink}
-            </p>
-          )}
-        </WorkStateNote>
-      )}
-      {/* The failed press. The button appears only where it could work: a wall —
-          a 400, a plan that admits no model, something that is gone — answers
-          the same way every time, and a Try again beside it costs the reader a
-          press to learn what the sentence already told them. */}
-      {failure !== null && (
-        <WorkStateNote
-          tone="error"
-          className="mt-2.5 motion-safe:animate-rise-in"
-          action={
-            failure.retryable ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void submit()}
-                disabled={!canStart}
-                className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
-              </Button>
-            ) : undefined
-          }
-        >
-          <p>{failure.message}</p>
-          {/* No "nothing was queued" here, unlike the refusal above. A refusal
-              is the server saying so; a failed request may have arrived and lost
-              only its answer, and the idempotency key is what makes the next
-              press safe rather than any claim this line could make. */}
-          {draftLink !== null && (
-            <p className="mt-2 text-ui">The task is saved as a draft. {draftLink}</p>
-          )}
-        </WorkStateNote>
-      )}
+      {/* Every reason this might not run, in `start-notes.tsx`: what the browser
+          worked out for itself, then what the server said when it disagreed. */}
+      <WorkStartNotes
+        executorsUnknown={executorsUnknown}
+        loadingHosts={loadingHosts}
+        onRetryHosts={onRetryHosts}
+        targetFound={selection.target !== null}
+        targetExplanation={selection.explanation}
+        degradation={selection.degradation}
+        blocked={blocked}
+        failure={failure}
+        draft={draft}
+        canStart={canStart}
+        submitting={submitting}
+        onConfirmExpensive={confirmExpensiveAndSubmit}
+        onRetryStart={() => void submit()}
+      />
     </div>
   );
 }
-
-/**
- * The account's connected apps, loaded once for everything on this surface that
- * needs them.
- *
- * Three things do now — the Apps chip that switches them on, the pre-flight
- * question that offers to switch one on because the goal named it, and the
- * disclosure that lists what the run will reach — and each of them asking
- * `/api/connectors` for itself would be three answers to one question, arriving
- * at three different moments. Only connected apps are kept: everything here is
- * about narrowing what one task may reach inside what the account already
- * permits, and an app nobody has linked is not a choice this surface can offer.
- *
- * A failed load is carried rather than swallowed, because "you have no
- * connected apps" and "Juno could not find out" are different sentences and
- * only the second one deserves a Retry.
- */
-function useConnectedApps(): {
-  connectors: ConnectorStatus[] | null;
-  failed: boolean;
-  reload: () => void;
-} {
-  const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    setFailed(false);
-    try {
-      const response = await fetch("/api/connectors");
-      if (!response.ok) throw new Error("connectors");
-      const data = (await response.json()) as { connectors?: ConnectorStatus[] };
-      setConnectors((data.connectors ?? []).filter((connector) => connector.connected));
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  const reload = React.useCallback(() => {
-    void load();
-  }, [load]);
-
-  return { connectors, failed, reload };
-}
-
-/* ──────────────────────────────── the chips ──────────────────────────────── */
-
-/** As much of `GET /api/projects` as a chip has any use for. */
-interface ComposerProject {
-  id: string;
-  name: string;
-  conversationCount: number;
-}
-
-/*
- * The chip shape lives in `composer-home/composer-chip.tsx`.
- *
- * There was a local `CHIP_CLASS` here — h-8 / px-2 / 12px / foreground-80 —
- * beside a `COMPOSER_CHIP_CLASS` that was extracted from this very file and is
- * h-7 / px-1.5 / 11.5px / muted. Both dressed the Project chip: this one on the
- * home composer, the shared one on the thread's. The extraction happened; the
- * fork stayed. There is now one height.
- */
-
-/**
- * Files this task into a Project, so the project's instructions and files apply.
- *
- * An account with no projects gets a "New project" button rather than a chip
- * that opens onto an empty menu and an apology. The two are the same click
- * either way — the only thing a reader with no projects can usefully do here is
- * make one — and an empty dropdown is a promise of a list that does not exist.
- *
- * The list is loaded on mount rather than on open. It is one small GET against
- * a page that is already making two, and knowing whether the account has any
- * projects is what decides which of the two controls above is even rendered;
- * deferring it would mean rendering a dropdown first and swapping it out under
- * the reader's hand.
- */
-function ProjectChip({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string | null;
-  /**
-   * The name travels with the id because this chip is the only holder of the
-   * project list on the page, and two other things now need the name: the voice
-   * briefing, which must not tell the model a filed task is unfiled. Handing it
-   * over at the press is cheaper and less fallible than a second fetch.
-   */
-  onChange: (project: { id: string; name: string } | null) => void;
-  disabled: boolean;
-}) {
-  const [projects, setProjects] = React.useState<ComposerProject[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
-  const [creating, setCreating] = React.useState(false);
-  const [open, setOpen] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    setFailed(false);
-    try {
-      const response = await fetch("/api/projects");
-      if (!response.ok) throw new Error("projects");
-      const data = (await response.json()) as { projects?: ComposerProject[] };
-      setProjects(data.projects ?? []);
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  // A brand-new project is created unnamed — the API calls it "Untitled
-  // project" and renames it from its first conversation — and filed against
-  // this task straight away, so it behaves exactly like picking an existing one.
-  const createAndPick = React.useCallback(async () => {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const data = (await response.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!response.ok || !data.id) throw new Error(data.error ?? "Could not create the project.");
-      setProjects((prev) => [{ id: data.id!, name: "New project", conversationCount: 0 }, ...(prev ?? [])]);
-      window.dispatchEvent(new CustomEvent("projects:sync"));
-      onChange({ id: data.id, name: "New project" });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create the project.");
-    } finally {
-      setCreating(false);
-      setOpen(false);
-    }
-  }, [creating, onChange]);
-
-  const selected = projects?.find((project) => project.id === value) ?? null;
-
-  if (projects === null && !failed) {
-    return (
-      <button type="button" disabled className={COMPOSER_CHIP_CLASS} aria-hidden="true" tabIndex={-1}>
-        <AppIcons.projects className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="truncate text-muted-foreground">Project</span>
-      </button>
-    );
-  }
-
-  if (projects !== null && projects.length === 0) {
-    return (
-      <button
-        type="button"
-        onClick={() => void createAndPick()}
-        disabled={disabled || creating}
-        className={COMPOSER_CHIP_CLASS}
-      >
-        {creating ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
-        ) : (
-          <Plus className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        )}
-        <span className="truncate">New project</span>
-      </button>
-    );
-  }
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={selected ? `Project: ${selected.name}. Change it` : "File this task in a project"}
-          className={COMPOSER_CHIP_CLASS}
-        >
-          <AppIcons.projects
-            className={cn("size-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-          <span className={cn("truncate", !selected && "text-muted-foreground")}>
-            {selected?.name ?? "Project"}
-          </span>
-          <ChevronDown
-            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
-            aria-hidden="true"
-          />
-        </button>
-      </DropdownMenuTrigger>
-      {/* `side="top"`. The chip used to sit ABOVE the field, where opening
-          downward landed the menu over the textarea the reader was heading for;
-          it is now on the strip along the composer's bottom edge, so the same
-          direction would push the list down over the task list below. Every
-          other control on this strip opens upward for the same reason. */}
-      <DropdownMenuContent
-        align="start"
-        side="top"
-        sideOffset={8}
-        className="flex max-h-[min(22rem,60vh)] w-60 flex-col p-0"
-      >
-        <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
-          {failed ? (
-            <div className="space-y-2 px-2 py-4 text-center">
-              <p className="text-caption leading-relaxed text-muted-foreground">
-                Couldn’t load your projects. This is empty because the request failed, not because
-                you have none.
-              </p>
-              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-              </Button>
-            </div>
-          ) : (
-            (projects ?? []).map((project) => {
-              const active = project.id === value;
-              return (
-                <DropdownMenuItem
-                  key={project.id}
-                  onSelect={() =>
-                    onChange(active ? null : { id: project.id, name: project.name })
-                  }
-                >
-                  <AppIcons.projects className={cn(active ? "text-primary" : "text-muted-foreground")} />
-                  <span className="flex-1 truncate">{project.name}</span>
-                  {active ? (
-                    <Check className="!size-3.5 text-primary" />
-                  ) : (
-                    <span className="font-mono text-caption text-muted-foreground">
-                      {project.conversationCount}
-                    </span>
-                  )}
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </ScrollFade>
-        {/* Pinned below the hairline so the list scrolls beneath it and starting
-            a new project never falls off the bottom of a long one. */}
-        <div className="shrink-0 border-t border-border/60 p-1.5">
-          <DropdownMenuItem
-            disabled={creating}
-            onSelect={(event) => {
-              // Hold the menu open through the create; `createAndPick` closes it
-              // when it settles, whichever way it settles.
-              event.preventDefault();
-              void createAndPick();
-            }}
-          >
-            {creating ? (
-              <Loader2 className="animate-spin text-muted-foreground" />
-            ) : (
-              <Plus className="text-muted-foreground" />
-            )}
-            <span className="flex-1">New project</span>
-          </DropdownMenuItem>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-

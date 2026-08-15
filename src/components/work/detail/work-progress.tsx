@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Minus, X } from "lucide-react";
+import { Loader2, Minus, X } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import type { PlanStep, PlanStepState } from "@/components/work/work-timeline";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +61,7 @@ type MarkIcon = React.ComponentType<{ className?: string; strokeWidth?: number }
 const MARK_ICON: Record<PlanStepState, MarkIcon | null> = {
   pending: null,
   active: Loader2,
-  done: Check,
+  done: StatusIcons.success,
   skipped: Minus,
   failed: X,
   // Deliberately no glyph. The step did not fail and it did not happen; an empty
@@ -74,7 +75,7 @@ function StepMark({ state }: { state: PlanStepState }) {
   return (
     <span
       className={cn(
-        "mt-[2px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full",
+        "mt-[2px] flex size-3.5 shrink-0 items-center justify-center rounded-full",
         state === "done" && "bg-primary text-primary-foreground",
         state === "failed" && "bg-destructive text-destructive-foreground",
         state === "skipped" && "border border-border text-muted-foreground",
@@ -89,7 +90,7 @@ function StepMark({ state }: { state: PlanStepState }) {
       {Icon !== null && (
         <Icon
           className={cn(
-            state === "done" || state === "failed" ? "h-2.5 w-2.5" : "h-3 w-3",
+            state === "done" || state === "failed" ? "size-2.5" : "size-3",
             state === "active" && "motion-safe:animate-spin"
           )}
           strokeWidth={state === "done" || state === "failed" ? 3 : 2}

@@ -17,11 +17,10 @@ import {
   Settings,
   Zap,
   Sun,
-  X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   SEARCH_TYPE_LABELS,
   SEARCH_WINDOWS,
@@ -248,7 +247,7 @@ function PaletteShell({
         {/* Search — the palette's one input, given real presence (52px) rather
             than the density of a list row. */}
         <div className="flex items-center gap-3 border-b border-border px-4">
-          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+          <Search className="size-4.5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
@@ -271,7 +270,7 @@ function PaletteShell({
               aria-label="Clear search"
               className="-mr-1 size-6 shrink-0 text-muted-foreground coarse:size-6"
             >
-              <X className="h-3.5 w-3.5" />
+              <ActionIcons.dismiss className="size-3.5" />
             </Pressable>
           )}
         </div>
@@ -748,7 +747,7 @@ function SearchPalette() {
               // after the components layer and nothing else can beat that class
               // from a call site. The fill was `bg-muted/50`, which resolved to
               // ~11.3% on a 13% panel and so left the chip with no fill at all.
-              className="ml-auto h-auto w-auto max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-1 text-caption text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
+              className="ml-auto size-auto max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-1 text-caption text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
             >
               <SelectValue />
             </SelectTrigger>

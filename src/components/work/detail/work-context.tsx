@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, FileText, Link2 } from "lucide-react";
+import { Link2 } from "lucide-react";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { RailHeading, RailSection } from "@/components/work/detail/work-rail";
 import type { WorkReference } from "@/components/work/work-detail-panels";
 import { WorkToolbox } from "@/components/work/work-toolbox";
@@ -81,11 +82,11 @@ function SourceCard({ reference }: { reference: WorkReference }) {
   const linked = reference.url !== null;
   return (
     <li className="flex items-start gap-2.5 rounded-field border border-border/50 bg-card px-2.5 py-2">
-      <span className="mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+      <span className="mt-[1px] flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
         {linked ? (
-          <Link2 className="h-3.5 w-3.5 text-source" />
+          <Link2 className="size-3.5 text-source" />
         ) : (
-          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <CodeIcons.file className="size-3.5 text-muted-foreground" />
         )}
       </span>
       <span className="min-w-0 flex-1">
@@ -97,7 +98,7 @@ function SourceCard({ reference }: { reference: WorkReference }) {
             className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-xs text-ui leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="min-w-0 truncate">{reference.label}</span>
-            <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <ActionIcons.external className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
           </a>
         ) : (
           <span className="block truncate text-ui leading-snug text-foreground">

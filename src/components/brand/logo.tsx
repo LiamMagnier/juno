@@ -26,7 +26,7 @@ export function JunoMark({ className }: { className?: string }) {
       height={512}
       priority
       unoptimized
-      className={cn("h-6 w-6 select-none dark:invert dark:brightness-[0.94]", className)}
+      className={cn("size-6 select-none dark:invert dark:brightness-[0.94]", className)}
     />
   );
 }
@@ -34,7 +34,7 @@ export function JunoMark({ className }: { className?: string }) {
 export function JunoLogo({ className, showWordmark = true }: { className?: string; showWordmark?: boolean }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
-      <JunoMark className="h-6 w-6" />
+      <JunoMark className="size-6" />
       {showWordmark && <span className="text-heading">Juno</span>}
     </span>
   );

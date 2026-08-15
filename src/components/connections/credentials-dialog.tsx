@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ExternalLink, KeyRound, Link2, Loader2, Music2 } from "lucide-react";
+import { KeyRound, Link2, Loader2, Music2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -75,7 +76,7 @@ function HelpSteps() {
             className="inline-flex items-center gap-0.5 text-foreground/85 underline decoration-border underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
           >
             account.apple.com
-            <ExternalLink className="size-3" />
+            <ActionIcons.external className="size-3" />
           </a>
         </li>
         <li>Go to Sign-In &amp; Security → App-Specific Passwords (requires two-factor authentication)</li>
@@ -178,7 +179,7 @@ export function CredentialsDialog({
                 role="alert"
                 className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
               >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
                 {error}
               </p>
             )}
@@ -234,7 +235,7 @@ export function CredentialsDialog({
                 role="alert"
                 className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
               >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <StatusIcons.error className="mt-0.5 size-4 shrink-0" />
                 {error}
               </p>
             )}

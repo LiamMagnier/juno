@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, Ban, Cloud, Info, Laptop, ShieldAlert } from "lucide-react";
+import { Ban, Cloud, Laptop } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { describeCapability, type WorkCapability, type WorkDegradation, type WorkRiskLevel, type WorkStatus } from "@/lib/work/domain";
 import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
@@ -243,20 +244,53 @@ const PILL_CLASS: Record<StatusTone, string> = {
   bad: "border-destructive/35 bg-destructive/10 text-destructive",
 };
 
+/**
+ * The chip geometry every Work pill shares.
+ *
+ * Hoisted because it was written out six times — the status pill, the risk pill,
+ * the capability chip, the host state pill, and the three inline "Paused" / "Off"
+ * / "Work off" spans in the schedule, skill and host rows — with no two of them
+ * able to drift without somebody noticing, and one of them already had (the
+ * capability chip's `gap-1.5` was absent, so its struck-through variant sat a
+ * pixel and a half tighter than its neighbour on the same row).
+ */
+const PILL_SHAPE =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none";
+
 /** The status as a chip. Mono + colour, never a coloured rectangle alone. */
 export function WorkStatusPill({ status, className }: { status: WorkStatus; className?: string }) {
   const meta = STATUS_META[status];
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
-        PILL_CLASS[meta.tone],
-        className
-      )}
-      title={meta.sentence}
-    >
-      <span className={cn("h-1.5 w-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
+    <span className={cn(PILL_SHAPE, PILL_CLASS[meta.tone], className)} title={meta.sentence}>
+      <span className={cn("size-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
       {meta.label}
+    </span>
+  );
+}
+
+/**
+ * A plain fact about a row, as a chip: "Paused", "Off", "Work off", "/slug".
+ *
+ * The three list rows each drew this by hand at exactly the same eleven classes,
+ * which is the same neutral tone `WorkStatusPill` already had a name for. It is
+ * deliberately toneless — a schedule that is paused and a skill that is switched
+ * off are states the user chose, not warnings — so it never takes colour. A row
+ * that needs to say something is WRONG reaches for the status pill or
+ * `WorkStateNote`, both of which carry an argument for their hue.
+ */
+export function WorkTag({
+  icon: Icon,
+  className,
+  children,
+}: {
+  icon?: React.ComponentType<{ className?: string }>;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className={cn(PILL_SHAPE, PILL_CLASS.neutral, className)}>
+      {Icon && <Icon className="size-2.5" aria-hidden="true" />}
+      {children}
     </span>
   );
 }
@@ -266,7 +300,7 @@ export function WorkStatusDot({ status }: { status: WorkStatus }) {
   const meta = STATUS_META[status];
   return (
     <span className="flex shrink-0 items-center" title={meta.label}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
+      <span className={cn("size-1.5 rounded-full", DOT_CLASS[meta.tone])} aria-hidden="true" />
       <span className="sr-only">{meta.label}</span>
     </span>
   );
@@ -304,7 +338,7 @@ export function WorkTargetLabel({
   const Icon = target === "cloud" ? Cloud : Laptop;
   return (
     <span className={cn("inline-flex items-center gap-1.5 font-mono text-micro text-muted-foreground", className)}>
-      <Icon className="h-3 w-3" aria-hidden="true" />
+      <Icon className="size-3" aria-hidden="true" />
       {target === "cloud" ? "Cloud" : hostUnknown ? "a Mac" : (hostName ?? "Your Mac")}
     </span>
   );
@@ -332,9 +366,9 @@ export function CapabilityChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
+        PILL_SHAPE,
         available
-          ? "border-border/70 bg-secondary text-muted-foreground"
+          ? PILL_CLASS.neutral
           : "border-warning/35 bg-warning/10 text-warning-foreground line-through decoration-warning/60"
       )}
       title={available ? undefined : `${describeCapability(capability)} is not available on this run.`}
@@ -432,15 +466,8 @@ export function riskLabel(risk: WorkRiskLevel): string {
 export function RiskPill({ risk }: { risk: WorkRiskLevel }) {
   const severe = risk === "irreversible" || risk === "sensitive";
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
-        severe
-          ? "border-destructive/35 bg-destructive/10 text-destructive"
-          : "border-border/70 bg-secondary text-muted-foreground"
-      )}
-    >
-      {severe && <ShieldAlert className="h-3 w-3" aria-hidden="true" />}
+    <span className={cn(PILL_SHAPE, severe ? PILL_CLASS.bad : PILL_CLASS.neutral)}>
+      {severe && <StatusIcons.security className="size-3" aria-hidden="true" />}
       {RISK_LABEL[risk]}
     </span>
   );
@@ -464,11 +491,21 @@ const NOTE_CLASS: Record<NoteTone, string> = {
   error: "border-destructive/40 bg-destructive/15 text-destructive",
 };
 
-const NOTE_ICON: Record<NoteTone, typeof Info> = {
-  info: Info,
-  warning: AlertTriangle,
+/*
+ * A glyph per tone, and — since this change — four glyphs for four tones.
+ *
+ * `warning` and `error` were both the triangle, so the component whose entire
+ * job is to make "something needs your attention" and "this failed" tell apart
+ * distinguished them by a fill alpha and nothing else. The registry has drawn
+ * the line for the whole product since it was written: a TRIANGLE is a warning,
+ * a CIRCLE is a failure, and `CodeIcons.error` has used the circle since Juno
+ * Code shipped. Work was the surface still using the triangle for both.
+ */
+const NOTE_ICON: Record<NoteTone, React.ComponentType<{ className?: string }>> = {
+  info: StatusIcons.info,
+  warning: StatusIcons.warning,
   blocked: Ban,
-  error: AlertTriangle,
+  error: StatusIcons.error,
 };
 
 /**
@@ -502,7 +539,7 @@ export function WorkStateNote({
         className
       )}
     >
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">{children}</div>
       {action != null && <div className="shrink-0">{action}</div>}
     </div>
@@ -528,7 +565,7 @@ export function DegradationNotes({
     <ul className={cn("space-y-1.5", className)}>
       {degradation.map((entry, index) => (
         <li key={`${entry.kind}-${entry.subject ?? index}`} className="flex items-start gap-2 text-ui leading-relaxed text-warning-foreground">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+          <StatusIcons.warning className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
           <span className="min-w-0">{entry.explanation}</span>
         </li>
       ))}

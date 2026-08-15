@@ -880,14 +880,22 @@ export function useChat(opts: UseChatOptions) {
         return startGeneration({ text: trimmed, attachments, connectors });
       }
 
-      // Deep research goes straight to generation: the researcher plans its own
-      // sub-questions server-side, so the preflight clarification round-trip
-      // would only add latency (and the flag wouldn't survive its detour).
-      if ((options?.deepResearch || options?.artifactEdit) && !opts.privateMode) {
+      // An artifact edit goes straight to generation: the target artifact is
+      // already the context a clarification would be asking for.
+      //
+      // Deep research used to take this exit too, on the reasoning that the
+      // researcher plans its own sub-questions server-side. That conflated two
+      // different unknowns: the engine decomposes the SUBJECT well, and cannot
+      // know the DELIVERABLE — audience, depth, period, what counts as a source.
+      // Those are unrecoverable once a multi-minute run has finished, which is
+      // why every comparable product (ChatGPT's scoping questions, Gemini's
+      // editable plan) asks before spending rather than after. It now goes
+      // through the same preflight as everything else, in research mode.
+      const deepResearch = !!options?.deepResearch && !opts.privateMode;
+      if (options?.artifactEdit && !opts.privateMode) {
         return startGeneration({
           text: trimmed,
           attachments,
-          deepResearch: options.deepResearch,
           artifactEdit: options.artifactEdit,
           connectors,
         });
@@ -900,9 +908,10 @@ export function useChat(opts: UseChatOptions) {
       const localSkip = quickPreflightSkip({
         message: trimmed,
         hasAttachments: attachments.length > 0,
+        deepResearch,
       });
       if (localSkip) {
-        return startGeneration({ text: trimmed, attachments, connectors });
+        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch });
       }
 
       setStatus("checking");
@@ -912,7 +921,10 @@ export function useChat(opts: UseChatOptions) {
       // request (e.g. a slow/unreachable server), locking the user out of chat.
       const clarifyController = new AbortController();
       // Keep well under the old 6s stall; triage itself budgets ~4s server-side.
-      const clarifyTimeout = setTimeout(() => clarifyController.abort(), 3500);
+      // Research scoping is allowed longer because the server's research triage
+      // budgets 6s: aborting at 3.5s would cancel every research scoping card
+      // just before it arrived, and the run would start unscoped every time.
+      const clarifyTimeout = setTimeout(() => clarifyController.abort(), deepResearch ? 8_000 : 3_500);
       try {
         const res = await fetch("/api/chat/clarify", {
           method: "POST",
@@ -923,6 +935,7 @@ export function useChat(opts: UseChatOptions) {
             message: trimmed.length > 2_500 ? trimmed.slice(0, 2_500) : trimmed,
             hasAttachments: attachments.length > 0,
             privateMode: opts.privateMode,
+            deepResearch,
           }),
           signal: clarifyController.signal,
         });
@@ -933,6 +946,9 @@ export function useChat(opts: UseChatOptions) {
             originalUserMessage: trimmed,
             attachments,
             result: data,
+            // Parked with the pending card so answering the questions resumes
+            // the RESEARCH turn the user asked for, not an ordinary one.
+            deepResearch: options?.deepResearch,
           });
           setStatus("idle");
           return { accepted: false, clarificationPending: true };
@@ -943,7 +959,7 @@ export function useChat(opts: UseChatOptions) {
         clearTimeout(clarifyTimeout);
       }
 
-      return startGeneration({ text: trimmed, attachments, connectors });
+      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
   );
@@ -1013,6 +1029,10 @@ export function useChat(opts: UseChatOptions) {
         text: pending.originalUserMessage,
         attachments: pending.attachments,
         preflightClarification: context,
+        // The flag the scoping card interrupted. Without it, answering the
+        // research questions would start a plain chat turn — the user would
+        // have scoped a run that then never happened.
+        deepResearch: pending.deepResearch,
       });
     },
     [pendingClarification, startGeneration, status]

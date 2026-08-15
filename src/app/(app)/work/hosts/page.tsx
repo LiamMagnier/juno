@@ -1,19 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw } from "lucide-react";
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import { WorkPageFrame } from "@/components/work/work-nav";
 import { WorkHostRow } from "@/components/work/work-host-row";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import {
   WORK_POLL_MS,
   WORK_SYNC_EVENT,
   fetchWorkHosts,
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /**
@@ -103,41 +102,22 @@ export default function WorkHostsPage() {
             onClick={() => void load()}
             className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
           >
-            <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
+            <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
           </Button>
         )
       }
     >
       {failed && hosts === null ? (
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load your Macs. This page is empty because the request failed, not because you
           have none — anything already signed in is still reachable by Juno, with whatever
           permissions it had.
-        </WorkStateNote>
+        </WorkLoadError>
       ) : hosts === null ? (
-        <div className="space-y-2.5">
-          {[...Array(2)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-[86px] w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons count={2} />
       ) : hosts.length === 0 ? (
         <EmptyState
+          icon={CodeIcons.device}
           title="No Macs yet"
           description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
         />

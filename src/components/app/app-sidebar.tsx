@@ -5,17 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  AlertCircle,
-  Check,
   ChevronDown,
   ChevronRight,
-  Pencil,
-  RefreshCw,
   Plus,
-  Trash2,
   Pin,
 } from "lucide-react";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { usePathname } from "next/navigation";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { UserMenu } from "@/components/app/user-menu";
@@ -690,8 +685,8 @@ export function AppSidebar({
           {mode === "work" ? (
             <>
               <RailIcon onClick={newWorkTask} label="New task">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
+                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
               <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
@@ -701,8 +696,8 @@ export function AppSidebar({
           ) : mode === "code" ? (
             <>
               <RailIcon onClick={newCodeSession} label="New session">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
+                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
               <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><SidebarMotionIcon kind="pulls" /></RailIcon>
@@ -712,8 +707,8 @@ export function AppSidebar({
           ) : (
             <>
               <RailIcon onClick={newChat} label="New chat">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
+                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
               <RailIcon href="/library" active={pathname === "/library"} label="Library"><SidebarMotionIcon kind="library" /></RailIcon>
@@ -752,7 +747,7 @@ export function AppSidebar({
     // over a black page under a black scrim, which is exactly the failure
     // SheetContent's own comment says it moved to --popover to avoid. The fill
     // belongs to whichever frame is hosting the panel.
-    <div key="expanded" className="flex h-full w-full flex-col text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
+    <div key="expanded" className="flex size-full flex-col text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
       {/* pb-2 (+ the nav's pt-1) = 12px to the first row. This was pb-7, which
           left a ~32px void between the wordmark and "New chat" and read as a
           layout gap rather than a deliberate break. */}
@@ -786,7 +781,7 @@ export function AppSidebar({
                 onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
                 aria-label="Search chats and projects"
               >
-                <SidebarMotionIcon kind="search" className="h-4 w-4" />
+                <SidebarMotionIcon kind="search" className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Search</TooltipContent>
@@ -801,7 +796,7 @@ export function AppSidebar({
                   onClick={onToggleCollapse}
                   aria-label="Collapse sidebar"
                 >
-                  <SidebarMotionIcon kind="panel-close" className="h-4 w-4" />
+                  <SidebarMotionIcon kind="panel-close" className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
@@ -810,7 +805,7 @@ export function AppSidebar({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
-                <SidebarMotionIcon kind="close" className="h-4 w-4" />
+                <SidebarMotionIcon kind="close" className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Close</TooltipContent>
@@ -1251,8 +1246,8 @@ function ModeToggle({
       // get their size back.
       optionClassName={compact ? undefined : "gap-1.5 px-2"}
       options={[
-        { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
-        { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
+        { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
+        { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
       ]}
     />
   );
@@ -1306,7 +1301,7 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
       // must not be mistaken for ordinary content carried by its border alone.
       className="mx-0.5 my-1 flex items-center gap-2 rounded-xs border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-ui text-destructive"
     >
-      <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <StatusIcons.error className="size-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
       <button
         type="button"
@@ -1319,7 +1314,7 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
         // from the list and made the press dip to scale(.97) in a single frame.
         className="pressable flex shrink-0 items-center gap-1 rounded-xs px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
       >
-        <RefreshCw className="h-3 w-3" aria-hidden="true" /> Retry
+        <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
       </button>
     </div>
   );
@@ -1432,7 +1427,7 @@ function Section({
     <>
       {/* Claude-style header: sentence-case label with a small chevron hugging
           it ("Pinned ⌄") — no leading icon column, no count badge. */}
-      {Icon && !collapsible && <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />}
+      {Icon && !collapsible && <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
       {/* Full --muted-foreground, no alpha. At /75 against the black ground this
           label measured under the 4.5:1 floor, and it is the only thing naming
           the list under it.
@@ -1447,7 +1442,7 @@ function Section({
       {collapsible && (
         <ChevronDown
           className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
+            "size-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
             isCollapsed && "-rotate-90"
           )}
         />
@@ -1575,7 +1570,7 @@ function CodeWorkspaceGroup({
         <span dir="auto" className="min-w-0 flex-1 truncate">{name}</span>
         <ChevronRight
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
+            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
             expanded && "rotate-90"
           )}
         />
@@ -1630,7 +1625,7 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
   if (!meta) return null;
   const inner = (
     <>
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
+      <span className={cn("size-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
       <span dir="auto" className="min-w-0 flex-1 truncate">{task.title}</span>
       {/* text-micro is the mono metadata floor (tailwind.config.ts) — the
           text-[10px] it replaces sat under it, losing hairline strokes on 1x
@@ -1753,7 +1748,7 @@ function ConversationRow({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="icon-sm" variant="ghost" onClick={commitRename} aria-label="Save">
-              <Check className="h-4 w-4" />
+              <StatusIcons.success className="size-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Save</TooltipContent>
@@ -1801,7 +1796,7 @@ function ConversationRow({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="flex shrink-0 items-center pl-1">
-                <span className={cn("h-1.5 w-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
+                <span className={cn("size-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
                 <span className="sr-only">{TASK_STATUS_META[taskStatus].label}</span>
               </span>
             </TooltipTrigger>
@@ -1832,7 +1827,7 @@ function ConversationRow({
             that no longer exists) is how the other ~30 menus quietly drifted. */}
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            <Pin className={cn("h-4 w-4", conversation.pinned ? "fill-primary text-primary" : "")} />
+            <Pin className={cn("size-4", conversation.pinned ? "fill-primary text-primary" : "")} />
             <span>{conversation.pinned ? "Unpin" : "Pin"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -1841,28 +1836,28 @@ function ConversationRow({
               setRenaming(conversation.id);
             }}
           >
-            <Pencil className="h-4 w-4" /> Rename
+            <ActionIcons.edit className="size-4" /> Rename
           </DropdownMenuItem>
           {variant === "chat" && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <AppIcons.projects className="h-4 w-4" /> Add to project
+                  <AppIcons.projects className="size-4" /> Add to project
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
                   <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                    {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
+                    {conversation.projectId == null ? <StatusIcons.success className="size-4" /> : <span className="size-4" />} No project
                   </DropdownMenuItem>
                   {projects.map((p) => (
                     <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                      {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <AppIcons.projects className="h-4 w-4" />}
+                      {conversation.projectId === p.id ? <StatusIcons.success className="size-4" /> : <AppIcons.projects className="size-4" />}
                       <span dir="auto" className="truncate">{p.name}</span>
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => router.push("/projects")}>
-                    <Plus className="h-4 w-4" /> New project…
+                    <Plus className="size-4" /> New project…
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
@@ -1874,7 +1869,7 @@ function ConversationRow({
               menu in the product where Delete highlighted like a primary action
               instead of taking the tinted /10 fill the variant was QA'd to. */}
           <DropdownMenuItem onSelect={remove} variant="destructive">
-            <Trash2 className="h-4 w-4" /> Delete
+            <ActionIcons.delete className="size-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1963,9 +1958,9 @@ function ProjectRow({
               // put a square 2px from the circular kebab it shares a row with, and a
               // colour-only hover on a 20px glyph gives the pointer nothing to land
               // on — the kebab beside it has answered with a fill all along.
-              className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
+              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:size-11"
             >
-              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
+              <ChevronRight className={cn("size-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
             </button>
           </TooltipTrigger>
           {/* The verb alone — aria-label keeps the project name for readers,
@@ -1990,20 +1985,20 @@ function ProjectRow({
         </Tooltip>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={onNewChat}>
-            <Plus className="h-4 w-4" /> New chat in project
+            <Plus className="size-4" /> New chat in project
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onToggleStar}>
-            <Pin className={cn("h-4 w-4", starred && "fill-primary text-primary")} />
+            <Pin className={cn("size-4", starred && "fill-primary text-primary")} />
             <span>{starred ? "Unpin" : "Pin"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onRename}>
-            <Pencil className="h-4 w-4" /> Rename
+            <ActionIcons.edit className="size-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {/* Same variant note as ConversationRow's Delete: the primitive owns
               the destructive treatment. */}
           <DropdownMenuItem onSelect={onDelete} variant="destructive">
-            <Trash2 className="h-4 w-4" /> Delete
+            <ActionIcons.delete className="size-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -2029,7 +2024,7 @@ function ProjectRow({
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
-            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground" />
+            <SidebarMotionIcon kind="conversation" className="size-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground" />
             <span dir="auto" className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}

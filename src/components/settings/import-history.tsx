@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { CheckCircle2, FileUp, Loader2, TriangleAlert } from "lucide-react";
+import { FileUp, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -136,7 +137,7 @@ export function ImportHistoryCard() {
         <EmptyState
           tone="error"
           size="panel"
-          icon={TriangleAlert}
+          icon={StatusIcons.error}
           title="Couldn't import that file"
           description={phase.message}
           action={
@@ -201,7 +202,7 @@ export function ImportHistoryCard() {
             </div>
           ) : phase.name === "done" ? (
             <div className="mx-auto max-w-sm">
-              <CheckCircle2 className="mx-auto mb-2 size-6 text-primary" />
+              <StatusIcons.success className="mx-auto mb-2 size-6 text-primary" />
               <p className="font-serif text-heading">
                 {phase.imported > 0
                   ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`

@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import { WorkPageFrame } from "@/components/work/work-nav";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
+import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
-import { WorkStateNote } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /**
@@ -64,46 +63,27 @@ export default function WorkSchedulesPage() {
       action={
         <Button asChild size="sm" className="gap-1.5">
           <Link href="/work/schedules/new">
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New schedule
+            <Plus className="size-3.5" aria-hidden="true" /> New schedule
           </Link>
         </Button>
       }
     >
       {failed ? (
-        <WorkStateNote
-          tone="error"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-            </Button>
-          }
-        >
+        <WorkLoadError onRetry={() => void load()}>
           Couldn’t load your schedules. This page is empty because the request failed, not because
           you have none — anything already set up is still running to its own clock.
-        </WorkStateNote>
+        </WorkLoadError>
       ) : schedules === null ? (
-        <div className="space-y-2.5">
-          {[...Array(3)].map((_, index) => (
-            <Skeleton
-              key={index}
-              className="h-[86px] w-full rounded-field"
-              style={staggerDelay(index, "tight")}
-            />
-          ))}
-        </div>
+        <WorkRowSkeletons />
       ) : schedules.length === 0 ? (
         <EmptyState
+          icon={AppIcons.tasks}
           title="Nothing scheduled"
           description="A schedule is a task with a trigger on it: every weekday at eight, when an invoice arrives, when a folder changes. Juno runs it while you are elsewhere and asks before anything it cannot undo."
           action={
             <Button asChild size="sm" className="gap-1.5">
               <Link href="/work/schedules/new">
-                <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New schedule
+                <Plus className="size-3.5" aria-hidden="true" /> New schedule
               </Link>
             </Button>
           }

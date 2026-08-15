@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Clock, Plus, Radio, Trash2 } from "lucide-react";
+import { Clock, Plus, Radio } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -326,11 +327,14 @@ export function TriggerListEditor({
         >
           <div className="flex flex-wrap items-center gap-2">
             {isTimeTriggerKind(trigger.kind) ? (
-              <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             ) : (
-              <Radio className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Radio className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             )}
-            <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
+            {/* `text-ui`, the dense-UI rung. This card is a control panel row
+                rather than a list item — its own detail lines are `micro` — and
+                `text-sm` put it a pixel off the scale between the two. */}
+            <span className="min-w-0 flex-1 text-ui font-medium text-foreground">
               {triggerLabel(trigger.kind)}
             </span>
             <label className="flex shrink-0 items-center gap-2">
@@ -368,7 +372,7 @@ export function TriggerListEditor({
               aria-label="Remove this trigger"
               className="text-muted-foreground/70 hover:text-destructive"
             >
-              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              <ActionIcons.delete className="size-3.5" aria-hidden="true" />
             </Button>
           </div>
 
@@ -406,7 +410,7 @@ function AddTriggerMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled} className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add a trigger
+          <Plus className="size-3.5" aria-hidden="true" /> Add a trigger
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">

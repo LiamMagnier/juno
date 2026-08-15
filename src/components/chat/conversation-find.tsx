@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Search } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   findInConversation,
@@ -84,7 +85,7 @@ export function ConversationFind({
           field with no fill and no recess at all. `.field-well` already picks
           the right rung per theme (page ground in light, --secondary in dark). */}
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input px-3 py-1.5 field-well transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-foreground/70 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background motion-reduce:transition-none">
-        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}
           value={query}
@@ -120,7 +121,7 @@ export function ConversationFind({
         disabled={matches.length === 0}
         aria-label="Previous match"
       >
-        <ChevronUp className="h-4 w-4" />
+        <ChevronUp className="size-4" />
       </Button>
       <Button
         variant="ghost"
@@ -129,10 +130,10 @@ export function ConversationFind({
         disabled={matches.length === 0}
         aria-label="Next match"
       >
-        <ChevronDown className="h-4 w-4" />
+        <ChevronDown className="size-4" />
       </Button>
       <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close find">
-        <X className="h-4 w-4" />
+        <ActionIcons.dismiss className="size-4" />
       </Button>
     </div>
   );

@@ -4,10 +4,10 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Code2, Download, FileCode2, FileText, GitBranch, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, MoreHorizontal, PanelRightOpen, Pencil, Search, Share2, Trash2, WifiOff } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   Dialog,
   DialogContent,
@@ -407,7 +407,7 @@ export default function ArtifactsPage() {
                               {downloadingId === item.id ? (
                                 <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
                               ) : (
-                                <MoreHorizontal className="size-4" aria-hidden />
+                                <ActionIcons.more className="size-4" aria-hidden />
                               )}
                             </Button>
                           </DropdownMenuTrigger>
@@ -420,17 +420,17 @@ export default function ArtifactsPage() {
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onSelect={() => openRename(item)}>
-                              <Pencil className="size-4" aria-hidden /> Rename
+                              <ActionIcons.edit className="size-4" aria-hidden /> Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => download(item)}>
-                              <Download className="size-4" aria-hidden /> Download source
+                              <ActionIcons.download className="size-4" aria-hidden /> Download source
                             </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => setShareTarget(item)}>
-                              <Share2 className="size-4" aria-hidden /> Share
+                              <ActionIcons.share className="size-4" aria-hidden /> Share
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onSelect={() => setDeleteTarget(item)}>
-                              <Trash2 className="size-4" aria-hidden /> Delete
+                              <ActionIcons.delete className="size-4" aria-hidden /> Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

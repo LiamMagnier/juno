@@ -151,6 +151,46 @@ export const runtime = "nodejs";
 // which the 15s SSE heartbeat below keeps resetting so it effectively never
 // fires. Keep RECOVERY_WINDOW_MS in use-chat.ts in sync with that nginx value.
 
+/**
+ * What a deep-research turn is asked to produce: a short answer, then a long
+ * document.
+ *
+ * The previous contract said "do not write the report directly in the chat" and
+ * nothing else, so the whole turn was one artifact card and the conversation
+ * itself said nothing. That is the wrong shape for the medium twice over: a
+ * reader who asked a question got no answer in the place they asked it, and the
+ * one artifact had to carry both the summary and the depth, so it opened on
+ * neither. Every product that does this well — ChatGPT with canvas, Gemini with
+ * its report pane, Claude with artifacts — answers in the thread and puts the
+ * document beside it.
+ *
+ * So the contract is now explicitly two-part, and the brief half is specified
+ * tightly: models left to "summarise briefly" reliably produce a preamble about
+ * what the report contains rather than the finding itself, which is the one
+ * thing the reader wanted in the thread.
+ */
+const RESEARCH_OUTPUT_CONTRACT = `# How to deliver this research
+
+Produce TWO things, in this order, in a single reply.
+
+## 1. The chat answer (before the artifact)
+Answer the question directly, in 100–200 words of flowing prose.
+- Lead with the finding itself — never with what the report contains. Do not write "This report examines…", "I researched…", or "Below you will find…".
+- State the most important numbers, dates and names inline, with citations [n].
+- If the evidence is genuinely contested or thin, say so in one clause rather than implying false confidence.
+- No headings, no bullet lists, no title. Plain paragraphs only.
+- This must stand on its own: a reader who never opens the report should still have a real answer.
+
+## 2. The full report (the artifact)
+Then output the complete, publication-grade report inside ONE artifact block:
+<juno:artifact identifier="research-report" type="MARKDOWN" title="<a specific title naming the topic>" language="md">
+…the entire report…
+</juno:artifact>
+
+The report is the long-form document described above: every section, every table, every citation. Do not abbreviate it because the chat answer already exists, and do not repeat the chat answer's wording as the report's opening — the report begins with its own title and executive summary.
+Give the artifact a title naming the actual subject, not the words "Research Report".
+Write nothing after the closing tag.`;
+
 /** Turns an entitlement verdict into the response it describes. */
 function refuse(rejection: EntitlementRejection) {
   return NextResponse.json(rejection.body, { status: rejection.status });
@@ -1929,7 +1969,7 @@ async function handleChat(req: Request) {
         });
         researchCostUsd = research.costUsd;
         if (research.ok) {
-          synthesisSystem = `${system}\n\n${research.context}\n\nIMPORTANT: You must output the entire research report inside a single <juno:artifact identifier="research-report" type="MARKDOWN" title="Research Report" language="md">...</juno:artifact> block. Include images and interactive elements in the markdown where appropriate. Do not write the report directly in the chat.`;
+          synthesisSystem = `${system}\n\n${research.context}\n\n${RESEARCH_OUTPUT_CONTRACT}`;
           // Sources are known up front (unlike native search, which streams
           // them): publish the numbered list now so citations resolve as the
           // report streams. Order must match the corpus numbering exactly, so
@@ -2510,6 +2550,27 @@ async function handleChat(req: Request) {
           data: { content: encryptMessageText(audit.report) },
         }).catch((err) => {
           console.error("[chat] could not persist repaired research report", {
+            messageId: auditedMessageId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        });
+        /*
+         * …and the artifact, which is where the report is actually READ.
+         *
+         * The audit's repairs are character splices into the delivered text, and
+         * that text is now mostly the report inside a `juno:artifact` block. The
+         * message row was being rewritten and the artifact row was not, so a
+         * claim the audit had labelled "the cited evidence is insufficient" was
+         * corrected in the chat transcript while the canvas beside it kept
+         * showing the unqualified original — the audited copy visible in the one
+         * place nobody reads it, and the unaudited copy in the one place they do.
+         *
+         * `persistArtifacts` appends a version rather than overwriting, so the
+         * delivered draft stays in the artifact's history exactly as the run's
+         * own `reportRevision` keeps it in the run.
+         */
+        await persistArtifacts(conversationId, auditedMessageId, parseArtifacts(audit.report)).catch((err) => {
+          console.error("[chat] could not persist the audited research artifact", {
             messageId: auditedMessageId,
             message: err instanceof Error ? err.message : String(err),
           });

@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, Link2Off, Loader2 } from "lucide-react";
+import { Link2Off, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -194,7 +195,7 @@ export default function ConnectionsPage() {
             tone="error"
             size="panel"
             className="mt-6"
-            icon={AlertCircle}
+            icon={StatusIcons.error}
             title="Couldn’t load your connections"
             description="The server may still be starting up, or the database isn’t reachable yet."
             action={

@@ -27,6 +27,7 @@
 
 import * as React from "react";
 import { Plus, X } from "lucide-react";
+import { ColorField } from "@/components/design/effects-panel";
 import { EasingEditor, InlineNumber, SmallSelect, fieldClass } from "@/components/design/motion-panel";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import {
@@ -586,21 +587,20 @@ function VariableValueField({
 }) {
   switch (value.kind) {
     case "color":
+      // The shared swatch-and-popover control, for the reason in `ColorField`:
+      // a native colour well is drawn by the operating system and sits here
+      // beside Radix menus that are not.
       return (
-        <label className="block">
-          <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Value</span>
-          <input
-            type="color"
-            aria-label="Variable colour"
-            value={rgbaToHex(value.value).slice(0, 7)}
-            disabled={readOnly}
-            onChange={(event) => {
-              const color = hexToRgba(event.target.value);
-              if (color) onChange({ kind: "color", value: color });
-            }}
-            className="size-6 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
-          />
-        </label>
+        <ColorField
+          label="Value"
+          ariaLabel="Variable colour"
+          value={rgbaToHex(value.value)}
+          disabled={readOnly}
+          onCommit={(hex) => {
+            const color = hexToRgba(hex);
+            if (color) onChange({ kind: "color", value: color });
+          }}
+        />
       );
     case "number":
       return <InlineNumber label="Value" value={value.value} disabled={readOnly} onCommit={(next) => onChange({ kind: "number", value: next })} />;

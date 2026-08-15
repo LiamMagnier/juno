@@ -33,23 +33,121 @@ export type LayoutMap = Map<NodeId, LayoutBox>;
 // ---------------------------------------------------------------------------
 
 /**
- * Mean advance width as a fraction of font size, by family class.
+ * Per-glyph advance widths, in 1/1000 em, for ASCII 32–126.
  *
- * These are measured averages for lowercase-heavy UI text, not per-glyph
- * metrics. They exist so a hug-sized label reserves a sane box on every
- * platform — not to claim typographic accuracy.
+ * This replaced a single mean ratio per family — 0.52em for every character —
+ * which measured "iiiii" and "WWWWW" as exactly the same width. Since the
+ * renderer draws REAL glyphs and only the line breaking used the estimate,
+ * wrapped lines broke in the wrong place, hug-sized labels came out the wrong
+ * width, and double-clicking to edit swapped in a textarea laid out by the
+ * actual font engine — so the text visibly reflowed the moment you started
+ * typing and reflowed back on commit.
+ *
+ * These are the standard Adobe core-font metrics (Helvetica and Times-Roman),
+ * which Arial and the common serif stacks match closely enough that the
+ * remaining error is a fraction of a character rather than a fifth of a line.
+ *
+ * They are TABLES, not measurements taken from the host, and that is the point:
+ * `layoutPage` runs in the browser for the canvas and on the server for every
+ * export, and those two must agree exactly. A `measureText` on a canvas element
+ * would be more accurate in the editor and would make the PNG disagree with the
+ * SVG disagree with the handoff — a worse failure than being uniformly a little
+ * off.
  */
-function advanceRatio(family: string): number {
+const HELVETICA_WIDTHS = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556,
+  278, 278, 584, 584, 584, 556, 1015,
+  667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611,
+  278, 278, 278, 469, 556, 333,
+  556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500,
+  334, 260, 334, 584,
+];
+
+const TIMES_WIDTHS = [
+  250, 333, 408, 500, 500, 833, 778, 180, 333, 333, 500, 564, 250, 333, 250, 278,
+  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+  278, 278, 564, 564, 564, 444, 921,
+  722, 667, 667, 722, 611, 556, 722, 722, 333, 389, 722, 611, 889, 722, 722, 556, 722, 667, 556, 611, 722, 722, 944, 722, 722, 611,
+  333, 278, 333, 469, 500, 333,
+  444, 500, 444, 500, 444, 333, 500, 500, 278, 278, 500, 278, 778, 500, 500, 500, 500, 333, 389, 278, 500, 500, 722, 500, 500, 444,
+  480, 200, 480, 541,
+];
+
+type FamilyClass = "mono" | "serif" | "sans";
+
+function familyClass(family: string): FamilyClass {
   const f = family.toLowerCase();
-  if (f.includes("mono") || f.includes("courier") || f.includes("consolas")) return 0.6;
-  if (f.includes("georgia") || f.includes("times") || f.includes("serif")) return 0.5;
-  return 0.52;
+  if (f.includes("mono") || f.includes("courier") || f.includes("consolas")) return "mono";
+  // "sans-serif" contains "serif", so sans has to be ruled in BEFORE serif is
+  // ruled out. The obvious ordering classified every `Inter, sans-serif` stack —
+  // which is most of the product — as a serif and measured it with Times widths.
+  if (f.includes("sans")) return "sans";
+  if (f.includes("georgia") || f.includes("times") || f.includes("serif")) return "serif";
+  return "sans";
 }
 
-/** Width one character of `typography` is assumed to take, letter spacing
- *  included. The renderer wraps with this too — see `wrapText`. */
+/**
+ * Full-width scripts advance about one em per character rather than half of one.
+ *
+ * CJK, Hangul and the fullwidth forms were being measured at 0.52em, so a
+ * Japanese label reserved roughly half the box it needed and wrapped about twice
+ * as late as it should.
+ */
+function isFullWidth(code: number): boolean {
+  return (
+    (code >= 0x1100 && code <= 0x115f) ||
+    (code >= 0x2e80 && code <= 0xa4cf) ||
+    (code >= 0xac00 && code <= 0xd7a3) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xfe30 && code <= 0xfe6f) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0xffe0 && code <= 0xffe6)
+  );
+}
+
+/** Bold faces are wider than their regular cut by roughly this much. */
+function weightFactor(weight: number, family: FamilyClass): number {
+  if (family === "mono" || weight < 600) return 1;
+  return family === "serif" ? 1.05 : 1.06;
+}
+
+/** One character's advance, in em. */
+function advanceEm(code: number, family: FamilyClass): number {
+  if (family === "mono") return 0.6;
+  if (isFullWidth(code)) return 1;
+  const table = family === "serif" ? TIMES_WIDTHS : HELVETICA_WIDTHS;
+  if (code >= 32 && code <= 126) return table[code - 32] / 1000;
+  // Latin-1 accented letters advance like their unaccented base; anything else
+  // falls back to the family's mean rather than guessing per script.
+  if (code >= 0xc0 && code <= 0xff) return family === "serif" ? 0.5 : 0.556;
+  return family === "serif" ? 0.48 : 0.52;
+}
+
+/**
+ * The width a run of text actually occupies, letter spacing included.
+ *
+ * Exported because the canvas's inline text editor has to lay its textarea out
+ * with the same numbers the renderer wraps with — that agreement is the whole
+ * reason the text no longer jumps when you start editing it.
+ */
+export function measureRun(
+  text: string,
+  typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing" | "fontWeight">
+): number {
+  const family = familyClass(typography.fontFamily);
+  const factor = weightFactor(typography.fontWeight ?? 400, family);
+  let em = 0;
+  for (const char of text) em += advanceEm(char.codePointAt(0) ?? 32, family);
+  return em * typography.fontSize * factor + text.length * typography.letterSpacing;
+}
+
+/** Mean advance for one character — a coarse estimate kept only for callers that
+ *  need a per-character step rather than a measured run. */
 export function advanceWidth(typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing">): number {
-  return typography.fontSize * advanceRatio(typography.fontFamily) + typography.letterSpacing;
+  const family = familyClass(typography.fontFamily);
+  const mean = family === "mono" ? 0.6 : family === "serif" ? 0.48 : 0.52;
+  return typography.fontSize * mean + typography.letterSpacing;
 }
 
 export function lineHeightPx(typography: Typography): number {
@@ -71,21 +169,23 @@ export function lineHeightPx(typography: Typography): number {
  */
 export function wrapText(
   characters: string,
-  typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing">,
+  typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing" | "fontWeight">,
   maxWidth: number
 ): string[] {
-  const perChar = advanceWidth(typography);
   const out: string[] = [];
 
   for (const paragraph of characters.split("\n")) {
-    if (maxWidth <= 0 || paragraph.length * perChar <= maxWidth) {
+    if (maxWidth <= 0 || measureRun(paragraph, typography) <= maxWidth) {
       out.push(paragraph);
       continue;
     }
     let current = "";
     for (const word of paragraph.split(" ")) {
       const candidate = current ? `${current} ${word}` : word;
-      if (current && candidate.length * perChar > maxWidth) {
+      // Measured, not counted. Breaking on `candidate.length * perChar` treated
+      // "Illinois" and "WWWWWWWW" as the same width, so a line of narrow
+      // characters broke early and a line of wide ones overflowed its box.
+      if (current && measureRun(candidate, typography) > maxWidth) {
         out.push(current);
         current = word;
       } else {
@@ -105,9 +205,8 @@ export function measureText(
   typography: Typography,
   maxWidth: number
 ): { width: number; height: number; lines: number } {
-  const perChar = advanceWidth(typography);
   const lines = wrapText(characters, typography, maxWidth);
-  const widest = Math.max(0, ...lines.map((line) => line.length * perChar));
+  const widest = Math.max(0, ...lines.map((line) => measureRun(line, typography)));
 
   return {
     width: Math.min(widest, maxWidth > 0 ? maxWidth : widest),

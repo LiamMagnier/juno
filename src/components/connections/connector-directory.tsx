@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
+import { Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -133,7 +134,7 @@ function AppLogo({ item }: { item: DirectoryItem }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.logo} alt="" className="size-6 object-contain" loading="lazy" />
       ) : (
-        <Plug className="size-5 text-primary" strokeWidth={1.7} />
+        <Plug className="size-5 text-primary" />
       )}
     </span>
   );
@@ -202,9 +203,9 @@ function TileStatus({ state }: { state: TileState }) {
   if (state === "connected") {
     return (
       <span className={cn(PILL, "border-success/40 bg-success/10 text-success")}>
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-success/70 motion-safe:animate-ping" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+        <span className="relative flex size-1.5">
+          <span className="absolute inline-flex size-full rounded-full bg-success/70 motion-safe:animate-ping" />
+          <span className="relative inline-flex size-1.5 rounded-full bg-success" />
         </span>
         Connected
       </span>
@@ -213,7 +214,7 @@ function TileStatus({ state }: { state: TileState }) {
   if (state === "connecting") {
     return (
       <span className={cn(PILL, "border-warning/40 bg-warning/10 text-warning")}>
-        <span className="h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse" />
+        <span className="size-1.5 rounded-full bg-warning motion-safe:animate-pulse" />
         Connecting
       </span>
     );
@@ -228,7 +229,7 @@ function TileStatus({ state }: { state: TileState }) {
   }
   return (
     <span className={cn(PILL, "border-border/60 text-muted-foreground")}>
-      <span className="h-1.5 w-1.5 rounded-full border border-muted-foreground/60" />
+      <span className="size-1.5 rounded-full border border-muted-foreground/60" />
       Available
     </span>
   );
@@ -346,7 +347,7 @@ function ConnectorTile({
                 rel="noreferrer"
               >
                 Set up in Composio
-                <ArrowUpRight className="size-3.5" />
+                <ActionIcons.external className="size-3.5" />
               </a>
             </Button>
           </TooltipTrigger>
@@ -616,7 +617,7 @@ export function ConnectorDirectory({
           <EmptyState
             tone="error"
             size="panel"
-            icon={AlertCircle}
+            icon={StatusIcons.error}
             className="mb-4"
             title="The app directory couldn’t be loaded"
             description={
@@ -727,7 +728,7 @@ function ComposioSetupCallout() {
                 className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-2 hover:underline"
               >
                 dashboard.composio.dev
-                <ArrowUpRight className="size-3" />
+                <ActionIcons.external className="size-3" />
               </a>{" "}
               and copy its API key (free, no card).
             </li>

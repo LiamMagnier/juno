@@ -303,7 +303,7 @@ export function ActivityTimeline({
         ) : (
           <>
             <span aria-hidden="true" className="flex w-9 shrink-0 items-center justify-center">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
+              <span className="size-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
             </span>
             <span aria-hidden="true" className="min-w-0 flex-1">
               {/* "Thought process" only when there WAS one. Plenty of models

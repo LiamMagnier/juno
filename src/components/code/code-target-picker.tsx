@@ -2,18 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  Cloud,
-  Folder,
-  GitBranch,
-  Laptop,
-  Lock,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -23,6 +12,7 @@ import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
 import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
+import { ActionIcons, AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -316,9 +306,9 @@ export function CodeTargetPicker({
           )}
         >
           {target === "device" ? (
-            <Laptop className="size-3.5 shrink-0" aria-hidden="true" />
+            <CodeIcons.device className="size-3.5 shrink-0" aria-hidden="true" />
           ) : (
-            <Cloud className="size-3.5 shrink-0" aria-hidden="true" />
+            <CodeIcons.cloud className="size-3.5 shrink-0" aria-hidden="true" />
           )}
           <span className="shrink-0">{target === "device" ? "Device" : "Cloud"}</span>
           {/* h-4, the height COMPOSER_DIVIDER draws in the same utility strip an
@@ -395,13 +385,13 @@ const TARGETS: { value: Target; label: string; hint: string; icon: React.ReactNo
     value: "device",
     label: "Device",
     hint: "Your Mac, streamed here as it works.",
-    icon: <Laptop className="size-4" aria-hidden="true" />,
+    icon: <CodeIcons.device className="size-4" aria-hidden="true" />,
   },
   {
     value: "cloud",
     label: "Cloud",
     hint: "A fresh machine, opens a pull request.",
-    icon: <Cloud className="size-4" aria-hidden="true" />,
+    icon: <CodeIcons.cloud className="size-4" aria-hidden="true" />,
   },
 ];
 
@@ -518,29 +508,29 @@ function DeviceList({
           ) : load.state === "error" ? (
             <PickerNote
               tone="error"
-              icon={<AlertCircle className="size-5" aria-hidden="true" />}
+              icon={<StatusIcons.error className="size-5" aria-hidden="true" />}
               title="Couldn’t load your projects"
               body="Juno couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced — try again."
               action={
                 <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 coarse:h-11">
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
                 </Button>
               }
             />
           ) : all.length === 0 ? (
             <PickerNote
-              icon={<Folder className="size-5" aria-hidden="true" />}
+              icon={<AppIcons.projects className="size-5" aria-hidden="true" />}
               title="No projects synced yet"
               body="Open a project folder in the Juno app on your Mac and it appears here, ready for a new session."
             />
           ) : filtered.length === 0 ? (
             <PickerNote
-              icon={<Search className="size-5" aria-hidden="true" />}
+              icon={<AppIcons.search className="size-5" aria-hidden="true" />}
               title={`No projects match “${query.trim()}”`}
               body="Names and paths are both searched. Clear the search to see all of them again."
             />
           ) : (
-            filtered.map((w) => {
+            filtered.map((w, i) => {
               // The mirror's key is the stable identity when it has one, so a
               // project that moved on disk still matches its own selection.
               const active = selected?.key ? selected.key === w.key : selected?.path === w.path;
@@ -549,10 +539,11 @@ function DeviceList({
               return (
                 <PickerRow
                   key={w.key ?? w.path}
+                  index={i}
                   itemRole="option"
                   active={active}
                   onClick={() => onPick(w)}
-                  icon={<Folder className="size-4" aria-hidden="true" />}
+                  icon={<AppIcons.projects className="size-4" aria-hidden="true" />}
                   title={w.name}
                   meta={
                     <>
@@ -573,7 +564,7 @@ function DeviceList({
                         // ground, under the 3:1 non-text minimum, on the one
                         // mark that says whether this project can run anything.
                         <span
-                          className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-success" : "bg-warning")}
+                          className={cn("size-1.5 rounded-full", online ? "bg-success" : "bg-warning")}
                           aria-hidden="true"
                         />
                       )}
@@ -666,12 +657,12 @@ function CloudList({
           ) : load.state === "error" ? (
             <PickerNote
               tone="error"
-              icon={<AlertCircle className="size-5" aria-hidden="true" />}
+              icon={<StatusIcons.error className="size-5" aria-hidden="true" />}
               title="Couldn’t reach GitHub"
               body="Your repositories couldn’t be listed, so this list is empty rather than wrong. Nothing was disconnected — try again."
               action={
                 <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5 coarse:h-11">
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
                 </Button>
               }
             />
@@ -683,14 +674,15 @@ function CloudList({
             />
           ) : filtered.length === 0 ? (
             <PickerNote
-              icon={<Search className="size-5" aria-hidden="true" />}
+              icon={<AppIcons.search className="size-5" aria-hidden="true" />}
               title={`No repositories match “${query.trim()}”`}
               body="Owner and name are both searched. Clear the search to see all of them again."
             />
           ) : (
-            filtered.map((repo) => (
+            filtered.map((repo, i) => (
               <PickerRow
                 key={repo.fullName}
+                index={i}
                 itemRole="option"
                 active={selected?.fullName === repo.fullName}
                 onClick={() => onPick(repo)}
@@ -703,11 +695,11 @@ function CloudList({
                 }
                 meta={
                   <>
-                    <GitBranch className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
                     <span className="truncate font-mono">{repo.defaultBranch}</span>
                     {repo.private && (
                       <span className="flex shrink-0 items-center gap-1">
-                        <Lock className="h-3 w-3" aria-hidden="true" />
+                        <CodeIcons.lock className="size-3" aria-hidden="true" />
                         Private
                       </span>
                     )}
@@ -743,7 +735,7 @@ function CloudList({
         // Full-strength hairline — see the note on TargetRows' separator.
         <div className="shrink-0 space-y-1.5 border-t border-border p-2">
           <label htmlFor="cloud-base-ref" className="flex items-center gap-1.5 px-0.5 text-caption text-muted-foreground">
-            <GitBranch className="h-3 w-3" aria-hidden="true" />
+            <CodeIcons.branch className="size-3" aria-hidden="true" />
             Base branch — optional
           </label>
           <Input
@@ -793,6 +785,7 @@ function PickerRow({
   tabIndex,
   onKeyDown,
   rowRef,
+  index,
   itemRole = "radio",
 }: {
   active: boolean;
@@ -805,6 +798,17 @@ function PickerRow({
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   rowRef?: (el: HTMLButtonElement | null) => void;
+  /**
+   * Position in a fetched list, which is what makes the rows arrive as a
+   * sequence rather than as one flat repaint.
+   *
+   * The skeletons this list shows while it loads were ALREADY staggered — so
+   * the placeholder was choreographed and the real thing it stood in for was
+   * not, and the moment the data landed the panel stopped moving like the
+   * panel it had just been. Omitted for the two machine rows, which are
+   * present from the first frame and have nothing to arrive from.
+   */
+  index?: number;
   /**
    * `radio` for the two machines, which implement the radio contract above
    * (one tab stop, arrows, selection follows focus); `option` for the project
@@ -826,7 +830,11 @@ function PickerRow({
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      className={ROW_HEIGHT}
+      style={index === undefined ? undefined : staggerDelay(index, "tight")}
+      className={cn(
+        ROW_HEIGHT,
+        index !== undefined && "[animation-fill-mode:backwards] motion-safe:animate-fade-in-up",
+      )}
     >
       <span className={cn("shrink-0", active ? "text-primary" : "text-muted-foreground")}>{icon}</span>
       <span className="min-w-0 flex-1">
@@ -840,7 +848,7 @@ function PickerRow({
         </span>
       </span>
       {trailing}
-      {active && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
+      {active && <StatusIcons.success className="size-4 shrink-0 text-primary" aria-hidden="true" />}
     </Pressable>
   );
 }
@@ -881,8 +889,8 @@ function PickerSearch({
   return (
     // Full-strength hairline — see the note on TargetRows' separator.
     <div className="relative shrink-0 border-b border-border p-2">
-      <Search
-        className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+      <AppIcons.search
+        className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
       />
       <Input

@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -103,7 +104,7 @@ export function WorkConnectorsChip({
           <span className="truncate">Apps</span>
           {count > 0 && <span className="shrink-0 tabular-nums text-primary">{count}</span>}
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
+            className="size-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -126,7 +127,7 @@ export function WorkConnectorsChip({
                 Couldn’t read your connected apps. This task will reach none of them until it can.
               </p>
               <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+                <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>
           ) : (

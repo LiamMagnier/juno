@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { Check, Copy, Link2 } from "lucide-react";
+import { Link2 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -171,9 +172,9 @@ export function ShareDialog({
                   reader got no acknowledgement that anything had happened. */}
               <Button size="sm" onClick={copy} className="shrink-0">
                 {copied ? (
-                  <Check className="size-4 motion-safe:animate-pop-in" aria-hidden />
+                  <StatusIcons.success className="size-4 motion-safe:animate-pop-in" aria-hidden />
                 ) : (
-                  <Copy className="size-4" aria-hidden />
+                  <ActionIcons.copy className="size-4" aria-hidden />
                 )}
                 <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
               </Button>

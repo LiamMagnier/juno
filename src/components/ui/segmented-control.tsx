@@ -413,7 +413,7 @@ export function SegmentedControl<T extends string>({
             // Pressable (pressable.tsx) both grow every icon target on a coarse
             // pointer. `text-sm` rather than the off-ladder 13px: this is the
             // same idiom as TabsTrigger and now says so at the same size.
-            labelHidden ? "h-8 w-8 coarse:h-10 coarse:w-10" : "gap-1.5 px-3 py-1 text-sm",
+            labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-sm",
             value === opt.value
               ? "text-foreground"
               : // An inactive segment had colour-only hover: the label brightened

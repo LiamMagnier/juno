@@ -242,10 +242,10 @@ export function ReasoningSlider({
       <div className="relative flex h-8 w-full items-center rounded-md border border-border/80 bg-neutral-200/80 dark:bg-[#121214] dark:border-white/10 shadow-inner overflow-hidden">
         {isTop ? (
           /* Max Mode: Pixelish Digital Matrix Canvas (Accent -> Violet) */
-          <canvas ref={canvasRef} className="h-full w-full block" />
+          <canvas ref={canvasRef} className="size-full block" />
         ) : (
           /* Standard Mode: Smooth Solid Accent Track with inner 6px radius (rounded-xs) */
-          <div className="relative h-full w-full">
+          <div className="relative size-full">
             {/* Active Accent Fill */}
             <div
               className="absolute inset-y-1 left-1 rounded-xs bg-primary transition-[width] duration-fast ease-out-soft shadow-xs"
@@ -297,7 +297,7 @@ export function ReasoningSlider({
             if (next) onChange(next.value);
           }}
           aria-label="Reasoning effort"
-          className="absolute inset-0 h-full w-full cursor-pointer appearance-none bg-transparent opacity-0 disabled:cursor-not-allowed z-20"
+          className="absolute inset-0 size-full cursor-pointer appearance-none bg-transparent opacity-0 disabled:cursor-not-allowed z-20"
         />
       </div>
     </div>

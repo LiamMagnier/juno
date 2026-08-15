@@ -183,7 +183,9 @@ export function WorkVoiceSurface({
         // nested inside it ending up the darkest thing on screen.
         className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-popover p-3 motion-safe:animate-rise-in"
       >
-        <p className="text-xs leading-relaxed text-muted-foreground">{explanation}</p>
+        {/* `text-ui`, which is what every other explanatory line in Work is
+            set in. `text-xs` is 14px and is not a rung on the scale. */}
+        <p className="text-ui leading-relaxed text-muted-foreground">{explanation}</p>
 
         {notice}
 

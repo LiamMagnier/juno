@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
-import { NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
+import { NotebookPen, Loader2, Monitor, Moon, Play, Square, Sun, Plus, CalendarClock } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
@@ -155,9 +156,9 @@ const CustomPickerButton = React.forwardRef<
         {...rest}
       >
         {selected ? (
-          <Check className="h-4 w-4" />
+          <StatusIcons.success className="size-4" />
         ) : (
-          <Plus className="h-4 w-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
+          <Plus className="size-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
         )}
       </AccentSwatch>
     </div>
@@ -333,7 +334,7 @@ function SpendCeiling({
             one 44px field on a page whose four other fields are the primitives'
             36px, and paired it with a button that was lg-tall and default-wide. */}
         <Button type="submit" disabled={!valid || !dirty || saving}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+          {saving ? <Loader2 className="size-4 animate-spin" /> : "Save"}
         </Button>
       </div>
       <p id="spend-cap-help" className="mt-2 text-caption text-muted-foreground">
@@ -667,9 +668,9 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                         motion-safe: the reduced-motion block in globals.css
                         enumerates the loops it stops and never included this. */}
                     {generating && (
-                      <span className="relative flex h-2 w-2" aria-hidden>
-                        <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 motion-safe:animate-ping" />
-                        <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                      <span className="relative flex size-2" aria-hidden>
+                        <span className="absolute inline-flex size-full rounded-full bg-success opacity-75 motion-safe:animate-ping" />
+                        <span className="relative inline-flex size-2 rounded-full bg-success" />
                       </span>
                     )}
                   </div>
@@ -681,7 +682,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                   <ul className="mt-4 space-y-1.5">
                     {plan.features.slice(0, 3).map((feat, idx) => (
                       <li key={idx} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Check className="h-3 w-3 text-primary shrink-0" />
+                        <StatusIcons.success className="size-3 text-primary shrink-0" />
                         <span className="truncate">{feat}</span>
                       </li>
                     ))}
@@ -769,7 +770,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                     <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
                     {renewsAtMs != null && (
                       <p className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
-                        <CalendarClock className="h-3.5 w-3.5 opacity-70" />
+                        <CalendarClock className="size-3.5 opacity-70" />
                         {cancelAtPeriodEnd ? "Access ends" : "Budget renews"} {formatDate(renewsAtMs)}
                       </p>
                     )}
@@ -816,7 +817,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                         className="items-center gap-1.5"
                         {...themeOption(i)}
                       >
-                        <t.icon className="h-4 w-4" />
+                        <t.icon className="size-4" />
                         {t.label}
                       </Pressable>
                     );
@@ -837,7 +838,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                         onClick={() => void setAccent(a.id)}
                         {...accentOption(i)}
                       >
-                        {selected && <Check className="h-4 w-4" />}
+                        {selected && <StatusIcons.success className="size-4" />}
                       </AccentSwatch>
                     );
                   })}
@@ -963,7 +964,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                   >
                     <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                       {p.label}
-                      {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                      {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                     </span>
                     <span className="text-xs leading-relaxed text-muted-foreground">{p.description}</span>
                   </Pressable>
@@ -1056,7 +1057,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                       >
                         <span className="flex items-center gap-1.5 text-sm font-medium">
                           {v.label}
-                          {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                          {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                         </span>
                         <span className="text-xs leading-relaxed text-muted-foreground">{v.description}</span>
                       </Pressable>
@@ -1072,14 +1073,14 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                         onClick={() => void playPreview(v.id)}
                         aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
                       >
-                        {/* h-4 w-4 to match the [&_svg]:size-4 the Button base forces —
+                        {/* size-4 to match the [&_svg]:size-4 the Button base forces —
                             a smaller class here would be silently out-specified. */}
                         {loading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="size-4 animate-spin" />
                         ) : active ? (
-                          <Square className="h-4 w-4" />
+                          <Square className="size-4" />
                         ) : (
-                          <Play className="h-4 w-4" />
+                          <Play className="size-4" />
                         )}
                       </Button>
                     </div>
@@ -1101,7 +1102,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
           <Tile eyebrow="Memory" i={8}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <NotebookPen className="h-5 w-5 text-primary" />
+                <NotebookPen className="size-5 text-primary" />
                 <div>
                   <p className="text-sm font-medium">Reference saved memories</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">Manage what Juno remembers</p>
@@ -1192,7 +1193,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                   learned the Juno-package and CSV formats existed. */}
               <Button asChild variant="outline" size="sm" className="w-full gap-2">
                 <Link href="/profile#account">
-                  <Download className="h-4 w-4" /> Export my data
+                  <ActionIcons.download className="size-4" /> Export my data
                 </Link>
               </Button>
             </div>
@@ -1268,7 +1269,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                   </p>
                 </div>
                 <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)} className="gap-2 shrink-0">
-                  <Trash2 className="h-4 w-4" /> Delete all chats
+                  <ActionIcons.delete className="size-4" /> Delete all chats
                 </Button>
               </div>
 
@@ -1288,7 +1289,7 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                     styled as dangerous. It is now a link to the guarded one. */}
                 <Button asChild variant="destructive-outline" size="sm" className="gap-2 shrink-0">
                   <Link href="/profile#account">
-                    <Trash2 className="h-4 w-4" /> Delete account…
+                    <ActionIcons.delete className="size-4" /> Delete account…
                   </Link>
                 </Button>
               </div>

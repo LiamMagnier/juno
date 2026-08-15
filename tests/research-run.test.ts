@@ -179,8 +179,11 @@ function memoryStore() {
       const existing = sources.find((source) => source.runId === runId && source.url === url);
       if (existing) {
         existing.title = title;
-        if (contentHash !== undefined) existing.contentHash = contentHash;
-        if (snapshot !== undefined) existing.snapshot = snapshot;
+        // Mirrors the Prisma store: a snapshot never shrinks, and the hash moves
+        // with it or not at all. See the note in src/lib/research/run.ts.
+        const keepsMoreText = snapshot != null && snapshot.length > (existing.snapshot?.length ?? 0);
+        if (keepsMoreText && contentHash !== undefined) existing.contentHash = contentHash;
+        if (keepsMoreText) existing.snapshot = snapshot;
         if (authority !== undefined) existing.authority = authority;
         return { id: existing.id, created: false };
       }
@@ -967,4 +970,76 @@ test("another account cannot read, steer or stop somebody else's run", async () 
     "not_found"
   );
   assert.equal((await store.readEvents({ runId: run.id, userId: "user_2", after: 0, limit: 10 })).length, 0);
+});
+
+/**
+ * A search backend that returns page text has its payload stored as the snapshot
+ * during SEARCH, and READ used to treat *any* snapshot as "already read" — so a
+ * few hundred characters of lede from a search API became the source of record
+ * and the page itself was never opened. This is the `open_page` half of the
+ * loop: a thin preview on a source worth having gets fetched properly.
+ */
+test("a thin search preview is opened properly, a full one is left alone", async () => {
+  const { store } = memoryStore();
+  const fetched: string[] = [];
+  const engine = createResearchEngine(
+    deps(store, {
+      async plan() {
+        return { queries: ["only question"], costMicroUsd: 0 };
+      },
+      async search() {
+        return {
+          hits: [
+            // A preview: short enough that it cannot be the page.
+            { url: "https://example.com/thin", title: "Thin", snippet: "…", rawContent: "x".repeat(300) },
+            // Already the whole document — re-fetching it would buy nothing.
+            { url: "https://example.com/full", title: "Full", snippet: "…", rawContent: "y".repeat(6_000) },
+          ],
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        fetched.push(url);
+        return { title: `Page at ${url}`, text: "z".repeat(5_000), costMicroUsd: 0 };
+      },
+    })
+  );
+
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.deepEqual(fetched, ["https://example.com/thin"], "only the thin preview is opened");
+
+  const sources = await store.listSources(run.id, run.userId);
+  const thin = sources.find((s) => s.url === "https://example.com/thin");
+  const full = sources.find((s) => s.url === "https://example.com/full");
+  assert.ok((thin?.snapshot?.length ?? 0) > 300, "the thin source now holds the real page");
+  assert.equal(full?.snapshot?.length, 6_000, "the full source keeps what search already gave it");
+});
+
+test("deepening never replaces a usable preview with a shorter body", async () => {
+  const { store } = memoryStore();
+  const engine = createResearchEngine(
+    deps(store, {
+      async plan() {
+        return { queries: ["only question"], costMicroUsd: 0 };
+      },
+      async search() {
+        return {
+          hits: [{ url: "https://example.com/walled", title: "Walled", snippet: "…", rawContent: "x".repeat(1_500) }],
+          costMicroUsd: 0,
+        };
+      },
+      // A consent wall: the fetch "succeeds" and returns almost nothing.
+      async fetchPage() {
+        return { title: "Please accept cookies", text: "Accept cookies to continue.", costMicroUsd: 0 };
+      },
+    })
+  );
+
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const [source] = await store.listSources(run.id, run.userId);
+  assert.equal(source.snapshot?.length, 1_500, "the only usable text this source ever had is kept");
 });

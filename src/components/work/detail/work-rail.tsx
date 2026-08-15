@@ -330,7 +330,7 @@ export function RailSection({
         >
           <ChevronRight
             className={cn(
-              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-transform duration-base ease-in-out group-hover:text-muted-foreground",
+              "size-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-muted-foreground",
               open && "rotate-90"
             )}
             aria-hidden="true"
@@ -399,7 +399,7 @@ export function RailDisclosure({
         >
           <ChevronRight
             className={cn(
-              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-transform duration-base ease-in-out group-hover:text-muted-foreground",
+              "size-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-muted-foreground",
               open && "rotate-90"
             )}
             aria-hidden="true"

@@ -98,7 +98,7 @@ export function ConnectorLogoTile({ id, className }: { id: string; className?: s
         // inside whatever card held it and read as a hole rather than a well;
         // a bare `border` (full --border) then made the edge the loudest thing
         // in a row of quiet ones.
-        "flex h-11 w-11 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary text-foreground",
+        "flex size-11 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary text-foreground",
         className
       )}
     >

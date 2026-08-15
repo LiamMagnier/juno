@@ -137,6 +137,18 @@ export function DesignContextMenu({
   // rest, and an item that exists to raise a toast is not an item.
   const canGroup = !readOnly && unlocked.length > 1 && new Set(unlocked.map((node) => node.parentId)).size === 1;
   const canUngroup = !readOnly && unlocked.length > 0 && unlocked.every((node) => isContainer(node));
+  /**
+   * The layer "Create component" would act on.
+   *
+   * One layer only, and not one that is already a component or an instance of
+   * one: `createComponent` promotes a node to a main component, and promoting a
+   * component is meaningless while promoting an instance would silently detach
+   * it from the thing it is an instance of.
+   */
+  const componentable =
+    !readOnly && unlocked.length === 1 && unlocked[0].type !== "component" && unlocked[0].type !== "instance"
+      ? unlocked[0]
+      : null;
   const hideable = unlocked.filter((node) => node.visible);
 
   const paste = pasteableNodes(doc, boxes);
@@ -248,6 +260,25 @@ export function DesignContextMenu({
             >
               Ungroup
               <Hint keys="⇧⌘G" />
+            </DropdownMenuItem>
+
+            {/* Making a component. `createComponent` has existed in the operation
+                layer from the start and had no call site anywhere in the UI, so
+                the only way to get one was to ask the AI for it — the single
+                biggest hole in what the editor could author. This is where Figma
+                puts it, on the same shortcut. */}
+            <DropdownMenuItem
+              disabled={!componentable}
+              onSelect={() =>
+                componentable &&
+                onApply(
+                  [{ op: "createComponent", nodeId: componentable.id, name: componentable.name }],
+                  "Create component"
+                )
+              }
+            >
+              Create component
+              <Hint keys="⌥⌘K" />
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

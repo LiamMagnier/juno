@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Clock, ShieldAlert } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -388,7 +389,7 @@ export function ApprovalCard({
       )}
     >
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <ShieldAlert
+        <StatusIcons.security
           className={cn("size-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
@@ -440,7 +441,7 @@ export function ApprovalCard({
 
       {current.derivedFromUntrusted && (
         <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
-          <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+          <StatusIcons.security className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
           <p className="text-label leading-relaxed text-warning-foreground">
             The model wrote these arguments from content it read — a web page, a file, or output from
             another connector. That content can contain text written to steer what gets sent. Check the

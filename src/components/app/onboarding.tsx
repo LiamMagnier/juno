@@ -6,17 +6,15 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   NotebookPen,
-  Check,
   ChevronDown,
-  Copy,
   Globe,
   MessageSquareText,
   Monitor,
   Moon,
-  PenLine,
   Search,
   Sun,
 } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { DotField } from "@/components/signature/dot-field";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Button } from "@/components/ui/button";
@@ -87,10 +85,10 @@ function ModelField({
           className="flex w-full items-center justify-between rounded-card border px-3.5 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary"
         >
           <span className="flex min-w-0 items-center gap-2">
-            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-micro" />}
+            {current && <ProviderLogo provider={current.provider} className="size-4 rounded-micro" />}
             <span className="truncate font-mono text-ui">{current?.name ?? "Select a model"}</span>
           </span>
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
+          <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
         </button>
       </PopoverTrigger>
 
@@ -104,7 +102,7 @@ function ModelField({
         className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-menu p-0"
       >
         <div className="relative border-b p-2">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -137,9 +135,9 @@ function ModelField({
                     }}
                     className="pressable flex w-full items-center gap-2 rounded-xs px-2.5 py-2 text-left hover:bg-secondary"
                   >
-                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-micro" />
+                    <ProviderLogo provider={m.provider} className="size-4 rounded-micro" />
                     <span className="min-w-0 flex-1 truncate font-mono text-label">{m.name}</span>
-                    {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                    {m.id === valueId && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                   </button>
                 ))}
               </div>
@@ -331,7 +329,7 @@ export function Onboarding() {
 
   const capabilities = [
     { icon: MessageSquareText, label: "Chat & code", desc: "Reason and build across the best models." },
-    { icon: PenLine, label: "Live canvas", desc: "Docs and apps in a side-by-side artifact." },
+    { icon: ActionIcons.edit, label: "Live canvas", desc: "Docs and apps in a side-by-side artifact." },
     { icon: NotebookPen, label: "Remembers you", desc: "Context and preferences carry between chats." },
     features.webSearch
       ? { icon: Globe, label: "Web search", desc: "Answers grounded in live, cited sources." }
@@ -426,8 +424,8 @@ export function Onboarding() {
                   className="flex items-start gap-3 rounded-card p-2.5 transition-colors duration-fast ease-out-soft hover:bg-secondary motion-safe:animate-fade-in-up"
                   style={{ animationDelay: `${80 + i * 60}ms`, animationFillMode: "backwards" }}
                 >
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-field bg-secondary text-foreground">
-                    <c.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  <div className="grid size-9 shrink-0 place-items-center rounded-field bg-secondary text-foreground">
+                    <c.icon className="size-4.5" />
                   </div>
                   <div className="pt-0.5">
                     <p className="text-body font-medium leading-tight">{c.label}</p>
@@ -439,7 +437,7 @@ export function Onboarding() {
 
             <Button ref={primaryRef} onClick={() => setStep(1)} size="lg" className="mt-6 w-full">
               Continue
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="size-4" />
             </Button>
             <button
               type="button"
@@ -477,7 +475,7 @@ export function Onboarding() {
                           // sit on a DialogContent (--popover), not on a card —
                           // so the selected accent wore a 6.5% disc of a surface
                           // that is nowhere near it on the dark theme.
-                          "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-popover transition-transform duration-fast ease-out-soft hover:scale-110 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 coarse:h-11 coarse:w-11",
+                          "flex size-9 items-center justify-center rounded-full ring-offset-2 ring-offset-popover transition-transform duration-fast ease-out-soft hover:scale-110 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 coarse:size-11",
                           settings.accent === a.id && "ring-2 ring-foreground"
                         )}
                         style={{ backgroundColor: color }}
@@ -487,7 +485,7 @@ export function Onboarding() {
                             confirmation that the accent took disappeared into it —
                             on the very screen where a new user is choosing one. */}
                         {settings.accent === a.id && (
-                          <Check className="h-4 w-4" style={{ color: swatchInk(color) }} />
+                          <StatusIcons.success className="size-4" style={{ color: swatchInk(color) }} />
                         )}
                       </button>
                     );
@@ -515,7 +513,7 @@ export function Onboarding() {
                           : "text-muted-foreground hover:bg-secondary"
                       )}
                     >
-                      <t.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                      <t.icon className="size-4.5" />
                       <span className="font-mono text-caption uppercase">{t.label}</span>
                     </button>
                   ))}
@@ -530,7 +528,7 @@ export function Onboarding() {
 
             <Button ref={primaryRef} onClick={() => setStep(2)} size="lg" className="mt-7 w-full">
               Continue
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="size-4" />
             </Button>
             <button
               type="button"
@@ -638,7 +636,7 @@ export function Onboarding() {
               className="mt-6 w-full"
             >
               {currentPlan === "FREE" ? "Continue with Free" : "Continue"}
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="size-4" />
             </Button>
             <button
               type="button"
@@ -666,7 +664,7 @@ export function Onboarding() {
               {/* step 1 — copy prompt */}
               <div>
                 <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
-                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
+                  <span className="grid size-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     1
                   </span>
                   Copy this into your other AI
@@ -686,9 +684,9 @@ export function Onboarding() {
                     // read as a hole punched in the block rather than a button
                     // resting on it. --accent is level with the dialog and so
                     // lifts clear of the recessed well underneath it.
-                    className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control border bg-accent text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
+                    className="pressable absolute right-2 top-2 grid size-7 place-items-center rounded-control border bg-accent text-muted-foreground hover:text-foreground coarse:size-9"
                   >
-                    {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied ? <StatusIcons.success className="size-3.5 text-primary" /> : <ActionIcons.copy className="size-3.5" />}
                   </button>
                 </div>
               </div>
@@ -696,7 +694,7 @@ export function Onboarding() {
               {/* step 2 — paste results */}
               <div>
                 <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
-                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
+                  <span className="grid size-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     2
                   </span>
                   Paste the results here
@@ -720,7 +718,7 @@ export function Onboarding() {
                   <span className="text-caption text-muted-foreground">
                     {imported !== null ? (
                       <span className="flex items-center gap-1.5 text-primary">
-                        <Check className="h-3.5 w-3.5" /> Added {imported} {imported === 1 ? "memory" : "memories"}
+                        <StatusIcons.success className="size-3.5" /> Added {imported} {imported === 1 ? "memory" : "memories"}
                       </span>
                     ) : (
                       "One fact per line."
@@ -732,7 +730,7 @@ export function Onboarding() {
                     onClick={runImport}
                     disabled={importing || importText.trim().length < 3}
                   >
-                    <NotebookPen className="h-3.5 w-3.5" />
+                    <NotebookPen className="size-3.5" />
                     {importing ? "Adding…" : "Add to memory"}
                   </Button>
                 </div>

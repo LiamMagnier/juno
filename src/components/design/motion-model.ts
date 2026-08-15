@@ -33,8 +33,10 @@ import type {
   Keyframe,
   MotionAnimation,
   MotionTrack,
+  NodeId,
   Rgba,
 } from "@/lib/design/types";
+import { isContainer } from "@/lib/design/types";
 
 /** What a keyframe can hold — the model's `Keyframe["value"]`, named. */
 export type MotionValue = number | Rgba;
@@ -431,6 +433,52 @@ function applyMotionValue(node: DesignNode, property: AnimatableProperty, value:
  * it is never handed to a transaction, and its `revision` is left as-is so
  * nothing downstream can mistake it for a saved state.
  */
+/**
+ * Scale a container's whole subtree along with it.
+ *
+ * `applyMotionValue` writes the new size onto the scaled node and stopped there,
+ * so a `scale` track on a card grew the card's background and left its label at
+ * full size in its original spot — which makes the commonest UI motion there is
+ * (a button or card easing from 0.96 to 1) visibly wrong.
+ *
+ * A child's `x`/`y` are relative to its parent, and that makes the correction
+ * exactly a multiply. Working in the parent's local frame, scaling about the
+ * centre maps a child at `cx` to `width·f/2 + (cx − width/2)·f`, which reduces
+ * to `cx·f`. So every descendant, at every depth, simply takes the same factor
+ * on its position and its size — no centre and no accumulated offset to carry
+ * down the tree. Text scales its own type with it, as it does in Figma; a
+ * label that kept its point size while its box grew would not be a scale.
+ */
+function scaleSubtree(
+  nodes: DesignDocument["nodes"],
+  rootId: NodeId,
+  factor: number
+): void {
+  const root = nodes[rootId];
+  if (!root || !isContainer(root)) return;
+  const walk = (ids: readonly NodeId[]) => {
+    for (const id of ids) {
+      const node = nodes[id];
+      if (!node) continue;
+      const scaled: DesignNode = {
+        ...node,
+        x: node.x * factor,
+        y: node.y * factor,
+        width: Math.max(0, node.width * factor),
+        height: Math.max(0, node.height * factor),
+        widthMode: "fixed",
+        heightMode: "fixed",
+      };
+      nodes[id] =
+        scaled.type === "text"
+          ? { ...scaled, typography: { ...scaled.typography, fontSize: Math.max(1, scaled.typography.fontSize * factor) } }
+          : scaled;
+      if (isContainer(node)) walk(node.children);
+    }
+  };
+  walk(root.children);
+}
+
 export function derivePreviewDocument(doc: DesignDocument, animation: MotionAnimation, timeMs: number): DesignDocument {
   let nodes: DesignDocument["nodes"] | null = null;
 
@@ -443,6 +491,11 @@ export function derivePreviewDocument(doc: DesignDocument, animation: MotionAnim
     if (next === current) continue;
     if (!nodes) nodes = { ...doc.nodes };
     nodes[track.nodeId] = next;
+    // Scale is the one property that is a transform on a whole subtree rather
+    // than a value on one layer.
+    if (track.property === "scale" && typeof value === "number" && value >= 0) {
+      scaleSubtree(nodes, track.nodeId, value);
+    }
   }
 
   return nodes ? { ...doc, nodes } : doc;
