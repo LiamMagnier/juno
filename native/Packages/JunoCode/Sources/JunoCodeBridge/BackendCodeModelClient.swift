@@ -428,18 +428,22 @@ public struct BackendCodeModelClient: AgentModelClient {
             guard data.count < 32 * 1_024 else { break }
             data.append(byte)
         }
-        if let envelope = try? JSONDecoder().decode(ProxyErrorWire.self, from: data),
-           let message = envelope.error ?? envelope.message
-        {
-            return message
+        if let json = try? JSONDecoder().decode(JSONValue.self, from: data) {
+            if let obj = json.objectValue {
+                if let error = obj["error"]?["message"]?.stringValue ?? obj["error"]?.stringValue ?? obj["message"]?.stringValue {
+                    return error
+                }
+            } else if let array = json.arrayValue, let first = array.first?.objectValue {
+                if let error = first["error"]?["message"]?.stringValue ?? first["error"]?.stringValue ?? first["message"]?.stringValue {
+                    return error
+                }
+            }
+        }
+        if let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
         }
         return "The model request failed (HTTP \(response.statusCode))."
     }
-}
-
-private struct ProxyErrorWire: Decodable {
-    let error: String?
-    let message: String?
 }
 
 // MARK: - Request building
@@ -1260,9 +1264,11 @@ struct OpenAIChatStreamDecoder {
         }
         if let finishReason = choice["finish_reason"]?.stringValue, !completed {
             completed = true
+            var sawTools = false
             for (_, block) in toolBlocks.sorted(by: { $0.key < $1.key })
                 where !block.id.isEmpty && !block.name.isEmpty
             {
+                sawTools = true
                 events.append(.toolCallRequested(
                     id: block.id,
                     name: block.name,
@@ -1270,10 +1276,14 @@ struct OpenAIChatStreamDecoder {
                 ))
             }
             let reason: ModelStopReason
-            switch finishReason {
-            case "tool_calls": reason = .toolUse
-            case "length": reason = .maxTokens
-            default: reason = .endTurn
+            if sawTools {
+                reason = .toolUse
+            } else {
+                switch finishReason {
+                case "tool_calls", "function_call": reason = .toolUse
+                case "length": reason = .maxTokens
+                default: reason = .endTurn
+                }
             }
             events.append(.turnCompleted(reason))
         }
