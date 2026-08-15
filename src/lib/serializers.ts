@@ -151,6 +151,14 @@ export async function serializeMessage(
     activity: serializeActivity(msg.activity),
     promptTokens: msg.promptTokens,
     completionTokens: msg.completionTokens,
+    // The prompt-cache split, straight off the row. `?? undefined` so a NULL
+    // column drops the key from the JSON entirely, which is the same shape the
+    // private path's live frame produces — one representation of "unknown" on
+    // the wire instead of two. NEVER `?? 0`: rows written before the column
+    // existed, and providers that report no cache buckets, are unknown, and a
+    // zero here would render every one of them as a total cache miss.
+    cacheReadTokens: msg.cacheReadTokens ?? undefined,
+    cacheWriteTokens: msg.cacheWriteTokens ?? undefined,
     costUsd,
     conversationId: msg.conversationId,
     // Prior contents preserved across regenerate/edit-and-resend (oldest first).

@@ -73,6 +73,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           feedback: m.feedback,
           promptTokens: m.promptTokens,
           completionTokens: m.completionTokens,
+          // Carried with the token counts, not dropped. A fork is a copy of
+          // generations that already happened, so their measurements still
+          // apply — and copying the totals while losing the split would make
+          // the fork claim it knows the input size but not how much of it was
+          // cached, which is a fact the original row does hold. NULL copies as
+          // NULL: unknown stays unknown rather than becoming a zero.
+          cacheReadTokens: m.cacheReadTokens,
+          cacheWriteTokens: m.cacheWriteTokens,
           sources: m.sources === null ? Prisma.DbNull : (m.sources as unknown as Prisma.InputJsonValue),
           activity: m.activity === null ? Prisma.DbNull : (m.activity as unknown as Prisma.InputJsonValue),
           // Preserve original timestamps so ordering and history windows match.

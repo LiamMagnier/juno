@@ -87,11 +87,14 @@ export interface ClientMessage {
   /**
    * Prompt-cache buckets for this generation, as the provider reported them.
    *
-   * LIVE-ONLY. These ride the `done` frame, where the accumulator still holds
-   * them; `Message` has no column for either, so a message read back from the
-   * database carries `promptTokens`/`completionTokens`/`costUsd` but NOT this
-   * split. A client must therefore treat absent as "unknown", never as zero —
-   * a reloaded transcript would otherwise claim every turn was a cache miss.
+   * DURABLE for saved turns: `Message.cacheReadTokens`/`cacheWriteTokens` hold
+   * them and `serializeMessage` emits them, so a reloaded transcript keeps the
+   * split. Live-only for PRIVATE turns, which have no row at all.
+   *
+   * ABSENT IS "UNKNOWN", NOT ZERO, and it stays common: every message written
+   * before the columns existed has NULL, as does every provider that reports no
+   * cache buckets. A reader that renders absent as 0 claims a total cache miss
+   * it never measured. Check for `!= null`, never `?? 0`.
    *
    * `cacheReadTokens` is a hit (billed ~0.1x input); `cacheWriteTokens` is the
    * creation of a new prefix (Anthropic only, billed 1.25x/2x by TTL).

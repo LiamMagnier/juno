@@ -27,10 +27,16 @@ public extension NativeSessionCostTotals {
 /// One turn's billed usage, exactly as the server reported it.
 ///
 /// Every field is optional and `nil` means UNKNOWN, never zero. Providers
-/// differ in what they report, the prompt-cache split rides only the live
-/// `done` frame, and a turn that failed before the provider answered has no
-/// usage at all. A ledger that defaulted any of these to 0 would quietly
-/// under-report a session instead of admitting it cannot say.
+/// differ in what they report, and a turn that failed before the provider
+/// answered has no usage at all. A ledger that defaulted any of these to 0
+/// would quietly under-report a session instead of admitting it cannot say.
+///
+/// The prompt-cache split reaches this type only from the live `done` frame.
+/// The server now persists it (`Message.cacheReadTokens`/`cacheWriteTokens`)
+/// and ships it on the `message` sync entity, so hydrating a reloaded
+/// transcript into a ledger has become possible — but it is not wired, and
+/// doing it means reversing the deliberate "since this launch" scope documented
+/// on `sessionCostLedgers`, not just decoding two more fields.
 public struct NativeTurnUsage: Identifiable, Equatable, Sendable {
     /// The assistant message this usage belongs to. Also the dedupe key: a
     /// stream that re-emits `done` (a resumed generation, a partial saved and

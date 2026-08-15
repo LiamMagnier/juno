@@ -5,6 +5,7 @@ import { requireNativeRequest } from "@/lib/native-request";
 import { prismaUnguarded } from "@/lib/prisma";
 import { isModelId } from "@/lib/models";
 import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutations";
+import { WORKSPACE_CONFIG_VERSION, writeWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
 
 export const runtime = "nodejs";
@@ -175,6 +176,52 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       const deleted = await tx.project.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The project was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "project", op.entityId), deleted: true } };
+    }
+    case "project_workspace.upsert": {
+      // The project must exist and be this account's. Checked explicitly rather
+      // than left to the foreign key, because a raw FK violation surfaces as a
+      // 500 and the client's outbox treats that as retryable — it would sit
+      // there re-sending a mutation for a project that was deleted on another
+      // device, forever.
+      const project = await tx.project.findFirst({ where: { id: op.projectId, userId: accountId }, select: { id: true } });
+      if (!project) throw new ApiV1Error("not_found", 404, "The project was not found.");
+
+      // Keyed by project, not by the workspace row's id, so the first save from
+      // a device that has never synced this workspace still works. Same
+      // not-yet-existing-row handling as `settings.update`: an absent row is
+      // revision 0, and anything else means another device created or changed
+      // it first and this client is writing over an edit it never saw.
+      const existing = await tx.projectWorkspace.findUnique({
+        where: { userId_projectId: { userId: accountId, projectId: op.projectId } },
+        select: { id: true },
+      });
+      if (existing) await requireRevision(tx, accountId, "project_workspace", existing.id, baseRevision);
+      else if (baseRevision !== 0) {
+        throw new ApiV1Error("revision_conflict", 409, "This workspace was removed on another device.", false, { currentRevision: 0 });
+      }
+
+      // Normalised through the codec before storage so the bytes written are
+      // byte-identical to the bytes a read produces. Skipping this makes an
+      // unchanged save write a differently-ordered object, bump the revision,
+      // and hand every other device a change to fetch for nothing.
+      const config = writeWorkspaceConfig(op.config) as Prisma.InputJsonObject;
+      const row = await tx.projectWorkspace.upsert({
+        where: { userId_projectId: { userId: accountId, projectId: op.projectId } },
+        create: { userId: accountId, projectId: op.projectId, config, configVersion: WORKSPACE_CONFIG_VERSION },
+        update: { config, configVersion: WORKSPACE_CONFIG_VERSION },
+      });
+      return { entity: { id: row.id, revision: await nextRevision(tx, accountId, "project_workspace", row.id) } };
+    }
+    case "project_workspace.delete": {
+      // Deleting the CONFIG, not the project: the assistant reverts to the
+      // project's own name and instructions and to the account's tools. That is
+      // "no opinion", which is exactly the state an absent row represents — so
+      // removal is the honest spelling of a reset, rather than storing an empty
+      // config object that would read as "allowed nothing".
+      await requireRevision(tx, accountId, "project_workspace", op.entityId, baseRevision);
+      const deleted = await tx.projectWorkspace.deleteMany({ where: { id: op.entityId, userId: accountId } });
+      if (!deleted.count) throw new ApiV1Error("not_found", 404, "The workspace configuration was not found.");
+      return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "project_workspace", op.entityId), deleted: true } };
     }
     case "memory.create": {
       if (baseRevision !== 0) throw new ApiV1Error("invalid_request", 400, "Create mutations must start at revision zero.");

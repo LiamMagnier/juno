@@ -52,6 +52,14 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["Conversation", "userId"],
   ["Folder", "userId"],
   ["Project", "userId"],
+  // A project's custom-assistant config: persona, tool whitelist, which of the
+  // project's files the model is fed. Guarded rather than waived because the
+  // knowledge-file selection is a statement about someone's private documents,
+  // and the whitelist is a permission decision — an unscoped read here leaks
+  // both. The one write that legitimately upserts by the compound
+  // `userId_projectId` key still carries userId, so the guard is satisfied by
+  // the query it was already making.
+  ["ProjectWorkspace", "userId"],
   ["MemoryEntry", "userId"],
   ["MemorySummary", "userId"],
   ["ConversationMemory", "userId"],

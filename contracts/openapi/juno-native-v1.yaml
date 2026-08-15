@@ -786,12 +786,20 @@ components:
           description: >-
             Strict operation union implemented by the server. project.update accepts
             entityId plus optional name, instructions, and starred fields.
+            project_workspace.upsert accepts projectId plus a whole `config` object
+            (custom-assistant settings: personaName, instructionsOverride,
+            allowedTools, allowedConnectorIds, knowledgeFileIds, preferredModelId).
+            The config REPLACES the stored object rather than patching it, and an
+            omitted key means "no opinion" — which is NOT the same as an empty
+            array. Like settings.update it is keyed by the parent (projectId), so
+            baseRevision 0 is the correct value for a workspace that does not exist
+            on the server yet.
           required: [type]
           additionalProperties: true
           properties:
             type:
               type: string
-              enum: [conversation.create, conversation.rename, conversation.update, conversation.archive, conversation.delete, folder.create, folder.rename, folder.delete, project.create, project.update, project.delete, memory.create, memory.update, memory.delete, settings.update]
+              enum: [conversation.create, conversation.rename, conversation.update, conversation.archive, conversation.delete, folder.create, folder.rename, folder.delete, project.create, project.update, project.delete, project_workspace.upsert, project_workspace.delete, memory.create, memory.update, memory.delete, settings.update]
     AppendMessagesRequest:
       type: object
       additionalProperties: false

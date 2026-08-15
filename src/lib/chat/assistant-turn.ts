@@ -65,6 +65,21 @@ export interface AssistantTurnFields {
   model: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  /**
+   * The prompt-cache split of `promptTokens`, as the provider reported it.
+   *
+   * EXPLICIT `null`, NEVER `undefined`, and that is the whole reason these are
+   * normalised here rather than passed through. Prisma reads `undefined` as
+   * "leave this column alone", which is harmless on the append path and wrong
+   * on the supersede path: regenerating a cached turn with a provider that
+   * reports no cache buckets would leave the PREVIOUS answer's cache numbers
+   * sitting under the new answer. That is the same trap `reasoningPartsColumn`
+   * exists to close, and it produces a number that looks measured and is not.
+   *
+   * `null` itself still means "unknown", never "zero" — no reader may coalesce.
+   */
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
   /** Exact generation cost (tokens + cache + tool fees), micro-USD. */
   costMicroUsd: number | null;
 }
@@ -76,6 +91,8 @@ export function assistantTurnFields(
     model: string;
     promptTokens: number | null;
     completionTokens: number | null;
+    cacheReadTokens?: number | null;
+    cacheWriteTokens?: number | null;
     costMicroUsd?: number | null;
   },
   encrypt: (value: string) => string
@@ -85,6 +102,8 @@ export function assistantTurnFields(
     model: data.model,
     promptTokens: data.promptTokens,
     completionTokens: data.completionTokens,
+    cacheReadTokens: data.cacheReadTokens ?? null,
+    cacheWriteTokens: data.cacheWriteTokens ?? null,
     costMicroUsd: data.costMicroUsd ?? null,
   };
 }
