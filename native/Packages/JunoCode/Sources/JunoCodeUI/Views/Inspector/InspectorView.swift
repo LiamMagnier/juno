@@ -132,51 +132,23 @@ public struct InspectorView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                // The inspector can be as narrow as 260pt. Giving the
-                // segmented control an honest minimum makes ViewThatFits pick
-                // the readable compact control below instead of squeezing five
-                // tabs into clipped labels.
+            HStack(spacing: JunoSpace.snug) {
+                Text("Inspector")
+                    .font(.headline)
+                Spacer(minLength: 0)
                 Picker("Inspector pane", selection: pane) {
                     ForEach(CodeInspectorPane.allCases) { candidate in
-                        Text(segmentLabel(for: candidate))
-                            .accessibilityLabel(candidate.label)
-                            .tag(candidate)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(minWidth: 390, maxWidth: .infinity)
-
-                // Keep the panes one click away at the normal 348pt rail width.
-                // A menu is technically usable there, but hides the fact that
-                // Changes, Activity and Agents are separate live surfaces. Five
-                // system symbols fit comfortably at the 260pt minimum and keep
-                // the inspector scannable without forcing the column wider.
-                Picker("Inspector pane", selection: pane) {
-                    ForEach(CodeInspectorPane.allCases) { candidate in
-                        Label(candidate.label, systemImage: candidate.symbol)
-                            .labelStyle(.iconOnly)
-                            .help(candidate.purpose)
-                            .accessibilityLabel(candidate.label)
-                            .tag(candidate)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(minWidth: 238, maxWidth: .infinity)
-
-                Picker("Inspector pane", selection: pane) {
-                    ForEach(CodeInspectorPane.allCases) { candidate in
-                        Label(candidate.label, systemImage: candidate.symbol)
+                        Label(segmentLabel(for: candidate), systemImage: candidate.symbol)
                             .tag(candidate)
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .labelsHidden()
+                .fixedSize()
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
+            .padding(.top, 52)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
             .help(pane.wrappedValue.purpose)
             .accessibilityValue(paneAccessibilityValue)
             .accessibilityIdentifier("juno.code.inspector.pane")
@@ -200,7 +172,7 @@ public struct InspectorView: View {
                     RepositoryTab(controller: controller)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .inspectorColumnWidth(

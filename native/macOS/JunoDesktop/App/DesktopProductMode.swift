@@ -199,22 +199,9 @@ extension View {
     func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
         VStack(spacing: 0) {
             DesktopSidebarProductHeader(product: product)
+                .padding(.top, 32)
             self
         }
-        // The strip measures from the window's top edge, not from wherever the
-        // column's safe area happens to begin.
-        //
-        // This is the second half of the same bug. Chat's sidebar carries a
-        // ~48pt titlebar inset and Code's does not, so a clearance *added* to
-        // the safe area put the switch 38pt down one column and 86pt down the
-        // other — the strip painting up into the inset all the while, which is
-        // why it looked like one tall band rather than a control sitting low.
-        // Taking the top safe area here makes the arithmetic absolute: the strip
-        // owns the band from the window's edge to `titlebarClearance`, the
-        // traffic lights sit inside it, and the list starts under it. The list
-        // keeps its own bottom safe area, which is what the footer is measured
-        // against.
-        .ignoresSafeArea(.container, edges: .top)
     }
 }
 

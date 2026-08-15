@@ -145,29 +145,24 @@ struct SubagentPane: View {
 
 private struct SubagentEmptyState: View {
     var body: some View {
-        VStack(spacing: JunoSpace.regular) {
-            Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Image(systemName: "person.2")
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(Color.junoAccent)
-                .frame(width: 56, height: 56)
-                .background(Color.junoAccent.opacity(0.12), in: Circle())
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 36, height: 36)
+                .background(Color.junoRaised, in: Circle())
                 .accessibilityHidden(true)
-                .accessibilityHidden(true)
-            VStack(spacing: JunoSpace.tight) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text("No sub-agents yet")
-                    .junoEmptyTitle()
+                    .font(.headline)
                 Text("Delegated work will appear here while it runs, then stay available as a report.")
                     .font(.callout)
                     .junoSecondaryInk()
-                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: 250)
-            Spacer(minLength: 0)
         }
-        .padding(JunoSpace.regular)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "No sub-agents yet. Delegated work will appear here while it runs, then stay available as a report."

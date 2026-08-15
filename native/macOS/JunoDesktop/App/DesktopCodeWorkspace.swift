@@ -21,8 +21,8 @@ private enum DesktopCodeInspectorMetrics {
     // inspector's minimum to that field made the trailing pane open at 332pt
     // even though its content is readable at the design-system minimum.
     static let minimum = JunoInspectorMetrics.minimum
-    static let ideal: CGFloat = 348
-    static let maximum = JunoInspectorMetrics.maximum
+    static let ideal: CGFloat = 320
+    static let maximum: CGFloat = 380
 }
 
 /// The Code window: one layout owner, two columns, one optional trailing
@@ -241,10 +241,17 @@ struct DesktopCodeWorkspace: View {
                 newSession: { selection.wrappedValue = .repository($0) },
                 rename: beginRename
             )
+            .searchable(
+                text: sessionSearchText,
+                placement: .sidebar,
+                prompt: "Search sessions"
+            )
+            .searchFocused($sidebarSearchFocused)
             .junoSidebarColumn()
         } detail: {
             VStack(spacing: 0) {
                 editorCanvas
+                    .padding(.top, 52)
 
                 // The persistent shell terminal is a sibling of the reading
                 // canvas, so it can be resized or dismissed without changing
@@ -258,12 +265,6 @@ struct DesktopCodeWorkspace: View {
             .junoReadingCanvas()
             .navigationTitle("")
             .toolbar { detailToolbar }
-            .searchable(
-                text: sessionSearchText,
-                placement: .toolbar,
-                prompt: "Search sessions"
-            )
-            .searchFocused($sidebarSearchFocused)
         }
         // `.inspector` goes on the split view, **not** on the detail column.
         //
@@ -419,7 +420,16 @@ struct DesktopCodeWorkspace: View {
                     title: contextTitle,
                     subtitle: contextSubtitle,
                     status: currentStatus,
-                    showsPreview: previewTarget != nil
+                    showsPreview: previewTarget != nil,
+                    showsConsole: consoleVisible,
+                    showsReview: reviewVisible,
+                    canUseSessionTools: controller != nil,
+                    isRunning: isRunning,
+                    togglePreview: openPreview,
+                    toggleConsole: { consoleVisible.toggle() },
+                    toggleReview: { reviewVisible.toggle() },
+                    toggleInspector: { inspectorVisible.toggle() },
+                    stop: stop
                 )
                 Divider()
                     .overlay(Color.junoSeparator)
@@ -1101,156 +1111,42 @@ struct DesktopCodeWorkspace: View {
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up
         // sitting inside the navigation column.
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button(action: newSession) {
                 Label("New session", systemImage: "square.and.pencil")
             }
             .help("Start a new session in this repository (⌘N)")
             .accessibilityIdentifier("juno.code.new-session")
-        }
 
-        ToolbarSpacer(.fixed, placement: .primaryAction)
+            Menu {
+                Button { isChoosingRepository = true } label: {
+                    Label("Add Project…", systemImage: "folder.badge.plus")
+                }
+                .keyboardShortcut("o", modifiers: .command)
 
-        // The panes. All four are toggles, so all four carry a symbol that
-        // states which way the toggle currently sits — never a tint, because
-        // the bar has exactly one tinted control and it is Stop. A row of
-        // accent-filled toggles is four primary actions and therefore none.
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button { openPreview() } label: {
-                Label(
-                    previewTarget == nil ? "Preview" : "Hide preview",
-                    systemImage: previewTarget == nil
-                        ? "rectangle.on.rectangle"
-                        : "rectangle.on.rectangle.slash"
-                )
-                .symbolVariant(previewTarget == nil ? .none : .fill)
-            }
-            .keyboardShortcut("p", modifiers: [.command, .option])
-            .help(previewTarget == nil ? "Open the live workspace preview (⌥⌘P)" : "Hide the live workspace preview (⌥⌘P)")
-            .accessibilityIdentifier("juno.code.preview.primary")
-            .disabled(controller?.context == nil)
+                Button { isOpeningQuickly = true } label: {
+                    Label("Open Quickly…", systemImage: "magnifyingglass")
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(controller?.context == nil)
 
-            Button { consoleVisible.toggle() } label: {
-                Label(
-                    consoleVisible ? "Hide console" : "Show console",
-                    systemImage: "apple.terminal"
-                )
-                .symbolVariant(consoleVisible ? .fill : .none)
-            }
-            .keyboardShortcut("c", modifiers: [.command, .option])
-            .help(consoleVisible ? "Hide the console (⌥⌘C)" : "Show the console (⌥⌘C)")
-            .accessibilityIdentifier("juno.code.console.toggle")
-            .disabled(controller == nil)
+                Divider()
 
-            Button { reviewVisible.toggle() } label: {
-                Label(
-                    reviewVisible ? "Close review" : "Open review",
-                    systemImage: "plusminus.circle"
-                )
-                .symbolVariant(reviewVisible ? .fill : .none)
-            }
-            .keyboardShortcut("r", modifiers: [.command, .option])
-            .help(reviewVisible ? "Close the review pane (⌥⌘R)" : "Review this session's changes (⌥⌘R)")
-            .accessibilityIdentifier("juno.code.review.toggle")
-            .disabled(controller == nil)
-
-            Button { inspectorVisible.toggle() } label: {
-                Label(
-                    inspectorVisible ? "Hide Code panels" : "Show Code panels",
-                    systemImage: "sidebar.trailing"
-                )
-                .symbolVariant(inspectorVisible ? .fill : .none)
-            }
-            .keyboardShortcut("i", modifiers: [.command, .option])
-            .help(inspectorVisible ? "Hide the Code panels (⌥⌘I)" : "Show the Code panels (⌥⌘I)")
-            .accessibilityIdentifier("juno.code.inspector.toggle")
-        }
-
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItem(placement: .primaryAction) {
-            // Not `role: .destructive`.
-            //
-            // A destructive toolbar button is drawn in the system's red on macOS 26
-            // whether or not it is enabled, which put a permanently red control in
-            // the titlebar — a saturated blob sitting in empty space for the entire
-            // time nothing was running, reading as an error indicator rather than as
-            // a disabled action. Stop is also not destructive in the sense the role
-            // means: it ends a run, it does not discard the reader's work.
-            //
-            // The colour now says something true instead. Red only while there is a
-            // run to stop; otherwise the control keeps its place and greys out like
-            // any other unavailable action.
-            // `stop.circle`, not `stop.fill`.
-            //
-            // `stop.fill` is a solid square, and a solid square alone in a
-            // toolbar capsule is not a control — it is the "lone square in a
-            // grey box" the audit photographed, indistinguishable from a
-            // rendering failure. Every other mark in this window is a circle
-            // carrying a glyph, and Stop now joins that family.
-            //
-            // The colour is on the symbol rather than on `.tint`, which in a
-            // macOS 26 toolbar addresses a prominent button's *background* and
-            // therefore did nothing here: the control claimed to be red while a
-            // run was live and drew black. Red only while there is a run to
-            // stop; otherwise it greys out like any other unavailable action.
-            // Not `role: .destructive`, which draws red whether or not the
-            // control is enabled — a permanently saturated blob in empty
-            // titlebar reads as an error indicator, and Stop is not destructive
-            // in the sense the role means: it ends a run, it does not discard
-            // the reader's work.
-            Button(action: stop) {
-                Label("Stop", systemImage: "stop.circle")
-                    .foregroundStyle(
-                        isRunning ? Color.junoDanger : Color.junoMutedForeground
+                Button(action: toggleComputerUse) {
+                    Label(
+                        controller?.computerUseActive == true
+                            ? "Stop Screen Control" : "Start Screen Control",
+                        systemImage: controller?.computerUseActive == true
+                            ? "display.trianglebadge.exclamationmark"
+                            : "display"
                     )
+                }
+                .disabled(!supportsComputerUse)
+                .help(computerUseHelp)
+            } label: {
+                Label("More", systemImage: "ellipsis")
             }
-            .keyboardShortcut(".", modifiers: .command)
-            .disabled(!isRunning)
-            .help("Stop this run immediately (⌘.)")
-            .accessibilityIdentifier("juno.code.stop")
-        }
-
-        // The commands. `.secondaryAction` is the system's own overflow: macOS
-        // decides when the bar has room for these and folds them itself when it
-        // does not. That is the whole reason the hand-rolled `ellipsis.circle`
-        // is gone — an app that draws its own overflow chevron is guessing at a
-        // decision the window server can actually make.
-        ToolbarItemGroup(placement: .secondaryAction) {
-            Button { isChoosingRepository = true } label: {
-                Label("Add Project…", systemImage: "folder.badge.plus")
-            }
-            .keyboardShortcut("o", modifiers: .command)
-            .accessibilityIdentifier("juno.code.add-project")
-
-            // `OpenQuicklySheet` is a complete file browser that had zero call
-            // sites: nothing in the app or the package ever presented it, so
-            // the documented way to open a workspace file by name did not exist
-            // in the shipping product. ⌘⇧O because plain ⌘O is already
-            // "Add project…".
-            Button { isOpeningQuickly = true } label: {
-                Label("Open Quickly…", systemImage: "magnifyingglass")
-            }
-            .keyboardShortcut("o", modifiers: [.command, .shift])
-            .disabled(controller?.context == nil)
-            .accessibilityIdentifier("juno.code.open-quickly")
-
-            Button(action: toggleComputerUse) {
-                Label(
-                    controller?.computerUseActive == true
-                        ? "Stop Screen Control" : "Start Screen Control",
-                    systemImage: controller?.computerUseActive == true
-                        ? "display.trianglebadge.exclamationmark"
-                        : "display"
-                )
-            }
-            .disabled(!supportsComputerUse)
-            // The reason, not just the dimming: the commonest one is "this model
-            // can't see a screenshot", which is fixed by the model selector two
-            // controls away, and a disabled control that will not say why reads
-            // as broken rather than as unavailable.
-            .help(computerUseHelp)
-            .accessibilityIdentifier("juno.code.computer-use")
+            .accessibilityIdentifier("juno.code.more")
         }
     }
 
@@ -2124,6 +2020,15 @@ private struct DesktopCodeContextStrip: View {
     let subtitle: String
     let status: CodeRunStatus?
     let showsPreview: Bool
+    let showsConsole: Bool
+    let showsReview: Bool
+    let canUseSessionTools: Bool
+    let isRunning: Bool
+    let togglePreview: () -> Void
+    let toggleConsole: () -> Void
+    let toggleReview: () -> Void
+    let toggleInspector: () -> Void
+    let stop: () -> Void
 
     var body: some View {
         // `CodePageHeader` owns the strip's anatomy — the mark, the 52pt, the
@@ -2157,6 +2062,59 @@ private struct DesktopCodeContextStrip: View {
                 .help(status.state.meaning)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Status: \(status.label)")
+            }
+
+            Button(action: toggleReview) {
+                Label(
+                    showsReview ? "Conversation" : "Review",
+                    systemImage: showsReview ? "bubble.left" : "plusminus.circle"
+                )
+                .contentShape(.rect)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canUseSessionTools)
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            .accessibilityIdentifier("juno.code.review.toggle")
+
+            Menu {
+                Button(action: togglePreview) {
+                    Label(
+                        showsPreview ? "Hide Preview" : "Open Preview",
+                        systemImage: "rectangle.on.rectangle"
+                    )
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+
+                Button(action: toggleConsole) {
+                    Label(
+                        showsConsole ? "Hide Terminal" : "Show Terminal",
+                        systemImage: "apple.terminal"
+                    )
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+
+                Button(action: toggleInspector) {
+                    Label("Inspect Session", systemImage: "sidebar.trailing")
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+            } label: {
+                Label("Session tools", systemImage: "ellipsis")
+                    .contentShape(.rect)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(!canUseSessionTools)
+            .accessibilityIdentifier("juno.code.session-tools")
+
+            if isRunning {
+                Button(action: stop) {
+                    Label("Stop", systemImage: "stop.circle")
+                        .foregroundStyle(Color.junoDanger)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.bordered)
+                .keyboardShortcut(".", modifiers: .command)
+                .accessibilityIdentifier("juno.code.stop")
             }
         }
         .accessibilityIdentifier("juno.code.context-strip")
