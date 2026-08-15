@@ -152,15 +152,7 @@ struct DesktopChatWorkSwitcher: View {
 enum DesktopSidebarChromeMetrics {
     /// The band the window's own chrome owns above the *sidebar*: the traffic
     /// lights, and nothing else.
-    ///
-    /// 52 at first, which was the toolbar's height — and wrong, because the
-    /// toolbar is over the *detail* column. Above the navigation column the only
-    /// thing to clear is the three buttons, whose 12pt circles are centred about
-    /// 20pt down, so they end by 26. 38 leaves a dozen points of air over them
-    /// and no more; at 52 the switch sat a control's height below the lights it
-    /// was supposed to sit beside, which is what a reader reads as the column
-    /// starting late.
-    static let trafficLightClearance: CGFloat = 38
+    static let trafficLightClearance: CGFloat = 14
 
     /// The lockup row that gives the navigation column a stable product identity.
     /// The mark is intentionally a little larger than a row icon: it is the
@@ -170,11 +162,6 @@ enum DesktopSidebarChromeMetrics {
     /// The switch's own row: ``DesktopSegmented``'s 28pt segment, the 2pt its
     /// track adds on each side, and the gap to the brand lockup.
     static let productSwitcherRow: CGFloat = 28 + 4 + JunoSpace.snug
-
-    /// One restrained header for all three products. Keeping this geometry in
-    /// one place prevents Chat, Code and Work from looking like separate apps.
-    static let titlebarClearance: CGFloat =
-        trafficLightClearance + brandRow + JunoSpace.snug + productSwitcherRow + JunoSpace.snug
 }
 
 extension View {
@@ -235,11 +222,8 @@ struct DesktopSidebarProductHeader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, JunoSpace.cozy)
+        .padding(.top, DesktopSidebarChromeMetrics.trafficLightClearance)
         .padding(.bottom, JunoSpace.snug)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(
-            height: DesktopSidebarChromeMetrics.titlebarClearance,
-            alignment: .bottom
-        )
     }
 }
