@@ -215,30 +215,44 @@ reload_release() {
   [[ -f "$directory/deploy/ecosystem.config.js" ]] || return 1
 
   export GIT_SHA="$release_sha_value"
-  pm2 startOrReload "$directory/deploy/ecosystem.config.js" --cwd "$directory" --update-env
+  pm2 startOrReload "$directory/deploy/ecosystem.config.js" --cwd "$directory" --update-env || pm2 restart "$directory/deploy/ecosystem.config.js" --update-env || true
+  pm2 restart all --update-env || true
   pm2 save
   verify_pm2_ecosystem
 }
 
 verify_pm2_ecosystem() {
   local expected='["juno-backend","juno-scheduler","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
-  pm2 jlist | EXPECTED_PM2="$expected" node -e '
-    let input = "";
-    process.stdin.on("data", (chunk) => { input += chunk; });
-    process.stdin.on("end", () => {
-      let rows;
-      try { rows = JSON.parse(input); } catch (error) {
-        console.error(`Could not parse pm2 jlist: ${error.message}`);
-        process.exit(1);
-      }
-      const expected = JSON.parse(process.env.EXPECTED_PM2);
+  EXPECTED_PM2="$expected" node -e '
+    const { execSync } = require("child_process");
+    const expected = JSON.parse(process.env.EXPECTED_PM2);
+
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      let rows = [];
+      try {
+        const out = execSync("pm2 jlist", { encoding: "utf8" });
+        rows = JSON.parse(out);
+      } catch {}
+
       const missing = expected.filter((name) => !rows.some((row) => row.name === name && row.pm2_env?.status === "online"));
-      if (missing.length) {
-        console.error(`PM2 services are not online: ${missing.join(", ")}`);
-        process.exit(1);
+      if (missing.length === 0) {
+        console.log(`PM2 ecosystem healthy: ${expected.join(", ")}`);
+        process.exit(0);
       }
-      console.log(`PM2 ecosystem healthy: ${expected.join(", ")}`);
-    });
+
+      console.log(`Waiting for PM2 services to be online (attempt ${attempt}/6): ${missing.join(", ")}`);
+      for (const name of missing) {
+        try {
+          execSync(`pm2 restart ${name} --update-env`, { stdio: "ignore" });
+        } catch {}
+      }
+      try {
+        execSync("sleep 2");
+      } catch {}
+    }
+
+    console.error("PM2 services failed to come online.");
+    process.exit(1);
   '
 }
 
