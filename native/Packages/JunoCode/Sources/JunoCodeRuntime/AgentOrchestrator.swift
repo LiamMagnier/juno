@@ -333,6 +333,9 @@ public actor AgentOrchestrator {
                         // persist one bounded, readable summary instead of one
                         // transcript event per delta.
                         turnReasoningSummary += summary
+                        if turnText.isEmpty {
+                            emitLiveText(turnReasoningSummary)
+                        }
                     case let .toolCallRequested(id, name, input):
                         toolCalls.append((id, name, input))
                     case let .usage(inputTokens, outputTokens):

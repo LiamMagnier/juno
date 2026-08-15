@@ -1216,12 +1216,35 @@ struct OpenAIChatStreamDecoder {
         if let delta = choice["delta"] {
             if let text = delta["content"]?.stringValue, !text.isEmpty {
                 events.append(.textDelta(text))
+            } else if let parts = delta["content"]?.arrayValue {
+                for part in parts {
+                    let type = part["type"]?.stringValue ?? ""
+                    if type == "text", let text = part["text"]?.stringValue, !text.isEmpty {
+                        events.append(.textDelta(text))
+                    } else if (type == "thinking" || type == "reasoning"),
+                              let text = (part["thinking"]?.stringValue ?? part["text"]?.stringValue),
+                              !text.isEmpty {
+                        events.append(.reasoningSummary(text))
+                    }
+                }
             }
-            if let reasoning = delta["reasoning_content"]?.stringValue,
-               !reasoning.isEmpty
-            {
+
+            if let reasoning = delta["reasoning_content"]?.stringValue, !reasoning.isEmpty {
                 events.append(.reasoningSummary(reasoning))
+            } else if let reasoning = delta["reasoning"]?.stringValue, !reasoning.isEmpty {
+                events.append(.reasoningSummary(reasoning))
+            } else if let thought = delta["thought"]?.stringValue, !thought.isEmpty {
+                events.append(.reasoningSummary(thought))
+            } else if let thinking = delta["thinking"]?.stringValue, !thinking.isEmpty {
+                events.append(.reasoningSummary(thinking))
+            } else if let details = delta["reasoning_details"]?.arrayValue {
+                for detail in details {
+                    if let text = detail["text"]?.stringValue, !text.isEmpty {
+                        events.append(.reasoningSummary(text))
+                    }
+                }
             }
+
             for call in delta["tool_calls"]?.arrayValue ?? [] {
                 guard let index = call["index"]?.intValue else { continue }
                 var block = toolBlocks[index] ?? ToolBlock()
