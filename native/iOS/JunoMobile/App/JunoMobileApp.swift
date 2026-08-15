@@ -23,6 +23,7 @@ struct JunoMobileApp: App {
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    @State private var memoryLearningModel: MemoryLearningModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     @State private var connectorModel: NativeConnectorModel?
     @State private var scheduledTaskModel: NativeScheduledTaskModel?
@@ -56,6 +57,7 @@ struct JunoMobileApp: App {
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
+        _memoryLearningModel = State(initialValue: configuration.memoryLearningModel)
         _searchModel = State(initialValue: configuration.searchModel)
         _connectorModel = State(initialValue: configuration.connectorModel)
         _scheduledTaskModel = State(initialValue: configuration.scheduledTaskModel)
@@ -117,6 +119,7 @@ struct JunoMobileApp: App {
             projectModel: projectModel,
             artifactModel: artifactModel,
             memorySettingsModel: memorySettingsModel,
+            memoryLearningModel: memoryLearningModel,
             searchModel: searchModel,
             privateChatModel: privateChatModel,
             generateClient: generateClient,
@@ -197,6 +200,18 @@ struct JunoMobileApp: App {
                 outbox: outbox,
                 sender: runtime
             )
+            // Hoisted out of the initializer below because the learning model is
+            // built over it. A second `NativeMemorySettingsModel` would be a
+            // second opinion about whether memory is switched on, and that flag is
+            // the consent gate the extractor reads before it may run at all.
+            let memorySettingsModel = NativeMemorySettingsModel(
+                repository: localStore,
+                outbox: outbox,
+                drainer: drainer,
+                syncModel: syncModel,
+                sender: runtime
+            )
+
             return JunoMobileConfiguration(
                 authModel: authModel,
                 localStore: localStore,
@@ -231,13 +246,8 @@ struct JunoMobileApp: App {
                     syncModel: syncModel,
                     sender: runtime
                 ),
-                memorySettingsModel: NativeMemorySettingsModel(
-                    repository: localStore,
-                    outbox: outbox,
-                    drainer: drainer,
-                    syncModel: syncModel,
-                    sender: runtime
-                ),
+                memorySettingsModel: memorySettingsModel,
+                memoryLearningModel: MemoryLearningModel(settings: memorySettingsModel),
                 searchModel: NativeSearchModel(repository: localStore),
                 // Its own client instance, and its own model: an incognito chat
                 // shares no state with the persisted one by construction.
@@ -329,6 +339,16 @@ private struct JunoMobileConfiguration {
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    /// Runs ``MemoryExtractionEngine`` after a finished turn and holds what it
+    /// proposed until the reader answers.
+    ///
+    /// Built over `memorySettingsModel` rather than beside it, because an accepted
+    /// proposal is written by that model's `createMemory` and by nothing else —
+    /// one write path, one place to delete from.
+    ///
+    /// Defaulted, and therefore a `var` among lets, so the failed-launch
+    /// configuration below does not have to name a model it cannot build.
+    var memoryLearningModel: MemoryLearningModel<SQLiteAccountRepository>? = nil
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let privateChatModel: NativePrivateChatModel?
     /// `/api/generate`, for editing an image the account already has. The same

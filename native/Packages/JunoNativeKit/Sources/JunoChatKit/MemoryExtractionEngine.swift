@@ -689,6 +689,167 @@ public enum MemoryInjection {
     }
 }
 
+// MARK: - Running the engine against a live account
+
+/// The pass, the proposals it produced, and the single write path that can turn
+/// one into a memory.
+///
+/// ``MemoryExtractionEngine`` is pure and ``NativeMemorySettingsModel`` already
+/// owns every write; what did not exist was anything that *ran* the engine. This
+/// is that missing piece and nothing else — it holds no memories of its own, it
+/// reads consent from the settings model rather than caching a copy, and the only
+/// way a candidate becomes durable is ``accept(_:)``, which calls
+/// `NativeMemorySettingsModel.createMemory`. One write path, one audit trail, one
+/// place the reader can delete from.
+///
+/// **Consent is re-read on every pass, and unknown is not consent.** The engine's
+/// `memoryEnabled` parameter is `Bool?` precisely so that "the settings record has
+/// not loaded" is distinguishable from "the reader switched it off", and this
+/// forwards `settings.settings?.memoryEnabled` untouched rather than defaulting it.
+/// A `?? false` here would silently stop learning for an account whose settings
+/// are merely in flight; a `?? true` would learn from someone who had said no. The
+/// optional is the whole point and it is passed through, not collapsed.
+@MainActor
+@Observable
+public final class MemoryLearningModel<Repository: AccountScopedRepository> {
+    /// Candidates waiting for the reader's decision, newest pass last.
+    ///
+    /// Not persisted. A proposal is a question, not a record, and a question that
+    /// survived a relaunch would be Juno holding on to something it was told not
+    /// to store yet. Anything still here when the app quits is simply asked again
+    /// the next time the conversation is read.
+    public private(set) var proposals: [MemoryCandidate] = []
+
+    /// Why the last pass ended as it did.
+    ///
+    /// Kept so a diagnostics surface can answer the only question anyone ever asks
+    /// about memory — *why did it not remember that* — with "memory is off" or
+    /// "read too recently" rather than with silence.
+    public private(set) var lastOutcome: MemoryExtractionOutcome?
+
+    /// Set while ``accept(_:)`` is writing, so a double-click cannot enqueue the
+    /// same memory twice.
+    public private(set) var isAccepting = false
+
+    /// Past this the review list stops being reviewable. Older proposals are
+    /// dropped rather than newer ones rejected: what the reader said most recently
+    /// is what they are most likely to recognise.
+    public static var maximumPendingProposals: Int { 12 }
+
+    private let settings: NativeMemorySettingsModel<Repository>
+    private let engine: MemoryExtractionEngine
+
+    /// Content the reader has explicitly discarded this session.
+    ///
+    /// Fed back into the pass as though it were already stored, which is what
+    /// stops "no, don't remember that" from being asked again sixty seconds later.
+    /// Session-scoped on purpose: this is a list of things the reader declined, and
+    /// persisting it would build a second, invisible corpus of exactly the
+    /// sentences they asked Juno not to keep.
+    private var declined: [String] = []
+
+    public init(
+        settings: NativeMemorySettingsModel<Repository>,
+        engine: MemoryExtractionEngine = MemoryExtractionEngine()
+    ) {
+        self.settings = settings
+        self.engine = engine
+    }
+
+    /// Runs one pass over a conversation whose turn has just finalized.
+    ///
+    /// - Parameters:
+    ///   - conversationID: Carried into every candidate as its source reference.
+    ///   - turns: **The reader's own turns only.** Callers must not pass the
+    ///     model's. ``HeuristicMemoryExtractor`` filters them out as well, but the
+    ///     protocol allows a future extractor that would not — and a model's guess
+    ///     promoted into a stored fact is the failure that makes people distrust
+    ///     the whole feature. Filtering at both ends costs nothing.
+    ///   - isExcluded: Incognito, or a project whose whitelist withholds
+    ///     ``ProjectWorkspaceTool/memoryRecall``.
+    public func observe(
+        conversationID: String,
+        turns: [MemoryExtractionTurn],
+        isExcluded: Bool = false
+    ) async {
+        let outcome = await engine.pass(
+            turns: turns.filter { $0.role == .user },
+            conversationID: conversationID,
+            // Straight through. See the note on this type about why it is optional.
+            memoryEnabled: settings.settings?.memoryEnabled,
+            existingMemories: settings.memories.map(\.content)
+                + proposals.map(\.content)
+                + declined,
+            isExcluded: isExcluded
+        )
+        lastOutcome = outcome
+        guard case .proposed(let candidates) = outcome else { return }
+        proposals.append(contentsOf: candidates)
+        if proposals.count > Self.maximumPendingProposals {
+            proposals.removeFirst(proposals.count - Self.maximumPendingProposals)
+        }
+    }
+
+    /// Stores a proposal, by exactly the route a hand-typed memory takes.
+    public func accept(_ candidate: MemoryCandidate) async {
+        guard !isAccepting else { return }
+        isAccepting = true
+        defer { isAccepting = false }
+        // Dropped from the list first. `createMemory` awaits a drain, and a
+        // proposal still on screen during it is a Keep button the reader can press
+        // again.
+        remove(candidate)
+        await settings.createMemory(content: Self.storableContent(of: candidate))
+    }
+
+    /// Drops a proposal and remembers that it was dropped, for this session.
+    public func decline(_ candidate: MemoryCandidate) {
+        remove(candidate)
+        declined.append(candidate.content)
+    }
+
+    /// Lets a conversation be re-read before the throttle would allow it —
+    /// after the reader deletes a memory, when the next pass should be free to
+    /// find it again rather than being told it is too soon.
+    public func forgetThrottle(conversationID: String) async {
+        await engine.forgetThrottle(conversationID: conversationID)
+    }
+
+    /// Sign-out, and account switches. Everything here is about one account and
+    /// none of it is durable, so all of it goes.
+    public func stop() async {
+        proposals = []
+        declined = []
+        lastOutcome = nil
+        await engine.reset()
+    }
+
+    private func remove(_ candidate: MemoryCandidate) {
+        proposals.removeAll { $0.id == candidate.id }
+    }
+
+    /// The text a candidate is stored as.
+    ///
+    /// A ``NativeMemoryKind/suppression`` is deliberately stored *without* its
+    /// polarity word so ``MemoryInjection`` can render "Avoid: …" without a double
+    /// negative — but `createMemory` files everything as a
+    /// ``NativeMemoryKind/fact``, because `/api/v1`'s `memory.create` has no kind
+    /// field. Storing the bare remainder would therefore invert the instruction:
+    /// "don't use em dashes" would come back as the fact "use em dashes", which is
+    /// the reader's prohibition turned into its own opposite. The polarity is put
+    /// back into the text, which is the only place this route can carry it.
+    /// `nonisolated` because it is a pure rewrite of one string and nothing about
+    /// it belongs to the main actor. Isolating it would make the rule assertable
+    /// only from an async main-actor context, which is a needless obstacle in
+    /// front of the one place this behaviour is pinned down.
+    nonisolated static func storableContent(of candidate: MemoryCandidate) -> String {
+        switch candidate.kind {
+        case .suppression: "Never: \(candidate.content)"
+        case .fact: candidate.content
+        }
+    }
+}
+
 // MARK: - Composing a persona's system prompt
 
 /// Everything the model is told before the conversation starts, assembled once.

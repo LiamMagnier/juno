@@ -30,6 +30,13 @@ struct JunoMobileRootView: View {
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    /// Runs ``MemoryExtractionEngine`` when a turn finishes, and holds what it
+    /// proposed until Settings › Memory is opened and the reader answers.
+    ///
+    /// Optional and `var`-defaulted so the DEBUG preview harness — which composes
+    /// this view with eleven of its thirty inputs — keeps compiling. A nil model
+    /// means nothing is learned, which is a real and safe state.
+    var memoryLearningModel: MemoryLearningModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     /// The in-memory incognito session. Nil when the app could not be configured.
     var privateChatModel: NativePrivateChatModel?
@@ -203,6 +210,10 @@ struct JunoMobileRootView: View {
             if previewSession != nil { return }
             #endif
             if case .signedIn(let session) = phase {
+                // Attached before anything can be sent. Nothing in this client
+                // used to look at a finished conversation at all, which is why
+                // `MemoryExtractionEngine` had no caller — this is the seam.
+                connectMemoryLearning()
                 syncModel?.start(for: session.profile.id)
                 Task { await conversationModel?.start(for: session.profile.id) }
                 Task { await projectModel?.start(for: session.profile.id) }
@@ -230,6 +241,13 @@ struct JunoMobileRootView: View {
                 projectModel?.stop()
                 artifactModel?.stop()
                 memorySettingsModel?.stop()
+                // Proposals are held in memory and belong to one account. Leaving
+                // them would show whoever signs in next what the previous reader
+                // had been asked about — and the whole promise of a proposal is
+                // that it was never stored.
+                if let memoryLearningModel {
+                    Task { await memoryLearningModel.stop() }
+                }
                 searchModel?.stop()
                 // Signing out must not leave an incognito transcript in memory.
                 privateChatModel?.stop()
@@ -437,6 +455,7 @@ struct JunoMobileRootView: View {
                 if let memorySettingsModel {
                     JunoMobileSettingsView(
                         model: memorySettingsModel,
+                        learningModel: memoryLearningModel,
                         conversationModel: conversationModel,
                         authModel: authModel,
                         session: currentSession,
@@ -854,6 +873,7 @@ struct JunoMobileRootView: View {
             if let memorySettingsModel {
                 JunoMobileSettingsView(
                     model: memorySettingsModel,
+                    learningModel: memoryLearningModel,
                     conversationModel: conversationModel,
                     authModel: authModel,
                     session: currentSession,
@@ -864,6 +884,33 @@ struct JunoMobileRootView: View {
                     requestSender: requestSender
                 )
             } else { unavailable }
+        }
+    }
+
+    /// Points the chat model's post-turn hook at the extraction engine.
+    ///
+    /// **Incognito needs no exclusion here and gets none by construction.** A
+    /// private chat runs on ``NativePrivateChatModel``, which shares no state with
+    /// the persisted one and never appends to `conversationModel` — so its turns
+    /// cannot reach this hook at all. An `isExcluded` flag would be a second,
+    /// weaker guarantee sitting on top of a structural one, and the weaker one is
+    /// what a future refactor would preserve.
+    ///
+    /// `turn.mayLearn` is always true on the phone today: it reports a project's
+    /// tool whitelist, and those are stored on the Mac that made them — there is
+    /// no `/api/v1` route to bring one here. Honouring the flag anyway is what
+    /// makes this correct on the day there is.
+    private func connectMemoryLearning() {
+        guard let conversationModel, let memoryLearningModel else { return }
+        conversationModel.didFinishTurn = { [weak memoryLearningModel] turn in
+            guard let memoryLearningModel else { return }
+            Task {
+                await memoryLearningModel.observe(
+                    conversationID: turn.conversationID,
+                    turns: turn.userTurns,
+                    isExcluded: !turn.mayLearn
+                )
+            }
         }
     }
 

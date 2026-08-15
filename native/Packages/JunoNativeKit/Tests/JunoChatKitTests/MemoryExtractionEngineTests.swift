@@ -339,6 +339,53 @@ final class MemoryExtractionEngineTests: XCTestCase {
     }
 }
 
+// MARK: - Storing what the engine proposed
+
+/// The one lossy step between a candidate and a stored memory, asserted so it
+/// cannot regress silently.
+final class MemoryLearningStorageTests: XCTestCase {
+
+    /// A prohibition must not come back as the fact it prohibits.
+    ///
+    /// ``HeuristicMemoryExtractor`` deliberately strips the polarity word — the
+    /// ``NativeMemoryKind/suppression`` kind carries it, so ``MemoryInjection`` can
+    /// render "Avoid: use em dashes" without a double negative. But
+    /// `NativeMemorySettingsModel.createMemory` files everything as a
+    /// ``NativeMemoryKind/fact``, because `memory.create` has no kind field. Store
+    /// the bare remainder and "don't use em dashes" is saved as the instruction
+    /// *to* use em dashes: the reader's prohibition, inverted, in a list they were
+    /// told is theirs.
+    func testAProhibitionKeepsItsPolarityWhenStoredAsAFact() {
+        let candidate = MemoryCandidate(
+            content: "use em dashes",
+            kind: .suppression,
+            rationale: .statedProhibition,
+            conversationID: "conversation-a"
+        )
+
+        XCTAssertEqual(
+            MemoryLearningModel<InMemoryTransactionalStore>.storableContent(of: candidate),
+            "Never: use em dashes"
+        )
+    }
+
+    /// An ordinary fact is stored verbatim. The rewrite above must not leak into
+    /// everything else and start prefixing preferences with a negation.
+    func testAFactIsStoredExactlyAsProposed() {
+        let candidate = MemoryCandidate(
+            content: "prefers dark roast coffee",
+            kind: .fact,
+            rationale: .statedPreference,
+            conversationID: "conversation-a"
+        )
+
+        XCTAssertEqual(
+            MemoryLearningModel<InMemoryTransactionalStore>.storableContent(of: candidate),
+            "prefers dark roast coffee"
+        )
+    }
+}
+
 // MARK: - Injection
 
 final class MemoryInjectionTests: XCTestCase {

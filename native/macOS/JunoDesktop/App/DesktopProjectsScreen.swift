@@ -995,6 +995,15 @@ private struct DesktopProjectRow: Identifiable {
 private enum DesktopProjectTab: String, CaseIterable, Identifiable {
     case overview
     case workspace
+    /// The **local** half of the project: persona, tool whitelist, knowledge
+    /// selection, preferred model.
+    ///
+    /// Its own section rather than a third column on Workspace, because
+    /// everything on Workspace round-trips to `/api/v1` and nothing here does.
+    /// Mixing a synced instructions editor with a device-local tool whitelist in
+    /// one card is how a reader comes to believe the whitelist follows them to
+    /// their phone. See ``ProjectWorkspaceStore``.
+    case assistant
 
     var id: Self { self }
     var label: String { rawValue.capitalized }
@@ -1047,10 +1056,10 @@ private struct DesktopProjectDetail: View {
                 backControl
                 header
                 sectionPicker
-                if tab == .overview {
-                    overview
-                } else {
-                    workspace
+                switch tab {
+                case .overview: overview
+                case .workspace: workspace
+                case .assistant: assistant
                 }
             }
             // Width only. The column count changes this page's height, never its
@@ -1145,9 +1154,52 @@ private struct DesktopProjectDetail: View {
             )
             .junoCodeSmall()
             .junoSecondaryInk()
+
+            assistantSummaryLine
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Project detail header")
+    }
+
+    /// This project's local assistant setup, when one has been made.
+    ///
+    /// Resolved through the model on every read rather than copied into state:
+    /// the Assistant tab writes to the same object, and a cached copy here is how
+    /// a header comes to advertise a persona the reader renamed a moment ago.
+    private var assistantConfiguration: ProjectWorkspaceConfiguration? {
+        configuration.projectWorkspaceModel?.workspaces[project.id]
+    }
+
+    /// Says out loud that this project answers as something other than itself,
+    /// and that its assistant is restricted.
+    ///
+    /// In the header rather than only inside the Assistant tab because a
+    /// whitelist the reader has to go looking for is one they forget they set —
+    /// and "why did Juno not search the web in here" is the support question that
+    /// follows.
+    @ViewBuilder
+    private var assistantSummaryLine: some View {
+        if let assistantConfiguration {
+            let persona = assistantConfiguration.personaName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts: [String] = [
+                persona.flatMap { $0.isEmpty ? nil : "Answers as “\($0)”" },
+                assistantConfiguration.toolAccess.isRestricted ? "Restricted tools" : nil,
+                DesktopAssistantCopy.knowledgeCount(
+                    assistantConfiguration.knowledgeFileIDs.count
+                ),
+            ].compactMap { $0 }
+            if !parts.isEmpty {
+                // `verbatim:` because these are already-composed strings. Without
+                // it SwiftUI reads them as localization keys and a persona named
+                // with a `%` or a bracket would be rendered as a format
+                // specifier — a project name is arbitrary text, not a key.
+                Text(verbatim: parts.joined(separator: " · "))
+                    .junoCodeSmall()
+                    .junoSecondaryInk()
+                    .accessibilityIdentifier("Project assistant summary")
+            }
+        }
     }
 
     private var pinControl: some View {
@@ -1429,6 +1481,38 @@ private struct DesktopProjectDetail: View {
         .padding(JunoSpace.regular)
     }
 
+    // MARK: Assistant
+
+    /// The custom-assistant surface, or an honest explanation of why it is not
+    /// there.
+    ///
+    /// Absent rather than disabled when the store could not be opened: a page of
+    /// greyed-out switches invites the reader to work out what is wrong, while a
+    /// sentence tells them.
+    @ViewBuilder
+    private var assistant: some View {
+        if let workspaceModel = configuration.projectWorkspaceModel {
+            DesktopProjectAssistantPanel(
+                project: project,
+                files: files,
+                workspaceModel: workspaceModel,
+                // Chat models only. An assistant's preferred model is the one a
+                // conversation opens on, and an image model cannot hold one.
+                modelCatalog: conversationModel.selectableModels.filter {
+                    $0.modality == "chat"
+                },
+                memories: configuration.memorySettingsModel?.memories ?? [],
+                isWide: isWide
+            )
+        } else {
+            DesktopProjectPlaceholder(
+                title: "Assistant setup is unavailable",
+                message: "Juno could not open this Mac's local store, so a persona and tool whitelist cannot be saved here.",
+                symbol: "exclamationmark.triangle"
+            )
+        }
+    }
+
     // MARK: Workspace
 
     private var workspace: some View {
@@ -1665,6 +1749,520 @@ private struct DesktopProjectPlaceholder: View {
                 )
         )
         .contentShape(.rect)
+    }
+}
+
+// MARK: - Assistant
+
+/// Wording shared by the two surfaces that describe a custom assistant, so the
+/// header's summary and the panel's own labels cannot drift into saying different
+/// things about the same configuration.
+private enum DesktopAssistantCopy {
+    /// Nil at zero. "0 knowledge files" in a summary line is a fact nobody needs,
+    /// and it makes an unconfigured project look configured.
+    static func knowledgeCount(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return count == 1 ? "1 knowledge file" : "\(count) knowledge files"
+    }
+
+    /// What withholding a tool actually does on this device.
+    ///
+    /// Written per tool rather than as one blanket sentence because the vetoes are
+    /// genuinely different mechanisms, and a reader deciding whether to trust a
+    /// switch deserves to know which one they are getting. Canvas in particular is
+    /// inverted — the server's default is *on*, so denying it means sending an
+    /// explicit `false` rather than sending nothing.
+    static func enforcement(of tool: ProjectWorkspaceTool) -> String {
+        switch tool {
+        case .webSearch:
+            "Turns in this project are sent without the web-search flag."
+        case .deepResearch:
+            "The research pipeline is never requested from this project."
+        case .canvas:
+            "Sent as an explicit “off”, because the server turns canvas on by default."
+        case .mediaGeneration:
+            "Sending to an image or video model from this project is refused."
+        case .connectors:
+            "No connected app is offered to a turn in this project."
+        case .memoryRecall:
+            "Juno is not told what it remembers about you here — and learns nothing new from these chats."
+        }
+    }
+}
+
+/// One project's **custom assistant**: the persona, the tool whitelist, which of
+/// its files count as knowledge, and which model it prefers.
+///
+/// Everything on this panel is stored by ``ProjectWorkspaceStore`` on this Mac
+/// only, and the panel says so rather than implying otherwise by sitting next to
+/// controls that sync. The alternative the store's own notes reject — folding a
+/// whitelist into the project's synced `instructions` as prose — is not offered
+/// here either: prose is not a gate, and a tool restriction the model can decline
+/// to honour is worse than none, because the reader believes it.
+private struct DesktopProjectAssistantPanel: View {
+    let project: NativeProject
+    let files: [NativeProjectFile]
+    let workspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>
+    let modelCatalog: [NativeChatModelOption]
+    /// Read only to render the prompt preview honestly. Nothing here writes a
+    /// memory; that is ``NativeMemorySettingsModel``'s job and its alone.
+    let memories: [NativeMemoryEntry]
+    let isWide: Bool
+
+    /// The two free-text fields are drafts with explicit saves rather than
+    /// write-on-keystroke bindings. A persona name is committed once; enqueuing a
+    /// compare-and-set write per character would race its own retries and make
+    /// every keystroke a chance to lose the edit next door.
+    @State private var personaDraft = ""
+    @State private var instructionsDraft = ""
+    @State private var overridesInstructions = false
+
+    private var workspace: ProjectWorkspaceConfiguration? {
+        workspaceModel.workspaces[project.id]
+    }
+
+    var body: some View {
+        let layout = isWide
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: JunoSpace.section))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: JunoSpace.section))
+        return VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            localOnlyNotice
+            layout {
+                VStack(alignment: .leading, spacing: JunoSpace.section) {
+                    personaCard
+                    toolsCard
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: JunoSpace.section) {
+                    knowledgeCard
+                    promptCard
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let error = workspaceModel.lastErrorDescription {
+                Text(error)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoDanger)
+                    .textSelection(.enabled)
+            }
+        }
+        // Keyed on the project, not on the workspace record: re-seeding the drafts
+        // every time the record changed would wipe a half-typed persona name the
+        // moment the save it is racing lands.
+        .task(id: project.id) { seedDrafts() }
+        .accessibilityIdentifier("Project assistant")
+    }
+
+    // MARK: Local-only
+
+    /// The one claim this panel must never leave implicit.
+    ///
+    /// `/api/v1` has no column for a tool whitelist, a persona or a knowledge
+    /// selection, so none of it syncs. Saying it once, at the top, is the
+    /// difference between a documented limitation and a reader discovering on
+    /// their phone that the assistant they built does not exist.
+    private var localOnlyNotice: some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Image(systemName: "laptopcomputer")
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
+            Text("Saved on this Mac only. The project's name, instructions and files sync to your other devices; this assistant's persona, tools and knowledge selection do not — Juno's backend has nowhere to put them yet.")
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.cozy)
+        .junoPanel(cornerRadius: JunoRadius.chip)
+        .accessibilityIdentifier("Assistant local only")
+    }
+
+    // MARK: Persona
+
+    private var personaCard: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            cardHeading("Persona", "Who this project answers as")
+
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.snug) {
+                    // The placeholder is the project's own name, which is what an
+                    // empty field means. Clearing the field is therefore a real
+                    // instruction — "go back to the project name" — rather than a
+                    // persona called nothing.
+                    TextField(project.name, text: $personaDraft)
+                        .onSubmit(savePersonaName)
+                        .accessibilityLabel("Assistant name")
+                        .accessibilityIdentifier("Assistant name")
+                    Button("Save", action: savePersonaName)
+                        .disabled(!personaNameChanged || workspaceModel.isSaving)
+                }
+                Text("Leave empty to use the project's own name.")
+                    .junoCaption()
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Picker("Preferred model", selection: preferredModelBinding) {
+                    Text("Account default").tag(String?.none)
+                    ForEach(modelCatalog) { option in
+                        Text(option.displayName).tag(String?.some(option.id))
+                    }
+                }
+                .accessibilityIdentifier("Assistant preferred model")
+                Text("Recorded for this assistant on this Mac. Chat's own model picker still chooses the model for each turn — there is no backend field for an assistant's model to be sent in.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Toggle("Replace the project's instructions", isOn: overrideBinding)
+                    .accessibilityIdentifier("Assistant overrides instructions")
+                if overridesInstructions {
+                    TextEditor(text: $instructionsDraft)
+                        .junoMono()
+                        .scrollContentBackground(.hidden)
+                        .padding(JunoSpace.snug)
+                        .frame(minHeight: 120)
+                        .junoPanel(cornerRadius: JunoRadius.chip)
+                        .accessibilityLabel("Assistant instructions")
+                        .accessibilityIdentifier("Assistant instructions")
+                    HStack {
+                        Text("\(instructionsDraft.count) characters")
+                            .junoCaption()
+                            .monospacedDigit()
+                        Spacer(minLength: JunoSpace.snug)
+                        Button("Save instructions", action: saveInstructions)
+                            .disabled(!instructionsChanged || workspaceModel.isSaving)
+                    }
+                    // Empty is a real override and not the same as switching this
+                    // off: it says "this assistant has no instructions at all",
+                    // which is a legitimate thing to want and impossible to say
+                    // any other way.
+                    Text("Empty means this assistant answers with no instructions at all. Switch this off to go back to the project's synced instructions.")
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Using the project's own instructions, which sync to your other devices.")
+                        .junoCaption()
+                }
+            }
+
+            if workspace != nil {
+                Divider()
+                Button("Forget this assistant", role: .destructive) {
+                    Task {
+                        await workspaceModel.delete(projectID: project.id)
+                        seedDrafts()
+                    }
+                }
+                .disabled(workspaceModel.isSaving)
+                .help("Removes the persona, whitelist and knowledge selection. The project, its chats and its files are untouched.")
+                .accessibilityIdentifier("Forget assistant")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
+    }
+
+    // MARK: Tools
+
+    private var toolsCard: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            cardHeading("Tools", "What this assistant may reach for")
+
+            Toggle("Restrict this assistant's tools", isOn: restrictionBinding)
+                .accessibilityIdentifier("Assistant restrict tools")
+
+            if workspace?.toolAccess.isRestricted == true {
+                ForEach(ProjectWorkspaceTool.allCases) { tool in
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        Toggle(tool.displayName, isOn: toolBinding(tool))
+                            .accessibilityIdentifier("Assistant tool \(tool.rawValue)")
+                        if workspace?.toolAccess.allows(tool) == false {
+                            Text(DesktopAssistantCopy.enforcement(of: tool))
+                                .junoCaption()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                Text("Juno stops sending the capability, rather than asking the model not to use it. A restriction written into a prompt is advice; this is the client refusing.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(JunoSpace.cozy)
+                    .junoPanel(cornerRadius: JunoRadius.chip)
+            } else {
+                Text("This assistant uses whatever your account and the chosen model normally allow. That is not the same as allowing everything — it is having no opinion.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
+    }
+
+    // MARK: Knowledge
+
+    private var knowledgeCard: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            cardHeading("Knowledge", "Which of this project's files are reference material")
+
+            if files.isEmpty {
+                DesktopProjectPlaceholder(
+                    message: "This project has no files yet. Add some on the Workspace tab and they can be chosen here."
+                )
+            } else {
+                ForEach(files) { file in
+                    Toggle(isOn: knowledgeBinding(file)) {
+                        HStack(spacing: JunoSpace.snug) {
+                            Image(systemName: DesktopProjectFileFacts.symbol(for: file))
+                                .junoSecondaryInk()
+                                .accessibilityHidden(true)
+                            Text(file.fileName)
+                                .junoRowLabel()
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: JunoSpace.snug)
+                            Text(DesktopProjectFileFacts.size(of: file))
+                                .junoCodeSmall()
+                                .junoSecondaryInk()
+                        }
+                    }
+                    .disabled(isKnowledgeFull && !isKnowledge(file))
+                    .accessibilityIdentifier("Assistant knowledge \(file.id)")
+                }
+                if isKnowledgeFull {
+                    Text("An assistant can hold \(ProjectWorkspaceConfiguration.maximumKnowledgeFiles) knowledge files. Past that the list of them crowds out the conversation.")
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // The reason this is a selection rather than "all of them": a project
+            // collects every image ever pasted into one of its chats.
+            Text("A project keeps every file that has ever been attached to a chat inside it. Only the ones ticked here are treated as this assistant's reference material.")
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
+    }
+
+    // MARK: Prompt preview
+
+    /// Exactly what this assistant would be told, assembled by the same function
+    /// that would assemble it for real.
+    ///
+    /// Rendered rather than described, and built by ``ProjectWorkspacePrompt``
+    /// rather than by a second copy of its rules here: a preview written
+    /// separately is a preview that can be wrong, and the whole reason to show one
+    /// is that memory injection and a knowledge manifest are otherwise invisible.
+    private var promptCard: some View {
+        let composed = ProjectWorkspacePrompt.systemPrompt(
+            workspace: workspace,
+            project: project,
+            knowledgeFileNames: knowledgeFileNames,
+            memories: memories
+        )
+        return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            cardHeading("Preview", "What this assistant is told")
+
+            if composed.isEmpty {
+                DesktopProjectPlaceholder(
+                    message: "Nothing yet — add instructions, pick knowledge files, or let Juno remember something."
+                )
+            } else {
+                ScrollView {
+                    Text(composed)
+                        .junoCode()
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(JunoSpace.cozy)
+                }
+                .frame(maxHeight: 260)
+                .junoPanel(cornerRadius: JunoRadius.chip)
+                .accessibilityIdentifier("Assistant prompt preview")
+            }
+
+            Text("Memory appears here only while this assistant is allowed to recall it. The knowledge list names files rather than repeating their contents — the server already has the bytes.")
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
+    }
+
+    // MARK: Bindings
+
+    private var preferredModelBinding: Binding<String?> {
+        Binding(
+            get: { workspace?.preferredModelID },
+            set: { value in save { $0.preferredModelID = value } }
+        )
+    }
+
+    private var overrideBinding: Binding<Bool> {
+        Binding(
+            get: { overridesInstructions },
+            set: { isOn in
+                overridesInstructions = isOn
+                if isOn {
+                    // Seeded from the synced instructions so switching the toggle
+                    // on does not present an empty editor over a project that has
+                    // a prompt — the reader would take the blank field for the
+                    // truth and save it.
+                    if instructionsDraft.isEmpty { instructionsDraft = project.instructions }
+                    save { $0.instructionsOverride = instructionsDraft }
+                } else {
+                    save { $0.instructionsOverride = nil }
+                }
+            }
+        )
+    }
+
+    private var restrictionBinding: Binding<Bool> {
+        Binding(
+            get: { workspace?.toolAccess.isRestricted ?? false },
+            set: { restricted in
+                save { configuration in
+                    // Switching restriction *on* seeds every tool rather than
+                    // none. An empty allow-list is a legitimate state but a
+                    // terrible default: the reader would flip one switch and
+                    // silently lose web search, canvas and connectors in one go.
+                    configuration.toolAccess = restricted
+                        ? .restricted(Set(ProjectWorkspaceTool.allCases))
+                        : .inheritsAccountDefaults
+                }
+            }
+        )
+    }
+
+    private func toolBinding(_ tool: ProjectWorkspaceTool) -> Binding<Bool> {
+        Binding(
+            get: { workspace?.toolAccess.allows(tool) ?? true },
+            set: { allowed in
+                save { configuration in
+                    var allowedTools: Set<ProjectWorkspaceTool>
+                    if case .restricted(let existing) = configuration.toolAccess {
+                        allowedTools = existing
+                    } else {
+                        allowedTools = Set(ProjectWorkspaceTool.allCases)
+                    }
+                    if allowed {
+                        allowedTools.insert(tool)
+                    } else {
+                        allowedTools.remove(tool)
+                    }
+                    configuration.toolAccess = .restricted(allowedTools)
+                }
+            }
+        )
+    }
+
+    private func knowledgeBinding(_ file: NativeProjectFile) -> Binding<Bool> {
+        Binding(
+            get: { isKnowledge(file) },
+            set: { included in
+                save { configuration in
+                    var ids = configuration.knowledgeFileIDs
+                    if included {
+                        guard !ids.contains(file.id),
+                            ids.count < ProjectWorkspaceConfiguration.maximumKnowledgeFiles
+                        else { return }
+                        // Appended, so the order is the order the reader chose —
+                        // which is the order the manifest is written in, and the
+                        // order a model reads it.
+                        ids.append(file.id)
+                    } else {
+                        ids.removeAll { $0 == file.id }
+                    }
+                    configuration.knowledgeFileIDs = ids
+                }
+            }
+        )
+    }
+
+    // MARK: Facts
+
+    private func isKnowledge(_ file: NativeProjectFile) -> Bool {
+        workspace?.knowledgeFileIDs.contains(file.id) ?? false
+    }
+
+    private var isKnowledgeFull: Bool {
+        (workspace?.knowledgeFileIDs.count ?? 0)
+            >= ProjectWorkspaceConfiguration.maximumKnowledgeFiles
+    }
+
+    /// The chosen files' names, in the reader's order.
+    ///
+    /// Driven from the id list rather than from `files` so a selection made before
+    /// a file was renamed still names it correctly, and so an id whose file has
+    /// been deleted simply drops out instead of leaving a blank line in the
+    /// manifest.
+    private var knowledgeFileNames: [String] {
+        (workspace?.knowledgeFileIDs ?? []).compactMap { id in
+            files.first { $0.id == id }?.fileName
+        }
+    }
+
+    private var personaNameChanged: Bool {
+        normalizedPersona != workspace?.personaName
+    }
+
+    /// Empty text means *no persona*, which is nil rather than `""`. The store
+    /// draws the same distinction: nil shows the project's name, `""` would show
+    /// nothing at all.
+    private var normalizedPersona: String? {
+        let trimmed = personaDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var instructionsChanged: Bool {
+        instructionsDraft != (workspace?.instructionsOverride ?? "")
+    }
+
+    // MARK: Actions
+
+    private func seedDrafts() {
+        personaDraft = workspace?.personaName ?? ""
+        overridesInstructions = workspace?.instructionsOverride != nil
+        instructionsDraft = workspace?.instructionsOverride ?? ""
+    }
+
+    private func savePersonaName() {
+        let value = normalizedPersona
+        save { $0.personaName = value }
+    }
+
+    private func saveInstructions() {
+        let value = instructionsDraft
+        save { $0.instructionsOverride = value }
+    }
+
+    /// One write path for every control on this panel.
+    ///
+    /// `update` creates the configuration on first use, so the first flip of the
+    /// first switch works on a project that has never had an assistant — without
+    /// the panel having to decide when a workspace comes into existence.
+    private func save(_ edit: @escaping (inout ProjectWorkspaceConfiguration) -> Void) {
+        Task { await workspaceModel.update(projectID: project.id, edit) }
+    }
+
+    private func cardHeading(_ eyebrow: String, _ title: String) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            Text(eyebrow)
+                .junoCodeSmall()
+                .junoSecondaryInk()
+                .accessibilityAddTraits(.isHeader)
+            Text(title)
+                .font(JunoSerif.cardTitle)
+        }
     }
 }
 

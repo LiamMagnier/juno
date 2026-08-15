@@ -32,8 +32,28 @@ struct JunoDesktopConfiguration {
     /// edit, so there is nothing separate to construct.
     let generateClient: NativeChatAPIClient?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    /// The **local** half of every custom assistant: persona name, tool
+    /// whitelist, knowledge-file selection, preferred model.
+    ///
+    /// Separate from `projectModel` rather than folded into it because the two
+    /// have different homes. A project is synced through the outbox to `/api/v1`;
+    /// none of this is, because there is no route for it — see
+    /// ``ProjectWorkspaceStore``. Keeping them apart is what stops a screen from
+    /// assuming a whitelist configured here will appear on the phone.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the same reason
+    /// ``workGrantStore`` is: the DEBUG preview harness composes a configuration
+    /// with no local database and should not have to name a store it cannot open.
+    var projectWorkspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>? = nil
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    /// Runs ``MemoryExtractionEngine`` after a finished turn and holds what it
+    /// proposed until the reader decides.
+    ///
+    /// Built over `memorySettingsModel` rather than beside it: proposals become
+    /// memories through that model's `createMemory` and nothing else, so there is
+    /// one write path and one place a memory can be deleted from.
+    var memoryLearningModel: MemoryLearningModel<SQLiteAccountRepository>? = nil
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let connectorModel: NativeConnectorModel?
     let scheduledTaskModel: NativeScheduledTaskModel?
@@ -214,6 +234,20 @@ struct JunoDesktopConfiguration {
                 workHostModel?.setGrants(summaries)
             }
 
+            // Hoisted out of the initializer call below because two other
+            // dependencies are built *over* it. A second
+            // `NativeMemorySettingsModel` would be a second view of the same
+            // account with its own idea of whether memory is switched on, and the
+            // extraction engine reads that flag to decide whether it may run at
+            // all — the one place a stale copy is not survivable.
+            let memorySettingsModel = NativeMemorySettingsModel(
+                repository: localStore,
+                outbox: outbox,
+                drainer: drainer,
+                syncModel: syncModel,
+                sender: runtime
+            )
+
             return Self(
                 authModel: NativeAuthModel(
                     runtime: runtime,
@@ -256,18 +290,14 @@ struct JunoDesktopConfiguration {
                     syncModel: syncModel,
                     sender: runtime
                 ),
+                projectWorkspaceModel: ProjectWorkspaceModel(repository: localStore),
                 artifactModel: NativeArtifactModel(
                     repository: localStore,
                     syncModel: syncModel,
                     sender: runtime
                 ),
-                memorySettingsModel: NativeMemorySettingsModel(
-                    repository: localStore,
-                    outbox: outbox,
-                    drainer: drainer,
-                    syncModel: syncModel,
-                    sender: runtime
-                ),
+                memorySettingsModel: memorySettingsModel,
+                memoryLearningModel: MemoryLearningModel(settings: memorySettingsModel),
                 searchModel: NativeSearchModel(repository: localStore),
                 connectorModel: NativeConnectorModel(
                     client: NativeConnectorClient(sender: runtime)
@@ -327,6 +357,49 @@ struct JunoDesktopConfiguration {
             )
         } catch {
             return unavailable(error.localizedDescription)
+        }
+    }
+
+    /// Joins the chat model to the two things that need to see a turn: the
+    /// project's tool whitelist on the way out, and the memory extractor on the
+    /// way back.
+    ///
+    /// Here rather than in ``JunoDesktopRootView`` because both hooks are
+    /// *composition*, not lifecycle — they describe which objects this build wires
+    /// together, which is what this type is for, and a view that also owned them
+    /// would have to be trusted to set them before the first turn is ever sent.
+    ///
+    /// Idempotent: assigning a closure twice replaces it. Safe to call on every
+    /// sign-in, which is when it is called, because the models outlive sessions
+    /// while the account they are pointed at does not.
+    @MainActor
+    func connectAssistantHooks() {
+        guard let conversationModel else { return }
+
+        // Vetoes only. `permitting` cannot grant a capability the composer did
+        // not request, so a project with no local configuration — the overwhelming
+        // majority — returns the turn exactly as it was built.
+        conversationModel.workspacePermissions = {
+            [weak projectWorkspaceModel] projectID, requested in
+            guard let workspace = projectWorkspaceModel?.workspaces[projectID] else {
+                return requested
+            }
+            return workspace.permitting(requested)
+        }
+
+        conversationModel.didFinishTurn = { [weak memoryLearningModel] turn in
+            guard let memoryLearningModel else { return }
+            Task {
+                await memoryLearningModel.observe(
+                    conversationID: turn.conversationID,
+                    turns: turn.userTurns,
+                    // Passed as an exclusion rather than by skipping the call, so
+                    // the outcome records *why* nothing was proposed. "This
+                    // assistant is walled off from memory" and "nothing in that
+                    // chat was worth keeping" are different answers.
+                    isExcluded: !turn.mayLearn
+                )
+            }
         }
     }
 

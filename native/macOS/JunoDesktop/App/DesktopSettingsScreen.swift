@@ -79,6 +79,12 @@ struct DesktopSettingsScreen: View {
     /// cannot actually grant is worse than no surface, because the reader would
     /// leave believing they had granted it.
     var workHostModel: DesktopWorkHostModel?
+    /// What ``MemoryExtractionEngine`` has proposed and not yet been answered on.
+    ///
+    /// Nil where nothing runs the engine — the DEBUG preview harness, and a launch
+    /// that could not open the local store. The review control is absent in that
+    /// case rather than opening a queue that can never fill.
+    var learningModel: MemoryLearningModel<SQLiteAccountRepository>?
 
     /// Whether the grid has room for two columns. Read from the page's own width
     /// rather than assumed, because the same view is 520pt wide in the ⌘, window
@@ -94,16 +100,70 @@ struct DesktopSettingsScreen: View {
     /// rather than looking the account up a second time somewhere that could
     /// disagree.
     @State private var isShowingMemory = false
+    /// Whether the proposal-review surface has taken over, on the same terms as
+    /// ``isShowingMemory``: one page swapping for another behind a back control,
+    /// not a nested navigation container.
+    @State private var isReviewingProposals = false
 
     var body: some View {
         Group {
             if isShowingMemory {
                 DesktopMemoryScreen(model: model, back: { isShowingMemory = false })
+            } else if isReviewingProposals, let learningModel {
+                proposalReview(learningModel)
             } else {
                 page
             }
         }
         .accessibilityIdentifier("juno.desktop.settings")
+    }
+
+    /// ``NativeMemoryManagerView``, given the same model this page is already
+    /// showing and a way back.
+    ///
+    /// The decision handler is the whole reason this screen exists: `true` writes
+    /// through `NativeMemorySettingsModel.createMemory`, exactly as typing a
+    /// memory by hand does, so an accepted proposal is indistinguishable from a
+    /// hand-typed one everywhere afterwards — same outbox, same reconciliation,
+    /// same delete button. There is no second path a memory can enter this account
+    /// by, which is what makes the manager an honest account of everything Juno
+    /// knows.
+    private func proposalReview(
+        _ learningModel: MemoryLearningModel<SQLiteAccountRepository>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: JunoSpace.cozy) {
+                Button {
+                    isReviewingProposals = false
+                } label: {
+                    Label("Settings", systemImage: "chevron.left")
+                        .junoRowLabel()
+                }
+                .buttonStyle(.plain)
+                .junoSecondaryInk()
+                .keyboardShortcut("[", modifiers: .command)
+                .help("Back to settings (⌘[)")
+                .accessibilityIdentifier("juno.desktop.memory-proposals.back")
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.regular)
+
+            NativeMemoryManagerView(
+                model: model,
+                proposals: learningModel.proposals,
+                onDecideProposal: { candidate, keep in
+                    Task {
+                        if keep {
+                            await learningModel.accept(candidate)
+                        } else {
+                            learningModel.decline(candidate)
+                        }
+                    }
+                }
+            )
+        }
+        .accessibilityIdentifier("juno.desktop.memory-proposals")
     }
 
     private var page: some View {
@@ -399,6 +459,38 @@ struct DesktopSettingsScreen: View {
         )
     }
 
+    /// The way in to ``NativeMemoryManagerView`` — the consent surface where
+    /// anything ``MemoryExtractionEngine`` proposed is kept or discarded.
+    ///
+    /// A second control beside "Open memory manager" rather than a badge on it,
+    /// because the two answer different questions. The manager is the corpus
+    /// editor: forty facts in a table with columns you can sort. This is the short
+    /// queue of things Juno noticed and has *not* stored, and it exists as its own
+    /// destination for one reason — a proposal that files itself and turns up
+    /// later is the version of this feature people call creepy.
+    ///
+    /// Absent when no learning model was composed, which is the DEBUG preview
+    /// harness and a failed launch. A button that opens an empty review queue
+    /// because nothing is running would be worse than no button.
+    @ViewBuilder
+    private var reviewControl: some View {
+        if let learningModel {
+            let waiting = learningModel.proposals.count
+            Button {
+                isReviewingProposals = true
+            } label: {
+                Text(
+                    waiting == 0
+                        ? "Review what Juno noticed"
+                        : "Review what Juno noticed (\(waiting))"
+                )
+                .junoWideButtonLabel()
+            }
+            .help("Keep or discard the details Juno picked up in your chats. Nothing here is saved until you keep it.")
+            .accessibilityIdentifier("juno.desktop.settings.memory-proposals")
+        }
+    }
+
     /// The switch and the link, as the web has it. A tile whose only control was
     /// "go and look" cannot answer the question people most often open settings
     /// with: is memory on?
@@ -430,6 +522,8 @@ struct DesktopSettingsScreen: View {
                 Text("Open memory manager").junoWideButtonLabel()
             }
             .accessibilityIdentifier("juno.desktop.settings.memory-manager")
+
+            reviewControl
 
             Divider()
 
