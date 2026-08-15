@@ -52,9 +52,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          swift test --package-path native/Packages/JunoCode -Xswiftc -warnings-as-errors
-          swift test --package-path native/Packages/JunoNativeKit -Xswiftc -warnings-as-errors
-          swift test --package-path native/Packages/JunoWork -Xswiftc -warnings-as-errors
+          swift test --package-path native/Packages/JunoCode --scratch-path "$RUNNER_TEMP/JunoCode-tests" -Xswiftc -warnings-as-errors
+          swift test --package-path native/Packages/JunoNativeKit --scratch-path "$RUNNER_TEMP/JunoNativeKit-tests" -Xswiftc -warnings-as-errors
+          swift test --package-path native/Packages/JunoWork --scratch-path "$RUNNER_TEMP/JunoWork-tests" -Xswiftc -warnings-as-errors
 
       - name: Install Node dependencies
         uses: actions/setup-node@v4
