@@ -41,7 +41,25 @@ function formatStreamElapsed(totalSec: number): string {
  * assistant works with no visible content yet. Elapsed time + progressive copy
  * keep long silent reasoning from looking hung.
  */
-function StreamStatus({ status }: { status?: GenerationStatus }) {
+function StreamStatus({
+  status,
+  recovering,
+  recoveryNote,
+}: {
+  status?: GenerationStatus;
+  /**
+   * The stream dropped and the client is polling for the persisted answer.
+   *
+   * This is NOT thinking, and saying "Thinking about your request" through it is
+   * the bug this parameter exists to kill: the connection is already gone, the
+   * global status has gone back to idle, the composer is usable again — and the
+   * bubble was still counting up a timer as though a model were working. A
+   * reader watched that for minutes and reasonably concluded the app was hung.
+   */
+  recovering?: boolean;
+  /** What `beginDropRecovery` already wrote onto the turn, shown verbatim. */
+  recoveryNote?: string;
+}) {
   const startRef = React.useRef(Date.now());
   const [elapsedSec, setElapsedSec] = React.useState(0);
   React.useEffect(() => {
@@ -58,7 +76,12 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
   const checking = status === "checking";
   const submitting = status === "submitting";
   let statusCopy = "Thinking about your request";
-  if (writing) statusCopy = "Writing the response";
+  // Recovery wins over every status rung. The global status is `idle` by this
+  // point — the stream ended — so the rungs below would all describe work that
+  // is not happening.
+  if (recovering) {
+    statusCopy = recoveryNote || "Reconnecting — the answer is still being written";
+  } else if (writing) statusCopy = "Writing the response";
   else if (checking) statusCopy = "Checking your request";
   else if (submitting) statusCopy = "Starting your request";
   else if (elapsedSec >= 600) {
@@ -796,7 +819,14 @@ export function MessageItem({
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor && !hasRunTrace ? (
-          <StreamStatus status={status} />
+          // `errorMessage` set while still streaming and NOT errored is exactly
+          // the shape `beginDropRecovery` leaves behind — it is the only state
+          // that writes an explanation onto a turn it expects to complete.
+          <StreamStatus
+            status={status}
+            recovering={message.streaming && !message.error && !!message.errorMessage}
+            recoveryNote={message.errorMessage ?? undefined}
+          />
         ) : message.error && !hasPartialWithError ? (
           // `rounded-field` is the inline-note rung; `rounded-lg` is 16px, the
           // SURFACE rung, which made this two-line notice rounder than the

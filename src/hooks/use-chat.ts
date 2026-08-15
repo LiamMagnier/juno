@@ -260,7 +260,18 @@ export function useChat(opts: UseChatOptions) {
               (removedAt.has(m.id) ? removedAt.get(m.id) !== m.createdAt : !knownIds.has(m.id)) &&
               (afterIdx < 0 || i > afterIdx) &&
               // Media generations persist with empty content + an attachment.
-              (m.content || m.reasoning || (m.attachments?.length ?? 0) > 0)
+              //
+              // `finishReason` is the fourth accepted shape, and it is the one
+              // that unwedges Gemini. A turn can legitimately finish having
+              // produced NOTHING — on Google, thinking and answer share a single
+              // output budget (see `google: 65536` in lib/llm.ts), so a
+              // high-effort run can spend the whole allowance reasoning and
+              // return no text. That row is persisted and terminal, but it has
+              // no content, no reasoning and no attachment, so the three checks
+              // above all rejected it. Recovery then polled for something that
+              // would never appear until the hour-long window expired, and the
+              // bubble sat there claiming to be thinking the entire time.
+              (m.content || m.reasoning || (m.attachments?.length ?? 0) > 0 || !!m.finishReason)
           );
           if (!recovered) continue;
           if (generationSeqRef.current !== seq) return;
