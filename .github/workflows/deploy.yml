@@ -821,6 +821,24 @@ jobs:
           test "$archive_sha" = "$GITHUB_SHA"
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
+          # Free disk space on the VM before transferring artifacts
+          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "$VM_USER@$VM_HOST" "bash -s" <<'PREFLIGHT'
+          set -euo pipefail
+          rm -f /tmp/juno-*.tar.gz /tmp/juno-*.sha256 /tmp/juno-*.env 2>/dev/null || true
+          if [ -d "$HOME/juno/releases" ]; then
+            find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
+            current_target="$(readlink -f "$HOME/juno/current" 2>/dev/null || true)"
+            prev_target="$(readlink -f "$HOME/juno/previous" 2>/dev/null || true)"
+            for dir in $(find "$HOME/juno/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort); do
+              real_dir="$(cd "$dir" 2>/dev/null && pwd -P || echo "$dir")"
+              if [ "$real_dir" != "$current_target" ] && [ "$real_dir" != "$prev_target" ]; then
+                echo "Pruning older release to free disk: $dir"
+                rm -rf -- "$dir" || true
+              fi
+            done
+          fi
+PREFLIGHT
           scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
           ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \

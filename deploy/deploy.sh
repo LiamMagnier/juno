@@ -242,6 +242,46 @@ verify_pm2_ecosystem() {
   '
 }
 
+prune_old_releases() {
+  local releases_dir="$1"
+  local current_target="$2"
+  local previous_target="$3"
+  local keep_count="${4:-2}"
+
+  [[ -d "$releases_dir" ]] || return 0
+
+  # Clean up any abandoned staging directories
+  find "$releases_dir" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
+
+  # Resolve canonical paths to protect active links
+  local current_real=""
+  local previous_real=""
+  [[ -n "$current_target" ]] && current_real="$(cd -- "$current_target" 2>/dev/null && pwd -P || echo "$current_target")"
+  [[ -n "$previous_target" ]] && previous_real="$(cd -- "$previous_target" 2>/dev/null && pwd -P || echo "$previous_target")"
+
+  # Find all release directories sorted from oldest to newest
+  local rel_dirs=()
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] && rel_dirs+=("$dir")
+  done < <(find "$releases_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | sort)
+
+  local total="${#rel_dirs[@]}"
+  if (( total <= keep_count )); then
+    return 0
+  fi
+
+  local to_remove=$(( total - keep_count ))
+  for (( i = 0; i < to_remove; i++ )); do
+    local candidate="${rel_dirs[i]}"
+    local candidate_real
+    candidate_real="$(cd -- "$candidate" 2>/dev/null && pwd -P || echo "$candidate")"
+    if [[ -n "$candidate_real" && "$candidate_real" != "$current_real" && "$candidate_real" != "$previous_real" ]]; then
+      say "${YELLOW}🧹 Pruning old release: $(basename "$candidate")...${NC}"
+      rm -rf -- "$candidate" || true
+    fi
+  done
+}
+
 health_url() {
   local url="${JUNO_HEALTH_URL:-${NEXT_PUBLIC_APP_URL:-}}"
   if [[ -z "$url" && -f "$ENV_FILE" ]]; then
@@ -402,6 +442,9 @@ main() {
   fi
   mkdir -p -- "$RELEASES_DIR"
 
+  # Pre-flight cleanup of old releases and staging directories to ensure disk space
+  prune_old_releases "$RELEASES_DIR" "$CURRENT_LINK" "$PREVIOUS_LINK" 2
+
   local release_id
   release_id="${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S)-$$"
   STAGING_DIR="$RELEASES_DIR/.staging-$release_id"
@@ -495,6 +538,9 @@ main() {
   ROLLBACK_NEEDED=0
   say "${GREEN}✅ Juno release $TARGET_SHA is active at $CURRENT_LINK.${NC}"
   say "${GREEN}↩️ Previous release preserved at $PREVIOUS_LINK ($OLD_CURRENT_TARGET).${NC}"
+
+  # Prune older releases to keep disk healthy
+  prune_old_releases "$RELEASES_DIR" "$RELEASE_DIR" "$OLD_CURRENT_TARGET" "${JUNO_KEEP_RELEASES:-2}"
 }
 
 main "$@"
