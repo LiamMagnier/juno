@@ -125,6 +125,11 @@ public enum AccountStorageError: Error, Equatable, Sendable {
     case invalidMetadataKey(String)
     case recordAccountMismatch(expected: StorageAccountID, actual: StorageAccountID)
     case versionConflict(expected: UInt64, actual: UInt64)
+    /// A branch edge that would describe an impossible tree: an empty id, an
+    /// oversized id, or a message named as its own parent. Rejected at the
+    /// boundary rather than written, because a cycle here is a transcript that
+    /// never finishes rendering.
+    case invalidBranchLink(messageID: String)
 }
 
 extension AccountStorageError: LocalizedError {
@@ -140,11 +145,18 @@ extension AccountStorageError: LocalizedError {
             "The record belongs to \(actual.rawValue), not \(expected.rawValue)."
         case let .versionConflict(expected, actual):
             "The store changed concurrently (expected \(expected), actual \(actual))."
+        case let .invalidBranchLink(messageID):
+            "The conversation branch link for \(messageID) is invalid."
         }
     }
 }
 
 /// Repository boundary implemented later by the production SQLite adapter.
+///
+/// The branch methods sit beside `apply` rather than inside it because a branch
+/// edge is not a synced record: it has no revision, no tombstone and no server
+/// counterpart, and routing it through `StorageTransaction` would put
+/// client-only topology on the same path the sync applier rewrites.
 public protocol AccountScopedRepository: Sendable {
     func snapshot(for accountID: StorageAccountID) async throws -> AccountStoreSnapshot
 
@@ -152,4 +164,46 @@ public protocol AccountScopedRepository: Sendable {
     func apply(_ transaction: StorageTransaction) async throws -> StorageCommit
 
     func wipe(accountID: StorageAccountID) async throws
+
+    /// Every branch edge recorded for this account, across all conversations.
+    ///
+    /// Returned whole rather than per conversation because the caller already
+    /// loads the account snapshot whole, and two round trips per reload would
+    /// buy nothing: an account that has never branched returns an empty array,
+    /// which is also the exact input the projection needs to fall back to a
+    /// plain linear transcript.
+    func messageBranchLinks(for accountID: StorageAccountID) async throws -> [MessageBranchLink]
+
+    /// Writes `links`, replacing any edge already recorded for the same message.
+    ///
+    /// Atomic across the whole array: a half-written tree is a transcript with a
+    /// missing middle, so a rejected edge must take the rest of the batch with
+    /// it. Any link marked active deactivates its siblings in the same
+    /// transaction, which is the only place the "one active child per parent"
+    /// rule can be enforced without a read-modify-write race.
+    func recordMessageBranchLinks(
+        _ links: [MessageBranchLink],
+        for accountID: StorageAccountID
+    ) async throws
+
+    /// Makes `messageID` the sibling the active timeline descends into, and
+    /// returns whether an edge for it existed at all.
+    ///
+    /// False is the honest answer for a message that was never branched — the
+    /// caller must not treat it as a switch that happened, because nothing did.
+    @discardableResult
+    func activateMessageBranch(
+        messageID: String,
+        for accountID: StorageAccountID
+    ) async throws -> Bool
+
+    /// Drops every edge belonging to one conversation.
+    ///
+    /// Called when the conversation itself is deleted. Left behind, the edges
+    /// would outlive their messages and re-attach to whatever later message
+    /// happened to reuse an id — a tree grafted onto a stranger's transcript.
+    func removeMessageBranchLinks(
+        conversationID: String,
+        for accountID: StorageAccountID
+    ) async throws
 }

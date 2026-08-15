@@ -50,7 +50,10 @@ extension SQLiteAccountRepositoryError: LocalizedError {
 /// encrypted by the required cipher; the key is never stored in this database.
 /// SQLite secure deletion and a truncated WAL are used when an account is wiped.
 public actor SQLiteAccountRepository: AccountScopedRepository {
-    public static let schemaVersion: Int32 = 1
+    /// Bumped to 2 for the `message_branches` table. The migration that adds it
+    /// is additive and forward-only, so a database written by a version-1 build
+    /// opens here unchanged and keeps every row — see `SQLiteDatabase.migrate`.
+    public static let schemaVersion: Int32 = 2
 
     public nonisolated let databaseURL: URL
 
@@ -213,6 +216,269 @@ public actor SQLiteAccountRepository: AccountScopedRepository {
 
     public func close() throws {
         try database.close()
+    }
+
+    // MARK: - Conversation branch topology
+
+    public func messageBranchLinks(
+        for accountID: StorageAccountID
+    ) throws -> [MessageBranchLink] {
+        try StorageValidation.accountID(accountID)
+        return try database.withStatement(
+            """
+            SELECT conversation_id, message_id, parent_message_id, branch_index,
+                   is_active_branch, created_at
+            FROM message_branches WHERE account_id = ?
+            """,
+            operation: "load message branches"
+        ) { statement in
+            try database.bind(accountID.rawValue, at: 1, to: statement)
+            var links: [MessageBranchLink] = []
+            while try database.step(statement, operation: "load message branches")
+                == SQLITE_ROW
+            {
+                links.append(try decodeBranchLink(statement))
+            }
+            return links
+        }
+    }
+
+    public func recordMessageBranchLinks(
+        _ links: [MessageBranchLink],
+        for accountID: StorageAccountID
+    ) throws {
+        try StorageValidation.accountID(accountID)
+        // Validate the whole batch before opening the transaction. A rejection
+        // discovered halfway through would roll back correctly, but it would
+        // also have already taken a write lock for a batch that was never going
+        // to land.
+        for link in links {
+            try StorageValidation.branchLink(link)
+        }
+        guard !links.isEmpty else { return }
+
+        try database.execute("BEGIN IMMEDIATE", operation: "begin branch write")
+        var committed = false
+        do {
+            // The edges are foreign-keyed to the account partition, so a branch
+            // recorded before any record exists for the account still needs its
+            // partition row. Reusing the store's current version rather than
+            // zero keeps `INSERT OR IGNORE` from being the thing that decides
+            // what version an existing partition is on.
+            try ensureAccountRow(
+                accountID: accountID,
+                version: try loadVersion(for: accountID)
+            )
+            for link in links {
+                try upsertBranchLink(link, accountID: accountID)
+                if link.isActiveBranch {
+                    try deactivateSiblings(of: link, accountID: accountID)
+                }
+            }
+            try database.execute("COMMIT", operation: "commit branch write")
+            committed = true
+            try database.protectFiles()
+        } catch {
+            if !committed {
+                try? database.execute("ROLLBACK", operation: "rollback branch write")
+            }
+            throw error
+        }
+    }
+
+    @discardableResult
+    public func activateMessageBranch(
+        messageID: String,
+        for accountID: StorageAccountID
+    ) throws -> Bool {
+        try StorageValidation.accountID(accountID)
+        try database.execute("BEGIN IMMEDIATE", operation: "begin branch activation")
+        var committed = false
+        do {
+            let existing = try loadBranchLink(messageID: messageID, accountID: accountID)
+            guard let existing else {
+                // Not an error: a message that was never branched has no sibling
+                // to switch away from. Committing the empty transaction rather
+                // than rolling back keeps the caller's `false` meaning "nothing
+                // to do" instead of "the database refused".
+                try database.execute("COMMIT", operation: "commit branch activation")
+                committed = true
+                return false
+            }
+            try deactivateSiblings(of: existing, accountID: accountID)
+            try database.withStatement(
+                """
+                UPDATE message_branches SET is_active_branch = 1
+                WHERE account_id = ? AND message_id = ?
+                """,
+                operation: "activate message branch"
+            ) { statement in
+                try database.bind(accountID.rawValue, at: 1, to: statement)
+                try database.bind(existing.messageID, at: 2, to: statement)
+                try database.expectDone(statement, operation: "activate message branch")
+            }
+            try database.execute("COMMIT", operation: "commit branch activation")
+            committed = true
+            try database.protectFiles()
+            return true
+        } catch {
+            if !committed {
+                try? database.execute("ROLLBACK", operation: "rollback branch activation")
+            }
+            throw error
+        }
+    }
+
+    public func removeMessageBranchLinks(
+        conversationID: String,
+        for accountID: StorageAccountID
+    ) throws {
+        try StorageValidation.accountID(accountID)
+        try database.withStatement(
+            "DELETE FROM message_branches WHERE account_id = ? AND conversation_id = ?",
+            operation: "delete message branches"
+        ) { statement in
+            try database.bind(accountID.rawValue, at: 1, to: statement)
+            try database.bind(conversationID, at: 2, to: statement)
+            try database.expectDone(statement, operation: "delete message branches")
+        }
+        try database.protectFiles()
+    }
+
+    private func upsertBranchLink(
+        _ link: MessageBranchLink,
+        accountID: StorageAccountID
+    ) throws {
+        try database.withStatement(
+            """
+            INSERT INTO message_branches(
+                account_id, message_id, conversation_id, parent_message_id,
+                branch_index, is_active_branch, created_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(account_id, message_id) DO UPDATE SET
+                conversation_id = excluded.conversation_id,
+                parent_message_id = excluded.parent_message_id,
+                branch_index = excluded.branch_index,
+                is_active_branch = excluded.is_active_branch,
+                created_at = excluded.created_at
+            """,
+            operation: "upsert message branch"
+        ) { statement in
+            try database.bind(accountID.rawValue, at: 1, to: statement)
+            try database.bind(link.messageID, at: 2, to: statement)
+            try database.bind(link.conversationID, at: 3, to: statement)
+            try database.bindOptionalText(link.parentMessageID, at: 4, to: statement)
+            try database.bind(Int64(link.branchIndex), at: 5, to: statement)
+            try database.bind(Int32(link.isActiveBranch ? 1 : 0), at: 6, to: statement)
+            try database.bind(
+                link.createdAt.timeIntervalSince1970,
+                at: 7,
+                to: statement
+            )
+            try database.expectDone(statement, operation: "upsert message branch")
+        }
+    }
+
+    /// Clears the active flag on every other child of `link`'s parent.
+    ///
+    /// Two statements rather than one with an `IS NOT DISTINCT FROM` dance,
+    /// because SQLite compares NULL to NULL as unknown: a single parameterised
+    /// `parent_message_id = ?` would match nothing at all for the roots of the
+    /// tree, quietly leaving two active first messages behind.
+    private func deactivateSiblings(
+        of link: MessageBranchLink,
+        accountID: StorageAccountID
+    ) throws {
+        let sql: String
+        if link.parentMessageID == nil {
+            sql = """
+                UPDATE message_branches SET is_active_branch = 0
+                WHERE account_id = ? AND conversation_id = ?
+                  AND parent_message_id IS NULL AND message_id <> ?
+                """
+        } else {
+            sql = """
+                UPDATE message_branches SET is_active_branch = 0
+                WHERE account_id = ? AND conversation_id = ?
+                  AND parent_message_id = ? AND message_id <> ?
+                """
+        }
+        try database.withStatement(sql, operation: "deactivate sibling branches") {
+            statement in
+            try database.bind(accountID.rawValue, at: 1, to: statement)
+            try database.bind(link.conversationID, at: 2, to: statement)
+            if let parent = link.parentMessageID {
+                try database.bind(parent, at: 3, to: statement)
+                try database.bind(link.messageID, at: 4, to: statement)
+            } else {
+                try database.bind(link.messageID, at: 3, to: statement)
+            }
+            try database.expectDone(statement, operation: "deactivate sibling branches")
+        }
+    }
+
+    private func loadBranchLink(
+        messageID: String,
+        accountID: StorageAccountID
+    ) throws -> MessageBranchLink? {
+        try database.withStatement(
+            """
+            SELECT conversation_id, message_id, parent_message_id, branch_index,
+                   is_active_branch, created_at
+            FROM message_branches WHERE account_id = ? AND message_id = ?
+            """,
+            operation: "load message branch"
+        ) { statement in
+            try database.bind(accountID.rawValue, at: 1, to: statement)
+            try database.bind(messageID, at: 2, to: statement)
+            switch try database.step(statement, operation: "load message branch") {
+            case SQLITE_DONE:
+                return nil
+            case SQLITE_ROW:
+                return try decodeBranchLink(statement)
+            default:
+                preconditionFailure("SQLite step returned an unexpected result")
+            }
+        }
+    }
+
+    private func decodeBranchLink(
+        _ statement: OpaquePointer
+    ) throws -> MessageBranchLink {
+        let conversationID = try database.text(
+            statement,
+            column: 0,
+            field: "branch conversation ID"
+        )
+        let messageID = try database.text(
+            statement,
+            column: 1,
+            field: "branch message ID"
+        )
+        let parentMessageID = try database.optionalText(
+            statement,
+            column: 2,
+            field: "branch parent message ID"
+        )
+        let branchIndexValue = sqlite3_column_int64(statement, 3)
+        let activeValue = sqlite3_column_int(statement, 4)
+        let createdAt = sqlite3_column_double(statement, 5)
+        guard branchIndexValue >= 0, branchIndexValue <= Int64(Int.max),
+            activeValue == 0 || activeValue == 1,
+            createdAt.isFinite
+        else {
+            throw SQLiteAccountRepositoryError.corruptStoredValue(
+                field: "message branch fields"
+            )
+        }
+        return MessageBranchLink(
+            conversationID: conversationID,
+            messageID: messageID,
+            parentMessageID: parentMessageID,
+            branchIndex: Int(branchIndexValue),
+            isActiveBranch: activeValue == 1,
+            createdAt: Date(timeIntervalSince1970: createdAt)
+        )
     }
 
     private func validateSQLiteValues(in transaction: StorageTransaction) throws {
