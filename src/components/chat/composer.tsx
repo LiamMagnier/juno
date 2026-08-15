@@ -91,6 +91,29 @@ interface ComposerProps {
   isBusy: boolean;
   status: GenerationStatus;
   onStop: () => void;
+  /**
+   * A deep-research run is gathering, and this composer steers it.
+   *
+   * The research surface used to carry its own steering form and its own
+   * pause/stop buttons — a second text field and a second set of transport
+   * controls sitting a few hundred pixels above the real ones, for the same
+   * conversation. The composer is where a person types at a conversation, so
+   * while a run is live it is what direction goes into: text becomes a
+   * constraint (or a pinned source, if it is a URL) on the running
+   * investigation rather than a queued message, and the primary button's Stop
+   * face ends the run rather than only the stream.
+   *
+   * `active` is narrower than "a run exists": it is true only while a worker is
+   * actually spending, because that is the window in which added direction can
+   * still change what gets read. Absent or inactive and every path below
+   * behaves exactly as it did.
+   */
+  steering?: {
+    active: boolean;
+    placeholder: string;
+    /** Resolves true when the server accepted it; the draft clears only then. */
+    onSteer: (text: string) => Promise<boolean>;
+  } | null;
   pendingClarification?: PendingPreflightClarification | null;
   onSubmitClarification?: (answers: PreflightClarificationAnswer[]) => Promise<SendResult> | SendResult | void;
   onSkipClarification?: () => Promise<SendResult> | SendResult | void;
@@ -285,6 +308,7 @@ export function Composer({
   isBusy,
   status,
   onStop,
+  steering,
   pendingClarification,
   onSubmitClarification,
   onSkipClarification,
@@ -575,16 +599,41 @@ export function Composer({
   }, [pendingClarification, autoresize]);
 
   const clarificationOpen = !!pendingClarification;
+  /**
+   * Steering mode: busy, but with somewhere for typing to go.
+   *
+   * Gated on `isBusy` as well as on the caller's flag, because a run and a
+   * generation are the same turn from the user's side and the field is only
+   * locked during the second. A clarification owns the composer outright while
+   * it is up, so it wins over steering — answering the question is the only
+   * thing that moves anything forward.
+   */
+  const steerMode = !!steering?.active && isBusy && status !== "checking" && !pendingClarification;
   const controlsLocked = isBusy || sendLocked || uploading || !!quotaReached;
-  const canSend = (text.trim().length > 0 || sendAttachments.length > 0 || clarificationAnswers.length > 0) && !controlsLocked;
+  const canSend = steerMode
+    ? // No attachments and no clarification answers: direction is words, and a
+      // file cannot be handed to a run that is already reading.
+      text.trim().length > 0 && !sendLocked && !quotaReached
+    : (text.trim().length > 0 || sendAttachments.length > 0 || clarificationAnswers.length > 0) && !controlsLocked;
   // With nothing to send and voice available, the primary button becomes the
   // voice-conversation launcher; the moment there's sendable content it morphs
   // back into Send.
   const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
   // The primary button's four faces, derived once so the stacked glyphs, the
   // tooltip and the busy ring cannot disagree about which state is showing.
+  // While steering, a draft flips the face back to Send — the button follows
+  // what the field is holding, so Stop is never the only thing a typed
+  // constraint can be handed to.
   const primaryFace: "checking" | "stop" | "voice" | "send" =
-    status === "checking" ? "checking" : isBusy ? "stop" : showVoiceButton ? "voice" : "send";
+    status === "checking"
+      ? "checking"
+      : steerMode && text.trim().length > 0
+        ? "send"
+        : isBusy
+          ? "stop"
+          : showVoiceButton
+            ? "voice"
+            : "send";
   // Never split() multi-MB drafts just to count lines — sample the head only.
   const longText = text.trim().length > COMPOSER_LONG_TEXT_CHARS || sampleLineCount(text) > 30;
   const hugeDraft = text.length > COMPOSER_INLINE_SOFT_CHARS;
@@ -650,6 +699,19 @@ export function Composer({
   const submit = async () => {
     if (!canSend) return;
     try {
+      // Direction into the live run, not a message into the thread. First,
+      // because every path below this builds an outgoing chat turn.
+      if (steerMode && steering) {
+        const value = text.trim();
+        if (!value) return;
+        const accepted = await steering.onSteer(value);
+        if (accepted) {
+          setText("");
+          setDraftExpanded(false);
+          requestAnimationFrame(autoresize);
+        }
+        return;
+      }
       if (clarificationOpen && pendingClarification) {
         const success = await submitClarification(clarificationAnswers);
         if (success) {
@@ -1809,9 +1871,11 @@ export function Composer({
             onChange={(e) => setDraftText(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            disabled={isBusy || sendLocked || status === "checking"}
+            // Steering keeps the field live through a generation — that is the
+            // whole point of it. Every other busy state still locks it.
+            disabled={(isBusy && !steerMode) || sendLocked || status === "checking"}
             rows={1}
-            placeholder={placeholder}
+            placeholder={steerMode && steering ? steering.placeholder : placeholder}
             // The palette is driven from here — focus never moves to it — so the
             // textarea has to name the row the arrow keys are sitting on, and
             // aria-controls ties that row's listbox back to this field while it
@@ -2278,22 +2342,35 @@ export function Composer({
                 <Button
                   type="button"
                   size="icon"
+                  // `primaryFace` is the single source of truth for what this
+                  // button is. It used to be re-derived inline three times —
+                  // click, disabled and label each testing `isBusy` again —
+                  // which is why steering could not be added without them
+                  // disagreeing: the face says Send while `isBusy` says Stop.
                   onClick={
-                    isBusy && status !== "checking"
+                    primaryFace === "stop"
                       ? onStop
-                      : showVoiceButton
+                      : primaryFace === "voice"
                         ? onOpenVoiceMode
                         : () => void submit()
                   }
-                  disabled={isBusy ? status === "stopping" || status === "checking" : showVoiceButton ? false : !canSend}
+                  disabled={
+                    primaryFace === "stop"
+                      ? status === "stopping" || status === "checking"
+                      : primaryFace === "voice"
+                        ? false
+                        : !canSend
+                  }
                   aria-label={
-                    isBusy && status !== "checking"
+                    primaryFace === "stop"
                       ? status === "stopping"
                         ? "Stopping generation"
                         : "Stop generating"
-                      : showVoiceButton
+                      : primaryFace === "voice"
                         ? "Start voice conversation"
-                        : "Send message"
+                        : steerMode
+                          ? "Add this to the research"
+                          : "Send message"
                   }
                   className={cn(
                     // One footprint for every face. The busy state used to widen
@@ -2304,7 +2381,7 @@ export function Composer({
                     // disabled → enabled flip fades instead of snapping, and
                     // nothing in the list touches layout.
                     "composer-primary-action size-9 rounded-composer-action coarse:size-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
-                    isBusy && status !== "checking" && "ring-2 ring-primary/15"
+                    primaryFace === "stop" && "ring-2 ring-primary/15"
                   )}
                 >
                   {/*
@@ -2357,7 +2434,15 @@ export function Composer({
               {/* The tooltip tracks the face — it used to say "Send" while the
                   button was Stop for the whole generation. */}
               <TooltipContent>
-                {primaryFace === "stop" ? "Stop" : primaryFace === "voice" ? "Voice conversation" : "Send"}
+                {primaryFace === "stop"
+                  ? steerMode
+                    ? "Stop the research"
+                    : "Stop"
+                  : primaryFace === "voice"
+                    ? "Voice conversation"
+                    : steerMode
+                      ? "Add to the research"
+                      : "Send"}
               </TooltipContent>
             </Tooltip>
           </div>

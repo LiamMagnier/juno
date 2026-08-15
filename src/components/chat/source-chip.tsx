@@ -100,10 +100,21 @@ export function SourceFavicon({
 }) {
   const src = React.useMemo(() => iconUrlOf(url), [url]);
   const [loaded, setLoaded] = React.useState(false);
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
   // React recycles this instance across a re-keyed list, so a new url has to
   // re-arm the <img> — otherwise the previous host's "loaded" state would keep
   // its logo on screen under the wrong source.
-  React.useEffect(() => setLoaded(false), [src]);
+  //
+  // …and then ask the element whether it is ALREADY done. `onLoad` fires once,
+  // and for a cached icon it can fire before React attaches the handler — after
+  // which the reset above latches the monogram on permanently. That is why a
+  // list of sources rendered on a warm cache came back as a row of grey letters
+  // where the logos had been a moment earlier. `naturalWidth > 0` is the part
+  // that matters: `complete` is also true for an image that failed.
+  React.useEffect(() => {
+    const el = imgRef.current;
+    setLoaded(!!el?.complete && el.naturalWidth > 0);
+  }, [src]);
 
   const host = hostOf(url);
   const letter = /^[\p{L}\p{N}]/u.test(host) ? host[0].toUpperCase() : null;
@@ -132,6 +143,7 @@ export function SourceFavicon({
       {src && (
         // eslint-disable-next-line @next/next/no-img-element -- third-party origin, not an optimizable asset
         <img
+          ref={imgRef}
           src={src}
           alt=""
           loading="lazy"

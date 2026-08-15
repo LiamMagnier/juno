@@ -636,6 +636,26 @@ function parseConflicts(value: unknown): ResearchConflict[] {
  * once the searching stage is over is worse than one that refuses it.
  */
 export interface ResearchPlan {
+  /**
+   * The plan a PERSON reads, as ordered sentences: "Collect official pricing,
+   * features and usage limits from vendor sites."
+   *
+   * Distinct from `queries`, and added because the two were being conflated at
+   * the one moment that cannot afford it. The plan gate is where a user decides
+   * whether to spend money, and what it had to show them was the raw query list
+   * — "best AI subscription 2026", "claude max vs chatgpt pro price" — which is
+   * the machine's shopping list, not a plan. Nobody can tell from a bag of
+   * search strings whether the investigation will cover what they care about,
+   * which is the only question the gate exists to ask.
+   *
+   * Steps describe INTENT and are what the gate renders; queries are how the
+   * intent is executed and live behind a disclosure. The two are produced in one
+   * planner call, so this costs nothing extra.
+   *
+   * Optional, and empty on every plan written before this existed. Consumers
+   * fall back to the query list rather than showing an empty gate.
+   */
+  steps?: string[];
   /** Sub-questions the run will search for. The user may edit these. */
   queries: string[];
   /** Structured questions and evidence requirements behind the query list. */
@@ -685,6 +705,14 @@ export const EMPTY_PLAN: ResearchPlan = {
  * a run only issues follow-ups the coverage matrix actually asks for.
  */
 export const MAX_PLAN_QUERIES = 40;
+/**
+ * Steps are read, not executed, so they are bounded by what a person will
+ * actually read at a decision point rather than by what the engine can afford.
+ * Six is the count every published plan gate converges on — past that the gate
+ * stops being a summary of the investigation and becomes the investigation.
+ */
+export const MAX_PLAN_STEPS = 6;
+export const MAX_STEP_CHARS = 200;
 export const MAX_PLAN_CONSTRAINTS = 16;
 export const MAX_PINNED_SOURCES = 24;
 export const MAX_QUERY_CHARS = 400;
@@ -720,8 +748,12 @@ export function parsePlan(value: unknown): ResearchPlan {
   const raw = value as Record<string, unknown>;
   const confirmation = raw.confirmation === "auto" ? "auto" : "required";
   const queries = cleanList(raw.queries, MAX_PLAN_QUERIES, MAX_QUERY_CHARS);
+  const steps = cleanList(raw.steps, MAX_PLAN_STEPS, MAX_STEP_CHARS);
   const parsedObjectives = parseObjectives(raw.objectives);
   return {
+    // Omitted rather than stored empty, so "this plan predates steps" and "this
+    // planner returned none" stay the same shape to every consumer.
+    ...(steps.length ? { steps } : {}),
     queries,
     objectives: parsedObjectives.length ? parsedObjectives : buildResearchObjectives("", queries),
     constraints: cleanList(raw.constraints, MAX_PLAN_CONSTRAINTS, MAX_CONSTRAINT_CHARS),

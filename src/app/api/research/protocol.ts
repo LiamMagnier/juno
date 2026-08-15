@@ -16,7 +16,9 @@ import {
   MAX_PINNED_SOURCES,
   MAX_PLAN_CONSTRAINTS,
   MAX_PLAN_QUERIES,
+  MAX_PLAN_STEPS,
   MAX_QUERY_CHARS,
+  MAX_STEP_CHARS,
 } from "@/lib/research/domain";
 
 /**
@@ -57,6 +59,8 @@ export const startResearchSchema = z.object({
 
 export const decidePlanSchema = z.object({
   decision: z.enum(["confirm", "cancel"]),
+  /** The plan a person read and possibly rewrote at the gate. See `ResearchPlan.steps`. */
+  steps: z.array(z.string().trim().min(3).max(MAX_STEP_CHARS)).max(MAX_PLAN_STEPS).optional(),
   queries: z.array(z.string().trim().min(3).max(MAX_QUERY_CHARS)).max(MAX_PLAN_QUERIES).optional(),
   constraints: z.array(constraint).max(MAX_PLAN_CONSTRAINTS).optional(),
   pinnedSources: z.array(sourceUrl).max(MAX_PINNED_SOURCES).optional(),

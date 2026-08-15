@@ -139,7 +139,7 @@ export function ReportReader({
         const linkable = isRenderableSourceUrl(source.url);
         const body = (
           <>
-            <span className="w-6 shrink-0 pt-px text-right font-mono text-caption tabular-nums text-muted-foreground">
+            <span className="w-6 shrink-0 pt-px text-right text-caption tabular-nums text-muted-foreground">
               {n}
             </span>
             <SourceFavicon url={source.url} variant="list" className="mt-px" />
@@ -147,7 +147,7 @@ export function ReportReader({
               <span className="block truncate text-xs font-medium text-foreground/90">
                 {titleOf({ title: source.title, url: source.url, snippet: "" })}
               </span>
-              <span className="mt-0.5 block truncate font-mono text-micro text-muted-foreground">
+              <span className="mt-0.5 block truncate text-caption text-muted-foreground">
                 {hostOf(source.url)}
                 {/* "Found, not read" is worth a word here: an unread source is
                     one the report could not have cited, and hiding that turns
@@ -232,7 +232,7 @@ export function ReportReader({
     <div className={cn("space-y-6", className)}>
       {/* Top Action & Metadata Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border/60 bg-card p-3 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2 font-mono text-micro text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
             Deep Research Report
           </span>
@@ -292,7 +292,10 @@ export function ReportReader({
             aria-label="Report contents"
             className="sticky top-6 hidden max-h-[calc(100vh-6rem)] w-44 shrink-0 overflow-y-auto lg:block"
           >
-            <p className="font-mono text-label uppercase text-muted-foreground">Contents</p>
+            {/* Sentence case, interface face — the rail headings here were
+                `font-mono text-label uppercase`, the metadata voice used for
+                furniture. Nothing in this product is set in full caps. */}
+            <p className="text-ui font-medium text-foreground">Contents</p>
             <ul className="mt-3 border-l border-border/60">
               {toc.map((item) => {
                 const active = item.id === activeId;
@@ -340,9 +343,7 @@ export function ReportReader({
             {sourcesOpen ? (
               <div className="flex max-h-[calc(100vh-6rem)] w-72 flex-col rounded-card border border-border/60 bg-card">
                 <div className="flex items-center justify-between gap-2 border-b border-border/50 py-2 pl-4 pr-2">
-                  <p className="font-mono text-label uppercase text-muted-foreground">
-                    Sources · {sources.length}
-                  </p>
+                  <p className="text-ui font-medium text-foreground">Sources · {sources.length}</p>
                   <button
                     type="button"
                     onClick={() => setSourcesOpen(false)}
@@ -358,7 +359,7 @@ export function ReportReader({
               <button
                 type="button"
                 onClick={() => setSourcesOpen(true)}
-                className="pressable inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 font-mono text-caption text-muted-foreground shadow-soft transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
+                className="pressable inline-flex h-9 items-center gap-1.5 rounded-full border border-border/70 bg-card px-3 text-caption text-muted-foreground shadow-soft transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
               >
                 <PanelRightOpen className="size-3.5" aria-hidden />
                 Sources · {sources.length}
@@ -372,7 +373,7 @@ export function ReportReader({
           the text — the print convention: references at the end. */}
       {sources.length > 0 && (
         <section aria-label="Report sources" className="mt-10 border-t border-border/60 pt-6 xl:hidden">
-          <p className="font-mono text-label uppercase text-muted-foreground">Sources · {sources.length}</p>
+          <p className="text-ui font-medium text-foreground">Sources · {sources.length}</p>
           <div className="mt-3">{sourceRows}</div>
         </section>
       )}

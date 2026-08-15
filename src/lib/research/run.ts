@@ -544,6 +544,9 @@ export interface ResearchRunView {
   state: string;
   stage: string;
   plan: {
+    /** The plan a person reads at the gate. Empty on runs drafted before steps
+     *  existed — the gate falls back to `queries`. See `ResearchPlan.steps`. */
+    steps: string[];
     queries: string[];
     constraints: string[];
     pinnedSources: string[];
@@ -692,6 +695,9 @@ export async function readResearchRun(input: {
       state,
       stage: stageForState(state),
       plan: {
+        // The plan a person reads at the gate. `?? []` rather than omitted, so
+        // a client never has to distinguish "no steps" from "field missing".
+        steps: plan.steps ?? [],
         queries: plan.queries,
         constraints: plan.constraints,
         pinnedSources: plan.pinnedSources,

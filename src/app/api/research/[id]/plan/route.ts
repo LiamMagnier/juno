@@ -30,6 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     runId: id,
     userId: user.id,
     decision: parsed.data.decision,
+    steps: parsed.data.steps,
     queries: parsed.data.queries,
     constraints: parsed.data.constraints,
     pinnedSources: parsed.data.pinnedSources,

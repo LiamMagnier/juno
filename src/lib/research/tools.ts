@@ -7,7 +7,7 @@ import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
 import { SNAPSHOT_CHARS, type ResearchDeps, type ResearchHit, type ResearchSourceRow } from "@/lib/research/engine";
-import type { ResearchPlan } from "@/lib/research/domain";
+import { MAX_PLAN_STEPS, type ResearchPlan } from "@/lib/research/domain";
 
 /**
  * What the durable research job farms out: planning, searching, fetching and
@@ -39,6 +39,12 @@ const FETCH_TIMEOUT_MS = 25_000;
 const RESULTS_PER_QUERY = 18;
 /** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
 const PLANNED_QUERIES = 14;
+/**
+ * How many human-readable steps the plan gate asks for. Matches
+ * `MAX_PLAN_STEPS`, which is the storage bound — a planner asked for more than
+ * the plan can hold would have its tail silently dropped at the gate.
+ */
+const PLANNED_STEPS = MAX_PLAN_STEPS;
 /** Queries one coverage-gap expansion may return. Slots are the engine's to allocate. */
 const EXPANDED_QUERIES = 8;
 /**
@@ -55,17 +61,45 @@ const EXPANDED_QUERIES = 8;
 const PAGE_CONTENT_CHARS = 16_000;
 const REVISION_REPORT_CHARS = 48_000;
 
-const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. Break the user's request into comprehensive, multi-angle web search queries covering:
+/**
+ * The planner writes TWO things, and the second one is why this prompt changed.
+ *
+ * It used to emit only search queries, and the plan gate — the screen where a
+ * person decides whether to spend money — had nothing else to show them. A bag
+ * of search strings is the machine's shopping list; you cannot tell from
+ * "claude max vs chatgpt pro price" whether the investigation is going to cover
+ * what you care about, which is the only question the gate asks. So the model
+ * also writes the plan a person reads: ordered sentences naming what the run
+ * will actually do, in the order it will do it.
+ *
+ * One call, two sections. Steps are intent, queries are execution, and asking
+ * for them together is what keeps them describing the same investigation — a
+ * second call would let the two drift, and the gate would then be approving a
+ * plan the searches do not implement.
+ *
+ * The section markers are literal and parsed positionally by `parsePlanSections`.
+ */
+const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. You produce a research plan in two sections.
+
+## PLAN
+The plan a person reads before approving the run. Write 4 to ${PLANNED_STEPS} steps, one per line, in the order the research will happen.
+Each step is ONE full sentence in plain language, starting with a verb, describing what will be investigated — not how it will be searched.
+Name the specific entities, documents, quantities or comparisons involved. Never mention search engines, queries or keywords.
+Move from establishing the facts, through the evidence, to the comparison or judgement the reader asked for.
+Example shape: "Collect official pricing, feature and usage-limit information from each vendor's own documentation."
+
+## QUERIES
+The searches that will execute the plan above. Write 10 to ${PLANNED_QUERIES} queries, one per line.
+Each must be a self-contained, high-intent web search query (repeat names, dates and context; a query must make sense on its own).
+Between them the queries must cover:
 1. Foundational concepts, official documentation, specifications, and primary sources
 2. Empirical evidence, statistics, benchmarks, case studies, and quantitative data
 3. Counter-arguments, conflicting perspectives, trade-offs, and critical debates
 4. Most recent developments, latest news, releases, and current status
 5. Adjacent and second-order angles: who is affected, what it is usually compared against, what the sceptics measure
-
-Reply with ONLY the sub-questions, one per line — no numbering, no bullets, no commentary.
-Each line must be a self-contained, high-intent web search query (repeat names, dates, and context; a query must make sense on its own).
 Vary the phrasing and the vocabulary between lines — near-duplicate queries return the same pages and waste the run's budget.
-Generate 10 to ${PLANNED_QUERIES} focused queries.`;
+
+Reply with exactly the two headings above and the lines under them. No numbering, no bullets, no commentary.`;
 
 /** A signal that aborts with its parent OR after `ms`, whichever comes first. */
 function timeboxSignal(
@@ -95,6 +129,38 @@ function timeboxSignal(
  */
 export function researchPlannerModel(): ModelInfo | null {
   return utilityModelCandidates()[0] ?? null;
+}
+
+/**
+ * Split the planner's reply into its two sections.
+ *
+ * Tolerant on purpose, and it degrades in the one direction that is safe. A
+ * model that ignores the headings entirely gives us a flat list, and a flat list
+ * is what this feature has always received — so the whole reply becomes the
+ * QUERIES section and the plan simply has no steps, exactly like every run
+ * drafted before steps existed. The gate falls back to the query list, which is
+ * where it started. What must never happen is the reverse: prose steps leaking
+ * into the query list would have the run searching the web for full sentences.
+ *
+ * Anything before the first recognised heading is discarded rather than guessed
+ * at — it is preamble, and preamble in the query list is a wasted search.
+ */
+function parsePlanSections(text: string): { plan: string; queries: string } {
+  const heading = /^\s*#{0,3}\s*(plan|queries)\s*:?\s*$/i;
+  let current: "plan" | "queries" | null = null;
+  const buckets = { plan: [] as string[], queries: [] as string[] };
+  let sawHeading = false;
+  for (const line of text.split("\n")) {
+    const match = line.match(heading);
+    if (match) {
+      current = match[1].toLowerCase() === "plan" ? "plan" : "queries";
+      sawHeading = true;
+      continue;
+    }
+    if (current) buckets[current].push(line);
+  }
+  if (!sawHeading) return { plan: "", queries: text };
+  return { plan: buckets.plan.join("\n"), queries: buckets.queries.join("\n") };
 }
 
 function parsePlanLines(text: string, max: number): string[] {
@@ -255,8 +321,18 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
     label: "plan",
   });
 
+  const sections = parsePlanSections(planned.text);
+  const steps = parsePlanLines(sections.plan, PLANNED_STEPS)
+    // A "step" that is really a search string is worse than no step at all: it
+    // puts the machine's vocabulary on the one screen written for a person. A
+    // real step is a sentence, so require sentence shape — a verb phrase long
+    // enough to be one, and no leading keyword soup.
+    .filter((line) => line.length >= 24 && /\s/.test(line))
+    .map((line) => (/[.!?]$/.test(line) ? line : `${line}.`));
+
   return {
-    queries: parsePlanLines(planned.text, PLANNED_QUERIES),
+    steps,
+    queries: parsePlanLines(sections.queries, PLANNED_QUERIES),
     // Both calls are the plan step as far as the run's ledger is concerned.
     costMicroUsd: brief.costMicroUsd + planned.costMicroUsd,
   };
@@ -319,8 +395,9 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
  *
  * A bare null meant the engine could only skip in silence, which mattered most
  * for exactly the documents the planner is prompted to chase: `application/pdf`
- * fails the content-type gate, so specs, papers and government reports were
- * dropped without a trace. The reason travels back so the run can say so.
+ * used to fail the content-type gate, so specs, papers and government reports
+ * were dropped without a trace. Those are now parsed; the reason still travels
+ * back for the files that genuinely cannot be read.
  */
 export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal }) => {
   if (!url) return null;
@@ -333,6 +410,11 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
         skipped: failure.reason,
         ...(failure.reason === "unsupported_content_type" ? { detail: failure.contentType } : {}),
         ...(failure.reason === "http_error" ? { detail: String(failure.httpStatus) } : {}),
+        // Which PDF gave up and how: "encrypted", "malformed", "too_large",
+        // "not_a_pdf". Without it every unreadable PDF looks the same in the
+        // timeline, and a password-protected filing and a truncated download
+        // want completely different things from the user.
+        ...(failure.reason === "pdf_unreadable" ? { detail: failure.detail } : {}),
       };
     }
     if (!outcome.page.text) return null;

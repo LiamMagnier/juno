@@ -434,7 +434,7 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
 function StepDuration({ ms }: { ms: number | null }) {
   if (ms === null || ms < 1000) return null;
   return (
-    <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground/70">{formatSpan(ms)}</span>
+    <span className="shrink-0 text-caption tabular-nums text-muted-foreground/70">{formatSpan(ms)}</span>
   );
 }
 
@@ -468,7 +468,7 @@ function EngineStrip({ engines }: { engines: EngineLine[] }) {
           <li
             key={engine.name}
             className={cn(
-              "inline-flex items-center gap-1 font-mono text-micro tabular-nums",
+              "inline-flex items-center gap-1 text-caption tabular-nums",
               problem ? "text-warning-foreground" : "text-muted-foreground/70"
             )}
           >
@@ -514,7 +514,7 @@ function ProviderNotice({ roster, className }: { roster: ProviderRoster; classNa
         <p className="min-w-0 flex-1 text-caption leading-snug text-warning-foreground">
           {TIMELINE_COPY.noGoodIndex}. {TIMELINE_COPY.noGoodIndexDetail}
           {roster.keyless.length > 0 && (
-            <span className="mt-0.5 block font-mono text-micro">{roster.keyless.join(" · ")}</span>
+            <span className="mt-0.5 block text-caption">{roster.keyless.join(" · ")}</span>
           )}
         </p>
       </div>
@@ -525,7 +525,7 @@ function ProviderNotice({ roster, className }: { roster: ProviderRoster; classNa
   const indexed = [...roster.keyed, ...(roster.selfHostedSearxng ? [TIMELINE_COPY.selfHosted] : [])];
   if (indexed.length === 0) return null;
   return (
-    <p className={cn("font-mono text-micro text-muted-foreground", className)}>
+    <p className={cn("text-caption text-muted-foreground", className)}>
       {TIMELINE_COPY.searchedWith} {indexed.join(" · ")}
       {roster.keyless.length > 0 ? ` · ${TIMELINE_COPY.alsoKeyless} ${roster.keyless.join(" · ")}` : ""}
     </p>
@@ -545,14 +545,14 @@ function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
       <span className="min-w-0 flex-1">
         <span
           className={cn(
-            "block truncate text-caption",
+            "block truncate text-ui",
             step.tone === "warning" ? "text-warning-foreground" : "text-foreground/80"
           )}
         >
           {step.title}
         </span>
         {step.detail && (
-          <span className="mt-0.5 block truncate font-mono text-micro text-muted-foreground">{step.detail}</span>
+          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{step.detail}</span>
         )}
       </span>
       <StepDuration ms={step.durationMs} />
@@ -606,10 +606,12 @@ export function RunTimeline({
           "coarse:min-h-11"
         )}
       >
-        <span className="font-mono text-micro uppercase tracking-wider text-muted-foreground">
-          {TIMELINE_COPY.heading}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-micro tabular-nums text-muted-foreground">
+        {/* Sentence case, interface face. This was `font-mono text-micro
+            uppercase tracking-wider` — the metadata voice used as a heading,
+            which is the register mistake the whole research surface was
+            rewritten to remove. Nothing in this product is set in full caps. */}
+        <span className="text-ui font-medium text-foreground">{TIMELINE_COPY.heading}</span>
+        <span className="min-w-0 flex-1 truncate text-ui tabular-nums text-muted-foreground">
           {searches.length} {searches.length === 1 ? TIMELINE_COPY.oneSearch : TIMELINE_COPY.searches} ·{" "}
           {readCount} {readCount === 1 ? TIMELINE_COPY.oneSourceRead : TIMELINE_COPY.sourcesRead}
         </span>
@@ -645,7 +647,7 @@ export function RunTimeline({
               </li>
             )}
             {hidden > 0 && (
-              <li className="font-mono text-micro tabular-nums text-muted-foreground">
+              <li className="text-caption tabular-nums text-muted-foreground">
                 + {hidden} {TIMELINE_COPY.earlierSteps}
               </li>
             )}
@@ -672,7 +674,7 @@ export function RunTimeline({
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5">
                     {step.results !== null && (
-                      <span className="font-mono text-micro tabular-nums text-muted-foreground/70">
+                      <span className="text-caption tabular-nums text-muted-foreground/70">
                         {step.results} {TIMELINE_COPY.results}
                       </span>
                     )}

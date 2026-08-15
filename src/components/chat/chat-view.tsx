@@ -22,6 +22,7 @@ import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { ResearchRunPanel } from "@/components/chat/research-run-panel";
+import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
@@ -439,6 +440,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [chat.status, privateMode, conversationId, router]);
 
   const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
+
+  /**
+   * The durable research run attached to this conversation, if there is one.
+   *
+   * Owned here rather than inside ResearchRunPanel because two components now
+   * read the same row: the panel draws it, and the composer steers and stops it.
+   * One hook, one event cursor — see use-conversation-run.ts. Never in
+   * incognito: that mode writes no rows to point at.
+   */
+  const research = useConversationResearch(privateMode ? null : currentConversationId);
+  const researchSteering = research.steering;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
   // message is a non-empty assistant reply. Flipping this false while a new send
@@ -1591,7 +1603,33 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onSend={sendFromComposer}
       isBusy={chat.isBusy}
       status={chat.status}
-      onStop={chat.stop}
+      // Stopping a deep-research turn has to stop BOTH halves. The stream is
+      // only the tail of it: cancel the generation without cancelling the run
+      // and a worker keeps searching and keeps spending against a turn nobody
+      // is waiting for any more. Order matters — the run first, so the money
+      // stops even if the stream teardown throws.
+      onStop={
+        researchSteering?.accepting
+          ? () => {
+              researchSteering.stop();
+              chat.stop();
+            }
+          : chat.stop
+      }
+      steering={
+        researchSteering?.accepting
+          ? {
+              active: true,
+              placeholder: "Add a constraint, or paste a source to include…",
+              onSteer: async (value: string) => {
+                const accepted = await researchSteering.steer(value);
+                if (accepted) toast.success("Added to this research run");
+                else toast.error(research.notice ?? "That could not be added to the run.");
+                return accepted;
+              },
+            }
+          : null
+      }
       pendingClarification={chat.pendingClarification}
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
@@ -1950,7 +1988,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     controls the in-request pipeline had nowhere to put. Never in
                     incognito — that mode writes no rows to point at. */}
                 {!privateMode && !voiceOpen && (
-                  <ResearchRunPanel conversationId={currentConversationId} />
+                  <ResearchRunPanel
+                    run={research.run}
+                    events={research.events}
+                    busy={research.busy}
+                    notice={research.notice}
+                    post={research.post}
+                    className="mx-auto mb-3 w-[calc(100%-1rem)] max-w-4xl sm:w-[calc(100%-2rem)]"
+                  />
                 )}
                 {composer}
               </div>

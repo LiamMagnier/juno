@@ -17,7 +17,7 @@ export function RunStateBadge({ state, className }: { state: string; className?:
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-caption",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-caption",
         badge.tone,
         className
       )}

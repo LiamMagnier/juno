@@ -61,6 +61,13 @@ export interface ResearchRunView {
   goal: string;
   state: string;
   plan: {
+    /**
+     * The plan a person reads at the gate: ordered sentences naming what the
+     * run will investigate. Empty on runs drafted before steps existed and on
+     * planners that returned none — the gate falls back to `queries`, which is
+     * what it used to show outright. See `ResearchPlan.steps`.
+     */
+    steps: string[];
     queries: string[];
     constraints: string[];
     pinnedSources: string[];

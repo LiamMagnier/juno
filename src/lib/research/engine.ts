@@ -308,6 +308,8 @@ export interface ResearchDeps {
     signal?: AbortSignal;
   }): Promise<{
     queries: string[];
+    /** The plan a person reads at the gate. See `ResearchPlan.steps`. */
+    steps?: string[];
     costMicroUsd: number;
     objectives?: ResearchPlan["objectives"];
   }>;
@@ -765,6 +767,8 @@ export interface ResearchEngine {
     runId: string;
     userId: string;
     decision: "confirm" | "cancel";
+    /** The plan as the user left it at the gate. See `ResearchPlan.steps`. */
+    steps?: string[];
     queries?: string[];
     constraints?: string[];
     pinnedSources?: string[];
@@ -970,6 +974,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       : buildResearchObjectives(run.goal, queries);
     const next: ResearchPlan = {
       ...plan,
+      // Absent rather than empty when the planner gave none — the gate reads
+      // "no steps" as "fall back to the query list", which is what every plan
+      // drafted before steps existed does.
+      ...(drafted.steps?.length ? { steps: drafted.steps } : {}),
       queries,
       objectives,
       issuedQueries: [],
@@ -2015,7 +2023,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       }).then(() => store.loadRun(runId, userId));
     },
 
-    async decidePlan({ runId, userId, decision, queries, constraints, pinnedSources }) {
+    async decidePlan({ runId, userId, decision, steps, queries, constraints, pinnedSources }) {
       const run = await store.loadRun(runId, userId);
       if (!run) return { ok: false, state: "", reason: "not_found" };
       if (run.state !== "awaiting_plan_confirmation") {
@@ -2033,16 +2041,30 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       }
       const current = parsePlan(run.plan);
       const editedQueries = queries ?? current.queries;
-      const queryEdit = queries !== undefined;
+      const editedSteps = steps ?? current.steps ?? [];
+      const planEdit = queries !== undefined || steps !== undefined;
+      /*
+       * WHAT THE EVIDENCE CONTRACT IS REBUILT FROM, and why steps win.
+       *
+       * A confirmed plan may be edited before any paid work starts, and the
+       * objectives have to be rebuilt from the edit or coverage and follow-ups
+       * keep pursuing the draft the user just discarded. What changed is which
+       * text they are built from: the steps are the plan the user actually read
+       * and rewrote, and they are written as questions about the subject, while
+       * the queries are search strings. Objectives built from search strings
+       * gave the coverage pass targets like "claude max vs chatgpt pro price"
+       * to satisfy — an objective that is really a keyword bag, which is why an
+       * edited step used to change the label on the gate and nothing else.
+       * Steps first, queries as the fallback for plans that have none.
+       */
+      const objectiveSource = editedSteps.length ? editedSteps : editedQueries;
       const edited: ResearchPlan = parsePlan({
         ...current,
+        ...(editedSteps.length ? { steps: editedSteps } : {}),
         queries: editedQueries,
-        // A confirmed plan may be edited before any paid work starts. Rebuild
-        // its evidence contract from the user's questions so coverage and
-        // follow-ups cannot continue pursuing the discarded draft.
-        ...(queryEdit
+        ...(planEdit
           ? {
-              objectives: buildResearchObjectives(run.goal, editedQueries),
+              objectives: buildResearchObjectives(run.goal, objectiveSource),
               issuedQueries: [],
               followUpRound: 0,
               coverage: [],
