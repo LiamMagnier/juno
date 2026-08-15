@@ -53,7 +53,7 @@ export function ControlsGallery() {
             <div className="relative sm:min-w-48 sm:max-w-xs sm:flex-1">
               <Search
                 aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               />
               <Input placeholder="Search artifacts…" aria-label="Search artifacts" className="h-9 pl-9" />
             </div>
@@ -84,7 +84,7 @@ export function ControlsGallery() {
             <div className="relative sm:min-w-48 sm:max-w-xs sm:flex-1">
               <Search
                 aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               />
               <Input placeholder="Search artifacts…" aria-label="Search artifacts" className="h-9 pl-9" />
             </div>
@@ -192,8 +192,10 @@ export function ControlsGallery() {
         <Section title="Badge" note="Not a control — here so its weight can be compared to the chip beside it.">
           <Badge>Default</Badge>
           <Badge variant="secondary">Secondary</Badge>
+          <Badge variant="muted">Muted</Badge>
+          <Badge variant="soft">Soft</Badge>
+          <Badge variant="success">Success</Badge>
           <Badge variant="outline">Outline</Badge>
-          <Badge variant="destructive">Destructive</Badge>
         </Section>
 
         <Section

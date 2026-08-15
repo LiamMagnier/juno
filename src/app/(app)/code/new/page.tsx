@@ -55,7 +55,7 @@ function CodeGreeting() {
   return (
     <div className="flex w-full flex-col items-center text-center">
       {/*
-        THE PILL IS NOW THE WAY BACK, and that is the whole navigational change
+        THIS CONTROL IS THE WAY BACK, and that is the whole navigational change
         this screen needed. Until `/code` existed there was nowhere for it to
         go, so the composer was a screen you could only leave through the
         sidebar — which is why the sidebar had to make `/code/new` the landing
@@ -65,15 +65,21 @@ function CodeGreeting() {
         A real <Link>, so it is middle-clickable, cmd-clickable and announced as
         a link — the same argument AppPageHeader makes about its own back
         control, which six pages had got wrong with a router.push onClick.
+
+        It is a ghost <Button asChild> now, which is that same idiom rather than
+        a hand-drawn pill. What it was: a bordered capsule setting its label in
+        `font-mono text-micro uppercase tracking-wider` — full uppercase mono at
+        10.5px, off the type scale, on the only way off this screen. The label
+        is sentence case in the sans face at a real rung now, and the hit area
+        grows on touch because the size variant already does that.
       */}
-      <Link
-        href="/code"
-        className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/80 px-3 py-1 font-mono text-micro uppercase tracking-wider text-muted-foreground shadow-xs transition-colors duration-fast ease-out-soft hover:border-foreground/25 hover:text-foreground"
-      >
-        <JunoMark className="size-3.5" />
-        <span>Juno Code</span>
-        <span className="sr-only">— see all runs</span>
-      </Link>
+      <Button asChild variant="ghost" size="sm" className="mb-3 text-muted-foreground">
+        <Link href="/code">
+          <JunoMark className="size-3.5" />
+          <span>Juno Code</span>
+          <span className="sr-only">— see all runs</span>
+        </Link>
+      </Button>
       {/* `text-display`, the same rung the session view's own hero uses. The
           old `text-3xl sm:text-4xl` pair is not on the product type scale, and
           it put the two Code screens' headings at two different sizes one

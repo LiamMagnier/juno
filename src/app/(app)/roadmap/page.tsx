@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -31,6 +32,46 @@ const SORTS: { key: SortKey; label: string }[] = [
   { key: "new", label: "New" },
   { key: "trending", label: "Trending" },
 ];
+
+// "All" is the first option of each filter rather than a control standing
+// outside it, because a tablist has to know the full set of choices to move
+// between them with the arrow keys.
+const CATEGORY_FILTERS: readonly (FeatureCategory | "ALL")[] = ["ALL", ...FEATURE_CATEGORIES];
+const STATUS_FILTERS: readonly (RoadmapRequest["status"] | "ALL")[] = ["ALL", ...BOARD_COLUMNS];
+
+/*
+ * Arrow-key traversal for a `role="tablist"`, which the role promises and which
+ * nothing supplies for free. Home and End are included because both bars on this
+ * page are long enough that "get me back to the first one" is a real request.
+ *
+ * Focus follows selection, the automatic-activation tablist pattern: switching a
+ * filter here is instant and free — there is no load behind a pill — so manual
+ * activation would only add a keypress. This is the same shape the inbox triage
+ * bar uses, deliberately, so a reader who has learned it there gets it here.
+ */
+function useTablist<T>(values: readonly T[], current: T, onSelect: (next: T) => void) {
+  const refs = React.useRef(new Map<T, HTMLButtonElement | null>());
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const index = values.indexOf(current);
+    let next: number | null = null;
+    if (event.key === "ArrowRight") next = (index + 1) % values.length;
+    if (event.key === "ArrowLeft") next = (index - 1 + values.length) % values.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = values.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    const value = values[next];
+    onSelect(value);
+    refs.current.get(value)?.focus();
+  };
+
+  const register = (value: T) => (node: HTMLButtonElement | null) => {
+    refs.current.set(value, node);
+  };
+
+  return { onKeyDown, register };
+}
 
 export default function RoadmapPage() {
   const router = useRouter();
@@ -121,6 +162,9 @@ export default function RoadmapPage() {
     [filtered, statusTab, sortFn]
   );
 
+  const categoryTabs = useTablist(CATEGORY_FILTERS, category, setCategory);
+  const statusTabs = useTablist(STATUS_FILTERS, statusTab, setStatusTab);
+
   const loading = requests === null;
   const empty = !loading && requests.length === 0;
 
@@ -174,25 +218,61 @@ export default function RoadmapPage() {
               track with an inline box-shadow on the active segment and no thumb
               travel, running `transition-all`. SegmentedControl already implements
               that lighting model with a measured gliding thumb, radiogroup
-              semantics and a reduced-motion guard. */}
+              semantics and a reduced-motion guard.
+
+              It was then re-typed at the call site: `optionClassName="font-mono
+              text-caption"`. "Top", "New" and "Trending" are prose control
+              labels, not metadata, so the mono face was wrong on its own terms —
+              and the 11px rung genuinely landed, because cn() merges Juno's
+              word-keyed fontSize tokens and so displaced the primitive's
+              text-sm. The forced `h-9` went with it: no other SegmentedControl in
+              the product pins its own height, and the track already sizes itself
+              from the segments plus its p-1 inset. */}
           <SegmentedControl
             value={sort}
             onChange={setSort}
             options={SORTS.map((s) => ({ value: s.key, label: s.label }))}
             ariaLabel="Sort requests"
-            className="h-9 shrink-0"
-            optionClassName="font-mono text-caption"
+            className="shrink-0"
           />
         </div>
 
-        {/* Category filter */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <CatChip active={category === "ALL"} onClick={() => setCategory("ALL")}>All</CatChip>
-          {FEATURE_CATEGORIES.map((c) => (
-            <CatChip key={c} active={category === c} onClick={() => setCategory(c)}>
-              {CATEGORY_LABEL[c]}
-            </CatChip>
-          ))}
+        {/* Category filter — one choice, so one tablist.
+            These were raw buttons carrying `aria-pressed`, which announces eleven
+            independent switches instead of one selection, in 11px mono: the
+            category names are prose, not metadata. They are the house chip now,
+            with real tab semantics and arrow-key traversal.
+            NOT a SegmentedControl, though the sort switch beside it is one:
+            SegmentedControl lays its segments out in an equal-width grid with
+            nowhere to wrap, and eleven categories in one row is unreadable on a
+            phone. A wrapping chip tablist is the right shape at this count. */}
+        <div
+          role="tablist"
+          aria-label="Filter by category"
+          onKeyDown={categoryTabs.onKeyDown}
+          className="mt-3 flex flex-wrap gap-1.5"
+        >
+          {CATEGORY_FILTERS.map((c) => {
+            const selected = category === c;
+            return (
+              <Pressable
+                key={c}
+                ref={categoryTabs.register(c)}
+                kind="chip"
+                size="lg"
+                selected={selected}
+                role="tab"
+                aria-selected={selected}
+                // Only the selected chip is in the tab order; the rest are
+                // reached with the arrows. Without it this row costs a keyboard
+                // user eleven presses to get past.
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setCategory(c)}
+              >
+                {c === "ALL" ? "All" : CATEGORY_LABEL[c]}
+              </Pressable>
+            );
+          })}
         </div>
 
         {/* Body */}
@@ -266,11 +346,23 @@ export default function RoadmapPage() {
 
             {/* Mobile: status tabs + list */}
             <div className="mt-5 lg:hidden">
-              <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-2">
-                <StatusTab active={statusTab === "ALL"} onClick={() => setStatusTab("ALL")}>All</StatusTab>
-                {BOARD_COLUMNS.map((s) => (
-                  <StatusTab key={s} active={statusTab === s} onClick={() => setStatusTab(s)}>
-                    {STATUS_META[s].label}
+              {/* The same single-select-as-N-switches fault the category row had,
+                  so the same fix: a tablist with roving focus. Geometry and type
+                  are untouched — these pills are already sans on the ladder. */}
+              <div
+                role="tablist"
+                aria-label="Filter by status"
+                onKeyDown={statusTabs.onKeyDown}
+                className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-2"
+              >
+                {STATUS_FILTERS.map((s) => (
+                  <StatusTab
+                    key={s}
+                    ref={statusTabs.register(s)}
+                    active={statusTab === s}
+                    onClick={() => setStatusTab(s)}
+                  >
+                    {s === "ALL" ? "All" : STATUS_META[s].label}
                   </StatusTab>
                 ))}
               </div>
@@ -292,26 +384,34 @@ export default function RoadmapPage() {
   );
 }
 
-function CatChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+/*
+ * `role="tab"` + `aria-selected`, where this used to say `aria-pressed`. Five
+ * toggle buttons announce five independent on/off switches; a status filter is
+ * one choice out of five, and the tablist role is also what earns the arrow-key
+ * traversal the wrapper now installs.
+ *
+ * The look is left exactly as it was. It is already sans at text-sm, on the type
+ * ladder, and the horizontal scroller it lives in wants the `shrink-0
+ * whitespace-nowrap` geometry — none of that was drift, so none of it changed.
+ */
+function StatusTab({
+  active,
+  onClick,
+  ref,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  ref?: React.Ref<HTMLButtonElement>;
+  children: React.ReactNode;
+}) {
   return (
     <button
+      ref={ref}
       onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-full border px-2.5 py-1 font-mono text-caption transition-colors duration-fast",
-        active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function StatusTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
+      role="tab"
+      aria-selected={active}
+      tabIndex={active ? 0 : -1}
       className={cn(
         "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm transition-colors duration-fast",
         active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"

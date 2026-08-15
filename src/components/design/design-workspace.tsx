@@ -234,8 +234,12 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
+            {/* Ghost, not outline. Cancel is the way out of a dialog, not a
+                second thing being offered, and every other confirm dialog in
+                the product spells that as ghost. An outlined cancel drew a box
+                that competed with the destructive button beside it. */}
             <DialogClose asChild>
-              <Button variant="outline" disabled={deleting}>Cancel</Button>
+              <Button variant="ghost" disabled={deleting}>Cancel</Button>
             </DialogClose>
             <Button variant="destructive" onClick={() => void deleteDesign()} disabled={deleting}>
               {deleting ? "Deleting…" : "Delete design"}

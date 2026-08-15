@@ -3946,10 +3946,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "policy_violation"
   },
   {
-    "id": "3ce2820992420cfa",
-    "source": "Billing interval"
-  },
-  {
     "id": "3ce663fa109ca739",
     "source": "Prompt for this code session"
   },
@@ -5668,6 +5664,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "595d74d04e0bd9c0",
     "source": "Billing not configured."
+  },
+  {
+    "id": "5964d46729562387",
+    "source": "Soft"
   },
   {
     "id": "5975cf1bba432391",
@@ -9582,6 +9582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "timeline"
   },
   {
+    "id": "94d5a7703a8250de",
+    "source": "Filter by status"
+  },
+  {
     "id": "94ea9b1d33a02975",
     "source": "Show less"
   },
@@ -11042,10 +11046,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Full editor"
   },
   {
-    "id": "aa2772880f19734e",
-    "source": "Max tier"
-  },
-  {
     "id": "aa42d0268755b6e8",
     "source": "No ceiling was set for this run, so the plan’s own default applies."
   },
@@ -11848,6 +11848,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b5c582d555b204b0",
     "source": "Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the same way."
+  },
+  {
+    "id": "b5c7aed7cd2a3085",
+    "source": "ALL"
   },
   {
     "id": "b5e1b1ba4e156b7a",
@@ -12988,6 +12992,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c87d165a1f409b27",
     "source": "The model stopped at its token limit."
+  },
+  {
+    "id": "c88a0b907419a70c",
+    "source": "Success"
   },
   {
     "id": "c890307de9b706a9",

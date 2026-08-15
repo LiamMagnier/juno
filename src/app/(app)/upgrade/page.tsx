@@ -4,6 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
 import { cn } from "@/lib/utils";
@@ -135,18 +136,27 @@ export default function UpgradePage() {
   return (
     <div className="app-page-scroll">
       <div className="app-page-content max-w-5xl">
+        {/*
+          The standing line goes in the header's own `lede`. This page was the
+          only one in the product that cancelled AppPageHeader's bottom spacing
+          with `mb-0` and then hand-drew a sibling paragraph in its place, which
+          put the lede outside the heading stack, outside the rule the header
+          draws, and on a margin nobody else uses. The prop already renders this
+          shape and already owns the gap below it.
+        */}
         <AppPageHeader
           eyebrow="Plans"
           heading={<>Pick the plan that <span className="italic text-primary">fits you</span>.</>}
-          className="mb-0"
+          lede={
+            <>
+              You’re on the{" "}
+              <span className="font-medium text-foreground">
+                {currentPlan === "OWNER" ? "Owner" : planLabel(currentPlan)}
+              </span>{" "}
+              plan. Every paid plan unlocks all models with a monthly limit based on tokens — upgrade any time, changes apply instantly.
+            </>
+          }
         />
-        <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-          You’re on the{" "}
-          <span className="font-medium text-foreground">
-            {currentPlan === "OWNER" ? "Owner" : planLabel(currentPlan)}
-          </span>{" "}
-          plan. Every paid plan unlocks all models with a monthly limit based on tokens — upgrade any time, changes apply instantly.
-        </p>
 
         {!features.billing && (
           // The same callout the two other warning callouts in the product use
@@ -165,44 +175,27 @@ export default function UpgradePage() {
 
         {annualAvailable && (
           <div className="mt-6 flex items-center gap-3">
-            <div
-              role="tablist"
-              aria-label="Billing interval"
-              // Opaque track one rung BELOW the thumb. This was `bg-muted/50`
-              // under a `bg-card` thumb: 6.5% against ~4.75% composited is a
-              // 1.75-point step, and `shadow-pop` is black ink on black, so
-              // which interval was selected became unreadable on the dark theme.
-              className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-secondary p-0.5"
-            >
-              {([
-                { id: "month" as const, label: "Monthly" },
-                { id: "year" as const, label: "Yearly" },
-              ]).map((option) => {
-                const active = interval === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setInterval(option.id)}
-                    className={cn(
-                      // A border on both states, so selecting does not change
-                      // the button's width by 1px on each side. coarse:py-2
-                      // because at py-1 this is a ~24px target, and it is the
-                      // control that decides what the user is billed — every
-                      // other picker in the product grows on a touch pointer.
-                      "rounded-full border px-3.5 py-1 font-mono text-caption coarse:py-2",
-                      "transition-[background-color,border-color,color] duration-fast ease-out-soft",
-                      active
-                        ? "border-border/60 bg-accent text-foreground"
-                        : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    )}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/*
+              The house segmented control, not a hand-rolled one. This was a
+              role="tablist" div wrapping raw buttons, set in 11px MONO on the
+              one control that decides what the user pays, over a pill track
+              that disagreed with the real primitive on radius, fill and inset.
+              A one-of-N choice is a radiogroup with a gliding thumb and arrow
+              keys, and the product already has exactly one of those. The only
+              thing kept from the old buttons is `coarse:py-2`: this picks a
+              price, and every other picker in the product grows on touch.
+            */}
+            <SegmentedControl<BillingInterval>
+              value={interval}
+              onChange={setInterval}
+              options={[
+                { value: "month", label: "Monthly" },
+                { value: "year", label: "Yearly" },
+              ]}
+              ariaLabel="Billing interval"
+              className="shrink-0"
+              optionClassName="coarse:py-2"
+            />
             {/*
               Said plainly rather than left for someone to work out. Every
               competitor discounts annual by 17-23%; implying a saving that is
@@ -267,33 +260,19 @@ export default function UpgradePage() {
               delay={120}
               header={
                 maxTiers.length > 1 ? (
-                  <div
-                    role="tablist"
-                    aria-label="Max tier"
-                    // Same ladder as the billing-interval tablist above.
-                    className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-secondary p-0.5"
-                  >
-                    {maxTiers.map((t) => {
-                      const active = activeMaxTier === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => setMaxTier(t.id)}
-                          className={cn(
-                            "rounded-full border px-3 py-1 font-mono text-caption coarse:py-2",
-                            "transition-[background-color,border-color,color] duration-fast ease-out-soft",
-                            active
-                              ? "border-border/60 bg-accent text-foreground"
-                              : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                          )}
-                        >
-                          {t.multiplier}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  // The ×5/×20 switch was a verbatim second copy of the billing
+                  // tablist — same hand-rolled track, same mono caption labels —
+                  // so the page shipped two of a control the product has one of.
+                  // It is the same primitive as the interval switch above now,
+                  // and the multipliers are sans like any other control label.
+                  <SegmentedControl<MaxTier>
+                    value={activeMaxTier}
+                    onChange={setMaxTier}
+                    options={maxTiers.map((t) => ({ value: t.id, label: t.multiplier }))}
+                    ariaLabel="Max tier"
+                    className="shrink-0"
+                    optionClassName="coarse:py-2"
+                  />
                 ) : undefined
               }
             >

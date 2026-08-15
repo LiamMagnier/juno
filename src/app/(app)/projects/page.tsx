@@ -213,7 +213,14 @@ export default function ProjectsPage() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects…"
               aria-label="Search projects"
-              className="h-10 w-full pl-9"
+              // No height. This was the last `h-10` on an <Input> in the product,
+              // so the Projects search stood 40px tall while the search box on
+              // roadmap, artifacts, knowledge, connections and admin stood at the
+              // base 36px — and because it out-specifies nothing but simply wins
+              // the merge, it also cancelled the base `coarse:h-11`, taking the
+              // touch growth away from the one search field most likely to be
+              // used on a phone. `pl-9` stays: that clears the search glyph.
+              className="w-full pl-9"
             />
           </div>
         )}

@@ -831,11 +831,15 @@ function ComponentLibrary({
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1 px-2 py-1.5 text-left font-mono text-micro uppercase tracking-wider text-muted-foreground hover:text-foreground"
+        // Sentence case in the sans face. This read "COMPONENTS" — full
+        // uppercase mono at 10.5px, off the type scale — on a control the user
+        // presses to open the section. The count keeps the mono, because a
+        // figure is what the mono face is for.
+        className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
       >
         <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
         Components
-        <span className="ml-auto tabular-nums">{components.length}</span>
+        <span className="ml-auto font-mono text-micro tabular-nums">{components.length}</span>
       </button>
       {open && (
         <ul className="max-h-56 overflow-y-auto pb-1">
@@ -999,11 +1003,13 @@ function VariableLibrary({
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left font-mono text-micro uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          // Sentence case in the sans face, matching the Components disclosure
+          // above — the two are one idiom and were both set in uppercase mono.
+          className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
         >
           <ChevronRight className={cn("size-3 transition-transform duration-fast", open && "rotate-90")} aria-hidden />
           Variables
-          <span className="ml-auto tabular-nums">{variables.length}</span>
+          <span className="ml-auto font-mono text-micro tabular-nums">{variables.length}</span>
         </button>
         <button
           type="button"

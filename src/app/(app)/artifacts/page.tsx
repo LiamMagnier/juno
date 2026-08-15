@@ -261,7 +261,11 @@ export default function ArtifactsPage() {
           // magnifier. The filter drops to its own line instead.
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <div className="relative sm:min-w-48 sm:max-w-xs sm:flex-1">
-              <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              {/* size-4, not size-3.5. Every other search field in the product
+                  sets its magnifier at size-4 over the same left-3 offset and
+                  the same pl-9 — projects, roadmap, knowledge — so this one
+                  glyph was a half-step small in an otherwise identical field. */}
+              <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
                 value={query}

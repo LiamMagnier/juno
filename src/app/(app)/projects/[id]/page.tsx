@@ -23,6 +23,7 @@ import {
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import {
@@ -582,13 +583,23 @@ export default function ProjectDetailPage() {
               ) : (
                 <>
                   <h1 className="truncate text-page-title">{data.project.name}</h1>
-                  <button
+                  {/* A bare glyph you press, which is exactly `kind="icon"`. It
+                      used to hand-roll the recipe — pressable, rounded-control,
+                      p-1.5, muted ink, an accent hover — one of four copies of it
+                      on this page, and the only radius among them that the house
+                      idiom for a pressable glyph does not use (a circle). The
+                      variant also grows the target to 40px on coarse pointers,
+                      which the padded version never did. `shrink-0` stays: it sits
+                      in a flex row beside a truncating h1. */}
+                  <Pressable
+                    kind="icon"
+                    size="md"
                     onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
-                    className="pressable shrink-0 rounded-control p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="shrink-0"
                     aria-label="Rename project"
                   >
                     <ActionIcons.edit className="size-4" />
-                  </button>
+                  </Pressable>
                 </>
               )}
             </div>
@@ -828,13 +839,20 @@ export default function ProjectDetailPage() {
                           <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption text-muted-foreground">
                             Only you
                           </span>
-                          <button
+                          {/* The section affordances in this sidebar Card — this
+                              one, Instructions' pencil below, and Files' plus —
+                              were three copies of the same hand-written string,
+                              two of them byte-identical. `kind="icon" size="sm"`
+                              is that shape as a primitive: a 28px circle with the
+                              house hover fill, 36px on coarse pointers. */}
+                          <Pressable
+                            kind="icon"
+                            size="sm"
                             onClick={() => router.push("/memory")}
-                            className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                             aria-label="Manage memories"
                           >
                             <ActionIcons.edit className="size-3.5" />
-                          </button>
+                          </Pressable>
                         </div>
                       </div>
                       {memories.length === 0 ? (
@@ -859,13 +877,16 @@ export default function ProjectDetailPage() {
                     <section className="py-5">
                       <div className="mb-2.5 flex items-center justify-between gap-2">
                         <CardEyebrow>Instructions</CardEyebrow>
-                        <button
+                        {/* Same glyph, same job, same primitive as Memory's above
+                            — the two were byte-identical hand-rolled strings. */}
+                        <Pressable
+                          kind="icon"
+                          size="sm"
                           onClick={() => setInstructionsOpen(true)}
-                          className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           aria-label="Edit project instructions"
                         >
                           <ActionIcons.edit className="size-3.5" />
-                        </button>
+                        </Pressable>
                       </div>
                       {instructions ? (
                         <button
@@ -908,14 +929,20 @@ export default function ProjectDetailPage() {
                     <section className="pt-5">
                       <div className="mb-2.5 flex items-center justify-between gap-2">
                         <CardEyebrow>Files</CardEyebrow>
-                        <button
+                        {/* The third copy of that string, plus a `disabled:opacity-50`
+                            it had to spell out. The primitive already dims AND
+                            un-hits a disabled control, so the upload affordance
+                            stops accepting clicks while a file is in flight
+                            rather than merely looking like it doesn't. */}
+                        <Pressable
+                          kind="icon"
+                          size="sm"
                           onClick={() => fileRef.current?.click()}
                           disabled={uploading}
-                          className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                           aria-label="Add file"
                         >
                           {uploading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-4" />}
-                        </button>
+                        </Pressable>
                       </div>
                       {workspaceFiles.length === 0 ? (
                         <EmptyState

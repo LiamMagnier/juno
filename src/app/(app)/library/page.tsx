@@ -23,6 +23,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
+import { useRadioGroup } from "@/components/settings/use-radio-group";
 import {
   Dialog,
   DialogContent,
@@ -620,6 +622,16 @@ export default function LibraryPage() {
   const someSelected = !allSelected && filtered.some((item) => selected.has(item.id));
   const totalSize = libraryItems.reduce((sum, item) => sum + item.size, 0);
 
+  // The file-type filter declares `role="radiogroup"`, which is a promise that
+  // the group is one tab stop and the arrows move between the options. It was
+  // making that promise and keeping none of it. This is the same hook the
+  // settings radiogroups use, so the pattern is identical across the product.
+  const filterOptionProps = useRadioGroup(
+    TABS,
+    TABS.findIndex((filter) => filter.key === tab),
+    (filter) => setTab(filter.key)
+  );
+
   const toggleSelect = (id: string) =>
     setSelected((previous) => {
       const next = new Set(previous);
@@ -795,61 +807,71 @@ export default function LibraryPage() {
         {!error && (
           <div className="sticky top-0 z-20 -mx-1 border-b border-border/55 bg-background/90 px-1 py-3 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {/* Chips in a radiogroup, matching Artifacts — the closer sibling,
-                  since both filter one list by content type. This was raw buttons
-                  with aria-pressed (wrong for a single-select) plus an underline
-                  positioned at -bottom-[13px], an offset hard-tied to the bar's
-                  py-3 that detached the moment that padding changed. */}
+              {/* A chip row rather than a SegmentedControl, and the counts are the
+                  reason. Each pill carries a live count that moves while files load,
+                  and SegmentedOption.label is typed `string` — the count would
+                  flatten into untabulated sans inside a thumb that re-measures on
+                  every change. So this is the shared chip primitive instead of the
+                  hand-rolled pill that was here, whose selected state was the
+                  inverted `bg-foreground text-background` fill removed from the view
+                  toggle further along this same bar. */}
               <div role="radiogroup" aria-label="Filter files" className="flex flex-wrap items-center gap-1.5">
-                {TABS.map((filter) => {
+                {TABS.map((filter, index) => {
                   const active = tab === filter.key;
                   return (
-                    <button
+                    <Pressable
                       key={filter.key}
-                      type="button"
+                      {...filterOptionProps(index)}
+                      kind="chip"
+                      size="lg"
+                      selected={active}
                       role="radio"
                       aria-checked={active}
                       onClick={() => setTab(filter.key)}
-                      className={cn(
-                        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-all duration-base ease-out-soft active:scale-95",
-                        active
-                          ? "border-foreground/40 bg-foreground text-background shadow-xs"
-                          : "border-border/70 bg-secondary/80 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      )}
                     >
-                      <span>{filter.label}</span>
-                      <span className={cn("font-mono text-micro tabular-nums", active ? "text-background/80" : "text-muted-foreground/80")}>
+                      {filter.label}
+                      {/* opacity-70 rather than a colour ternary: the selected chip
+                          sets text-primary-ink, and an explicit colour would fight it. */}
+                      <span className="font-mono text-micro tabular-nums opacity-70">
                         {countFor(libraryItems, filter.key)}
                       </span>
-                    </button>
+                    </Pressable>
                   );
                 })}
               </div>
 
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
-                {/* The focus affordance was a foreground-tinted box-shadow — the exact
-                    white-halo pattern the shadow rebase removed, which on the true-black
-                    ground painted a glow around the field instead of a ring. It is the
-                    ring token now, like every other focusable surface. */}
-                <div className="group/search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-border/60 bg-card px-3 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 motion-reduce:transition-none sm:max-w-[16rem]">
-                  <Search className="size-3.5 shrink-0 text-muted-foreground transition-colors group-focus-within/search:text-foreground" />
+                {/* The last hand-rolled text field in the product: a <div> shell
+                    around a bare <input>, at its own radius and border. Its `bg-card`
+                    utility was also defeating Input's `.field-well` ground — utilities
+                    are emitted after the components layer — so this was the one field
+                    that never painted its per-theme ground. Composed like Artifacts
+                    now: relative wrapper, absolute magnifier, `pl-9` on the Input. No
+                    `type="search"`, because WebKit's native clear would then sit beside
+                    the one below. */}
+                <div className="relative min-w-0 flex-1 sm:max-w-[16rem]">
+                  <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <label htmlFor="library-search" className="sr-only">Search files</label>
-                  <input
+                  <Input
                     id="library-search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search files"
-                    className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    className={cn("h-9 pl-9", query && "pr-10")}
                   />
                   {query && (
-                    <button
-                      type="button"
-                      onClick={() => setQuery("")}
-                      aria-label="Clear search"
-                      className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <ActionIcons.dismiss className="size-3.5" />
-                    </button>
+                    // Out of the input's flow now, on the icon primitive, which
+                    // brings the coarse-pointer target the raw button never had.
+                    // `pr-10` above keeps the value from running under it. The
+                    // centring is a flex wrapper rather than `-translate-y-1/2` on
+                    // the control: `.pressable:active` sets a bare `transform`, so
+                    // the press dip would have replaced the centring offset and the
+                    // button would jump half its height on every press.
+                    <div className="absolute inset-y-0 right-1 flex items-center">
+                      <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search">
+                        <ActionIcons.dismiss className="size-3.5" />
+                      </Pressable>
+                    </div>
                   )}
                 </div>
                 {/* Was a hand-rolled track with a flat `bg-foreground text-background`

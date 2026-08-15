@@ -270,8 +270,12 @@ export default function DesignPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
+            {/* Ghost, not outline. Cancel is the way out of a dialog, not a
+                second thing being offered, and every other confirm dialog in
+                the product spells that as ghost. An outlined cancel drew a box
+                that competed with the destructive button beside it. */}
             <DialogClose asChild>
-              <Button variant="outline" disabled={deleting}>
+              <Button variant="ghost" disabled={deleting}>
                 Cancel
               </Button>
             </DialogClose>

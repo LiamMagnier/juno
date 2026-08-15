@@ -8,6 +8,7 @@ import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import type { WebSearchSite } from "@/components/aicss/web-search";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
@@ -1453,23 +1454,35 @@ export function ThoughtProcessPanel({
 
         {/* FOOTER — two copy buttons and nothing else. No "Started 14:32:07"
             line: `t0` is not reliably a server instant (see the header comment).
-            No toast either — the label is the receipt. */}
+            No toast either — the label is the receipt.
+
+            Both were hand-rolled <button>s wearing FULL UPPERCASE 11px mono on a
+            hand-set 0.08em track. That is three breaks stacked on one control,
+            and the worst of them is the font: mono is for the figures in the
+            ledger above, not for a control's prose label. They are the plain
+            ghost Button now, sentence case, which also restores the 44px touch
+            target their hand-rolled padding never reached. The behaviour is
+            untouched — same handlers, same `copied` receipt in the label. */}
         <div className={cn(rule("footer"), "flex items-center gap-2")}>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => void copy("run", toRunMarkdown(run, reasoning, finishNote))}
-            className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+            className="text-muted-foreground"
           >
             {copied === "run" ? "Copied" : "Copy run"}
-          </button>
+          </Button>
           {run.sources.length > 0 && (
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => void copy("sources", toSourcesMarkdown(run))}
-              className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+              className="text-muted-foreground"
             >
               {copied === "sources" ? "Copied" : "Copy sources"}
-            </button>
+            </Button>
           )}
         </div>
       </div>

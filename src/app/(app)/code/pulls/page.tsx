@@ -46,8 +46,14 @@ export default async function CodePullsPage() {
           // The way back to the thing that produces this list. It matters most
           // when the list is empty, which is exactly when it is least obvious
           // that pull requests come from runs.
+          //
+          // Default variant, not `outline`. This is byte-for-byte the same
+          // action as the one on `/code` — same label, same icon, same href —
+          // and it was the only one of the pair drawn as secondary, so the two
+          // tabs of one surface disagreed about whether starting a task is the
+          // primary thing to do here. It isn't a different question on this tab.
           actions={
-            <Button asChild variant="outline" className="gap-1.5">
+            <Button asChild className="gap-1.5">
               <Link href="/code/new">
                 <AppIcons.new className="size-4" aria-hidden="true" /> New task
               </Link>

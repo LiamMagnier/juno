@@ -19,6 +19,8 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Pressable } from "@/components/ui/pressable";
+import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { useApp } from "@/components/app/app-provider";
 import { ACCENTS, swatchInk } from "@/lib/accents";
 import { resolveModel, type ModelInfo } from "@/lib/models";
@@ -327,6 +329,15 @@ export function Onboarding() {
   const currentModelId = resolveModel(settings.defaultModel)?.id ?? settings.defaultModel;
   const labCount = new Set(models.map((m) => m.provider)).size;
   const activeTheme = theme ?? "system";
+  // The keyboard half of the theme radiogroup below — one tab stop, arrows and
+  // Home/End between the three tiles. Same hook the Settings page's Theme picker
+  // uses; see use-radio-group.ts for why a group that gives every option its own
+  // tab stop keeps only half of what `role="radiogroup"` promises.
+  const themeOption = useRadioGroup(
+    THEMES,
+    THEMES.findIndex((t) => t.id === activeTheme),
+    (t) => setTheme(t.id)
+  );
 
   const capabilities = [
     { icon: MessageSquareText, label: "Chat & code", desc: "Reason and build across the best models." },
@@ -496,28 +507,37 @@ export function Onboarding() {
 
               <div>
                 <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Theme</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTheme(t.id)}
-                      aria-pressed={activeTheme === t.id}
-                      className={cn(
-                        "pressable flex flex-col items-center gap-1.5 rounded-card border px-2 py-3",
-                        activeTheme === t.id
-                          ? "border-primary/50 bg-primary/10 text-primary"
-                          // hover:bg-secondary — see the model field above: on a
-                          // popover, --accent resolves to the panel's own colour
-                          // on dark, so the two unselected theme tiles answered
-                          // the pointer with nothing.
-                          : "text-muted-foreground hover:bg-secondary"
-                      )}
-                    >
-                      <t.icon className="size-4.5" />
-                      <span className="font-mono text-caption uppercase">{t.label}</span>
-                    </button>
-                  ))}
+                {/* One control, one implementation: this is the Settings page's
+                    Theme picker, which is already `<Pressable kind="tile">` in a
+                    radiogroup. What stood here was a hand-rolled `pressable …
+                    border` recipe with its own selected tint, labelled in
+                    uppercase mono at 11px — the first screen a new user meets,
+                    in the one style the house rule forbids — and `aria-pressed`
+                    on three buttons, which announces three independent toggles
+                    rather than one choice of three. The `hover:bg-secondary` it
+                    carried goes with it: that was written when --accent and
+                    --popover were both 13% on dark, and they are 15% and 9% now,
+                    so the tile's own accent hover is a six-point step off the
+                    panel with no help from the call site. */}
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
+                  {THEMES.map((t, i) => {
+                    const selected = activeTheme === t.id;
+                    return (
+                      <Pressable
+                        key={t.id}
+                        kind="tile"
+                        role="radio"
+                        selected={selected}
+                        aria-checked={selected}
+                        onClick={() => setTheme(t.id)}
+                        className="items-center gap-1.5"
+                        {...themeOption(i)}
+                      >
+                        <t.icon className="size-4.5" />
+                        {t.label}
+                      </Pressable>
+                    );
+                  })}
                 </div>
               </div>
 
