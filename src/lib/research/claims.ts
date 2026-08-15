@@ -130,6 +130,17 @@ export function createCitationJudge(opts: {
   policy: BackgroundProviderPolicy;
   conversationProvider?: string | null;
   /**
+   * The account the judge's model calls bill to.
+   *
+   * TWO ledgers, one charge, and they answer different questions. `onSpend`
+   * below feeds the RUN's odometer, which is what the per-run ceiling reads;
+   * this bills the ACCOUNT's monthly ledger, which is what `checkBudget` reads.
+   * A run that stayed inside its own $1 ceiling still spent the month's money.
+   * Both come from the same figure `runUtilityPrompt` computes once, so they
+   * cannot drift apart.
+   */
+  userId: string;
+  /**
    * Called with what each judge call really cost, micro-USD.
    *
    * Out of band rather than on the verdict, and that is deliberate. A verdict is
@@ -160,6 +171,7 @@ export function createCitationJudge(opts: {
       maxTokens: JUDGE_OUTPUT_TOKENS,
       label: "research/citation",
       parse: parseJudgeVerdict,
+      userId: opts.userId,
       policy: opts.policy,
       conversationProvider: opts.conversationProvider,
       purpose: "citation_validation",
@@ -326,6 +338,7 @@ export async function recordCitationAudit(opts: {
   const judge =
     opts.judge ??
     createCitationJudge({
+      userId: opts.userId,
       policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
       conversationProvider: opts.conversationProvider,
       onSpend: (microUsd) => {

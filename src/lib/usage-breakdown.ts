@@ -32,6 +32,11 @@ export const USAGE_SURFACES = [
   // while nobody is looking.
   "work",
   "research",
+  // Background utility calls (`runUtilityPrompt`): titles, AI moderation,
+  // memory work, follow-up pills, the citation judge. Separate from "chat" on
+  // purpose — an account should be able to see what it spent on work it never
+  // asked for, and a title generation is not a turn of conversation.
+  "utility",
 ] as const;
 export type UsageSurface = (typeof USAGE_SURFACES)[number];
 

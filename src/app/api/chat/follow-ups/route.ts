@@ -121,6 +121,10 @@ export async function POST(req: Request) {
       maxTokens: 160,
       label: "follow-ups",
       parse: parseSuggestions,
+      // Decoration the user did not ask for, on a model call they pay for:
+      // billed to the account as `kind: "utility"` so the pills show up in the
+      // month's spend instead of being free to the budget and unexplained.
+      userId: user.id,
     });
 
     return NextResponse.json({ suggestions: result ?? [] });

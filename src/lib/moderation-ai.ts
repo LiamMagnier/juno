@@ -172,7 +172,20 @@ function parseVerdict(text: string): ModerationHit | null {
  * walk. Returns a hit only on real, confident violations. FAIL OPEN on any
  * failure (empty input, no provider, parse error, timeout) → null.
  */
-export async function moderateText(text: string): Promise<ModerationHit | null> {
+export async function moderateText(
+  text: string,
+  /**
+   * The account whose message this is, so the classifier's model call reaches
+   * the spend ledger (`kind: "utility"`). Null only where there is no account
+   * to bill — the offline check in scripts/test-moderation.ts.
+   *
+   * Moderation is billed but never budget-GATED: `runUtilityPrompt` has no
+   * pre-spend check in front of it, and adding one here would mean an account
+   * near its monthly ceiling stops being screened. Cost is a reason to see the
+   * number, not a reason to stop reading what the model is being sent.
+   */
+  userId: string | null
+): Promise<ModerationHit | null> {
   const trimmed = (text ?? "").trim();
   if (trimmed.length < MIN_INPUT_CHARS) return null;
 
@@ -186,6 +199,7 @@ export async function moderateText(text: string): Promise<ModerationHit | null> 
       maxTokens: 200,
       label: "moderation/classify",
       parse: parseVerdict,
+      userId,
     });
     return result ?? null;
   } catch (err) {
@@ -212,7 +226,7 @@ export async function moderateUserMessages({
     // One request produces at most one moderation record/strike even when a
     // private context contains several user turns.
     for (const text of texts) {
-      const hit = await moderateText(text);
+      const hit = await moderateText(text, userId);
       if (!hit) continue;
       await recordFlag({
         userId,

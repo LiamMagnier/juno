@@ -76,7 +76,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // picks a cheap fast model from whichever providers the server has keys for.
   // (It used to resolve a model through canUseModel(), which is Pro-floored —
   // so a Free user got no title model at all and always hit the crude fallback.)
-  const generated = await generateChatTitleFromMessages(contextMessages).catch((err) => {
+  // It is not plan-gated, but it IS billed: the naming call is a real model
+  // call made on this account's behalf, and it reaches the ledger as
+  // `kind: "utility"` rather than silently spending outside the month's budget.
+  const generated = await generateChatTitleFromMessages(contextMessages, { userId: user.id }).catch((err) => {
     console.error("[title] generation failed", { conversationId: id, err });
     return null;
   });
@@ -115,6 +118,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (!project || !canAutoRenameProjectName({ name: project.name, nameSource: project.nameSource })) return;
       const generatedProjectName =
         (await generateProjectName({
+          userId: user.id,
           firstUser: contextMessages.map((m) => m.content).join("\n\n").slice(0, 2000),
           instructions: project.instructions,
         }).catch((err) => {

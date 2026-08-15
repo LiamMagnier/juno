@@ -31,15 +31,25 @@ function clean(raw: string, max: number, maxWords = 7): string | null {
  * bare `catch`, so one rate-limited provider silently downgraded every title to
  * the crude first-7-words fallback with nothing in the logs to explain it.
  */
-async function complete(
-  system: string,
-  user: string,
-  maxTokens: number,
-  label: string,
-  parse: (text: string) => string | null,
-  llm?: UtilityLlm
-): Promise<string | null> {
-  const { result } = await runUtilityPrompt({ system, userMsg: user, maxTokens, label, parse, llm });
+async function complete(opts: {
+  system: string;
+  user: string;
+  maxTokens: number;
+  label: string;
+  /** The account the naming call is billed to — see the exports below. */
+  userId: string | null;
+  parse: (text: string) => string | null;
+  llm?: UtilityLlm;
+}): Promise<string | null> {
+  const { result } = await runUtilityPrompt({
+    system: opts.system,
+    userMsg: opts.user,
+    maxTokens: opts.maxTokens,
+    label: opts.label,
+    userId: opts.userId,
+    parse: opts.parse,
+    llm: opts.llm,
+  });
   return result;
 }
 
@@ -65,7 +75,14 @@ export function fallbackChatTitle(messages: TitleContextMessage[]): string | nul
 
 export async function generateChatTitleFromMessages(
   messages: TitleContextMessage[],
-  opts: { llm?: UtilityLlm } = {}
+  /**
+   * `userId` is required, and it is not decoration: naming runs a real model
+   * call on the user's behalf, and until it was threaded through here that call
+   * was spent without ever reaching the ApiSpend ledger — free to the monthly
+   * budget and absent from the usage page. It bills as `kind: "utility"`, so a
+   * title never masquerades as a chat turn.
+   */
+  opts: { userId: string | null; llm?: UtilityLlm }
 ): Promise<string | null> {
   const usable = messages
     .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
@@ -83,19 +100,20 @@ Return ONLY the title.`;
   const transcript = usable
     .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${compact(m.content).slice(0, m.role === "USER" ? 1600 : 1000)}`)
     .join("\n\n");
-  return complete(
+  return complete({
     system,
-    `Conversation so far:\n${transcript}\n\nTitle:`,
-    32,
-    "title",
-    (raw) => clean(raw, 60, 7),
-    opts.llm
-  );
+    user: `Conversation so far:\n${transcript}\n\nTitle:`,
+    maxTokens: 32,
+    label: "title",
+    userId: opts.userId,
+    parse: (raw) => clean(raw, 60, 7),
+    llm: opts.llm,
+  });
 }
 
 /** A concise folder-style name for a project, derived from its instructions and/or first chat. */
 export async function generateProjectName(
-  opts: { firstUser?: string; instructions?: string; llm?: UtilityLlm }
+  opts: { userId: string | null; firstUser?: string; instructions?: string; llm?: UtilityLlm }
 ): Promise<string | null> {
   const basis = [
     opts.instructions?.trim() ? `Project instructions:\n"""${opts.instructions.slice(0, 1500)}"""` : "",
@@ -111,5 +129,13 @@ Rules:
   - No quotes, no ending punctuation, no emoji.
   - Write it in the SAME language as the content.
 Reply with ONLY the name.`;
-  return complete(system, `${basis}\n\nProject name:`, 16, "project-name", (raw) => clean(raw, 40, 4), opts.llm);
+  return complete({
+    system,
+    user: `${basis}\n\nProject name:`,
+    maxTokens: 16,
+    label: "project-name",
+    userId: opts.userId,
+    parse: (raw) => clean(raw, 40, 4),
+    llm: opts.llm,
+  });
 }

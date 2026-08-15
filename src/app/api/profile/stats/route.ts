@@ -30,7 +30,17 @@ export async function GET() {
   const [account, yearSpends, lifetimeSpends] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.id }, select: { createdAt: true } }),
     prisma.apiSpend.findMany({
-      where: { userId: user.id, createdAt: { gte: since } },
+      /*
+       * The activity card counts REPLIES, and background utility calls are not
+       * replies. `kind: "utility"` is the walk behind chat titles, moderation,
+       * memory extraction, follow-up pills and the citation judge — several
+       * model calls can fire around a single message the user sent, so counting
+       * their rows here would have inflated "generations this year" and the
+       * heatmap by a multiple that has nothing to do with how much the user
+       * wrote. Their COST is still theirs and still shows: the lifetime card
+       * below reads every row, and breaks the utility spend out by kind.
+       */
+      where: { userId: user.id, createdAt: { gte: since }, kind: { not: "utility" } },
       select: {
         model: true,
         promptTokens: true,
@@ -137,7 +147,10 @@ export async function GET() {
     .slice(0, 12);
 
   const lifetimeTokens = lifetimeTokensIn + lifetimeTokensOut;
-  const lifetimeMessages = lifetimeSpends.length;
+  // Row count minus the background walk, for the same reason the year window
+  // excludes it: this number is rendered under the word "Replies". Its cost,
+  // its tokens and its own line in the by-kind breakdown all stay.
+  const lifetimeMessages = lifetimeSpends.filter((s) => (s.kind || "chat") !== "utility").length;
 
   // Persist repairs so plan budget (which sums costMicroUsd) matches the
   // honest recompute — fire-and-forget, capped so a huge ledger can't stall.

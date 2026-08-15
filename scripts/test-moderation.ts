@@ -105,15 +105,15 @@ async function main() {
   console.log("\n3. moderateText — fail open when no LLM is available");
   // ------------------------------------------------------------------
   // A benign message with no provider configured must return null (never flag).
-  const benignVerdict = await moderateText("What's a good recipe for banana bread?");
+  const benignVerdict = await moderateText("What's a good recipe for banana bread?", null);
   check("benign + no LLM → null (fail open)", benignVerdict === null, `got ${JSON.stringify(benignVerdict)}`);
 
   // Empty / tiny inputs short-circuit to null before any LLM call.
-  check("empty → null", (await moderateText("")) === null);
-  check("tiny → null", (await moderateText("ok")) === null);
+  check("empty → null", (await moderateText("", null)) === null);
+  check("tiny → null", (await moderateText("ok", null)) === null);
 
   // The pre-filter still fires through moderateText even with no LLM available.
-  const preHit = await moderateText("XMODTEST_CRITICAL_CSAM in a longer sentence for length");
+  const preHit = await moderateText("XMODTEST_CRITICAL_CSAM in a longer sentence for length", null);
   check("pre-filter hit survives moderateText with no LLM", preHit?.severity === "critical", `got ${JSON.stringify(preHit)}`);
 
   if (failures.length) {

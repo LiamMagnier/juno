@@ -126,6 +126,20 @@ export async function GET(req: Request) {
     const text = await runUtilityPrompt({
       label: "i18n",
       maxTokens: 6000,
+      /*
+       * The one utility call with no account behind it, and the only `null` in
+       * the codebase.
+       *
+       * This route has no auth check at all (see the rate limits above), so
+       * there is frequently no session to read — and even when there is, the
+       * result is cached process-wide and served to every visitor who asks for
+       * that locale. Billing the first visitor for a catalog the next hundred
+       * read for free would be arbitrary, and `ApiSpend.userId` is a foreign
+       * key with nowhere else to point. So this spend stays a PLATFORM cost:
+       * unattributed in the per-account ledger, bounded by the two rate limits
+       * and the translation cache rather than by anyone's monthly budget.
+       */
+      userId: null,
       system:
         "You translate software interface copy. Return exactly one valid JSON object with the same keys as the input and translated string values. " +
         "Translate naturally and concisely. Preserve Juno, company/model/provider names, URLs, email examples, keyboard shortcuts, variables, numbers, and punctuation where appropriate. " +

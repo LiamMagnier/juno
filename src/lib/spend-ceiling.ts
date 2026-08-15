@@ -99,8 +99,29 @@ export function effectiveBudget(input: EffectiveBudgetInput): EffectiveBudget {
 // Reservations
 // ---------------------------------------------------------------------------
 
-/** Every surface that can spend money. Matches `SpendReservation.kind`. */
-export type SpendKind = "chat" | "work" | "voice" | "research" | "code" | "task" | "image" | "video";
+/**
+ * Every surface that can spend money. Matches `SpendReservation.kind`.
+ *
+ * "utility" is the odd one out and deliberately so: it is not a surface the
+ * user is looking at, it is the background walk in `runUtilityPrompt` — chat
+ * titles, AI moderation, memory extraction and consolidation, follow-up pills,
+ * the memory editor, the research citation judge. That spend reached no ledger
+ * at all until it got this name, so it was invisible to both the monthly
+ * ceiling and the usage page. Filing it under "chat" would have made it
+ * visible and simultaneously unreadable: the ledger's request counts and
+ * cost-per-turn for real conversations would have absorbed a title generation
+ * that the account never asked for.
+ */
+export type SpendKind =
+  | "chat"
+  | "work"
+  | "voice"
+  | "research"
+  | "code"
+  | "task"
+  | "image"
+  | "video"
+  | "utility";
 
 /**
  * What a unit of work is assumed to cost before it has run.
@@ -123,6 +144,13 @@ export const DEFAULT_ESTIMATE_MICRO_USD: Record<SpendKind, number> = {
   task: 50_000,
   image: 40_000,
   video: 500_000,
+  // Nothing reserves under this kind today: the utility walk is fire-and-check
+  // background work that runs to completion and then bills, with no pre-spend
+  // gate in front of it (see runUtilityPrompt). The figure is here because the
+  // Record is exhaustive over SpendKind — and it is a real one, not a filler:
+  // one small prompt on a free-tier model, so a caller that ever does reserve
+  // holds something close to the truth rather than a chat turn's estimate.
+  utility: 5_000, // $0.005
 };
 
 /**

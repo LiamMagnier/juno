@@ -108,6 +108,7 @@ Rules:
     userMsg,
     maxTokens: 600,
     label: "memory/edit",
+    userId: user.id,
     parse: (text) => {
       const attempt = modelOutSchema.safeParse(extractJson(text));
       return attempt.success ? attempt.data : null;

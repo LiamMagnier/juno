@@ -30,6 +30,7 @@ import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowled
 // estimate and a bill drift apart, and this number is about to be compared
 // against a reservation by the research engine.
 import { estimateGenerationCostUsd } from "@/lib/pricing";
+import { recordSpend } from "@/lib/spend";
 
 /*
  * Incremental memory architecture
@@ -166,6 +167,24 @@ export async function runUtilityPrompt<T>(opts: {
   maxTokens: number;
   label: string;
   parse: (text: string) => T | null;
+  /**
+   * The account this walk bills to — or null when there is genuinely no account
+   * behind it.
+   *
+   * Required, and required as a union rather than defaulted, because the bug
+   * this closes was silence: every caller here spent real provider tokens that
+   * never reached the ApiSpend ledger, so background work was invisible to the
+   * monthly ceiling (`effectiveBudget`/`checkBudget`) and to the usage page. A
+   * `userId?: string` would let the next caller reintroduce that by omission;
+   * a required field makes each one state, at the call site, whose money this
+   * is.
+   *
+   * Exactly one caller passes null today: the public UI-translation route,
+   * which has no session and caches its result process-wide for every visitor.
+   * Its spend is a platform cost, not any one account's — and ApiSpend.userId
+   * is a foreign key with nowhere to point.
+   */
+  userId: string | null;
   /** Override the provider walk (tests / callers with their own model). */
   llm?: UtilityLlm;
   /**
@@ -190,10 +209,15 @@ export async function runUtilityPrompt<T>(opts: {
   /**
    * What the provider walk really spent, micro-USD, across EVERY attempt.
    *
-   * Additive and optional, because almost every caller of this function is an
-   * account-level utility — titles, moderation, memory extraction, follow-ups,
-   * translations — that runs outside any per-job ledger and correctly ignores
-   * it. The one caller that cannot ignore it is the research citation judge:
+   * The ACCOUNT ledger is not this value's job: the walk writes its own
+   * ApiSpend rows as it goes (see the `finally` below), so a caller that
+   * ignores this number is still billed. What it reports is the same spend to
+   * a caller that keeps a SECOND ledger of its own.
+   *
+   * Additive and optional, because almost every caller of this function —
+   * titles, moderation, memory extraction, follow-ups, translations — keeps no
+   * such ledger and correctly ignores it. The one caller that cannot is the
+   * research citation judge:
    * it runs inside a budgeted run whose ceiling is enforced BEFORE each stage,
    * and a stage that never says what it cost is a stage the ceiling cannot see.
    * The run's reported cost under-stated the audit by the whole of it.
@@ -291,14 +315,45 @@ export async function runUtilityPrompt<T>(opts: {
        * Same reasoning, and the same helper, as `utilityCompletion` in
        * src/lib/research/tools.ts.
        */
-      spentMicroUsd += Math.round(
-        estimateGenerationCostUsd(model, {
-          promptTokens: inputTokens,
-          completionTokens: outputTokens,
+      const billed = estimateGenerationCostUsd(model, {
+        promptTokens: inputTokens,
+        completionTokens: outputTokens,
+        promptChars: opts.system.length + opts.userMsg.length,
+        completionChars: out.length,
+      });
+      spentMicroUsd += Math.round(billed.costUsd * 1_000_000);
+      /*
+       * ONE LEDGER ROW PER ATTEMPT, from the same `billed` figure the walk's
+       * own total is accumulated from — so the number the research engine
+       * reserves against and the number the monthly ceiling enforces cannot
+       * disagree. Two computations of one charge is the drift this avoids.
+       *
+       * Per attempt rather than one summed row at the end, because ApiSpend is
+       * "one row per billable model call" and a walk can call two providers
+       * before a third answers: a single row would have to pick one model id
+       * for tokens spent on three, and the usage page's per-model breakdown
+       * would blame the wrong provider for the overload it routed around.
+       *
+       * Awaited, not fired-and-forgotten. Most of these walks run inside a
+       * route handler or an `after()` hook that ends the moment the caller
+       * gets its answer, and a floating insert there is a charge that lands
+       * only if the process happens to live long enough. `recordSpend` already
+       * swallows its own failures (a ledger outage must never break a title);
+       * the catch is for the finally block itself, where a throw would replace
+       * the model's answer with an error about billing.
+       */
+      if (opts.userId) {
+        await recordSpend({
+          userId: opts.userId,
+          model: model.id,
+          kind: "utility",
+          promptTokens: billed.promptTokens,
+          completionTokens: billed.completionTokens,
+          costUsd: billed.costUsd || undefined,
           promptChars: opts.system.length + opts.userMsg.length,
           completionChars: out.length,
-        }).costUsd * 1_000_000
-      );
+        }).catch(() => {});
+      }
     }
     const parsed = opts.parse(out);
     if (parsed === null) console.error(`[${opts.label}] ${model.id} unusable output (${out.length} chars)`);
@@ -786,6 +841,7 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
       maxTokens: 500,
       label: "memory/extract",
       parse: parseExtraction,
+      userId: opts.userId,
       policy,
       conversationProvider,
       purpose: "memory_extraction",
@@ -1259,6 +1315,7 @@ Rules:
     maxTokens: 1400,
     label: "memory/consolidate",
     parse: (text) => (text.trim() ? text.trim() : null),
+    userId: opts.userId,
     policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
     conversationProvider,
     purpose: "memory_consolidation",
