@@ -1068,6 +1068,8 @@ struct DesktopConversationView: View {
             attachmentModel: attachmentModel,
             libraryModel: configuration.libraryModel,
             projectModel: configuration.projectModel,
+            workspaceModel: configuration.projectWorkspaceModel,
+            documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
@@ -2355,6 +2357,16 @@ struct DesktopComposer: View {
     let attachmentModel: NativeComposerAttachmentModel?
     let libraryModel: NativeLibraryModel?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    /// The local half of every custom assistant on this account, which is where a
+    /// project's preferred model is kept. Optional for the same reason
+    /// ``JunoDesktopConfiguration/projectWorkspaceModel`` is: a composition root
+    /// that could not open this Mac's local store has no preferences to read, and
+    /// a composer with no preferences behaves exactly as it did before they
+    /// existed.
+    let workspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
+    /// This Mac's local document index. Non-nil is what makes the "My documents"
+    /// row in the "+" menu appear at all — see ``documentGroundingArmed``.
+    let documentIndex: NativeDocumentIndexModel?
     let connectorModel: NativeConnectorModel?
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
@@ -2391,6 +2403,38 @@ struct DesktopComposer: View {
     /// Defaults to false so an existing reader's model choice keeps being obeyed
     /// exactly as before. See ``routedModelID(for:)`` for why this is opt-in.
     @AppStorage("juno.desktop.composer.auto-route-model") private var autoRouteModel = false
+    /// Whether a turn may quote this Mac's own document index.
+    ///
+    /// **Off by default, and that default is the point.** Importing a file into
+    /// the Library is consent to *search* it on this machine; it is not standing
+    /// consent to put paragraphs of it into every question that leaves the Mac
+    /// afterwards. Somebody who has indexed a medical letter and then asks Juno
+    /// an unrelated question must not have the letter quoted at a provider
+    /// because a lexical ranker thought two words matched.
+    ///
+    /// `@AppStorage` rather than `@State`, beside `fastMode` and `proMode`: it is
+    /// a preference, and a reader who turns it on should not have to turn it on
+    /// again in the next window. It can therefore be on with an empty index —
+    /// which is fine and says so, because the index is memory-only and starts
+    /// empty at every launch.
+    @AppStorage("juno.desktop.composer.document-context") private var documentContext = false
+    /// What grounding did on the last send, in one sentence.
+    ///
+    /// Kept because "your documents were searched and nothing matched" and "your
+    /// documents were quoted" have to be told apart from outside. Without it a
+    /// reader with the switch on has no way to know which of the two happened,
+    /// and the safe assumption — that their files were consulted — is the wrong
+    /// one about half the time.
+    @State private var groundingNote: String?
+    /// Whether the reader opened the model picker and chose, in this composer,
+    /// since the conversation was selected.
+    ///
+    /// The top rung of ``routedModelID(for:)``'s precedence. It cannot be derived
+    /// from `selectedModelID`: that value is *also* what `configureSelection()`
+    /// resolves from the conversation and the catalog, so "GPT-5.6 because the
+    /// reader said so" and "GPT-5.6 because it was first in the list" are the
+    /// same string and must not be treated as the same instruction.
+    @State private var modelChosenByReader = false
     @State private var selectedProjectID: String?
     @State private var selectedConnectors: Set<String> = []
     @State private var showingFileImporter = false
@@ -2433,6 +2477,52 @@ struct DesktopComposer: View {
 
     private var reasoningEffort: NativeReasoningEffort? {
         thinkingScale?.stops.first { $0.id == thinkingStopID }?.effort
+    }
+
+    // MARK: The reader's own documents
+
+    /// How many files this Mac currently has indexed. Zero is a real and common
+    /// state — the index is memory-only and empty at every launch.
+    private var indexedDocumentCount: Int {
+        documentIndex?.documents.count ?? 0
+    }
+
+    /// Whether the next send will search this Mac's documents.
+    ///
+    /// All three conditions are required. A lit switch over an empty index would
+    /// promise something that cannot happen — the same rule the Web search row
+    /// already follows for a model that cannot search — and a spoken turn leaves
+    /// over the realtime socket, which carries none of the text this grounding
+    /// extends. Claiming otherwise mid-call would be the one thing this feature
+    /// must never do: say documents were consulted when they were not.
+    private var documentGroundingArmed: Bool {
+        documentContext && indexedDocumentCount > 0 && !voiceActive
+    }
+
+    /// The line above the composer about the reader's documents.
+    ///
+    /// Two states, never merged: before a send it says what *will* happen, and
+    /// after one it says what *did*. Silence in between is not an option — the
+    /// whole objection to prompt-side retrieval is that files get read into a
+    /// message with nothing on screen admitting it.
+    @ViewBuilder
+    private var documentContextNotice: some View {
+        if let groundingNote {
+            Label(groundingNote, systemImage: "doc.text.magnifyingglass")
+                .junoCaption()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("juno.desktop.chat.document-context-note")
+        } else if documentGroundingArmed {
+            Label(
+                indexedDocumentCount == 1
+                    ? "Juno will search 1 document on this Mac and quote what it finds in your message."
+                    : "Juno will search \(indexedDocumentCount) documents on this Mac and quote what it finds in your message.",
+                systemImage: "doc.text.magnifyingglass"
+            )
+            .junoCaption()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("juno.desktop.chat.document-context-armed")
+        }
     }
 
     private var canSend: Bool {
@@ -2565,6 +2655,8 @@ struct DesktopComposer: View {
                     .foregroundStyle(Color.junoDanger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            documentContextNotice
 
             if dictating {
                 DesktopDictation(
@@ -2711,11 +2803,16 @@ struct DesktopComposer: View {
             }
         }
         .onAppear {
-            configureSelection()
+            // The project is settled *before* the model is, and the order is
+            // load-bearing: a project's preferred model is part of the answer
+            // `configureSelection()` gives, so resolving first would show the
+            // account default for a frame and then jump to the assistant's model
+            // in front of the reader.
             if let fixedProjectID {
                 selectedProjectID = fixedProjectID
             }
             consumeDraftProject()
+            configureSelection()
             consumeDraftPrompt()
             focused = true
             // Published here as well as from the `onChange` pair below, because a
@@ -2751,18 +2848,38 @@ struct DesktopComposer: View {
         }
         .onChange(of: model.modelCatalog) { _, _ in configureSelection() }
         .onChange(of: model.selectedConversationID) { _, selected in
-            configureSelection()
+            // A pick is about the conversation it was made in. Moving to another
+            // one retires it, so the next conversation's project preference is
+            // free to apply — otherwise one deliberate choice would follow the
+            // reader around the sidebar for the rest of the session.
+            modelChosenByReader = false
+            // A note about the last send describes a message in the conversation
+            // it was sent to. Carried into another one it is a claim about
+            // nothing the reader is looking at.
+            groundingNote = nil
+            // Project first, then selection: `configureSelection()` reads the
+            // project's preferred model, and running it against the *previous*
+            // conversation's project would resolve one assistant's model into
+            // another assistant's chat. Same reason as `onAppear` above.
             if let fixedProjectID {
                 selectedProjectID = fixedProjectID
             } else {
                 selectedProjectID = selected == nil
                     ? nil : model.selectedConversation?.projectId
             }
+            configureSelection()
             if selected == nil {
                 selectedConnectors = []
                 canvasEnabled = false
             }
         }
+        // Covers both directions the preference can move: the reader filing the
+        // draft under a different project from the "+" menu, and the preference
+        // itself being edited on the Projects page while this composer is open.
+        .onChange(of: projectPreferredModelID) { _, _ in configureSelection() }
+        // Disarming the switch retires the note with it: "nothing matched" beside
+        // a switch that is now off reads as the state rather than as history.
+        .onChange(of: documentContext) { _, _ in groundingNote = nil }
         .onChange(of: draftProjectID) { _, _ in
             consumeDraftProject()
         }
@@ -2909,6 +3026,7 @@ struct DesktopComposer: View {
     /// from the outside exactly like a chat armed with nothing.
     private var hasArmedTools: Bool {
         deepResearch || webSearch || canvasEnabled || !selectedConnectors.isEmpty
+            || documentGroundingArmed
     }
 
     /// The "+" itself. What it opens is ``JunoAddMenuContent``, which carries the
@@ -2953,6 +3071,8 @@ struct DesktopComposer: View {
                 webSearch: $webSearch,
                 supportsWebSearch: selectedModel?.supportsWebSearch == true,
                 canvasEnabled: $canvasEnabled,
+                documentContext: $documentContext,
+                indexedDocumentCount: documentIndex == nil ? nil : indexedDocumentCount,
                 connectorModel: connectorModel,
                 connectedConnectors: connectedConnectors,
                 selectedConnectors: $selectedConnectors,
@@ -3022,6 +3142,12 @@ struct DesktopComposer: View {
                 selectedModelID: selectedModelID,
                 select: { descriptor in
                     selectedModelID = descriptor.id
+                    // The only place this is set. It is what makes rung 1 of
+                    // ``routedModelID(for:)`` distinguishable from the same id
+                    // arriving out of `configureSelection()`, and it is why a
+                    // project's preferred model stops reasserting itself after
+                    // somebody has said otherwise.
+                    modelChosenByReader = true
                     showingModelSelector = false
                 }
             )
@@ -3267,12 +3393,47 @@ struct DesktopComposer: View {
         }
     }
 
+    /// The project whose preferences apply to this composer, if any. The fixed
+    /// one wins because a project overview's composer cannot be filed anywhere
+    /// else, whatever the "+" menu last remembered.
+    private var activeProjectID: String? {
+        fixedProjectID ?? selectedProjectID
+    }
+
+    /// The project's preferred model, when it applies.
+    ///
+    /// Nil is the common answer and means "this changes nothing" — no project, no
+    /// preference saved, a preference naming a model this account can no longer
+    /// select, or a reader who has made a pick of their own. The rule itself is
+    /// ``ProjectPreferredModel/resolve(preferredModelID:readerChoseExplicitly:selectableModelIDs:)``,
+    /// which lives in JunoChatKit so the phone cannot grow a second, different
+    /// version of the same precedence.
+    private var projectPreferredModelID: String? {
+        guard let activeProjectID, let workspaceModel else { return nil }
+        return ProjectPreferredModel.resolve(
+            preferredModelID: workspaceModel.workspaces[activeProjectID]?.preferredModelID,
+            readerChoseExplicitly: modelChosenByReader,
+            selectableModelIDs: model.selectableModels.map(\.id)
+        )
+    }
+
     private func configureSelection() {
         selectedModelID = DesktopChatSelection.resolvedModelID(
             current: selectedModelID,
             conversationModel: model.selectedConversation?.model ?? "",
             selectable: model.selectableModels
         )
+        // A project's preference is written into the **picker**, not only onto
+        // the wire. That is what keeps the control honest: an assistant
+        // configured for Sonnet shows "Sonnet" in the composer before the reader
+        // presses Send, rather than showing the account default and quietly
+        // answering as something else. It sits after the resolve above so it
+        // outranks the conversation's own stored model, which is only a record of
+        // what the last turn used — see ``routedModelID(for:)`` for the full
+        // order and the reasoning.
+        if let preferred = projectPreferredModelID {
+            selectedModelID = preferred
+        }
         configureThinking()
     }
 
@@ -3292,16 +3453,38 @@ struct DesktopComposer: View {
 
     /// The model this turn will actually go to.
     ///
-    /// **Off by default, and that default is deliberate.** Auto-routing changes
-    /// which model answers without the reader asking, and a picker that shows one
-    /// name while another model replies is a control that lies. So the reader's
-    /// selection is a `manualLock` until they explicitly turn routing on, and
-    /// this function returns `selectedModelID` unchanged in every other case.
+    /// **The precedence, highest first, and why it is this order.**
+    ///
+    /// 1. **An explicit pick the reader made in this composer.** Opening the
+    ///    picker and choosing is a specific statement about this conversation,
+    ///    made now. Nothing below may quietly overrule it — including
+    ///    auto-routing, which used to. That is a deliberate change: routing is a
+    ///    *standing* preference set once in Settings, and when a standing default
+    ///    and a specific instruction disagree, honouring the standing one is how
+    ///    a reader ends up watching a model they did not choose answer a question
+    ///    they chose it for.
+    /// 2. **The project's preferred model.** Also the reader's instruction, also
+    ///    explicit — just made earlier, on the Projects page, about every chat in
+    ///    this assistant rather than about this one. It outranks the
+    ///    conversation's own stored model because that field only records what
+    ///    the last turn happened to use. `configureSelection()` has already put
+    ///    it in the picker, so this rung shows before it fires.
+    /// 3. **Auto-routing**, when the reader has opted into it and neither of the
+    ///    above has spoken. This is the one rung that is not visible in the
+    ///    picker beforehand, which is why it is opt-in and off by default.
+    /// 4. **Whatever the picker is showing** — the conversation's model, or the
+    ///    account default. The behaviour every reader had before any of this
+    ///    existed.
     ///
     /// The routed id is not written back into `selectedModelID`: the picker keeps
     /// showing what the reader chose as their default, and routing stays a
     /// per-turn decision rather than something that silently rewrites a setting.
     private func routedModelID(for content: String) -> String {
+        // Rung 2 is tested first only because it is the one that needs work:
+        // `projectPreferredModelID` is nil exactly when rung 1 applies, and rung
+        // 1's answer is already sitting in `selectedModelID`.
+        if let preferred = projectPreferredModelID { return preferred }
+        if modelChosenByReader { return selectedModelID }
         guard autoRouteModel else { return selectedModelID }
         let signals = NativeComposerSignals(
             prompt: content,
@@ -3348,8 +3531,24 @@ struct DesktopComposer: View {
         let pro = proMode
         let connectors = Array(selectedConnectors.prefix(5))
         let projectID = selectedProjectID
+        // Whatever the last send said about documents is now history about a
+        // message further up the transcript. Cleared here rather than on arrival
+        // so nothing about the previous turn is on screen while this one runs.
+        groundingNote = nil
+        let documentCount = indexedDocumentCount
+        // Snapshotted for the same reason `fastMode` is: the send is async, and
+        // a switch flipped while the turn is in flight must not change what the
+        // composer then says about a turn that was already composed.
+        let wasGroundingArmed = documentGroundingArmed
 
         Task {
+            // Grounding happens before anything is created or appended, because
+            // the turn's text has to be final by then: `sendMessage` sends the
+            // string it is given and there is no second channel to add to
+            // afterwards. See ``NativeDocumentGrounding`` for why the passages
+            // travel inside the message rather than beside it.
+            let grounding = await groundedTurn(for: content, armed: wasGroundingArmed)
+
             let conversationID: String?
             if fixedProjectID == nil, let selected = model.selectedConversationID {
                 conversationID = selected
@@ -3364,7 +3563,7 @@ struct DesktopComposer: View {
             guard let conversationID else { return }
             let sent = model.sendMessage(
                 conversationID: conversationID,
-                prompt: content,
+                prompt: grounding.promptForModel,
                 modelID: modelID,
                 reasoningEffort: effort,
                 attachmentIDs: uploadedIDs,
@@ -3381,11 +3580,67 @@ struct DesktopComposer: View {
             attachmentModel?.clear()
             deepResearch = false
             canvasEnabled = false
+            // Written only after the turn was accepted, and only when the switch
+            // was armed: a note about documents beside a message that never left
+            // is news about something that did not happen.
+            if wasGroundingArmed {
+                groundingNote = Self.groundingNote(
+                    for: grounding,
+                    documentCount: documentCount
+                )
+            }
             Task {
                 await model.generateTitleIfNeeded(conversationID: conversationID)
             }
             didSendConversation?(conversationID)
         }
+    }
+
+    /// Retrieves this Mac's passages for one turn and folds them into its text.
+    ///
+    /// Returns the reader's own words untouched whenever grounding is off, there
+    /// is no index, or nothing matched — ``NativeDocumentGrounding`` is the only
+    /// thing that decides what a grounded turn looks like, and it refuses to
+    /// build a block over an empty result.
+    ///
+    /// - Parameter armed: the snapshot taken in ``send()``, not the live switch.
+    ///   Reading the live one here would let a toggle flipped mid-flight decide
+    ///   one thing while the note printed afterwards claims the other — the
+    ///   composer would report "nothing matched" for a corpus it never searched.
+    private func groundedTurn(for content: String, armed: Bool) async -> NativeDocumentGrounding {
+        guard armed, let documentIndex else {
+            return NativeDocumentGrounding(ungrounded: content)
+        }
+        // Asking for exactly what can be used, rather than the index's default
+        // eight: five of them would be ranked, formatted and thrown away.
+        let passages = await documentIndex.passages(
+            matching: content,
+            limit: NativeDocumentGrounding.maximumPassages
+        )
+        return NativeDocumentGrounding.ground(prompt: content, in: passages)
+    }
+
+    /// What the composer says about a send that has just happened.
+    ///
+    /// The two outcomes are worded so they cannot be confused, because the
+    /// difference matters: one means the reader's files were read into a message
+    /// that has now left the Mac, and the other means they were searched and had
+    /// nothing to say. Silence would leave both looking identical.
+    private static func groundingNote(
+        for grounding: NativeDocumentGrounding,
+        documentCount: Int
+    ) -> String {
+        guard grounding.isGrounded else {
+            return documentCount == 1
+                ? "Nothing in your 1 indexed document matched that question, so none of it was attached."
+                : "Nothing in your \(documentCount) indexed documents matched that question, so none of it was attached."
+        }
+        let excerpts = grounding.cited.count == 1 ? "1 excerpt" : "\(grounding.cited.count) excerpts"
+        // The file names, not a count of them. "2 documents" is a number somebody
+        // has to go and check; "Q3 Report.pdf, Contract.docx" is the answer.
+        // "in your message", not "in full": a long passage is cut to length
+        // before it is quoted, and this line must not claim otherwise.
+        return "Sent \(excerpts) from \(grounding.citedSourceNames.joined(separator: ", ")) — they are in your message above."
     }
 
     /// Sends the draft — text and up to four images — through the live session
@@ -3845,6 +4100,15 @@ private struct JunoAddMenuContent: View {
     @Binding var webSearch: Bool
     let supportsWebSearch: Bool
     @Binding var canvasEnabled: Bool
+    @Binding var documentContext: Bool
+    /// How many documents this Mac has indexed, or **nil when there is no index
+    /// at all** — a composition root that could not open the local store.
+    ///
+    /// Absent is not zero, and the row treats them differently: nil hides it,
+    /// because a switch for a feature this build cannot perform is a switch that
+    /// does nothing, while `0` shows it disabled with the reason beside it, which
+    /// is how somebody learns the Library is where documents come from.
+    let indexedDocumentCount: Int?
     let connectorModel: NativeConnectorModel?
     let connectedConnectors: [NativeConnector]
     @Binding var selectedConnectors: Set<String>
@@ -4034,6 +4298,31 @@ private struct JunoAddMenuContent: View {
             identifier: "juno.desktop.chat.add.canvas"
         ) {
             arm($canvasEnabled)
+        }
+
+        if let indexedDocumentCount {
+            JunoAddMenuRow(
+                icon: .files,
+                // "My documents", not "Documents": the files are the reader's own
+                // and they are on their own Mac, and the two words that say so
+                // are the difference between a tool and a place.
+                title: "My documents",
+                // Why it is off, beside it rather than inside its name — the rule
+                // the Library row above already follows. A spoken turn goes over
+                // the realtime socket and never through the text this grounding
+                // extends, so during a call the switch genuinely cannot act.
+                note: voiceActive
+                    ? "chat only"
+                    : (indexedDocumentCount == 0 ? "none on this Mac" : "\(indexedDocumentCount)"),
+                // The same rule the Web search row follows for a model that
+                // cannot search: a lit switch over an empty index promises
+                // something that cannot happen.
+                accessory: .state(documentContext && indexedDocumentCount > 0 && !voiceActive),
+                disabled: voiceActive || indexedDocumentCount == 0,
+                identifier: "juno.desktop.chat.add.documents"
+            ) {
+                arm($documentContext)
+            }
         }
     }
 

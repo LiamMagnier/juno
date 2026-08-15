@@ -260,6 +260,65 @@ final class ProjectWorkspaceStoreTests: XCTestCase {
         }
     }
 
+    // MARK: The preferred model, as a precedence rule
+
+    private static let catalog = [
+        "anthropic:claude-sonnet-4-6",
+        "openai:gpt-5.6",
+        "google:gemini-3-pro",
+    ]
+
+    func testAPreferredModelIsUsedWhenTheReaderHasNotChosenOne() {
+        XCTAssertEqual(
+            ProjectPreferredModel.resolve(
+                preferredModelID: "openai:gpt-5.6",
+                readerChoseExplicitly: false,
+                selectableModelIDs: Self.catalog
+            ),
+            "openai:gpt-5.6"
+        )
+    }
+
+    /// The rung that matters most. A reader who opened the picker said something
+    /// specific about this conversation; a preference saved on a Projects page is
+    /// a standing default, and the standing one must never quietly win.
+    func testAnExplicitPickOutranksTheProjectsPreference() {
+        XCTAssertNil(
+            ProjectPreferredModel.resolve(
+                preferredModelID: "openai:gpt-5.6",
+                readerChoseExplicitly: true,
+                selectableModelIDs: Self.catalog
+            )
+        )
+    }
+
+    /// Preferences are stored locally and never revalidated, so a plan change or
+    /// a retired model leaves a stale id behind. Falling through beats sending a
+    /// model id the route will refuse — that would make the whole project
+    /// unsendable until somebody found this setting.
+    func testAPreferenceNamingAModelTheAccountCannotSelectIsIgnored() {
+        XCTAssertNil(
+            ProjectPreferredModel.resolve(
+                preferredModelID: "openai:gpt-4o-retired",
+                readerChoseExplicitly: false,
+                selectableModelIDs: Self.catalog
+            )
+        )
+    }
+
+    /// Absent is not "": neither says anything, and neither may be sent.
+    func testNoPreferenceAndABlankPreferenceBothSayNothing() {
+        for value in [nil, "", "   "] as [String?] {
+            XCTAssertNil(
+                ProjectPreferredModel.resolve(
+                    preferredModelID: value,
+                    readerChoseExplicitly: false,
+                    selectableModelIDs: Self.catalog
+                )
+            )
+        }
+    }
+
     // MARK: The whitelist as a gate
 
     /// The point of a whitelist is that the *client* stops sending the flag.

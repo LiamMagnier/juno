@@ -261,6 +261,41 @@ public final class NativeDocumentIndexModel {
         refreshResults()
     }
 
+    /// Ranks the corpus for one question and hands the hits straight back,
+    /// without disturbing anything a screen is currently showing.
+    ///
+    /// **Why this is not `setQuery` followed by reading ``passages``.** Those two
+    /// are the *search field's* state. A chat send that drove them would wipe
+    /// whatever the reader had typed into the Library's search box, and would
+    /// then leave the chat's hits sitting in the Library's result list as though
+    /// somebody had searched for them there. This shares the index and nothing
+    /// else, which is what lets a turn be grounded while a search is open.
+    ///
+    /// An empty array is the answer for every ordinary "nothing to say" case —
+    /// signed out, nothing indexed, a blank question, no chunk matched — and
+    /// none of them is an error. A send is the worst possible moment to put a
+    /// failure notice in front of someone for the absence of a document they
+    /// never claimed to have.
+    ///
+    /// - Parameter limit: how many passages at most. Defaults to the store's own
+    ///   ``resultLimit``; a caller with a character budget should ask for fewer
+    ///   rather than retrieve eight and discard five.
+    public func passages(matching query: String, limit: Int? = nil) async -> [NativeDocumentPassage] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let accountID, !trimmed.isEmpty, !documents.isEmpty else { return [] }
+        let found = await index.retrieve(
+            query: trimmed,
+            accountID: StorageAccountID(accountID.rawValue),
+            limit: max(1, limit ?? resultLimit)
+        )
+        // Re-checked *after* the await, for the same reason `store(_:accountID:)`
+        // checks before its write: someone can sign out or switch accounts while
+        // the rank is running, and handing one person's passages to the other
+        // person's prompt is the exact failure the partitioning exists to stop.
+        guard self.accountID == accountID else { return [] }
+        return found.map(NativeDocumentPassage.init)
+    }
+
     // MARK: - Internals
 
     /// Where the bytes come from. A single enum so the read, the extraction and
@@ -373,5 +408,196 @@ public final class NativeDocumentIndexModel {
             passages = found.map(NativeDocumentPassage.init)
             isSearching = false
         }
+    }
+}
+
+// MARK: - Putting passages in front of a model
+
+/// One chat turn, rewritten to carry the passages that back it.
+///
+/// **How the passages actually reach the model, and why it is this way.**
+/// `/api/chat` composes the system prompt server-side, and
+/// ``NativeChatGenerationRequest`` carries no free-text context field of any
+/// kind — the request names a conversation and the server reads that
+/// conversation's history. The only text this client controls end to end is the
+/// body of the user message it appends. So grounding is done by extending that
+/// message, and ``promptForModel`` is what gets sent, stored, and shown.
+///
+/// That consequence is the design rather than a compromise. Whatever the model
+/// is shown is exactly what the transcript shows, so a reader can always scroll
+/// up and audit which sentences of which of their files left the Mac. A private
+/// side-channel would have been the same feature with the evidence deleted, and
+/// "Juno quietly attached four paragraphs of your medical letter" is not a thing
+/// anybody should have to take on trust.
+///
+/// **Markers are assigned last, and only to passages that survived the budget.**
+/// This is the invariant the whole type exists to hold. Number the hits first,
+/// then drop the ones that do not fit, and `[3]` names nothing while still
+/// reading to the model as an ordinary citation — a fabricated source with a
+/// real-looking marker. ``cited`` is therefore definitive: `cited[0]` is `[1]`,
+/// `cited.count` is the largest marker that exists, and a surface resolving a
+/// marker back to a file must read it from here rather than re-running the
+/// retrieval and hoping the ranking came out the same.
+public struct NativeDocumentGrounding: Equatable, Sendable {
+    /// The passages that were given a marker, in marker order.
+    ///
+    /// Their ``NativeDocumentPassage/text`` is the *excerpt as sent*, not the
+    /// whole chunk: a truncated quote and the passage it came from are different
+    /// strings, and a reader auditing what was sent has to be shown the one that
+    /// was actually sent.
+    public let cited: [NativeDocumentPassage]
+    /// The text to send as the user turn.
+    ///
+    /// Byte-identical to the reader's own prompt when ``cited`` is empty. An
+    /// ungrounded turn must not carry a heading announcing context that is not
+    /// there — a model handed "Context from my documents:" over nothing will
+    /// still try to honour it.
+    public let promptForModel: String
+
+    public var isGrounded: Bool { !cited.isEmpty }
+
+    /// The documents the markers point into, in marker order and de-duplicated.
+    /// Two passages from one PDF are one document, which is what a note above
+    /// the composer should say.
+    public var citedSourceNames: [String] {
+        var seen = Set<String>()
+        return cited.map(\.sourceName).filter { seen.insert($0).inserted }
+    }
+
+    /// A turn nothing was attached to. The only way to build one where `cited`
+    /// is empty, so "not grounded" cannot be spelled two ways.
+    public init(ungrounded prompt: String) {
+        cited = []
+        promptForModel = prompt
+    }
+
+    private init(cited: [NativeDocumentPassage], promptForModel: String) {
+        self.cited = cited
+        self.promptForModel = promptForModel
+    }
+
+    // MARK: Budget
+
+    /// How many passages one turn may carry.
+    ///
+    /// Four rather than the index's default eight. These excerpts are prepended
+    /// to every question in a conversation the server also replays history for,
+    /// and eight chunks at the chunker's 1,200-character ceiling is most of ten
+    /// thousand characters of other people's prose in front of a one-line
+    /// question — which is how a model ends up answering about the context
+    /// instead of about what was asked.
+    public static let maximumPassages = 4
+    /// The longest a single excerpt may be before it is cut.
+    public static let maximumPassageCharacters = 1_200
+    /// The ceiling on the whole appended block, locators and instructions
+    /// included.
+    ///
+    /// Below `maximumPassages × maximumPassageCharacters` on purpose, so this is
+    /// a rail that actually fires rather than arithmetic that can never bind:
+    /// four chunks at the chunker's full ceiling is 4,800 characters of somebody
+    /// else's prose in front of a one-line question, and the turn after it, and
+    /// the turn after that. Four *short* passages fit; four long ones do not, and
+    /// the ones that do not fit are dropped before any marker is handed out.
+    public static let maximumBlockCharacters = 4_000
+
+    /// Builds the turn to send from the reader's prompt and the passages
+    /// retrieval returned, in rank order.
+    ///
+    /// Passages are taken in order until the budget is spent, and the **first**
+    /// one that does not fit ends the block rather than being skipped over in
+    /// favour of a shorter, lower-ranked one. That keeps what is sent a prefix of
+    /// the ranking, which is the only version of this a reader can predict and a
+    /// test can pin down.
+    public static func ground(
+        prompt: String,
+        in passages: [NativeDocumentPassage]
+    ) -> NativeDocumentGrounding {
+        var cited: [NativeDocumentPassage] = []
+        var remaining = maximumBlockCharacters - preamble.count - closingReserve
+
+        for passage in passages.prefix(maximumPassages) {
+            let excerpt = Self.excerpt(passage.text)
+            // An excerpt that came out empty is a passage with nothing quotable
+            // in it. Numbering it would produce a marker over a blank quote,
+            // which is a citation to nothing.
+            guard !excerpt.isEmpty else { continue }
+            // `+ 8` for the marker, the brackets and the blank lines around the
+            // entry — deliberately over-counted rather than measured, because the
+            // ceiling is a safety rail and an exact fit is worth nothing.
+            let cost = excerpt.count + passage.locator.count + 8
+            guard cost <= remaining else { break }
+            remaining -= cost
+            cited.append(
+                NativeDocumentPassage(
+                    id: passage.id,
+                    sourceName: passage.sourceName,
+                    locator: passage.locator,
+                    text: excerpt,
+                    score: passage.score
+                )
+            )
+        }
+
+        guard !cited.isEmpty else { return NativeDocumentGrounding(ungrounded: prompt) }
+
+        var block = preamble
+        for (offset, passage) in cited.enumerated() {
+            block += "\n\n[\(offset + 1)] \(passage.locator)\n\(passage.text)"
+        }
+        block += "\n\n" + closing(count: cited.count)
+
+        // The reader's own words first, then the material. The other order reads
+        // better to a model and worse to a person: this string is also the
+        // message bubble in the transcript, and a bubble that opens with two
+        // pages of a PDF has buried the question its owner actually asked.
+        let question = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return NativeDocumentGrounding(
+            cited: cited,
+            promptForModel: question.isEmpty ? block : "\(question)\n\n\(block)"
+        )
+    }
+
+    // MARK: The wording
+
+    private static let preamble = """
+    ---
+    Excerpts retrieved from documents held on my own device, quoted verbatim:
+    """
+
+    /// What the closing instruction costs, reserved before any passage is
+    /// measured. Computed from the longest form it can take — the count is
+    /// interpolated into it — so the budget cannot be overspent by a block that
+    /// happened to number into two digits.
+    private static let closingReserve = closing(count: maximumPassages).count + 4
+
+    /// The instruction that turns excerpts into citable sources.
+    ///
+    /// It names the exact range of markers that exist. Without the range a model
+    /// handed two excerpts will still occasionally produce a `[3]`, and a `[3]`
+    /// under an answer is indistinguishable to a reader from a real source they
+    /// could go and check.
+    private static func closing(count: Int) -> String {
+        let range = count == 1 ? "[1]" : "[1] to [\(count)]"
+        return """
+        Cite an excerpt with its marker — \(range), and no other number — only \
+        where that excerpt actually supports what you just said. If they do not \
+        answer the question, say so and answer without them rather than \
+        attributing anything to these files that they do not contain.
+        """
+    }
+
+    /// Cuts an excerpt to length at a word boundary.
+    ///
+    /// Mid-word truncation invents words ("the settleme…"), and a quote is being
+    /// presented as verbatim. The ellipsis stays so the model — and the reader
+    /// auditing the bubble — can see the quote is a fragment of something longer.
+    static func excerpt(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maximumPassageCharacters else { return trimmed }
+        let head = trimmed.prefix(maximumPassageCharacters)
+        guard let lastSpace = head.lastIndex(where: { $0.isWhitespace }) else {
+            return head + "…"
+        }
+        return head[head.startIndex..<lastSpace] + "…"
     }
 }

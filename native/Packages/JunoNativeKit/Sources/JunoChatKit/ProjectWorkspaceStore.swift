@@ -245,6 +245,56 @@ public struct ProjectWorkspaceConfiguration: Identifiable, Equatable, Sendable {
     }
 }
 
+// MARK: - Which model a project's turns go to
+
+/// Answers the one question ``ProjectWorkspaceConfiguration/preferredModelID``
+/// exists to answer, in a single place both composers can read.
+///
+/// Pure, and separate from the composer that calls it, because a precedence rule
+/// spread across two clients is a precedence rule that will differ between them
+/// within a release — and the symptom of that is a Mac and a phone sending the
+/// same question in the same project to two different models.
+public enum ProjectPreferredModel {
+    /// The model a turn filed under this project should go to, or nil when this
+    /// preference has nothing to say and the caller should carry on exactly as it
+    /// would have.
+    ///
+    /// **The precedence this encodes, highest first, and why it is this order.**
+    ///
+    /// 1. **An explicit pick the reader just made** wins outright, which is what
+    ///    `readerChoseExplicitly` is for. Someone who opened the model picker and
+    ///    chose has said something specific about *this* conversation; a
+    ///    preference saved on a Projects page weeks ago is a standing default.
+    ///    The specific instruction beats the standing one, and a picker showing
+    ///    one name while another model answers is a control that lies.
+    /// 2. **The project's preference**, when it names a model this account can
+    ///    still select. It outranks the conversation's own stored model on
+    ///    purpose: that field is only a record of what the last turn happened to
+    ///    use, while this is something the reader deliberately configured.
+    /// 3. Nil — no opinion. Auto-routing and the account default are below this
+    ///    and are the caller's business, not this function's.
+    ///
+    /// - Parameter selectableModelIDs: what the account may actually send to.
+    ///   Checked rather than trusted: the preference is stored locally and is
+    ///   never revalidated, so a plan change, a retired model, or a workspace
+    ///   written by a newer build can all leave a stale id behind. Falling
+    ///   through to the caller's own choice is the right failure — sending a
+    ///   model id the route will reject would turn a stale preference into an
+    ///   unsendable project.
+    public static func resolve(
+        preferredModelID: String?,
+        readerChoseExplicitly: Bool,
+        selectableModelIDs: [String]
+    ) -> String? {
+        guard !readerChoseExplicitly else { return nil }
+        guard let preferredModelID,
+            !preferredModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            selectableModelIDs.contains(preferredModelID)
+        else { return nil }
+        return preferredModelID
+    }
+}
+
 // MARK: - Snapshot
 
 public struct ProjectWorkspaceSnapshot: Equatable, Sendable {
