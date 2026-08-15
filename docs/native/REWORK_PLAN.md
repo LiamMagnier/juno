@@ -202,6 +202,66 @@ splitting by platform after Phase 2. Phase 2 alone is 2–3 weeks and cannot be
 parallelised. There is no version of this that is a two-week polish pass — attempting one
 produces a fourth generation of half-finished migration on top of the three already here.
 
+## Gates
+
+Four of the design rules above are now build failures rather than prose. Run them with
+`npm run native:design:check`; `npm run native:design:list` prints every violation each
+can see, and `npm run native:design:baseline` re-records the ceiling after a migration.
+CI runs them as the **Design rules** job in `.github/workflows/native.yml`.
+
+**They ratchet.** Each records the tree's current violation count in
+`scripts/check-native-design-baseline.json` and fails only when the count goes **up**. A
+hard gate against a tree holding 550 unshaped hit targets is a gate that gets switched off
+in week one, and a switched-off gate leaves a green check where a measurement used to be.
+The number is only ever allowed to travel downwards. A lane that migrates a surface
+re-records the baseline in the same commit that lands the migration — which is principle 8
+applied to the gates themselves.
+
+| Gate | Enforces | Bans | Exempt |
+|---|---|---|---|
+| `check-native-type` | Principle 7 | `Font.system(size:)` / `.font(.system(size:` anywhere | `JunoTypography.swift`, which implements `junoFont` |
+| `check-native-motion` | Principle 3 | raw `.easeOut/.easeIn/.easeInOut/.linear(duration:)`, `.spring(response:)`, `.snappy`, `.bouncy`, `.smooth`, `withAnimation(.default`, and any `withAnimation(…)` whose argument is not a `JunoMotion.` token | `JunoDesignTokens.swift`, which defines the ladder |
+| `check-native-glass` | Principle 1 | `.glassEffect` / `.junoGlass` / any `Material` inside a file or type named `Transcript*`, `*Row*`, `*Card*`, `*Bubble*`, `Diff*`, `Review*`, `*EmptyState*`, `Message*`; plus any glass call with no `GlassEffectContainer` in the file | `JunoMaterials`, `JunoDesktopChrome`, `JunoMobileChrome` — the primitives that own glass |
+| `check-native-targets` | 44pt targets | a `Button`/`Menu` whose only explicit `.frame` dimension is under 44, and any `Button`/`Menu` label with no `.contentShape` | controls the system draws: `Menu` bodies, context menus, alerts, dialogs, swipe actions, toolbars, pickers |
+
+`glass` matches on names, so a chrome affordance living inside a content-named file reads
+as a violation — the "Jump to latest" pill in `TranscriptView.swift` is the one such hit
+today, and it is chrome floating over content rather than content. The message always names
+which marker matched, so a reviewer can tell the two apart in one line.
+
+Comments and string literals are blanked before scanning, so the essays in
+`JunoDesignTokens.swift` that name every banned constructor do not count against it. Test
+targets are not scanned — a raw `.easeOut(duration:)` is *correct* in `JunoDesignTokensTests`,
+which has to build the curve it is asserting the ladder produces.
+
+### The ceiling as measured on 2026-08-15
+
+The debt these gates hold the line on, by module. `targets` over-reports on purpose — it
+cannot see padding or a `.contentShape` supplied by a shared `ButtonStyle` — so read it as
+a ratchet, not as a defect count. The other three are close to literal.
+
+| Module | type | motion | glass | targets |
+|---|---:|---:|---:|---:|
+| JunoNativeKit (shared) | 59 | 2 | 0 | 43 |
+| JunoCode (shared) | 6 | 1 | 1 | 117 |
+| JunoWork (shared) | 0 | 0 | 0 | 0 |
+| JunoDesktop (macOS) | 9 | 9 | 1 | 252 |
+| JunoMobile (iOS) | 17 | 17 | 3 | 138 |
+| **Total** | **91** | **29** | **5** | **550** |
+
+Two readings worth carrying into the phases. The `glass` column being near-empty confirms
+the audit: content is opaque at essentially every site today, and the gate exists to keep
+it that way through nine phases rather than to clean anything up — the five hits are all
+*loose* glass, glass laid down with no `GlassEffectContainer` to group it. And `targets` is
+where the work is, concentrated in `JunoDesktop` and `JunoCode`, which is the same place
+Phase 2's missing component layer would fix it wholesale: one shaped row primitive retires
+several hundred of these at once.
+
+Principles 2 (still-frame) and 5 (skeletons, not spinners) are **not** gated. Both need to
+know whether a surface's row geometry is knowable, which is a judgement about the screen
+rather than a property of the token stream, and a gate that guessed at it would report
+noise. They stay review items.
+
 ## Blockers found for the web-linking phase
 
 The website Code & Work is feature-complete, but the apps cannot be linked to it as-is:

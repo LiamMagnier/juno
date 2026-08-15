@@ -42,11 +42,16 @@ enum JunoAttachmentSurface: String, Identifiable, Hashable, CaseIterable, Sendab
 /// large surface arriving over the reader's conversation, and a spring with
 /// character on something that size reads as the app being pleased with itself.
 enum JunoCameraMotion {
-    static let entry = Animation.snappy(duration: 0.34, extraBounce: 0.02)
-    static let exit = Animation.snappy(duration: 0.26)
+    /// A whole region arriving, decelerating onto its resting place. No bounce at
+    /// all rather than the 0.02 it used to carry: on a surface this size the
+    /// difference was never visible, and `ease-out-soft` is the rung the rest of
+    /// the product enters on.
+    static let entry = JunoMotion.outSoft(JunoMotion.Duration.slow)
+    static let exit = JunoMotion.exit
     /// How long the exit takes, for the one place that must wait for it: handing
-    /// off from the camera to the Photos picker.
-    static let exitDuration = Duration.milliseconds(260)
+    /// off from the camera to the Photos picker. Read from the same rung the
+    /// animation uses, so the wait cannot drift away from the motion.
+    static let exitDuration = Duration.seconds(JunoMotion.Duration.exit)
 }
 
 /// Owns which attachment surface is up, for one chat screen.

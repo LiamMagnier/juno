@@ -234,11 +234,11 @@ private struct JunoMobileDraftChat: View {
             ScrollView {
                 // The transcript's own metrics, so a spoken turn is the same
                 // shape here as it will be in the chat it is filed into.
-                LazyVStack(spacing: 24) {
+                LazyVStack(spacing: JunoSpace.section) {
                     JunoMobileVoiceLines(messages: voiceMessages)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.section)
                 .frame(maxWidth: 768)
                 .frame(maxWidth: .infinity)
             }
@@ -534,10 +534,7 @@ private struct JunoMobileConversationDetail: View {
             // gives up its width. A sheet ignores the transaction and animates
             // itself, so one call is correct for both.
             withAnimation(
-                JunoMotion.reduced(
-                    JunoMobileMotion.easeSpring(JunoMobileMotion.durSlow),
-                    when: reduceMotion
-                )
+                JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)
             ) {
                 openArtifact = match
             }
@@ -701,7 +698,7 @@ private struct JunoMobileConversationDetail: View {
             // The width clamp is not decoration — it is what keeps a line of
             // running text at a readable measure on an iPad, where a full-bleed
             // answer runs to ~90 characters.
-            LazyVStack(spacing: 24) {
+            LazyVStack(spacing: JunoSpace.section) {
                 ForEach(messages) { message in
                     JunoMobileMessageRow(
                         message: message,
@@ -756,7 +753,7 @@ private struct JunoMobileConversationDetail: View {
                     // does not run an insertion transition for rows that were
                     // already there on the first layout, so a loaded history
                     // arrives settled rather than cascading up the screen.
-                    .transition(JunoMobileMotion.riseInTransition)
+                    .transition(.opacity.combined(with: .offset(y: JunoSpace.snug)))
                 }
 
                 // Approval receipts are rendered as their own safety surface,
@@ -806,11 +803,11 @@ private struct JunoMobileConversationDetail: View {
             // last answer grows, which is a transcript that visibly reflows
             // while it is being read.
             .animation(
-                JunoMotion.reduced(JunoMobileMotion.riseIn, when: reduceMotion),
+                JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion),
                 value: messages.count
             )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 24)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.section)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -842,7 +839,7 @@ private struct JunoMobileConversationDetail: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: newChat) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 16, weight: .regular))
+                        .junoFont(size: 16, relativeTo: .callout, weight: .regular)
                         // Ink, not the accent. The root sets `.tint` so system
                         // controls follow the account's accent, and toolbar glyphs
                         // inherit it — but chrome that is always present is not
@@ -997,8 +994,8 @@ private struct JunoMobileConversationDetail: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 16)
-                .padding(.bottom, 8)
+                .padding(.trailing, JunoSpace.regular)
+                .padding(.bottom, JunoSpace.snug)
                 .transition(.scale.combined(with: .opacity))
                 .accessibilityLabel("Scroll to latest")
                 .accessibilityIdentifier("juno.mobile.chat-scroll-bottom")
@@ -1062,10 +1059,7 @@ private struct JunoMobileConversationDetail: View {
 
     private func closeArtifact() {
         withAnimation(
-            JunoMotion.reduced(
-                JunoMobileMotion.easeSpring(JunoMobileMotion.durSlow),
-                when: reduceMotion
-            )
+            JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)
         ) {
             openArtifact = nil
         }
@@ -1237,7 +1231,7 @@ private struct JunoMobileConversationTitle: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 16, weight: .semibold))
+            .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
             .lineLimit(1)
             .truncationMode(.tail)
             .foregroundStyle(highlighted ? Color.junoAccent : Color.primary)
@@ -1425,7 +1419,7 @@ private struct JunoMobileMessageRow: View {
     private var userBubble: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 0)
-            VStack(alignment: .trailing, spacing: 5) {
+            VStack(alignment: .trailing, spacing: JunoSpace.tight) {
                 if editing {
                     promptEditor
                 } else {
@@ -1467,20 +1461,20 @@ private struct JunoMobileMessageRow: View {
     /// field grows with the prompt instead of scrolling a long one inside two
     /// lines — the same words were readable a moment ago in the bubble.
     private var promptEditor: some View {
-        VStack(alignment: .trailing, spacing: 8) {
+        VStack(alignment: .trailing, spacing: JunoSpace.snug) {
             TextField("Edit message", text: $draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .junoFont(size: 15, relativeTo: .body)
                 .lineSpacing(5)
                 .lineLimit(1...12)
                 .focused($editorFocused)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
                 .background(Color.junoMuted, in: Self.bubbleShape)
                 .overlay(Self.bubbleShape.strokeBorder(Color.junoAccent, lineWidth: 1))
                 .accessibilityIdentifier("juno.mobile.message-editor")
 
-            HStack(spacing: 12) {
+            HStack(spacing: JunoSpace.cozy) {
                 Button("Cancel") {
                     editing = false
                     editorFocused = false
@@ -1555,7 +1549,7 @@ private struct JunoMobileMessageRow: View {
     private var bubbleBody: some View {
         Text(plainText)
             // **Relative to `.body`, which is the whole point.** This was a flat
-            // `.font(.system(size: 15))`, so the reader's own words were the one
+            // `.junoFont(size: 15, relativeTo: .subheadline)`, so the reader's own words were the one
             // thing in the transcript Dynamic Type could not move: the answer
             // beside it renders through `JunoMarkdownText` at `.font(.body)` and
             // scales all the way to AX5, so at the largest accessibility sizes
@@ -1568,8 +1562,8 @@ private struct JunoMobileMessageRow: View {
             // box, so 9pt of extra leading on top of the glyph height.
             .lineSpacing(5)
             .textSelection(.enabled)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .frame(
                 maxHeight: isLongPrompt && !expanded
                     ? NativePromptLimits.collapsedMessageHeight : nil,
@@ -1609,7 +1603,7 @@ private struct JunoMobileMessageRow: View {
         )
     }
 
-    /// "Show more · 22 lines", in the web's monospaced metadata voice, on a
+    /// "Show more · 22 lines", in the metadata voice, on a
     /// Liquid Glass capsule — it is a floating control over the transcript, and
     /// this app's other floating controls are glass.
     private var expandControl: some View {
@@ -1618,14 +1612,14 @@ private struct JunoMobileMessageRow: View {
                 expanded.toggle()
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: JunoSpace.tight) {
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .junoFont(size: 10, relativeTo: .caption2, weight: .semibold)
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                 Text(expandLabel)
-                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption)
             }
             .foregroundStyle(Color.junoMutedForeground)
-            .padding(.horizontal, 11)
+            .padding(.horizontal, JunoSpace.cozy)
             // `minHeight`, not `height`: the capsule has to be able to grow with
             // the label now that the label scales, or the text is clipped by its
             // own control at the accessibility sizes.
@@ -1647,7 +1641,7 @@ private struct JunoMobileMessageRow: View {
     )
 
     private var assistantAnswer: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             // The run trace leads the answer, as it does on the web: what Juno is
             // doing belongs above the thing it produced, not in a footnote under
             // it. Never on a spoken line — see ``voice``.
@@ -1665,7 +1659,7 @@ private struct JunoMobileMessageRow: View {
             // stands in its place rather than under it.
             if let progress = message.mediaProgress {
                 NativeMediaGenerationView(progress: progress)
-                    .padding(.top, 2)
+                    .padding(.top, JunoSpace.hairline)
             }
 
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
@@ -1695,7 +1689,7 @@ private struct JunoMobileMessageRow: View {
 
             if !message.sources.isEmpty {
                 sources
-                    .padding(.top, 4)
+                    .padding(.top, JunoSpace.hairline)
             }
 
             footer
@@ -1746,8 +1740,8 @@ private struct JunoMobileMessageRow: View {
         )
     }
 
-    /// Which model wrote this and what it cost, in the web's monospaced metadata
-    /// face. The spinner is gone: while a reply is pending the thought-process row
+    /// Which model wrote this and what it cost, in the metadata voice. The
+    /// spinner is gone: while a reply is pending the thought-process row
     /// above already says so, and the composer is showing Stop throughout — a
     /// third indicator for one event was the "AI slop" the transcript is being
     /// cleared of.
@@ -1761,9 +1755,8 @@ private struct JunoMobileMessageRow: View {
     /// `.opacity(0.6)`, and the multiplier was the whole legibility problem:
     /// the token already sits at the contrast floor — 5.2:1 on the canvas in
     /// light, which clears WCAG AA for body text with nothing to spare — so
-    /// scaling it down by hand puts this line at roughly 2.4:1, in a
-    /// monospaced 11pt face, which is the smallest and faintest text in the
-    /// product. A hand-scaled fixed colour also stops participating in the
+    /// scaling it down by hand puts this line at roughly 2.4:1, in the
+    /// smallest and faintest text in the product. A hand-scaled fixed colour also stops participating in the
     /// system's Increase Contrast adaptation, so the one setting a low-vision
     /// reader would reach for does nothing to it. There is no rung below the
     /// muted token; a line that should be quieter gets less weight or less
@@ -1772,10 +1765,10 @@ private struct JunoMobileMessageRow: View {
     private var footer: some View {
         if !message.isPending, let line = footerLine {
             Text(line)
-                .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
-                .kerning(0.22)
+                .junoFont(size: 12, relativeTo: .caption)
+                .monospacedDigit()
                 .junoMetaInk()
-                .padding(.top, 2)
+                .padding(.top, JunoSpace.hairline)
                 .accessibilityLabel(footerAccessibilityLabel ?? line)
         }
     }
@@ -1889,7 +1882,7 @@ private struct JunoMobileMessageRow: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.top, 2)
+            .padding(.top, JunoSpace.hairline)
             .accessibilityElement(children: .contain)
         }
     }
@@ -1928,12 +1921,16 @@ private struct JunoMobileMessageRow: View {
 
     private func copy() {
         UIPasteboard.general.string = plainText
-        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+            copied = true
+        }
         // Long enough to read, short enough that the row is back to normal
         // before the reader looks again.
         Task {
             try? await Task.sleep(for: .seconds(1.6))
-            withAnimation(.easeOut(duration: 0.2)) { copied = false }
+            withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion, tier: .tint)) {
+                copied = false
+            }
         }
     }
 
@@ -1989,7 +1986,7 @@ private struct JunoMobileArtifactInlineCard: View {
     }
 
     private var card: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             Image(systemName: glyph)
                 .junoFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
@@ -2001,7 +1998,7 @@ private struct JunoMobileArtifactInlineCard: View {
                     .lineLimit(1)
                     .junoInk()
                 Text(subtitle)
-                    .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
+                    .junoFont(size: 12, relativeTo: .caption)
                     .junoMetaInk()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2015,8 +2012,8 @@ private struct JunoMobileArtifactInlineCard: View {
                     .foregroundStyle(Color.junoMutedForeground)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .fill(Color.junoSurface)
@@ -2025,7 +2022,7 @@ private struct JunoMobileArtifactInlineCard: View {
             RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
-        .padding(.vertical, 4)
+        .padding(.vertical, JunoSpace.hairline)
         .contentShape(Rectangle())
     }
 }

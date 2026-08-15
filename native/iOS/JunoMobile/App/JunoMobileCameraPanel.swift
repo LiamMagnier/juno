@@ -204,7 +204,7 @@ struct JunoMobileCameraPanel: View {
             Spacer(minLength: 0)
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
+                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                     // White over the picture, ink over the surface that stands
                     // in for it: a white glyph on the unavailable card is a
                     // close button nobody can see.
@@ -212,6 +212,7 @@ struct JunoMobileCameraPanel: View {
                         : AnyShapeStyle(.primary))
                     .frame(width: 38, height: 38)
                     .junoGlass(in: Circle(), interactive: true)
+                    .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -231,7 +232,7 @@ struct JunoMobileCameraPanel: View {
     /// between the side controls instead would put it wherever their widths
     /// happened to leave it.
     private func controls(_ metrics: JunoFloatingPanelMetrics) -> some View {
-        JunoGlass(spacing: 24) {
+        JunoGlass(spacing: JunoSpace.section) {
             ZStack {
                 HStack(spacing: 0) {
                     libraryButton
@@ -241,7 +242,7 @@ struct JunoMobileCameraPanel: View {
                 shutter
             }
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, JunoSpace.section)
         .padding(.bottom, metrics.controlBottomPadding)
     }
 
@@ -256,7 +257,7 @@ struct JunoMobileCameraPanel: View {
                         .clipShape(Circle())
                 } else {
                     Image(systemName: "photo.on.rectangle")
-                        .font(.system(size: 19, weight: .semibold))
+                        .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
                         .foregroundStyle(.primary)
                         .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 }
@@ -307,7 +308,7 @@ struct JunoMobileCameraPanel: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 19, weight: .semibold))
+                .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 .junoGlass(in: Circle(), interactive: true)
@@ -358,20 +359,20 @@ struct JunoMobileCameraPanel: View {
     private func unavailable(
         _ reason: JunoCameraUnavailability, _ metrics: JunoFloatingPanelMetrics
     ) -> some View {
-        VStack(spacing: 14) {
+        VStack(spacing: JunoSpace.regular) {
             Image(systemName: "camera.fill")
-                .font(.system(size: 30))
+                .junoFont(size: 30, relativeTo: .largeTitle)
                 .junoSecondaryInk()
             Text(reason.message)
                 .font(.callout)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            HStack(spacing: 10) {
+            HStack(spacing: JunoSpace.cozy) {
                 if reason.isRecoverableInSettings,
                     let url = URL(string: UIApplication.openSettingsURLString) {
                     Link(destination: url) {
                         Text("attachments.camera.open-settings")
-                            .font(.system(size: 16, weight: .semibold))
+                            .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                     }
                     .buttonStyle(.borderedProminent)
                 }
@@ -380,7 +381,7 @@ struct JunoMobileCameraPanel: View {
             }
             .tint(Color.junoAccent)
         }
-        .padding(26)
+        .padding(JunoSpace.section)
         .frame(maxWidth: .infinity)
         // Concentric with the panel it sits in: inner radius = outer radius less
         // the gap between them. A card with its own unrelated corner inside a
@@ -406,10 +407,14 @@ struct JunoMobileCameraPanel: View {
         // Opacity, not movement, so it stays truthful under Reduce Motion: a
         // capture with no acknowledgement reads as a control that did nothing,
         // on the one control where that doubt makes people press twice.
-        withAnimation(.easeOut(duration: 0.06)) { flashing = true }
+        withAnimation(JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint)) {
+            flashing = true
+        }
         Task {
             let file = await camera.capture()
-            withAnimation(.easeIn(duration: 0.16)) { flashing = false }
+            withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion, tier: .tint)) {
+                flashing = false
+            }
             guard let file else { return }
             onCapture(file)
         }
@@ -444,7 +449,7 @@ struct JunoShutterPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .animation(.snappy(duration: 0.12), value: configuration.isPressed)
+            .animation(JunoMotion.press, value: configuration.isPressed)
     }
 }
 

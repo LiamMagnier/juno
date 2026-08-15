@@ -543,6 +543,7 @@ struct DesktopCodeWorkspace: View {
         case .allProjects:
             DesktopCodeAllProjects(
                 workbench: workbenchModel,
+                isLoading: isBootstrapping,
                 open: { selection.wrappedValue = .repository($0) },
                 newSession: { selection.wrappedValue = .repository($0) },
                 addProject: { isChoosingRepository = true },
@@ -1043,7 +1044,31 @@ struct DesktopCodeWorkspace: View {
 
     // MARK: - Toolbar
 
-    /// A fixed set. Every item is present in every state and disables rather than
+    /// **Three groups, separated by the system's own spacer.**
+    ///
+    /// This bar used to be eight unlabelled icons in an unbroken row, then a
+    /// hand-rolled `ellipsis.circle` menu that re-listed two of them, then a
+    /// lone Stop. Nine controls with no separators is not a toolbar; it is a
+    /// strip of icons the eye has to parse one at a time, and it was the worst
+    /// single element in the window.
+    ///
+    /// What it is now:
+    ///
+    /// 1. **Make** — start a session. The only thing here that creates.
+    /// 2. **Show** — the four panes this window can put beside the transcript.
+    ///    Every one of them is a toggle, every one keeps its position and
+    ///    disables rather than vanishing, and they read as one cluster because
+    ///    `ToolbarSpacer(.fixed)` puts real air on both sides of them.
+    /// 3. **Stop** — the trailing edge, and the bar's **one** tinted control.
+    ///
+    /// Everything else — add a project, open a file by name, build to a
+    /// simulator, hand over the screen — is a *command* rather than a pane, and
+    /// commands go to `.secondaryAction`, where the system collects them into
+    /// its own overflow. That is the same set of items the `ellipsis.circle`
+    /// menu held, minus the two it duplicated, and now the platform decides
+    /// when and how to fold them rather than this file drawing a chevron.
+    ///
+    /// Every item is present in every state and disables rather than
     /// vanishing — both because a rebuilt AppKit toolbar is the documented crash
     /// surface here, and because a control that keeps its position is one the
     /// pointer does not have to re-find.
@@ -1079,6 +1104,12 @@ struct DesktopCodeWorkspace: View {
             .accessibilityIdentifier("juno.code.new-session")
         }
 
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+
+        // The panes. All four are toggles, so all four carry a symbol that
+        // states which way the toggle currently sits — never a tint, because
+        // the bar has exactly one tinted control and it is Stop. A row of
+        // accent-filled toggles is four primary actions and therefore none.
         ToolbarItemGroup(placement: .primaryAction) {
             Button { openPreview() } label: {
                 Label(
@@ -1087,134 +1118,50 @@ struct DesktopCodeWorkspace: View {
                         ? "rectangle.on.rectangle"
                         : "rectangle.on.rectangle.slash"
                 )
+                .symbolVariant(previewTarget == nil ? .none : .fill)
             }
-            .tint(previewTarget == nil ? nil : Color.junoAccent)
             .keyboardShortcut("p", modifiers: [.command, .option])
-            .help(previewTarget == nil ? "Open the live workspace preview" : "Hide the live workspace preview")
+            .help(previewTarget == nil ? "Open the live workspace preview (⌥⌘P)" : "Hide the live workspace preview (⌥⌘P)")
             .accessibilityIdentifier("juno.code.preview.primary")
             .disabled(controller?.context == nil)
 
             Button { consoleVisible.toggle() } label: {
-                Image(systemName: "terminal")
+                Label(
+                    consoleVisible ? "Hide console" : "Show console",
+                    systemImage: "apple.terminal"
+                )
+                .symbolVariant(consoleVisible ? .fill : .none)
             }
-            .tint(consoleVisible ? Color.junoAccent : nil)
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help(consoleVisible ? "Hide console" : "Show console")
-            .accessibilityLabel(consoleVisible ? "Hide console" : "Show console")
+            .help(consoleVisible ? "Hide the console (⌥⌘C)" : "Show the console (⌥⌘C)")
             .accessibilityIdentifier("juno.code.console.toggle")
             .disabled(controller == nil)
 
             Button { reviewVisible.toggle() } label: {
-                Image(systemName: "plusminus.circle")
+                Label(
+                    reviewVisible ? "Close review" : "Open review",
+                    systemImage: "plusminus.circle"
+                )
+                .symbolVariant(reviewVisible ? .fill : .none)
             }
-            .tint(reviewVisible ? Color.junoAccent : nil)
             .keyboardShortcut("r", modifiers: [.command, .option])
-            .help(reviewVisible ? "Close review" : "Open review")
-            .accessibilityLabel(reviewVisible ? "Close review" : "Open review")
+            .help(reviewVisible ? "Close the review pane (⌥⌘R)" : "Review this session's changes (⌥⌘R)")
             .accessibilityIdentifier("juno.code.review.toggle")
             .disabled(controller == nil)
 
-            if let repository = targetRepository {
-                Button {
-                    // Same beat as the preview dock opening: the pane's
-                    // insertion is the canvas-slide keyframe, and that
-                    // keyframe belongs on `canvasEnter`.
-                    withAnimation(
-                        JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
-                    ) {
-                        closePreview()
-                        simulatorHost.open(
-                            workspaceKey: repository.id.value,
-                            workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
-                        )
-                    }
-                } label: {
-                    Label("Simulator", systemImage: "iphone")
-                }
-                .help("Build and run this project's iOS app in a simulator")
-                .accessibilityIdentifier("juno.code.simulator")
-            }
-
             Button { inspectorVisible.toggle() } label: {
-                Image(systemName: "sidebar.trailing")
+                Label(
+                    inspectorVisible ? "Hide Code panels" : "Show Code panels",
+                    systemImage: "sidebar.trailing"
+                )
+                .symbolVariant(inspectorVisible ? .fill : .none)
             }
-            .tint(inspectorVisible ? Color.junoAccent : nil)
             .keyboardShortcut("i", modifiers: [.command, .option])
-            .help(inspectorVisible ? "Hide Code panels" : "Show Code panels")
-            .accessibilityLabel(inspectorVisible ? "Hide Code panels" : "Show Code panels")
+            .help(inspectorVisible ? "Hide the Code panels (⌥⌘I)" : "Show the Code panels (⌥⌘I)")
             .accessibilityIdentifier("juno.code.inspector.toggle")
         }
 
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button(action: openPreview) {
-                    Label(
-                        previewTarget == nil ? "Open Preview" : "Hide Preview",
-                        systemImage: previewTarget == nil
-                            ? "rectangle.on.rectangle"
-                            : "rectangle.on.rectangle.slash"
-                    )
-                }
-                .disabled(controller?.context == nil)
-                .accessibilityIdentifier("juno.code.preview")
-
-                // `OpenQuicklySheet` is a complete 163-line file browser that had
-                // zero call sites: nothing in the app or the package ever presented
-                // it, so the documented way to open a workspace file by name did not
-                // exist in the shipping product. ⌘⇧O because plain ⌘O is already
-                // "Add project…" in the sidebar.
-                Button { isChoosingRepository = true } label: {
-                    Label("Add Project…", systemImage: "folder.badge.plus")
-                }
-                .keyboardShortcut("o", modifiers: .command)
-                .accessibilityIdentifier("juno.code.add-project")
-
-                Button { isOpeningQuickly = true } label: {
-                    Label("Open Quickly…", systemImage: "magnifyingglass")
-                }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-                .disabled(controller?.context == nil)
-                .accessibilityIdentifier("juno.code.open-quickly")
-
-                Divider()
-
-                Button(action: toggleComputerUse) {
-                    Label(
-                        controller?.computerUseActive == true
-                            ? "Stop Screen Control" : "Start Screen Control",
-                        systemImage: controller?.computerUseActive == true
-                            ? "display.trianglebadge.exclamationmark"
-                            : "display"
-                    )
-                }
-                .disabled(!supportsComputerUse)
-                // `computerUseHelp` was computed and never attached to anything,
-                // so a dimmed item gave no reason for being dimmed.
-                .help(computerUseHelp)
-                .accessibilityIdentifier("juno.code.computer-use")
-
-                // The reason, in the menu, not only under the pointer.
-                //
-                // A tooltip is a poor place for the answer to "why can't I do
-                // this", because it is only found by someone who already suspects
-                // there is one — and the commonest reason here is "this model
-                // can't see a screenshot", which is fixed by the model selector
-                // two controls away. A plain `Text` in a menu is macOS's own
-                // disabled explanatory row, so this borrows the platform's
-                // vocabulary rather than inventing a caption.
-                //
-                // Conditional on purpose, and safe: this is menu *content*, built
-                // when the menu opens. The item that must never come and go is the
-                // `ToolbarItem` holding it, and that one is unconditional.
-                if let reason = controller?.computerUseUnavailableReason {
-                    Text(reason)
-                }
-            } label: {
-                Label("Session tools", systemImage: "ellipsis.circle")
-            }
-            .help("Preview, review, console, inspector, and screen control")
-            .accessibilityIdentifier("juno.code.session-tools")
-        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
 
         ToolbarItem(placement: .primaryAction) {
             // Not `role: .destructive`.
@@ -1229,14 +1176,98 @@ struct DesktopCodeWorkspace: View {
             // The colour now says something true instead. Red only while there is a
             // run to stop; otherwise the control keeps its place and greys out like
             // any other unavailable action.
+            // `stop.circle`, not `stop.fill`.
+            //
+            // `stop.fill` is a solid square, and a solid square alone in a
+            // toolbar capsule is not a control — it is the "lone square in a
+            // grey box" the audit photographed, indistinguishable from a
+            // rendering failure. Every other mark in this window is a circle
+            // carrying a glyph, and Stop now joins that family.
+            //
+            // The colour is on the symbol rather than on `.tint`, which in a
+            // macOS 26 toolbar addresses a prominent button's *background* and
+            // therefore did nothing here: the control claimed to be red while a
+            // run was live and drew black. Red only while there is a run to
+            // stop; otherwise it greys out like any other unavailable action.
+            // Not `role: .destructive`, which draws red whether or not the
+            // control is enabled — a permanently saturated blob in empty
+            // titlebar reads as an error indicator, and Stop is not destructive
+            // in the sense the role means: it ends a run, it does not discard
+            // the reader's work.
             Button(action: stop) {
-                Label("Stop", systemImage: "stop.fill")
+                Label("Stop", systemImage: "stop.circle")
+                    .foregroundStyle(
+                        isRunning ? Color.junoDanger : Color.junoMutedForeground
+                    )
             }
-            .tint(isRunning ? Color.junoDanger : nil)
             .keyboardShortcut(".", modifiers: .command)
             .disabled(!isRunning)
             .help("Stop this run immediately (⌘.)")
             .accessibilityIdentifier("juno.code.stop")
+        }
+
+        // The commands. `.secondaryAction` is the system's own overflow: macOS
+        // decides when the bar has room for these and folds them itself when it
+        // does not. That is the whole reason the hand-rolled `ellipsis.circle`
+        // is gone — an app that draws its own overflow chevron is guessing at a
+        // decision the window server can actually make.
+        ToolbarItemGroup(placement: .secondaryAction) {
+            Button { isChoosingRepository = true } label: {
+                Label("Add Project…", systemImage: "folder.badge.plus")
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            .accessibilityIdentifier("juno.code.add-project")
+
+            // `OpenQuicklySheet` is a complete file browser that had zero call
+            // sites: nothing in the app or the package ever presented it, so
+            // the documented way to open a workspace file by name did not exist
+            // in the shipping product. ⌘⇧O because plain ⌘O is already
+            // "Add project…".
+            Button { isOpeningQuickly = true } label: {
+                Label("Open Quickly…", systemImage: "magnifyingglass")
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(controller?.context == nil)
+            .accessibilityIdentifier("juno.code.open-quickly")
+
+            Button(action: toggleComputerUse) {
+                Label(
+                    controller?.computerUseActive == true
+                        ? "Stop Screen Control" : "Start Screen Control",
+                    systemImage: controller?.computerUseActive == true
+                        ? "display.trianglebadge.exclamationmark"
+                        : "display"
+                )
+            }
+            .disabled(!supportsComputerUse)
+            // The reason, not just the dimming: the commonest one is "this model
+            // can't see a screenshot", which is fixed by the model selector two
+            // controls away, and a disabled control that will not say why reads
+            // as broken rather than as unavailable.
+            .help(computerUseHelp)
+            .accessibilityIdentifier("juno.code.computer-use")
+        }
+    }
+
+    /// Build and run the selected repository's iOS app.
+    ///
+    /// Lifted out of the toolbar so the item holding it can be unconditional:
+    /// a `ToolbarItem` that appears and disappears makes SwiftUI rebuild the
+    /// AppKit toolbar under a live window, which is the documented crash
+    /// surface this file opens by warning about. The button is now always
+    /// present and disables when there is no project.
+    private func openSimulator() {
+        guard let repository = targetRepository else { return }
+        // Same beat as the preview dock opening: the pane's insertion is the
+        // canvas-slide keyframe, and that keyframe belongs on `canvasEnter`.
+        withAnimation(
+            JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+        ) {
+            closePreview()
+            simulatorHost.open(
+                workspaceKey: repository.id.value,
+                workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
+            )
         }
     }
 
@@ -2090,58 +2121,39 @@ private struct DesktopCodeContextStrip: View {
     let showsPreview: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.cozy) {
-            VStack(alignment: .leading, spacing: 2) {
-                // Caption-class, not the fixed 9pt it shipped at: 9pt is below
-                // the scale's caption floor, and a frozen `.system(size:)`
-                // never moves with Dynamic Type. The tracked overline reads
-                // the same at the rung's size — quiet is done with ink and
-                // tracking here, not with sub-legible type.
-                Text("JUNO CODE")
-                    .font(.system(.caption2, design: .rounded, weight: .semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.junoMutedForeground)
-
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .junoSecondaryInk()
-                        .lineLimit(1)
-                }
+        // `CodePageHeader` owns the strip's anatomy — the mark, the 52pt, the
+        // canvas ground, the path in the code face. What used to be here was a
+        // fourth hand-built header with its own metrics and, worse, a *seventh*
+        // rendering of run status: a bare tinted `Circle` beside a label, in a
+        // card, agreeing with nothing else in the window.
+        //
+        // The "JUNO CODE" overline is gone with it. The product's name above
+        // the session's own name, inside the product, is chrome that says
+        // nothing the sidebar's product switch has not already said.
+        CodePageHeader(
+            icon: .code,
+            title: title,
+            subtitle: subtitle.isEmpty ? nil : subtitle
+        ) {
+            if showsPreview {
+                Label("Preview live", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.junoSuccess)
+                    .labelStyle(.titleAndIcon)
             }
 
-            Spacer(minLength: JunoSpace.regular)
-
-            HStack(spacing: JunoSpace.snug) {
-                if showsPreview {
-                    Label("Preview live", systemImage: "dot.radiowaves.left.and.right")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.junoSuccess)
+            if let status {
+                HStack(spacing: JunoSpace.tight) {
+                    CodeStatusGlyph(status)
+                    Text(status.label)
+                        .junoCaption()
+                        .contentTransition(.identity)
                 }
-
-                if let status {
-                    HStack(spacing: JunoSpace.tight) {
-                        Circle()
-                            .fill(status.tint)
-                            .frame(width: 7, height: 7)
-                        Text(status.label)
-                            .font(.caption.weight(.medium))
-                    }
-                    .padding(.horizontal, JunoSpace.snug)
-                    .padding(.vertical, JunoSpace.tight)
-                    .junoCard(cornerRadius: JunoRadius.chip)
-                }
+                .help(status.state.meaning)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Status: \(status.label)")
             }
         }
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.vertical, JunoSpace.cozy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.junoCanvas)
-        .accessibilityElement(children: .combine)
         .accessibilityIdentifier("juno.code.context-strip")
     }
 }

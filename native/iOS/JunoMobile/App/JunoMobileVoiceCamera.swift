@@ -285,10 +285,10 @@ struct JunoMobileVoiceSelfView: View {
                 .fill(Color.junoAccent)
                 .frame(width: 5, height: 5)
             Text("voice.camera.live")
-                .font(.system(size: 10, weight: .semibold))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
         }
         .padding(.horizontal, JunoSpace.tight)
-        .padding(.vertical, 3)
+        .padding(.vertical, JunoSpace.hairline)
         .background(.ultraThinMaterial, in: Capsule())
         .padding(.top, JunoSpace.hairline)
         .accessibilityHidden(true)
@@ -327,10 +327,11 @@ struct JunoMobileVoiceSelfView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 26, height: 26)
                 .background(.ultraThinMaterial, in: Circle())
+                .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

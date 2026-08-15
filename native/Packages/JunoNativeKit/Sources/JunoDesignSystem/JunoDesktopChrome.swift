@@ -320,6 +320,43 @@ public extension View {
         buttonStyle(.glass)
     }
 
+    /// The metric every toolbar action in the product uses.
+    ///
+    /// **Apply this to the `Button` inside each `ToolbarItem`, not to the
+    /// `.toolbar` modifier.** That is counter-intuitive and was got wrong once
+    /// already: `.controlSize` and `.imageScale` normally flow down the
+    /// environment, so putting them on the view that carries `.toolbar {…}`
+    /// looks like it should size the whole bar. It does nothing at all. Toolbar
+    /// item content is hosted by `NSToolbar`, in a view hierarchy that is a
+    /// sibling of the content view rather than a descendant, so the content
+    /// view's environment never reaches it. The change built, ran, and produced
+    /// a pixel-identical toolbar.
+    ///
+    /// **Why the default was wrong.** A bare `Button { Label(…) }` in a toolbar
+    /// inherits `.regular`, which on this OS draws roughly a 22pt glass capsule
+    /// around a 13pt glyph. That is smaller than the standard macOS toolbar
+    /// button, and Liquid Glass makes it read smaller still: the material is
+    /// mostly transparent, so a small capsule has very little of its own
+    /// presence and the glyph is doing all the work of being a target. Measured
+    /// against `mac-work.png` in `docs/native/design/rework/`, the compose and
+    /// overflow actions came out at about 22pt in a window 1512pt wide.
+    ///
+    /// `.large` is the platform's own next rung — about 32pt — not a
+    /// hand-picked number. That distinction matters more than usual here: a
+    /// literal `.frame(width:height:)` on a glass button overrides the shape the
+    /// material is lensing through, so the capsule stops matching its own
+    /// highlight and the press flex deforms. The size has to come from the
+    /// control metric, never from a frame.
+    ///
+    /// Pointer targets have no 44pt rule the way touch does, but the AppKit apps
+    /// this sits beside — Mail, Notes, Xcode — all land near 30pt, and matching
+    /// them is most of what makes a Mac toolbar feel native.
+    func junoToolbarMetrics() -> some View {
+        controlSize(.large)
+            .imageScale(.large)
+            .fontWeight(.medium)
+    }
+
     /// The one primary action on a surface.
     ///
     /// Prefer the cross-platform ``SwiftUI/View/junoProminentAction()`` in new

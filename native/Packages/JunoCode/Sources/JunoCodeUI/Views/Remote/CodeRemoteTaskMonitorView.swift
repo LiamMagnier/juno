@@ -103,7 +103,10 @@ public struct CodeRemoteTaskMonitorView: View {
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.tight)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial)
+                    // Opaque: an error message is the most important text on
+                    // this surface, and material behind it makes its contrast
+                    // depend on the desktop picture.
+                    .background(Color.junoSurface)
             }
         }
     }

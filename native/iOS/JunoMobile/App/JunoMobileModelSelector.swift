@@ -31,7 +31,7 @@ struct JunoMobileModelControl: View {
         Button {
             presented = true
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
                 JunoProviderMark(
                     providerID: selected?.providerID ?? "juno",
                     providerName: selected?.providerName ?? "Juno",
@@ -51,7 +51,11 @@ struct JunoMobileModelControl: View {
                     .id(selectedModelID)
                     .transition(.opacity)
                     .animation(
-                        JunoMotion.reduced(JunoMobileMotion.fadeIn, when: reduceMotion),
+                        JunoMotion.reduced(
+                            JunoMotion.outSoft(JunoMotion.Duration.base),
+                            when: reduceMotion,
+                            tier: .tint
+                        ),
                         value: selectedModelID
                     )
                 // One chevron, turning over — the web's `rotate-180` when the
@@ -59,21 +63,26 @@ struct JunoMobileModelControl: View {
                 // symmetrical, so a 180° turn is indistinguishable from no turn
                 // at all, and it stated a direction the picker does not have.
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 9, weight: .semibold))
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                     .junoSecondaryInk()
                     .rotationEffect(.degrees(presented ? 180 : 0))
                     .animation(
                         JunoMotion.reduced(
-                            JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase),
+                            JunoMotion.outSoft(JunoMotion.Duration.base),
                             when: reduceMotion
                         ),
                         value: presented
                     )
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.tight)
             .frame(minWidth: 0)
             .modifier(JunoMobileComposerChipBackground())
+            // The chip draws at its own height; the finger gets the same 44pt the
+            // composer's round controls beside it already carry, in the capsule
+            // shape the chip visibly is.
+            .frame(minHeight: 44)
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(JunoMobileChipPressStyle())
         .accessibilityLabel("Model")
@@ -224,8 +233,8 @@ struct JunoMobileModelSelectorView: View {
             VStack(spacing: 0) {
                 if !providers.isEmpty {
                     providerRail
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.vertical, JunoSpace.snug)
                 }
                 List {
                     if filtered.isEmpty {
@@ -288,8 +297,8 @@ struct JunoMobileModelSelectorView: View {
 
             VStack(spacing: 0) {
                 JunoMobileSelectorSearchField(query: $query)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.cozy)
                 if filtered.isEmpty {
                     noResults
                     Spacer(minLength: 0)
@@ -379,8 +388,8 @@ struct JunoMobileModelSelectorView: View {
         let selected = model.id == selectedModelID
         let expanded = showsDetailToggle && detailModelID == model.id
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 Button {
                     guard reason == nil else { return }
                     onSelect(model)
@@ -399,15 +408,15 @@ struct JunoMobileModelSelectorView: View {
                         // `fade-in-up`'s own timing, so the spec sheet's arrival
                         // and the row's growth are one movement.
                         withAnimation(
-                            JunoMotion.reduced(JunoMobileMotion.fadeInUp, when: reduceMotion)
+                            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)
                         ) {
                             detailModelID = expanded ? nil : model.id
                         }
                     } label: {
                         Image(systemName: expanded ? "chevron.up" : "info.circle")
-                            .font(.system(size: 15))
+                            .junoFont(size: 15, relativeTo: .subheadline)
                             .junoSecondaryInk()
-                            .frame(width: 30, height: 30)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -417,14 +426,14 @@ struct JunoMobileModelSelectorView: View {
 
             if expanded {
                 JunoModelDetailView(model: model, showsHeader: false)
-                    .padding(.top, 2)
+                    .padding(.top, JunoSpace.hairline)
                     // `fade-in-up`, keyed on the model: the spec sheet is a
                     // different set of numbers each time, and sliding it up a
                     // few points is what says so.
-                    .transition(JunoMobileMotion.fadeInUpTransition)
+                    .transition(.opacity.combined(with: .offset(y: JunoSpace.tight)))
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, JunoSpace.hairline)
         .contentShape(Rectangle())
         // The opening cascade, `min(i, 12) * 16ms` exactly as the web caps it:
         // past a dozen rows the stagger stops adding rhythm and starts adding
@@ -434,7 +443,7 @@ struct JunoMobileModelSelectorView: View {
         .animation(
             reduceMotion
                 ? nil
-                : JunoMobileMotion.riseIn
+                : JunoMotion.emphasized
                     .delay(Double(min(rowOrder[model.id] ?? 0, 12)) * 0.016),
             value: rowsIn
         )
@@ -451,12 +460,12 @@ struct JunoMobileModelSelectorView: View {
         Button {
             provider = id
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: JunoSpace.cozy) {
                 if let id {
                     JunoProviderMark(providerID: id, providerName: name, size: 18)
                 } else {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 14))
+                        .junoFont(size: 14, relativeTo: .subheadline)
                         .frame(width: 18, height: 18)
                         .junoSecondaryInk()
                 }
@@ -477,13 +486,13 @@ struct JunoMobileModelSelectorView: View {
     /// the website's icon rail.
     private var providerRail: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
                 providerChip(id: nil, name: "All")
                 ForEach(providers, id: \.id) { entry in
                     providerChip(id: entry.id, name: entry.shortName)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, JunoSpace.hairline)
         }
         .scrollIndicators(.hidden)
         .accessibilityIdentifier("juno.mobile.model-provider-rail")
@@ -494,7 +503,7 @@ struct JunoMobileModelSelectorView: View {
         return Button {
             provider = active ? nil : id
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: JunoSpace.tight) {
                 if let id {
                     JunoProviderMark(providerID: id, providerName: name, size: 15)
                 }
@@ -502,8 +511,8 @@ struct JunoMobileModelSelectorView: View {
                     .font(.footnote.weight(active ? .semibold : .regular))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 6)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.tight)
             .foregroundStyle(active ? Color.junoAccent : .primary)
             .background {
                 Capsule().fill(active ? Color.junoAccent.opacity(0.14) : Color.junoRowHover)
@@ -610,7 +619,7 @@ private struct JunoMobileSelectorSearchField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             Image(systemName: "magnifyingglass")
                 .junoSecondaryInk()
             TextField("Search models", text: $query)
@@ -629,8 +638,8 @@ private struct JunoMobileSelectorSearchField: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
         .background(JunoGlassBackground(cornerRadius: 12))
         .accessibilityIdentifier("juno.mobile.model-search")
     }
@@ -644,24 +653,26 @@ private struct JunoMobileModelRowLabel: View {
     let unavailabilityReason: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
             JunoProviderMark(
                 providerID: model.providerID,
                 providerName: model.providerName,
                 size: 22
             )
+            // An optical baseline nudge against the two-line title beside it,
+            // not a gap.
             .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.tight) {
                     Text(model.displayName)
                         .font(.body.weight(.medium))
                         .lineLimit(2)
                     if model.choosesReasoningAutomatically {
                         Text("SMART")
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
+                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                            .padding(.horizontal, JunoSpace.tight)
+                            .padding(.vertical, JunoSpace.hairline)
                             .foregroundStyle(Color.junoAccent)
                             .background {
                                 Capsule().fill(Color.junoAccent.opacity(0.14))
@@ -669,13 +680,13 @@ private struct JunoMobileModelRowLabel: View {
                     }
                     if selected {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .semibold))
+                            .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                             .foregroundStyle(Color.junoAccent)
                     }
                     Spacer(minLength: 0)
                     if let cost = NativeModelPresentation.costGlyph(model.pricing) {
                         Text(cost)
-                            .font(.caption.monospaced())
+                            .font(.caption)
                             .junoMetaInk()
                     }
                 }

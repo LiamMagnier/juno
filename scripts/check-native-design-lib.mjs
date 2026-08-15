@@ -78,6 +78,11 @@ export function swiftFiles() {
         // `.build` holds checked-out dependency sources — thousands of Swift
         // files nobody here can fix. `node_modules` is the Electron shell.
         if (entry.name === ".build" || entry.name === "node_modules" || entry.name === ".git") continue;
+        // 236 of this tree's 703 Swift files are tests, and a test is the one
+        // place a raw `.easeOut(duration:)` is CORRECT — `JunoDesignTokensTests`
+        // has to construct the curve it is asserting the ladder produces. These
+        // gates are about what ships to a user's screen.
+        if (entry.name === "Tests") continue;
         walk(relativePath);
         continue;
       }

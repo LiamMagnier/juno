@@ -153,7 +153,7 @@ struct JunoPageTitle: View {
     var subtitle: LocalizedStringKey?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             Text(title)
                 .junoPageHeading(compact: true)
                 .accessibilityAddTraits(.isHeader)
@@ -176,7 +176,7 @@ struct JunoGroupLabel: View {
             .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
             .junoSecondaryInk()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 6)
+            .padding(.top, JunoSpace.tight)
     }
 }
 
@@ -195,7 +195,7 @@ struct JunoInlineError: View {
     var retry: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color.junoCaution)
                 .font(.caption)
@@ -217,8 +217,8 @@ struct JunoInlineError: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .fill(Color.junoCaution.opacity(0.10))
@@ -242,7 +242,7 @@ struct JunoStatusPill: View {
         Text(text)
             .junoFont(size: 12, relativeTo: .footnote, weight: .semibold)
             .foregroundStyle(filled ? tint : Color.junoMutedForeground)
-            .padding(.horizontal, 9)
+            .padding(.horizontal, JunoSpace.snug)
             .frame(minHeight: 22)
             .background(Capsule().fill(filled ? tint.opacity(0.14) : Color.junoMuted))
             .accessibilityLabel(text)

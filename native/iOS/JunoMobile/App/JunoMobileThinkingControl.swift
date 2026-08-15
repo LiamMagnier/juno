@@ -48,18 +48,18 @@ struct JunoMobileThinkingControl: View {
                 guard scale.isAdjustable else { return }
                 presented = true
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: JunoSpace.tight) {
                     JunoMobileThinkingLabel(text: label, ultra: atTopTier, pop: topArrivals)
                     if scale.isAdjustable {
                         Image(systemName: "chevron.up")
-                            .font(.system(size: 9, weight: .semibold))
+                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                             .junoSecondaryInk()
                             // Turns over while the picker is up, as the web's
                             // chevron does.
                             .rotationEffect(.degrees(presented ? 180 : 0))
                             .animation(
                                 JunoMotion.reduced(
-                                    JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase),
+                                    JunoMotion.outSoft(JunoMotion.Duration.base),
                                     when: reduceMotion
                                 ),
                                 value: presented
@@ -67,9 +67,14 @@ struct JunoMobileThinkingControl: View {
                     }
                 }
                 .foregroundStyle(scale.isAutomatic ? Color.secondary : Color.primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.tight)
                 .modifier(JunoMobileComposerChipBackground())
+                // The chip draws at its own height; the finger gets the same 44pt
+                // the composer's round controls beside it already carry, in the
+                // capsule shape the chip visibly is.
+                .frame(minHeight: 44)
+                .contentShape(Capsule(style: .continuous))
             }
             .buttonStyle(JunoMobileChipPressStyle())
             .disabled(!scale.isAdjustable)
@@ -159,7 +164,9 @@ private struct JunoMobileThinkingLabel: View {
             .id(text)
             .transition(.opacity)
             .animation(
-                JunoMotion.reduced(JunoMobileMotion.fadeIn, when: reduceMotion),
+                JunoMotion.reduced(
+                    JunoMotion.outSoft(JunoMotion.Duration.base), when: reduceMotion, tier: .tint
+                ),
                 value: text
             )
             // `ultra-pop`: 1 → 1.18 at 45% → 1 over 420ms. The landing flourish
@@ -168,10 +175,16 @@ private struct JunoMobileThinkingLabel: View {
             .scaleEffect(popped ? 1.18 : 1)
             .task(id: pop) {
                 guard pop > 0, ultra, !reduceMotion else { return }
-                withAnimation(JunoMobileMotion.easeSpring(0.189)) { popped = true }
-                try? await Task.sleep(for: .milliseconds(189))
+                withAnimation(
+                    JunoMotion.reduced(
+                        JunoMotion.outSoft(JunoMotion.Duration.base), when: reduceMotion
+                    )
+                ) { popped = true }
+                try? await Task.sleep(for: .seconds(JunoMotion.Duration.base))
                 guard !Task.isCancelled else { return }
-                withAnimation(JunoMobileMotion.easeSpring(0.231)) { popped = false }
+                withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+                    popped = false
+                }
             }
     }
 
@@ -229,8 +242,12 @@ private struct JunoMobileThinkingRamp: View {
             }
             .mask { JunoMobileThinkingWord(text: text) }
             .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.linear(duration: 12).repeatForever(autoreverses: true)) {
+                withAnimation(
+                    JunoMotion.ambient(
+                        .linear(duration: 12).repeatForever(autoreverses: true),
+                        when: reduceMotion
+                    )
+                ) {
                     panned = true
                 }
             }

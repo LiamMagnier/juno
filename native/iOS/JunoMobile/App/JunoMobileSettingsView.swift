@@ -11,12 +11,12 @@ import UIKit
 /// tiles, in the website's order, using the website's control vocabulary.
 ///
 /// The previous build had the right idea — cards, not a `Form` — and then wrote
-/// its own version of every part. It sat at `spacing: 12` with no reading clamp
+/// its own version of every part. It sat at `spacing: JunoSpace.cozy` with no reading clamp
 /// while every other rebuilt screen in this app is `24` clamped to 768
 /// (``JunoMobileMemoryView``, the project detail). It set type in points —
 /// `.system(size: 16)` for a row, `12` for its explanation — so the one screen a
 /// person opens to *change* how the app reads was the one screen that ignored
-/// Dynamic Type. And it hand-rolled a third copy of the monospaced eyebrow that
+/// Dynamic Type. And it hand-rolled a third copy of the section eyebrow that
 /// already existed twice in shared code.
 ///
 /// What this pass actually fixes, in order of how much it mattered:
@@ -222,7 +222,7 @@ struct JunoMobileSettingsView: View {
     /// a switch and its label to opposite edges of the window.
     private var page: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 usageTile
 
@@ -251,9 +251,9 @@ struct JunoMobileSettingsView: View {
                 aboutTile
                 dangerZone
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 32)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.region)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -269,7 +269,7 @@ struct JunoMobileSettingsView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             if let session {
                 JunoAvatar(
                     imageData: avatarData,
@@ -414,7 +414,7 @@ struct JunoMobileSettingsView: View {
                 .accessibilityIdentifier("juno.mobile.settings-background-provider")
 
                 Text(settings.backgroundProviderMode.explanation)
-                    .font(.system(size: 12))
+                    .junoFont(size: 12, relativeTo: .caption)
                     .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -425,7 +425,7 @@ struct JunoMobileSettingsView: View {
                         "settings.background-provider.crosses",
                         systemImage: "exclamationmark.triangle"
                     )
-                    .font(.system(size: 12))
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoCaution)
                 }
             }
@@ -1118,7 +1118,7 @@ private struct JunoMobileFavoriteModelsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
                 JunoPageTitle(
                     title: "Favorite models",
                     subtitle: "These sit at the top of the composer's model menu."
@@ -1149,9 +1149,9 @@ private struct JunoMobileFavoriteModelsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 32)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.region)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -1420,10 +1420,10 @@ struct JunoMobileAccentPicker: View {
                         .overlay {
                             Circle()
                                 .strokeBorder(accent.color, lineWidth: 2)
-                                .padding(-4)
+                                .padding(-JunoSpace.hairline)
                                 .opacity(chosen ? 1 : 0)
                         }
-                        .frame(width: 34, height: 34)
+                        .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)

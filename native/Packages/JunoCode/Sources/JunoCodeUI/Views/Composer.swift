@@ -753,7 +753,14 @@ struct ComposerSurface<Controls: View>: View {
                     cornerRadius: JunoRadius.composer,
                     style: .continuous
                 ),
-                tint: isDropTargeted ? Color.junoAccent.opacity(0.28) : nil
+                // Full alpha or nothing. `Glass.tint(_:)` honours the alpha it
+                // is given, so a diluted accent stops establishing a
+                // predictable luminance and the composer's text ends up
+                // reading against whatever is behind the window — the exact
+                // defect `accentGlassAction` was written to document. The 0.28
+                // that stood here was the one value the material must never be
+                // handed.
+                tint: isDropTargeted ? Color.junoAccent : nil
             )
             // The whole composer is the drop target, not just the thumbnails —
             // there is nothing to aim at before the first image is attached.

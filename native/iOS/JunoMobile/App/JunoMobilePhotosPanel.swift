@@ -86,7 +86,7 @@ struct JunoMobilePhotosPanel: View {
     /// sit on the same line and clear the home indicator by the same amount as
     /// the camera's controls, because they are the same row in the same panel.
     private func controls(_ metrics: JunoFloatingPanelMetrics) -> some View {
-        JunoGlass(spacing: 20) {
+        JunoGlass(spacing: JunoSpace.roomy) {
             HStack(spacing: 0) {
                 backButton
                 Spacer(minLength: 12)
@@ -143,7 +143,7 @@ struct JunoMobilePhotosPanel: View {
     private var backButton: some View {
         Button(action: dismiss) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 19, weight: .semibold))
+                .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)
@@ -185,7 +185,7 @@ struct JunoMobilePhotosPanel: View {
     private var confirmButton: some View {
         Button(action: confirmSelection) {
             Image(systemName: "checkmark")
-                .font(.system(size: 19, weight: .bold))
+                .junoFont(size: 19, relativeTo: .title3, weight: .bold)
                 .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)

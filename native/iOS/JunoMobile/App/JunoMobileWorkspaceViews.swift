@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 /// All three were plain `List`s with an SF Symbol, a bold line and a grey line:
 /// the default shape you get for free, which is why they read as filler beside
 /// the rest of the app. They are rebuilt here on the same system as Connections,
-/// Tasks and Code — a serif page heading, cards on the warm canvas, a monospaced
+/// Tasks and Code — a serif page heading, cards on the warm canvas, a quiet
 /// metadata line, and grouping that means something (favourites, file kind,
 /// artifact kind) rather than one undifferentiated column.
 
@@ -121,9 +121,9 @@ struct JunoMobileProjectsView: View {
     @ViewBuilder
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 JunoPageTitle(title: "navigation.projects", subtitle: "projects.subtitle")
-                    .padding(.top, 6)
+                    .padding(.top, JunoSpace.tight)
 
                 JunoMobileWorkspaceStatus(
                     conflicted: model.conflictedMutationCount > 0,
@@ -149,15 +149,15 @@ struct JunoMobileProjectsView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.section)
         }
         .accessibilityIdentifier("juno.mobile.project-list")
     }
 
     private var empty: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Text("No projects yet").junoEmptyTitle()
                 Text("A project groups conversations and files, and gives every chat in it the same standing instructions.")
                     .font(.callout)
@@ -167,7 +167,7 @@ struct JunoMobileProjectsView: View {
                 }
                 .junoProminentAction()
                 .controlSize(.large)
-                .padding(.top, 2)
+                .padding(.top, JunoSpace.hairline)
             }
         }
     }
@@ -176,11 +176,11 @@ struct JunoMobileProjectsView: View {
         let conversations = model.conversationsByProject[project.id]?.count ?? 0
         let files = model.filesByProject[project.id]?.count ?? 0
         return NavigationLink(value: project.id) {
-            JunoCard(padding: 14) {
-                HStack(alignment: .top, spacing: 13) {
+            JunoCard(padding: JunoSpace.regular) {
+                HStack(alignment: .top, spacing: JunoSpace.cozy) {
                     JunoWorkspaceGlyph(systemName: "folder")
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: JunoSpace.tight) {
                             Text(project.name)
                                 .font(JunoSerif.cardTitle)
                                 .foregroundStyle(.primary)
@@ -199,7 +199,8 @@ struct JunoMobileProjectsView: View {
                             }
                         }
                         Text("^[\(conversations) conversation](inflect: true) · ^[\(files) file](inflect: true)")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .caption)
+                            .monospacedDigit()
                             .junoMetaInk()
                             .lineLimit(1)
                         if !project.instructions.isEmpty {
@@ -222,7 +223,7 @@ struct JunoMobileProjectsView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .junoMetaInk()
-                        .padding(.top, 4)
+                        .padding(.top, JunoSpace.hairline)
                 }
             }
         }
@@ -282,18 +283,18 @@ private struct JunoMobileProjectFileRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 12) {
+            HStack(spacing: JunoSpace.cozy) {
                 JunoWorkspaceGlyph(
                     systemName: file.kind == "IMAGE" ? "photo" : "doc.text",
                     size: 34
                 )
                 VStack(alignment: .leading, spacing: 3) {
                     Text(file.fileName)
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    HStack(spacing: 5) {
+                    HStack(spacing: JunoSpace.tight) {
                         Text(
                             ByteCountFormatter.string(
                                 fromByteCount: Int64(file.size), countStyle: .file
@@ -303,7 +304,8 @@ private struct JunoMobileProjectFileRow: View {
                             Text("· \(projectName)").lineLimit(1)
                         }
                     }
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .junoMetaInk()
                 }
                 Spacer(minLength: 0)
@@ -315,15 +317,15 @@ private struct JunoMobileProjectFileRow: View {
                     Button("Delete", role: .destructive, action: delete)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                         .junoSecondaryInk()
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("File options")
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())
@@ -359,6 +361,7 @@ struct JunoMobileArtifactsView: View {
     let openConversation: (String) -> Void
     @State private var searchText = ""
     @State private var kindFilter: NativeArtifactKind?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var filteredArtifacts: [NativeArtifact] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -419,9 +422,9 @@ struct JunoMobileArtifactsView: View {
     @ViewBuilder
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 JunoPageTitle(title: "navigation.artifacts", subtitle: "artifacts.subtitle")
-                    .padding(.top, 6)
+                    .padding(.top, JunoSpace.tight)
 
                 JunoMobileWorkspaceStatus(
                     conflicted: false,
@@ -438,8 +441,8 @@ struct JunoMobileArtifactsView: View {
 
                 if model.artifacts.isEmpty {
                     JunoCard {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("No artifacts yet").font(.system(size: 17, weight: .semibold))
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                            Text("No artifacts yet").junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                             Text("When Juno builds a page, a component or a diagram in a chat, it is kept here — every version of it.")
                                 .font(.callout)
                                 .junoSecondaryInk()
@@ -450,25 +453,27 @@ struct JunoMobileArtifactsView: View {
                         .font(.callout)
                         .junoSecondaryInk()
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
+                        .padding(.vertical, JunoSpace.region)
                 } else {
                     ForEach(filteredArtifacts) { card($0) }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.section)
         }
         .accessibilityIdentifier("juno.mobile.artifact-list")
     }
 
     private var kindChips: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
                 chip(nil, label: "All")
                 ForEach(availableKinds, id: \.self) { kind in
                     chip(kind, label: Self.kindLabel(kind))
                 }
             }
+            // 1pt, so the chips' capsules are not clipped by the scroll view's
+            // bounds. Not a gap, so not on the ladder.
             .padding(.vertical, 1)
         }
         .scrollIndicators(.hidden)
@@ -485,14 +490,18 @@ struct JunoMobileArtifactsView: View {
     private func chip(_ kind: NativeArtifactKind?, label: String) -> some View {
         let active = kindFilter == kind
         return Button {
-            withAnimation(JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase)) {
+            withAnimation(
+                JunoMotion.reduced(
+                    JunoMotion.outSoft(JunoMotion.Duration.base), when: reduceMotion
+                )
+            ) {
                 kindFilter = kind
             }
         } label: {
             Text(label)
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .foregroundStyle(active ? Color.junoCanvas : Color.primary)
-                .padding(.horizontal, 13)
+                .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 32)
                 .background(
                     Capsule().fill(active ? Color.primary : Color.primary.opacity(0.06))
@@ -504,12 +513,12 @@ struct JunoMobileArtifactsView: View {
 
     private func card(_ artifact: NativeArtifact) -> some View {
         NavigationLink(value: artifact.id) {
-            JunoCard(padding: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
+            JunoCard(padding: JunoSpace.regular) {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    HStack(spacing: JunoSpace.snug) {
                         JunoWorkspaceGlyph(systemName: Self.kindIcon(artifact.kind), size: 32)
                         Text(Self.kindLabel(artifact.kind).uppercased())
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                             .junoMetaInk()
                         Spacer(minLength: 4)
                         JunoStatusPill(
@@ -521,7 +530,7 @@ struct JunoMobileArtifactsView: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    HStack(spacing: 5) {
+                    HStack(spacing: JunoSpace.tight) {
                         Image(systemName: "bubble.left")
                             .font(.caption2)
                             .junoMetaInk()
@@ -580,7 +589,7 @@ private struct JunoWorkspaceGlyph: View {
             RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
                 .fill(Color.junoAccent.opacity(0.12))
             Image(systemName: systemName)
-                .font(.system(size: size * 0.44))
+                .junoFont(size: size * 0.44, relativeTo: .body)
                 .foregroundStyle(Color.junoAccent)
         }
         .frame(width: size, height: size)
@@ -606,12 +615,12 @@ struct JunoMobileWorkspaceStatus: View {
 
     var body: some View {
         if conflicted {
-            JunoCard(padding: 12) {
-                VStack(alignment: .leading, spacing: 10) {
+            JunoCard(padding: JunoSpace.cozy) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Label(conflictMessage, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
                         .font(.caption)
                         .junoSecondaryInk()
-                    HStack(spacing: 10) {
+                    HStack(spacing: JunoSpace.cozy) {
                         Button("Keep mine", action: keepMine)
                         Spacer(minLength: 0)
                         Button("Use server version", action: useServer)
@@ -647,7 +656,7 @@ private struct JunoMobileProjectDetail: View {
     /// two counts beneath — the same header shape the projects *list* uses for
     /// each card, so opening one does not land somewhere that looks unrelated.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(project.name)
                 .junoPageHeading(compact: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -657,7 +666,7 @@ private struct JunoMobileProjectDetail: View {
             // iPhone in English and do not fit one in German, and a fixed HStack
             // answers that by squeezing every chip until the words truncate.
             ScrollView(.horizontal) {
-                HStack(spacing: 6) {
+                HStack(spacing: JunoSpace.tight) {
                     if project.starred {
                         JunoMobileMetaChip(title: "Favourite", systemImage: "star.fill")
                     }
@@ -677,7 +686,7 @@ private struct JunoMobileProjectDetail: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.hidden)
         }
-        .padding(.top, 6)
+        .padding(.top, JunoSpace.tight)
     }
 
     private func count(_ value: Int, _ noun: String) -> String {
@@ -728,14 +737,14 @@ private struct JunoMobileProjectDetail: View {
             JunoCard(padding: 0) {
                 if model.selectedConversations.isEmpty {
                     JunoMobileEmptyLine(text: "No linked conversations yet.")
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.vertical, JunoSpace.regular)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(model.selectedConversations.enumerated()), id: \.element.id) {
                             index, conversation in
                             if index > 0 {
-                                Divider().padding(.leading, 16)
+                                Divider().padding(.leading, JunoSpace.regular)
                             }
                             conversationRow(conversation)
                         }
@@ -747,27 +756,28 @@ private struct JunoMobileProjectDetail: View {
 
     private func conversationRow(_ conversation: NativeProjectConversation) -> some View {
         Button { openConversation(conversation.id) } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: JunoSpace.cozy) {
                 if conversation.pinned {
                     Image(systemName: "pin.fill")
-                        .font(.system(size: 10))
+                        .junoFont(size: 11, relativeTo: .caption2)
                         .foregroundStyle(Color.junoAccent)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(conversation.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .lineLimit(1)
                     Text(conversation.lastMessageAt, style: .relative)
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .monospacedDigit()
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())
@@ -790,14 +800,14 @@ private struct JunoMobileProjectDetail: View {
             JunoCard(padding: 0) {
                 if model.selectedFiles.isEmpty {
                     JunoMobileEmptyLine(text: "No project files yet.")
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.vertical, JunoSpace.regular)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(Array(model.selectedFiles.enumerated()), id: \.element.id) {
                             index, file in
                             if index > 0 {
-                                Divider().padding(.leading, 16)
+                                Divider().padding(.leading, JunoSpace.regular)
                             }
                             // No padding here: the row owns its own, exactly as
                             // `conversationRow` does. Adding it at the call site
@@ -830,15 +840,15 @@ private struct JunoMobileProjectDetail: View {
     /// legible before its longest field is.
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 instructionsSection
                 conversationsSection
                 filesSection
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.section)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -859,7 +869,7 @@ private struct JunoMobileProjectDetail: View {
                     }
                 } label: {
                     Image(systemName: project.starred ? "star.fill" : "star")
-                        .font(.system(size: 15))
+                        .junoFont(size: 15, relativeTo: .subheadline)
                         // Coral only when it is *on*: a starred project is an
                         // active state, which is what the accent is for.
                         .foregroundStyle(project.starred ? Color.junoAccent : Color.primary)
@@ -901,9 +911,9 @@ private struct JunoMobileProjectDetail: View {
                 // editing it in a proportional face hides the indentation and the
                 // angle brackets that give it its structure.
                 TextEditor(text: $instructionsDraft)
-                    .font(.system(size: 14, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .junoFont(size: 14, relativeTo: .subheadline, design: .monospaced)
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug)
                     .junoScreenCanvas()
                     .navigationTitle("Instructions")
                     .navigationBarTitleDisplayMode(.inline)
@@ -1031,7 +1041,7 @@ private struct JunoMobileProjectDetail: View {
 /// the navigation bar owns the title and the actions, and the artifact's identity
 /// is stated once in the editorial serif below it. Opened from a conversation it
 /// is the web's *canvas* instead — `close` is non-nil — and it draws
-/// `canvas-panel.tsx`'s own header: the title small and semibold, a monospaced
+/// `canvas-panel.tsx`'s own header: the title small and semibold, a quiet
 /// meta line under it, then the view switch, share and the close control on one
 /// line. That mode deliberately sets no `navigationTitle` and adds no toolbar
 /// items: docked, it is a pane inside the *conversation's* navigation stack, and
@@ -1091,14 +1101,14 @@ struct JunoMobileArtifactDetail: View {
     /// for the title, then the facts about it as quiet chips. The navigation bar
     /// keeps the title too, for the moment it scrolls away.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text(artifact.title)
                 .junoPageHeading(compact: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
 
             ScrollView(.horizontal) {
-                HStack(spacing: 6) {
+                HStack(spacing: JunoSpace.tight) {
                     JunoMobileMetaChip(
                         title: artifact.conversationTitle,
                         systemImage: "bubble.left.and.text.bubble.right"
@@ -1113,6 +1123,8 @@ struct JunoMobileArtifactDetail: View {
                         versionChip
                     }
                 }
+                // 1pt, so the chips' capsules are not clipped by the scroll
+                // view's bounds. Not a gap, so not on the ladder.
                 .padding(.vertical, 1)
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -1174,7 +1186,7 @@ struct JunoMobileArtifactDetail: View {
     /// artifact — get no switch at all rather than a disabled one. A page, a
     /// graphic or a component gets three: Preview, Source and the live canvas.
     private var controls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             if availableModes.count > 1 {
                 JunoMobileSegmented(
                     options: availableModes.map { .init($0, $0.title) },
@@ -1190,9 +1202,9 @@ struct JunoMobileArtifactDetail: View {
 
             ShareLink(item: version?.content ?? "") {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .subheadline)
                     .foregroundStyle(Color.primary.opacity(0.75))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .disabled(version == nil)
@@ -1201,9 +1213,9 @@ struct JunoMobileArtifactDetail: View {
             if let exportURL {
                 ShareLink(item: exportURL) {
                     Image(systemName: "doc.badge.arrow.up")
-                        .font(.system(size: 15))
+                        .junoFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(Color.primary.opacity(0.75))
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Share export")
@@ -1211,21 +1223,22 @@ struct JunoMobileArtifactDetail: View {
         }
     }
 
-    /// The website's canvas header: identity, then one line of monospaced facts,
-    /// then the controls. `canvas-panel.tsx` draws the same three things in the
-    /// same order, and the mono line is what makes an artifact read as a *file*
+    /// The website's canvas header: identity, then one line of facts, then the
+    /// controls. `canvas-panel.tsx` draws the same three things in the same
+    /// order, and the fact line is what makes an artifact read as a *file*
     /// rather than as another card in the chat.
     private var canvasHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(artifact.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .accessibilityAddTraits(.isHeader)
                     Text(metaLine)
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .monospacedDigit()
                         .foregroundStyle(Color.junoMutedForeground)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -1239,9 +1252,9 @@ struct JunoMobileArtifactDetail: View {
                 if let close {
                     Button(action: close) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                             .foregroundStyle(Color.primary)
-                            .frame(width: 30, height: 30)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -1250,17 +1263,17 @@ struct JunoMobileArtifactDetail: View {
                 }
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: JunoSpace.cozy) {
                 if artifact.versions.count > 1 { versionChip }
                 controls
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, JunoSpace.regular)
         // Taller at the top than the bottom: presented as a sheet there is no
         // navigation bar above this, only the drag indicator, and a title that
         // starts flush under it reads as a collision.
-        .padding(.top, 16)
-        .padding(.bottom, 10)
+        .padding(.top, JunoSpace.regular)
+        .padding(.bottom, JunoSpace.cozy)
         // `bg-card/50` over a hairline: the header is chrome, so it reads one
         // step off the canvas the artifact itself sits on.
         .background(Color.junoSurface.opacity(0.5))
@@ -1295,13 +1308,13 @@ struct JunoMobileArtifactDetail: View {
     private var surface: some View {
         VStack(spacing: 0) {
             if close == nil {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     header
                     controls
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 14)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.hairline)
+                .padding(.bottom, JunoSpace.regular)
             } else {
                 canvasHeader
             }
@@ -1451,7 +1464,7 @@ struct JunoMobileArtifactDetail: View {
             NavigationStack {
                 TextEditor(text: $editValue)
                     .font(.system(.body, design: .monospaced))
-                    .padding(8)
+                    .padding(JunoSpace.snug)
                     .junoScreenCanvas()
                     .navigationTitle("Edit artifact")
                     .navigationBarTitleDisplayMode(.inline)

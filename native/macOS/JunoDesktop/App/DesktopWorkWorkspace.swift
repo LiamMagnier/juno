@@ -432,6 +432,7 @@ struct DesktopWorkWorkspace: View {
             Button(action: compose) {
                 Label("New task", systemImage: "square.and.pencil")
             }
+            .junoToolbarMetrics()
             .help("Describe something for Juno to go and do (⌘N)")
             .accessibilityIdentifier("juno.work.new-task")
         }
@@ -489,6 +490,7 @@ struct DesktopWorkWorkspace: View {
             } label: {
                 Label("Task", systemImage: "ellipsis.circle")
             }
+            .junoToolbarMetrics()
             .disabled(model.isMutating)
             .accessibilityIdentifier("juno.work.task-menu")
         }

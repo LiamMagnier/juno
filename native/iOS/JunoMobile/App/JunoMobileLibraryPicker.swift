@@ -36,8 +36,8 @@ struct JunoMobileLibraryPicker: View {
     @State private var previews = NativeFilePreviewLoader()
 
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: JunoSpace.regular),
+        GridItem(.flexible(), spacing: JunoSpace.regular),
     ]
 
     var body: some View {
@@ -94,7 +94,7 @@ struct JunoMobileLibraryPicker: View {
 
     private var list: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                 JunoMobileSegmented(
                     options: NativeLibraryModel.Filter.allCases.map {
                         .init($0, $0.title)
@@ -110,18 +110,19 @@ struct JunoMobileLibraryPicker: View {
                 }
 
                 Text(selectionLine)
-                    .font(.system(size: 12, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
 
-                LazyVGrid(columns: columns, spacing: 14) {
+                LazyVGrid(columns: columns, spacing: JunoSpace.regular) {
                     ForEach(model.visibleItems) { item in
                         card(item)
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.snug)
+            .padding(.bottom, JunoSpace.section)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -161,13 +162,13 @@ struct JunoMobileLibraryPicker: View {
             }
             .overlay(alignment: .topTrailing) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
+                    .junoFont(size: 20, relativeTo: .title3)
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(
                         selected ? Color.junoOnAccent : Color.white,
                         selected ? Color.junoAccent : Color.black.opacity(0.35)
                     )
-                    .padding(10)
+                    .padding(JunoSpace.cozy)
                     .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
             }
         }

@@ -51,13 +51,13 @@ struct JunoMobileInlineArtifactView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 header
                 controls
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 14)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.regular)
 
             JunoMobileArtifactBody(
                 kind: artifact.kind,
@@ -76,8 +76,8 @@ struct JunoMobileInlineArtifactView: View {
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .strokeBorder(Color.junoHairline, lineWidth: 1)
             )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.regular)
         }
         .junoScreenCanvas()
         .navigationTitle(reference.title)
@@ -86,7 +86,7 @@ struct JunoMobileInlineArtifactView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                         .foregroundStyle(Color.primary)
                 }
                 .accessibilityLabel("artifact.close")
@@ -97,13 +97,13 @@ struct JunoMobileInlineArtifactView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text(reference.title)
                 .junoPageHeading(compact: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
 
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
                 JunoMobileMetaChip(title: kindName, systemImage: kindGlyph)
                 if let language = reference.language, !language.isEmpty {
                     JunoMobileMetaChip(title: language.uppercased())
@@ -120,7 +120,7 @@ struct JunoMobileInlineArtifactView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             // Nothing for a kind with one view — a one-segment switcher is a
             // label wearing a control's clothes — and three for a page, a graphic
             // or a component, which now includes the live canvas.
@@ -135,9 +135,9 @@ struct JunoMobileInlineArtifactView: View {
             Spacer(minLength: 0)
             ShareLink(item: reference.content) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .subheadline)
                     .foregroundStyle(Color.primary.opacity(0.75))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("artifact.share-source")

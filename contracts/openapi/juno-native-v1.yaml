@@ -567,6 +567,705 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeSessionDetailResponse' } } }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+
+  # ---------------------------------------------------------------------------
+  # Juno Work
+  #
+  # These are the routes the shipped Swift clients already call, and only those.
+  # The list was derived by reading native/Packages/JunoNativeKit/Sources/
+  # JunoWorkKit rather than by enumerating src/app/api/work, because a contract
+  # written from the server's directory listing documents endpoints nothing
+  # calls while leaving the ones a released app depends on undescribed — which
+  # is the exact shape the drift gate was supposed to prevent and did not, since
+  # it could only guard what was written down.
+  #
+  # Work sits under /api, not /api/v1: it predates the versioned surface and the
+  # clients address it directly, so every operation carries the same per-
+  # operation `servers` override that /chat and /code already use.
+  #
+  # Vocabularies (status, target, risk, decision, command kind, host state,
+  # artifact kind, trigger kind) are NOT re-enumerated here. They are generated
+  # into both halves from contracts/work/juno-work-v1.json, and a second copy in
+  # this file would be a second source of truth that drifts silently — the
+  # failure the generated Swift contract exists to prevent. Each such field
+  # instead names its vocabulary in `x-juno-work-vocabulary`.
+  # ---------------------------------------------------------------------------
+  /work/hosts:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkHosts
+      summary: Macs signed in to Juno Work for this account
+      description: >-
+        Most-recently-seen first. `state` is narrowed by the heartbeat window
+        before it is serialized, so a Mac that stopped beating cannot be
+        reported as `online` on the strength of a stale column. Read on a timer:
+        reachability is a heartbeat fact, and dispatching local work from a
+        stale list queues it at a machine that is asleep.
+      responses:
+        '200':
+          description: Every registered host, revoked ones included.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkHostsResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/hosts/register:
+    post:
+      servers: [{ url: /api }]
+      operationId: registerNativeWorkHost
+      summary: Register this Mac for Work, or re-advertise what it can do
+      description: >-
+        Registration and heartbeat are the same statement — this is what this
+        machine can do right now — so they are one route. It is also the only
+        route that returns the `WorkHost` id, which the relay claim loop cannot
+        run without. Deliberately not PATCH /work/hosts/{hostId}: that is the
+        owner's narrowing surface and accepts no capability manifest, so a
+        heartbeat sent there wrote a few booleans, discarded the manifest and
+        never refreshed presence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkHostRegistrationRequest' }
+      responses:
+        '200':
+          description: >-
+            The stored host plus the capability names this relay will actually
+            route on, so a newer Mac can see which half of its advertisement is
+            being ignored rather than infer it from work that never arrives.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkHostRegistrationResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/hosts/{hostId}/commands:
+    get:
+      servers: [{ url: /api }]
+      operationId: claimNextNativeWorkCommand
+      summary: Long-poll for the next command addressed to this host
+      description: >-
+        Held open until a command arrives or the poll times out. `command: null`
+        is the ordinary idle outcome and not an error — a client that treats it
+        as one turns every quiet minute into a broken relay. `protocolVersion`
+        is the wire generation this host can parse; the relay withholds any kind
+        above it rather than sending one the host would refuse.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: protocolVersion
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The next command, or null when the poll expired idle.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkCommandClaimResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/hosts/{hostId}/commands/{commandId}:
+    post:
+      servers: [{ url: /api }]
+      operationId: acknowledgeNativeWorkCommand
+      summary: Report the outcome of a claimed command
+      description: >-
+        A failed command still has to be acknowledged. Silence strands it: the
+        lease holds, no other process may take it, and the user reads a task
+        that is starting for ever. `error` is truncated by the caller to the
+        relay's ceiling, because a rejected acknowledgement leaves the command
+        claimed for the reason that the explanation was too long to accept.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: commandId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkCommandAcknowledgement' }
+      responses:
+        '200':
+          description: >-
+            The stored command. `replay: true` marks an acknowledgement that had
+            already been recorded, so a retry is a lookup rather than a second
+            write.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkCommandResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/hosts/{hostId}/events:
+    post:
+      servers: [{ url: /api }]
+      operationId: appendNativeWorkHostEvents
+      summary: Deliver a batch of run events produced on this Mac
+      description: >-
+        The host outbox. Every event carries the producer's `eventKey`, so a
+        batch whose POST succeeded and whose response was lost is recognised as
+        a re-delivery instead of shown to the user twice. `firstGap` being
+        non-null means re-send from there.
+      parameters:
+        - in: path
+          name: hostId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkHostEventBatch' }
+      responses:
+        '200':
+          description: Relay cursor, producer cursor, and what was deduplicated.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkHostEventBatchResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '403': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkSessions
+      description: Owner-scoped Work tasks, most-recently-active first.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: archived
+          description: Include archived tasks. Absent means live tasks only.
+          schema: { type: string, enum: ['true'] }
+      responses:
+        '200':
+          description: Task summaries without join-table context — see /work/sessions/{sessionId}/context.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionsResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeWorkSession
+      summary: Compose a task
+      description: >-
+        Created in `draft`; it costs nothing until a run is started against it.
+        `idempotencyKey` belongs to the composition, not the request — a client
+        mints one per composition and reuses it only when retrying that one, so
+        a phone on a bad connection gets a lookup instead of a second task.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkSessionCreateRequest' }
+      responses:
+        '200':
+          description: The task an earlier request with this key already created.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionResponse' } } }
+        '201':
+          description: The created task.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '402': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions/{sessionId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkSession
+      description: >-
+        The task, its current attempt, and that attempt's pending approvals.
+        `approvals` is required rather than optional: while the route omitted
+        it, a task stopped waiting for permission looked exactly like a task
+        that was still working.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Task, current run and pending approvals.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionDetailResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeWorkSession
+      description: Title, pin and archive. Everything that shapes execution lives on /context.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkSessionEditRequest' }
+      responses:
+        '200':
+          description: The updated task.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeWorkSession
+      description: Soft-deletes the task and stops any live attempt.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Acknowledged.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkOkResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions/{sessionId}/context:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkSessionContext
+      summary: The durable choices that shape a task before any attempt runs
+      description: >-
+        `connectorIds` is ABSENT, not empty, when the user was never asked which
+        apps this task may reach. The two are different facts — "inherits the
+        account's apps" and "was offered them and chose none" — and a client
+        that materialises `[]` for the missing key turns every older task's
+        implicit access into an explicit refusal. Clients must preserve absence.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Model, effort, approval posture, apps and files.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionContextResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeWorkSessionContext
+      summary: Change a task's context and read back when each change takes effect
+      description: >-
+        A model or approval change applies to the next attempt; taking an app or
+        file away can apply immediately. The route answers with `applied` and
+        `currentRun` so a client states the server's verdict rather than
+        guessing from the control that was pressed.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkSessionContextEditRequest' }
+      responses:
+        '200':
+          description: The stored context, the task, and when each change lands.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSessionContextUpdateResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions/{sessionId}/runs:
+    post:
+      servers: [{ url: /api }]
+      operationId: startNativeWorkRun
+      summary: Dispatch a new attempt
+      description: >-
+        `requestedTarget` is a request, not an outcome. The server picks the
+        effective target from the capabilities the plan needs and the hosts that
+        are actually reachable, and reports any difference as a degradation on
+        the run and in `selection`. A client that renders the requested target
+        as the result tells its user the task ran on their Mac when it ran in
+        the cloud without their files.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkRunStartRequest' }
+      responses:
+        '200':
+          description: The attempt an earlier request with this key already started.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkRunResponse' } } }
+        '201':
+          description: The dispatched attempt and the target selection behind it.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkRunDispatchResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '402': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions/{sessionId}/events:
+    get:
+      servers: [{ url: /api }]
+      operationId: streamNativeWorkEvents
+      summary: Follow a task's event log from a cursor
+      description: >-
+        Server-sent events, strictly after `after`. Resuming from the last
+        applied sequence is what makes a reconnect cheap and a replayed page
+        recognisable as already-applied by sequence rather than by content.
+        Clients must reject a 200 whose content-type is not text/event-stream:
+        a captive portal answers 200 with HTML, and a parser that grinds through
+        a login page reports "malformed event" for something that is not one.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: after
+          required: true
+          description: Last applied event `seq`. 0 streams from the beginning.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: >-
+            Progressive Work events, each frame encoded as `data: {json}\n\n`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                x-juno-event-schema: '#/components/schemas/WorkEvent'
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/sessions/{sessionId}/answer:
+    post:
+      servers: [{ url: /api }]
+      operationId: submitNativeWorkSubmission
+      summary: Reply to a question, or steer a run that asked nothing
+      description: >-
+        One route, two submissions, told apart by the mere PRESENCE of
+        `questionId`. A client must never put an empty or placeholder
+        `questionId` on the wire: a note typed while Juno works would then be
+        recorded as the reply to whatever it asks next. The two have opposite
+        preconditions — an answer needs a run that is waiting for one, an
+        instruction needs a run that is not — and only the instruction form
+        carries `delivered`/`explanation`, because only it can be accepted by
+        the log and still fail to reach a Mac.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkSubmissionRequest' }
+      responses:
+        '200':
+          description: The relay cursor, plus the delivery verdict for an instruction.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSubmissionResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '503': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/runs/{runId}/control:
+    post:
+      servers: [{ url: /api }]
+      operationId: controlNativeWorkRun
+      summary: Pause, resume, stop or undo an attempt
+      description: >-
+        `command` is null for a cloud run, which has no Mac to instruct, and for
+        a Mac that could not be told. Stated either way rather than omitted, so
+        a client can distinguish "recorded" from "recorded and delivered".
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkRunControlRequest' }
+      responses:
+        '200':
+          description: The attempt after the control, and the command queued for a host.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkRunControlResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/approvals/{approvalId}/decision:
+    post:
+      servers: [{ url: /api }]
+      operationId: decideNativeWorkApproval
+      summary: Answer one approval request
+      description: >-
+        `actionDigest` is required and is the point of the route. An approval
+        that says "allow file writes" can be replayed against a different write
+        than the one shown; an approval bound to the hash of the exact
+        normalised action cannot. The server echoes the row it wrote, and a
+        client must refuse a response whose digest is not the one it rendered —
+        that means the request was superseded between render and tap, and
+        showing a decided card for an action the user was never shown is the
+        failure this check exists for.
+      parameters:
+        - in: path
+          name: approvalId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkApprovalDecisionRequest' }
+      responses:
+        '200':
+          description: The decided approval, and the command queued for a host.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkApprovalDecisionResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '410': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/artifacts:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkArtifacts
+      summary: The durable deliverables attached to one task
+      description: >-
+        The authoritative catalogue for actions such as Save. The event log is
+        not one: an event can arrive before the object is stored, an update can
+        replace an earlier version, and a reconnect can replay it.
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: kind
+          schema: { type: string }
+          x-juno-work-vocabulary: artifactKinds
+      responses:
+        '200':
+          description: Deliverable head rows, newest-updated first.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkArtifactsResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/artifacts/{artifactId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeWorkArtifact
+      description: >-
+        One deliverable and a bounded, immutable version history, newest first.
+        `truncated` says the history was cut at the route's ceiling rather than
+        that it is complete.
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The deliverable with its version history.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkArtifactDetailResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/artifacts/{artifactId}/download:
+    get:
+      servers: [{ url: /api }]
+      operationId: downloadNativeWorkArtifact
+      summary: The stored bytes, after their recorded SHA-256 has been re-checked
+      description: >-
+        Bytes are served only once the route has verified the content hash it
+        stored. `x-juno-validated` reports whether the export validator ever
+        opened the file back up — a file can be served by explicit user request
+        and still never have passed validation, and the save UI has to be able
+        to say so.
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: version
+          description: Defaults to the current version.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: The stored bytes.
+          headers:
+            x-juno-artifact-version:
+              required: true
+              description: The version actually served.
+              schema: { type: integer, minimum: 1 }
+            x-juno-validated:
+              required: true
+              description: '"true" only when the export validator parsed this exact version.'
+              schema: { type: string, enum: ['true', 'false'] }
+            x-juno-validation-warning:
+              description: Present when the file is served despite a validator complaint.
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/schedules:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkSchedules
+      description: Durable automations for this account, each with its full trigger set.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+        - in: query
+          name: enabled
+          schema: { type: string, enum: ['true', 'false'] }
+        - in: query
+          name: sessionId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Schedules with their triggers.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkSchedulesResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: createNativeWorkSchedule
+      description: Creates a schedule and its triggers together.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkScheduleWriteRequest' }
+      responses:
+        '201':
+          description: The created schedule.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/schedules/{scheduleId}:
+    patch:
+      servers: [{ url: /api }]
+      operationId: updateNativeWorkSchedule
+      summary: Replace the editable fields of a schedule
+      description: >-
+        When `triggers` is present it REPLACES the set. That is deliberate: a
+        merge would leave a trigger the user deleted still firing, because
+        nothing in a partial edit says "and no others". A request that only
+        flips `enabled` omits `triggers` entirely and leaves them untouched.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkScheduleWriteRequest' }
+      responses:
+        '200':
+          description: The updated schedule.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeWorkSchedule
+      description: Removes the schedule and its triggers. Runs it already started are untouched.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Acknowledged.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkOkResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/schedules/{scheduleId}/run-now:
+    post:
+      servers: [{ url: /api }]
+      operationId: runNativeWorkScheduleNow
+      summary: Fire a schedule once without moving its clock
+      description: >-
+        `nextRunAt` is stated back rather than omitted, so a client never has to
+        infer from the absence of a change that this route left the schedule's
+        own clock alone. It did.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [idempotencyKey]
+              properties:
+                idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+      responses:
+        '200':
+          description: The attempt an earlier request with this key already started.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleRunNowResponse' } } }
+        '201':
+          description: The dispatched attempt and the target selection behind it.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleRunNowResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /work/schedules/{scheduleId}/runs:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeWorkScheduleRuns
+      description: >-
+        This schedule's attempts, newest first. `nextBefore` is ABSENT on a
+        short page — a cursor echoed back unconditionally is how a client that
+        pages until it disappears loops for ever.
+      parameters:
+        - in: path
+          name: scheduleId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: before
+          description: Keyset cursor — the `createdAt` of the last row already seen.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Attempts for this schedule.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WorkScheduleRunsResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -1239,3 +1938,773 @@ components:
         message: { type: string }
         code: { type: string }
         retryable: { type: boolean }
+
+    # -------------------------------------------------------------------------
+    # Juno Work
+    #
+    # Field-for-field with the serializers in src/lib/work/serializers.ts and
+    # src/lib/work/schedule.ts, which are the only functions allowed to build
+    # these shapes. Two omissions there are load-bearing and are repeated here
+    # so a client author reads them rather than discovering them: a run never
+    # carries `claimedBy`/`claimedAt`/`leaseExpiresAt`/`idempotencyKey`, and a
+    # file grant never carries `localPath`/`resolvedRealPath` on any surface
+    # except the Mac that owns the path.
+    #
+    # `additionalProperties: false` throughout. These responses are built by
+    # construction rather than spread from a row, so a column added next quarter
+    # cannot ride out to a phone — and a contract that allowed extra keys would
+    # quietly bless exactly that.
+    # -------------------------------------------------------------------------
+    WorkDegradation:
+      type: object
+      additionalProperties: false
+      required: [kind, explanation]
+      description: >-
+        Why the effective target or model differs from the requested one, in the
+        user's words. An entry with no explanation is dropped by the serializer
+        rather than passed through — a warning triangle with no sentence beside
+        it tells a user something went wrong and nothing about what.
+      properties:
+        kind: { type: string, x-juno-work-vocabulary: degradationKinds }
+        explanation: { type: string }
+        subject: { type: string }
+    WorkTargetSelection:
+      type: object
+      additionalProperties: false
+      required: [target, hostId, explanation, missing, degradation]
+      description: Which target the dispatcher actually chose, and why.
+      properties:
+        target: { type: string, x-juno-work-vocabulary: targets }
+        hostId: { type: [string, 'null'] }
+        explanation: { type: string }
+        missing:
+          type: array
+          description: Capabilities the plan needed that the chosen target could not offer.
+          items: { type: string, x-juno-work-vocabulary: capabilities }
+        degradation: { type: array, items: { $ref: '#/components/schemas/WorkDegradation' } }
+    WorkSession:
+      type: object
+      additionalProperties: false
+      required:
+        [id, projectId, conversationId, title, titleSource, goal, status, needsAttention,
+         requestedTarget, preferredHostId, requestedModel, reasoningEffort, permissionPolicy,
+         pinned, archived, lastActivityAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: [string, 'null'] }
+        conversationId:
+          type: [string, 'null']
+          description: The chat this was started from. A plain pointer, not a relation — the conversation may be private-mode and never mirrored server-side.
+        title: { type: string }
+        titleSource: { type: string }
+        goal: { type: string, description: What the user asked for, verbatim. Plans are checked back against this. }
+        status: { type: string, x-juno-work-vocabulary: statuses }
+        needsAttention:
+          type: boolean
+          description: Stored rather than derived, because deriving it meant every client re-implemented the same three-way test differently.
+        requestedTarget: { type: string, x-juno-work-vocabulary: targets }
+        preferredHostId: { type: [string, 'null'] }
+        requestedModel: { type: [string, 'null'] }
+        reasoningEffort: { type: [string, 'null'] }
+        permissionPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        pinned: { type: boolean }
+        archived: { type: boolean }
+        lastActivityAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkRun:
+      type: object
+      additionalProperties: false
+      required:
+        [id, sessionId, attempt, origin, scheduleId, status, terminalReason, terminalDetail,
+         requestedTarget, effectiveTarget, hostId, requestedModel, effectiveModel,
+         requiredCapabilities, availableCapabilities, degradation, approvalMode,
+         approvalModeNarrowedByHost, planVersion, budget, usage, inputSensitivity,
+         outputSensitivity, lastSeq, startedAt, finishedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        attempt: { type: integer, minimum: 1, description: 1-based within the session. What a user means by "the second try"; run ids are opaque. }
+        origin: { type: string, enum: [manual, retry, schedule, trigger, resume, fork] }
+        scheduleId: { type: [string, 'null'] }
+        status: { type: string, x-juno-work-vocabulary: statuses }
+        terminalReason:
+          type: [string, 'null']
+          description: Written once when the run leaves a live status, never inferred later from the last event.
+          x-juno-work-vocabulary: terminalReasons
+        terminalDetail: { type: [string, 'null'], description: Operator-facing detail. Never the model's text. }
+        requestedTarget: { type: string, x-juno-work-vocabulary: targets }
+        effectiveTarget: { type: [string, 'null'] }
+        hostId: { type: [string, 'null'] }
+        requestedModel: { type: [string, 'null'] }
+        effectiveModel: { type: [string, 'null'] }
+        requiredCapabilities: { type: array, items: { type: string, x-juno-work-vocabulary: capabilities } }
+        availableCapabilities: { type: array, items: { type: string, x-juno-work-vocabulary: capabilities } }
+        degradation: { type: array, items: { $ref: '#/components/schemas/WorkDegradation' } }
+        approvalMode:
+          type: [string, 'null']
+          description: Which mode this attempt enforced. Null when the run carries no mode this build can read.
+          x-juno-work-vocabulary: permissionPolicies
+        approvalModeNarrowedByHost: { type: boolean, description: True when a Mac's own floor was stricter than the task asked for. }
+        planVersion: { type: integer, minimum: 1 }
+        budget:
+          type: object
+          additionalProperties: false
+          required: [maxCostMicroUsd, maxTokens, maxRuntimeMs]
+          properties:
+            maxCostMicroUsd: { type: integer, minimum: 0 }
+            maxTokens: { type: integer, minimum: 0 }
+            maxRuntimeMs: { type: integer, minimum: 0 }
+        usage:
+          type: object
+          additionalProperties: false
+          required: [costMicroUsd, inputTokens, outputTokens]
+          properties:
+            costMicroUsd: { type: integer, minimum: 0 }
+            inputTokens: { type: integer, minimum: 0 }
+            outputTokens: { type: integer, minimum: 0 }
+        inputSensitivity: { type: string, x-juno-work-vocabulary: sensitivities }
+        outputSensitivity: { type: string, x-juno-work-vocabulary: sensitivities }
+        lastSeq: { type: integer, minimum: 0, description: Monotonic event counter — the cursor clients resume the stream from. }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkEvent:
+      type: object
+      additionalProperties: false
+      required: [id, runId, seq, kind, payloadVersion, visibility, payload, eventKey, agentId, createdAt]
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        seq: { type: integer, minimum: 1 }
+        kind: { type: string, x-juno-work-vocabulary: eventKinds }
+        payloadVersion: { type: integer, minimum: 1 }
+        visibility:
+          type: string
+          enum: [user, operator, internal]
+          description: An event whose stored visibility is unreadable is served as `internal` rather than shown.
+        payload: {}
+        eventKey: { type: [string, 'null'], description: The producer's idempotency key. Clients dedupe replays on it. }
+        agentId: { type: [string, 'null'], description: Present when the event came from a subagent rather than the root agent. }
+        createdAt: { type: string, format: date-time }
+    WorkApproval:
+      type: object
+      additionalProperties: false
+      required:
+        [id, runId, action, risk, summary, detail, detailVersion, actionDigest, decision,
+         decidedAt, decidedVia, expiresAt, createdAt]
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        action: { type: string, description: 'Tool/action identifier, e.g. "work.file.batch_move".' }
+        risk:
+          type: string
+          description: An unrecognised risk level is served as the highest, so a client that cannot name it still asks.
+          x-juno-work-vocabulary: riskLevels
+        summary: { type: string, description: Exactly what the user is shown. Stored so an audit can prove what was on screen. }
+        detail: {}
+        detailVersion: { type: integer, minimum: 1 }
+        actionDigest:
+          type: string
+          description: >-
+            SHA-256 over the canonical serialisation of the action. `policyDigest`
+            is deliberately absent — it is the server's replay defence and there
+            is nothing a client could do with it.
+        decision: { type: string, x-juno-work-vocabulary: approvalDecisions }
+        decidedAt: { type: [string, 'null'], format: date-time }
+        decidedVia: { type: [string, 'null'], enum: [web, macos, ios, schedule_policy, null] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    WorkArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, identifier, title, kind, mimeType, currentVersion, validatedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        identifier: { type: string, description: 'Stable per-session key the agent updates across runs, e.g. "q3-report".' }
+        title: { type: string }
+        kind: { type: string, x-juno-work-vocabulary: artifactKinds }
+        mimeType: { type: string }
+        currentVersion: { type: integer, minimum: 1 }
+        validatedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Null until the export validator has opened the file back up. A never-validated deliverable is shown as such rather than offered as though it were fine.
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkArtifactVersion:
+      type: object
+      additionalProperties: true
+      required: [version, byteSize, contentHash, origin, runId]
+      properties:
+        version: { type: integer, minimum: 1 }
+        byteSize: { type: integer, minimum: 0 }
+        contentHash: { type: string, description: SHA-256 of the stored bytes. The download route re-checks it. }
+        origin: { type: string, enum: [generated, edit, restore, import] }
+        runId: { type: [string, 'null'], description: Null for a user edit made outside a run. }
+        provenance: { type: array, items: {}, description: Source URLs, connector records and files read. Entries this build cannot interpret are dropped rather than half-rendered. }
+        validation: { type: [object, 'null'], additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    WorkHost:
+      type: object
+      additionalProperties: false
+      required:
+        [id, deviceId, displayName, platform, appVersion, protocolVersion, enabled,
+         allowsFileWork, allowsBrowser, allowsComputerUse, allowsShell, allowsBackground,
+         capabilities, capabilitiesVersion, allowedApps, blockedApps, allowedDomains,
+         approvalPolicy, state, lastSeenAt, activeRunCount, queuedRunCount, revokedAt,
+         createdAt, updatedAt]
+      description: >-
+        The advertised toggles are passed through as the host wrote them and are
+        never combined into one "can do local work" boolean. Presence and
+        capability are different facts, and a client that collapses them queues
+        file work at a Mac that is online, signed in, and has file work off.
+      properties:
+        id: { type: string }
+        deviceId: { type: string, description: The paired CodeDevice. One host per device. }
+        displayName: { type: string }
+        platform: { type: string }
+        appVersion: { type: string }
+        protocolVersion: { type: integer, minimum: 1 }
+        enabled: { type: boolean, description: The master switch. False means every toggle below is off regardless. }
+        allowsFileWork: { type: boolean }
+        allowsBrowser: { type: boolean }
+        allowsComputerUse: { type: boolean }
+        allowsShell: { type: boolean }
+        allowsBackground: { type: boolean }
+        capabilities: {}
+        capabilitiesVersion: { type: integer, minimum: 1 }
+        allowedApps: {}
+        blockedApps: {}
+        allowedDomains: {}
+        approvalPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        state:
+          type: string
+          description: A host whose state is unreadable is served as `offline`. Being wrong that way costs a user who waits; the other way queues a task at a machine that will never claim it.
+          x-juno-work-vocabulary: hostStates
+        lastSeenAt: { type: string, format: date-time }
+        activeRunCount: { type: integer, minimum: 0 }
+        queuedRunCount: { type: integer, minimum: 0 }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkCommand:
+      type: object
+      additionalProperties: false
+      required:
+        [id, hostId, sessionId, runId, kind, payload, payloadVersion, status, result, error,
+         idempotencyKey, expiresAt, leaseExpiresAt, attempts, createdAt, claimedAt, completedAt]
+      description: >-
+        The command as everyone other than the owning Mac sees it. Payload and
+        result are filtered through per-kind allowlists: the phone sends a
+        display name for `grant_folder`, the user picks a folder at the Mac, and
+        the host answers with the absolute path it resolved — echoing that back
+        would hand the phone the very thing the grant design keeps from it,
+        through a field nobody thinks of as a path.
+      properties:
+        id: { type: string }
+        hostId: { type: string }
+        sessionId: { type: string }
+        runId: { type: [string, 'null'] }
+        kind: { type: string, x-juno-work-vocabulary: commandKinds }
+        payload: {}
+        payloadVersion: { type: integer, minimum: 1 }
+        status:
+          type: string
+          description: An unreadable status is served as `failed`, never `pending` — a command nobody can classify must not be handed to a host to run a second time.
+          x-juno-work-vocabulary: commandStatuses
+        result: {}
+        error: { type: [string, 'null'] }
+        idempotencyKey: { type: string }
+        expiresAt: { type: string, format: date-time }
+        leaseExpiresAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        claimedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        redacted:
+          type: array
+          items: { type: string }
+          description: Keys that existed and were withheld, so a remote surface can say "the Mac returned more than this" instead of showing a truncated result as the whole one.
+    WorkTrigger:
+      type: object
+      additionalProperties: false
+      required: [id, kind, config, configVersion, enabled, lastFiredAt, dedupeWindowSec]
+      description: >-
+        `lastEventKey` is deliberately absent: it is a producer's identifier for
+        somebody's email or calendar entry, and echoing it would leak which
+        specific message a trigger last matched.
+      properties:
+        id: { type: string }
+        kind: { type: string, x-juno-work-vocabulary: triggerKinds }
+        config: {}
+        configVersion: { type: integer, minimum: 1 }
+        enabled: { type: boolean }
+        lastFiredAt: { type: [string, 'null'], format: date-time }
+        dedupeWindowSec: { type: integer, minimum: 0 }
+    WorkSchedule:
+      type: object
+      additionalProperties: false
+      required:
+        [id, sessionId, name, enabled, instructions, instructionsVersion, target, hostId,
+         timezone, runConfig, runConfigVersion, budget, unattendedPolicy, hostOfflinePolicy,
+         maxConcurrentRuns, notifyPolicy, missedRunPolicy, retryPolicy, lastRunAt, nextRunAt,
+         legacyScheduledTaskId, createdAt, updatedAt, triggers]
+      description: >-
+        `lockedUntil` is absent for the same reason a run omits
+        `leaseExpiresAt`: it says when Juno's own dispatcher can be raced, which
+        is infrastructure detail no client acts on.
+      properties:
+        id: { type: string }
+        sessionId: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        instructions: { type: string }
+        instructionsVersion: { type: integer, minimum: 1 }
+        target: { type: string, x-juno-work-vocabulary: targets }
+        hostId: { type: [string, 'null'] }
+        timezone: { type: string, description: IANA zone. DST is resolved against this zone at computation time, never by adding 24h to the previous fire. }
+        runConfig: {}
+        runConfigVersion: { type: integer, minimum: 1 }
+        budget:
+          type: object
+          additionalProperties: false
+          required: [maxCostMicroUsd, maxTokens, maxRuntimeMs]
+          properties:
+            maxCostMicroUsd: { type: integer, minimum: 0 }
+            maxTokens: { type: integer, minimum: 0 }
+            maxRuntimeMs: { type: integer, minimum: 0 }
+        unattendedPolicy:
+          type: string
+          description: Never "auto-approve" — a scheduled task must not gain permissions because nobody is watching.
+          x-juno-work-vocabulary: unattendedPolicies
+        hostOfflinePolicy: { type: string, x-juno-work-vocabulary: hostOfflinePolicies }
+        maxConcurrentRuns: { type: integer, minimum: 1 }
+        notifyPolicy: { type: string, enum: [none, on_finish, on_attention, all] }
+        missedRunPolicy: { type: string, x-juno-work-vocabulary: missedRunPolicies }
+        retryPolicy: {}
+        lastRunAt: { type: [string, 'null'], format: date-time }
+        nextRunAt: { type: [string, 'null'], format: date-time }
+        legacyScheduledTaskId: { type: [string, 'null'], description: The ScheduledTask this was migrated from, when it was. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        triggers: { type: array, items: { $ref: '#/components/schemas/WorkTrigger' } }
+    WorkSessionContext:
+      type: object
+      additionalProperties: false
+      required: [projectId, model, reasoningEffort, permissionPolicy, attachmentIds, attachments]
+      properties:
+        projectId: { type: [string, 'null'] }
+        model: { type: [string, 'null'] }
+        reasoningEffort: { type: [string, 'null'] }
+        permissionPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        connectorIds:
+          type: array
+          items: { type: string }
+          description: >-
+            ABSENT when the user was never asked which apps this task may reach;
+            present and possibly empty once they answered. Absence must be
+            preserved, not defaulted to [].
+        attachmentIds: { type: array, items: { type: string } }
+        attachments:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, displayName]
+            properties:
+              id: { type: string }
+              displayName: { type: string }
+        skillSlug: { type: string, description: Present only when the goal invokes a skill. }
+    WorkOkResponse:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+    WorkHostsResponse:
+      type: object
+      additionalProperties: false
+      required: [hosts]
+      properties:
+        hosts: { type: array, items: { $ref: '#/components/schemas/WorkHost' } }
+    WorkHostRegistrationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [deviceId, displayName, platform, appVersion, protocolVersion, enabled,
+         allowsFileWork, allowsBrowser, allowsComputerUse, allowsShell, allowsBackground,
+         approvalPolicy, capabilities, capabilitiesVersion, allowedApps, blockedApps,
+         allowedDomains, activeRunCount, queuedRunCount]
+      description: >-
+        Every field is either a permission this Mac is handing out or the
+        identity the relay pairs it by. The three app/domain arrays are sorted
+        by the client, so two advertisements of the same policy are
+        byte-identical and a heartbeat does not read as a change downstream.
+        The counts describe REMOTE work this host is carrying and nothing else —
+        reporting a local session here puts a badge on the phone for work the
+        phone never sent.
+      properties:
+        deviceId: { type: string }
+        displayName: { type: string }
+        platform: { type: string, const: macos }
+        appVersion: { type: string }
+        protocolVersion: { type: integer, minimum: 1 }
+        enabled: { type: boolean }
+        allowsFileWork: { type: boolean }
+        allowsBrowser: { type: boolean }
+        allowsComputerUse: { type: boolean }
+        allowsShell: { type: boolean }
+        allowsBackground: { type: boolean }
+        approvalPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        capabilities: { type: array, items: { type: string, x-juno-work-vocabulary: capabilities } }
+        capabilitiesVersion: { type: integer, minimum: 1 }
+        allowedApps: { type: array, items: { type: string } }
+        blockedApps: { type: array, items: { type: string } }
+        allowedDomains: { type: array, items: { type: string } }
+        activeRunCount: { type: integer, minimum: 0 }
+        queuedRunCount: { type: integer, minimum: 0 }
+    WorkHostRegistrationResponse:
+      type: object
+      additionalProperties: false
+      required: [host, routableCapabilities]
+      properties:
+        host: { $ref: '#/components/schemas/WorkHost' }
+        routableCapabilities: { type: array, items: { type: string } }
+    WorkCommandClaimResponse:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command:
+          oneOf:
+            - { $ref: '#/components/schemas/WorkCommand' }
+            - { type: 'null' }
+        protocolVersion: { type: integer, minimum: 1, description: Echoed on an idle poll. }
+    WorkCommandAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, x-juno-work-vocabulary: commandStatuses }
+        result: { type: object, additionalProperties: true }
+        error: { type: string, maxLength: 10000 }
+    WorkCommandResponse:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command: { $ref: '#/components/schemas/WorkCommand' }
+        replay: { type: boolean }
+    WorkHostEventBatch:
+      type: object
+      additionalProperties: true
+      required: [runId, events]
+      properties:
+        runId: { type: string }
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [seq, kind, payload]
+            properties:
+              seq: { type: integer, minimum: 1 }
+              kind: { type: string, x-juno-work-vocabulary: eventKinds }
+              payloadVersion: { type: integer, minimum: 1 }
+              visibility: { type: string, enum: [user, operator, internal] }
+              payload: {}
+              eventKey: { type: string }
+              agentId: { type: string }
+    WorkHostEventBatchResponse:
+      type: object
+      additionalProperties: true
+      required: [lastSeq, acceptedThrough, accepted, duplicates, firstGap]
+      properties:
+        lastSeq: { type: integer, minimum: 0, description: The relay's own cursor, which is what clients resume the stream from. }
+        acceptedThrough: { type: integer, minimum: 0, description: The producer cursor, echoed so the host's next `afterSeq` agrees. }
+        accepted: { type: integer, minimum: 0 }
+        duplicates: { type: integer, minimum: 0 }
+        firstGap:
+          type: [integer, 'null']
+          description: Non-null means re-send from here.
+    WorkSessionsResponse:
+      type: object
+      additionalProperties: false
+      required: [sessions]
+      properties:
+        sessions: { type: array, items: { $ref: '#/components/schemas/WorkSession' } }
+    WorkSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [session]
+      properties:
+        session: { $ref: '#/components/schemas/WorkSession' }
+        replay: { type: boolean, description: Present and true when an idempotency key resolved to an existing task. }
+    WorkSessionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [goal, idempotencyKey]
+      properties:
+        goal: { type: string, minLength: 1 }
+        title: { type: string }
+        requestedTarget: { type: string, x-juno-work-vocabulary: targets }
+        preferredHostId: { type: string }
+        model: { type: string }
+        reasoningEffort: { type: string }
+        attachmentIds: { type: array, items: { type: string } }
+        connectorIds:
+          type: array
+          items: { type: string }
+          description: Sending this key at all records that the user was asked. An empty array means "asked, chose none" — omitting the key means "never asked".
+        permissionPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+    WorkSessionEditRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: { type: string }
+        pinned: { type: boolean }
+        archived: { type: boolean }
+    WorkSessionDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [session, run, approvals]
+      properties:
+        session: { $ref: '#/components/schemas/WorkSession' }
+        run:
+          oneOf:
+            - { $ref: '#/components/schemas/WorkRun' }
+            - { type: 'null' }
+        approvals: { type: array, items: { $ref: '#/components/schemas/WorkApproval' } }
+    WorkSessionContextResponse:
+      type: object
+      additionalProperties: false
+      required: [context]
+      properties:
+        context: { $ref: '#/components/schemas/WorkSessionContext' }
+    WorkSessionContextEditRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: >-
+        `reasoningEffort` distinguishes three intents: absent leaves it alone, a
+        string sets it, and an explicit null clears it. A client that cannot send
+        null has no way to say "back to the model's default".
+      properties:
+        model: { type: string }
+        reasoningEffort: { type: [string, 'null'] }
+        permissionPolicy: { type: string, x-juno-work-vocabulary: permissionPolicies }
+        connectorIds: { type: array, items: { type: string } }
+        attachmentIds: { type: array, items: { type: string } }
+    WorkSessionContextUpdateResponse:
+      type: object
+      additionalProperties: false
+      required: [session, context, applied, currentRun]
+      properties:
+        session: { $ref: '#/components/schemas/WorkSession' }
+        context: { $ref: '#/components/schemas/WorkSessionContext' }
+        applied:
+          type: object
+          additionalProperties: true
+          description: Per-field verdict — when each change takes effect, in the user's words.
+        currentRun:
+          description: The attempt those verdicts are about, so a control can name it rather than infer it from the session status.
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [id, attempt, inFlight]
+              properties:
+                id: { type: string }
+                attempt: { type: integer, minimum: 1 }
+                inFlight: { type: boolean }
+            - { type: 'null' }
+    WorkRunStartRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotencyKey]
+      properties:
+        requestedTarget: { type: string, x-juno-work-vocabulary: targets }
+        model: { type: string }
+        reasoningEffort: { type: string }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+    WorkRunResponse:
+      type: object
+      additionalProperties: true
+      required: [run]
+      properties:
+        run: { $ref: '#/components/schemas/WorkRun' }
+        replay: { type: boolean }
+    WorkRunDispatchResponse:
+      type: object
+      additionalProperties: true
+      required: [run, selection]
+      properties:
+        run: { $ref: '#/components/schemas/WorkRun' }
+        selection: { $ref: '#/components/schemas/WorkTargetSelection' }
+    WorkRunControlRequest:
+      type: object
+      additionalProperties: false
+      required: [action, idempotencyKey]
+      properties:
+        action:
+          type: string
+          description: Restricted to the run-control subset of the command vocabulary.
+          x-juno-work-vocabulary: commandKinds
+        reason: { type: string }
+        idempotencyKey: { type: string, minLength: 8, maxLength: 200 }
+    WorkRunControlResponse:
+      type: object
+      additionalProperties: false
+      required: [run, command]
+      properties:
+        run: { $ref: '#/components/schemas/WorkRun' }
+        command:
+          oneOf:
+            - { $ref: '#/components/schemas/WorkCommand' }
+            - { type: 'null' }
+    WorkApprovalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, actionDigest]
+      properties:
+        decision: { type: string, x-juno-work-vocabulary: approvalDecisions }
+        actionDigest: { type: string, description: The digest of the card that was on screen. The executor refuses on mismatch. }
+        reason: { type: string }
+    WorkApprovalDecisionResponse:
+      type: object
+      additionalProperties: false
+      required: [approval, command]
+      properties:
+        approval: { $ref: '#/components/schemas/WorkApproval' }
+        command:
+          oneOf:
+            - { $ref: '#/components/schemas/WorkCommand' }
+            - { type: 'null' }
+        replay: { type: boolean }
+    WorkSubmissionRequest:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [questionId, text]
+          title: Answer
+          properties:
+            questionId: { type: string, minLength: 1 }
+            text: { type: string, minLength: 1 }
+        - type: object
+          additionalProperties: false
+          required: [text]
+          title: Instruction
+          description: >-
+            No `questionId`, not even an empty one. The route tells the two
+            submissions apart by its presence alone.
+          properties:
+            text: { type: string, minLength: 1 }
+            idempotencyKey:
+              type: string
+              minLength: 8
+              maxLength: 200
+              description: >-
+                Required by the native clients even though the web omits it. A
+                phone that loses a response usually lost signal mid-send and its
+                owner presses Send again; the route deliberately mints no key
+                from the text, because two identical sentences a minute apart are
+                two deliberate instructions.
+    WorkSubmissionResponse:
+      type: object
+      additionalProperties: false
+      required: [lastSeq, replay]
+      properties:
+        lastSeq: { type: integer, minimum: 0 }
+        replay: { type: boolean }
+        delivered:
+          type: boolean
+          description: >-
+            Instruction submissions only. False means recorded but not handed to
+            an executor — a local run whose Mac is revoked, switched off or too
+            old to parse `steer`.
+        explanation:
+          type: string
+          minLength: 1
+          description: The sentence that goes with `delivered`, addressed to the user. Never empty when `delivered` is present.
+    WorkArtifactsResponse:
+      type: object
+      additionalProperties: false
+      required: [artifacts]
+      properties:
+        artifacts: { type: array, items: { $ref: '#/components/schemas/WorkArtifact' } }
+    WorkArtifactDetailResponse:
+      type: object
+      additionalProperties: true
+      required: [artifact, versions]
+      properties:
+        artifact: { $ref: '#/components/schemas/WorkArtifact' }
+        versions: { type: array, items: { $ref: '#/components/schemas/WorkArtifactVersion' } }
+        truncated: { type: boolean, description: The history was cut at the route's ceiling. }
+        warning: { type: string }
+    WorkSchedulesResponse:
+      type: object
+      additionalProperties: false
+      required: [schedules]
+      properties:
+        schedules: { type: array, items: { $ref: '#/components/schemas/WorkSchedule' } }
+    WorkScheduleResponse:
+      type: object
+      additionalProperties: true
+      required: [schedule]
+      properties:
+        schedule: { $ref: '#/components/schemas/WorkSchedule' }
+    WorkScheduleWriteRequest:
+      type: object
+      additionalProperties: true
+      description: >-
+        POST requires `name`, `instructions` and `triggers`; PATCH treats every
+        field as optional and replaces `triggers` wholesale when it is present.
+      properties:
+        name: { type: string, minLength: 1 }
+        instructions: { type: string, minLength: 1 }
+        enabled: { type: boolean }
+        sessionId: { type: string }
+        target: { type: string, x-juno-work-vocabulary: targets }
+        hostId: { type: [string, 'null'], description: Required when target is local. Explicit null clears it. }
+        timezone: { type: string }
+        runConfig: { type: object, additionalProperties: true }
+        maxCostMicroUsd: { type: integer, minimum: 0 }
+        maxTokens: { type: integer, minimum: 0 }
+        maxRuntimeMs: { type: integer, minimum: 0 }
+        unattendedPolicy: { type: string, x-juno-work-vocabulary: unattendedPolicies }
+        hostOfflinePolicy: { type: string, x-juno-work-vocabulary: hostOfflinePolicies }
+        maxConcurrentRuns: { type: integer, minimum: 1 }
+        notifyPolicy: { type: string, enum: [none, on_finish, on_attention, all] }
+        missedRunPolicy: { type: string, x-juno-work-vocabulary: missedRunPolicies }
+        retryPolicy: { type: object, additionalProperties: true }
+        triggers:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [kind]
+            properties:
+              kind: { type: string, x-juno-work-vocabulary: triggerKinds }
+              config: { type: object, additionalProperties: true }
+              enabled: { type: boolean }
+              dedupeWindowSec: { type: integer, minimum: 0 }
+    WorkScheduleRunNowResponse:
+      type: object
+      additionalProperties: true
+      required: [run]
+      properties:
+        run: { $ref: '#/components/schemas/WorkRun' }
+        selection: { $ref: '#/components/schemas/WorkTargetSelection' }
+        nextRunAt: { type: [string, 'null'], format: date-time }
+        replay: { type: boolean }
+    WorkScheduleRunsResponse:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs: { type: array, items: { $ref: '#/components/schemas/WorkRun' } }
+        nextBefore: { type: string, format: date-time, description: Absent on a short page. }

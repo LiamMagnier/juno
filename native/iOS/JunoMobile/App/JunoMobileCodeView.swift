@@ -235,11 +235,11 @@ struct JunoMobileCodeView: View {
                             )
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(session.profile.name ?? session.profile.email)
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
                                 Text(session.profile.email)
-                                    .font(.system(size: 11))
+                                    .junoFont(size: 11, relativeTo: .caption2)
                                     .junoSecondaryInk()
                                     .lineLimit(1)
                             }
@@ -248,7 +248,7 @@ struct JunoMobileCodeView: View {
                                 JunoStatusPill(text: plan.planName, tint: .junoAccent)
                             }
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                                 .junoMetaInk()
                         }
 
@@ -271,11 +271,15 @@ struct JunoMobileCodeView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                     .junoSecondaryInk()
                 Spacer(minLength: 4)
+                // Not monospaced. A percentage beside its own label is a UI
+                // label, not machine output, and setting it in the code face was
+                // what made a plan meter read as instrumentation.
                 Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                    .monospacedDigit()
                     .junoSecondaryInk()
             }
             // Coral until it is nearly spent, then amber — the same rule the
@@ -317,20 +321,30 @@ struct JunoMobileCodeView: View {
                     .padding(.top, 4)
                     .accessibilityIdentifier("juno.mobile.code-composer")
 
+                // The repository or folder gets its own line above the switch.
+                //
+                // All three used to share one row, and on a 6.3" phone that is
+                // 369pt for a three-way switch, a repository slug and Send: the
+                // switch was squeezed to "N… … …" and the control that decides
+                // where somebody's code is written became unreadable. Nothing
+                // here truncates now, and the thing most likely to be long — a
+                // repository name — has the full width to be long in.
+                JunoMobileCodeTargetChip(model: model)
+
                 HStack(spacing: 8) {
-                    JunoMobileCodeTargetPicker(model: model)
+                    JunoMobileCodeTargetSwitch(model: model)
                     Spacer(minLength: 4)
                     Button {
                         start()
                     } label: {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
+                            .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
                             .foregroundStyle(
                                 canStart ? Color.junoOnAccent : Color.junoMutedForeground
                             )
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: canStart))
-                            .frame(width: 40, height: 44)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -382,8 +396,13 @@ private struct JunoMobileCodeGreeting: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            // The wordmark, in the UI face. It was set in the code face, which
+            // is the one thing the house rule reserves for code, paths and
+            // terminal output — a product name in monospace is the single
+            // clearest tell that a screen was drawn by a developer.
             Text("code.brand")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                .tracking(0.6)
                 .junoMetaInk()
             HStack(spacing: 9) {
                 JunoMark(size: 20)
@@ -404,12 +423,15 @@ private struct JunoMobileCodeGreeting: View {
     }
 }
 
-/// "Where does this run" — the No project ⇄ Cloud ⇄ Remote toggle and the picker
-/// for whichever is selected, folded into one chip row so the choice is always
-/// visible without occupying a screen of its own.
-private struct JunoMobileCodeTargetPicker: View {
+/// "Where does this run" — the No project ⇄ Cloud ⇄ Remote switch.
+///
+/// One of a pair: this half chooses the *kind* of target and
+/// ``JunoMobileCodeTargetChip`` names the particular one. They were a single
+/// row until the switch started truncating under the chip on a phone; splitting
+/// them is what let each keep its full width without either becoming a screen
+/// of its own.
+private struct JunoMobileCodeTargetSwitch: View {
     @Bindable var model: NativeCodeModel
-    @State private var picking = false
 
     /// The three things the reader can aim the composer at.
     ///
@@ -445,60 +467,73 @@ private struct JunoMobileCodeTargetPicker: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            // Juno's own switch, not `.pickerStyle(.segmented)`: the system
-            // control fills its selected segment with the app tint, so "where
-            // does this run" sat in the composer as a coral slab — louder than
-            // the Send button beside it. The website's tabs are neutral.
-            JunoMobileSegmented(
-                options: [
-                    JunoMobileSegmented<Choice>.Option(
-                        Choice.none, String(localized: "code.target.none")
-                    ),
-                    JunoMobileSegmented<Choice>.Option(
-                        Choice.cloud, String(localized: "code.target.cloud")
-                    ),
-                    JunoMobileSegmented<Choice>.Option(
-                        Choice.device, String(localized: "code.target.remote")
-                    ),
-                ],
-                selection: choice,
-                accessibilityLabel: String(localized: "code.target")
-            )
-            .accessibilityIdentifier("juno.mobile.code-target")
+        // Juno's own switch, not `.pickerStyle(.segmented)`: the system
+        // control fills its selected segment with the app tint, so "where
+        // does this run" sat in the composer as a coral slab — louder than
+        // the Send button beside it. The website's tabs are neutral.
+        JunoMobileSegmented(
+            options: [
+                JunoMobileSegmented<Choice>.Option(
+                    Choice.none, String(localized: "code.target.none")
+                ),
+                JunoMobileSegmented<Choice>.Option(
+                    Choice.cloud, String(localized: "code.target.cloud")
+                ),
+                JunoMobileSegmented<Choice>.Option(
+                    Choice.device, String(localized: "code.target.remote")
+                ),
+            ],
+            selection: choice,
+            accessibilityLabel: String(localized: "code.target")
+        )
+        .accessibilityIdentifier("juno.mobile.code-target")
+    }
+}
 
-            // Nothing to pick when there is no target: the chip would open a
-            // sheet of repositories for a conversation that will not use one.
-            if !model.isTargetless {
-                Button {
-                    picking = true
-                } label: {
-                    HStack(spacing: 5) {
-                        JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
-                        Text(label)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 11)
-                    .frame(height: 32)
-                    .modifier(JunoGlassCapsule())
+/// Which repository, or which folder on which computer. Opens the picker.
+private struct JunoMobileCodeTargetChip: View {
+    @Bindable var model: NativeCodeModel
+    @State private var picking = false
+
+    @ViewBuilder
+    var body: some View {
+        // Nothing to pick when there is no target: the chip would open a sheet
+        // of repositories for a conversation that will not use one.
+        if !model.isTargetless {
+            Button {
+                picking = true
+            } label: {
+                HStack(spacing: 6) {
+                    JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
+                    Text(label)
+                        .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.down")
+                        .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
+                        .junoSecondaryInk()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(label))
-                .sheet(isPresented: $picking) {
-                    JunoMobileCodeTargetSheet(model: model)
-                        .presentationDetents([.medium, .large])
-                        .presentationDragIndicator(.visible)
-                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                // 44, not the 32 it used to be. This is the control that decides
+                // where somebody's code gets written, and it was the smallest
+                // target on the screen.
+                .frame(height: 44)
+                .modifier(JunoGlassCapsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(label))
+            .sheet(isPresented: $picking) {
+                JunoMobileCodeTargetSheet(model: model)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
         }
     }
 
     private var label: String {
-        if model.isTargetless { return String(localized: "code.target.none.label") }
         switch model.target {
         case .cloud:
             return model.selectedRepository?.fullName
@@ -562,7 +597,8 @@ private struct JunoMobileCodeTargetSheet: View {
                                 .junoSecondaryInk()
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(repo.fullName).font(.system(size: 15, weight: .medium))
+                                Text(repo.fullName)
+                                    .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                                 Text(repo.defaultBranch)
                                     .font(.caption)
                                     .junoSecondaryInk()
@@ -628,7 +664,9 @@ private struct JunoMobileCodeTargetSheet: View {
                                         .frame(width: 20)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(workspace.name)
-                                            .font(.system(size: 15, weight: .medium))
+                                            .junoFont(
+                                                size: 15, relativeTo: .subheadline, weight: .medium
+                                            )
                                         Text(workspace.path)
                                             .font(.caption)
                                             .junoSecondaryInk()
@@ -693,13 +731,19 @@ private struct JunoMobileCodeTaskRow: View {
                 HStack(spacing: 8) {
                     JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
                         .junoSecondaryInk()
+                    // A repository slug and a folder name are labels, not code.
+                    // Setting them in the code face is what made every row in
+                    // this list read as log output rather than as a session.
                     Text(task.whereItRuns)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                         .junoMetaInk()
                         .lineLimit(1)
                         .truncationMode(.head)
                     Spacer(minLength: 4)
-                    JunoStatusPill(text: statusText, tint: statusTint)
+                    JunoStatusPill(
+                        text: junoCodeStatusText(task.status),
+                        tint: junoCodeStatusTint(task.status)
+                    )
                 }
                 Text(task.title)
                     .font(JunoSerif.cardTitle)
@@ -720,41 +764,47 @@ private struct JunoMobileCodeTaskRow: View {
             }
         }
     }
+}
 
-    private var statusText: String {
-        switch task.status {
-        case .queued: String(localized: "code.status.queued")
-        case .running: String(localized: "code.status.running")
-        case .awaitingApproval: String(localized: "code.status.awaiting")
-        case .done: String(localized: "code.status.done")
-        case .failed: String(localized: "code.status.failed")
-        case .cancelled: String(localized: "code.status.cancelled")
-        }
+/// A run's status as a word, shared by the list row and the session header.
+///
+/// Hoisted out of the row because the header used to say nothing at all: it drew
+/// a bare spinner, which reads identically whether a run is healthy or wedged.
+/// One function so a status cannot come to mean two different things on two
+/// screens of the same product.
+private func junoCodeStatusText(_ status: NativeCodeTaskStatus) -> String {
+    switch status {
+    case .queued: String(localized: "code.status.queued")
+    case .running: String(localized: "code.status.running")
+    case .awaitingApproval: String(localized: "code.status.awaiting")
+    case .done: String(localized: "code.status.done")
+    case .failed: String(localized: "code.status.failed")
+    case .cancelled: String(localized: "code.status.cancelled")
     }
+}
 
-    /// Running is deliberately **not** the accent.
-    ///
-    /// The website marks an in-flight session with a neutral dot and lets the
-    /// motion carry the meaning; painting every live row coral is what made the
-    /// Code list read as a column of alerts, and it spent the accent on the most
-    /// common state there is. The states that are genuinely exceptional — waiting
-    /// on you, failed — keep their colour.
-    /// The ramp, not the system palette. `.orange`, `.green` and `.red` are
-    /// Apple's colours, tuned for a neutral grey background; on the warm canvas
-    /// they read as three foreign hues, and none of them had ever been checked
-    /// for contrast as *text*, which is how this pill draws them.
-    /// `junoCaution` / `junoSuccess` / `junoDanger` are the tokens Juno Code and
-    /// Juno Chat already share, so the same run status is the same colour on the
-    /// Mac, on the web and here.
-    private var statusTint: Color {
-        switch task.status {
-        case .queued: Color.junoMutedForeground
-        case .running: Color.junoMutedForeground
-        case .awaitingApproval: Color.junoCaution
-        case .done: Color.junoSuccess
-        case .failed: Color.junoDanger
-        case .cancelled: Color.junoMutedForeground
-        }
+/// Running is deliberately **not** the accent.
+///
+/// The website marks an in-flight session with a neutral dot and lets the
+/// motion carry the meaning; painting every live row coral is what made the
+/// Code list read as a column of alerts, and it spent the accent on the most
+/// common state there is. The states that are genuinely exceptional — waiting
+/// on you, failed — keep their colour.
+/// The ramp, not the system palette. `.orange`, `.green` and `.red` are
+/// Apple's colours, tuned for a neutral grey background; on the warm canvas
+/// they read as three foreign hues, and none of them had ever been checked
+/// for contrast as *text*, which is how this pill draws them.
+/// `junoCaution` / `junoSuccess` / `junoDanger` are the tokens Juno Code and
+/// Juno Chat already share, so the same run status is the same colour on the
+/// Mac, on the web and here.
+private func junoCodeStatusTint(_ status: NativeCodeTaskStatus) -> Color {
+    switch status {
+    case .queued: Color.junoMutedForeground
+    case .running: Color.junoMutedForeground
+    case .awaitingApproval: Color.junoCaution
+    case .done: Color.junoSuccess
+    case .failed: Color.junoDanger
+    case .cancelled: Color.junoMutedForeground
     }
 }
 
@@ -764,6 +814,8 @@ private struct JunoMobileCodeSessionView: View {
     @Bindable var model: NativeCodeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isNearBottom = true
+    @State private var followUp = ""
+    @FocusState private var followUpFocused: Bool
 
     private let bottomAnchor = "juno.code.bottom"
 
@@ -781,7 +833,12 @@ private struct JunoMobileCodeSessionView: View {
                 .padding(.vertical, 14)
             }
             .junoScreenCanvas()
-            .defaultScrollAnchor(.bottom)
+            // `.initialOffset`, not the plain anchor. The plain one also sets the
+            // content's *alignment*, so a short log — a run that failed after
+            // four steps, which is exactly when somebody reads one carefully —
+            // was pinned to the bottom of the window under a screen of empty
+            // canvas. This opens at the newest line without moving the log.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             .onChange(of: model.events.count) { _, _ in
                 guard isNearBottom else { return }
                 withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
@@ -822,14 +879,27 @@ private struct JunoMobileCodeSessionView: View {
                     JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
                         .junoSecondaryInk()
                     Text(task.whereItRuns)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                         .junoMetaInk()
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    if model.isStreaming {
-                        ProgressView().controlSize(.mini)
-                    }
+                    JunoStatusPill(
+                        text: junoCodeStatusText(task.status),
+                        tint: junoCodeStatusTint(task.status)
+                    )
                 }
+                // Where the run has got to, as text that survives a still frame.
+                //
+                // This corner used to hold a bare `ProgressView`, which is the
+                // one thing a supervision screen must not do: a spinner spins
+                // identically whether the agent is working or wedged, so the only
+                // signal on the page informed nobody. Status, how long it has
+                // been going and the last thing it actually did are three facts
+                // that read the same in a screenshot as they do live.
+                Text(progressLine(task))
+                    .junoCaption()
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if !task.prompt.isEmpty {
                     Text(task.prompt)
                         .font(.callout)
@@ -839,70 +909,229 @@ private struct JunoMobileCodeSessionView: View {
                 if let url = task.pullRequestURL {
                     Link(destination: url) {
                         Label("code.open-pull-request", systemImage: "arrow.triangle.pull")
-                            .font(.system(size: 14, weight: .semibold))
+                            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                     }
                     .foregroundStyle(Color.junoAccent)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
             }
         }
     }
 
-    /// The approval card. It sits at the bottom, over the log, because the agent
-    /// is *blocked* on it — an answer buried in the scrollback would leave a run
-    /// stalled with no visible reason.
-    @ViewBuilder
-    private var footer: some View {
-        if let approval = model.pendingApproval {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("code.approval.title", systemImage: "hand.raised.fill")
-                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
-                    .foregroundStyle(Color.junoCaution)
-                Text(approval.summary)
-                    .font(.callout)
-                    .junoInk()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let detail = approval.detail, !detail.isEmpty {
-                    Text(detail)
-                        .junoCaption()
-                        .lineLimit(4)
-                }
-                // Neither of these is glass, and the panel behind them is why.
-                // The card carries `JunoGlassBackground`, so a glass capsule sat
-                // inside it had nothing to refract but the pane it was already
-                // standing on: glass cannot sample glass, and the result is that
-                // *both* surfaces collapse to a flat translucent wash and lose
-                // their lensing. The system's bordered pair is the correct
-                // vocabulary on a glass platter, and the explicit tint keeps
-                // Allow on Juno's accent instead of the device's.
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await model.respondToApproval(approve: false) }
-                    } label: {
-                        Text("code.approval.deny")
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    Button {
-                        Task { await model.respondToApproval(approve: true) }
-                    } label: {
-                        Text("code.approval.allow")
-                            .fontWeight(.semibold)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
-                    .controlSize(.large)
-                    .accessibilityIdentifier("juno.mobile.code-approve")
-                }
-            }
-            .padding(14)
-            .background(JunoGlassBackground(cornerRadius: 22))
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+    /// "Started 4 minutes ago · Reading the settings store" while a run is live,
+    /// and "Started 6 hours ago · Stopped 5 hours ago" once it is not.
+    ///
+    /// The second half changes with the first because the useful fact changes:
+    /// on a live run it is what the agent last did, and on a finished one it is
+    /// when it stopped — repeating the last log line there just says the bottom
+    /// of the log twice.
+    ///
+    /// "Reconnecting…" displaces the last action, because a log that stopped
+    /// growing because the connection dropped looks exactly like a log that
+    /// stopped growing because the agent is thinking.
+    private func progressLine(_ task: NativeCodeTask) -> String {
+        let started = task.createdAt.formatted(.relative(presentation: .named))
+        var line = String(localized: "code.session.started", defaultValue: "Started \(started)")
+        if task.status.isTerminal {
+            let stopped = task.updatedAt.formatted(.relative(presentation: .named))
+            line += " · " + String(
+                localized: "code.session.stopped", defaultValue: "stopped \(stopped)"
+            )
+        } else if model.streamReconnectAttempt > 0 {
+            line += " · " + String(
+                localized: "code.session.reconnecting", defaultValue: "Reconnecting…"
+            )
+        } else if let last = model.events.last?.title, !last.isEmpty {
+            line += " · " + last
         }
+        return line
+    }
+
+    /// Everything the reader can say to this run, on **one** pane of glass.
+    ///
+    /// The approval card and the follow-up composer are one surface rather than
+    /// two stacked cards, and the reason is a rule about the material: a screen
+    /// gets a single Liquid Glass layer over opaque content. Two glass platters
+    /// in the same safe-area inset would each be sampling the other, which is how
+    /// both lose their lensing and collapse into a pair of grey slabs.
+    ///
+    /// The approval half sits on top because the agent is *blocked* on it — an
+    /// answer buried in the scrollback leaves a run stalled with no visible
+    /// reason — and the composer under it, where the keyboard expects it.
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let approval = model.pendingApproval {
+                approvalPanel(approval)
+                Divider()
+            }
+            followUpComposer
+        }
+        .padding(14)
+        .background(JunoGlassBackground(cornerRadius: 22))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: model.pendingApproval
+        )
+    }
+
+    /// A second message to a session that already exists.
+    ///
+    /// Before this there was none: the bottom of this screen held the approval
+    /// card and nothing else, so the only thing a reader could say to a run they
+    /// had started from their phone was yes or no. Anything else meant starting a
+    /// *new* session, which throws away the conversation the first one is
+    /// attached to.
+    ///
+    /// A follow-up is a fresh execution inside the same durable Code
+    /// conversation, so it can only be sent once the current one has stopped —
+    /// the field says so plainly rather than accepting a message it would have to
+    /// drop.
+    private var followUpComposer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let blocked = followUpBlockedReason {
+                Text(blocked)
+                    .junoCaption()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(
+                    String(
+                        localized: "code.followup.placeholder",
+                        defaultValue: "Reply to this session"
+                    ),
+                    text: $followUp,
+                    axis: .vertical
+                )
+                    .lineLimit(1...5)
+                    .textFieldStyle(.plain)
+                    .focused($followUpFocused)
+                    .disabled(followUpBlockedReason != nil)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("juno.mobile.code-followup")
+                Button {
+                    sendFollowUp()
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
+                        .foregroundStyle(
+                            canSendFollowUp ? Color.junoOnAccent : Color.junoMutedForeground
+                        )
+                        .frame(width: 34, height: 34)
+                        .modifier(JunoComposerSendBackground(active: canSendFollowUp))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSendFollowUp)
+                .accessibilityLabel(
+                    Text(String(localized: "code.followup.send", defaultValue: "Send follow-up"))
+                )
+                .accessibilityIdentifier("juno.mobile.code-followup-send")
+            }
+        }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
+            value: canSendFollowUp
+        )
+    }
+
+    /// Why a follow-up cannot be sent right now, in the reader's terms.
+    ///
+    /// Two honest reasons and no third: the run has not finished, or it predates
+    /// server-side Code conversations and has nothing to continue into. Both are
+    /// facts about the task rather than about this screen, which is why neither
+    /// is phrased as an apology or offered a retry.
+    private var followUpBlockedReason: String? {
+        guard let task = model.openTask else { return nil }
+        if !task.status.isTerminal {
+            return String(
+                localized: "code.followup.blocked.active",
+                defaultValue: "Juno is still working. You can reply once this run stops."
+            )
+        }
+        if task.conversationID == nil {
+            return String(
+                localized: "code.followup.blocked.unlinked",
+                defaultValue: "This run is not linked to a Code conversation, so it cannot be continued."
+            )
+        }
+        return nil
+    }
+
+    private var canSendFollowUp: Bool {
+        !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && followUpBlockedReason == nil
+            && !model.isMutating
+    }
+
+    /// Sends, and clears only on success. A field emptied by a request that
+    /// failed loses the reader's words with no way back.
+    private func sendFollowUp() {
+        let text = followUp
+        Task {
+            if await model.sendFollowUp(prompt: text) != nil {
+                followUp = ""
+                followUpFocused = false
+            }
+        }
+    }
+
+    private func approvalPanel(_ approval: NativeCodeApproval) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("code.approval.title", systemImage: "hand.raised.fill")
+                .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                .foregroundStyle(Color.junoCaution)
+            Text(approval.summary)
+                .font(.callout)
+                .junoInk()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let detail = approval.detail, !detail.isEmpty {
+                Text(detail)
+                    .junoCaption()
+                    .lineLimit(4)
+            }
+            // Neither of these is glass, and the panel behind them is why.
+            // The footer carries `JunoGlassBackground`, so a glass capsule
+            // sat inside it had nothing to refract but the pane it was
+            // already standing on: glass cannot sample glass, and the result
+            // is that *both* surfaces collapse to a flat translucent wash and
+            // lose their lensing. The system's bordered pair is the correct
+            // vocabulary on a glass platter, and the explicit tint keeps
+            // Allow on Juno's accent instead of the device's.
+            HStack(spacing: 10) {
+                Button {
+                    Task { await model.respondToApproval(approve: false) }
+                } label: {
+                    Text("code.approval.deny")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                // Neutral, explicitly. `.bordered` inherits the app tint, so
+                // Deny drew in coral beside a coral Allow and the pane had two
+                // accented actions competing to be the obvious one — on the
+                // single control in the product that stops an agent from
+                // touching somebody's files. One tinted action per surface.
+                .buttonStyle(.bordered)
+                .tint(Color.junoMutedForeground)
+                .foregroundStyle(.primary)
+                .controlSize(.large)
+                Button {
+                    Task { await model.respondToApproval(approve: true) }
+                } label: {
+                    Text("code.approval.allow")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .controlSize(.large)
+                .accessibilityIdentifier("juno.mobile.code-approve")
+            }
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
@@ -946,12 +1175,17 @@ private struct JunoMobileCodeEventRow: View {
                 .frame(width: 14)
                 .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 1) {
+                    // The code face only where the content is code. A file
+                    // change is a path and a line count and belongs in it; a
+                    // tool call's summary and a sub-agent's status line are
+                    // sentences, and setting those in monospace is what made an
+                    // ordinary run read as a terminal dump.
                     Text(event.title)
-                        .font(.system(size: 13, design: .monospaced))
+                        .junoFont(size: 13, relativeTo: .footnote, design: design)
                         .lineLimit(2)
                     if let detail = event.detail, !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 12, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .caption, design: design)
                             .junoSecondaryInk()
                             .lineLimit(2)
                     }
@@ -959,6 +1193,14 @@ private struct JunoMobileCodeEventRow: View {
                 Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Monospace for the rows that carry a path, and the UI face for the rest.
+    private var design: Font.Design {
+        switch event.kind {
+        case .fileChange, .acceptChange, .rejectChange, .rollbackResult: .monospaced
+        default: .default
         }
     }
 

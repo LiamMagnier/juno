@@ -267,200 +267,21 @@ enum DesktopCodeNavigationState {
 }
 
 // MARK: - Status vocabulary
-
-/// One status vocabulary shared by the column, the toolbar and the detail
-/// surfaces, so a run does not read as "Running" in one place and "Active" in
-/// another.
-struct CodeRunStatus {
-    let label: String
-    let symbol: String
-    /// The website's own mark, where the concept has one.
-    ///
-    /// Most of this vocabulary is native-only: the web draws run status as a
-    /// small tinted dot and has no glyph for queued, running or completed, so
-    /// an SF Symbol there is an elaboration rather than a divergence. Two of
-    /// these states *are* named on the web, though — a permission request is a
-    /// shield and a failure is a circle — and those two must not be a raised
-    /// hand and a cross here.
-    let junoIcon: JunoIcon?
-    /// Colour is spent only where the state asks something of the reader.
-    ///
-    /// The website's sidebar draws a run's state as one small dot and reserves
-    /// hue for the three states worth interrupting for — `bg-warning` for an
-    /// approval, `bg-destructive` for a failure, `bg-success` for a finish — and
-    /// leaves everything else on `bg-muted-foreground/50`. Running used to be the
-    /// account accent here, which put a coral spinner on every live row in the
-    /// Code column and made the busiest sidebar the loudest one. Nothing about a
-    /// run in flight needs to be *found*: it is already the only thing on screen
-    /// that moves, so the motion is the signal and the indicator itself stays the
-    /// column's own ink.
-    let tint: Color
-    let isActive: Bool
-    let needsApproval: Bool
-
-    private init(
-        label: String,
-        symbol: String,
-        junoIcon: JunoIcon? = nil,
-        tint: Color,
-        isActive: Bool,
-        needsApproval: Bool = false
-    ) {
-        self.label = label
-        self.symbol = symbol
-        self.junoIcon = junoIcon
-        self.tint = tint
-        self.isActive = isActive
-        self.needsApproval = needsApproval
-    }
-
-    /// - Parameter hasPendingApproval: the session record's own flag, which the
-    ///   store keeps current for every session including the ones not on screen.
-    ///   A live session blocked on the reader outranks whatever its status says.
-    init(_ status: SessionStatus, hasPendingApproval: Bool = false) {
-        let resolved: SessionStatus =
-            hasPendingApproval && !status.isTerminal ? .waitingForApproval : status
-        switch resolved {
-        case .idle:
-            self.init(label: "Ready", symbol: "circle.dotted", tint: .secondary, isActive: false)
-        case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
-        case .waitingForApproval:
-            self.init(
-                label: "Needs approval",
-                symbol: "hand.raised.fill",
-                junoIcon: .permission,
-                tint: .junoCaution,
-                isActive: true,
-                needsApproval: true
-            )
-        case .stopping:
-            self.init(label: "Stopping", symbol: "stop.circle", tint: .secondary, isActive: true)
-        case .completed:
-            self.init(
-                label: "Completed",
-                symbol: "checkmark.circle.fill",
-                tint: .junoSuccess,
-                isActive: false
-            )
-        case .failed:
-            self.init(
-                label: "Failed",
-                symbol: "xmark.circle.fill",
-                junoIcon: .error,
-                tint: .junoDanger,
-                isActive: false
-            )
-        case .cancelled:
-            self.init(
-                label: "Stopped",
-                symbol: "stop.circle.fill",
-                tint: .secondary,
-                isActive: false
-            )
-        }
-    }
-
-    init(_ status: NativeCodeTaskStatus) {
-        switch status {
-        case .queued:
-            self.init(label: "Queued", symbol: "clock", tint: .secondary, isActive: true)
-        case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
-        case .awaitingApproval:
-            self.init(
-                label: "Needs approval",
-                symbol: "hand.raised.fill",
-                junoIcon: .permission,
-                tint: .junoCaution,
-                isActive: true,
-                needsApproval: true
-            )
-        case .done:
-            self.init(
-                label: "Completed",
-                symbol: "checkmark.circle.fill",
-                tint: .junoSuccess,
-                isActive: false
-            )
-        case .failed:
-            self.init(
-                label: "Failed",
-                symbol: "xmark.circle.fill",
-                junoIcon: .error,
-                tint: .junoDanger,
-                isActive: false
-            )
-        case .cancelled:
-            self.init(
-                label: "Stopped",
-                symbol: "stop.circle.fill",
-                tint: .secondary,
-                isActive: false
-            )
-        }
-    }
-
-    /// The relay reports a session's state as flags rather than an enum, and a
-    /// host that has stopped checking in is stale rather than idle: sending to it
-    /// would produce a command nobody claims.
-    init(_ summary: CodeRemoteSessionSummary) {
-        if summary.isAwaitingApproval {
-            self.init(
-                label: "Needs approval",
-                symbol: "hand.raised.fill",
-                junoIcon: .permission,
-                tint: .junoCaution,
-                isActive: true,
-                needsApproval: true
-            )
-        } else if summary.fresh == false {
-            self.init(
-                label: "Computer offline",
-                symbol: "bolt.horizontal.circle",
-                tint: .junoCaution,
-                isActive: false
-            )
-        } else if summary.isRunning {
-            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
-        } else if summary.lastError != nil {
-            self.init(
-                label: "Failed",
-                symbol: "xmark.circle.fill",
-                junoIcon: .error,
-                tint: .junoDanger,
-                isActive: false
-            )
-        } else {
-            self.init(label: "Ready", symbol: "circle.dotted", tint: .secondary, isActive: false)
-        }
-    }
-}
-
-/// The row's real status, drawn with the platform's own indeterminate indicator
-/// while a run is live rather than a coloured dot that cannot express motion.
-struct CodeStatusIndicator: View {
-    let status: CodeRunStatus
-
-    var body: some View {
-        Group {
-            if status.isActive, !status.needsApproval {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(status.tint)
-            } else if let junoIcon = status.junoIcon {
-                JunoIconView(junoIcon, size: 13)
-                    .foregroundStyle(status.tint)
-            } else {
-                Image(systemName: status.symbol)
-                    .foregroundStyle(status.tint)
-                    .imageScale(.small)
-            }
-        }
-        .frame(width: 16)
-        .accessibilityLabel(status.label)
-    }
-}
+//
+// **It is not here any more.** `CodeRunStatus`, its three transport
+// projections and the mark that draws it moved to
+// `JunoCodeUI/Components/CodeRunStatus.swift`, which is the one table for the
+// whole product — the column, the toolbar, the page header and the two remote
+// canvases all read it, and iOS can reach it too.
+//
+// What used to live here was only the *value*. The marks were declared
+// separately at six other call sites, which is how one window ended up drawing
+// a shield, a spinner, a filled dot, a green check, a red exclamation and a
+// hollow dot with nothing to relate them and no legend anywhere. There is now
+// one circle family, three inks, and `CodeStatusLegend` to read it from.
+//
+// The old definition is deleted rather than aliased. A `typealias` pointing at
+// the new one would be a fourth half-finished migration.
 
 // MARK: - Navigation column
 
@@ -526,6 +347,12 @@ struct DesktopCodeSidebar: View {
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
     @State private var projectPendingDeletion: ProjectGroup?
+    /// The footer bar's glass namespace. One container, one participant, one
+    /// identity — a loose `.glassEffect` gets inconsistent sampling and no
+    /// morphing, which is the failure `GlassEffectContainer` exists to prevent.
+    @Namespace private var footerGlass
+
+    static let footerGlassID = "juno.code.sidebar.footer"
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -909,19 +736,15 @@ struct DesktopCodeSidebar: View {
     /// - Parameter nested: whether this row already sits under its project's own
     ///   row, in which case it drops the facts that row has just stated.
     private func row(_ run: DesktopCodeRun, nested: Bool = false) -> some View {
-        HStack(spacing: JunoSpace.tight) {
-            CodeStatusIndicator(status: run.status)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(run.title)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(nested ? run.nestedCaption : run.caption)
-                    .junoCaption()
-                    .lineLimit(1)
-                    .truncationMode(.head)
-            }
-            Spacer(minLength: JunoSpace.hairline)
+        // `CodeSessionRow` owns the shape — mark column, two lines, truncation
+        // ends, 44pt target, the combined VoiceOver label. This column used to
+        // build it by hand, and so did the cloud monitor and the relay list,
+        // each with its own metrics.
+        CodeSessionRow(
+            title: run.title,
+            caption: nested ? run.nestedCaption : run.caption,
+            status: run.status
+        ) {
             if isFavorite(run) {
                 // The accent, because a pin is one of exactly two places the
                 // website spends `--primary` inside the whole column
@@ -937,8 +760,6 @@ struct DesktopCodeSidebar: View {
         .junoSidebarRowInk()
         .tag(run.item)
         .contextMenu { rowMenu(run) }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(run.title), \(run.caption), \(run.status.label)")
     }
 
     @ViewBuilder
@@ -1049,26 +870,49 @@ struct DesktopCodeSidebar: View {
     /// page it opens reads this Mac's own artifact store, which does not depend on
     /// the four account facts ``DesktopSidebarFooter`` needs to draw anything
     /// coherent.
+    /// **The footer is a glass bar, and that is what fixes the overlap.**
+    ///
+    /// It used to paint nothing at all and rely on the bottom scroll edge
+    /// effect to fade the rows sliding under it. That works for a bar one row
+    /// tall — the effect fades content across roughly its own inset — and this
+    /// footer is three rows and about a hundred points. So the last project row
+    /// arrived under the footer still legible, half-transparent and sliced
+    /// through the middle of its own glyphs by the row above, which is the
+    /// clipped ghost the audit photographed. Nothing was drawing over anything;
+    /// nothing was drawing *at all*.
+    ///
+    /// One `GlassEffectContainer` holding one glass element is the fix, and it
+    /// is the right one rather than a convenient one: a pinned bar over
+    /// scrolling content is exactly what the material is for, the sidebar is
+    /// this window's designated glass layer, and glass carries its own edge so
+    /// the bar needs no painted separator. The rows underneath now refract
+    /// instead of showing through. The scroll edge effect stays — it is what
+    /// softens the handful of points immediately above the bar.
     @ViewBuilder
     private var footer: some View {
-        VStack(spacing: 0) {
-            workspaceStatus
-            DesktopSidebarDesignRow(isActive: selection == .design) {
-                selection = .design
+        JunoDesktopGlass(spacing: JunoSpace.snug) {
+            VStack(spacing: 0) {
+                workspaceStatus
+                DesktopSidebarDesignRow(isActive: selection == .design) {
+                    selection = .design
+                }
+                if let session {
+                    DesktopSidebarFooter(
+                        session: session,
+                        avatarModel: avatarModel,
+                        syncModel: syncModel,
+                        plan: plan,
+                        // Selection, not a closure out of the window: Usage and
+                        // Settings are this column's own destinations, so they are
+                        // reached the way every other row here is reached.
+                        openUsage: { selection = .usage },
+                        openSettings: { selection = .settings }
+                    )
+                }
             }
-            if let session {
-                DesktopSidebarFooter(
-                    session: session,
-                    avatarModel: avatarModel,
-                    syncModel: syncModel,
-                    plan: plan,
-                    // Selection, not a closure out of the window: Usage and
-                    // Settings are this column's own destinations, so they are
-                    // reached the way every other row here is reached.
-                    openUsage: { selection = .usage },
-                    openSettings: { selection = .settings }
-                )
-            }
+            .frame(maxWidth: .infinity)
+            .junoGlass(in: Rectangle())
+            .junoGlassID(DesktopCodeSidebar.footerGlassID, in: footerGlass)
         }
     }
 
@@ -1720,255 +1564,101 @@ struct DesktopCodeDraftDetail: View {
         focused = true
     }
 
+    /// The strip above the launchpad: which project this conversation is in,
+    /// what that means, and the way to change it.
+    ///
+    /// Both branches are ``CodePageHeader`` because they were always the same
+    /// header — the same 52pt strip above the same composer, differing only in
+    /// what they had to say. Written out twice they had already drifted into
+    /// the app's only pair of 19pt glyphs and two different trailing button
+    /// treatments.
     @ViewBuilder
     private var repositoryContextBar: some View {
         if let record {
-            projectContextBar(record)
-        } else {
-            noProjectBar
-        }
-    }
-
-    /// The bar for a conversation with no project.
-    ///
-    /// It states the consequence — no files, no commands — rather than only the
-    /// absence, because "No project" alone reads as a setup step the reader
-    /// skipped rather than as a working mode. The action is an offer sitting
-    /// beside a usable composer, which is the whole difference from the wall
-    /// this replaces.
-    private var noProjectBar: some View {
-        HStack(spacing: JunoSpace.cozy) {
-            projectMark
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("No project")
-                    .font(.headline)
-                Text("Juno can answer and plan here, but cannot read or change files.")
-                    .font(.caption)
-                    .junoSecondaryInk()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-
-            Spacer(minLength: JunoSpace.cozy)
-
-            Button(action: addProject) {
-                JunoIconLabel(verbatim: "Open a Project…", icon: .projects, size: 13)
-            }
-            .junoGlassButton()
-            .keyboardShortcut("o", modifiers: [.command])
-            .accessibilityIdentifier("juno.code.draft-open-project")
-        }
-        .controlSize(.small)
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(minHeight: 52)
-        // The system's neutral window grey against a warm page — the same
-        // cold-surface defect as the artifact command bar and the two search
-        // fields. The canvas is the ground these context bars sit on.
-        .background(Color.junoCanvas)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.code.no-project-context")
-    }
-
-    /// The leading mark both context bars open with.
-    ///
-    /// **One definition, because the two bars are the same bar.** They occupy the
-    /// same 52pt strip above the same composer and differ only in what they have
-    /// to say; a mark written out twice is a mark that disagrees with itself the
-    /// first time either is touched, which is how the two ended up as the app's
-    /// only 19pt glyphs — the sidebar draws this same icon at 15, the menu at 14,
-    /// this bar's own button label at 13.
-    ///
-    /// A 19pt outline glyph tinted `.tertiary`, floating in a 28pt slot of
-    /// whitespace, was the largest and least resolved thing in the bar: nothing
-    /// held it, so it read as an unfinished placeholder beside a 13pt title. The
-    /// fix is the treatment the rest of the app already uses for a mark that
-    /// stands for a thing rather than labelling an action — a quiet fill with the
-    /// glyph centred at roughly half the tile, which is the website's own row
-    /// idiom and the sidebar's "Add project…" chip idiom in a square. `junoMuted`
-    /// is the resting-chip fill by definition, and it is one step off the bar's
-    /// own ground rather than a competing surface.
-    ///
-    /// Identical in both bars on purpose. The tile is the *slot* a project
-    /// occupies; whether one is open is said by the words beside it, which is
-    /// where a reader looks for it. Two different inks for the same glyph said
-    /// nothing legible and cost the pair their symmetry.
-    private var projectMark: some View {
-        JunoIconView(.projects, size: 14)
-            .junoSecondaryInk()
-            .frame(width: 28, height: 28)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(Color.junoMuted)
-            )
-            .accessibilityHidden(true)
-    }
-
-    private func projectContextBar(_ record: WorkspaceRecord) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            projectMark
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(record.descriptor.displayName)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(
-                    (record.descriptor.localPathHint as NSString)
-                        .abbreviatingWithTildeInPath
-                )
-                .font(.caption.monospaced())
-                .junoSecondaryInk()
-                .lineLimit(1)
-                .truncationMode(.middle)
-            }
-
-            Spacer(minLength: JunoSpace.cozy)
-
-            Text(record.descriptor.isGitRepository ? "Git repository" : "Folder")
-                .font(.caption)
-                .junoSecondaryInk()
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.vertical, JunoSpace.hairline)
-                .background(
-                    // `controlBackgroundColor` is pure white in light aqua, so
-                    // this badge was a small cold pill on the warm row. `junoMuted`
-                    // is the palette's quiet fill — the same one a resting chip
-                    // and a selected row use — which is the role this pill plays.
-                    Capsule(style: .continuous)
-                        .fill(Color.junoMuted)
-                )
-
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([
-                    URL(fileURLWithPath: record.descriptor.localPathHint)
-                ])
-            } label: {
-                Image(systemName: "arrow.up.right.square")
-                    .junoFont(size: 14, relativeTo: .body, weight: .medium)
-                    .junoSecondaryInk()
-                    .frame(width: 28, height: 28)
-            }
-            .junoGlassButton()
-            .help("Show this repository in Finder")
-            .accessibilityLabel("Show repository in Finder")
-            .accessibilityIdentifier("juno.code.show-in-finder")
-        }
-        .controlSize(.small)
-        .padding(.horizontal, JunoSpace.cozy)
-        .frame(minHeight: 52)
-        // The system's neutral window grey against a warm page — the same
-        // cold-surface defect as the artifact command bar and the two search
-        // fields. The canvas is the ground these context bars sit on.
-        .background(Color.junoCanvas)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.code.repository-context")
-    }
-
-    private var composer: some View {
-        // Keep the context and task surfaces visually connected, but give them
-        // separate jobs. The slim upper layer answers "where?"; the lower
-        // layer is the place to write and launch. This keeps the composer
-        // compact without turning every control into a floating pill.
-        JunoDesktopGlass(spacing: JunoSpace.snug) {
-            VStack(spacing: -JunoSpace.hairline) {
-                destinationRow
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug)
-                    .frame(maxWidth: 560)
-                    .junoFloatingChrome(cornerRadius: JunoRadius.well)
-                    .zIndex(1)
-
-                VStack(spacing: 0) {
-                    draftAttachmentStrip
-
-                    if dictating {
-                        DesktopDictation(
-                            onCancel: {
-                                withAnimation(JunoMotion.fast) { dictating = false }
-                                focused = true
-                            },
-                            onStop: { transcript in
-                                appendDictated(transcript)
-                                withAnimation(JunoMotion.fast) { dictating = false }
-                                focused = true
-                            },
-                            onSend: { transcript in
-                                appendDictated(transcript)
-                                withAnimation(JunoMotion.fast) { dictating = false }
-                                Task {
-                                    await Task.yield()
-                                    send()
-                                }
-                            }
-                        )
-                        .transition(.opacity)
-                    } else {
-                        TextField(
-                            record == nil
-                                ? "Ask about a codebase, an idea, or a fix…"
-                                : target == .local
-                                    ? "Describe what you want Juno to build, fix, review, or explain…"
-                                    : "Describe the task to run…",
-                            text: $prompt,
-                            axis: .vertical
-                        )
-                        .textFieldStyle(.plain)
-                        .lineLimit(1...5)
-                        .font(.body)
-                        .focused($focused)
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
-                        .padding(.horizontal, JunoSpace.cozy)
-                        .padding(.top, JunoSpace.regular)
-                        .padding(.bottom, JunoSpace.snug)
-                        .accessibilityIdentifier("juno.code.launch-prompt")
-                        .onKeyPress(.return, phases: .down) { press in
-                            if press.modifiers.contains(.shift) { return .ignored }
-                            if canSend { send() }
-                            return .handled
-                        }
-
-                        if let issue = importError ?? launchIssue {
-                            Label(issue, systemImage: "info.circle")
-                                .font(.caption)
-                                .junoSecondaryInk()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, JunoSpace.cozy)
-                                .padding(.bottom, JunoSpace.snug)
-                                .transition(.opacity)
-                                .accessibilityIdentifier("juno.code.launch-issue")
-                        }
-                    }
-
-                    HStack(spacing: JunoSpace.snug) {
-                        composerAddMenu
-                        localControls
-
-                        Spacer(minLength: JunoSpace.cozy)
-
-                        if JunoSpeechService.isSupported {
-                            dictateButton
-                        }
-                        sendButton
-                    }
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.bottom, JunoSpace.snug)
+            CodePageHeader(
+                icon: .projects,
+                title: record.descriptor.displayName,
+                subtitle: (record.descriptor.localPathHint as NSString)
+                    .abbreviatingWithTildeInPath,
+                // A path, so it is set in the code face. That is the only thing
+                // monospace is for in this product — code, paths and terminal
+                // output — never a label.
+                subtitleIsPath: true,
+                badge: record.descriptor.isGitRepository ? "Git repository" : "Folder"
+            ) {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([
+                        URL(fileURLWithPath: record.descriptor.localPathHint)
+                    ])
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                        .junoFont(size: 14, relativeTo: .body, weight: .medium)
+                        .frame(width: 28, height: 28)
                 }
-                .frame(maxWidth: 680)
-                .junoGlass(
-                    in: RoundedRectangle(
-                        cornerRadius: JunoRadius.composer,
-                        style: .continuous
-                    ),
-                    // Full-alpha or nothing: `Glass.tint(_:)` honours alpha,
-                    // so a diluted accent stops establishing a predictable
-                    // luminance and reads as whatever is behind the window —
-                    // the exact defect `accentGlassAction` documents. A drop
-                    // hover is the composer's one moment of full emphasis.
-                    tint: isDropTargeted ? Color.junoAccent : nil
-                )
+                .buttonStyle(.borderless)
+                .help("Show this repository in Finder")
+                .accessibilityLabel("Show repository in Finder")
+                .accessibilityIdentifier("juno.code.show-in-finder")
             }
-            .padding(.horizontal, JunoSpace.roomy)
+            .accessibilityIdentifier("juno.code.repository-context")
+        } else {
+            // It states the consequence — no files, no commands — rather than
+            // only the absence, because "No project" alone reads as a setup step
+            // the reader skipped rather than as a working mode. The action is an
+            // offer sitting beside a usable composer.
+            CodePageHeader(
+                icon: .projects,
+                title: "No project",
+                subtitle: "Juno can answer and plan here, but cannot read or change files."
+            ) {
+                Button(action: addProject) {
+                    JunoIconLabel(verbatim: "Open a Project…", icon: .projects, size: 13)
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut("o", modifiers: [.command])
+                .accessibilityIdentifier("juno.code.draft-open-project")
+            }
+            .accessibilityIdentifier("juno.code.no-project-context")
         }
+    }
+
+    /// **One pane of glass, and therefore no seam.**
+    ///
+    /// This was the window's most visible defect: the destination row was its
+    /// own glass element at `JunoRadius.well` (10) and 560pt wide, laid on the
+    /// input's glass at `JunoRadius.composer` (26) and 680pt wide, with a
+    /// negative gap between them. Two different corner curves met at two
+    /// different insets and the join was legible from across the room — the
+    /// picker read as a separate box balanced on top of the composer rather
+    /// than as its first row.
+    ///
+    /// ``CodeComposerShell`` is one glass element with the destination row
+    /// *inside* it, separated by a hairline. There is no second edge left to
+    /// mismatch, and the shape is published as the container shape so nested
+    /// chips stay concentric with it.
+    private var composer: some View {
+        CodeComposerShell(
+            // Full-alpha or nothing: `Glass.tint(_:)` honours alpha, so a
+            // diluted accent stops establishing a predictable luminance and
+            // reads as whatever is behind the window. A drop hover is the
+            // composer's one moment of full emphasis.
+            tint: isDropTargeted ? Color.junoAccent : nil
+        ) {
+            destinationRow
+        } input: {
+            composerInput
+        } actions: {
+            HStack(spacing: JunoSpace.snug) {
+                composerAddMenu
+                localControls
+
+                Spacer(minLength: JunoSpace.cozy)
+
+                voiceButton
+                sendButton
+            }
+        }
+        .padding(.horizontal, JunoSpace.roomy)
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
             value: target
@@ -1979,6 +1669,79 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
+    @ViewBuilder
+    private var composerInput: some View {
+        VStack(spacing: 0) {
+            draftAttachmentStrip
+
+            if dictating {
+                DesktopDictation(
+                    onCancel: {
+                        withAnimation(JunoMotion.fast) { dictating = false }
+                        focused = true
+                    },
+                    onStop: { transcript in
+                        appendDictated(transcript)
+                        withAnimation(JunoMotion.fast) { dictating = false }
+                        focused = true
+                    },
+                    onSend: { transcript in
+                        appendDictated(transcript)
+                        withAnimation(JunoMotion.fast) { dictating = false }
+                        Task {
+                            await Task.yield()
+                            send()
+                        }
+                    }
+                )
+                .transition(.opacity)
+            } else {
+                TextField(
+                    record == nil
+                        ? "Ask about a codebase, an idea, or a fix…"
+                        : target == .local
+                            ? "Describe what you want Juno to build, fix, review, or explain…"
+                            : "Describe the task to run…",
+                    text: $prompt,
+                    axis: .vertical
+                )
+                .textFieldStyle(.plain)
+                .lineLimit(1...5)
+                .font(.body)
+                .focused($focused)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.top, JunoSpace.regular)
+                .padding(.bottom, JunoSpace.snug)
+                .accessibilityIdentifier("juno.code.launch-prompt")
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.shift) { return .ignored }
+                    if canSend { send() }
+                    return .handled
+                }
+
+                if let issue = importError ?? launchIssue {
+                    Label(issue, systemImage: "info.circle")
+                        .font(.caption)
+                        .junoSecondaryInk()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.bottom, JunoSpace.snug)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("juno.code.launch-issue")
+                }
+            }
+        }
+    }
+
+    /// Where this run will happen — the composer's first row, inside the
+    /// composer's own glass.
+    ///
+    /// Run location is a per-conversation control sitting directly under the
+    /// prompt rather than a global setting in a preferences window, because it
+    /// is a decision about *this* task: the same reader wants a throwaway
+    /// question answered on this Mac and a long refactor dispatched to the
+    /// cloud, ten seconds apart.
     private var destinationRow: some View {
         HStack(spacing: JunoSpace.snug) {
             // Only the local destination is a *project*, and only a project is
@@ -1997,18 +1760,12 @@ struct DesktopCodeDraftDetail: View {
                 .truncationMode(.head)
 
             if record != nil {
-                Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(width: 1, height: 18)
-                    .accessibilityHidden(true)
+                CodeContextSeparator()
                 targetMenu
             }
 
             if target != .local {
-                Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(width: 1, height: 18)
-                    .accessibilityHidden(true)
+                CodeContextSeparator()
                 launchControls
             }
         }
@@ -2085,24 +1842,13 @@ struct DesktopCodeDraftDetail: View {
             }
             .keyboardShortcut("o", modifiers: [.command])
         } label: {
-            HStack(spacing: JunoSpace.snug) {
-                // Same rule as `destinationIdentity`: the web's project chip is
-                // `text-muted-foreground` and the coral in this row belongs to
-                // the send button.
-                JunoIconView(record == nil ? .conversation : .projects, size: 14)
-                    .junoSecondaryInk()
-                Text(destinationTitle)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Image(systemName: "chevron.down")
-                    // The scale's floor. A fixed 9pt chevron sat below the
-                    // caption rung and never moved with Dynamic Type.
-                    .font(.caption2.weight(.bold))
-                    .junoSecondaryInk()
-            }
-            .padding(.vertical, JunoSpace.hairline)
-            .contentShape(.rect)
+            // Same rule as `destinationIdentity`: the web's project chip is
+            // `text-muted-foreground` and the coral in this row belongs to the
+            // send button at the other end of it.
+            CodeContextChipLabel(
+                destinationTitle,
+                icon: record == nil ? .conversation : .projects
+            )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -2130,21 +1876,10 @@ struct DesktopCodeDraftDetail: View {
                 }
             }
         } label: {
-            HStack(spacing: JunoSpace.hairline) {
-                Image(systemName: target.symbol)
-                    // Scaled against the caption row it leads, one size up so
-                    // the mark reads as the row's anchor.
-                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
-                Text(target.label)
-                Image(systemName: "chevron.down")
-                    // The scale's floor — the fixed 8pt this replaces was
-                    // below the caption rung and frozen against Dynamic Type.
-                    .font(.caption2.weight(.bold))
-            }
-            .font(.caption)
-            .junoSecondaryInk()
+            CodeContextChipLabel(target.label, systemImage: target.symbol)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Choose where this task runs")
         .accessibilityIdentifier("juno.code.launch-target")
@@ -2220,18 +1955,18 @@ struct DesktopCodeDraftDetail: View {
             // not use would be the composer claiming a power it does not have.
             .disabled(behavior != .code || record == nil)
         } label: {
-            HStack(spacing: JunoSpace.hairline) {
-                Image(systemName: contractSymbol)
-                    // Same treatment as the target menu's mark beside it.
-                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
-                Text(contractTitle)
-            }
-            .font(.caption)
-            .foregroundStyle(
-                permissionMode == .fullAccess && record != nil ? Color.junoCaution : .secondary
+            CodeContextChipLabel(
+                contractTitle,
+                systemImage: contractSymbol,
+                // The one place this row spends hue: full access is the
+                // contract where Juno stops asking, and that is worth saying
+                // in a colour.
+                tint: permissionMode == .fullAccess && record != nil
+                    ? Color.junoCaution : nil
             )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Choose whether Juno answers, plans, or edits—and when it asks")
         .accessibilityLabel("Access")
@@ -2521,92 +2256,116 @@ struct DesktopCodeDraftDetail: View {
         .accessibilityLabel("Attached file (path.value)")
     }
 
-    private var dictateButton: some View {
-        Button {
-            focused = false
-            withAnimation(JunoMotion.fast) { dictating = true }
-        } label: {
-            Image(systemName: "mic")
-                .font(.body)
-                // The ramp has three rungs and no in-betweens: a hand-mixed
-                // `primary.opacity(0.76)` was a fourth ink no other control
-                // used. Secondary is the rung for a quiet neutral control.
-                .junoSecondaryInk()
-                .frame(width: 34, height: 34)
-                .contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .help("Dictate a message")
-        .accessibilityLabel("Dictate a message")
-        .accessibilityIdentifier("juno.code.composer.dictate")
-    }
-
-    /// The same morphing primary action Chat uses: voice mode when the prompt
-    /// is empty, Send once the reader has written something, and a spinner while
-    /// a task is being created. Voice lives in this slot so it is discoverable
-    /// without adding a second row of controls to the Code composer.
+    /// **One microphone.**
+    ///
+    /// The composer used to end in two of them: a quiet `mic` for dictation and,
+    /// immediately to its right, a coral `waveform` orb for voice mode. Two
+    /// adjacent microphone glyphs, one of them the loudest thing in the window,
+    /// and nothing on either saying which one talks to Juno and which one types
+    /// for you.
+    ///
+    /// So there is one mark for speaking, and it owns both ways of doing it.
+    /// Pressing it dictates — the common case, and the one that leaves the
+    /// reader's words in the composer where they can still edit them. The menu
+    /// beside it starts a voice conversation, which is a different thing and is
+    /// now named as one instead of being inferred from an orb. `primaryAction:`
+    /// is the platform's own control for exactly this shape: a button that also
+    /// has a menu.
+    ///
+    /// The accent circle to its right no longer morphs. It is Send, always —
+    /// see ``sendButton``.
     @ViewBuilder
-    private var sendButton: some View {
-        if trimmedPrompt.isEmpty,
-            pendingAttachments.isEmpty,
-            fileReferences.isEmpty,
-            let beginVoice
-        {
-            Button {
-                beginVoice(modelID)
-            } label: {
-                Image(systemName: "waveform")
-                    .junoFont(size: 16, relativeTo: .body, weight: .semibold)
-                    .frame(width: 30, height: 30)
-                    // `junoOnAccent` on the active tint, exactly as the chrome
-                    // contract asks — the accent is an account setting and
-                    // on-accent is the token that keeps contrast on all five
-                    // palettes.
-                    .foregroundStyle(
-                        modelID.isEmpty ? Color.junoMutedForeground : Color.junoOnAccent
-                    )
-                    .contentShape(.circle)
-            }
-            // The chrome's own circular action, as Chat's voice slot draws it.
-            // The hand-rolled version this replaces tinted the glass with a
-            // diluted neutral (`primary` at 4%/14%) — a faded tint is the one
-            // thing `Glass.tint(_:)` must never be given, and the binary
-            // full-accent/untinted pair is the sanctioned reading of
-            // available/unavailable.
-            .accentGlassAction(active: !modelID.isEmpty)
-            .disabled(modelID.isEmpty)
-            .help("Start a voice conversation")
-            .accessibilityLabel("Start voice mode")
-            .accessibilityIdentifier("juno.code.composer.voice")
-        } else {
-            Button(action: send) {
-                Group {
-                    if isStartingLocal || code.isMutating {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.up")
-                            // The named rung Chat's send arrow uses — callout
-                            // bold is the same 12pt at the default setting,
-                            // and it moves with Dynamic Type.
-                            .font(.callout.weight(.bold))
+    private var voiceButton: some View {
+        let canDictate = JunoSpeechService.isSupported
+        let canConverse = beginVoice != nil && !modelID.isEmpty
+
+        if canDictate || canConverse {
+            Menu {
+                if canDictate {
+                    Button {
+                        startDictation()
+                    } label: {
+                        Label("Dictate into the composer", systemImage: "mic")
                     }
                 }
-                .frame(width: 30, height: 30)
-                // On-accent, not `junoForeground`: the glyph sits on the
-                // accent-tinted glass, and canvas ink there is the contrast
-                // failure the on-accent token exists to prevent. This used to
-                // say `junoForeground` while a second, losing `foregroundStyle`
-                // outside the button said on-accent; one statement now wins.
-                .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                .contentShape(.circle)
+                if let beginVoice {
+                    Button {
+                        beginVoice(modelID)
+                    } label: {
+                        Label("Start a voice conversation", systemImage: "waveform")
+                    }
+                    .disabled(modelID.isEmpty)
+                }
+            } label: {
+                Image(systemName: "mic")
+                    .font(.body)
+                    // The ramp has three rungs and no in-betweens: a hand-mixed
+                    // `primary.opacity(0.76)` was a fourth ink no other control
+                    // used. Secondary is the rung for a quiet neutral control.
+                    .junoSecondaryInk()
+                    // 44pt of target under a 34pt mark, because a control this
+                    // small beside the send button is one the pointer misses.
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
+            } primaryAction: {
+                if canDictate {
+                    startDictation()
+                } else if let beginVoice {
+                    beginVoice(modelID)
+                }
             }
-            .accentGlassAction(active: canSend)
-            .disabled(!canSend)
-            .help("Start this task (Return)")
-            .accessibilityLabel("Start task")
-            .accessibilityIdentifier("juno.code.launch-send")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(canDictate ? "Dictate, or start a voice conversation" : "Start a voice conversation")
+            .accessibilityLabel("Voice")
+            .accessibilityIdentifier("juno.code.composer.voice")
         }
+    }
+
+    private func startDictation() {
+        focused = false
+        withAnimation(JunoMotion.fast) { dictating = true }
+    }
+
+    /// The composer's one primary action, and the only tinted thing in it.
+    ///
+    /// It used to morph into a voice orb whenever the prompt was empty, which
+    /// meant the single most emphatic control in the window changed what it did
+    /// depending on whether the reader had typed anything — and put a second
+    /// microphone next to the first. Send is now Send: present in every state,
+    /// tinted only when there is something to send, in one position the pointer
+    /// never has to re-find.
+    private var sendButton: some View {
+        Button(action: send) {
+            Group {
+                if isStartingLocal || code.isMutating {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.up")
+                        // The named rung Chat's send arrow uses — callout
+                        // bold is the same 12pt at the default setting,
+                        // and it moves with Dynamic Type.
+                        .font(.callout.weight(.bold))
+                }
+            }
+            // On-accent, not `junoForeground`: the glyph sits on the
+            // accent-tinted glass, and canvas ink there is the contrast
+            // failure the on-accent token exists to prevent.
+            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+            // 44, not the 30 it shipped at. `accentGlassAction` puts the glass
+            // on the button itself, so the label's frame *is* the target: a
+            // 30pt circle is below the minimum in a row where the two controls
+            // beside it are menus.
+            .frame(width: 44, height: 44)
+            .contentShape(.circle)
+        }
+        .accentGlassAction(active: canSend)
+        .disabled(!canSend)
+        .help("Start this task (Return)")
+        .accessibilityLabel("Start task")
+        .accessibilityIdentifier("juno.code.launch-send")
     }
 
     private func appendDictated(_ transcript: String) {
@@ -2978,6 +2737,13 @@ struct DesktopCodeDraftDetail: View {
 /// short strings across a window this wide.
 struct DesktopCodeAllProjects: View {
     @Bindable var workbench: WorkbenchModel
+    /// Whether the folder grants are still being reopened.
+    ///
+    /// The page used to have one state — the list — and answered both "still
+    /// opening" and "you have none" with the same empty poster, so a reader
+    /// whose grants were mid-restore was told they had no projects. Loading,
+    /// empty and broken are three different sentences and now read as three.
+    let isLoading: Bool
     let open: (WorkspaceID) -> Void
     let newSession: (WorkspaceID) -> Void
     let addProject: () -> Void
@@ -3005,7 +2771,26 @@ struct DesktopCodeAllProjects: View {
 
     var body: some View {
         Group {
-            if workbench.workspaces.isEmpty {
+            if isLoading, workbench.workspaces.isEmpty {
+                // Skeleton cards at the real card geometry, not a spinner: the
+                // rows that are coming have a known shape, so claiming it is
+                // both honest and stops the page jumping when they land.
+                JunoDetailPage(maxWidth: 820) {
+                    CodeLoadingList(count: 4, label: "Opening your projects")
+                }
+            } else if let error = workbench.lastError, workbench.workspaces.isEmpty {
+                // Broken, with the reason and the recovery. A lapsed folder
+                // grant is the one failure that makes Juno Code unusable end to
+                // end — no workspace opens, so no session starts — and it is
+                // fixed only by the reader picking the folder again.
+                CodeErrorState(
+                    title: "Juno could not open your projects",
+                    reason: error,
+                    retryTitle: workbench.workspaceNeedingAccess == nil
+                        ? "Add Project…" : "Choose Folder Again…",
+                    retry: addProject
+                )
+            } else if workbench.workspaces.isEmpty {
                 JunoEmptyState(
                     title: "No projects yet",
                     message: """

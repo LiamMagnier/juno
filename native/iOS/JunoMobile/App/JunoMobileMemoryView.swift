@@ -41,15 +41,15 @@ struct JunoMobileMemoryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 summaryCard
                 factsSection
                 privacySection
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 32)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.region)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -97,37 +97,37 @@ struct JunoMobileMemoryView: View {
 
     // MARK: - Header
 
-    /// The web's own heading, wording included: a monospaced eyebrow naming the
-    /// section, then **what the page is about** in the serif. "Memory" alone
+    /// The web's own heading, wording included: a small semibold eyebrow naming
+    /// the section, then **what the page is about** in the serif. "Memory" alone
     /// names a feature; "What Juno remembers" states the question the reader
     /// came to answer.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text("Memory")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                 .foregroundStyle(Color.junoMutedForeground)
                 .accessibilityHidden(true)
             Text("What Juno remembers")
                 .junoPageHeading(compact: true)
                 .accessibilityAddTraits(.isHeader)
             Text("Distilled from your chats and used as context whenever you talk to Juno. Always yours to edit.")
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .lineSpacing(3)
                 .foregroundStyle(Color.junoMutedForeground)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 6)
+        .padding(.top, JunoSpace.tight)
     }
 
     /// Editing one fact, full width and multi-line.
     private var editSheet: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 TextEditor(text: $editContent)
-                    .font(.system(size: 16))
+                    .junoFont(size: 16, relativeTo: .callout)
                     .lineSpacing(2)
                     .scrollContentBackground(.hidden)
-                    .padding(10)
+                    .padding(JunoSpace.cozy)
                     .background(
                         RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                             .fill(Color.junoSurface)
@@ -140,11 +140,11 @@ struct JunoMobileMemoryView: View {
                     .accessibilityLabel("Memory")
                     .accessibilityIdentifier("juno.mobile.memory-edit-field")
                 Text("Write it as a short, durable statement — Juno quotes these back as facts.")
-                    .font(.system(size: 12))
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoMutedForeground)
                 Spacer(minLength: 0)
             }
-            .padding(16)
+            .padding(JunoSpace.regular)
             .junoScreenCanvas()
             .navigationTitle("Edit memory")
             .navigationBarTitleDisplayMode(.inline)
@@ -186,9 +186,9 @@ struct JunoMobileMemoryView: View {
                 if model.isRefreshingSummary, model.summary == nil {
                     working("Consolidating what Juno has learned…")
                 } else if let summary = model.summary, !summary.content.isEmpty {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: JunoSpace.regular) {
                         ForEach(JunoMemorySummarySection.parse(summary.content)) { section in
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                                 if let title = section.title {
                                     Text(title)
                                         .font(
@@ -229,10 +229,10 @@ struct JunoMobileMemoryView: View {
     }
 
     private func working(_ text: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             ProgressView().controlSize(.small)
             Text(text)
-                .font(.system(size: 14))
+                .junoFont(size: 14, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
         }
     }
@@ -259,18 +259,18 @@ struct JunoMobileMemoryView: View {
                             showingFacts.toggle()
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: JunoSpace.snug) {
                             Text(factsSummaryLine)
-                                .font(.system(size: 15))
+                                .junoFont(size: 15, relativeTo: .subheadline)
                                 .foregroundStyle(Color.primary.opacity(0.82))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.down")
-                                .font(.system(size: 11, weight: .bold))
+                                .junoFont(size: 11, relativeTo: .caption2, weight: .bold)
                                 .foregroundStyle(Color.junoMutedForeground)
                                 .rotationEffect(.degrees(showingFacts ? 180 : 0))
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 13)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.vertical, JunoSpace.cozy)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -278,31 +278,31 @@ struct JunoMobileMemoryView: View {
                     .accessibilityIdentifier("juno.mobile.memory-facts-toggle")
 
                     if showingFacts {
-                        Divider().padding(.leading, 16)
+                        Divider().padding(.leading, JunoSpace.regular)
                         addRow
                         if model.memories.isEmpty {
-                            Divider().padding(.leading, 16)
+                            Divider().padding(.leading, JunoSpace.regular)
                             JunoMobileEmptyLine(
                                 text: "Nothing saved yet. What Juno learns in chats appears here."
                             )
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, JunoSpace.regular)
+                            .padding(.vertical, JunoSpace.regular)
                         } else {
                             // The filter earns its place only once scrolling is
                             // the alternative. Below the threshold the whole list
                             // is on screen and a search field is a control that
                             // does nothing but take a row.
                             if model.memories.count >= Self.searchThreshold {
-                                Divider().padding(.leading, 16)
+                                Divider().padding(.leading, JunoSpace.regular)
                                 searchRow
                             }
                             if matchingFacts.isEmpty {
-                                Divider().padding(.leading, 16)
+                                Divider().padding(.leading, JunoSpace.regular)
                                 JunoMobileEmptyLine(
                                     text: "No memory matches “\(factQuery.trimmingCharacters(in: .whitespaces))”."
                                 )
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
+                                .padding(.horizontal, JunoSpace.regular)
+                                .padding(.vertical, JunoSpace.regular)
                             } else {
                                 // Grouped by where they came from, because "you
                                 // told Juno this" and "Juno worked this out" are
@@ -338,13 +338,13 @@ struct JunoMobileMemoryView: View {
     }
 
     private var searchRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .semibold))
+                .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18)
             TextField("Filter memories", text: $factQuery)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .accessibilityIdentifier("juno.mobile.memory-search")
@@ -353,15 +353,15 @@ struct JunoMobileMemoryView: View {
                     factQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .junoFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
     }
 
     /// States the count in words rather than as a bare number beside a label —
@@ -381,15 +381,15 @@ struct JunoMobileMemoryView: View {
     @ViewBuilder
     private func factGroup(_ title: String, _ entries: [NativeMemoryEntry]) -> some View {
         if !entries.isEmpty {
-            Divider().padding(.leading, 16)
+            Divider().padding(.leading, JunoSpace.regular)
             Text(title)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                 .kerning(0.4)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 2)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.cozy)
+                .padding(.bottom, JunoSpace.hairline)
             ForEach(entries) { memory in
                 factRow(memory)
             }
@@ -397,43 +397,43 @@ struct JunoMobileMemoryView: View {
     }
 
     private var addRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             Image(systemName: "plus")
-                .font(.system(size: 13, weight: .semibold))
+                .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18)
             TextField("Something Juno should remember", text: $newMemory)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .onSubmit(addMemory)
                 .accessibilityIdentifier("juno.mobile.settings-memory-input")
             if !newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button("Add", action: addMemory)
-                    .font(.system(size: 14, weight: .semibold))
+                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.junoAccent)
                     .disabled(model.isMutating)
                     .accessibilityIdentifier("juno.mobile.settings-memory-add")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
     }
 
     private func factRow(_ memory: NativeMemoryEntry) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
             // A suppression is not a fact — it is an instruction to *stop* using
             // one, and it reads as a contradiction unless it is marked.
             Image(systemName: memory.kind == .suppression ? "hand.raised" : "circle.fill")
-                .font(.system(size: memory.kind == .suppression ? 12 : 5))
+                .junoFont(size: memory.kind == .suppression ? 12 : 5, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, height: 20)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(memory.content)
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .subheadline)
                     .lineSpacing(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 6) {
+                HStack(spacing: JunoSpace.tight) {
                     Text(memory.source == .manual ? "Added by you" : "Learned from chats")
                     Text("·")
                     Text(memory.createdAt, style: .date)
@@ -441,7 +441,7 @@ struct JunoMobileMemoryView: View {
                         Text("· waiting to sync")
                     }
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .junoFont(size: 12, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
             }
 
@@ -453,16 +453,16 @@ struct JunoMobileMemoryView: View {
                 Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .semibold))
+                    .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .disabled(model.isMutating || model.isErasing)
             .accessibilityLabel("Actions for this memory")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
         .accessibilityElement(children: .combine)
     }
 
@@ -487,22 +487,22 @@ struct JunoMobileMemoryView: View {
                     )) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pause memory")
-                                .font(.system(size: 15, weight: .medium))
+                                .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                             Text("Keeps what Juno already knows; stops it learning more.")
-                                .font(.system(size: 12))
+                                .junoFont(size: 12, relativeTo: .caption)
                                 .foregroundStyle(Color.junoMutedForeground)
                         }
                     }
                     .disabled(model.isMutating || model.settings == nil)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.cozy)
                     .accessibilityIdentifier("juno.mobile.memory-pause")
 
-                    Divider().padding(.leading, 16)
+                    Divider().padding(.leading, JunoSpace.regular)
 
                     exportRow
 
-                    Divider().padding(.leading, 16)
+                    Divider().padding(.leading, JunoSpace.regular)
 
                     resetRow
                 }
@@ -524,17 +524,17 @@ struct JunoMobileMemoryView: View {
                 item: exportURL,
                 preview: SharePreview("juno-memory.json")
             ) {
-                HStack(spacing: 10) {
+                HStack(spacing: JunoSpace.cozy) {
                     Text("Export memory")
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .foregroundStyle(.primary)
                     Spacer(minLength: 6)
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14, weight: .semibold))
+                        .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 13)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
                 .contentShape(Rectangle())
             }
             // A `ShareLink` tints its whole label with the accent, exactly as a
@@ -597,23 +597,23 @@ struct JunoMobileMemoryView: View {
     /// erases everything on one tap is a mis-tap away from unrecoverable; a
     /// confirmation that stays armed forever is the same button with extra work.
     private var resetRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             if model.isErasing {
                 working("Erasing memory…")
             } else if resetArmed {
                 Text("Erase everything Juno remembers?")
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .subheadline)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Cancel") {
                     withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
                         resetArmed = false
                     }
                 }
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.junoMutedForeground)
                 Button("Erase") { showingEraseAll = true }
-                    .font(.system(size: 14, weight: .semibold))
+                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.junoDanger)
                     .accessibilityIdentifier("juno.mobile.settings-memory-erase-confirm")
@@ -632,7 +632,7 @@ struct JunoMobileMemoryView: View {
                     }
                 } label: {
                     Text("Reset memory…")
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .foregroundStyle(Color.junoDanger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -642,8 +642,8 @@ struct JunoMobileMemoryView: View {
                 .accessibilityIdentifier("juno.mobile.settings-memory-erase")
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
     }
 
     private func addMemory() {

@@ -32,7 +32,7 @@ struct JunoMobileDictation: View {
     private var transcript: String { speech.transcript }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: JunoSpace.cozy) {
             if let startFailure {
                 unavailable(startFailure)
             } else {
@@ -51,11 +51,11 @@ struct JunoMobileDictation: View {
     private var preview: some View {
         ScrollView {
             Text(previewText)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
         }
         .frame(maxHeight: 132)
         .scrollBounceBehavior(.basedOnSize)
@@ -90,7 +90,7 @@ struct JunoMobileDictation: View {
     // MARK: - Capsule
 
     private var capsule: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             circleButton(
                 systemName: "xmark",
                 label: "Cancel dictation",
@@ -123,7 +123,7 @@ struct JunoMobileDictation: View {
             .disabled(transcript.isEmpty)
             .opacity(transcript.isEmpty ? 0.4 : 1)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 64)
         .background(JunoGlassBackground(cornerRadius: 32))
         .accessibilityIdentifier("juno.mobile.dictation")
@@ -141,7 +141,7 @@ struct JunoMobileDictation: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: glyphSize, weight: .semibold))
+                .junoFont(size: glyphSize, relativeTo: .subheadline, weight: .semibold)
                 // `junoOnAccent`, not a literal white: the accent is an account
                 // setting, and white fails contrast on the amber and sage
                 // palettes. Off the accent the glyph is on a hairline outline or
@@ -158,6 +158,9 @@ struct JunoMobileDictation: View {
                         Circle().fill(Color.junoAccent)
                     }
                 }
+                // The circle stays 40; the finger gets 44, in the same
+                // round shape the control visibly is.
+                .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -171,12 +174,12 @@ struct JunoMobileDictation: View {
     /// Names the fix rather than apologising, and keeps the one control that gets
     /// the reader back to typing.
     private func unavailable(_ message: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             Image(systemName: "mic.slash")
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .footnote)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
             circleButton(
@@ -187,8 +190,8 @@ struct JunoMobileDictation: View {
                 action: onCancel
             )
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 12)
+        .padding(.leading, JunoSpace.regular)
+        .padding(.trailing, JunoSpace.cozy)
         .frame(height: 64)
         .background(JunoGlassBackground(cornerRadius: 32))
         .accessibilityIdentifier("juno.mobile.dictation-unavailable")
@@ -277,7 +280,7 @@ struct JunoMobileDictationMeter: View {
 
 #if DEBUG
 #Preview("Dictation meter") {
-    VStack(spacing: 24) {
+    VStack(spacing: JunoSpace.section) {
         JunoMobileDictationMeter(levels: (0..<48).map { _ in Double.random(in: 0...1) })
         JunoMobileDictationMeter(levels: [])
     }

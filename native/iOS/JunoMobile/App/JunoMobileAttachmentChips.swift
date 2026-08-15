@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import SwiftUI
 
 /// The pending attachments, shown above the composer.
@@ -14,20 +15,20 @@ struct JunoMobileAttachmentChips: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
                 ForEach(attachments) { attachment in
                     chip(attachment)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.snug)
         }
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("juno.mobile.composer-attachments")
     }
 
     private func chip(_ attachment: NativeComposerAttachment) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             thumbnail(attachment)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.fileName)
@@ -59,8 +60,8 @@ struct JunoMobileAttachmentChips: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text("attachments.remove"))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.tight)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         // One VoiceOver stop per attachment, reading name and state together,
         // rather than four separate stops per chip.
@@ -79,7 +80,7 @@ struct JunoMobileAttachmentChips: View {
     private func statusLine(_ attachment: NativeComposerAttachment) -> some View {
         switch attachment.state {
         case .preparing, .uploading:
-            HStack(spacing: 4) {
+            HStack(spacing: JunoSpace.hairline) {
                 ProgressView().controlSize(.mini)
                 Text("attachments.uploading").font(.caption2).junoSecondaryInk()
             }

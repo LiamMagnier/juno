@@ -36,7 +36,7 @@ struct JunoMobileUsageView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 header
 
                 if let loadError {
@@ -54,8 +54,8 @@ struct JunoMobileUsageView: View {
                         .frame(height: 200)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.section)
         }
         .junoScreenCanvas()
         .navigationTitle("Usage")
@@ -68,9 +68,9 @@ struct JunoMobileUsageView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                     // The big number is *tokens*, not euros: it is the one
                     // quantity that is meaningful on every plan, including the
                     // unlimited ones where a spend figure has no budget to sit
@@ -83,7 +83,7 @@ struct JunoMobileUsageView: View {
                     }
                 }
                 Text(subhead)
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .footnote)
                     .junoSecondaryInk()
             }
 
@@ -101,8 +101,8 @@ struct JunoMobileUsageView: View {
             )
             .accessibilityIdentifier("juno.mobile.usage.range")
         }
-        .padding(.top, 4)
-        .padding(.bottom, 2)
+        .padding(.top, JunoSpace.hairline)
+        .padding(.bottom, JunoSpace.hairline)
     }
 
     private var headline: String {
@@ -135,11 +135,11 @@ struct JunoMobileUsageView: View {
 
     private var emptyState: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 Text("Nothing yet")
-                    .font(.system(size: 16, weight: .semibold))
+                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                 Text("No requests in the \(range.subtitle). Ask Juno something and this fills in.")
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .footnote)
                     .junoSecondaryInk()
             }
         }
@@ -187,7 +187,7 @@ private struct JunoMobileUsageStats: View {
 
     var body: some View {
         JunoCard {
-            VStack(spacing: 14) {
+            VStack(spacing: JunoSpace.regular) {
                 HStack(spacing: 0) {
                     stat(NativeUsageFormat.count(breakdown.totals.requests), "Requests")
                     divider
@@ -209,12 +209,12 @@ private struct JunoMobileUsageStats: View {
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(.system(size: 22, weight: .semibold))
+                .junoFont(size: 22, relativeTo: .title2, weight: .semibold)
                 .contentTransition(.numericText())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(label)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .caption)
                 .junoSecondaryInk()
         }
         .frame(maxWidth: .infinity)
@@ -254,9 +254,9 @@ private struct JunoMobileUsageActivity: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Text("Activity")
-                    .font(.system(size: 16, weight: .semibold))
+                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
 
                 // Anchored to the trailing edge: the newest week is the one
                 // worth landing on, and a year-long grid opening on last January
@@ -274,7 +274,7 @@ private struct JunoMobileUsageActivity: View {
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, JunoSpace.hairline)
                 }
                 .defaultScrollAnchor(.trailing)
                 .scrollIndicators(.hidden)
@@ -285,15 +285,16 @@ private struct JunoMobileUsageActivity: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             if let busiest = breakdown.busiestDay, busiest.requests > 0 {
                 Text("Busiest \(NativeUsageFormat.day(busiest.dayMs)) · \(busiest.requests)")
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .junoSecondaryInk()
             }
             Spacer(minLength: 4)
             Text("Less")
-                .font(.system(size: 11))
+                .junoFont(size: 12, relativeTo: .caption)
                 .junoSecondaryInk()
             ForEach(0..<5, id: \.self) { level in
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
@@ -301,7 +302,7 @@ private struct JunoMobileUsageActivity: View {
                     .frame(width: 9, height: 9)
             }
             Text("More")
-                .font(.system(size: 11))
+                .junoFont(size: 12, relativeTo: .caption)
                 .junoSecondaryInk()
         }
         .accessibilityHidden(true)
@@ -327,27 +328,28 @@ private struct JunoMobileUsageSurfaces: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Text("By surface")
-                    .font(.system(size: 16, weight: .semibold))
+                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
 
                 if rows.isEmpty {
                     Text("No surface has spent anything in this window.")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .footnote)
                         .junoSecondaryInk()
                 } else {
                     ForEach(rows) { row in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                            HStack(spacing: JunoSpace.snug) {
                                 Image(systemName: row.symbol)
-                                    .font(.system(size: 13))
+                                    .junoFont(size: 13, relativeTo: .footnote)
                                     .frame(width: 18)
                                     .junoSecondaryInk()
                                 Text(row.displayName)
-                                    .font(.system(size: 15))
+                                    .junoFont(size: 15, relativeTo: .subheadline)
                                 Spacer(minLength: 6)
                                 Text(NativeUsageFormat.tokens(row.totalTokens))
-                                    .font(.system(size: 13, design: .monospaced))
+                                    .junoFont(size: 13, relativeTo: .footnote)
+                                    .monospacedDigit()
                                     .junoSecondaryInk()
                             }
                             JunoMobileUsageBar(
@@ -405,9 +407,9 @@ private struct JunoMobileUsageTokenMix: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Text("In and out")
-                    .font(.system(size: 16, weight: .semibold))
+                    .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                 JunoMobileUsageBar(fraction: promptShare)
                 HStack(spacing: 0) {
                     label("Prompt", NativeUsageFormat.tokens(totals.promptTokens))
@@ -421,9 +423,10 @@ private struct JunoMobileUsageTokenMix: View {
     private func label(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(value)
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+                .monospacedDigit()
             Text(title)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .caption)
                 .junoSecondaryInk()
         }
         .accessibilityElement(children: .combine)
@@ -455,20 +458,22 @@ private struct JunoMobileUsageModels: View {
     var body: some View {
         if !rows.isEmpty {
             JunoCard {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Text("By model")
-                        .font(.system(size: 16, weight: .semibold))
+                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                     ForEach(rows) { row in
-                        HStack(spacing: 8) {
+                        HStack(spacing: JunoSpace.snug) {
                             Text(name(for: row.model))
-                                .font(.system(size: 15))
+                                .junoFont(size: 15, relativeTo: .subheadline)
                                 .lineLimit(1)
                             Spacer(minLength: 6)
                             Text("\(NativeUsageFormat.count(row.requests))×")
-                                .font(.system(size: 12, design: .monospaced))
+                                .junoFont(size: 12, relativeTo: .caption)
+                                .monospacedDigit()
                                 .junoMetaInk()
                             Text(NativeUsageFormat.tokens(row.totalTokens))
-                                .font(.system(size: 13, design: .monospaced))
+                                .junoFont(size: 13, relativeTo: .footnote)
+                                .monospacedDigit()
                                 .junoSecondaryInk()
                         }
                         .accessibilityElement(children: .combine)
@@ -490,21 +495,21 @@ private struct JunoMobileUsagePlanCard: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 HStack {
                     Text("Plan")
-                        .font(.system(size: 16, weight: .semibold))
+                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                     Spacer(minLength: 6)
                     JunoStatusPill(text: plan.planName, tint: .junoAccent)
                 }
 
                 if plan.isUnlimited {
                     Text("No usage limits on this plan.")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .footnote)
                         .junoSecondaryInk()
                 } else if plan.isBrowseOnly {
                     Text("Free is a browse-only tier. Upgrade to start using models.")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .footnote)
                         .junoSecondaryInk()
                 } else {
                     meter("Session", plan.session)
@@ -513,7 +518,7 @@ private struct JunoMobileUsagePlanCard: View {
 
                 if let renewsAt = plan.renewsAt {
                     Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 12, relativeTo: .caption)
                         .junoSecondaryInk()
                 }
             }
@@ -521,13 +526,14 @@ private struct JunoMobileUsagePlanCard: View {
     }
 
     private func meter(_ title: String, _ window: NativeUsagePlan.Window) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: JunoSpace.tight) {
                 Text(title)
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .subheadline)
                 Spacer(minLength: 6)
                 Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
-                    .font(.system(size: 13, design: .monospaced))
+                    .junoFont(size: 13, relativeTo: .footnote)
+                    .monospacedDigit()
                     .junoSecondaryInk()
             }
             // Coral until it is nearly spent, then amber: the colour is a
@@ -538,7 +544,7 @@ private struct JunoMobileUsagePlanCard: View {
             )
             if let resetsAt = window.resetsAt {
                 Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 11))
+                    .junoFont(size: 12, relativeTo: .caption)
                     .junoMetaInk()
             }
         }

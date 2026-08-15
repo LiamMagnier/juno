@@ -82,7 +82,7 @@ struct JunoMobileConnectionsView: View {
 
     private var list: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10, pinnedViews: []) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy, pinnedViews: []) {
                 header
                 filters
                 if let error = model.lastErrorDescription {
@@ -122,7 +122,7 @@ struct JunoMobileConnectionsView: View {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Text("connections.load-more")
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                             }
                             Spacer()
                         }
@@ -132,8 +132,8 @@ struct JunoMobileConnectionsView: View {
                     .foregroundStyle(Color.junoAccent)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.section)
             .animation(
                 JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
                 value: model.visibleConnectors.map(\.id)
@@ -143,14 +143,14 @@ struct JunoMobileConnectionsView: View {
 
     private var header: some View {
         JunoPageTitle(title: "navigation.connections", subtitle: "connections.subtitle")
-            .padding(.top, 6)
-            .padding(.bottom, 2)
+            .padding(.top, JunoSpace.tight)
+            .padding(.bottom, JunoSpace.hairline)
     }
 
     /// The Connected filter, then the category chips. Both are filters over one
     /// list rather than separate screens — the web page's shape.
     private var filters: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             // Juno's own switch rather than `.pickerStyle(.segmented)`, whose
             // selected segment takes the app tint and painted this filter coral.
             // The website's tabs are neutral — the accent belongs to actions.
@@ -169,7 +169,7 @@ struct JunoMobileConnectionsView: View {
 
             if !model.categories.isEmpty {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: JunoSpace.snug) {
                         categoryChip(id: nil, label: String(localized: "connections.category.all"), count: nil)
                         ForEach(model.categories) { category in
                             categoryChip(
@@ -177,13 +177,15 @@ struct JunoMobileConnectionsView: View {
                             )
                         }
                     }
+                    // 1pt, so the chips' capsules are not clipped by the
+                    // scroll view's bounds. Not a gap, so not on the ladder.
                     .padding(.vertical, 1)
                 }
                 .scrollIndicators(.hidden)
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
-        .padding(.bottom, 2)
+        .padding(.bottom, JunoSpace.hairline)
     }
 
     private func categoryChip(id: String?, label: String, count: Int?) -> some View {
@@ -191,16 +193,16 @@ struct JunoMobileConnectionsView: View {
         return Button {
             model.selectedCategory = id
         } label: {
-            HStack(spacing: 5) {
-                Text(label).font(.system(size: 14, weight: .medium))
+            HStack(spacing: JunoSpace.tight) {
+                Text(label).junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 if let count {
                     Text("\(count)")
-                        .font(.system(size: 12, weight: .medium))
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                         .foregroundStyle(active ? .white.opacity(0.75) : .secondary)
                 }
             }
             .foregroundStyle(active ? Color.white : Color.primary)
-            .padding(.horizontal, 13)
+            .padding(.horizontal, JunoSpace.cozy)
             .frame(height: 32)
             .background(
                 Capsule().fill(active ? Color.junoAccent : Color.primary.opacity(0.06))
@@ -211,9 +213,9 @@ struct JunoMobileConnectionsView: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             Image(systemName: "app.dashed")
-                .font(.system(size: 28))
+                .junoFont(size: 28, relativeTo: .title)
                 .junoMetaInk()
             Text("connections.empty")
                 .font(.callout)
@@ -221,18 +223,18 @@ struct JunoMobileConnectionsView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
+        .padding(.vertical, JunoSpace.region)
     }
 
     // MARK: Row
 
     private func row(_ connector: NativeConnector) -> some View {
-        JunoCard(padding: 14) {
-            HStack(alignment: .center, spacing: 13) {
+        JunoCard(padding: JunoSpace.regular) {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 JunoMobileConnectorTile(connector: connector)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(connector.label)
-                        .font(.system(size: 16, weight: .semibold))
+                        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                         .lineLimit(1)
                     if connector.connected, let account = connector.accountLabel, !account.isEmpty {
                         Text(account)
@@ -267,7 +269,7 @@ struct JunoMobileConnectionsView: View {
                 Text("connections.connected")
                     .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
                     .foregroundStyle(Color.junoAccent)
-                    .padding(.horizontal, 13)
+                    .padding(.horizontal, JunoSpace.cozy)
                     .frame(minHeight: 32)
                     .background(Capsule().fill(Color.junoAccent.opacity(0.13)))
             }

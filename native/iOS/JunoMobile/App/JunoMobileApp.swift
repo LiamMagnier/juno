@@ -94,14 +94,16 @@ struct JunoMobileApp: App {
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
                         privateChatModel: world.privateChatModel,
-                        // Work was built into the harness — `PreviewWorld`
-                        // constructs the model, `PreviewSender` serves its
-                        // fixtures in the wire shape — and then never handed to
-                        // the phone's shell, so `--juno-preview-tab work` spent
-                        // its whole life rendering "Something went wrong" and
-                        // the one screen on this device that supervises a Mac
-                        // could not be looked at without an account, a relay and
-                        // a real task in the right state.
+                        // Code and Work are both relay-backed, and both were
+                        // omitted here. The shell renders "Something went wrong"
+                        // for a section whose model is nil, so
+                        // `--juno-preview-tab work` and `--juno-preview-tab code`
+                        // spent their whole lives on that placeholder: the two
+                        // screens on this device that supervise a Mac were the
+                        // two that could not be looked at without an account, a
+                        // relay and a real task in the right state. Work was
+                        // fixed; Code was left, and this is the same fix.
+                        codeModel: world.codeModel,
                         workModel: world.workModel,
                         libraryModel: world.libraryModel,
                         accountDataClient: world.accountDataClient,

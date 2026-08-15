@@ -242,7 +242,14 @@ public struct SimulatorPane: View {
                     .buttonStyle(.borderless)
             }
             .padding(JunoSpace.snug)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
+            // Opaque. This is a notice inside the pane's content, not chrome
+            // floating over it, and material on something you read is the one
+            // thing the glass rule forbids: the text's contrast becomes a
+            // function of whatever is behind the window.
+            .background(
+                Color.junoMuted,
+                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+            )
             .padding(JunoSpace.snug)
             .accessibilityIdentifier("juno.code.simulator-input-disclosure")
         }

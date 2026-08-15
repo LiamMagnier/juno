@@ -3,6 +3,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoStorage
 import JunoSync
@@ -57,6 +58,15 @@ public final class PreviewWorld {
     /// decode path works.
     public let workModel: NativeWorkModel
 
+    /// Juno Code, over the same no-network sender.
+    ///
+    /// Relay-backed like Work, and seeded the same way: ``PreviewCodeFixtures``
+    /// answers `/api/code/*` in the wire shape so the harness runs
+    /// `NativeCodeTaskClient`'s real decoders. Built here rather than left nil
+    /// because the phone's Code screen renders the shell's "Something went
+    /// wrong" placeholder without a model — which is what it had always done.
+    public let codeModel: NativeCodeModel
+
     private let repository: SQLiteAccountRepository
     private let outbox: InMemoryMutationOutbox
     private let sender: PreviewSender
@@ -92,6 +102,9 @@ public final class PreviewWorld {
         sender = PreviewSender(networkFails: scenario.networkFails, empty: scenario == .empty)
         chatTransport = sender
         workModel = NativeWorkModel(client: NativeWorkClient(sender: sender, streamer: sender))
+        codeModel = NativeCodeModel(
+            client: NativeCodeTaskClient(sender: sender, streamer: sender)
+        )
         attachmentModel = NativeComposerAttachmentModel(
             client: NativeAttachmentAPIClient(sender: sender)
         )
@@ -168,6 +181,17 @@ public final class PreviewWorld {
         privateChatModel.start(for: accountID)
         libraryModel.start(for: accountID)
         await workModel.start(for: accountID)
+        await codeModel.start(for: accountID)
+
+        // Juno Code opens on its session list, because that is where a reader
+        // arrives. A single session is one relaunch away with
+        // `--juno-preview-code-session <id>` — the log has four states worth
+        // looking at (running, blocked on an approval, finished with a diff,
+        // failed) and nothing in the list distinguishes them from outside.
+        if let id = JunoPreviewEnvironment.initialCodeSession,
+            let task = codeModel.tasks.first(where: { $0.id == id }) {
+            codeModel.open(task)
+        }
 
         // Open the task the Work screenshots are of. Without this the thread is
         // the "no task selected" placeholder, which is a state worth capturing

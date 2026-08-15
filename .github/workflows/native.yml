@@ -21,6 +21,12 @@ on:
       - "contracts/**"
       - "scripts/check-native-swift-contract.mjs"
       - "scripts/generate-native-swift-contract.mjs"
+      - "scripts/check-native-design*.mjs"
+      - "scripts/check-native-type.mjs"
+      - "scripts/check-native-motion.mjs"
+      - "scripts/check-native-glass.mjs"
+      - "scripts/check-native-targets.mjs"
+      - "scripts/check-native-design-baseline.json"
       - ".github/workflows/native.yml"
   pull_request:
     paths:
@@ -28,6 +34,12 @@ on:
       - "contracts/**"
       - "scripts/check-native-swift-contract.mjs"
       - "scripts/generate-native-swift-contract.mjs"
+      - "scripts/check-native-design*.mjs"
+      - "scripts/check-native-type.mjs"
+      - "scripts/check-native-motion.mjs"
+      - "scripts/check-native-glass.mjs"
+      - "scripts/check-native-targets.mjs"
+      - "scripts/check-native-design-baseline.json"
       - ".github/workflows/native.yml"
   workflow_dispatch:
 
@@ -70,6 +82,38 @@ jobs:
       # look like different products.
       - name: Design tokens have not drifted
         run: npm run design:tokens:check
+
+  # ---------------------------------------------------------------------------
+  # The four design rules from docs/native/REWORK_PLAN.md, as build failures.
+  #
+  # Its own job rather than a fifth step on `contract`, because the point of these
+  # is that a reviewer can fail a change against a NAMED rule — a red check called
+  # "Design rules" says which principle broke, where a red "API contract" would
+  # not. It is pure Node on Linux and takes about a second; the runner spin-up is
+  # the whole cost.
+  #
+  # Each gate RATCHETS. It records the tree's current violation count in
+  # scripts/check-native-design-baseline.json and fails only when the count goes
+  # UP. That is not a softening: a hard gate against a tree that already holds
+  # hundreds of frozen font sizes is a gate somebody switches off in week one, and
+  # a switched-off gate leaves a green check where a measurement used to be. The
+  # number is only ever allowed to travel downwards, and a lane that migrates a
+  # surface re-records the baseline in the same commit.
+  # ---------------------------------------------------------------------------
+  design:
+    name: Design rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # No `npm ci`: these four scripts import nothing outside `node:*`, so the
+      # install would be the entire runtime of the job.
+      - name: Glass, motion, type and targets have not regressed
+        run: npm run native:design:check
 
   # ---------------------------------------------------------------------------
   # The shared packages, under the same strict-concurrency, warnings-as-errors

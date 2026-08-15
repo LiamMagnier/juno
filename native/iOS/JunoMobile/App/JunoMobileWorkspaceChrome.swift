@@ -47,7 +47,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                     }
                 } label: {
                     Text(option.title)
-                        .font(.system(size: 13, weight: .medium))
+                        .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
                         .foregroundStyle(selected ? Color.primary : Color.junoMutedForeground)
                         // A switch that wraps is not a switch. This one is now
                         // used inside the Code composer, where three options,
@@ -56,7 +56,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                         // pressure rather than breaking onto a second row.
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, JunoSpace.regular)
                         .frame(height: 28)
                         .background {
                             if selected {
@@ -76,7 +76,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                 .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
             }
         }
-        .padding(2)
+        .padding(JunoSpace.hairline)
         .background(Capsule(style: .continuous).fill(Color.junoMuted))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
@@ -98,25 +98,32 @@ struct JunoMobileMetaChip: View {
 
     var body: some View {
         if let action {
-            Button(action: action) { label }
-                .buttonStyle(.plain)
+            // The chip draws 28pt tall; as a button it has to be tappable at 44,
+            // so the target grows around the capsule rather than the capsule
+            // growing to meet it.
+            Button(action: action) {
+                label
+                    .frame(minHeight: 44)
+                    .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
         } else {
             label.accessibilityElement(children: .combine)
         }
     }
 
     private var label: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: JunoSpace.tight) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             }
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 .lineLimit(1)
         }
         .foregroundStyle(Color.junoMutedForeground)
-        .padding(.horizontal, 10)
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 28)
         .background(Capsule(style: .continuous).fill(Color.junoMuted))
         .contentShape(Capsule())
@@ -198,7 +205,7 @@ struct JunoMobileClampedText: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(text)
                 .font(font)
                 .lineSpacing(3)
@@ -215,13 +222,13 @@ struct JunoMobileClampedText: View {
                         expanded.toggle()
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: JunoSpace.hairline) {
                         Text(expanded ? "Show less" : "Show all")
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+                            .junoFont(size: 11, relativeTo: .caption2, weight: .bold)
                             .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                 }
                 .buttonStyle(.plain)
@@ -260,23 +267,23 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
                     .junoSecondaryInk()
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier(identifier ?? "")
                 Spacer(minLength: 0)
                 if let action, let actionTitle {
                     Button(action: action) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: JunoSpace.hairline) {
                             if let actionImage {
                                 Image(systemName: actionImage)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                             }
                             Text(actionTitle)
-                                .font(.system(size: 12, weight: .medium))
+                                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                         }
                         .foregroundStyle(Color.junoAccent)
                     }
@@ -288,7 +295,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
 
             if let footnote {
                 Text(footnote)
-                    .font(.system(size: 12))
+                    .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoMutedForeground)
             }
         }
@@ -303,7 +310,7 @@ struct JunoMobileEmptyLine: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 14))
+            .junoFont(size: 14, relativeTo: .subheadline)
             .foregroundStyle(Color.junoMutedForeground)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -312,7 +319,7 @@ struct JunoMobileEmptyLine: View {
 #if DEBUG
 #Preview("Workspace chrome") {
     ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: JunoSpace.section) {
             JunoMobileSegmented(
                 options: [.init(0, "Preview"), .init(1, "Source")],
                 selection: .constant(0),
@@ -337,7 +344,7 @@ struct JunoMobileEmptyLine: View {
                 }
             }
         }
-        .padding(16)
+        .padding(JunoSpace.regular)
     }
     .background(Color.junoCanvas)
 }

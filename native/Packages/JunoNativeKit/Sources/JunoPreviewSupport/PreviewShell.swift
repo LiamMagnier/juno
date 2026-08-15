@@ -48,6 +48,17 @@ public enum JunoPreviewEnvironment {
             || ProcessInfo.processInfo.environment["JUNO_PREVIEW_WORK_OVERVIEW"] == "1"
     }
 
+    /// Opens one Juno Code session's log, from `--juno-preview-code-session <id>`
+    /// or `JUNO_PREVIEW_CODE_SESSION`.
+    ///
+    /// Code's four interesting states — a run in flight, a run blocked on an
+    /// approval, a finished run with a diff, a run that failed — all live behind
+    /// a row tap, and the session list looks the same from outside whichever one
+    /// you are after. See ``PreviewCodeFixtures`` for the ids.
+    public static var initialCodeSession: String? {
+        value(for: "--juno-preview-code-session", env: "JUNO_PREVIEW_CODE_SESSION")
+    }
+
     /// Opens the densest Work thread directly on its Files & cost surface.
     /// This keeps artifact/version QA deterministic and avoids relying on
     /// screen-coordinate automation against a resizable macOS window.

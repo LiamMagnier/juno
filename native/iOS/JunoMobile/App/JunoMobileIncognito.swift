@@ -177,7 +177,7 @@ struct JunoMobileIncognitoChat: View {
                     .frame(maxWidth: .infinity)
                     .containerRelativeFrame(.vertical)
             } else {
-                LazyVStack(spacing: 24) {
+                LazyVStack(spacing: JunoSpace.section) {
                     ForEach(model.turns) { turn in
                         JunoMobileIncognitoTurnRow(turn: turn)
                     }
@@ -185,8 +185,8 @@ struct JunoMobileIncognitoChat: View {
                         JunoInlineError(message: error)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 24)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.section)
                 .frame(maxWidth: 768)
                 .frame(maxWidth: .infinity)
             }
@@ -208,19 +208,19 @@ struct JunoMobileIncognitoChat: View {
     /// The web's incognito greeting, verbatim — the sentence is the promise, and
     /// rewording a privacy claim per platform is how the two stop matching.
     private var greeting: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: JunoSpace.cozy) {
             JunoGhostMark(active: false, size: 44)
             Text("You're incognito")
                 .font(JunoSerif.greeting(compact: true))
                 .multilineTextAlignment(.center)
             Text("Chats aren't saved, added to memory, or used to train models.")
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .lineSpacing(3)
                 .foregroundStyle(Color.junoMutedForeground)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
         }
-        .padding(.horizontal, 28)
+        .padding(.horizontal, JunoSpace.section)
         .accessibilityElement(children: .combine)
     }
 
@@ -232,16 +232,16 @@ struct JunoMobileIncognitoChat: View {
     /// would be offering controls that cannot work. This is the same shell with
     /// only the controls incognito actually supports.
     private var composer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             TextField("Message Juno privately", text: $prompt, axis: .vertical)
                 .lineLimit(1...6)
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.top, JunoSpace.hairline)
                 .accessibilityIdentifier("juno.mobile.incognito-composer")
 
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
                 JunoMobileModelControl(
                     models: selectableModels,
                     selectedModelID: $selectedModelID,
@@ -264,11 +264,11 @@ struct JunoMobileIncognitoChat: View {
                 if model.isStreaming {
                     Button { model.stopGeneration() } label: {
                         Image(systemName: "stop.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .junoFont(size: 14, relativeTo: .subheadline, weight: .bold)
                             .foregroundStyle(Color.junoOnAccent)
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: true))
-                            .frame(width: 40, height: 44)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -276,7 +276,7 @@ struct JunoMobileIncognitoChat: View {
                 } else {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
+                            .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
                             // Follows the ground: `junoOnAccent` on the coral,
                             // the quiet ink on the untinted glass the inactive
                             // state now wears.
@@ -286,7 +286,7 @@ struct JunoMobileIncognitoChat: View {
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: !sendDisabled))
                             .scaleEffect(sendDisabled ? 0.92 : 1)
-                            .frame(width: 40, height: 44)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -296,7 +296,7 @@ struct JunoMobileIncognitoChat: View {
                 }
             }
         }
-        .padding(8)
+        .padding(JunoSpace.snug)
         .background(JunoGlassBackground(cornerRadius: 26))
         // Dashed, exactly as the web marks its private composer. A solid border
         // would be indistinguishable from the normal one at a glance, and the
@@ -308,8 +308,8 @@ struct JunoMobileIncognitoChat: View {
                     style: StrokeStyle(lineWidth: 1, dash: [5, 4])
                 )
         )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
     }
 
     private var sendDisabled: Bool {
@@ -366,11 +366,11 @@ private struct JunoMobileIncognitoTurnRow: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
                 Text(turn.content)
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .subheadline)
                     .lineSpacing(5)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.cozy)
                     .background(Color.junoMuted, in: Self.bubble)
                     .overlay(Self.bubble.strokeBorder(Color.junoHairline, lineWidth: 1))
                     .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.85 : nil, alignment: .trailing)
@@ -379,27 +379,26 @@ private struct JunoMobileIncognitoTurnRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("You said, \(turn.content)")
         } else {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 if !turn.content.isEmpty {
                     JunoLessonText(turn.content)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    HStack(spacing: 12) {
+                    HStack(spacing: JunoSpace.cozy) {
                         JunoThinkingMatrix()
                             .foregroundStyle(Color.junoMutedForeground)
                         Text("Thinking about your request")
-                            .font(.system(size: 17))
+                            .junoFont(size: 17, relativeTo: .body)
                             .foregroundStyle(Color.junoMutedForeground)
                     }
                     .frame(minHeight: 40)
                 }
                 if let model = turn.model, !model.isEmpty, !turn.content.isEmpty {
                     Text(junoDisplayModelName(model))
-                        .font(.system(size: 11, design: .monospaced))
-                        .kerning(0.22)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoMutedForeground)
-                        .padding(.top, 2)
+                        .padding(.top, JunoSpace.hairline)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -411,12 +410,12 @@ private struct JunoMobileIncognitoTurnRow: View {
 
 #if DEBUG
 #Preview("Ghost") {
-    HStack(spacing: 24) {
+    HStack(spacing: JunoSpace.section) {
         JunoGhostMark(active: false, size: 28)
         JunoGhostMark(active: true, size: 28)
         JunoGhostMark(active: false, size: 44)
     }
-    .padding(40)
+    .padding(JunoSpace.region)
     .background(Color.junoCanvas)
 }
 #endif

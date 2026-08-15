@@ -199,7 +199,7 @@ struct JunoMobileComposer: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             if model.canRetrySelectedConversation && !model.isGenerating {
                 retryBanner
             }
@@ -267,7 +267,7 @@ struct JunoMobileComposer: View {
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: JunoSpace.snug) {
                     if !attachments.isEmpty, let attachmentModel {
                         JunoMobileAttachmentChips(
                             attachments: attachments,
@@ -285,8 +285,8 @@ struct JunoMobileComposer: View {
                             .lineLimit(1...6)
                             .textFieldStyle(.plain)
                             .focused(composerFocused)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
+                            .padding(.horizontal, JunoSpace.snug)
+                            .padding(.top, JunoSpace.hairline)
                             .accessibilityIdentifier("juno.mobile.chat-composer")
 
                         if isLongDraft {
@@ -296,13 +296,13 @@ struct JunoMobileComposer: View {
 
                     controlRow
                 }
-                .padding(8)
+                .padding(JunoSpace.snug)
                 .background(JunoGlassBackground(cornerRadius: 26))
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
         // The light behind the composer, and the one place it can be mounted.
         //
         // It has to be *here*, on the outer stack, and not on the capsule's own
@@ -420,21 +420,21 @@ struct JunoMobileComposer: View {
     /// file to keep the chat tidy?" One line and one button, exactly as the web
     /// puts it, and it never touches the draft unless the button is tapped.
     private var attachAsFileOffer: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             Text("That's a long one — send it as a file to keep the chat tidy?")
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Button(action: attachDraftAsFile) {
-                HStack(spacing: 5) {
+                HStack(spacing: JunoSpace.tight) {
                     Image(systemName: "doc.badge.arrow.up")
-                        .font(.system(size: 11, weight: .semibold))
+                        .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                     Text("Attach")
-                        .font(.system(size: 12, weight: .medium))
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                 }
                 .foregroundStyle(Color.primary)
-                .padding(.horizontal, 11)
+                .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 28)
                 .modifier(JunoGlassCapsule())
             }
@@ -442,7 +442,7 @@ struct JunoMobileComposer: View {
             .accessibilityLabel("Send this message as a file")
             .accessibilityIdentifier("juno.mobile.chat-attach-draft")
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, JunoSpace.snug)
         .transition(.opacity)
     }
 
@@ -455,21 +455,22 @@ struct JunoMobileComposer: View {
     /// with it. "Edit" puts it back, for a reader who really does want to work
     /// inside a 40,000-character prompt on a phone.
     private var collapsedDraftCard: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: 8) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .top, spacing: JunoSpace.snug) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Long message ready to send")
-                        .font(.system(size: 14, weight: .medium))
+                        .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                     Text(
                         "\(prompt.count.formatted(.number)) characters · sent in full"
                     )
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
                     Text(prompt.prefix(160) + (prompt.count > 160 ? "…" : ""))
-                        .font(.system(size: 11))
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(Color.junoMutedForeground)
                         .lineLimit(3)
-                        .padding(.top, 2)
+                        .padding(.top, JunoSpace.hairline)
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -477,16 +478,16 @@ struct JunoMobileComposer: View {
                     draftExpanded = false
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
+                        .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear this message")
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: JunoSpace.snug) {
                 Button {
                     draftExpanded = true
                     composerFocused.wrappedValue = true
@@ -506,8 +507,8 @@ struct JunoMobileComposer: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -517,14 +518,14 @@ struct JunoMobileComposer: View {
     }
 
     private func capsuleLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: JunoSpace.tight) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
         }
         .foregroundStyle(Color.primary)
-        .padding(.horizontal, 11)
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 28)
         .modifier(JunoGlassCapsule())
     }
@@ -534,7 +535,7 @@ struct JunoMobileComposer: View {
             .font(.caption2)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, JunoSpace.tight)
             .transition(.opacity)
     }
 
@@ -569,7 +570,7 @@ struct JunoMobileComposer: View {
     /// is arriving. One slot for the primary action means the reader's thumb
     /// learns one position, and the glyph tells them what it will do.
     private var controlRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             if voiceActive {
                 voiceAddMenu
             } else {
@@ -691,11 +692,11 @@ struct JunoMobileComposer: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 16, weight: .semibold))
+                .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 34, height: 34)
                 .modifier(JunoComposerGlassCircle())
-                .frame(width: 40, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         // Same three rules as the full menu: source order, ink rather than
@@ -734,7 +735,7 @@ struct JunoMobileComposer: View {
                 // colour it still responds to Increase Contrast.
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 34, height: 34)
-                .frame(width: 40, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -758,7 +759,7 @@ struct JunoMobileComposer: View {
     }
 
     private var phaseIndicator: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: JunoSpace.tight) {
             if isStreamingPhase {
                 ProgressView().controlSize(.mini)
             } else {
@@ -773,7 +774,7 @@ struct JunoMobileComposer: View {
     }
 
     private var retryBanner: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color.junoCaution)
             Text(model.chatErrorDescription ?? "The response was interrupted.")
@@ -844,7 +845,7 @@ struct JunoMobileComposer: View {
             } label: {
                 actionLabel(active: true) {
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .junoFont(size: 14, relativeTo: .subheadline, weight: .bold)
                 }
             }
             .buttonStyle(.plain)
@@ -863,7 +864,7 @@ struct JunoMobileComposer: View {
             Button(action: send) {
                 actionLabel(active: !sendDisabled) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
                 }
                 .scaleEffect(sendDisabled ? 0.92 : 1)
             }
@@ -905,7 +906,7 @@ struct JunoMobileComposer: View {
             .foregroundStyle(active ? Color.junoOnAccent : Color.junoMutedForeground)
             .frame(width: 34, height: 34)
             .modifier(JunoComposerSendBackground(active: active))
-            .frame(width: 40, height: 44)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
 

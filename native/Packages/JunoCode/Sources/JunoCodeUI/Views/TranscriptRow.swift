@@ -129,7 +129,7 @@ struct TranscriptRow: View {
         case let .reasoningSummary(summary):
             ReasoningRow(text: summary.summary)
         case let .toolProposed(proposed):
-            ToolActivityRow(proposed: proposed, context: context)
+            ToolActivityRow(proposed: proposed, startedAt: event.timestamp, context: context)
         case let .approvalRequested(request):
             if !context.pendingApprovalIDs.contains(request.id) {
                 resolvedApprovalRow(request)
@@ -562,11 +562,29 @@ struct ReasoningRow: View {
 // MARK: - Tool activity
 
 /// A proposed/running/finished tool call with expandable streamed output.
+///
+/// **The row is drawn at its final geometry from the first frame.** Both slots
+/// that change when the call returns — the status mark and the duration — are
+/// fixed-width, so a transcript with six calls in flight does not re-flow six
+/// times as they land. A row that resizes on completion makes the whole column
+/// jump under the reader's eye at exactly the moment they are trying to read
+/// the result that caused it.
+///
+/// Neither slot spins, either. A running call shows the vocabulary's running
+/// mark and a live elapsed count, which passes the still-frame test: paused,
+/// "1.4s" and climbing is a different picture from "1.4s" and stuck, where two
+/// paused spinners are the same picture.
 struct ToolActivityRow: View {
     let proposed: ToolProposedEvent
+    /// When the call was proposed — the clock the live elapsed count runs from.
+    let startedAt: Date
     let context: TranscriptContext
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The duration column's width, chosen so the longest value it can hold
+    /// ("120.0s") fits without the column moving. Both states use it.
+    private static let durationColumn: CGFloat = 46
 
     private var completion: ToolCompletedEvent? {
         context.completion(forToolCall: proposed.toolCallID)
@@ -648,14 +666,27 @@ struct ToolActivityRow: View {
 
                     Spacer(minLength: JunoSpace.snug)
 
-                    if let completion {
-                        Text(String(format: "%.1fs", completion.durationSeconds))
-                            .junoCodeSmall()
-                            .junoMetaInk()
-                            .monospacedDigit()
-                    } else {
-                        ProgressView().controlSize(.mini)
+                    Group {
+                        if let completion {
+                            Text(String(format: "%.1fs", completion.durationSeconds))
+                        } else {
+                            // The one place a `TimelineView` earns its keep: a
+                            // number that is genuinely changing once a second,
+                            // in the slot the final number will occupy.
+                            TimelineView(.periodic(from: startedAt, by: 1)) { timeline in
+                                Text(
+                                    String(
+                                        format: "%.1fs",
+                                        max(0, timeline.date.timeIntervalSince(startedAt))
+                                    )
+                                )
+                            }
+                        }
                     }
+                    .junoCodeSmall()
+                    .junoMetaInk()
+                    .monospacedDigit()
+                    .frame(width: Self.durationColumn, alignment: .trailing)
 
                     if hasDetail {
                         Image(systemName: "chevron.right")
@@ -705,29 +736,25 @@ struct ToolActivityRow: View {
         }
     }
 
-    @ViewBuilder
+    /// The call's state, in the window's one status vocabulary.
+    ///
+    /// It used to be four locally-declared symbols plus a spinner, which is
+    /// four of the six loose glyphs the audit counted. `CodeStatusGlyph` draws
+    /// the same four concepts in the same circle family the sidebar and the
+    /// page header use, at a fixed width, swapped in place on `fast`.
     private var statusIcon: some View {
-        if let completion {
-            switch completion.status {
-            case .succeeded:
-                Image(systemName: "checkmark.circle.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(Color.junoSuccess)
-            case .failed:
-                Image(systemName: "xmark.circle.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(Color.junoDanger)
-            case .denied:
-                Image(systemName: "hand.raised.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(Color.junoCaution)
-            case .cancelled:
-                Image(systemName: "stop.circle.fill")
-                    .imageScale(.small)
-                    .junoSecondaryInk()
-            }
-        } else {
-            ProgressView().controlSize(.mini)
+        CodeStatusGlyph(status, size: 12)
+    }
+
+    private var status: CodeRunStatus {
+        guard let completion else { return CodeRunStatus(CodeRunState.running) }
+        switch completion.status {
+        case .succeeded: return CodeRunStatus(CodeRunState.finished)
+        case .failed: return CodeRunStatus(CodeRunState.failed)
+        // A denied call is one a person stopped, which is what
+        // `needsApproval`'s caution mark says everywhere else in the window.
+        case .denied: return CodeRunStatus(CodeRunState.needsApproval)
+        case .cancelled: return CodeRunStatus(CodeRunState.stopped)
         }
     }
 
@@ -868,38 +895,44 @@ private struct TranscriptLoadKey: Equatable {
 
 /// A sub-agent's status as one glyph, shared by the transcript and the panel so
 /// the same agent cannot read as two different states in two places.
+///
+/// It draws through ``CodeStatusGlyph``, which is what makes that sentence true
+/// across surfaces rather than only across these two. This used to be a second
+/// status vocabulary with its own table — a `clock` where the run table draws
+/// `circle.dotted`, a `hand.raised.fill` where it draws
+/// `exclamationmark.circle.fill`, and a `ProgressView` for running, which is a
+/// spinner inside a transcript row that also re-flows the row when it resolves.
+/// A delegated agent and the run that delegated it therefore reported the same
+/// four states in two different alphabets, a few hundred pixels apart.
+///
+/// The projection below is the whole of the difference between the two enums,
+/// stated once. `SubagentStatus` is the wire vocabulary from
+/// `runner/agent-core`'s `AgentEvent` union — `SessionEvents.swift` copies its
+/// raw values character-for-character and says so — so it is not ours to
+/// change; mapping it is correct where renaming it would not be.
 struct SubagentStatusGlyph: View {
     let status: SubagentStatus
 
-    var body: some View {
+    /// `preparing` folds into `queued` because the distinction — accepted
+    /// versus building its tool registry — is real to the runtime and invisible
+    /// to a reader watching a list. `interrupted` maps to `hostOffline` rather
+    /// than to `stopped`: both mean the process went away without being asked,
+    /// which is the caution-coloured "something ended this for you" state, and
+    /// `stopped` is reserved for the case where somebody chose it.
+    private var runState: CodeRunState {
         switch status {
-        case .queued, .preparing:
-            Image(systemName: "clock")
-                .imageScale(.small)
-                .junoSecondaryInk()
-        case .running:
-            ProgressView().controlSize(.small)
-        case .waitingForApproval:
-            Image(systemName: "hand.raised.fill")
-                .imageScale(.small)
-                .foregroundStyle(Color.junoCaution)
-        case .completed:
-            Image(systemName: "checkmark.circle.fill")
-                .imageScale(.small)
-                .foregroundStyle(Color.junoSuccess)
-        case .failed:
-            Image(systemName: "xmark.circle.fill")
-                .imageScale(.small)
-                .foregroundStyle(Color.junoDanger)
-        case .cancelled:
-            Image(systemName: "stop.circle.fill")
-                .imageScale(.small)
-                .junoSecondaryInk()
-        case .interrupted:
-            Image(systemName: "bolt.horizontal.circle.fill")
-                .imageScale(.small)
-                .foregroundStyle(Color.junoCaution)
+        case .queued, .preparing: .queued
+        case .running: .running
+        case .waitingForApproval: .needsApproval
+        case .completed: .finished
+        case .failed: .failed
+        case .cancelled: .stopped
+        case .interrupted: .hostOffline
         }
+    }
+
+    var body: some View {
+        CodeStatusGlyph(CodeRunStatus(runState), size: 11)
     }
 }
 

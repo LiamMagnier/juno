@@ -271,6 +271,14 @@ model EntityRevision {
 
   @@unique([accountId, entityType, entityId])
   @@index([accountId, entityType])
+  // The one lookup that does not know the account yet: when a cascade deletes a
+  // child after its parent, juno_record_account_change() has no owner to resolve
+  // and reads it back off this row instead. The unique key above leads with
+  // accountId and so cannot serve it, which left a sequential scan running once
+  // per cascaded row — once per message on a conversation delete. Declared here
+  // rather than only in the migration so `prisma migrate dev` does not read it
+  // as drift and generate a DROP.
+  @@index([entityType, entityId])
 }
 
 /// Change-log compaction state — a single "global" row recording the highest

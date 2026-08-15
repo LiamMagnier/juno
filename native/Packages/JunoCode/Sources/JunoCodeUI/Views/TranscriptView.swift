@@ -27,6 +27,22 @@ public struct TranscriptView: View {
     /// otherwise 1800pt of single-column text.
     static let measure: CGFloat = 720
 
+    /// Whether the reader is still at the end of the record.
+    ///
+    /// **Auto-scroll only happens while this is true.** A transcript that
+    /// scrolls itself while the reader is 400 lines up reading a tool result is
+    /// not being helpful; it is taking the window away from them, and during a
+    /// long run it does so every few hundred milliseconds. Once they scroll up
+    /// the transcript freezes, and "Jump to latest" is how they come back —
+    /// which is also the only honest way to say "there is more below", because
+    /// the alternative is a view that silently disagrees with where they are
+    /// looking.
+    @State private var isPinnedToBottom = true
+
+    /// How close to the end still counts as being at the end. A line's height,
+    /// roughly: a reader one pixel off the bottom has not chosen to leave.
+    private static let pinThreshold: CGFloat = 24
+
     public init(
         controller: SessionController,
         modelDisplayNames: [String: String] = [:],
@@ -55,7 +71,11 @@ public struct TranscriptView: View {
                     }
                     // The live tail is its own view so that a token arriving
                     // invalidates only the tail, not the whole event list.
-                    TranscriptTail(controller: controller, proxy: proxy)
+                    TranscriptTail(
+                        controller: controller,
+                        proxy: proxy,
+                        isPinnedToBottom: isPinnedToBottom
+                    )
                 }
                 .padding(.horizontal, JunoSpace.tight)
                 .padding(.top, JunoSpace.regular)
@@ -64,11 +84,18 @@ public struct TranscriptView: View {
                 .frame(maxWidth: .infinity)
             }
             .environment(\.codeModelDisplayNames, modelDisplayNames)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height
+                    >= geometry.contentSize.height - Self.pinThreshold
+            } action: { _, pinned in
+                isPinnedToBottom = pinned
+            }
             // Anchored on the tail rather than on the last event, so a run that
             // ends with streaming text, a tool row or a status line all settle in
             // the same place — and so this stays correct without re-deriving the
             // visible list inside the handler.
             .onChange(of: controller.events.count) {
+                guard isPinnedToBottom else { return }
                 // `fast` (0.12), not the 0.15 literal that was here: a
                 // near-miss off the ladder, close enough to look intentional
                 // and far enough to desynchronise from every other 0.12 in the
@@ -79,6 +106,23 @@ public struct TranscriptView: View {
                     proxy.scrollTo(TranscriptTail.id, anchor: .bottom)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if !isPinnedToBottom {
+                    TranscriptJumpToLatest {
+                        withAnimation(
+                            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)
+                        ) {
+                            proxy.scrollTo(TranscriptTail.id, anchor: .bottom)
+                        }
+                    }
+                    .padding(.bottom, JunoSpace.cozy)
+                    .transition(.junoOverlay)
+                }
+            }
+            .animation(
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                value: isPinnedToBottom
+            )
         }
     }
 
@@ -148,6 +192,10 @@ public struct TranscriptView: View {
 struct TranscriptTail: View {
     let controller: SessionController
     let proxy: ScrollViewProxy
+    /// Streaming text follows the reader only while the reader is still at the
+    /// end. Otherwise the tail grows silently and the "Jump to latest" control
+    /// above is what says so.
+    let isPinnedToBottom: Bool
 
     static let id = "juno.code.transcript.tail"
 
@@ -177,6 +225,7 @@ struct TranscriptTail: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .id(Self.id)
         .onChange(of: controller.liveAssistantText) {
+            guard isPinnedToBottom else { return }
             proxy.scrollTo(Self.id, anchor: .bottom)
         }
     }
@@ -208,6 +257,32 @@ struct TranscriptTail: View {
     private func durationText(_ seconds: Double) -> String {
         let total = Int(seconds)
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// The way back to the end of a record that is still growing.
+///
+/// The one piece of floating chrome the transcript carries, and therefore the
+/// one thing in this column that is glass. It appears only when the reader has
+/// left the bottom, which is the only moment it says anything they do not
+/// already know.
+struct TranscriptJumpToLatest: View {
+    let jump: () -> Void
+
+    var body: some View {
+        Button(action: jump) {
+            HStack(spacing: JunoSpace.tight) {
+                Image(systemName: "arrow.down")
+                    .font(.caption.weight(.bold))
+                Text("Jump to latest").junoRowLabel()
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(minHeight: CodeRowMetrics.minHeight)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.junoPress)
+        .junoGlass(in: Capsule(style: .continuous), interactive: true)
+        .accessibilityIdentifier("juno.code.transcript.jump-to-latest")
     }
 }
 

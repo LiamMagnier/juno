@@ -141,7 +141,7 @@ struct JunoMobileVoiceDock: View {
     private var controller: JunoRealtimeVoiceController { session.controller }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             if let message = failureMessage {
                 failureBanner(message)
             }
@@ -150,8 +150,8 @@ struct JunoMobileVoiceDock: View {
                     .font(.caption)
                     .foregroundStyle(Color.junoCaution)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug)
                     .modifier(JunoGlassCapsule())
             }
             if let message = camera.unavailability?.message {
@@ -203,14 +203,14 @@ struct JunoMobileVoiceDock: View {
             optionsMenu
             hangUpButton
         }
-        .padding(4)
+        .padding(JunoSpace.hairline)
         .modifier(JunoGlassCapsule())
     }
 
     /// A camera that could not start says so where the call's other notices
     /// appear, and offers the only fix that works for a refusal.
     private func cameraNotice(_ message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             Label(message, systemImage: "video.slash")
                 .font(.caption)
                 .foregroundStyle(Color.junoCaution)
@@ -222,11 +222,11 @@ struct JunoMobileVoiceDock: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.junoAccent)
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
         .modifier(JunoGlassCapsule())
         .accessibilityIdentifier("juno.mobile.voice-camera-unavailable")
     }
@@ -236,8 +236,8 @@ struct JunoMobileVoiceDock: View {
             .font(.caption)
             .foregroundStyle(Color.junoCaution)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.snug)
             .modifier(JunoGlassCapsule())
             .accessibilityIdentifier("juno.mobile.voice-screen-share-unavailable")
     }
@@ -254,19 +254,20 @@ struct JunoMobileVoiceDock: View {
     private var status: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(statusTitle)
-                .font(.system(size: 14, weight: .semibold))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                 .lineLimit(1)
                 .contentTransition(.opacity)
             if let costLabel {
                 Text(costLabel)
-                    .font(.system(size: 10, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .caption2)
+                    .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
             }
         }
         .frame(width: 96, height: 34, alignment: .leading)
-        .padding(.leading, 10)
-        .padding(.trailing, 4)
+        .padding(.leading, JunoSpace.cozy)
+        .padding(.trailing, JunoSpace.hairline)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
         .accessibilityHint(bargeInHint)
@@ -364,7 +365,7 @@ struct JunoMobileVoiceDock: View {
     /// the control that applies it sits with it.
     @ViewBuilder
     private func failureBanner(_ message: String) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: JunoSpace.snug) {
             Label(message, systemImage: "exclamationmark.triangle")
                 .font(.caption)
                 .foregroundStyle(Color.junoCaution)
@@ -375,7 +376,7 @@ struct JunoMobileVoiceDock: View {
             // than closing, and the transcript is still in the controller behind
             // it. The Mac has no equivalent; it should.
             if saveError != nil {
-                HStack(spacing: 14) {
+                HStack(spacing: JunoSpace.regular) {
                     Button("voice.save.retry") { hangUp() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
@@ -383,7 +384,7 @@ struct JunoMobileVoiceDock: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .accessibilityIdentifier("juno.mobile.voice-save-error")
             } else if case .error(let error) = controller.phase, error.isPermissionDenial {
                 // A denied microphone is fixed in Settings and never by trying
@@ -395,11 +396,11 @@ struct JunoMobileVoiceDock: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.junoAccent)
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
         .modifier(JunoGlassCapsule())
         .accessibilityIdentifier("juno.mobile.voice-failure")
     }
@@ -585,10 +586,10 @@ struct JunoMobileVoiceDock: View {
             }
         } label: {
             Image(systemName: "chevron.down")
-                .font(.system(size: 15, weight: .semibold))
+                .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                 .foregroundStyle(Color.primary.opacity(0.75))
                 .frame(width: 34, height: 34)
-                .frame(width: 38, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .tint(Color.primary)
@@ -613,13 +614,13 @@ struct JunoMobileVoiceDock: View {
                     ProgressView().tint(Color.junoCanvas)
                 } else {
                     Image(systemName: "phone.down.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                         .foregroundStyle(Color.junoCanvas)
                 }
             }
             .frame(width: 34, height: 34)
             .background(Color.junoDanger, in: Circle())
-            .frame(width: 38, height: 44)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -642,7 +643,7 @@ struct JunoMobileVoiceDock: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .medium))
+                .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                 .foregroundStyle(
                     tone == .prominent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary)
                 )
@@ -652,7 +653,7 @@ struct JunoMobileVoiceDock: View {
                     in: Circle()
                 )
                 // The same 44pt-tall target the composer's own controls carry.
-                .frame(width: 38, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -767,7 +768,11 @@ struct JunoMobileVoiceField: View {
         // a live microphone has to stay visible.
         .opacity(appeared ? 1 : 0)
         .task {
-            withAnimation(JunoMotion.reduced(.easeOut(duration: 0.36), when: reduceMotion)) {
+            withAnimation(
+                JunoMotion.reduced(
+                    JunoMotion.outSoft(JunoMotion.Duration.slow), when: reduceMotion
+                )
+            ) {
                 appeared = true
             }
         }

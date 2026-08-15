@@ -103,9 +103,9 @@ struct JunoMobileTasksView: View {
     @ViewBuilder
     private var content: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 JunoPageTitle(title: "navigation.tasks", subtitle: "tasks.subtitle")
-                    .padding(.top, 6)
+                    .padding(.top, JunoSpace.tight)
 
                 if let error = model.lastErrorDescription {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
@@ -137,18 +137,18 @@ struct JunoMobileTasksView: View {
                             .font(.caption)
                             .junoSecondaryInk()
                             .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 4)
+                            .padding(.top, JunoSpace.hairline)
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.section)
         }
     }
 
     private var empty: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 Text("tasks.empty.title")
                     .junoEmptyTitle()
                 Text("tasks.empty.detail")
@@ -164,16 +164,16 @@ struct JunoMobileTasksView: View {
                 .junoProminentAction()
                 .controlSize(.large)
                 .disabled(models.isEmpty)
-                .padding(.top, 2)
+                .padding(.top, JunoSpace.hairline)
             }
         }
     }
 
     private var locked: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 Label("tasks.locked.title", systemImage: "lock")
-                    .font(.system(size: 17, weight: .semibold))
+                    .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 Text("tasks.locked.detail")
                     .font(.callout)
                     .junoSecondaryInk()
@@ -198,16 +198,17 @@ private struct JunoMobileTaskCard: View {
 
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                HStack(alignment: .top, spacing: JunoSpace.cozy) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(task.scheduleDescription)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                            .monospacedDigit()
                             .junoMetaInk()
                         Text(task.name)
                             .font(JunoSerif.cardTitle)
                             .lineLimit(1)
-                        HStack(spacing: 5) {
+                        HStack(spacing: JunoSpace.tight) {
                             Text(task.modelName)
                                 .font(.caption)
                                 .junoSecondaryInk()
@@ -251,9 +252,9 @@ private struct JunoMobileTaskCard: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .semibold))
+                            .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                             .junoSecondaryInk()
-                            .frame(width: 30, height: 30)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel("tasks.options")
@@ -261,7 +262,7 @@ private struct JunoMobileTaskCard: View {
 
                 Divider().overlay(Color.junoHairline)
 
-                HStack(spacing: 8) {
+                HStack(spacing: JunoSpace.snug) {
                     statusLine
                     Spacer(minLength: 6)
                     if task.conversationID != nil {

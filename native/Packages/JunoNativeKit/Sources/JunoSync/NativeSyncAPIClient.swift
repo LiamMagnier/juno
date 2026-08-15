@@ -157,6 +157,36 @@ public struct NativeSyncAPIClient: Sendable {
         "saved_prompt", "connection", "usage", "share",
         "announcement_dismissal", "scheduled_task",
         "code_device", "code_task", "code_task_event", "code_workspace",
+        // Juno Work. These ship AHEAD of the triggers that emit them, which is
+        // the ordering rule above applied to the one case where breaking it
+        // would be worst.
+        //
+        // `project_workspace` above could be added ahead of its writer because
+        // its table was new and empty. Work is the opposite: every one of these
+        // tables already holds rows on live accounts, so the first Work write
+        // after `20260815141000_work_change_capture_triggers` is applied emits a
+        // change of a type older builds do not know — and by the comment above,
+        // that does not skip a row, it ends syncing for that account on that
+        // device, for every entity type, until the app is updated.
+        //
+        // So this list must be the OLDEST build in the field before that
+        // migration is applied. Adding the strings is necessary and not
+        // sufficient; the release order is the other half.
+        //
+        // The twelve match the trigger argument in the migration and the loader
+        // keys in
+        // `src/lib/sync-entities.ts` exactly — that pairing is what a client
+        // reads back from `/api/v1/changes` and then hydrates from
+        // `/api/v1/entities`. Four Work models are deliberately absent, matching
+        // the loader file: `WorkEvent` (its own SSE transport with a per-run seq
+        // cursor), `WorkCommand` (relay control plane — a replayed command is an
+        // action taken twice), `WorkRunIO` (provenance meaningful only beside
+        // its artifact version) and `WorkAuditEvent` (the security log, which
+        // outlives the session it describes).
+        "work_session", "work_run", "work_approval", "work_artifact",
+        "work_artifact_version", "work_host", "work_file_grant",
+        "work_session_connector", "work_skill", "work_skill_version",
+        "work_schedule", "work_trigger",
     ]
 
     private let sender: any NativeAuthenticatedRequestSending

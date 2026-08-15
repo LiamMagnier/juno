@@ -46,7 +46,7 @@ public actor PreviewSender: NativeChatRequestSending {
         return HTTPResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "application/json"]),
-            body: cannedBody(for: request.path)
+            body: cannedBody(for: request)
         )
     }
 
@@ -78,6 +78,9 @@ public actor PreviewSender: NativeChatRequestSending {
     /// Holding the stream open is also the more faithful fixture: a running task
     /// really does have a stream that has not ended.
     private nonisolated func streamBytes(for path: String) -> AsyncThrowingStream<UInt8, any Error> {
+        if path.hasPrefix("/api/code/tasks/"), path.hasSuffix("/events") {
+            return codeStreamBytes(taskID: PreviewCodeFixtures.taskID(in: path) ?? "")
+        }
         guard path.hasPrefix("/api/work/sessions/"), path.hasSuffix("/events"),
             PreviewWorkFixtures.liveSessionIDs.contains(Self.workSessionID(in: path) ?? "")
         else {
@@ -86,6 +89,27 @@ public actor PreviewSender: NativeChatRequestSending {
         // Deliberately never finished. The consuming task is cancelled when the
         // model closes the stream, which terminates this one with it.
         return AsyncThrowingStream { _ in }
+    }
+
+    /// One Juno Code task's log, as the SSE bytes the real route would write.
+    ///
+    /// The whole backlog arrives in a single `snapshot` frame, which is what the
+    /// server sends on every connect. A terminal task's stream then ends, exactly
+    /// as it does in production; a live one is held open for the same reason
+    /// Work's is — `NativeCodeModel.follow` reconnects the instant a stream
+    /// finishes and only stops at a terminal status, so a finished stream on a
+    /// running task is a reconnect loop under every screenshot.
+    private nonisolated func codeStreamBytes(
+        taskID: String
+    ) -> AsyncThrowingStream<UInt8, any Error> {
+        guard let frame = PreviewCodeFixtures.snapshotFrame(taskID: taskID) else {
+            return AsyncThrowingStream { $0.finish() }
+        }
+        let live = PreviewCodeFixtures.liveTaskIDs.contains(taskID)
+        return AsyncThrowingStream { continuation in
+            for byte in frame { continuation.yield(byte) }
+            if !live { continuation.finish() }
+        }
     }
 
     /// `wk-invoices` out of `/api/work/sessions/wk-invoices/events`.
@@ -98,7 +122,16 @@ public actor PreviewSender: NativeChatRequestSending {
 
     /// Minimal, valid canned bodies keyed by path so any incidental call from a
     /// real code path decodes cleanly. Never fetched from a server.
-    private func cannedBody(for path: String) -> Data {
+    private func cannedBody(for request: NativeBearerRequest) -> Data {
+        let path = request.path
+        // Code first, and by request rather than by path alone: `/api/code/tasks`
+        // is the session list on GET and creates a run on POST, and a list handed
+        // to a create is refused by the wrapper decoder that reads it.
+        if let body = PreviewCodeFixtures.body(
+            path: path, method: request.method, empty: empty
+        ) {
+            return body
+        }
         if path == "/api/work/artifacts" {
             return PreviewWorkFixtures.artifactsBody(sessionID: PreviewWorkFixtures.openSessionID)
         }

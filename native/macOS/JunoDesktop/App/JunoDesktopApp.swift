@@ -97,7 +97,29 @@ struct JunoDesktopApp: App {
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unifiedCompact)
+        // `.unified`, not `.unifiedCompact`.
+        //
+        // `.unifiedCompact` is AppKit's *compact* titlebar mode: it shortens the
+        // titlebar and draws every toolbar control at the small metric. That is
+        // the whole reason the toolbar actions read as undersized — the compose
+        // and overflow buttons came out around 22pt in a 1512pt-wide window,
+        // against the ~30pt that Mail, Notes and Xcode land on.
+        //
+        // It is worth recording what does NOT fix this, because both look like
+        // they should and neither moves a pixel. `.controlSize(.large)` on the
+        // view carrying `.toolbar { … }` does nothing: toolbar item content is
+        // hosted by `NSToolbar` in a hierarchy that is a sibling of the content
+        // view, so the content view's environment never reaches it. Putting
+        // `.controlSize` / `.imageScale` on the `Button` inside the
+        // `ToolbarItem` does nothing either — under Liquid Glass the system owns
+        // the toolbar control metric, and the window's toolbar style is the only
+        // thing that sets it. Both were built, run and screenshotted before
+        // landing here.
+        //
+        // Compact is the right choice for a utility window with one or two
+        // actions. This window is the product's primary surface and carries a
+        // search field, so it takes the standard metric.
+        .windowToolbarStyle(.unified)
         .windowBackgroundDragBehavior(.enabled)
         .commands {
             JunoDesktopCommands()

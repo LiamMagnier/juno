@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 // Money, everywhere Juno shows it.
@@ -68,8 +69,9 @@ public enum JunoCostFormatting {
         let prefix = isPartial ? "≥" : ""
 
         if amount == 0 { return prefix + format(0, precision: .display) }
-        if precision == .display, amount < subCentThreshold {
-            return "\(prefix)<" + format(subCentThreshold, precision: .display)
+        let floor = smallestDrawable(at: precision)
+        if amount < floor {
+            return "\(prefix)<" + format(floor, precision: precision)
         }
         return prefix + format(amount, precision: precision)
     }
@@ -77,12 +79,28 @@ public enum JunoCostFormatting {
     /// The `Double` entry point, for call sites whose model already carries a
     /// `Double`. Prefer the `Decimal` or micro-USD forms where the value comes
     /// off the wire — they cannot lose a cent to binary rounding.
+    ///
+    /// Labelled rather than a second unlabelled overload: `Decimal` is
+    /// `ExpressibleByFloatLiteral`, so `cost(0.41)` would otherwise be ambiguous
+    /// at every call site that passes a literal.
     public static func cost(
-        _ usd: Double,
+        usd: Double,
         isPartial: Bool = false,
         precision: Precision = .display
     ) -> String {
-        cost(decimal(fromDouble: usd), isPartial: isPartial, precision: precision)
+        cost(self.usd(usd), isPartial: isPartial, precision: precision)
+    }
+
+    /// A `Double` dollar amount as an exact `Decimal`, for call sites that have
+    /// to hand one to a view rather than format it here.
+    ///
+    /// `Decimal(_: Double)` carries the binary representation error straight
+    /// into the decimal — `Decimal(0.0006)` is `0.00059999…`. Going through the
+    /// shortest round-tripping description drops it, which matters only at the
+    /// sub-cent boundary but matters absolutely there.
+    public static func usd(_ value: Double) -> Decimal {
+        guard value.isFinite else { return 0 }
+        return Decimal(string: "\(value)") ?? Decimal(value)
     }
 
     /// The wire form. Costs arrive from the API as micro-USD integers.
@@ -100,8 +118,24 @@ public enum JunoCostFormatting {
         "\(cost(spent)) of \(cost(ceiling))"
     }
 
-    /// One cent. Below this, ``Precision/display`` refuses to round to zero.
-    private static let subCentThreshold: Decimal = 0.01
+    /// The same pair straight off the wire, which is how a Work run carries it
+    /// (`costMicroUsd` / `maxCostMicroUsd`).
+    public static func costOfCeiling(spentMicroUSD: Int, ceilingMicroUSD: Int) -> String {
+        costOfCeiling(
+            Decimal(spentMicroUSD) / microUSDPerUSD,
+            ceiling: Decimal(ceilingMicroUSD) / microUSDPerUSD
+        )
+    }
+
+    /// The smallest amount each precision can draw truthfully. Below it, a real
+    /// charge would round to `$0.00`, so the "<" form is used instead: rounding
+    /// a paid turn down to nothing is the one error neither precision may make.
+    private static func smallestDrawable(at precision: Precision) -> Decimal {
+        switch precision {
+        case .display: return Decimal(string: "0.01")!
+        case .exact: return Decimal(string: "0.0001")!
+        }
+    }
 
     private static func format(_ amount: Decimal, precision: Precision) -> String {
         let fractionLength: ClosedRange<Int> = precision == .display ? 2...2 : 2...4
@@ -113,15 +147,6 @@ public enum JunoCostFormatting {
                 // a 12.345 charge as $12.34. Round the way a bill rounds.
                 .rounded(rule: .toNearestOrAwayFromZero)
         )
-    }
-
-    /// `Decimal(_: Double)` carries the binary representation error straight
-    /// into the decimal — `Decimal(0.0006)` is `0.00059999…`. Going through the
-    /// shortest round-tripping description drops it, which matters only at the
-    /// sub-cent boundary but matters absolutely there.
-    private static func decimal(fromDouble value: Double) -> Decimal {
-        guard value.isFinite else { return 0 }
-        return Decimal(string: "\(value)") ?? Decimal(value)
     }
 
     /// Compact token counts: 847, 12.4K, 1.8M.
@@ -204,20 +229,9 @@ public struct JunoMessageMetaLine: View {
         self.isStreaming = isStreaming
     }
 
-    /// The `Double` convenience, for call sites whose message model stores one.
-    public init(
-        modelDisplayName: String?,
-        costUSD: Double?,
-        isCostPartial: Bool = false,
-        isStreaming: Bool = false
-    ) {
-        self.init(
-            modelDisplayName: modelDisplayName,
-            costUSD: costUSD.map { Decimal(string: "\($0)") ?? Decimal($0) },
-            isCostPartial: isCostPartial,
-            isStreaming: isStreaming
-        )
-    }
+    // A `Double?` convenience initialiser would be ambiguous against this one
+    // at `costUSD: nil`. Call sites holding a `Double` write
+    // `costUSD: message.costUSD.map(JunoCostFormatting.usd)`.
 
     public var body: some View {
         if modelDisplayName == nil, costUSD == nil, !isStreaming {

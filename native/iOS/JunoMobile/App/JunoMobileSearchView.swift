@@ -80,12 +80,12 @@ struct JunoMobileSearchView: View {
     // MARK: - Field
 
     private var field: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
             TextField("Chats, messages, projects, files…", text: $draft)
-                .font(.system(size: 16))
+                .junoFont(size: 16, relativeTo: .callout)
                 .textFieldStyle(.plain)
                 .foregroundStyle(Color.primary)
                 .submitLabel(.search)
@@ -104,12 +104,12 @@ struct JunoMobileSearchView: View {
                     fieldFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .junoFont(size: 16, relativeTo: .callout)
                         .foregroundStyle(Color.junoMutedForeground)
                         // A glyph is not a touch target: the 16pt symbol was the
                         // whole of it, and a tap that missed by two points went
                         // to the field instead and cleared nothing.
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -117,18 +117,18 @@ struct JunoMobileSearchView: View {
                 .accessibilityIdentifier("juno.mobile.search-clear")
             }
         }
-        .padding(.leading, 16)
+        .padding(.leading, JunoSpace.regular)
         // 8 rather than 16 on this side, so the wider clear button lands the
         // glyph exactly where the bare glyph used to sit: the target grew
         // outwards into the capsule's own inset, and nothing moved.
-        .padding(.trailing, 8)
+        .padding(.trailing, JunoSpace.snug)
         .frame(height: 44)
         // Real Liquid Glass, in the same container the rest of the app's floating
         // chrome uses. `interactive` is what makes it respond to touch, and it
         // belongs here because the whole capsule is the field's hit area.
         .junoGlass(in: Capsule(style: .continuous), interactive: true)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
         .junoGlassSearchContainer()
     }
 
@@ -176,15 +176,15 @@ struct JunoMobileSearchView: View {
 
     private var results: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
                 ForEach(visibleGroups, id: \.kind) { group in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
                         JunoGroupLabel(text: sectionTitle(group.kind))
                         JunoCard(padding: 0) {
                             VStack(spacing: 0) {
                                 ForEach(Array(group.results.enumerated()), id: \.element.id) {
                                     index, result in
-                                    if index > 0 { Divider().padding(.leading, 48) }
+                                    if index > 0 { Divider().padding(.leading, JunoSpace.region + JunoSpace.regular) }
                                     row(result)
                                 }
                             }
@@ -192,9 +192,9 @@ struct JunoMobileSearchView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 20)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.snug)
+            .padding(.bottom, JunoSpace.roomy)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
@@ -204,21 +204,21 @@ struct JunoMobileSearchView: View {
 
     private func row(_ result: NativeSearchResult) -> some View {
         Button { open(result) } label: {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 Image(systemName: icon(result.kind))
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(result.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
                     if !result.snippet.isEmpty, result.snippet != result.title {
                         Text(result.snippet)
-                            .font(.system(size: 13))
+                            .junoFont(size: 13, relativeTo: .footnote)
                             .foregroundStyle(Color.junoMutedForeground)
                             .lineLimit(2)
                     }
@@ -226,12 +226,13 @@ struct JunoMobileSearchView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(result.updatedAt, style: .relative)
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .contentShape(Rectangle())
         }
         // `.plain` is the load-bearing part: without it the label inherits the
@@ -255,15 +256,15 @@ struct JunoMobileSearchView: View {
             )
         } else {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
                     if !recentConversations.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
                             JunoGroupLabel(text: "Recent chats")
                             JunoCard(padding: 0) {
                                 VStack(spacing: 0) {
                                     ForEach(Array(recentConversations.prefix(6).enumerated()), id: \.element.id) {
                                         index, conversation in
-                                        if index > 0 { Divider().padding(.leading, 48) }
+                                        if index > 0 { Divider().padding(.leading, JunoSpace.region + JunoSpace.regular) }
                                         recentRow(
                                             title: conversation.title,
                                             date: conversation.lastMessageAt,
@@ -278,13 +279,13 @@ struct JunoMobileSearchView: View {
                     }
 
                     if !projects.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
                             JunoGroupLabel(text: "Projects")
                             JunoCard(padding: 0) {
                                 VStack(spacing: 0) {
                                     ForEach(Array(projects.prefix(5).enumerated()), id: \.element.id) {
                                         index, project in
-                                        if index > 0 { Divider().padding(.leading, 48) }
+                                        if index > 0 { Divider().padding(.leading, JunoSpace.region + JunoSpace.regular) }
                                         recentRow(
                                             title: project.name,
                                             date: project.updatedAt,
@@ -297,9 +298,9 @@ struct JunoMobileSearchView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 20)
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.top, JunoSpace.snug)
+                .padding(.bottom, JunoSpace.roomy)
                 .frame(maxWidth: 768)
                 .frame(maxWidth: .infinity)
             }
@@ -315,24 +316,25 @@ struct JunoMobileSearchView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 12) {
+            HStack(spacing: JunoSpace.cozy) {
                 Image(systemName: glyph)
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.system(size: 15, weight: .medium))
+                    .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(date, style: .relative)
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())

@@ -56,8 +56,8 @@ struct JunoMobileLibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: JunoSpace.regular),
+        GridItem(.flexible(), spacing: JunoSpace.regular),
     ]
 
     private var files: [NativeProjectFile] {
@@ -185,7 +185,7 @@ struct JunoMobileLibraryView: View {
 
             documentIndexPanel
 
-            LazyVGrid(columns: columns, spacing: 14) {
+            LazyVGrid(columns: columns, spacing: JunoSpace.regular) {
                 ForEach(files) { file in
                     JunoLibraryCard(
                         file: file,
@@ -201,10 +201,10 @@ struct JunoMobileLibraryView: View {
                     )
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, JunoSpace.regular)
             // Clears the floating search field, so the last row is never
             // trapped underneath it.
-            .padding(.bottom, 96)
+            .padding(.bottom, JunoSpace.region * 3)
             .animation(
                 JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: files.count
             )
@@ -241,23 +241,23 @@ struct JunoMobileLibraryView: View {
                 keepMine: {},
                 useServer: {}
             )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, JunoSpace.regular)
 
             // The container stays: the selected chip is a glass element, and glass
             // laid down outside one samples independently instead of blending
             // with its neighbours. It is the `.bar` slab behind the row that is
             // gone, not the chips' own material.
-            JunoGlass(spacing: 10) {
-                HStack(spacing: 8) {
+            JunoGlass(spacing: JunoSpace.cozy) {
+                HStack(spacing: JunoSpace.snug) {
                     ForEach(JunoLibraryFilter.allCases) { option in
                         chip(option)
                     }
                     Spacer(minLength: 0)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 2)
-            .padding(.bottom, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, JunoSpace.cozy)
         }
     }
 
@@ -273,14 +273,14 @@ struct JunoMobileLibraryView: View {
     @ViewBuilder
     private var documentIndexPanel: some View {
         if let index = documentIndex, index.isReady, indexPanelHasContent(index) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                 indexSummary(index)
                 if let failure = documentPickerFailure ?? index.lastErrorDescription {
                     indexFailure(failure, index: index)
                 }
                 indexResults(index)
             }
-            .padding(14)
+            .padding(JunoSpace.regular)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
@@ -290,8 +290,8 @@ struct JunoMobileLibraryView: View {
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .strokeBorder(Color.junoHairline, lineWidth: 1)
             )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.cozy)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Documents indexed on this phone")
             .accessibilityIdentifier("juno.mobile.library-document-index")
@@ -306,12 +306,12 @@ struct JunoMobileLibraryView: View {
     }
 
     private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: JunoSpace.snug) {
             Image(systemName: "text.magnifyingglass")
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             Text(indexSummaryLine(index))
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .lineLimit(2)
             Spacer(minLength: 0)
             if index.isIngesting {
@@ -327,7 +327,7 @@ struct JunoMobileLibraryView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 17))
+                        .junoFont(size: 17, relativeTo: .body)
                         .junoSecondaryInk()
                 }
                 .accessibilityLabel("Manage indexed documents")
@@ -358,7 +358,7 @@ struct JunoMobileLibraryView: View {
     }
 
     private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
@@ -393,7 +393,7 @@ struct JunoMobileLibraryView: View {
                     .junoCaption()
                     .junoSecondaryInk()
             } else {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     ForEach(index.passages) { passage in
                         passageRow(passage)
                     }
@@ -414,7 +414,7 @@ struct JunoMobileLibraryView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(passage.text)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .lineLimit(4)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -443,9 +443,9 @@ struct JunoMobileLibraryView: View {
             }
         } label: {
             Text(option.title)
-                .font(.system(size: 17, weight: selected ? .semibold : .regular))
+                .junoFont(size: 17, relativeTo: .body, weight: selected ? .semibold : .regular)
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
-                .padding(.horizontal, 18)
+                .padding(.horizontal, JunoSpace.regular)
                 .frame(height: 40)
                 .modifier(JunoLibraryChipBackground(selected: selected))
         }
@@ -459,14 +459,14 @@ struct JunoMobileLibraryView: View {
     /// pinned to the top costs a row of previews on every scroll; down here it
     /// costs nothing and is where the thumb already is.
     private var searchField: some View {
-        JunoGlass(spacing: 14) {
-            HStack(spacing: 10) {
+        JunoGlass(spacing: JunoSpace.regular) {
+            HStack(spacing: JunoSpace.cozy) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
+                    .junoFont(size: 17, relativeTo: .body, weight: .medium)
                     .junoSecondaryInk()
                 TextField("library.search", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 17))
+                    .junoFont(size: 17, relativeTo: .body)
                     .focused($searchFocused)
                     .submitLabel(.search)
                     .accessibilityIdentifier("juno.mobile.library-search")
@@ -475,19 +475,19 @@ struct JunoMobileLibraryView: View {
                         searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 17))
+                            .junoFont(size: 17, relativeTo: .body)
                             .junoMetaInk()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("library.search.clear")
                 }
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, JunoSpace.regular)
             .frame(height: 52)
             .junoGlass(in: Capsule(), interactive: true)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.bottom, JunoSpace.cozy)
     }
 
     @ViewBuilder
@@ -525,19 +525,19 @@ private struct JunoLibraryMessage: View {
     let detail: LocalizedStringKey
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: JunoSpace.cozy) {
             Image(systemName: symbol)
-                .font(.system(size: 28))
+                .junoFont(size: 28, relativeTo: .title)
                 .junoMetaInk()
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
             Text(detail)
                 .font(.callout)
                 .junoSecondaryInk()
                 .multilineTextAlignment(.center)
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 60)
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.top, JunoSpace.region)
         .frame(maxWidth: .infinity)
     }
 }

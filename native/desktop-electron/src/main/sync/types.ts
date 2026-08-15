@@ -85,6 +85,41 @@ export const SYNC_ENTITY_TYPES = [
   'code_task',
   'code_task_event',
   'code_workspace',
+  // `project_workspace` was missing here while the Swift client
+  // (`NativeSyncAPIClient.entityTypes`) already carried it, so the two clients
+  // disagreed about the closed set they are both supposed to mirror. Harmless
+  // only because nothing writes that table yet — which is exactly the window in
+  // which to fix it.
+  'project_workspace',
+  // Juno Work. These ship AHEAD of the triggers that emit them.
+  //
+  // Unlike `project_workspace`, every Work table already holds rows on live
+  // accounts, so the first Work write after
+  // `prisma/migrations/20260815141000_work_change_capture_triggers` is applied
+  // emits a type older builds do not know. Per the note above, an unknown type
+  // is "a condition to report, not to guess at" — which in practice ends that
+  // account's sync on that install until it updates. This list must therefore
+  // be the oldest build in the field before that migration is applied; shipping
+  // the strings is necessary and not sufficient.
+  //
+  // The twelve match the trigger argument in the migration and the loader keys in
+  // `src/lib/sync-entities.ts`. Four Work models are deliberately absent,
+  // matching the loader file: WorkEvent (its own SSE transport), WorkCommand
+  // (relay control plane — a replayed command is an action taken twice),
+  // WorkRunIO (provenance meaningful only beside its artifact version) and
+  // WorkAuditEvent (the security log, which outlives its session).
+  'work_session',
+  'work_run',
+  'work_approval',
+  'work_artifact',
+  'work_artifact_version',
+  'work_host',
+  'work_file_grant',
+  'work_session_connector',
+  'work_skill',
+  'work_skill_version',
+  'work_schedule',
+  'work_trigger',
 ] as const;
 
 export type SyncEntityType = (typeof SYNC_ENTITY_TYPES)[number];

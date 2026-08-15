@@ -124,13 +124,19 @@ public struct JunoCostMetricsBadge: View {
                     .imageScale(.small)
                 Text(JunoCostFormatting.tokens(metrics.totalTokens))
                     .monospacedDigit()
-                Text(JunoCostFormatting.cost(metrics.costUsd, isPartial: metrics.isPartial))
+                Text(JunoCostFormatting.cost(usd: metrics.costUsd, isPartial: metrics.isPartial))
                     .monospacedDigit()
+                    .fontWeight(.medium)
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .imageScale(.small)
             }
             .junoCaption()
             .junoSecondaryInk()
+            // The chip is small enough to read as decoration; the control it
+            // sits in must still be a control. `contentShape` matches the whole
+            // row so the gap between the count and the chevron is not dead.
+            .frame(minHeight: minimumHitTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilitySummary)
@@ -156,6 +162,15 @@ public struct JunoCostMetricsBadge: View {
                 }
             }
             row("Turns", "\(metrics.turns)")
+            // The one place the extra decimals belong. The collapsed line shows
+            // cents because that is what a price is; a reader who opened the
+            // receipt is asking the accountant's question instead.
+            row(
+                "Cost",
+                JunoCostFormatting.cost(
+                    usd: metrics.costUsd, isPartial: metrics.isPartial, precision: .exact
+                )
+            )
             if metrics.isPartial {
                 // Says WHY the total carries a "≥" instead of leaving the
                 // reader to wonder whether the number is broken.
@@ -184,15 +199,25 @@ public struct JunoCostMetricsBadge: View {
     private var accessibilitySummary: String {
         var parts = [
             "Session cost",
-            JunoCostFormatting.cost(metrics.costUsd, isPartial: metrics.isPartial),
+            // Spoken, not drawn: VoiceOver reads the drawn "≥" as "greater than
+            // or equal to", or drops it, and neither is the sentence meant.
+            JunoCostFormatting.spokenCost(
+                JunoCostFormatting.usd(metrics.costUsd), isPartial: metrics.isPartial
+            ),
             "\(metrics.totalTokens) tokens across \(metrics.turns) turns",
         ]
         if let rate = metrics.cacheHitRate {
             parts.append("\(JunoCostFormatting.percent(rate)) of input served from cache")
         }
         if metrics.isPartial {
-            parts.append("at least — some turns reported no usage")
+            parts.append("some turns reported no usage")
         }
         return parts.joined(separator: ", ")
     }
 }
+
+/// The platform minimum for anything a finger or a pointer has to acquire.
+/// Local to this file on purpose — the design system has no hit-target scale
+/// yet, and inventing a half-adopted one here is how the last three migrations
+/// started.
+private let minimumHitTarget: CGFloat = 44

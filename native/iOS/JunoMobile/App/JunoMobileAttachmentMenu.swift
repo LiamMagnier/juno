@@ -310,7 +310,7 @@ struct JunoMobileComposerActions: View {
     /// control that looks 32pt.
     private var plus: some View {
         Image(systemName: "plus")
-            .font(.system(size: 16, weight: .semibold))
+            .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
             .foregroundStyle(.primary)
             .frame(width: 34, height: 34)
             .modifier(JunoComposerGlassCircle())
@@ -326,7 +326,7 @@ struct JunoMobileComposerActions: View {
                         .transition(.scale.combined(with: .opacity))
                 }
             }
-            .frame(width: 40, height: 44)
+            .frame(width: 44, height: 44)
             .contentShape(Rectangle())
             .animation(JunoMotion.fast, value: tools.isArmed)
     }

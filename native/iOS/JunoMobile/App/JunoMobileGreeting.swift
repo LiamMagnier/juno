@@ -3,60 +3,6 @@ import JunoDesignSystem
 import Observation
 import SwiftUI
 
-// MARK: - The web's motion tokens
-
-/// The website's authored easing curves and durations, as SwiftUI animations.
-///
-/// `JunoMotion` offers springs, which are the right default for anything the
-/// finger drives. These are the other half: the *authored* curves the stylesheet
-/// uses for choreography — a message rising in, a chevron turning over, a thumb
-/// travelling to a detent — where the browser and the phone have to agree frame
-/// for frame or the two products stop feeling like one. Every value is
-/// `--ease-*` / `--dur-*` from `src/app/globals.css`, unchanged.
-enum JunoMobileMotion {
-    /// `--dur-fast`. Immediate feedback: a press, a colour swap.
-    static let durFast: TimeInterval = 0.12
-    /// `--dur-base`. The default: rows, chevrons, travel between detents.
-    static let durBase: TimeInterval = 0.22
-    /// `--dur-slow`. Whole-surface crossfades.
-    static let durSlow: TimeInterval = 0.36
-
-    /// `--ease-spring: cubic-bezier(0.32, 0.72, 0, 1)`. Travel and rise — it
-    /// leaves fast and lands slowly, which is what makes a move read as weight
-    /// rather than as a tween.
-    static func easeSpring(_ duration: TimeInterval) -> Animation {
-        .timingCurve(0.32, 0.72, 0, 1, duration: duration)
-    }
-
-    /// `--ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1)`.
-    static func easeOutSoft(_ duration: TimeInterval) -> Animation {
-        .timingCurve(0.33, 1, 0.68, 1, duration: duration)
-    }
-
-    /// `rise-in`: 0.32s on the spring curve. The one entry animation the whole
-    /// product uses — a new message, a greeting, a row in the model picker.
-    static let riseIn = easeSpring(0.32)
-
-    /// The half of `rise-in` a `transition` expresses: opacity 0 → 1 and an 8pt
-    /// climb. Paired with ``riseIn`` on the container's `.animation(_:value:)`,
-    /// which is also what limits it to genuinely new content — SwiftUI does not
-    /// run insertion transitions for the rows that were already there on the
-    /// first layout, so a loaded history arrives settled, exactly as the web's
-    /// `animateFrom` index arranges by hand.
-    /// Computed rather than stored: `AnyTransition` is not `Sendable`, so a
-    /// `static let` of one is shared mutable state under Swift 6's checking.
-    /// Rebuilding it per read costs nothing — it is two value-type wrappers.
-    static var riseInTransition: AnyTransition { .opacity.combined(with: .offset(y: 8)) }
-
-    /// `fade-in`: 0.2s ease-out. Used where a value is *replaced* in place —
-    /// the model name after picking a different model.
-    static let fadeIn = Animation.easeOut(duration: 0.2)
-
-    /// `fade-in-up`: 0.25s ease-out, and the 6pt climb that goes with it.
-    static let fadeInUp = Animation.easeOut(duration: 0.25)
-    static var fadeInUpTransition: AnyTransition { .opacity.combined(with: .offset(y: 6)) }
-}
-
 /// The web's `active:scale-[0.97]` on `duration-fast ease-out-soft`, for the
 /// composer's chips.
 ///
@@ -83,7 +29,7 @@ struct JunoMobileChipPressStyle: ButtonStyle {
                 .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
                 .animation(
                     JunoMotion.reduced(
-                        JunoMobileMotion.easeOutSoft(JunoMobileMotion.durFast),
+                        JunoMotion.outSoft(JunoMotion.Duration.fast),
                         when: reduceMotion
                     ),
                     value: pressed
@@ -273,13 +219,13 @@ struct JunoMobileGreeting: View {
     private var compact: Bool { sizeClass == .compact }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: JunoSpace.cozy) {
             JunoMark(size: compact ? 21 : 29)
                 .opacity(phraseIn ? 1 : 0)
                 .offset(y: phraseIn ? 0 : 8)
             sentence
         }
-        .padding(.horizontal, 28)
+        .padding(.horizontal, JunoSpace.section)
         .frame(maxWidth: .infinity)
         .background { auraLayer }
         .accessibilityElement(children: .ignore)
@@ -344,8 +290,12 @@ struct JunoMobileGreeting: View {
             nameIn = true
             return
         }
-        withAnimation(JunoMobileMotion.riseIn.delay(0.06)) { phraseIn = true }
-        withAnimation(JunoMobileMotion.riseIn.delay(0.18)) { nameIn = true }
+        withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.06)) {
+            phraseIn = true
+        }
+        withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.18)) {
+            nameIn = true
+        }
     }
 
     /// One sentence, with one half made invisible.

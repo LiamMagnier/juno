@@ -7,7 +7,14 @@ const outputArg = process.argv.find((value) => value.startsWith("--output="));
 if (!outputArg) throw new Error("Pass --output=/absolute/path/to/JunoNativeContract.swift");
 const outputPath = resolve(outputArg.slice("--output=".length));
 const source = await readFile(contractPath, "utf8");
-for (const required of ["operationId: exchangeAuthorizationCode", "operationId: listModels", "operationId: getBootstrap", "operationId: listAccountChanges", "operationId: applyAccountMutation", "operationId: appendNativeConversationMessages", "operationId: streamNativeChat", "operationId: cancelNativeChatGeneration", "operationId: getNativeChatReceipt", "/auth/refresh:", "com.liammagnier.juno://auth/callback", "juno://auth/callback"]) {
+// The Work fragments are here for the reason the others are, and for one more.
+// Juno Work shipped 25 route files that the Swift clients already called while
+// this document described none of them, so the drift gate guarded only the half
+// that was never at risk — a contract can be complete for years and still be
+// silently half a product. Naming one operation per Work surface (hosts, the
+// relay, sessions, runs, approvals, artifacts, schedules) means removing that
+// surface from the contract fails generation rather than passing quietly.
+for (const required of ["operationId: exchangeAuthorizationCode", "operationId: listModels", "operationId: getBootstrap", "operationId: listAccountChanges", "operationId: applyAccountMutation", "operationId: appendNativeConversationMessages", "operationId: streamNativeChat", "operationId: cancelNativeChatGeneration", "operationId: getNativeChatReceipt", "operationId: listNativeWorkHosts", "operationId: registerNativeWorkHost", "operationId: claimNextNativeWorkCommand", "operationId: appendNativeWorkHostEvents", "operationId: listNativeWorkSessions", "operationId: startNativeWorkRun", "operationId: streamNativeWorkEvents", "operationId: submitNativeWorkSubmission", "operationId: decideNativeWorkApproval", "operationId: downloadNativeWorkArtifact", "operationId: listNativeWorkSchedules", "/auth/refresh:", "com.liammagnier.juno://auth/callback", "juno://auth/callback"]) {
   if (!source.includes(required)) throw new Error(`OpenAPI contract is missing required fragment: ${required}`);
 }
 const version = source.match(/^  version: ([0-9]+\.[0-9]+\.[0-9]+)$/m)?.[1];

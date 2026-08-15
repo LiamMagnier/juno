@@ -27,13 +27,13 @@ struct JunoMobileResearchProgress: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
             if enabled { header }
             runRow
             searchBlock
             if let degradedWarning { warningRow(degradedWarning) }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, JunoSpace.regular)
         .accessibilityIdentifier("juno.mobile.research-progress")
     }
 
@@ -53,7 +53,7 @@ struct JunoMobileResearchProgress: View {
         // Absent, not zero. Before the first search there is genuinely nothing
         // to report, and "Planning · 0 sources" states a fact nobody has.
         if let counts = run.countsSummary {
-            HStack(spacing: 6) {
+            HStack(spacing: JunoSpace.tight) {
                 // Not `binoculars`: the header above already carries that glyph
                 // for "research is on", and repeating it here would make two
                 // rows that look like the same statement twice.
@@ -100,7 +100,7 @@ struct JunoMobileResearchProgress: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             Image(systemName: "binoculars")
                 .font(.caption)
             Text("research.enabled")
@@ -119,7 +119,7 @@ struct JunoMobileResearchProgress: View {
     /// A reader who asked for research and silently received plain chat has
     /// been misled about the basis of the reply.
     private func warningRow(_ message: String) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: JunoSpace.tight) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.caption2)
             Text(message)

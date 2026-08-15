@@ -18,7 +18,7 @@ import SwiftUI
 ///     rest    ·              THOUGHT PROCESS                    8.4s  ›
 ///                            See how this response was made
 ///
-/// The duration keeps the same slot and the same monospaced face in both states,
+/// The duration keeps the same slot and the same face in both states,
 /// so the eye follows one continuous thing from meter to receipt. Settling is
 /// four separate signals — the matrix stops, the number demotes, the nouns
 /// appear, the chevron offers the detail — and the motion stopping is the least
@@ -56,11 +56,11 @@ struct JunoMobileThoughtProcessRow: View {
         // A model that returns no reasoning trace has nothing to disclose, and
         // the answer itself is the whole receipt.
         if streaming {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 liveStrip
                 liveTrace
             }
-            .padding(.bottom, 12)
+            .padding(.bottom, JunoSpace.cozy)
         } else if hasReasoning {
             restingStrip
         }
@@ -96,7 +96,7 @@ struct JunoMobileThoughtProcessRow: View {
     /// is what this row previously had no way to provide, and why it used to show
     /// the sentence alone.
     private var liveStrip: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: JunoSpace.cozy) {
             // The same 36pt gutter the resting dot uses. The web puts the matrix
             // at its natural 18pt here and only widens the slot once the run
             // settles, so its sentence slides 18pt left→right at the moment the
@@ -149,7 +149,7 @@ struct JunoMobileThoughtProcessRow: View {
 
     private var restingStrip: some View {
         Button { showingPanel = true } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: JunoSpace.cozy) {
                 // The web's `w-9` slot with its 1.5×1.5 point at the centre: what
                 // nine travelling points collapse to once there is nothing left
                 // to travel.
@@ -164,7 +164,7 @@ struct JunoMobileThoughtProcessRow: View {
                         .kerning(0.13)
                         .foregroundStyle(Color.junoMutedForeground)
                     Text("See how this response was made")
-                        .font(.system(size: 15))
+                        .junoFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(Color.primary.opacity(0.78))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -173,26 +173,24 @@ struct JunoMobileThoughtProcessRow: View {
 
                 if let duration = clock.duration {
                     Text(JunoMobileRunCopy.span(duration))
-                        .font(.system(size: 11, design: .monospaced))
-                        .kerning(0.22)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .monospacedDigit()
                         .foregroundStyle(Color.junoMutedForeground)
-                        .padding(.horizontal, 1)
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
             }
             .frame(minHeight: 48)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, JunoSpace.snug)
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         .buttonStyle(JunoMobileThoughtRowStyle())
         // The press wash bleeds past the transcript's own inset, as the web's
         // hover does: `-mx-2 px-2`.
-        .padding(.horizontal, -8)
-        .padding(.bottom, 12)
+        .padding(.horizontal, -JunoSpace.snug)
+        .padding(.bottom, JunoSpace.cozy)
         .accessibilityLabel(
             [
                 "Open thought process — complete",
@@ -293,12 +291,12 @@ private struct JunoMobileThoughtProcessPanel: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: JunoSpace.section) {
                     summary
                     reasoningSection
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 20)
+                .padding(.horizontal, JunoSpace.roomy)
+                .padding(.vertical, JunoSpace.roomy)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .junoScreenCanvas()
@@ -310,7 +308,7 @@ private struct JunoMobileThoughtProcessPanel: View {
                     // capsule behind every item.
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
+                            .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
                     }
                     .accessibilityLabel("Close thought process")
                     .accessibilityIdentifier("juno.mobile.thought-process-close")
@@ -324,8 +322,8 @@ private struct JunoMobileThoughtProcessPanel: View {
     /// "What did it do?" answered at the top, where a run summary belongs, with
     /// the duration as a chip rather than as body text.
     private var summary: some View {
-        JunoCard(padding: 16) {
-            HStack(alignment: .top, spacing: 16) {
+        JunoCard(padding: JunoSpace.regular) {
+            HStack(alignment: .top, spacing: JunoSpace.regular) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Run summary")
                         .font(JunoSerif.font(size: 13, relativeTo: .footnote, face: .medium))
@@ -339,12 +337,11 @@ private struct JunoMobileThoughtProcessPanel: View {
 
                 if let duration {
                     Text(JunoMobileRunCopy.span(duration))
-                        .font(.system(size: 11, design: .monospaced))
-                        .kerning(0.22)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .monospacedDigit()
                         .foregroundStyle(Color.junoMutedForeground)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.vertical, JunoSpace.hairline)
                         .background(Color.junoMuted, in: Capsule())
                 }
             }
@@ -352,9 +349,9 @@ private struct JunoMobileThoughtProcessPanel: View {
     }
 
     private var reasoningSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text("REASONING")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                 .kerning(0.5)
                 .foregroundStyle(Color.junoMutedForeground)
 
@@ -364,7 +361,7 @@ private struct JunoMobileThoughtProcessPanel: View {
             // come first, foldable, and the full text stays below them.
             let lines = JunoAIcssReasoningLines.lines(text: reasoning)
             if !lines.isEmpty {
-                JunoCard(padding: 14) {
+                JunoCard(padding: JunoSpace.regular) {
                     JunoAIcssReasoningStream(
                         lines: lines,
                         streaming: false,
@@ -374,7 +371,7 @@ private struct JunoMobileThoughtProcessPanel: View {
                 }
             }
 
-            JunoCard(padding: 14) {
+            JunoCard(padding: JunoSpace.regular) {
                 // The serif, at reading size, because this is the model's own
                 // prose rather than product chrome — the same call the web makes.
                 Text(reasoning)
@@ -390,7 +387,7 @@ private struct JunoMobileThoughtProcessPanel: View {
 
 #if DEBUG
 #Preview("Thought process") {
-    VStack(alignment: .leading, spacing: 28) {
+    VStack(alignment: .leading, spacing: JunoSpace.section) {
         JunoMobileThoughtProcessRow(
             streaming: true,
             writing: false,
@@ -410,7 +407,7 @@ private struct JunoMobileThoughtProcessPanel: View {
             clock: JunoMobileRunClock(duration: 8.42)
         )
     }
-    .padding(16)
+    .padding(JunoSpace.regular)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .background(Color.junoCanvas)
 }

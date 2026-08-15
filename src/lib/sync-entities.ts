@@ -22,6 +22,30 @@ import {
   type EntityData,
   type EntityEnvelope,
 } from "@/lib/sync-entity-envelope";
+import {
+  serializeApproval,
+  serializeArtifact,
+  serializeGrantForRemote,
+  serializeHost,
+  serializeRun,
+  serializeSession,
+} from "@/lib/work/serializers";
+import { serializeSchedule } from "@/lib/work/schedule";
+import { serializeSkill, serializeSkillVersion } from "@/lib/work/skills";
+
+/**
+ * Adapts a serializer's return value to `EntityData`.
+ *
+ * TypeScript will not assign an `interface` to `Record<string, unknown>` even
+ * when every one of its properties satisfies it, and the Work wire shapes are
+ * declared as interfaces. The alternative is copying their field lists into
+ * this file, which would mean two places that decide what leaves the server —
+ * and one of them, `serializeGrantForRemote`, exists precisely so there is only
+ * one. The cast is the cheaper of the two mistakes.
+ */
+function entityData(value: object): EntityData {
+  return { ...value } as EntityData;
+}
 
 /** Loads owned rows for one entity type, keyed by entity id. Every loader
  *  enforces ownership in the query itself — an id belonging to another
@@ -470,6 +494,172 @@ const loaders: Record<string, EntityLoader> = {
           lastOpenedAt: row.lastOpenedAt.toISOString(),
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
+        },
+      ]),
+    );
+  },
+
+  // -------------------------------------------------------------------------
+  // Juno Work
+  //
+  // Work was the one product on a different contract. Chat and Code sync
+  // through cursors, revisions and tombstones; Work was reachable only by
+  // polling `/api/work/*`, so a task started on the Mac reached the phone when
+  // the phone next asked, a task deleted on the phone stayed on the Mac until
+  // something refetched, and nothing about a Work row could survive an offline
+  // period. Sixteen `Work*` models had neither a loader here nor a
+  // change-capture trigger, which is why none of them could ever appear in
+  // `/api/v1/changes`.
+  //
+  // Every payload is built by the same serializer the REST routes use, not by
+  // a second copy of the field list. That matters most for `work_file_grant`:
+  // `serializeGrantForRemote` is the single place in the codebase where a
+  // stored path is *not* added to a response, and a hand-written loader here
+  // would be a second disclosure rule to keep in step with it — which is the
+  // shape of mistake that puts /Users/<name>/Downloads on a phone.
+  //
+  // Four models are deliberately NOT here. `WorkEvent` has its own SSE
+  // transport with a per-run `seq` cursor, and a row per token-step in the
+  // account change feed would swamp every other entity a client is waiting on;
+  // `WorkCommand` is relay control plane, leased and host-addressed, and a
+  // replayed command is a command executed twice; `WorkRunIO` is provenance
+  // only meaningful beside the artifact version it points at, and no client
+  // reads it; `WorkAuditEvent` is the security log, deliberately outliving the
+  // session it describes and deliberately not a user-facing surface.
+  work_session: async (accountId, ids) => {
+    const rows = await prisma.workSession.findMany({
+      where: { id: { in: ids }, userId: accountId, deletedAt: null },
+    });
+    return new Map(rows.map((row) => [row.id, entityData(serializeSession(row))]));
+  },
+  work_run: async (accountId, ids) => {
+    const rows = await prisma.workRun.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(rows.map((row) => [row.id, entityData(serializeRun(row))]));
+  },
+  work_approval: async (accountId, ids) => {
+    const rows = await prisma.workApproval.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(rows.map((row) => [row.id, entityData(serializeApproval(row))]));
+  },
+  work_artifact: async (accountId, ids) => {
+    const rows = await prisma.workArtifact.findMany({
+      where: { id: { in: ids }, userId: accountId, deletedAt: null },
+    });
+    return new Map(rows.map((row) => [row.id, entityData(serializeArtifact(row))]));
+  },
+  // No owner column of its own; ownership is the head row's, enforced in the
+  // query rather than checked afterwards. `storageKey` is dropped: it is an
+  // object-storage address, and the only sanctioned way to the bytes is the
+  // download route, which re-checks `contentHash` before serving them.
+  work_artifact_version: async (accountId, ids) => {
+    const rows = await prisma.workArtifactVersion.findMany({
+      where: { id: { in: ids }, artifact: { userId: accountId } },
+    });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          artifactId: row.artifactId,
+          version: row.version,
+          byteSize: row.byteSize,
+          contentHash: row.contentHash,
+          origin: row.origin,
+          provenance: row.provenance,
+          provenanceVersion: row.provenanceVersion,
+          validation: row.validation,
+          runId: row.runId,
+          createdAt: row.createdAt.toISOString(),
+        },
+      ]),
+    );
+  },
+  work_host: async (accountId, ids) => {
+    const rows = await prisma.workHost.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(rows.map((row) => [row.id, entityData(serializeHost(row))]));
+  },
+  // `serializeGrantForRemote`, never `serializeGrantForHost`. A synced entity is
+  // by definition on every signed-in device, including the phone, so this is the
+  // one loader where reaching for the unqualified serializer would be wrong even
+  // though it compiles.
+  work_file_grant: async (accountId, ids) => {
+    const rows = await prisma.workFileGrant.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        entityData({ ...serializeGrantForRemote(row), sessionId: row.sessionId, createdAt: row.createdAt.toISOString() }),
+      ]),
+    );
+  },
+  // One row per app a single task may reach. Its own entity rather than an
+  // array on `work_session` for the reason the join table exists at all: a
+  // grant has to be individually revocable, and an array column cannot carry
+  // when it was made. Absence of rows still does not mean "chose none" — that
+  // distinction lives in `WorkSession.connectorsChosen`, which is why the
+  // session payload carries it too.
+  work_session_connector: async (accountId, ids) => {
+    const rows = await prisma.workSessionConnector.findMany({
+      where: { id: { in: ids }, userId: accountId },
+    });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          sessionId: row.sessionId,
+          connectorId: row.connectorId,
+          createdAt: row.createdAt.toISOString(),
+        },
+      ]),
+    );
+  },
+  work_skill: async (accountId, ids) => {
+    const rows = await prisma.workSkill.findMany({
+      where: { id: { in: ids }, userId: accountId, deletedAt: null },
+    });
+    return new Map(rows.map((row) => [row.id, entityData(serializeSkill(row))]));
+  },
+  work_skill_version: async (accountId, ids) => {
+    const rows = await prisma.workSkillVersion.findMany({
+      where: { id: { in: ids }, skill: { userId: accountId } },
+    });
+    return new Map(rows.map((row) => [row.id, entityData(serializeSkillVersion(row))]));
+  },
+  // Triggers are NOT embedded here, unlike the REST shape a client gets from
+  // `/api/work/schedules`. A synced entity has one revision, and an embedded
+  // trigger edit would either have to bump the schedule's revision from a
+  // different table's trigger — which resurrects a schedule tombstoned in the
+  // same cascade — or change nothing and never reach the client. The same
+  // normalisation `artifact`/`artifact_version` already uses.
+  work_schedule: async (accountId, ids) => {
+    const rows = await prisma.workSchedule.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(
+      rows.map((row) => {
+        const { triggers: _normalisedIntoOwnEntity, ...schedule } = serializeSchedule(row, []);
+        return [row.id, entityData(schedule)];
+      }),
+    );
+  },
+  work_trigger: async (accountId, ids) => {
+    const rows = await prisma.workTrigger.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          scheduleId: row.scheduleId,
+          kind: row.kind,
+          config: row.config,
+          configVersion: row.configVersion,
+          enabled: row.enabled,
+          lastFiredAt: row.lastFiredAt?.toISOString() ?? null,
+          dedupeWindowSec: row.dedupeWindowSec,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          // `lastEventKey`, `cursor` and `lastPollError` are absent for the
+          // reason `serializeSchedule` omits them: the first two are a
+          // producer's handle on somebody's specific email or calendar entry,
+          // and shipping either tells every device which message a trigger last
+          // matched.
         },
       ]),
     );

@@ -75,7 +75,7 @@ struct JunoMobileDesignArtifactBody: View {
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(JunoSpace.regular)
             }
         case .drawing, .layers:
             switch decoded {
@@ -135,11 +135,11 @@ struct JunoMobileDesignArtifactBody: View {
 
     private func outline(_ document: DesignDocument) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                 ForEach(document.pages, id: \.id) { page in
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
                         Text(page.name)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
                             .junoMetaInk()
                             .textCase(.uppercase)
                             .accessibilityAddTraits(.isHeader)
@@ -156,7 +156,7 @@ struct JunoMobileDesignArtifactBody: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            .padding(JunoSpace.regular)
         }
         .accessibilityIdentifier("juno.mobile.design.outline")
     }
@@ -165,14 +165,14 @@ struct JunoMobileDesignArtifactBody: View {
     /// are the part of a design somebody checks on a phone: a typo in a button
     /// is legible in a list and illegible on a thumbnail.
     private func layer(_ row: JunoMobileDesignOutline.Row) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: row.glyph)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .caption)
                 .junoMetaInk()
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .subheadline)
                     .lineLimit(1)
                 if let characters = row.characters {
                     Text(characters)
@@ -185,7 +185,7 @@ struct JunoMobileDesignArtifactBody: View {
             Spacer(minLength: 0)
             if row.hidden {
                 Image(systemName: "eye.slash")
-                    .font(.system(size: 11))
+                    .junoFont(size: 11, relativeTo: .caption2)
                     .junoMetaInk()
                     .accessibilityLabel("Hidden")
             }
@@ -203,7 +203,7 @@ struct JunoMobileDesignArtifactBody: View {
     /// not to the artifact chrome already stacked above this view — and because
     /// the canvas is what the thumb should not be covering.
     private var footer: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: JunoSpace.cozy) {
             JunoMobileSegmented(
                 options: [
                     .init(Reading.drawing, "Design"),
@@ -216,8 +216,8 @@ struct JunoMobileDesignArtifactBody: View {
             .accessibilityIdentifier("juno.mobile.design.view-mode")
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
         .background(Color.junoSurface.opacity(0.5))
         .overlay(alignment: .top) {
             Rectangle()

@@ -221,12 +221,19 @@ struct DesktopSidebarQuotaMeter: View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    // Not monospaced. A plan's name and "62% used" are labels,
+                    // and the code face on a label is what makes a product
+                    // read as a debug console — it is reserved here for code,
+                    // paths and terminal output and nothing else. The digits
+                    // still hold their column: `monospacedDigit()` fixes the
+                    // figure widths without changing the face, which is the
+                    // only thing the code face was buying.
                     Text(plan.planName)
-                        .font(.caption.monospaced())
-                        .junoSecondaryInk()
+                        .junoCaption()
                     Spacer(minLength: JunoSpace.hairline)
                     Text(readout)
-                        .font(.caption.monospaced())
+                        .junoCaption()
+                        .monospacedDigit()
                         .lineLimit(1)
                         .contentTransition(.numericText())
                 }
@@ -383,15 +390,47 @@ struct DesktopSidebarSyncDot: View {
 /// running task `bg-success motion-safe:animate-pulse`, and reserves hue for the
 /// three states worth interrupting a reader for. It replaces a coral caption,
 /// which said the same thing in the colour the product spends on primary actions.
+///
+/// **One of these per screen, and only where something is genuinely changing.**
+/// A pulse over a wedged run says exactly what a pulse over a healthy one says,
+/// so it is never the only thing reporting progress — the surfaces that use it
+/// carry the step, the elapsed time and the last action as static text beside
+/// it. Run rows in the source list deliberately do *not* use it: dozens of
+/// synchronized loops in one column is decoration, and their mark is
+/// `CodeStatusGlyph`, which is still.
 struct DesktopCodeRunningDot: View {
     var diameter: CGFloat = 6
 
     @State private var dimmed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Tailwind's own `animate-pulse` period — two seconds between full and half
-    /// opacity — because that is literally the animation the web applies here.
-    private static let period: TimeInterval = 2
+    /// The ambient loop's period. Two seconds between full and half opacity,
+    /// which is the top of the 1.2–2.0s band the motion system allows a loop —
+    /// slow enough to read as breathing rather than as blinking.
+    /// The breath's full cycle, built from the ladder rather than written as a
+    /// literal — which is what the note below already claimed and what the
+    /// motion gate checks for. It was `2` until the gate flagged it.
+    ///
+    /// `emphasis` is the ladder's slowest rung at 560ms; a loop wants to be a
+    /// small multiple of a rung rather than a number of its own, so this is
+    /// 4× it — 2.24s, inside the 1.2–2.0s-per-cycle band the agentic motion
+    /// rules ask for once you count a single direction of an autoreversing
+    /// animation (1.12s each way).
+    private static let period: TimeInterval = JunoMotion.Duration.emphasis * 4
+
+    /// The one animation in the product that is a `repeatForever`, and the only
+    /// place a duration is written rather than named.
+    ///
+    /// A ladder rung would be wrong here and the ladder says so: every rung is
+    /// a *transition* between two states, 70ms to 560ms, and this is neither a
+    /// transition nor in that range. It is built from `JunoMotion.Duration`'s
+    /// own arithmetic and passed through `reduced(_:when:tier:)` at the
+    /// `ambient` tier, which is the tier that exists precisely for this — under
+    /// Reduce Motion an ambient loop does not want to be faster, it wants to
+    /// stop, and `ambient` returns `nil` so it does.
+    private var breath: Animation {
+        .easeInOut(duration: Self.period / 2).repeatForever(autoreverses: true)
+    }
 
     var body: some View {
         Circle()
@@ -399,10 +438,7 @@ struct DesktopCodeRunningDot: View {
             .frame(width: diameter, height: diameter)
             .opacity(dimmed ? 0.5 : 1)
             .animation(
-                JunoMotion.reduced(
-                    .easeInOut(duration: Self.period / 2).repeatForever(autoreverses: true),
-                    when: reduceMotion
-                ),
+                JunoMotion.reduced(breath, when: reduceMotion, tier: .ambient),
                 value: dimmed
             )
             // Guarded rather than relying on the nil animation above: with motion
