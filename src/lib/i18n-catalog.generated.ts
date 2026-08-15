@@ -482,10 +482,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Next version"
   },
   {
-    "id": "06836ad18a442516",
-    "source": "Schema & Migrations"
-  },
-  {
     "id": "0686f93c235136a6",
     "source": "Preview unavailable · open original"
   },
@@ -628,10 +624,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0878ef4911217cd0",
     "source": "The trigger configuration is not an object."
-  },
-  {
-    "id": "088635d1af03b065",
-    "source": "Ready for tasks"
   },
   {
     "id": "0899a536b7ffa272",
@@ -1032,10 +1024,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0f82aca66af91493",
     "source": "length"
-  },
-  {
-    "id": "0f83ed6c66e8dcbf",
-    "source": "Full-Stack Feature"
   },
   {
     "id": "0f8bf74360a15708",
@@ -1900,10 +1888,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1ca64e8365a562cf",
     "source": "Image selection canvas"
-  },
-  {
-    "id": "1ca7515dad38d517",
-    "source": "PR & Code Review"
   },
   {
     "id": "1caf1cf8d44cfc5c",
@@ -3430,10 +3414,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno only uses essential cookies to keep you signed in — no analytics, no trackers. Your choice here also covers anything we might add later."
   },
   {
-    "id": "33d4c4afb520102f",
-    "source": "Build an end-to-end endpoint, database model, and interactive UI component."
-  },
-  {
     "id": "33df3a4c86606850",
     "source": "Could not restore this version."
   },
@@ -4378,10 +4358,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Contents"
   },
   {
-    "id": "437bbaabbce12969",
-    "source": "One-click start"
-  },
-  {
     "id": "437f93ad5e1d72bf",
     "source": "Reading what this task is working with…"
   },
@@ -5124,6 +5100,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4e655bc9c765b7f1",
     "source": "research/citation"
+  },
+  {
+    "id": "4e83f6e371b5e53e",
+    "source": "Autonomous coding tasks in your workspace or on an isolated cloud runner with GitHub review."
   },
   {
     "id": "4e917cf200726bf5",
@@ -5922,10 +5902,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This schedule is already running. Let it finish before starting another."
   },
   {
-    "id": "5cbe7afb3c7264a9",
-    "source": "Security & Auth Audit"
-  },
-  {
     "id": "5cdaf86ba3219832",
     "source": "Edit this memory"
   },
@@ -6104,10 +6080,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5e9f98120dbe5682",
     "source": "Severity"
-  },
-  {
-    "id": "5ea31eca5914d003",
-    "source": "Autonomous coding tasks in your Mac's workspace or on an isolated cloud runner with full GitHub review."
   },
   {
     "id": "5ea44c3961f16643",
@@ -7350,6 +7322,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Deep research is available on a paid Juno plan."
   },
   {
+    "id": "700e05dbfb1c0a18",
+    "source": "Scaffold Feature"
+  },
+  {
     "id": "7013af4c42fe4380",
     "source": "Setup"
   },
@@ -7412,6 +7388,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "70eb321d8c393f2c",
     "source": "Extra high"
+  },
+  {
+    "id": "710a7870e9b9b94a",
+    "source": "Generate Tests"
   },
   {
     "id": "710d39b7dc50c98d",
@@ -8698,10 +8678,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Smooth and easy-going"
   },
   {
-    "id": "851c3d8867b26154",
-    "source": "Suggested Workflows"
-  },
-  {
     "id": "8527a710e86dde5c",
     "source": "Early reasoning model, two generations behind."
   },
@@ -8928,10 +8904,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "890892ed3349a7c8",
     "source": "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context."
-  },
-  {
-    "id": "890d34fffcde315c",
-    "source": "Target:"
   },
   {
     "id": "892e29ab37354c39",
@@ -11566,10 +11538,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "DeepSeek V4 Flash"
   },
   {
-    "id": "b08d39042036f180",
-    "source": "Optimize runtime bottlenecks, clean up types, and eliminate dead code."
-  },
-  {
     "id": "b0991be00c32110c",
     "source": "Node.js authentication security guide"
   },
@@ -11600,14 +11568,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b0ecb7199745628a",
     "source": "Realtime voice is not configured."
-  },
-  {
-    "id": "b0f34c12aeab0250",
-    "source": "GitHub Cloud Runner"
-  },
-  {
-    "id": "b1023f5a298f6bfc",
-    "source": "Mac Workspace"
   },
   {
     "id": "b10ee75613be6829",
@@ -11890,6 +11850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No console output yet."
   },
   {
+    "id": "b4b09e3f92cf5ca9",
+    "source": "Fix Bug"
+  },
+  {
     "id": "b4d879ff56f2c045",
     "source": "Claude Fable"
   },
@@ -11908,6 +11872,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b53eb415b6d87409",
     "source": "This canvas changed after you made the selection. Select the part again before editing it."
+  },
+  {
+    "id": "b5751f1e6597c483",
+    "source": "Codebase Audit"
   },
   {
     "id": "b57c2d03a0eed406",
@@ -12352,10 +12320,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bcda257cf2693ac6",
     "source": "Les présentes sont soumises au"
-  },
-  {
-    "id": "bcee497b7f099dff",
-    "source": "Juno Code Agent"
   },
   {
     "id": "bd0718154e568a2c",
@@ -13790,10 +13754,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "New Work task"
   },
   {
-    "id": "d1d6c9e80b7dac61",
-    "source": "Review git changes for breaking diffs, edge cases, and best practices."
-  },
-  {
     "id": "d1dc9f416289cfa0",
     "source": "All models, with a monthly token limit."
   },
@@ -14366,10 +14326,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The slash name stays /"
   },
   {
-    "id": "d9be889bf602ab94",
-    "source": "Analyze test failures, locate root cause, and apply regression fixes."
-  },
-  {
     "id": "d9d12b04b3831c32",
     "source": "Edit image"
   },
@@ -14660,6 +14616,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd4ab83bd1222aa1",
     "source": "GPT Nano"
+  },
+  {
+    "id": "dd51d55b614ecdab",
+    "source": "Refactor & Clean"
   },
   {
     "id": "dd57c2813b0bcaeb",
@@ -14972,10 +14932,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e223bda2d051cb22",
     "source": "Chats aren't saved, added to memory, or used to train models."
-  },
-  {
-    "id": "e233a62bd676bde0",
-    "source": "Design relational models, create migrations, and write query helpers."
   },
   {
     "id": "e267c77d67df204b",
@@ -15410,10 +15366,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ended"
   },
   {
-    "id": "e87e386067beaf90",
-    "source": "Fix Failing Tests"
-  },
-  {
     "id": "e888155d8c7d2e3c",
     "source": "Compare"
   },
@@ -15784,10 +15736,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ed5b72431ea6da4e",
     "source": "syndicated copy of"
-  },
-  {
-    "id": "ed620fd2a50ddfef",
-    "source": "Audit endpoints for authentication flaws, CSRF, and input validation."
   },
   {
     "id": "ed7febcd4ffa864b",
@@ -16820,10 +16768,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fd9b6df3cdbc3d35",
     "source": "Delay"
-  },
-  {
-    "id": "fda3ef47c2b1fb74",
-    "source": "Refactor & Performance"
   },
   {
     "id": "fdab556f67bf858e",
