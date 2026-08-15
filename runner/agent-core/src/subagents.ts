@@ -506,6 +506,37 @@ export class SubagentManager {
       }
     }
 
+function resolveSubagentModel(specModel: string | undefined, hostModel: string): string {
+  if (!specModel || typeof specModel !== 'string') return hostModel;
+  const trimmed = specModel.trim();
+  const lowered = trimmed.toLowerCase();
+  if (
+    lowered === 'inherit' ||
+    lowered === 'same' ||
+    lowered === 'default' ||
+    lowered === 'auto' ||
+    lowered === 'max' ||
+    lowered === 'pro' ||
+    lowered === 'large' ||
+    lowered === 'standard'
+  ) {
+    return hostModel;
+  }
+  if (lowered === 'flash' || lowered === 'fast' || lowered === 'flash_lite' || lowered === 'lite' || lowered === 'mini') {
+    if (hostModel.startsWith('anthropic:')) return 'anthropic:claude-haiku-4-5-20251001';
+    if (hostModel.startsWith('google:')) return 'google:gemini-3.6-flash';
+    if (hostModel.startsWith('openai:')) return 'openai:gpt-5.4-mini';
+    return hostModel;
+  }
+  if (lowered.startsWith('claude')) {
+    return lowered.includes(':') ? trimmed : `anthropic:${trimmed}`;
+  }
+  if (trimmed.includes(':') || trimmed.includes('/')) {
+    return trimmed;
+  }
+  return hostModel;
+}
+
     // Create tasks; same-batch dependencies may reference titles.
     const created: SubagentTask[] = [];
     const idByTitle = new Map<string, string>();
@@ -514,7 +545,7 @@ export class SubagentManager {
       const task: SubagentTask = {
         id,
         spec,
-        model: spec.model ?? this.host.model,
+        model: resolveSubagentModel(spec.model, this.host.model),
         isolation: spec.writes ? 'git_worktree' : 'shared_read_only',
         mode: stricterMode(this.host.mode, roleModeCeiling(spec.role)),
         status: 'queued',

@@ -69,44 +69,92 @@ public struct CodeModelProviderResolver: Sendable {
     /// Pro/Codex snapshots speak Responses, and every other configured lab
     /// speaks OpenAI-compatible Chat Completions.
     public static let `default` = CodeModelProviderResolver { modelID in
-        let lowered = modelID.lowercased()
+        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+
+        // Short aliases and tier names that subagents or callers might supply
+        if lowered == "max" {
+            return CodeModelRoute(
+                providerID: "qwen",
+                providerModelID: "qwen3.8-max",
+                wireProtocol: .openAIChat
+            )
+        }
+        if lowered == "pro" {
+            return CodeModelRoute(
+                providerID: "anthropic",
+                providerModelID: "claude-sonnet-5",
+                wireProtocol: .anthropicMessages
+            )
+        }
+        if lowered == "flash" || lowered == "fast" {
+            return CodeModelRoute(
+                providerID: "google",
+                providerModelID: "gemini-3.6-flash",
+                wireProtocol: .openAIChat
+            )
+        }
+        if lowered == "haiku" {
+            return CodeModelRoute(
+                providerID: "anthropic",
+                providerModelID: "claude-haiku-4-5-20251001",
+                wireProtocol: .anthropicMessages
+            )
+        }
+        if lowered == "sonnet" {
+            return CodeModelRoute(
+                providerID: "anthropic",
+                providerModelID: "claude-sonnet-5",
+                wireProtocol: .anthropicMessages
+            )
+        }
+        if lowered == "opus" {
+            return CodeModelRoute(
+                providerID: "anthropic",
+                providerModelID: "claude-opus-5",
+                wireProtocol: .anthropicMessages
+            )
+        }
         if lowered.hasPrefix("claude") {
             return CodeModelRoute(
                 providerID: "anthropic",
-                providerModelID: modelID,
+                providerModelID: trimmed,
                 wireProtocol: .anthropicMessages
             )
         }
 
         let separator: Character = lowered.contains(":") ? ":" : "/"
-        let components = modelID.split(separator: separator, maxSplits: 1).map(String.init)
-        guard components.count == 2 else { return nil }
-        let providerID = components[0].lowercased()
-        let providerModelID = components[1]
-        guard providerID != "juno", !providerModelID.isEmpty else { return nil }
+        let components = trimmed.split(separator: separator, maxSplits: 1).map(String.init)
+        if components.count == 2 {
+            let providerID = components[0].lowercased()
+            let providerModelID = components[1]
+            guard providerID != "juno", !providerModelID.isEmpty else { return nil }
 
-        if providerID == "anthropic" {
-            return CodeModelRoute(
-                providerID: providerID,
-                providerModelID: providerModelID,
-                wireProtocol: .anthropicMessages
-            )
+            if providerID == "anthropic" {
+                return CodeModelRoute(
+                    providerID: providerID,
+                    providerModelID: providerModelID,
+                    wireProtocol: .anthropicMessages
+                )
+            }
+
+            let openAICompatibleProviders: Set<String> = [
+                "openai", "zhipu", "moonshot", "google", "meta", "deepseek",
+                "mistral", "xai", "minimax", "mimo", "qwen", "longcat",
+            ]
+            if openAICompatibleProviders.contains(providerID) {
+                let responseOnly = providerID == "openai"
+                    && (providerModelID.lowercased().contains("-codex")
+                        || providerModelID.lowercased().hasSuffix("-pro"))
+                return CodeModelRoute(
+                    providerID: providerID,
+                    providerModelID: providerModelID,
+                    wireProtocol: responseOnly ? .openAIResponses : .openAIChat
+                )
+            }
         }
 
-        let openAICompatibleProviders: Set<String> = [
-            "openai", "zhipu", "moonshot", "google", "meta", "deepseek",
-            "mistral", "xai", "minimax", "mimo", "qwen", "longcat",
-        ]
-        guard openAICompatibleProviders.contains(providerID) else { return nil }
-
-        let responseOnly = providerID == "openai"
-            && (providerModelID.lowercased().contains("-codex")
-                || providerModelID.lowercased().hasSuffix("-pro"))
-        return CodeModelRoute(
-            providerID: providerID,
-            providerModelID: providerModelID,
-            wireProtocol: responseOnly ? .openAIResponses : .openAIChat
-        )
+        return nil
     }
 
     /// Models the website's agent proxy can serve. `juno:auto` is deliberately
