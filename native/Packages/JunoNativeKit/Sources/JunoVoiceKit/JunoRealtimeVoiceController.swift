@@ -1545,18 +1545,22 @@ public final class JunoRealtimeVoiceController {
     nonisolated static let decayRate: Double = 3.6
     /// The quietest speech worth showing, and the loudest worth scaling to.
     /// −52 dBFS is a soft voice across a desk; −12 is close and emphatic.
-    nonisolated static let quietFloorDB: Double = -52
-    nonisolated static let loudCeilingDB: Double = -12
+    nonisolated static var quietFloorDB: Double { RealtimeLoudness.quietFloorDB }
+    nonisolated static var loudCeilingDB: Double { RealtimeLoudness.loudCeilingDB }
 
     /// Linear RMS → 0…1 across a speech window, in decibels.
+    ///
+    /// The arithmetic moved to ``RealtimeLoudness`` and this forwards to it,
+    /// rather than the two keeping their own copy. ``RealtimeVoiceActivityDetector``
+    /// decides whether someone is talking over the model from the same numbers
+    /// the orb is drawn from, and a detector tuned against a curve that had since
+    /// drifted from the one on screen would produce the least debuggable report
+    /// in the stack: "it cut the answer off and the light hadn't moved."
     ///
     /// `nonisolated` because it is pure arithmetic and needs to be testable
     /// without a main-actor hop, and because the meter pump is the only caller.
     nonisolated static func loudness(_ rms: Double) -> Double {
-        guard rms > 0 else { return 0 }
-        let decibels = 20 * log10(rms)
-        let range = loudCeilingDB - quietFloorDB
-        return min(1, max(0, (decibels - quietFloorDB) / range))
+        RealtimeLoudness.normalized(rms)
     }
 
     // MARK: On-device transcription
