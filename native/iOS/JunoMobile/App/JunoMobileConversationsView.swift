@@ -565,6 +565,25 @@ private struct JunoMobileConversationDetail: View {
         }
     }
 
+    /// Re-asks a prompt as a new branch beside the original.
+    ///
+    /// Nothing is overwritten: the original keeps its words and its replies, and
+    /// the pager under the bubble is what goes back to them. The model is the
+    /// composer's live selection — the reader can change it and then re-ask,
+    /// which is the whole point of asking again.
+    private func editMessage(_ message: NativeChatMessage, newContent: String) {
+        guard !selectedModelID.isEmpty else { return }
+        Task {
+            await model.editUserMessage(
+                messageID: message.id,
+                conversationID: conversation.id,
+                newContent: newContent,
+                modelID: selectedModelID,
+                reasoningEffort: reasoningEffort
+            )
+        }
+    }
+
     /// Rating an answer. Applied to the row optimistically because the round trip
     /// is a write with no reply worth waiting for, and a thumb that fills in a
     /// second after the tap reads as a broken button.
@@ -709,7 +728,27 @@ private struct JunoMobileConversationDetail: View {
                             ? { _ = model.continueLastResponse(conversationID: conversation.id) }
                             : nil,
                         branch: branchAction,
-                        setFeedback: feedbackAction
+                        setFeedback: feedbackAction,
+                        branchPosition: model.branchPosition(
+                            for: message.id,
+                            in: conversation.id
+                        ),
+                        stepBranch: { offset in
+                            Task {
+                                await model.stepBranch(
+                                    from: message.id,
+                                    in: conversation.id,
+                                    offset: offset
+                                )
+                            }
+                        },
+                        // Only a question can be re-asked, and only once it is
+                        // a message the store holds — the fork hangs the new
+                        // wording off this row's own place in the tree.
+                        editMessage: message.role == .user && !message.isPending
+                            ? { newContent in editMessage(message, newContent: newContent) }
+                            : nil,
+                        isGenerating: model.isGenerating
                     )
                     // `rise-in`, as the web gives every new turn. Scoped to the
                     // stack's `.animation(_:value: messages.count)` below, which
@@ -1296,8 +1335,33 @@ private struct JunoMobileMessageRow: View {
     /// yet has nothing to act on; all six controls arrive with the saved message
     /// when the call is filed.
     var voice: Bool = false
+    /// Where this message sits among its revisions, or nil when it has none.
+    ///
+    /// Nil is the answer for every message in a conversation nobody has edited,
+    /// which is what keeps the `‹ 1 / 1 ›` pager — a control that cannot do
+    /// anything — off the overwhelming majority of transcripts.
+    var branchPosition: NativeMessageBranchPosition?
+    /// Switches to the revision `offset` steps away. Supplied by the screen
+    /// rather than derived here: a row cannot reach the store.
+    var stepBranch: ((Int) -> Void)?
+    /// Re-asks this prompt with new wording, as a **new branch**. The original
+    /// keeps its text and its whole subtree of replies. Nil on answers and on
+    /// spoken lines, neither of which can be re-asked.
+    var editMessage: ((String) -> Void)?
+    /// Whether a generation is running. Greys the pager and withholds Edit
+    /// rather than hiding either — a control that vanishes mid-stream reads as a
+    /// revision that was lost.
+    var isGenerating: Bool = false
 
     @State private var copied = false
+    /// Whether this prompt is open for rewriting, and the words being written.
+    ///
+    /// Local to the row on purpose: an edit in progress is not conversation
+    /// state, and hoisting it would make a `LazyVStack` tearing the row down on
+    /// scroll into a way to lose what someone was typing.
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var editorFocused: Bool
 
     /// The transcript's own width, so the user bubble can be capped at a share of
     /// it rather than at a guessed number of points.
@@ -1362,8 +1426,13 @@ private struct JunoMobileMessageRow: View {
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 5) {
-                bubbleBody
-                if isLongPrompt { expandControl }
+                if editing {
+                    promptEditor
+                } else {
+                    bubbleBody
+                    if isLongPrompt { expandControl }
+                }
+                promptControls
             }
             // A real cap, not a fixed width: the bubble hugs short messages
             // and wraps long ones at 85% of the transcript, as the web's
@@ -1372,6 +1441,107 @@ private struct JunoMobileMessageRow: View {
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
         .accessibilityElement(children: .contain)
+    }
+
+    /// The `‹ 1 / 3 ›` pager, where this message has revisions to page through.
+    ///
+    /// Built only when the store handed down a position, which it does only for
+    /// a message that genuinely has siblings — so this is empty on almost every
+    /// row, and the transcript keeps the spacing it had before trees existed.
+    @ViewBuilder
+    private var branchNavigator: some View {
+        if let branchPosition, let stepBranch {
+            NativeBranchNavigator(
+                position: branchPosition,
+                isEnabled: !isGenerating,
+                onStep: stepBranch
+            )
+        }
+    }
+
+    /// The bubble, opened for rewriting in place.
+    ///
+    /// In place rather than in a sheet: the reader is changing one sentence in a
+    /// conversation they can see, and a modal over the transcript takes away the
+    /// context that tells them what to change it to. `axis: .vertical` so the
+    /// field grows with the prompt instead of scrolling a long one inside two
+    /// lines — the same words were readable a moment ago in the bubble.
+    private var promptEditor: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            TextField("Edit message", text: $draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .junoFont(size: 15, relativeTo: .body)
+                .lineSpacing(5)
+                .lineLimit(1...12)
+                .focused($editorFocused)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.junoMuted, in: Self.bubbleShape)
+                .overlay(Self.bubbleShape.strokeBorder(Color.junoAccent, lineWidth: 1))
+                .accessibilityIdentifier("juno.mobile.message-editor")
+
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    editing = false
+                    editorFocused = false
+                }
+                .foregroundStyle(Color.junoMutedForeground)
+                .accessibilityIdentifier("juno.mobile.message-edit-cancel")
+
+                Button("Send") { submitEdit() }
+                    .fontWeight(.semibold)
+                    .foregroundStyle(
+                        canSubmitEdit ? Color.junoAccent : Color.junoMutedForeground
+                    )
+                    .disabled(!canSubmitEdit)
+                    .accessibilityIdentifier("juno.mobile.message-edit-send")
+            }
+            .junoFont(size: 14, relativeTo: .subheadline)
+            .buttonStyle(.plain)
+        }
+        .onAppear { editorFocused = true }
+    }
+
+    /// Whether the rewrite is worth sending: not blank, and not the words that
+    /// are already there. Re-asking an unchanged prompt would spend a turn to
+    /// add a revision identical to the one beside it.
+    private var canSubmitEdit: Bool {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+            && trimmed != plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            && !isGenerating
+    }
+
+    private func submitEdit() {
+        guard canSubmitEdit, let editMessage else { return }
+        editing = false
+        editorFocused = false
+        editMessage(draft)
+    }
+
+    /// Edit and the pager, under the reader's own words.
+    @ViewBuilder
+    private var promptControls: some View {
+        // `voice` withholds Edit for the same reason it withholds the action
+        // row: a spoken line exists only in the call controller, and there is no
+        // stored message for a fork to branch away from.
+        if !voice, editMessage != nil || branchPosition != nil {
+            HStack(spacing: 2) {
+                branchNavigator
+                if editMessage != nil, !editing {
+                    actionButton(
+                        systemImage: "pencil",
+                        label: "message.edit",
+                        identifier: "juno.mobile.message-edit"
+                    ) {
+                        draft = plainText
+                        editing = true
+                    }
+                    .disabled(isGenerating)
+                }
+            }
+            .accessibilityElement(children: .contain)
+        }
     }
 
     /// The bubble proper.
@@ -1537,6 +1707,11 @@ private struct JunoMobileMessageRow: View {
             }
 
             if !message.isPending && !voice { actionRow }
+
+            // Under the answer, where the web puts it. An answer has siblings
+            // when the question above it was re-asked, so this is the same
+            // pager the prompt carries, reading the same numbers.
+            if !voice { branchNavigator }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu { copyButton }

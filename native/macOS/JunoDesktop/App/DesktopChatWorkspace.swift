@@ -1194,7 +1194,17 @@ private struct DesktopTranscript: View {
                                     )
                                 }
                             },
-                            openArtifact: openArtifact
+                            openArtifact: openArtifact,
+                            branchPosition: branchPosition(for: message),
+                            stepBranch: { offset in
+                                stepBranch(from: message, offset: offset)
+                            },
+                            editMessage: message.role == .user && !message.isPending
+                                ? { newContent in
+                                    editMessage(message, newContent: newContent)
+                                }
+                                : nil,
+                            isGenerating: model.isGenerating
                         )
                         .modifier(DesktopMessageRise(rises: index >= animateFrom))
                         .id(message.id)
@@ -1243,7 +1253,14 @@ private struct DesktopTranscript: View {
                             readAloud: nil,
                             // A spoken turn carries no artifact tag: it is a
                             // recognizer's line, not a written reply.
-                            openArtifact: { _ in }
+                            openArtifact: { _ in },
+                            // And no place in the tree: it exists in the call
+                            // controller until the call is hung up and filed,
+                            // so there is nothing yet to branch from or re-ask.
+                            branchPosition: nil,
+                            stepBranch: nil,
+                            editMessage: nil,
+                            isGenerating: model.isGenerating
                         )
                         // A line the recognizer has not finalized is a
                         // hypothesis it is still rewriting several times a
@@ -1399,6 +1416,52 @@ private struct DesktopTranscript: View {
         }
     }
 
+    /// Where `message` sits among its revisions, or nil when it has none.
+    ///
+    /// Asked of the store per row rather than cached on the message: a position
+    /// is a fact about the tree, and one copied onto a message would keep
+    /// reading `2 / 3` after the reader's next edit made it `2 / 4`.
+    private func branchPosition(
+        for message: NativeChatMessage
+    ) -> NativeMessageBranchPosition? {
+        model.branchPosition(for: message.id, in: message.conversationID)
+    }
+
+    private func stepBranch(from message: NativeChatMessage, offset: Int) {
+        Task {
+            await model.stepBranch(
+                from: message.id,
+                in: message.conversationID,
+                offset: offset
+            )
+        }
+    }
+
+    /// Re-asks a prompt as a new branch beside the original.
+    ///
+    /// The model is resolved the same way the composer resolves its own on
+    /// opening a conversation — the account's pick for this conversation,
+    /// falling back to the first model it can still use. Reading the composer's
+    /// live selection instead would mean threading its state through the
+    /// transcript, and the conversation's own model is the honest answer for a
+    /// turn being asked again inside that conversation.
+    private func editMessage(_ message: NativeChatMessage, newContent: String) {
+        let modelID = DesktopChatSelection.resolvedModelID(
+            current: "",
+            conversationModel: model.selectedConversation?.model ?? "",
+            selectable: model.selectableModels
+        )
+        guard !modelID.isEmpty else { return }
+        Task {
+            await model.editUserMessage(
+                messageID: message.id,
+                conversationID: message.conversationID,
+                newContent: newContent,
+                modelID: modelID
+            )
+        }
+    }
+
     private func branch(from message: NativeChatMessage) {
         guard let messageActions else { return }
         actionError = nil
@@ -1506,9 +1569,34 @@ private struct DesktopMessageRow: View {
     /// `LazyVStack` is free to tear the row down while the reader is still
     /// reading it.
     let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
+    /// Where this message sits among its revisions, or nil when it has none.
+    ///
+    /// Nil is the answer for every message in a conversation nobody has edited,
+    /// which is what keeps the `‹ 1 / 1 ›` pager — a control that cannot do
+    /// anything — off the overwhelming majority of transcripts.
+    let branchPosition: NativeMessageBranchPosition?
+    /// Switches to the revision `offset` steps away. Supplied by the transcript
+    /// rather than derived here: a row cannot reach the store.
+    let stepBranch: ((Int) -> Void)?
+    /// Re-asks this prompt with new wording, as a **new branch**. The original
+    /// keeps its text and its whole subtree of replies — see
+    /// ``NativeConversationModel/editUserMessage(messageID:conversationID:newContent:modelID:)``.
+    /// Nil on answers and on spoken lines, neither of which can be re-asked.
+    let editMessage: ((String) -> Void)?
+    /// Whether a generation is running. Greys the pager and withholds Edit
+    /// rather than hiding either — a control that vanishes mid-stream reads as a
+    /// revision that was lost.
+    let isGenerating: Bool
     /// Whether a long prompt is showing in full. Collapsed is the resting state,
     /// as it is on the web.
     @State private var promptExpanded = false
+    /// Whether this prompt is open for rewriting, and the words being written.
+    ///
+    /// Local to the row on purpose: an edit in progress is not conversation
+    /// state, and hoisting it would make a `LazyVStack` tearing the row down on
+    /// scroll into a way to lose what someone was typing.
+    @State private var editing = false
+    @State private var draft = ""
 
     private var displayContent: String {
         message.sources.isEmpty
@@ -1646,6 +1734,96 @@ private struct DesktopMessageRow: View {
         .accessibilityIdentifier("juno.desktop.chat.message-expand")
     }
 
+    /// The `‹ 1 / 3 ›` pager, where this message has revisions to page through.
+    ///
+    /// Built only when the store handed down a position, which it does only for
+    /// a message that genuinely has siblings — so this is empty on almost every
+    /// row, and the transcript keeps the spacing it had before trees existed.
+    @ViewBuilder
+    private var branchNavigator: some View {
+        if let branchPosition, let stepBranch {
+            NativeBranchNavigator(
+                position: branchPosition,
+                isEnabled: !isGenerating,
+                onStep: stepBranch
+            )
+        }
+    }
+
+    /// The bubble, opened for rewriting in place.
+    ///
+    /// In place rather than in a sheet: the reader is changing one sentence in a
+    /// conversation they can see, and a modal over the transcript takes away the
+    /// context that tells them what to change it to.
+    private var promptEditor: some View {
+        VStack(alignment: .trailing, spacing: JunoSpace.snug) {
+            TextEditor(text: $draft)
+                .font(.body)
+                .textEditorStyle(.plain)
+                // The editor draws its own opaque backing, which would sit as a
+                // white slab inside the bubble's fill.
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 64, maxHeight: 240)
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.vertical, JunoSpace.hairline)
+                .background(Self.bubbleShape.fill(Color.junoMuted))
+                .overlay(
+                    Self.bubbleShape
+                        .strokeBorder(Color.junoAccent, lineWidth: 1)
+                )
+                .frame(maxWidth: 560)
+                .accessibilityLabel("Edit message")
+                .accessibilityIdentifier("juno.desktop.chat.message-editor")
+
+            HStack(spacing: JunoSpace.snug) {
+                Button("Cancel") { editing = false }
+                    .buttonStyle(.plain)
+                    .junoSecondaryInk()
+                Button("Send") { submitEdit() }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!canSubmitEdit)
+            }
+            .font(.callout)
+        }
+    }
+
+    /// Whether the rewrite is worth sending: not blank, and not the words that
+    /// are already there. Re-asking an unchanged prompt would spend a turn to
+    /// add a revision identical to the one beside it.
+    private var canSubmitEdit: Bool {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty
+            && trimmed != plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            && !isGenerating
+    }
+
+    private func submitEdit() {
+        guard canSubmitEdit, let editMessage else { return }
+        editing = false
+        editMessage(draft)
+    }
+
+    /// Edit and the pager, under the reader's own words.
+    @ViewBuilder
+    private var promptControls: some View {
+        // `isVoice` withholds Edit for the same reason it withholds the action
+        // row: a spoken line exists only in the call controller, and there is no
+        // stored message for a fork to branch away from.
+        if !isVoice, editMessage != nil || branchPosition != nil {
+            HStack(spacing: JunoSpace.hairline) {
+                branchNavigator
+                if editMessage != nil, !editing {
+                    messageAction("Edit message", symbol: "pencil") {
+                        draft = plainText
+                        editing = true
+                    }
+                    .disabled(isGenerating)
+                    .accessibilityIdentifier("juno.desktop.chat.message-edit")
+                }
+            }
+        }
+    }
+
     var body: some View {
         Group {
             switch message.role {
@@ -1653,8 +1831,13 @@ private struct DesktopMessageRow: View {
                 HStack {
                     Spacer(minLength: 90)
                     VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                        userBubble
-                        if isLongPrompt { expandControl }
+                        if editing {
+                            promptEditor
+                        } else {
+                            userBubble
+                            if isLongPrompt { expandControl }
+                        }
+                        promptControls
                     }
                 }
 
@@ -1812,6 +1995,11 @@ private struct DesktopMessageRow: View {
                     }
                     .junoSecondaryInk()
                 }
+
+                // Under the answer, where the web puts it. An answer has
+                // siblings when the question above it was re-asked, so this is
+                // the same pager the prompt carries, reading the same numbers.
+                branchNavigator
                 }
 
             case .system, .tool:
