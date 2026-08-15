@@ -1293,17 +1293,22 @@ public final class JunoRealtimeVoiceController {
 
     /// Brings the audio graph up: once with the hardware's help, once without.
     ///
-    /// **The two attempts are why voice starts on the Mac at all.** The first
-    /// rung asks the input node for voice processing, and that request is only
-    /// honoured at *initialisation* time — `setVoiceProcessingEnabled(true)`
-    /// merely sets a flag, so a Mac whose input and output are different devices
-    /// (a USB microphone with sound going out over HDMI, an aggregate device, a
-    /// driver with no voice-processing unit, or a voice processor another engine
-    /// in this process already holds) reports a perfectly plausible input format
-    /// and then fails inside `engine.start()`. Nothing readable before `start()`
-    /// predicts it, so the only way to find out is to try — and the shipped
-    /// build had no second try, which is how the reader ended up looking at
-    /// `-10875` above the dock.
+    /// **The two attempts are why voice starts on the Mac at all — and they are
+    /// what makes asking on a phone safe.** The first rung asks the input node
+    /// for voice processing, and that request is only honoured at *initialisation*
+    /// time — `setVoiceProcessingEnabled(true)` merely sets a flag, so a Mac whose
+    /// input and output are different devices (a USB microphone with sound going
+    /// out over HDMI, an aggregate device, a driver with no voice-processing unit,
+    /// or a voice processor another engine in this process already holds) reports
+    /// a perfectly plausible input format and then fails inside `engine.start()`.
+    /// Nothing readable before `start()` predicts it, so the only way to find out
+    /// is to try — and the shipped build had no second try, which is how the
+    /// reader ended up looking at `-10875` above the dock.
+    ///
+    /// The same is true on iOS, where the refusals are different but the shape is
+    /// identical: a route that cannot host the unit, a session another app is
+    /// holding, a call arriving mid-setup. The rung below is what turns any of
+    /// those into a working call rather than a broken one.
     ///
     /// The second rung drops voice processing and takes the format the hardware
     /// actually reports, on a brand-new engine. There is no third: a plain input
@@ -1312,8 +1317,15 @@ public final class JunoRealtimeVoiceController {
     /// delay the message.
     private func startAudioEngine() throws(JunoRealtimeVoiceError) {
         #if os(iOS)
-        // `.voiceChat` is what buys echo cancellation: without it the model
-        // hears itself through the speaker and interrupts its own turn.
+        // `.playAndRecord` with `.voiceChat` is the **precondition** for what
+        // `buildAudioGraph` does next, not a substitute for it. The node's
+        // voice-processing unit can only be enabled under a category that both
+        // records and plays, and `.voiceChat` is the mode Apple documents for it.
+        //
+        // The mode does also cancel echo at the *session* level, which is real and
+        // is why calls on a phone sounded fine long before any of this — but it is
+        // invisible to `isVoiceProcessingEnabled`, so it has never been evidence
+        // the barge-in gate could read, and it is still not treated as any.
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(
@@ -1373,8 +1385,8 @@ public final class JunoRealtimeVoiceController {
     /// exception rather than returning an error.
     ///
     /// - Parameter voiceProcessing: Echo cancellation and automatic gain from
-    ///   the input node's voice-processing unit. Ignored on iOS, where the
-    ///   session's `.voiceChat` mode has already asked for both.
+    ///   the input node's voice-processing unit. Requested on **both** platforms;
+    ///   false is the caller's second rung, after the first one failed.
     private func buildAudioGraph(voiceProcessing: Bool) throws {
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
@@ -1385,22 +1397,32 @@ public final class JunoRealtimeVoiceController {
         var started = false
         defer { if !started { Self.unwind(engine: engine, player: player) } }
 
-        #if os(macOS)
-        // What `.voiceChat` buys on iOS, asked for directly here: echo
-        // cancellation so the model does not hear itself through the speakers and
-        // interrupt its own turn, and automatic gain so a laptop's far-field
-        // microphone reaches the relay at a usable level.
+        // Ask this node for its voice-processing IO unit: echo cancellation, so
+        // the model does not hear itself through the speakers and interrupt its
+        // own turn, and automatic gain, so a far-field microphone reaches the
+        // relay at a usable level.
         //
         // Both matter to what is on screen as well. Without AGC the raw RMS of
         // someone talking a normal distance from a MacBook sits around 0.01–0.03,
         // which is why the field barely moved while they were speaking.
         //
-        // `try?` because a driver with no voice-processing unit refuses right
+        // **Asked for on iOS too, and that is the whole of how barge-in became
+        // reachable on a phone.** The `.voiceChat` session in the caller cancels
+        // echo at the session level, but ``echoCancellation(of:)`` reads
+        // `isVoiceProcessingEnabled`, which describes the unit on *this node* — so
+        // a phone that never asked was answering "no" to the only question the
+        // barge-in gate knows how to ask, and every iPhone call was manual-only no
+        // matter how well its echo was being cancelled. The fix is to make the
+        // condition true rather than to assume it: ask here, and read back
+        // whatever actually happened. If the unit does not come up the node still
+        // says `false`, the gate still resolves to
+        // ``RealtimeBargeInPolicy/manualOnly``, and nothing is worse than it was.
+        //
+        // `try?` because a device with no voice-processing unit refuses right
         // here, and a conversation without echo cancellation is still a
-        // conversation. The drivers that *accept* the flag and then fail to
+        // conversation. The devices that *accept* the flag and then fail to
         // initialise are what the caller's second attempt exists for.
         if voiceProcessing { try? input.setVoiceProcessingEnabled(true) }
-        #endif
 
         // Model speech arrives as PCM16 mono 24 kHz. Scheduling Float32 mono
         // 24 kHz and letting the mixer resample is what keeps this correct on
@@ -1417,7 +1439,9 @@ public final class JunoRealtimeVoiceController {
         engine.connect(player, to: engine.mainMixerNode, format: playback)
 
         let inputFormat = Self.usableInputFormat(of: input)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        guard RealtimeInputFormat.isUsable(
+            sampleRate: inputFormat.sampleRate, channelCount: inputFormat.channelCount
+        ) else {
             throw RealtimeAudioSetupError.noInput
         }
         guard let converter = AVAudioConverter(from: inputFormat, to: capture) else {
@@ -1450,43 +1474,51 @@ public final class JunoRealtimeVoiceController {
 
     /// What the hardware is doing about echo, as the input node reports it.
     ///
-    /// Deliberately the same rule ``AVAudioEngineRealtimeEndpoint`` uses, down to
-    /// the platform behaviour it implies: `isVoiceProcessingEnabled` tracks the
-    /// voice-processing IO unit on *this node*, which only macOS asks for, so an
-    /// iPhone answers ``RealtimeEchoCancellation/unavailable`` and stays on manual
-    /// barge-in even though its `.voiceChat` session is cancelling echo at the
-    /// session level.
+    /// Deliberately the same rule ``AVAudioEngineRealtimeEndpoint`` uses, and
+    /// deliberately a *reading* rather than a conclusion. `isVoiceProcessingEnabled`
+    /// tracks the voice-processing IO unit on this node, which
+    /// ``buildAudioGraph(voiceProcessing:)`` now asks for on both platforms and
+    /// which neither platform promises.
     ///
-    /// That conservatism is the whole design and is not an oversight to tidy up.
-    /// The cost of being wrong in one direction is a feature nobody notices is
-    /// missing; the cost of being wrong in the other is every answer cut off by
-    /// its own first syllable, with the Interrupt button apparently pressing
-    /// itself. If the phone is to have automatic barge-in it should come from
-    /// enabling the unit and reading it back here, not from inferring it.
+    /// **What changed for iOS is the evidence, not the standard.** The phone used
+    /// to answer ``RealtimeEchoCancellation/unavailable`` because nothing had
+    /// asked; it now answers whatever the unit did. The old refusal to infer
+    /// `.active` from `AVAudioSession.mode` was right and is still in force — see
+    /// ``RealtimeEchoCancellation/fromInputNode(reportsVoiceProcessing:)``, which
+    /// is not given anything to infer from. The cost of being wrong in one
+    /// direction is a feature nobody notices is missing; the cost of being wrong
+    /// in the other is every answer cut off by its own first syllable, with the
+    /// Interrupt button apparently pressing itself.
     private nonisolated static func echoCancellation(
         of input: AVAudioInputNode
     ) -> RealtimeEchoCancellation {
-        input.isVoiceProcessingEnabled ? .active : .unavailable
+        .fromInputNode(reportsVoiceProcessing: input.isVoiceProcessingEnabled)
     }
 
     /// The input node's format now, with voice processing withdrawn if enabling
     /// it left the node describing nothing recordable.
     ///
-    /// Behind a helper so the caller can bind a `let`: some inputs — an
-    /// aggregate device, a driver that does not implement the unit — report zero
-    /// channels or a zero sample rate once the voice processor is attached, and
-    /// a conversation without echo cancellation beats no conversation at all.
+    /// Behind a helper so the caller can bind a `let`: some inputs — an aggregate
+    /// device, a driver that does not implement the unit, a phone whose route
+    /// changed under the request — report zero channels, a zero sample rate or
+    /// NaN once the voice processor attaches, and a conversation without echo
+    /// cancellation beats no conversation at all.
+    ///
+    /// **This is the cheap half of the fallback, and it runs on iOS now for the
+    /// same reason the request does.** The caller's second rung rebuilds the whole
+    /// graph; this one recovers inside the first rung when the only casualty was
+    /// the format. Either way the node is left reporting `false`, so the barge-in
+    /// gate lands on manual-only for the call that results — degraded audio is
+    /// traded for working audio, never for an unearned `.active`.
     private nonisolated static func usableInputFormat(
         of input: AVAudioInputNode
     ) -> AVAudioFormat {
         let format = input.outputFormat(forBus: 0)
-        #if os(macOS)
-        if format.sampleRate <= 0 || format.channelCount == 0 {
-            try? input.setVoiceProcessingEnabled(false)
-            return input.outputFormat(forBus: 0)
-        }
-        #endif
-        return format
+        guard !RealtimeInputFormat.isUsable(
+            sampleRate: format.sampleRate, channelCount: format.channelCount
+        ) else { return format }
+        try? input.setVoiceProcessingEnabled(false)
+        return input.outputFormat(forBus: 0)
     }
 
     /// Takes an engine apart far enough that the audio device is genuinely free.
@@ -1497,13 +1529,22 @@ public final class JunoRealtimeVoiceController {
     /// the *device* stays configured for a session that no longer exists — which
     /// is the state a retry cannot recover from, because it would read the dead
     /// session's sample rate straight back out of the hardware.
+    ///
+    /// The release is unconditional now that both platforms ask for the unit. It
+    /// has to be: the caller's whole fallback ladder is "try, unwind, try again
+    /// differently", and an unwind that left the unit attached would hand the
+    /// second rung exactly the configuration the first one failed on. On iOS it
+    /// also hands the shared session back un-voice-processed before it is
+    /// deactivated, which is what the next thing in this process to claim the
+    /// microphone — dictation, in `JunoSpeechService` — expects to find.
+    ///
+    /// Ordered before the session is deactivated, in every caller: reaching
+    /// `engine.inputNode` under a dead session is not something to ask iOS for.
     private nonisolated static func unwind(engine: AVAudioEngine, player: AVAudioPlayerNode?) {
         engine.inputNode.removeTap(onBus: 0)
         player?.stop()
         engine.stop()
-        #if os(macOS)
         try? engine.inputNode.setVoiceProcessingEnabled(false)
-        #endif
         if let player, engine.attachedNodes.contains(player) { engine.detach(player) }
     }
 

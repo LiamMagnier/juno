@@ -269,6 +269,32 @@ struct JunoMobileVoiceDock: View {
         .padding(.trailing, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
+        .accessibilityHint(bargeInHint)
+    }
+
+    /// Which barge-in mode this call is actually in, said where the Mac says it.
+    ///
+    /// `DesktopVoice` puts the same sentence in the status tooltip. A phone has no
+    /// tooltip, so it goes on the status element's hint — the label itself is
+    /// 96pt and fixed, and a status that grew to explain itself would slide every
+    /// control in the pill sideways mid-sentence.
+    ///
+    /// **It is worth saying on a phone now that it can differ from call to call.**
+    /// Whether talking over Juno interrupts it is a fact about this device's audio
+    /// hardware and never a preference: the voice-processing unit is requested on
+    /// iOS as well as macOS, and a route that cannot host it — some Bluetooth HFP
+    /// headsets, a session another app is holding — drops the same phone back to
+    /// manual. Without a canceller the microphone hears the speakers, so acting on
+    /// it would be a call that interrupts itself on its own first syllable.
+    ///
+    /// Empty rather than absent off a live call: applying the modifier
+    /// conditionally would change the view's identity every time the phase moved,
+    /// and `Text(verbatim:)` keeps the placeholder out of the strings catalog.
+    private var bargeInHint: Text {
+        guard session.isLive else { return Text(verbatim: "") }
+        return controller.bargeIn == .automatic
+            ? Text("voice.barge-in.automatic")
+            : Text("voice.barge-in.manual")
     }
 
     /// The web's ladder, so the phone and the browser describe the same call in
@@ -400,10 +426,14 @@ struct JunoMobileVoiceDock: View {
                 // The label names the barge-in mode, because this control is the
                 // one place the fact is about. Under `.automatic` the tap is a
                 // shortcut for something a reader can also just do by talking;
-                // under `.manualOnly` — which is what a phone reports, since the
-                // voice-processing unit is only asked for on the Mac — it is the
-                // only way, and saying so stops "talking over Juno does nothing"
-                // reading as a bug.
+                // under `.manualOnly` it is the only way, and saying so stops
+                // "talking over Juno does nothing" reading as a bug rather than
+                // as this device's audio hardware.
+                //
+                // Both are now reachable on a phone. The voice-processing unit is
+                // requested on iOS as well as macOS and the policy is read back
+                // off the input node, so this label is the live answer for this
+                // call and not a platform constant.
                 circleButton(
                     systemImage: "stop.fill",
                     label: controller.bargeIn == .automatic

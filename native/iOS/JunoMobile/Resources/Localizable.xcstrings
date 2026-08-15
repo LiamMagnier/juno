@@ -6482,6 +6482,40 @@
     "Viewing v%@ · read-only" : {
 
     },
+    "voice.barge-in.automatic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talk over Juno to interrupt it"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parlez pendant que Juno répond pour l’interrompre"
+          }
+        }
+      }
+    },
+    "voice.barge-in.manual" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Interrupt to cut Juno off"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utilisez Interrompre pour couper Juno"
+          }
+        }
+      }
+    },
     "voice.camera.live" : {
       "extractionState" : "manual",
       "localizations" : {

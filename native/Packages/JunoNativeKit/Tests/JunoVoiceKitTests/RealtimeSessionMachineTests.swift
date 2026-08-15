@@ -467,3 +467,106 @@ final class RealtimeBargeInPolicyTests: XCTestCase {
         XCTAssertEqual(RealtimeBargeInPolicy(echoCancellation: .active), .automatic)
     }
 }
+
+// MARK: - Echo cancellation, as read from the node
+
+/// The gate that decides whether talking over Juno is allowed to interrupt it.
+///
+/// These are the assertions that make it safe to request the voice-processing
+/// unit on iOS as well as macOS: the request is not an input to the answer, so
+/// asking on a second platform cannot, by construction, turn barge-in on
+/// anywhere the hardware did not.
+final class RealtimeEchoCancellationTests: XCTestCase {
+
+    /// The whole safety property in one test. The resolver is handed the node's
+    /// own `isVoiceProcessingEnabled` and nothing else — no request to trust, no
+    /// `AVAudioSession.mode` to infer from — so a phone that asked for the unit
+    /// and did not get it reads exactly like a phone that never asked.
+    func testResolutionFollowsTheNodeAndNotTheRequest() {
+        XCTAssertEqual(
+            RealtimeEchoCancellation.fromInputNode(reportsVoiceProcessing: true), .active
+        )
+        XCTAssertEqual(
+            RealtimeEchoCancellation.fromInputNode(reportsVoiceProcessing: false), .unavailable
+        )
+    }
+
+    /// End to end through the policy, which is the pair the audio graph actually
+    /// evaluates once `engine.start()` has returned. Asking for the unit is not
+    /// what turns automatic barge-in on; the node reporting it back is.
+    func testOnlyANodeThatReportsTheUnitEarnsAutomaticBargeIn() {
+        XCTAssertEqual(
+            RealtimeBargeInPolicy(
+                echoCancellation: .fromInputNode(reportsVoiceProcessing: true)
+            ),
+            .automatic
+        )
+        XCTAssertEqual(
+            RealtimeBargeInPolicy(
+                echoCancellation: .fromInputNode(reportsVoiceProcessing: false)
+            ),
+            .manualOnly,
+            "a request that the unit refused must leave the call exactly where it was"
+        )
+    }
+
+    /// ``RealtimeEchoCancellation/unknown`` is "no graph", which is a third answer
+    /// and not a pessimistic second one. A reading of a node that is running can
+    /// never mean it, and a caller that tells the two apart — "not started" and
+    /// "started without a canceller" want different UI — depends on that.
+    func testANodeReadingNeverAnswersUnknown() {
+        for reported in [true, false] {
+            XCTAssertNotEqual(
+                RealtimeEchoCancellation.fromInputNode(reportsVoiceProcessing: reported),
+                .unknown
+            )
+        }
+    }
+}
+
+// MARK: - Input format sanity
+
+/// Whether the voice processor left the input node describing something a
+/// capture graph can be built on — the check that decides between withdrawing
+/// the unit and keeping the call, and failing the whole attempt.
+final class RealtimeInputFormatTests: XCTestCase {
+
+    func testOrdinaryHardwareFormatsAreUsable() {
+        for rate in [8_000.0, 16_000, 24_000, 44_100, 48_000, 96_000] {
+            XCTAssertTrue(RealtimeInputFormat.isUsable(sampleRate: rate, channelCount: 1))
+            XCTAssertTrue(RealtimeInputFormat.isUsable(sampleRate: rate, channelCount: 2))
+        }
+    }
+
+    /// What an aggregate device, a driver with no voice-processing unit, or a
+    /// phone whose route changed under the request leaves behind. Recoverable:
+    /// the graph withdraws voice processing and re-reads rather than giving up.
+    func testANodeLeftDescribingNothingRecordableIsNotUsable() {
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: 0, channelCount: 1))
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: 48_000, channelCount: 0))
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: -48_000, channelCount: 1))
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: 0, channelCount: 0))
+    }
+
+    /// The case the two old inline spellings both missed. `Double.nan` is neither
+    /// `<= 0` nor `> 0`, so it slipped past the "withdraw and re-read" branch *and*
+    /// past the "this rung is finished" guard — and the uplink divides by the
+    /// sample rate, where `AVAudioFrameCount(_:)` traps on NaN and infinity rather
+    /// than saturating, on the realtime audio thread.
+    func testNonFiniteSampleRatesAreNotUsable() {
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: .nan, channelCount: 1))
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: .infinity, channelCount: 1))
+        XCTAssertFalse(RealtimeInputFormat.isUsable(sampleRate: -.infinity, channelCount: 1))
+        XCTAssertFalse(
+            RealtimeInputFormat.isUsable(sampleRate: .signalingNaN, channelCount: 2)
+        )
+    }
+
+    /// No upper bound, on purpose. A 384 kHz interface is a real thing a person
+    /// owns and the converter downsamples whatever arrives — refusing one would
+    /// trade a call that happens for a hazard that does not exist.
+    func testUnusuallyHighRatesAreStillUsable() {
+        XCTAssertTrue(RealtimeInputFormat.isUsable(sampleRate: 192_000, channelCount: 1))
+        XCTAssertTrue(RealtimeInputFormat.isUsable(sampleRate: 384_000, channelCount: 8))
+    }
+}

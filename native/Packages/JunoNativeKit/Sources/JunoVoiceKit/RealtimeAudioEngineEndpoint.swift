@@ -23,9 +23,9 @@ import Foundation
 /// - **Voice processing is attempted and then withdrawn.**
 ///   `setVoiceProcessingEnabled(true)` only sets a flag; the refusal surfaces
 ///   inside `engine.start()`, on Macs whose input and output are different
-///   devices. There is a second attempt without it, and no third — a plain input
-///   node on the hardware's own format is the simplest thing CoreAudio can be
-///   asked for.
+///   devices and on phones whose route cannot host the unit. There is a second
+///   attempt without it, and no third — a plain input node on the hardware's own
+///   format is the simplest thing CoreAudio can be asked for.
 /// - **The input format is read as late as possible**, immediately before the
 ///   converter and tap built from it. A converter built from a format the node
 ///   has since left resamples wrong, and a tap installed with one raises an
@@ -75,8 +75,13 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
 
     public func start() async throws {
         #if os(iOS)
-        // `.voiceChat` is what buys echo cancellation on iOS: without it the model
-        // hears itself through the speaker and interrupts its own turn.
+        // `.playAndRecord` with `.voiceChat` is the **precondition** for the
+        // voice-processing request in ``build(voiceProcessing:)``, not a
+        // substitute for it: the unit can only be enabled under a category that
+        // both records and plays. The mode does also cancel echo at the session
+        // level — which is why calls on a phone sounded fine before any of this —
+        // but that is invisible to `isVoiceProcessingEnabled` and is therefore no
+        // evidence at all as far as ``echoCancellation`` is concerned.
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(
@@ -227,13 +232,20 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         var started = false
         defer { if !started { Self.unwind(engine: engine, player: player) } }
 
-        #if os(macOS)
-        // `try?` because a driver with no voice-processing unit refuses right
-        // here, and that is a recoverable outcome — the drivers that *accept* the
+        // Asked for on **both** platforms. On iOS this is what makes ``echoCancellation``
+        // able to answer `.active` at all: the session's `.voiceChat` mode cancels
+        // echo without ever touching `isVoiceProcessingEnabled`, so a phone that
+        // did not ask for the node's own unit reported "no" to the only question
+        // ``RealtimeBargeInPolicy`` knows how to ask, and automatic barge-in could
+        // never engage. Asking makes the condition true where the hardware allows
+        // it; where it does not, the node still says `false` and the policy still
+        // lands on manual, which is exactly where it was.
+        //
+        // `try?` because a device with no voice-processing unit refuses right
+        // here, and that is a recoverable outcome — the devices that *accept* the
         // flag and then fail to initialise are what the caller's second attempt
         // exists for.
         if voiceProcessing { try? input.setVoiceProcessingEnabled(true) }
-        #endif
 
         guard let playback = AVAudioFormat(
                 standardFormatWithSampleRate: Self.downlinkSampleRate, channels: 1
@@ -250,7 +262,9 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         engine.connect(player, to: engine.mainMixerNode, format: playback)
 
         let inputFormat = Self.usableInputFormat(of: input)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        guard RealtimeInputFormat.isUsable(
+            sampleRate: inputFormat.sampleRate, channelCount: inputFormat.channelCount
+        ) else {
             throw Failure.noInput
         }
         guard let converter = AVAudioConverter(from: inputFormat, to: capture) else {
@@ -281,27 +295,33 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     }
 
     /// The input node's format now, with voice processing withdrawn if enabling
-    /// it left the node describing nothing recordable — some aggregate devices
-    /// and some drivers report zero channels or a zero sample rate once the
-    /// voice processor attaches, and a call without echo cancellation beats no
-    /// call at all.
+    /// it left the node describing nothing recordable — some aggregate devices,
+    /// some drivers and some phone routes report zero channels, a zero sample
+    /// rate or NaN once the voice processor attaches, and a call without echo
+    /// cancellation beats no call at all.
+    ///
+    /// The cheap half of the fallback: the caller's second attempt rebuilds
+    /// everything, this recovers inside the first. Either way the node is left
+    /// reporting `false`, so ``echoCancellation`` stays truthful and the policy
+    /// lands on manual for the call that results.
     private nonisolated static func usableInputFormat(
         of input: AVAudioInputNode
     ) -> AVAudioFormat {
         let format = input.outputFormat(forBus: 0)
-        #if os(macOS)
-        if format.sampleRate <= 0 || format.channelCount == 0 {
-            try? input.setVoiceProcessingEnabled(false)
-            return input.outputFormat(forBus: 0)
-        }
-        #endif
-        return format
+        guard !RealtimeInputFormat.isUsable(
+            sampleRate: format.sampleRate, channelCount: format.channelCount
+        ) else { return format }
+        try? input.setVoiceProcessingEnabled(false)
+        return input.outputFormat(forBus: 0)
     }
 
+    /// The node's own answer, never the request that preceded it — see
+    /// ``RealtimeEchoCancellation/fromInputNode(reportsVoiceProcessing:)``, which
+    /// is deliberately not given the request to look at.
     private nonisolated static func echoCancellation(
         of input: AVAudioInputNode
     ) -> RealtimeEchoCancellation {
-        input.isVoiceProcessingEnabled ? .active : .unavailable
+        .fromInputNode(reportsVoiceProcessing: input.isVoiceProcessingEnabled)
     }
 
     /// Takes an engine apart far enough that the audio device is genuinely free.
@@ -309,13 +329,17 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     /// in flight is handed to a block whose format has gone away, and the
     /// voice-processing unit has to be released afterwards, or the *device* stays
     /// configured for a session that no longer exists.
+    ///
+    /// The release is unconditional, because both platforms now ask for the unit
+    /// and the retry ladder depends on it: an unwind that left the unit attached
+    /// would hand the second attempt the very configuration the first one failed
+    /// on. Always called before ``stop()`` deactivates the iOS session — reaching
+    /// `engine.inputNode` under a dead session is not something to ask iOS for.
     private nonisolated static func unwind(engine: AVAudioEngine, player: AVAudioPlayerNode?) {
         engine.inputNode.removeTap(onBus: 0)
         player?.stop()
         engine.stop()
-        #if os(macOS)
         try? engine.inputNode.setVoiceProcessingEnabled(false)
-        #endif
         if let player, engine.attachedNodes.contains(player) { engine.detach(player) }
     }
 
