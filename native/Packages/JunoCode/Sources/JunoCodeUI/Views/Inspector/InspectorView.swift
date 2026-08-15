@@ -146,7 +146,6 @@ public struct InspectorView: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            .padding(.top, 52)
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
             .help(pane.wrappedValue.purpose)

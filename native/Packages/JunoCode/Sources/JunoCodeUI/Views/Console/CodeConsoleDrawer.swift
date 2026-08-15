@@ -138,14 +138,40 @@ public struct CodeConsoleDrawer: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            Picker("Console", selection: segmentBinding) {
+            HStack(spacing: 2) {
                 ForEach(Segment.allCases) { candidate in
-                    Text(candidate.label).tag(candidate)
+                    Button {
+                        withAnimation(JunoMotion.fast) {
+                            segmentBinding.wrappedValue = candidate
+                        }
+                    } label: {
+                        Text(candidate.label)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(
+                                segment == candidate
+                                    ? Color.junoForeground : Color.junoMutedForeground
+                            )
+                            .padding(.horizontal, JunoSpace.snug)
+                            .frame(height: 24)
+                            .background(
+                                segment == candidate ? Color.junoRaised : .clear,
+                                in: RoundedRectangle(
+                                    cornerRadius: JunoRadius.chip,
+                                    style: .continuous
+                                )
+                            )
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .accessibilityAddTraits(segment == candidate ? .isSelected : [])
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 218)
+            .padding(2)
+            .background(
+                Color.junoMuted.opacity(0.5),
+                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+            )
             .accessibilityIdentifier("juno.code.console.segment")
 
             Spacer(minLength: JunoSpace.snug)

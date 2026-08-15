@@ -170,11 +170,6 @@ struct DesktopCodeWorkspace: View {
                 guard case .session = selection.wrappedValue else {
                     return false
                 }
-                #if DEBUG
-                if CommandLine.arguments.contains("--juno-preview-inspector") {
-                    return true
-                }
-                #endif
                 return inspectorVisible
             },
             set: { inspectorVisible = $0 }
@@ -249,19 +244,10 @@ struct DesktopCodeWorkspace: View {
             .searchFocused($sidebarSearchFocused)
             .junoSidebarColumn()
         } detail: {
-            VStack(spacing: 0) {
-                editorCanvas
-                    .padding(.top, 52)
-
-                // The persistent shell terminal is a sibling of the reading
-                // canvas, so it can be resized or dismissed without changing
-                // the transcript's own layout contract.
-                if consoleVisible {
-                    DesktopTerminalView(host: DesktopTerminalHost.shared)
-                        .frame(height: 250)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
+            // `CodeSessionCanvas` owns the single Output / Terminal / Tests
+            // drawer. Keeping a second shell terminal here produced two
+            // consoles, a hard black slab, and two incompatible resize models.
+            editorCanvas
             .junoReadingCanvas()
             .navigationTitle("")
             .toolbar { detailToolbar }
@@ -420,15 +406,7 @@ struct DesktopCodeWorkspace: View {
                     title: contextTitle,
                     subtitle: contextSubtitle,
                     status: currentStatus,
-                    showsPreview: previewTarget != nil,
-                    showsConsole: consoleVisible,
-                    showsReview: reviewVisible,
-                    canUseSessionTools: controller != nil,
                     isRunning: isRunning,
-                    togglePreview: openPreview,
-                    toggleConsole: { consoleVisible.toggle() },
-                    toggleReview: { reviewVisible.toggle() },
-                    toggleInspector: { inspectorVisible.toggle() },
                     stop: stop
                 )
                 Divider()
@@ -1117,6 +1095,60 @@ struct DesktopCodeWorkspace: View {
             }
             .help("Start a new session in this repository (⌘N)")
             .accessibilityIdentifier("juno.code.new-session")
+
+            Button {
+                reviewVisible.toggle()
+            } label: {
+                Label(
+                    reviewVisible ? "Show Conversation" : "Review Changes",
+                    systemImage: reviewVisible ? "bubble.left" : "plusminus.circle"
+                )
+            }
+            .disabled(controller == nil)
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            .help(reviewVisible ? "Return to Conversation" : "Review Changes")
+            .accessibilityIdentifier("juno.code.review.toggle")
+
+            Button(action: openPreview) {
+                Label(
+                    previewTarget == nil ? "Open Preview" : "Hide Preview",
+                    systemImage: "rectangle.on.rectangle"
+                )
+            }
+            .disabled(controller == nil)
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .help(previewTarget == nil ? "Open Preview" : "Hide Preview")
+            .accessibilityIdentifier("juno.code.preview.toggle")
+
+            Button {
+                inspectorPresentation.wrappedValue.toggle()
+            } label: {
+                Label(
+                    inspectorPresentation.wrappedValue ? "Hide Inspector" : "Show Inspector",
+                    systemImage: "sidebar.trailing"
+                )
+            }
+            .disabled(controller == nil)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .help(inspectorPresentation.wrappedValue ? "Hide Inspector" : "Show Inspector")
+            .accessibilityIdentifier("juno.code.inspector.toggle")
+
+            Button {
+                withAnimation(
+                    JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+                ) {
+                    consoleVisible.toggle()
+                }
+            } label: {
+                Label(
+                    consoleVisible ? "Hide Console" : "Show Console",
+                    systemImage: "apple.terminal"
+                )
+            }
+            .disabled(controller == nil)
+            .keyboardShortcut("c", modifiers: [.command, .option])
+            .help(consoleVisible ? "Hide Console" : "Show Console")
+            .accessibilityIdentifier("juno.code.console.toggle")
 
             Menu {
                 Button { isChoosingRepository = true } label: {
@@ -2019,15 +2051,7 @@ private struct DesktopCodeContextStrip: View {
     let title: String
     let subtitle: String
     let status: CodeRunStatus?
-    let showsPreview: Bool
-    let showsConsole: Bool
-    let showsReview: Bool
-    let canUseSessionTools: Bool
     let isRunning: Bool
-    let togglePreview: () -> Void
-    let toggleConsole: () -> Void
-    let toggleReview: () -> Void
-    let toggleInspector: () -> Void
     let stop: () -> Void
 
     var body: some View {
@@ -2045,13 +2069,6 @@ private struct DesktopCodeContextStrip: View {
             title: title,
             subtitle: subtitle.isEmpty ? nil : subtitle
         ) {
-            if showsPreview {
-                Label("Preview live", systemImage: "dot.radiowaves.left.and.right")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Color.junoSuccess)
-                    .labelStyle(.titleAndIcon)
-            }
-
             if let status {
                 HStack(spacing: JunoSpace.tight) {
                     CodeStatusGlyph(status)
@@ -2063,48 +2080,6 @@ private struct DesktopCodeContextStrip: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Status: \(status.label)")
             }
-
-            Button(action: toggleReview) {
-                Label(
-                    showsReview ? "Conversation" : "Review",
-                    systemImage: showsReview ? "bubble.left" : "plusminus.circle"
-                )
-                .contentShape(.rect)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!canUseSessionTools)
-            .keyboardShortcut("r", modifiers: [.command, .option])
-            .accessibilityIdentifier("juno.code.review.toggle")
-
-            Menu {
-                Button(action: togglePreview) {
-                    Label(
-                        showsPreview ? "Hide Preview" : "Open Preview",
-                        systemImage: "rectangle.on.rectangle"
-                    )
-                }
-                .keyboardShortcut("p", modifiers: [.command, .option])
-
-                Button(action: toggleConsole) {
-                    Label(
-                        showsConsole ? "Hide Terminal" : "Show Terminal",
-                        systemImage: "apple.terminal"
-                    )
-                }
-                .keyboardShortcut("c", modifiers: [.command, .option])
-
-                Button(action: toggleInspector) {
-                    Label("Inspect Session", systemImage: "sidebar.trailing")
-                }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-            } label: {
-                Label("Session tools", systemImage: "ellipsis")
-                    .contentShape(.rect)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(!canUseSessionTools)
-            .accessibilityIdentifier("juno.code.session-tools")
 
             if isRunning {
                 Button(action: stop) {

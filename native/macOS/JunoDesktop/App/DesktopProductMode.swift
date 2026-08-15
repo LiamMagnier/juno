@@ -199,7 +199,6 @@ extension View {
     func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
         VStack(spacing: 0) {
             DesktopSidebarProductHeader(product: product)
-                .padding(.top, 32)
             self
         }
     }

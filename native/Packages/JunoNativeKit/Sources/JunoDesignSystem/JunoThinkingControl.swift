@@ -75,6 +75,10 @@ public struct JunoThinkingTrack: View {
         .sensoryFeedback(.selection, trigger: index)
         .focusable(ladder.isAdjustable)
         .focused($focused)
+        // Keep keyboard and VoiceOver focus without painting AppKit's blue
+        // focus halo over Juno's neutral control artwork. The value remains
+        // legible through the thumb, detents and accessibility value.
+        .focusEffectDisabled()
         // Full Keyboard Access and hardware keyboards. `onMoveCommand` is
         // macOS/tvOS only, so the arrow keys are read directly on both.
         .onKeyPress(.leftArrow) {

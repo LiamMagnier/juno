@@ -57,14 +57,7 @@ struct SubagentPane: View {
 
     private func list(active: [SubagentRun], done: [SubagentRun]) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
-                SubagentOverview(
-                    activeCount: active.count,
-                    doneCount: done.count,
-                    hasRunningWork: active.contains {
-                        $0.status == .running || $0.status == .preparing
-                    }
-                )
+            LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                 section(
                     "Active",
                     symbol: "bolt.horizontal.fill",
@@ -78,8 +71,8 @@ struct SubagentPane: View {
                     runs: done
                 )
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.cozy)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
         }
         .accessibilityIdentifier("juno.code.subagents")
     }
@@ -117,13 +110,18 @@ struct SubagentPane: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(title), \(runs.count)")
 
-                LazyVStack(spacing: JunoSpace.tight) {
+                LazyVStack(spacing: 0) {
                     ForEach(runs) { run in
                         SubagentListRow(
                             run: run,
                             activity: activity(for: run),
                             open: { focused = run.agentID }
                         )
+                        if run.id != runs.last?.id {
+                            Divider()
+                                .overlay(Color.junoSeparator)
+                                .padding(.leading, 40)
+                        }
                     }
                 }
             }
@@ -170,86 +168,6 @@ private struct SubagentEmptyState: View {
     }
 }
 
-private struct SubagentOverview: View {
-    let activeCount: Int
-    let doneCount: Int
-    let hasRunningWork: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(width: 30, height: 30)
-                    .background(Color.junoAccent.opacity(0.12), in: Circle())
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Sub-agents")
-                        .junoRowLabel()
-                        .fontWeight(.semibold)
-                    Text(activeCount == 0 ? "No active work" : "\(activeCount) active now")
-                        .junoCaption()
-                }
-                Spacer(minLength: JunoSpace.tight)
-                if hasRunningWork {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color.junoAccent)
-                        .accessibilityHidden(true)
-                }
-            }
-
-            HStack(spacing: JunoSpace.tight) {
-                SubagentMetric(
-                    title: "Active",
-                    value: activeCount,
-                    tint: Color.junoAccent
-                )
-                SubagentMetric(
-                    title: "Done",
-                    value: doneCount,
-                    tint: .junoMutedForeground
-                )
-                Spacer(minLength: 0)
-            }
-        }
-        .padding(JunoSpace.cozy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.junoRaised.opacity(0.78),
-            in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Sub-agents, \(activeCount) active, \(doneCount) done"
-        )
-    }
-}
-
-private struct SubagentMetric: View {
-    let title: String
-    let value: Int
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: JunoSpace.hairline) {
-            Text("\(value)")
-                .font(.caption.weight(.semibold))
-                .monospacedDigit()
-            Text(title)
-                .font(.caption)
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, JunoSpace.snug)
-        .padding(.vertical, 4)
-        .background(tint.opacity(0.10), in: Capsule())
-    }
-}
-
 // MARK: - One row
 
 /// One agent: its mark, its name, what it is doing, and how long it has been
@@ -264,10 +182,6 @@ private struct SubagentListRow: View {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
                 SubagentStatusGlyph(status: run.status)
                     .frame(width: 28, height: 28)
-                    .background(
-                        SubagentFormatting.tint(run.status).opacity(0.12),
-                        in: Circle()
-                    )
                     .tint(SubagentFormatting.tint(run.status))
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
@@ -304,23 +218,12 @@ private struct SubagentListRow: View {
                     }
                 }
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.cozy)
+            .padding(.horizontal, JunoSpace.tight)
+            .padding(.vertical, JunoSpace.snug)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                (run.isActive
-                    ? Color.junoAccent.opacity(0.075)
-                    : Color.junoRaised.opacity(0.68)),
+                run.isActive ? Color.junoRowSelected.opacity(0.7) : .clear,
                 in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .strokeBorder(
-                        run.isActive
-                            ? Color.junoAccent.opacity(0.25)
-                            : Color.junoBorder.opacity(0.75),
-                        lineWidth: 1
-                    )
             )
             .contentShape(.rect)
         }
@@ -601,16 +504,8 @@ private struct SubagentDetailPane: View {
                     )
                 }
             }
-            .padding(JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.tight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Color.junoRaised.opacity(0.80),
-                in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
             liveActionBar
             if run.executionMode == .workspaceWrite {
                 worktreeActions
@@ -1025,15 +920,7 @@ private struct SubagentDetailPane: View {
     ) -> some View {
         content()
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(JunoSpace.cozy)
-            .background(
-                Color.junoRaised.opacity(0.68),
-                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
-            )
+            .padding(.vertical, JunoSpace.tight)
     }
 }
 
@@ -1072,10 +959,6 @@ private struct SubagentInspectorStateCard: View {
         .background(
             tint.opacity(0.08),
             in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .strokeBorder(tint.opacity(0.24), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(message)")

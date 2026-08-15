@@ -192,7 +192,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
         XCTAssertTrue(app.buttons["juno.code.composer.voice"].exists)
         XCTAssertTrue(app.buttons["juno.code.composer.dictate"].exists)
-        XCTAssertTrue(app.menuButtons["juno.code.session-tools"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["juno.code.preview.toggle"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
         XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
         XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
