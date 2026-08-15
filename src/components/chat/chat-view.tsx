@@ -1749,7 +1749,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </div>
         );
 
-        return topActionsSlot ? createPortal(cluster, topActionsSlot) : null;
+        return topActionsSlot ? createPortal(cluster, topActionsSlot) : cluster;
       })()}
 
       {/* Chat column */}

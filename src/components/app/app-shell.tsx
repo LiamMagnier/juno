@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -9,6 +9,7 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
+import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
@@ -32,6 +33,10 @@ function clampWidth(w: number) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
+
+  const showSurfaceSwitcher =
+    pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
 
   const [collapsed, setCollapsed] = React.useState(false);
   // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
@@ -310,6 +315,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Plus className="size-5" />
           </Button>
         </div>
+
+        {/* Floating seamless Chat ⇄ Work Switcher and Top Actions (no background, no divider border) */}
+        {showSurfaceSwitcher && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-14 items-center justify-center px-4">
+            <div className="pointer-events-auto">
+              <ChatWorkSwitcher />
+            </div>
+            <div
+              id="juno-top-actions-slot"
+              className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
+            />
+          </div>
+        )}
 
         <div className="relative min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>
