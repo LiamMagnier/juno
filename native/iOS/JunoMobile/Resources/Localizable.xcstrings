@@ -6737,6 +6737,23 @@
         }
       }
     },
+    "voice.interrupt.or-talk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrupt Juno — or just talk over it"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrompre Juno — ou parlez simplement par-dessus"
+          }
+        }
+      }
+    },
     "voice.mute" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6920,6 +6937,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Connexion…"
+          }
+        }
+      }
+    },
+    "voice.status.interrupting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrupting…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interruption…"
           }
         }
       }

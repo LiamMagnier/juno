@@ -12,6 +12,30 @@ public struct ServerResearchRead: Equatable, Sendable {
     }
 }
 
+extension DeepResearchPhase {
+    /// The one word a surface puts on this phase.
+    ///
+    /// Here rather than in each client so the Mac and the phone cannot describe
+    /// the same run differently — the projection exists to give both platforms
+    /// one reading of the server's events, and two hand-written switch
+    /// statements over the result would put the disagreement back one layer up.
+    ///
+    /// "Writing" rather than "Synthesizing" and "Checking gaps" rather than
+    /// "Gap analysis": these are read by someone waiting, not by someone
+    /// debugging the pipeline.
+    public var displayName: String {
+        switch self {
+        case .planning: "Planning"
+        case .searching: "Searching"
+        case .reading: "Reading"
+        case .gapAnalysis: "Checking gaps"
+        case .synthesizing: "Writing"
+        case .completed: "Done"
+        case .stopped: "Stopped"
+        }
+    }
+}
+
 /// A server-run research turn, described in the same vocabulary as a local run.
 public struct ServerResearchProgress: Equatable, Sendable {
     public let phase: DeepResearchPhase
@@ -47,6 +71,29 @@ public struct ServerResearchProgress: Equatable, Sendable {
         self.pagesRead = pagesRead
         self.citationCount = citationCount
         self.warnings = warnings
+    }
+
+    /// The counts a waiting reader actually wants, in one line — or **nil when
+    /// there is nothing yet to count**, so a surface omits the line rather than
+    /// printing "0 searches · 0 sources" over a run that has only just started.
+    /// Absent is not zero.
+    ///
+    /// "Sources" is the *read* count and is deliberately not called citations. A
+    /// citation number is earned by a source that backs a marker in the finished
+    /// report; printing this count under that word would promise a `[n]` for
+    /// every page the server merely opened.
+    ///
+    /// Shared rather than formatted per platform for the same reason
+    /// ``DeepResearchPhase/displayName`` is: two clients describing one run.
+    public var countsSummary: String? {
+        var parts: [String] = []
+        if !queriesRun.isEmpty {
+            parts.append("\(queriesRun.count) \(queriesRun.count == 1 ? "search" : "searches")")
+        }
+        if citationCount > 0 {
+            parts.append("\(citationCount) \(citationCount == 1 ? "source" : "sources")")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

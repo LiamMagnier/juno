@@ -379,6 +379,29 @@ public final class JunoRealtimeVoiceController {
         didSet { box.assistantSpeaking = assistantSpeaking }
     }
     public private(set) var muted = false
+    /// Whether talking over Juno interrupts it.
+    ///
+    /// **A fact about the audio hardware, never a preference**, which is why it
+    /// is resolved from the input node in ``buildAudioGraph(voiceProcessing:)``
+    /// and not from a setting. Without echo cancellation the microphone hears the
+    /// speakers, so the detector's "someone is talking" is *Juno* talking — and
+    /// automatic barge-in becomes a session that hangs up on its own first
+    /// syllable, every answer, with nothing on screen to explain it. See
+    /// ``RealtimeBargeInPolicy``, whose `.unknown` case resolves to
+    /// ``RealtimeBargeInPolicy/manualOnly`` for exactly that reason.
+    ///
+    /// ``manualOnly`` is not a degraded mode: the Interrupt control works under
+    /// both policies and is the interruption that is always available.
+    public private(set) var bargeIn: RealtimeBargeInPolicy = .manualOnly
+    /// The session as ``RealtimeSessionMachine`` sees it — finer than ``phase``
+    /// in the one place a reader can feel: `listening` / `responding` /
+    /// `interrupting` are three separate states where ``Phase/live`` is one.
+    ///
+    /// Published so a surface can say "Interrupting…" for the round trip between
+    /// the interrupt going out and the relay confirming it dropped the turn.
+    /// Without it that window renders as "Juno is speaking" over silence, which
+    /// reads as the interruption having been ignored.
+    public private(set) var sessionPhase: RealtimeSessionPhase = .idle
     /// A non-fatal relay notice, cleared after a few seconds. The relay sends
     /// `error` frames mid-session for things a conversation survives; promoting
     /// those to ``Phase/error(_:)`` would hang up on a recoverable hiccup.
@@ -395,6 +418,33 @@ public final class JunoRealtimeVoiceController {
     private let authorization: any JunoVoiceRelayAuthorizing
     /// Used only when the token response does not name a relay.
     private let fallbackRelayURL: URL?
+
+    /// The shared lifecycle reducer, run **alongside** this controller rather
+    /// than in place of it.
+    ///
+    /// Every event this controller learns about is mirrored in, so the reducer's
+    /// phase is a second, testable reading of the same session — but only the
+    /// barge-in transitions have their effects executed (see ``perform(_:)``).
+    /// A full swap would put the reconnect, the recognizer, ScreenCaptureKit and
+    /// the composed-turn bookkeeping through a reducer none of them has ever run
+    /// under; this gets the two behaviours that were previously unreachable —
+    /// automatic barge-in and an observable `interrupting` — without moving the
+    /// working call onto an untested spine.
+    ///
+    /// Drift is safe by construction: an event the reducer does not expect
+    /// returns `[]` and leaves its phase alone, and every barge-in decision is
+    /// gated on it being in ``RealtimeSessionPhase/responding``. A mirror that
+    /// has fallen behind therefore withholds automatic barge-in, which is the
+    /// same place the hardware gate already lands.
+    private var session: RealtimeSessionMachine
+    /// Reads the same 0…1 meter the orb is drawn from and decides whether the
+    /// reader has started talking over the answer. Only consulted under
+    /// ``RealtimeBargeInPolicy/automatic``.
+    private var detector = RealtimeVoiceActivityDetector()
+    /// What the input node reported once the graph was up. ``RealtimeEchoCancellation/unknown``
+    /// before ``startAudioEngine()`` and after teardown — a third answer, not a
+    /// pessimistic second one.
+    private var echoCancellation: RealtimeEchoCancellation = .unknown
 
     private let box = VoiceRelayShuttle()
     private var audioEngine: AVAudioEngine?
@@ -453,6 +503,94 @@ public final class JunoRealtimeVoiceController {
         self.authorization = authorization
         self.fallbackRelayURL = relayURL
         self.provider = provider
+        self.session = RealtimeSessionMachine(provider: provider)
+    }
+
+    // MARK: Session mirror
+
+    /// Feeds one event to ``session`` and republishes its phase.
+    ///
+    /// The returned effects are **discarded by default**. This controller
+    /// already owns the socket, the engine, the recognizer and the reconnect,
+    /// and running the reducer's `closeTransport`/`stopAudio`/`scheduleReconnect`
+    /// on top of that would tear a session down twice. Only ``interrupt()`` and
+    /// ``noticeBargeIn(_:)`` pass the result on to ``perform(_:)``, because the
+    /// barge-in effects are the ones the controller has no other source for.
+    @discardableResult
+    private func advance(_ event: RealtimeSessionEvent) -> [RealtimeSessionEffect] {
+        let effects = session.apply(event)
+        sessionPhase = session.phase
+        return effects
+    }
+
+    /// Executes the barge-in effects, and only those.
+    ///
+    /// `flushPlayback` before `sendInterrupt` is the reducer's ordering and it is
+    /// load-bearing: the queued buffers are already on the player node, so
+    /// waiting for the relay to acknowledge means Juno talks over the
+    /// interruption for a whole round trip. `setUplinkSuppressed(false)` matters
+    /// just as much — half-duplex has the microphone muted while Juno holds the
+    /// floor, and an interruption nobody unmutes is one the relay never hears.
+    ///
+    /// Anything else the reducer asks for is ignored here on purpose; see
+    /// ``advance(_:)``.
+    private func perform(_ effects: [RealtimeSessionEffect]) {
+        for effect in effects {
+            switch effect {
+            case .flushPlayback:
+                flushPlayback()
+            case .sendInterrupt:
+                send(.controlInterrupt)
+            case .setUplinkSuppressed(let suppressed):
+                assistantSpeaking = suppressed
+            case .notice(let message):
+                showNotice(message)
+            case .startAudio, .openTransport, .sendSessionStart, .scheduleReconnect,
+                .closeTransport, .stopAudio:
+                // Owned by this controller's own lifecycle, which has already
+                // run them or is about to.
+                break
+            }
+        }
+    }
+
+    /// The floor changed hands, so the run of frames counted against the
+    /// previous speaker must not decide anything about the next one. Called
+    /// wherever ``assistantSpeaking`` moves for a reason other than barge-in.
+    private func resetVoiceActivity() {
+        detector.reset()
+    }
+
+    /// Automatic barge-in, one meter frame at a time.
+    ///
+    /// Four gates, each one a specific failure it prevents: the policy (the
+    /// microphone hears the speakers without echo cancellation), mute (a muted
+    /// microphone cannot be talking over anything, and the frames captured just
+    /// before the mute must not fire an interruption just after it),
+    /// ``assistantSpeaking`` (there is nothing to interrupt otherwise), and the
+    /// reducer itself, which returns no effects unless it agrees Juno holds the
+    /// floor.
+    private func noticeBargeIn(_ loudness: Double) {
+        guard bargeIn == .automatic, !muted, assistantSpeaking else { return }
+        guard detector.observe(loudness: loudness) == .began else { return }
+        perform(advance(.userSpeechDetected))
+    }
+
+    /// Hardware truth, mirrored onto both the published property and the
+    /// reducer, so a surface and a barge-in decision can never read different
+    /// answers to the same question.
+    private func setBargeInPolicy(_ policy: RealtimeBargeInPolicy) {
+        bargeIn = policy
+        session.setBargeInPolicy(policy)
+        resetVoiceActivity()
+    }
+
+    /// A never-empty detail for the reducer's failure events. `LocalizedError`
+    /// makes `errorDescription` optional and the reducer stores whatever it is
+    /// handed; an empty string there would render as a blank explanation.
+    private nonisolated static func mirrorDetail(_ error: JunoRealtimeVoiceError) -> String {
+        let described = error.errorDescription ?? ""
+        return described.isEmpty ? "The voice session could not continue." : described
     }
 
     /// Connects and starts a session. Safe to call again from `ended` or
@@ -484,8 +622,17 @@ public final class JunoRealtimeVoiceController {
         assistantSpeaking = false
         if let requested { provider = requested }
         phase = .connecting
+        // A fresh reducer per session, pinned to manual barge-in until the audio
+        // graph has been asked what it is actually doing about echo. Carrying the
+        // previous call's policy across would let a session that had headphones
+        // start automatic on a Mac that no longer has them.
+        session = RealtimeSessionMachine(provider: provider)
+        echoCancellation = .unknown
+        setBargeInPolicy(.manualOnly)
+        advance(.start)
 
         guard await requestMicPermission() else {
+            advance(.audioFailed(Self.mirrorDetail(JunoRealtimeVoiceError.micPermissionDenied)))
             phase = .error(.micPermissionDenied)
             return
         }
@@ -498,6 +645,7 @@ public final class JunoRealtimeVoiceController {
     public func end() {
         guard !closedByUser else { return }
         closedByUser = true
+        advance(.end)
         teardown(closeCode: .normalClosure)
         // A session that already ended or failed keeps that phase: overwriting a
         // relay's reason with "client" would lose the only explanation the user
@@ -518,16 +666,32 @@ public final class JunoRealtimeVoiceController {
     public func setMuted(_ newValue: Bool) {
         muted = newValue
         box.muted = newValue
+        // A muted microphone cannot be talking over the answer. Retiring the
+        // run here is what stops the frames captured just before the mute from
+        // firing an interruption just after it.
+        if newValue { resetVoiceActivity() }
     }
 
-    /// Barge-in. Local playback is flushed *before* the relay is told, because
-    /// the queued buffers are already on the player node: waiting for the relay
-    /// to acknowledge means the model keeps talking over the interruption for as
-    /// long as the round trip takes.
+    /// Barge-in, by hand. Local playback is flushed *before* the relay is told,
+    /// because the queued buffers are already on the player node: waiting for the
+    /// relay to acknowledge means the model keeps talking over the interruption
+    /// for as long as the round trip takes.
+    ///
+    /// Works under **either** ``bargeIn`` policy — the on-screen control is the
+    /// interruption that is always available, which is exactly why
+    /// ``RealtimeBargeInPolicy/manualOnly`` is a usable mode and not a broken one.
+    ///
+    /// The flush and the send stay here rather than being delegated to the
+    /// reducer's effects: this is the path a reader's finger takes, and it must
+    /// not become conditional on the mirror agreeing about whose turn it is.
+    /// ``advance(_:)`` is still fed, so the mirror reaches `interrupting` and the
+    /// surface can say so.
     public func interrupt() {
         guard phase == .live else { return }
         flushPlayback()
         send(.controlInterrupt)
+        resetVoiceActivity()
+        advance(.interruptRequested)
     }
 
     /// Switches provider on the live socket rather than reconnecting — the relay
@@ -550,6 +714,11 @@ public final class JunoRealtimeVoiceController {
         #endif
         flushPlayback()
         assistantSpeaking = false
+        // The mirror has no "switch provider" event, and it does not need one:
+        // the floor is being handed back either way, and saying so is what stops
+        // it sitting in `responding` for a turn that was just dropped.
+        resetVoiceActivity()
+        advance(.assistantTurnEnded)
         send(.sessionSwitch(provider: newProvider))
     }
 
@@ -608,6 +777,7 @@ public final class JunoRealtimeVoiceController {
                 // CoreAudio's OSStatus onto something actionable itself, and
                 // re-wrapping it in `.audioEngineFailed(_:)` here would flatten
                 // the refusal case the UI turns into a Settings link.
+                advance(.audioFailed(Self.mirrorDetail(error)))
                 phase = .error(error)
                 return
             }
@@ -621,6 +791,13 @@ public final class JunoRealtimeVoiceController {
         startReceiving(on: task)
         startPinging()
         startMetering()
+        // After the send, not before: the reducer answers `transportOpened` with
+        // `sendSessionStart`, and this controller has already done that. Feeding
+        // it here keeps the mirror's phase at `negotiating` — which is what makes
+        // the next `session.ready` a transition the reducer accepts rather than
+        // one it ignores, and an ignored `ready` is a mirror that never reaches
+        // `responding` and therefore never allows barge-in.
+        advance(.transportOpened)
         if isReconnect { phase = .reconnecting }
     }
 
@@ -677,6 +854,7 @@ public final class JunoRealtimeVoiceController {
     private func socketFailed(_ error: any Error) {
         guard !closedByUser else { return }
         if case .ended = phase { return }
+        advance(.transportFailed(error.localizedDescription))
         if phase == .live, !reconnectAttempted {
             // Once, and only from `live`. A drop before the first
             // `session.ready` is usually a rejected credential, and retrying it
@@ -687,6 +865,7 @@ public final class JunoRealtimeVoiceController {
             flushPlayback()
             capabilities = nil
             assistantSpeaking = false
+            resetVoiceActivity()
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !self.closedByUser else { return }
@@ -721,6 +900,7 @@ public final class JunoRealtimeVoiceController {
             // that recovered has earned another attempt if it drops again.
             reconnectAttempted = false
             phase = .live
+            advance(.sessionReady(provider: readyProvider, capabilities: readyCapabilities))
             if readyCapabilities.needsClientTranscript {
                 await startTranscriber()
             } else {
@@ -732,6 +912,12 @@ public final class JunoRealtimeVoiceController {
 
         case .turn(let turnPhase):
             assistantSpeaking = turnPhase == .start
+            // The floor changed hands, so the run of loud frames counted against
+            // whoever had it before must not decide anything about whoever has it
+            // now — otherwise the tail of Juno's own first word arrives at the
+            // detector as the reader interrupting.
+            resetVoiceActivity()
+            advance(turnPhase == .start ? .assistantTurnBegan : .assistantTurnEnded)
             // The answer starts here, whatever arrives next. Recorded on the
             // relay's own turn frame rather than on the first assistant word,
             // because some relays send the frame first and some do not.
@@ -740,11 +926,14 @@ public final class JunoRealtimeVoiceController {
         case .interrupted:
             flushPlayback()
             assistantSpeaking = false
+            resetVoiceActivity()
+            advance(.relayInterrupted)
 
         case .usage(let update):
             usage = update
 
         case .sessionClosed(let reason):
+            advance(.relayClosed(reason))
             teardown(closeCode: .normalClosure)
             phase = .ended(reason)
 
@@ -752,6 +941,11 @@ public final class JunoRealtimeVoiceController {
             // Fatal only before the session is up. Once audio is flowing the
             // same frame means "that turn had a problem", and hanging up on it
             // would end conversations that were fine.
+            //
+            // The mirror is fed the same frame and draws the same distinction
+            // itself — its `notice` effect is dropped here rather than executed,
+            // because ``showNotice(_:)`` below is already the one that runs.
+            advance(.relayError(detail))
             if phase == .connecting || phase == .reconnecting {
                 teardown(closeCode: .normalClosure)
                 phase = .error(.relay(detail))
@@ -1244,6 +1438,35 @@ public final class JunoRealtimeVoiceController {
         audioEngine = engine
         playerNode = player
         playbackFormat = playback
+        // Read from the node, never from what was asked for: `setVoiceProcessingEnabled`
+        // only sets a flag, and on the Macs whose input and output are different
+        // devices the unit refuses to initialise inside `engine.start()`. Asking
+        // for the canceller and getting it are different facts, and only the
+        // second one makes automatic barge-in safe — so the policy is derived
+        // here, once the graph is genuinely up.
+        echoCancellation = Self.echoCancellation(of: input)
+        setBargeInPolicy(RealtimeBargeInPolicy(echoCancellation: echoCancellation))
+    }
+
+    /// What the hardware is doing about echo, as the input node reports it.
+    ///
+    /// Deliberately the same rule ``AVAudioEngineRealtimeEndpoint`` uses, down to
+    /// the platform behaviour it implies: `isVoiceProcessingEnabled` tracks the
+    /// voice-processing IO unit on *this node*, which only macOS asks for, so an
+    /// iPhone answers ``RealtimeEchoCancellation/unavailable`` and stays on manual
+    /// barge-in even though its `.voiceChat` session is cancelling echo at the
+    /// session level.
+    ///
+    /// That conservatism is the whole design and is not an oversight to tidy up.
+    /// The cost of being wrong in one direction is a feature nobody notices is
+    /// missing; the cost of being wrong in the other is every answer cut off by
+    /// its own first syllable, with the Interrupt button apparently pressing
+    /// itself. If the phone is to have automatic barge-in it should come from
+    /// enabling the unit and reading it back here, not from inferring it.
+    private nonisolated static func echoCancellation(
+        of input: AVAudioInputNode
+    ) -> RealtimeEchoCancellation {
+        input.isVoiceProcessingEnabled ? .active : .unavailable
     }
 
     /// The input node's format now, with voice processing withdrawn if enabling
@@ -1295,6 +1518,11 @@ public final class JunoRealtimeVoiceController {
         audioEngine = nil
         playerNode = nil
         playbackFormat = nil
+        // Back to the third answer, not to a pessimistic second one: "no graph"
+        // and "a graph with no canceller" want different UI, and the policy that
+        // falls out of both is manual either way.
+        echoCancellation = .unknown
+        setBargeInPolicy(RealtimeBargeInPolicy(echoCancellation: .unknown))
     }
 
     // MARK: Audio failures
@@ -1526,7 +1754,19 @@ public final class JunoRealtimeVoiceController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(Int(Self.meterInterval * 1_000)))
                 guard !Task.isCancelled, let self else { break }
-                let micTarget = self.muted ? 0 : Self.loudness(self.box.micLevel)
+                let micLoudness = Self.loudness(self.box.micLevel)
+                // Automatic barge-in reads the same number the orb is drawn from,
+                // on the same pump, so a detector calibrated against one curve and
+                // a light drawn from another can never drift apart — the failure
+                // that produces the least debuggable report in the stack: "it cut
+                // the answer off and the light hadn't even moved."
+                //
+                // Fed here and not from the tap because this loop runs at a fixed
+                // ~30Hz, which is the cadence ``RealtimeVoiceActivityDetector``'s
+                // frame counts are tuned against; the tap's rate follows whatever
+                // buffer size the hardware chose.
+                self.noticeBargeIn(micLoudness)
+                let micTarget = self.muted ? 0 : micLoudness
                 // Playback decays rather than being cleared: the relay's audio
                 // arrives in bursts, and resetting between them would strobe the
                 // field through zero while the model is still mid-word.

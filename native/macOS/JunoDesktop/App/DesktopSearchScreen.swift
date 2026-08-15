@@ -22,6 +22,13 @@ import SwiftUI
 struct DesktopSearchScreen: View {
     @Bindable var model: NativeSearchModel<SQLiteAccountRepository>
     let openConversation: (String) -> Void
+    /// The server's `activity` frames for the generation running in Chat, if
+    /// there is one. Empty is the ordinary state and draws nothing.
+    var researchActivity: [NativeChatActivity] = []
+    /// Takes the reader to the conversation the research run belongs to. Nil
+    /// where there is no conversation to return to, which disables the control
+    /// rather than leaving one that does nothing.
+    var openResearchRun: (() -> Void)?
 
     @State private var scope = DesktopSearchScope.everything
     @State private var selection: NativeSearchResult.ID?
@@ -40,6 +47,7 @@ struct DesktopSearchScreen: View {
             // No canvas here. The detail column paints it once; repainting it
             // inside a page is what flattens the window into a single cream field
             // and leaves floating chrome with nothing to refract.
+            .safeAreaInset(edge: .top, spacing: 0) { researchBar }
             .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
             .searchable(text: query, placement: .toolbar, prompt: "Search Juno")
             .searchFocused($fieldFocused)
@@ -234,6 +242,92 @@ struct DesktopSearchScreen: View {
                 ? "Cannot be opened from Search"
                 : "Opens the conversation"
         )
+    }
+
+    // MARK: - Research
+
+    /// The deep-research run happening in Chat, reported on the screen whose
+    /// whole job is finding things.
+    ///
+    /// **Why here.** This page searches the encrypted store on this Mac and says
+    /// so in its own status bar; deep research is the other half of the same
+    /// question, running against the web, and a reader who came here looking for
+    /// something Juno is *at that moment* reading twelve pages about should be
+    /// told rather than shown "No results". The strip is the pointer back.
+    ///
+    /// Everything in it is read through ``DeepResearchActivityProjection``, which
+    /// maps the server's existing `activity` stream onto the same phase and
+    /// citation vocabulary a local run produces — not a second research engine
+    /// with its own opinion about what the run did.
+    @ViewBuilder
+    private var researchBar: some View {
+        let run = DeepResearchActivityProjection.progress(from: researchActivity)
+        // Absent, not empty: no activity is no run, and a strip that appears with
+        // nothing in it would read as a run that has stalled.
+        if !researchActivity.isEmpty {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.snug) {
+                    Image(systemName: "binoculars")
+                        .junoSecondaryInk()
+                    // The phase is the server's own account of where it is, never
+                    // a guess one step ahead of the events — a label that runs
+                    // ahead is how a stuck run looks healthy.
+                    Text(researchHeadline(run))
+                        .junoCaption()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: JunoSpace.regular)
+                    if let counts = run.countsSummary {
+                        Text(counts)
+                            .junoCaption()
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                    if let openResearchRun {
+                        Button("Open in Chat", action: openResearchRun)
+                            .buttonStyle(.link)
+                            .accessibilityIdentifier("juno.desktop.search-research-open")
+                    }
+                }
+                // A run that quietly degraded to plain chat has to say so: the
+                // reader asked for research and the answer is not researched.
+                // Only the first — the rest of a warning burst says the same
+                // thing in different words and would bury the strip.
+                if let warning = run.warnings.first {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .junoCaption()
+                        .foregroundStyle(Color.junoCaution)
+                        .lineLimit(2)
+                }
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.snug)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.junoRaised)
+            .overlay(alignment: .bottom) { Divider() }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.updatesFrequently)
+            .accessibilityIdentifier("juno.desktop.search-research")
+        }
+    }
+
+    /// Phase plus the query, when the run reported one.
+    ///
+    /// Two things it refuses to do. It does not keep saying "Researching" once
+    /// the run is over — the activity outlives the generation that produced it,
+    /// and a present tense over a finished run reports work that stopped minutes
+    /// ago as still happening. And it drops the quoted half rather than inventing
+    /// one: a nil query is the honest answer on the provider-tool search paths,
+    /// where sources arrive from grounding metadata and the query the model typed
+    /// never reaches this client.
+    private func researchHeadline(_ run: ServerResearchProgress) -> String {
+        let stage = switch run.phase {
+        case .completed: "Researched the web"
+        case .stopped: "Research stopped"
+        default: "Researching the web · \(run.phase.displayName)"
+        }
+        guard let query = run.currentQuery else { return stage }
+        return "\(stage) — “\(query)”"
     }
 
     // MARK: - Status

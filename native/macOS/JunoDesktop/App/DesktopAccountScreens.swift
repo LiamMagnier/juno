@@ -32,7 +32,18 @@ struct DesktopDestinationView: View {
             if let model = configuration.searchModel {
                 DesktopSearchScreen(
                     model: model,
-                    openConversation: openConversation
+                    openConversation: openConversation,
+                    // The run in flight in Chat, so the screen a reader uses to
+                    // find things can say "Juno is reading twelve pages about
+                    // this right now" instead of "No results".
+                    researchActivity: conversationModel.researchActivity,
+                    // Only offered when there is a conversation to return to.
+                    // A run always belongs to one, but a reader can reach Search
+                    // from a draft that has not been created yet, and a link to
+                    // nowhere is worse than no link.
+                    openResearchRun: conversationModel.selectedConversationID.map { id in
+                        { openConversation(id) }
+                    }
                 )
             } else {
                 unavailable("Search", "The encrypted search index is unavailable.")
