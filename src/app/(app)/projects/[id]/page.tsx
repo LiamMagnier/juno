@@ -550,11 +550,16 @@ export default function ProjectDetailPage() {
         <header className="mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <CardEyebrow>Project</CardEyebrow>
-            {/* Type scale lives on the wrapper so the rename input inherits the hero
-                metrics verbatim (text-[length:inherit]). Passing `text-display` into
-                Input would be silently dead: twMerge reads custom type tokens as colour
-                classes and keeps Input's `text-sm`, which wins on alphabetical order. */}
-            <div className="mt-2 flex items-center gap-2 text-[clamp(1.7rem,1.45rem+0.8vw,2.15rem)] font-semibold leading-tight tracking-[-0.025em]">
+            {/* `text-page-title` on both branches, so the rename input and the heading it
+                replaces render from one named rung and the swap stays metrically silent.
+                This site used to hand-write clamp(1.7rem, 1.45rem + 0.8vw, 2.15rem) at
+                -0.025em — the third of the three drift variants tailwind.config.ts's
+                fontSize comment names — and hung it on this wrapper so the Input could
+                inherit it through `text-[length:inherit]`. That indirection only existed
+                because twMerge read custom type tokens as colour classes and kept Input's
+                own `text-sm`; utils.ts registers the fontSize keys now, so the token wins
+                outright and the wrapper is back to just laying the row out. */}
+            <div className="mt-2 flex items-center gap-2">
               {editingName ? (
                 <Input
                   value={nameDraft}
@@ -572,11 +577,11 @@ export default function ProjectDetailPage() {
                   // here never rendered and everything around it was tuned at 10px.
                   // Now the last class wins, which would have silently squared this
                   // field off against every other input in the product.
-                  className="h-auto max-w-xl px-2 py-0.5 text-[length:inherit]"
+                  className="h-auto max-w-xl px-2 py-0.5 text-page-title"
                 />
               ) : (
                 <>
-                  <h1 className="truncate">{data.project.name}</h1>
+                  <h1 className="truncate text-page-title">{data.project.name}</h1>
                   <button
                     onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
                     className="pressable shrink-0 rounded-control p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -1189,9 +1194,11 @@ export default function ProjectDetailPage() {
             <DialogTitle className="mt-2 text-xl">
               How Juno behaves in this project
             </DialogTitle>
-            {/* No type token here: twMerge would read `text-body` as a colour and evict
-                DialogDescription's own text-muted-foreground. */}
-            <DialogDescription className="mt-1.5">
+            {/* `text-body` is the prose rung this description wanted; DialogDescription
+                itself only sets `text-sm`. It could not be passed until utils.ts
+                registered the fontSize keys — twMerge read it as a colour and evicted the
+                component's own text-muted-foreground. Both survive the merge now. */}
+            <DialogDescription className="mt-1.5 text-body">
               Prepended to every chat here — Juno reads this before your first message, alongside the
               referenced files.
             </DialogDescription>
