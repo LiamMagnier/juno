@@ -904,7 +904,7 @@ extension CodePreviewData {
         ],
         "Sources/JunoCodeUI": [
             FileEntry(path: path("Sources/JunoCodeUI/Theme/JunoCodeTheme.swift"), isDirectory: false, byteCount: 2_744),
-            FileEntry(path: path("Sources/JunoCodeUI/Views/WorkbenchView.swift"), isDirectory: false, byteCount: 3_902),
+            FileEntry(path: path("Sources/JunoCodeUI/Views/TranscriptView.swift"), isDirectory: false, byteCount: 3_902),
         ],
         "Tests": [
             FileEntry(path: path("Tests/JunoCodeCoreTests"), isDirectory: true, byteCount: nil),

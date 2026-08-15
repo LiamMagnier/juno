@@ -409,6 +409,39 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
         completionTokens = payloadNum(event.payload, "completionTokens") ?? completionTokens;
         break;
       }
+      case "rollback_result": {
+        /*
+         * The OUTCOME is transcript; the request is not.
+         *
+         * `accept_change`/`reject_change`/`undo_change` are asks that may never
+         * have been acted on — a host can vanish between the ask and the answer
+         * — so persisting them would leave a reloaded transcript claiming a file
+         * was reverted on the strength of somebody having clicked. This row is
+         * the host's own report, and it is the one thing here that a reader
+         * coming back tomorrow can rely on. It sits beside the `write` rows it
+         * contradicts, which is the whole point: a file listed as edited and
+         * then listed as reverted has to read that way in history too.
+         */
+        const status = payloadStr(event.payload, "status");
+        const paths = Array.isArray((event.payload as EventPayload | null)?.paths)
+          ? ((event.payload as EventPayload).paths as unknown[]).filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [];
+        push(event, {
+          kind: status === "applied" ? "done" : "warning",
+          title:
+            status === "applied"
+              ? paths.length === 1
+                ? `Rolled back ${paths[0]}`
+                : `Rolled back ${paths.length} files`
+              : status === "unsupported"
+                ? "Nothing to roll back"
+                : "Rollback failed",
+          detail: payloadStr(event.payload, "message") ?? undefined,
+        });
+        break;
+      }
       case "agent": {
         // Keep only each agent's LATEST snapshot; folded below after the loop.
         const agent = (event.payload as Record<string, unknown> | null)?.agent as
@@ -420,7 +453,10 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
         break;
       }
       default:
-        break; // status/user/approval_response/cancel_request carry no transcript content
+        // status/user/approval_response/cancel_request carry no transcript
+        // content, and neither do the rollback ASKS — see `rollback_result`
+        // above for why only the host's answer is persisted.
+        break;
     }
   }
 

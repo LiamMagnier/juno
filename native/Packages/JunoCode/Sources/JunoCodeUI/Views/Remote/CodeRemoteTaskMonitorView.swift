@@ -538,6 +538,18 @@ private extension NativeCodeEvent.Kind {
         case .error: "exclamationmark.triangle"
         case .done: "checkmark.circle"
         case .agent: "person.2"
+        // The rollback verbs. `rollbackReady` is a host capability
+        // advertisement that `decodeEvent` deliberately keeps so the log
+        // decodes without dropping it, and which the monitor does not render;
+        // the other four are real, user-visible outcomes of a change being
+        // accepted, rejected or undone. They are enumerated rather than left to
+        // a `default` so the next verb added to `NativeCodeEvent.Kind` fails
+        // this switch instead of silently rendering as a dotted circle.
+        case .rollbackReady: "circle.dotted"
+        case .acceptChange: "checkmark.circle"
+        case .rejectChange: "xmark.circle"
+        case .undoChange: "arrow.uturn.backward.circle"
+        case .rollbackResult: "arrow.triangle.2.circlepath"
         }
     }
 
