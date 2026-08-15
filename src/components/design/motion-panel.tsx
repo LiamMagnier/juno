@@ -29,7 +29,7 @@
  */
 
 import * as React from "react";
-import { EyeOff, Pause, Play, Plus, Repeat, SkipBack, X } from "lucide-react";
+import { EyeOff, Pause, Play, Plus, Repeat, SkipBack } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   ANIMATABLE_PROPERTIES,
@@ -565,11 +565,7 @@ export function MotionPanel({
                       aria-label={`Remove the ${info.label} track`}
                       className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
                     >
-                      {/* Raw `X`. This destroys a track, so by the registry it
-                          should be `ActionIcons.delete` ("never a bare X") — but
-                          that swaps the drawing for a trash can, which is a
-                          design call rather than part of this migration. */}
-                      <X className="size-3" aria-hidden />
+                      <ActionIcons.delete className="size-3" aria-hidden />
                     </button>
                   </div>
                 );

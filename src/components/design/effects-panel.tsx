@@ -1820,8 +1820,9 @@ export function TextField({
 }
 
 /** Sentinel for the "Mixed" row. Not the empty string: some of these selects
- *  use "" for a real choice ("None"). */
-const MIXED_OPTION = " mixed";
+ *  use "" for a real choice ("None"). The NUL is an escape, not the raw byte it
+ *  used to be — a literal NUL makes git treat this file as binary. */
+const MIXED_OPTION = "\u0000mixed";
 
 /**
  * A boolean, on the same row as every other field.

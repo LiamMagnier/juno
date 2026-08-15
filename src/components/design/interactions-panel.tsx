@@ -26,7 +26,8 @@
  */
 
 import * as React from "react";
-import { Plus, X } from "lucide-react";
+import { Plus } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { ColorField } from "@/components/design/effects-panel";
 import { EasingEditor, InlineNumber, SmallSelect, fieldClass } from "@/components/design/motion-panel";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
@@ -286,10 +287,7 @@ function InteractionCard({
           aria-label="Remove this interaction"
           className="pressable mt-3 shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
         >
-          {/* Raw `X` — this destroys the interaction, so it is not
-              `ActionIcons.dismiss`. See motion-panel.tsx for why it is not
-              `ActionIcons.delete` either. */}
-          <X className="size-3" aria-hidden />
+          <ActionIcons.delete className="size-3" aria-hidden />
         </button>
       </div>
 

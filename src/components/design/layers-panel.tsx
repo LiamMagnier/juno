@@ -41,7 +41,6 @@ import {
   LockOpen,
   Plus,
   Square,
-  X,
   Zap,
 } from "lucide-react";
 import { ActionIcons, DesignIcons, type DesignIconName } from "@/lib/app-icons";
@@ -441,7 +440,7 @@ export function LayersPanel({
                   aria-label={`Delete ${p.name}`}
                   className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/page:opacity-100 coarse:opacity-100"
                 >
-                  <X className="size-3" aria-hidden />
+                  <ActionIcons.delete className="size-3" aria-hidden />
                 </button>
               )}
             </div>
@@ -632,12 +631,7 @@ export function LayersPanel({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" disabled={node.locked} onSelect={() => deleteLayer(id)}>
-                    {/* Raw `X`, and knowingly inconsistent: "Delete variable"
-                        further down this file already draws
-                        `ActionIcons.delete`. Reconciling the two means picking
-                        one DRAWING for destructive removal in this panel, which
-                        is a design decision, not a reference swap. */}
-                    <X className="size-4" aria-hidden />
+                    <ActionIcons.delete className="size-4" aria-hidden />
                     Delete layer
                   </DropdownMenuItem>
                 </DropdownMenuContent>
