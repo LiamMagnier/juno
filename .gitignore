@@ -96,3 +96,6 @@ DerivedData/
 # Local SQLite dev database — contains real conversation data, never commit it.
 prisma/dev.db
 prisma/dev.db-journal
+
+# Local .env snapshots taken before editing — never commit these.
+.env.backup-*
