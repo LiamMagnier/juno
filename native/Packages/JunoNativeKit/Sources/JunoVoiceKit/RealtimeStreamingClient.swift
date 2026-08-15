@@ -583,6 +583,76 @@ public enum RealtimeEchoCancellation: Equatable, Sendable {
     case active
     case unavailable
     case unknown
+
+    /// Resolved from the audio input node, and from nothing else.
+    ///
+    /// **The one thing this deliberately cannot see is what was asked for.**
+    /// `setVoiceProcessingEnabled(true)` only sets a flag — the voice-processing
+    /// IO unit either initialises inside `engine.start()` or it does not, and
+    /// `isVoiceProcessingEnabled` on the node afterwards is the only witness. Both
+    /// audio graphs in this package now request the unit on macOS *and* iOS, so
+    /// "we asked" is true almost everywhere and means almost nothing; a resolver
+    /// handed the request would eventually be edited to trust it, and trusting it
+    /// is the self-interrupting call. Without a canceller the microphone hears the
+    /// speakers, ``RealtimeVoiceActivityDetector`` reads that as the reader
+    /// talking, and every answer is cut off by its own first syllable with the
+    /// Interrupt button apparently pressing itself. This function cannot make that
+    /// mistake because it is not given the material for it.
+    ///
+    /// Note what is equally absent: `AVAudioSession.mode`. `.voiceChat` genuinely
+    /// does cancel echo at the session level on iOS, and it is a perfectly good
+    /// reason to *ask* the node for its unit — it is not evidence that the ask
+    /// succeeded, and it is not a reading of this node.
+    ///
+    /// ``unknown`` is unreachable from here on purpose. Being able to read the
+    /// node at all means a graph is up; "no graph" is the third answer and belongs
+    /// to whoever owns the lifecycle, not to a reading of hardware that is
+    /// running.
+    ///
+    /// - Parameter reportsVoiceProcessing: `AVAudioInputNode.isVoiceProcessingEnabled`,
+    ///   read **after** `engine.start()` returned. Read before then it describes a
+    ///   pending request rather than a running unit.
+    public static func fromInputNode(
+        reportsVoiceProcessing: Bool
+    ) -> RealtimeEchoCancellation {
+        reportsVoiceProcessing ? .active : .unavailable
+    }
+}
+
+// MARK: - Input format sanity
+
+/// Whether what an input node is describing is something a capture graph can
+/// actually be built on.
+///
+/// One rule, in one place, because the audio graphs had two spellings of it and
+/// they had already drifted: the "withdraw voice processing and re-read" branch
+/// tested `sampleRate <= 0`, while the "give up on this rung" guard tested
+/// `sampleRate > 0`. Those are not complements. `Double.nan` fails both — it is
+/// not `<= 0` and it is not `> 0` — so a node left describing NaN skipped the
+/// cheap recovery and failed the whole attempt instead.
+///
+/// It matters more now that iOS asks for the voice-processing unit too. A
+/// processor that attaches and leaves the node describing nothing recordable is
+/// the *recoverable* failure — withdraw it, re-read, and the call still happens
+/// on manual barge-in — and it can only be recovered from if it is recognised.
+public enum RealtimeInputFormat: Sendable {
+
+    /// - Parameters:
+    ///   - sampleRate: `AVAudioFormat.sampleRate`. Non-finite counts as unusable:
+    ///     the uplink divides by it, and `AVAudioFrameCount(_:)` traps on inf and
+    ///     NaN rather than saturating — on the realtime audio thread, which is an
+    ///     immediate crash.
+    ///   - channelCount: `AVAudioFormat.channelCount`. Zero is a node that has
+    ///     been configured out of existence, not a mono node.
+    /// - Returns: True when a converter and a tap built from this format will
+    ///   describe real audio.
+    public static func isUsable(sampleRate: Double, channelCount: UInt32) -> Bool {
+        // No upper bound on the rate, deliberately. A 384 kHz interface is a real
+        // thing a person owns, the converter downsamples whatever arrives, and
+        // refusing one would be a call that does not happen in exchange for a
+        // hazard that does not exist.
+        sampleRate.isFinite && sampleRate > 0 && channelCount > 0
+    }
 }
 
 /// One slice of captured audio, as the client sees it.
