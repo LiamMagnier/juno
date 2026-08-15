@@ -838,7 +838,7 @@ jobs:
               fi
             done
           fi
-PREFLIGHT
+          PREFLIGHT
           scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
           ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
