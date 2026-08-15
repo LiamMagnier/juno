@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { workspaceConfigSchema } from "@/lib/projects/workspace-config";
 
 /*
  * The native mutation union — request shapes only, no server imports, so the
@@ -38,6 +39,23 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
     starred: z.boolean().optional(),
   }).strict(),
   z.object({ type: z.literal("project.delete"), entityId: z.string().min(1).max(200) }).strict(),
+  // Custom-assistant config for one project. UPSERT rather than create/update,
+  // for the reason `settings.update` is an upsert: the client keys this by
+  // PROJECT, not by the workspace row's id, and the row may not exist yet on
+  // the first save. Making the client create-then-update would mean it had to
+  // learn a server-assigned id before it could ever write, and a device that
+  // configured a workspace offline would have nothing to send.
+  //
+  // `config` REPLACES the stored object wholesale — it is not a patch. A patch
+  // would need a way to say "remove the allowedTools key", and JSON's only
+  // spelling for that is null, which is already taken by a different meaning in
+  // half the fields. Whole-object replacement keeps "absent" expressible.
+  z.object({
+    type: z.literal("project_workspace.upsert"),
+    projectId: z.string().min(1).max(200),
+    config: workspaceConfigSchema,
+  }).strict(),
+  z.object({ type: z.literal("project_workspace.delete"), entityId: z.string().min(1).max(200) }).strict(),
   z.object({ type: z.literal("memory.create"), clientEntityId: z.string().uuid().optional(), content: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ type: z.literal("memory.update"), entityId: z.string().min(1).max(200), content: z.string().trim().min(1).max(20_000) }).strict(),
   z.object({ type: z.literal("memory.delete"), entityId: z.string().min(1).max(200) }).strict(),

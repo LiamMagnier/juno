@@ -138,11 +138,24 @@ public enum NativeSyncAPIError: Error, Equatable, LocalizedError, Sendable {
 }
 
 public struct NativeSyncAPIClient: Sendable {
+    /// The entity types this build understands, and the reason this list is not
+    /// advisory: ``requireEntityType`` THROWS on anything absent, which aborts
+    /// the whole page rather than skipping one row. A type the server has
+    /// started emitting and a client has not learned does not degrade — it
+    /// stops that account syncing entirely, on that device, for everything.
+    ///
+    /// So the ordering rule for adding one is fixed: the STRING SHIPS TO
+    /// CLIENTS BEFORE ANY ROW OF THAT TYPE CAN EXIST. `project_workspace` is
+    /// here ahead of the store that writes it for exactly that reason — the
+    /// server table is new and empty, so no change of that type can reach a
+    /// client until something starts creating rows, and by then this build is
+    /// the old build.
     public static let entityTypes: Set<String> = [
         "profile", "settings", "subscription", "folder", "conversation",
         "message", "message_version", "attachment", "artifact",
-        "artifact_version", "project", "memory", "saved_prompt", "connection",
-        "usage", "share", "announcement_dismissal", "scheduled_task",
+        "artifact_version", "project", "project_workspace", "memory",
+        "saved_prompt", "connection", "usage", "share",
+        "announcement_dismissal", "scheduled_task",
         "code_device", "code_task", "code_task_event", "code_workspace",
     ]
 

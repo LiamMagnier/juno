@@ -231,12 +231,19 @@ function privateAssistantMessage(
 }
 
 /**
- * The prompt-cache split for the `done` frame.
+ * The prompt-cache split for a PRIVATE turn's `done` frame.
  *
- * Lives only on the live frame because `Message` has no column for either
- * counter — `recordSpend` is where they are durably kept. Absent when the
- * provider reported nothing, so a client can tell "no cache" apart from
- * "this build/provider does not report it"; emitting 0 would assert a miss.
+ * Private mode stores nothing, so the accumulator is the only place these
+ * counters ever exist and the frame is the only chance to report them. The
+ * saved path deliberately does NOT use this any more: `Message` now has both
+ * columns, so its frame is built from the persisted row via `serializeMessage`.
+ * Spreading the accumulator over that would make the live frame right even when
+ * the write went wrong — the failure would then surface only on reload, which
+ * is precisely the bug this column set was added to fix.
+ *
+ * Absent when the provider reported nothing, so a client can tell "no cache"
+ * apart from "this build/provider does not report it"; emitting 0 asserts a
+ * miss that was never measured.
  */
 function cacheTokenFields(acc: GenerationAccumulator): {
   cacheReadTokens?: number;
@@ -1772,6 +1779,14 @@ async function handleChat(req: Request) {
         reasoningParts: string[];
         promptTokens: number | null;
         completionTokens: number | null;
+        /**
+         * The provider-reported prompt-cache split. Taken from the accumulator
+         * rather than from `buildUsage`, which clamps every absent bucket to 0
+         * for display arithmetic — persisting that would write "cache miss" for
+         * providers that simply never report the split.
+         */
+        cacheReadTokens?: number | null;
+        cacheWriteTokens?: number | null;
         /** Exact generation cost (tokens + cache + tool fees), micro-USD. */
         costMicroUsd?: number | null;
       }) => {
@@ -2175,6 +2190,11 @@ async function handleChat(req: Request) {
           reasoningParts: acc.reasoningParts,
           promptTokens: usage.totalInput || acc.tokens.promptTokens || null,
           completionTokens: usage.output || acc.tokens.completionTokens || null,
+          // Straight off the accumulator, undefined and all: `usage.cacheRead`
+          // is already `Math.max(0, … ?? 0)` and cannot tell "no cache" from
+          // "this provider does not report cache".
+          cacheReadTokens: acc.tokens.cacheReadTokens,
+          cacheWriteTokens: acc.tokens.cacheWriteTokens,
           costMicroUsd: usage.costMicroUsd || null,
         });
 
@@ -2239,7 +2259,10 @@ async function handleChat(req: Request) {
           type: "done",
           // The visible cost covers the WHOLE research run: planning (billed
           // inside runDeepResearch) + this synthesis. Zero for normal chat.
-          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined, ...cacheTokenFields(acc) },
+          // The cache split is NOT spread in from the accumulator here: it is
+          // now a column, and `serializeMessage` reads it back off the row that
+          // was just written. Same numbers live and on reload, from one source.
+          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined },
           artifacts,
           memoryUpdated,
           quota: consumed.quota,
@@ -2326,6 +2349,10 @@ async function handleChat(req: Request) {
               reasoningParts: acc.reasoningParts,
               promptTokens: partialUsage.totalInput || acc.tokens.promptTokens || null,
               completionTokens: partialUsage.output || acc.tokens.completionTokens || null,
+              // A stopped turn still consumed (and may have written) cache, so
+              // the split is persisted on the partial exactly as on the whole.
+              cacheReadTokens: acc.tokens.cacheReadTokens,
+              cacheWriteTokens: acc.tokens.cacheWriteTokens,
               costMicroUsd: partialUsage.costMicroUsd || null,
             });
             const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(acc.text));
@@ -2350,7 +2377,8 @@ async function handleChat(req: Request) {
             }
             send({
               type: "done",
-              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined, ...cacheTokenFields(acc) },
+              // Read back off the persisted row, same as the success path.
+              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
               artifacts,
               memoryUpdated: false,
               quota: consumed.quota,

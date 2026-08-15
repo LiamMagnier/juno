@@ -68,6 +68,7 @@ model User {
   votes                       FeatureVote[]
   featureComments             FeatureComment[]
   projects                    Project[]
+  projectWorkspaces           ProjectWorkspace[]
   savedPrompts                SavedPrompt[]
   authoredAnnouncements       Announcement[]               @relation("AnnouncementAuthor")
   announcementDismissals      AnnouncementDismissal[]
@@ -506,9 +507,65 @@ model Project {
   workSkills         WorkSkill[]
   knowledgeDocuments KnowledgeDocument[]
   memories           MemoryEntry[]
+  workspace          ProjectWorkspace?
 
   @@index([userId, updatedAt])
   @@unique([userId, importSourceId])
+}
+
+/// The custom-assistant configuration for one project: which tools it may reach
+/// for, which of its files are knowledge rather than chat debris, the persona
+/// name shown instead of the project's, and the model it prefers.
+///
+/// A SEPARATE TABLE RATHER THAN COLUMNS ON `Project`, on purpose. `Project` is
+/// written by renames, stars and instruction edits from every surface, and the
+/// native sync contract versions a whole entity, not a field: putting this on
+/// `Project` would make toggling a tool on the Mac collide with renaming the
+/// project on the phone and lose one of them to a revision conflict. Its own
+/// row gets its own `EntityRevision`, so the two edits are independent — which
+/// is the entire reason those conflicts do not need resolving.
+///
+/// ONE ROW PER PROJECT, enforced by `@@unique([userId, projectId])` rather than
+/// by making `projectId` the primary key: the change-capture trigger keys the
+/// feed on a scalar `id` column (see juno_record_account_change), and every
+/// other synced table has a cuid there. `userId` is denormalised alongside so
+/// the trigger's cheap 'direct' account resolution applies and the shared
+/// trigger function needs no new mode.
+///
+/// The payload is ONE VERSIONED JSON COLUMN, following `Project.workDefaults`.
+/// Not aesthetics: this config is three-valued in three places — "inherit the
+/// account default", "restricted to exactly these", and "restricted to nothing"
+/// are three different instructions, and the second and third are only
+/// distinguishable as `[]` versus an absent key. Spread across nullable scalar
+/// columns, a Prisma patch that omits a field and one that nulls it flatten
+/// into the same write, and "inherits account defaults" silently becomes
+/// "restricted to nothing" — i.e. an assistant that quietly loses every tool.
+/// JSON keeps absent and empty as distinct states all the way to the client.
+model ProjectWorkspace {
+  id     String @id @default(cuid())
+  userId String
+  /// Unique on its own: a project has at most one workspace, full stop.
+  projectId String @unique
+  /// See src/lib/projects/workspace-config.ts for the schema and the reader.
+  config    Json     @default("{}")
+  /// Lets an older client read the parts of a newer payload it understands
+  /// instead of failing on a shape it has never seen. Same contract as
+  /// `Project.workDefaultsVersion`.
+  configVersion Int  @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Redundant against `projectId @unique` as a constraint, and kept anyway
+  /// because it is what makes the mutation's upsert OWNER-SCOPED IN THE WRITE
+  /// ITSELF. Upserting on `projectId` alone would be a write whose correctness
+  /// depends entirely on the ownership check that precedes it; with this key
+  /// the account id is part of the row lookup, so a bug in that check cannot
+  /// turn into one account editing another's workspace.
+  @@unique([userId, projectId])
+  @@index([userId, updatedAt])
 }
 
 model Message {
@@ -533,6 +590,27 @@ model Message {
   feedback         Feedback? // thumbs up/down on assistant messages
   promptTokens     Int?
   completionTokens Int?
+  // The prompt-cache split of `promptTokens`, as the PROVIDER reported it.
+  //
+  // These used to live only on the live `done` SSE frame and in ApiSpend, so a
+  // reloaded transcript lost the split entirely and the native cost badge could
+  // only show a cache ratio for messages generated in the current session.
+  // Scrolling back one screen made the same turn look uninstrumented.
+  //
+  // NULLABLE AND NOTHING ELSE. NULL means "we do not know the split for this
+  // row" — every message written before this column, plus every provider that
+  // does not report cache buckets at all. A `NOT NULL DEFAULT 0` would have
+  // backfilled the entire message history with the assertion "this turn was a
+  // 100% cache miss", which is a fabricated measurement, not a missing one. No
+  // reader may coalesce these to 0: absent ≠ zero.
+  //
+  // `cacheReadTokens` is a hit (billed ~0.1x input) and is a SUBSET of
+  // `promptTokens`, not additive with it. `cacheWriteTokens` is the creation of
+  // a new cached prefix (Anthropic only, billed 1.25x/2x by TTL). The finer
+  // 5m/1h write split stays in ApiSpend, which is the billing ledger; the
+  // message row only needs what the cost badge renders.
+  cacheReadTokens  Int?
+  cacheWriteTokens Int?
   // Exact generation cost at write time (tokens + cache + tool fees), micro-USD.
   // Serializer prefers this over recomputing from token counts alone (which
   // drop cache writes and web-search fees and under-report badly).

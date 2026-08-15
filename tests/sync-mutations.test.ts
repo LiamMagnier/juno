@@ -68,6 +68,55 @@ test("project.update accepts a typed favorite and rejects malformed values", () 
   }).success);
 });
 
+test("project_workspace.upsert is keyed by project and carries a whole config", () => {
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert",
+    projectId: "project-1",
+    config: { personaName: "Release captain", allowedTools: ["webSearch", "canvas"] },
+  }).success);
+  // An empty config is a legitimate reset: it says "no opinion about anything".
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert", projectId: "project-1", config: {},
+  }).success);
+  assert.ok(mutationOperationSchema.safeParse({ type: "project_workspace.delete", entityId: "w1" }).success);
+
+  // Strictness matters more here than elsewhere: a misspelled key in a tool
+  // whitelist that were accepted silently would store a restriction nothing
+  // enforces, and the user would believe the assistant was locked down.
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert", projectId: "p1", config: { allowedTool: ["webSearch"] },
+  }).success);
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert", projectId: "p1", config: { allowedTools: ["timeTravel"] },
+  }).success);
+  assert.ok(!mutationOperationSchema.safeParse({ type: "project_workspace.upsert", config: {} }).success);
+});
+
+test("an empty tool whitelist survives the mutation schema as an empty array", () => {
+  // The op that locks an assistant out of every tool and the op that leaves it
+  // inheriting the account's must not arrive as the same request. `[]` is the
+  // first; an omitted key is the second.
+  const restricted = mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert", projectId: "p1", config: { allowedTools: [] },
+  });
+  assert.ok(restricted.success);
+  assert.ok(
+    restricted.data.type === "project_workspace.upsert" &&
+      Array.isArray(restricted.data.config.allowedTools) &&
+      restricted.data.config.allowedTools.length === 0
+  );
+
+  const inherits = mutationOperationSchema.safeParse({
+    type: "project_workspace.upsert", projectId: "p1", config: {},
+  });
+  assert.ok(inherits.success);
+  assert.ok(
+    inherits.data.type === "project_workspace.upsert" &&
+      inherits.data.config.allowedTools === undefined,
+    "no default may be manufactured for a key nobody set"
+  );
+});
+
 test("mutation request keeps idempotency envelope requirements", () => {
   const valid = {
     clientMutationId: randomUUID(),

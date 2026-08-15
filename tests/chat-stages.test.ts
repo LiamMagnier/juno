@@ -119,6 +119,50 @@ test("an unknown cost is null rather than absent", () => {
   assert.equal(fields.costMicroUsd, null);
 });
 
+test("the prompt-cache split is persisted alongside the token counts", () => {
+  const fields = assistantTurnFields(
+    {
+      content: "x",
+      model: "m",
+      promptTokens: 12_000,
+      completionTokens: 300,
+      cacheReadTokens: 9_600,
+      cacheWriteTokens: 1_400,
+    },
+    encrypt
+  );
+  assert.equal(fields.cacheReadTokens, 9_600);
+  assert.equal(fields.cacheWriteTokens, 1_400);
+});
+
+test("an unreported cache split is null, not zero — absent is not a miss", () => {
+  // A provider that reports no cache buckets has told us nothing about caching.
+  // Writing 0 would record "this turn was a total cache miss", a measurement
+  // nobody took, and it is indistinguishable downstream from a real zero.
+  const fields = assistantTurnFields(
+    { content: "x", model: "m", promptTokens: 900, completionTokens: 40 },
+    encrypt
+  );
+  assert.equal(fields.cacheReadTokens, null);
+  assert.equal(fields.cacheWriteTokens, null);
+});
+
+test("an unreported cache split is an explicit null, so a regenerate CLEARS the old one", () => {
+  // The supersede path hands these straight to prisma.message.update. Prisma
+  // reads `undefined` as "leave the column alone", so a regenerate onto a
+  // provider with no cache reporting would leave the PREVIOUS answer's cache
+  // numbers sitting under the new answer. `in` distinguishes the two states
+  // that `assert.equal(…, null)` above cannot.
+  const fields = assistantTurnFields(
+    { content: "x", model: "m", promptTokens: null, completionTokens: null },
+    encrypt
+  );
+  assert.ok("cacheReadTokens" in fields, "the key must be present for the update to clear it");
+  assert.ok("cacheWriteTokens" in fields, "the key must be present for the update to clear it");
+  assert.notEqual(fields.cacheReadTokens, undefined);
+  assert.notEqual(fields.cacheWriteTokens, undefined);
+});
+
 test("the version snapshot copies ciphertext verbatim", () => {
   // Decrypting to re-encrypt would put plaintext in memory for no reason and
   // couple the history rows to the current key.

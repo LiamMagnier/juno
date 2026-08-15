@@ -285,11 +285,16 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     /// Prompt-cache tokens the provider reported for this turn: a read is a hit
     /// on an existing prefix (~0.1x input), a write is the creation of one.
     ///
-    /// LIVE-ONLY, and `nil` is not zero. The server carries these on the `done`
-    /// frame from the in-flight accumulator; `Message` has no column for either,
-    /// so the same message re-read after a sync comes back without them. A
-    /// reader that showed absent as 0 would report every reloaded turn as a
-    /// total cache miss, which is the opposite of what happened.
+    /// `nil` IS NOT ZERO. A reader that showed absent as 0 would report the turn
+    /// as a total cache miss, which is the opposite of what happened. Absent
+    /// stays common: the provider may report no cache buckets at all.
+    ///
+    /// These are durable server-side now — `Message.cacheReadTokens` /
+    /// `cacheWriteTokens` hold them and the `message` sync entity carries them —
+    /// but THIS type is still fed only by the live `done` frame. The synced
+    /// transcript's `NativeChatMessage` does not decode them yet, so a reloaded
+    /// conversation still has no split on this side of the wire. See the note on
+    /// `sessionCostLedgers` in `NativeConversationStore`.
     public let cacheReadTokens: Int?
     public let cacheWriteTokens: Int?
 

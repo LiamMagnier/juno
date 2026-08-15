@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { coerceChatOrigin } from "@/lib/chat-origin";
+import { parseWorkspaceConfig } from "@/lib/projects/workspace-config";
 import { getViewUrl } from "@/lib/storage";
 import type { EntityIndexCursor } from "@/lib/sync-entity-index";
 
@@ -126,6 +127,17 @@ const loaders: Record<string, EntityLoader> = {
           feedback: row.feedback,
           promptTokens: row.promptTokens,
           completionTokens: row.completionTokens,
+          // The prompt-cache split of `promptTokens`. Carried here for the same
+          // reason as `costMicroUsd`: the native clients cannot derive it — it
+          // is a provider-reported measurement, not a calculation — and without
+          // it a synced transcript can only show the cache ratio for turns
+          // generated in the current session on that device.
+          //
+          // null means UNKNOWN (row predates the columns, or the provider
+          // reports no cache buckets). Passed through as null rather than 0 so
+          // the client can keep telling the two apart.
+          cacheReadTokens: row.cacheReadTokens,
+          cacheWriteTokens: row.cacheWriteTokens,
           // The exact cost written at generation time, in micro-USD. The native
           // clients cannot derive this: their model manifest carries a price
           // *tier* ("premium"/"economy"), not per-token rates, and recomputing
@@ -232,6 +244,34 @@ const loaders: Record<string, EntityLoader> = {
           nameSource: row.nameSource,
           instructions: row.instructions,
           starred: row.starred,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        },
+      ]),
+    );
+  },
+  // The custom-assistant half of a project: persona name, tool whitelist,
+  // knowledge-file selection, preferred model. A separate entity from `project`
+  // so a config edit on one device and a rename on another get independent
+  // revisions and cannot conflict — see the model comment in schema.prisma.
+  //
+  // `config` is passed through as the stored object, NOT flattened into named
+  // fields. Flattening is where "inherits the account's tools" and "allowed no
+  // tools" become the same payload: the first has no `allowedTools` key, the
+  // second has an empty array, and any shape that materialises a default for a
+  // missing key erases that difference on the way to the client.
+  project_workspace: async (accountId, ids) => {
+    const rows = await prisma.projectWorkspace.findMany({ where: { id: { in: ids }, userId: accountId } });
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          id: row.id,
+          projectId: row.projectId,
+          config: parseWorkspaceConfig(row.config),
+          // Rides alongside so a client reading a payload written by a newer
+          // build can tell "a shape I only half understand" from "corrupt".
+          configVersion: row.configVersion,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
         },
