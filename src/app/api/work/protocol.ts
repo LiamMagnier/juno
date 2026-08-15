@@ -826,13 +826,19 @@ function booleanParam(raw: string | null): boolean | null | undefined {
 }
 
 /**
- * Validates and clamps the session list filters.
+ * A `limit` parameter, the way every list route in the repo reads one.
  *
- * `limit` follows the repo's query-param idiom exactly: unparseable falls back
- * to the default rather than 400ing, and anything parseable is clamped into
- * range. The clamp is what stops `?limit=100000` from turning a list view into
- * a full-table read whenever somebody's pagination is off by a zero.
+ * Unparseable falls back to the default rather than 400ing, and anything
+ * parseable is clamped into range. The clamp is what stops `?limit=100000` from
+ * turning a list view into a full-table read whenever somebody's pagination is
+ * off by a zero.
  */
+function limitParam(raw: string | null, fallback: number, max: number): number {
+  const value = Number(raw ?? String(fallback));
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), max) : fallback;
+}
+
+/** Validates and clamps the session list filters. */
 export function parseSessionListQuery(params: URLSearchParams): SessionListQueryResult {
   const status = params.get("status");
   if (status !== null && !(WORK_STATUSES as readonly string[]).includes(status)) {
@@ -851,11 +857,6 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
     return { ok: false, parameter: "projectId" };
   }
 
-  const rawLimit = Number(params.get("limit") ?? String(SESSION_LIST_DEFAULT_LIMIT));
-  const limit = Number.isFinite(rawLimit)
-    ? Math.min(Math.max(Math.floor(rawLimit), 1), SESSION_LIST_MAX_LIMIT)
-    : SESSION_LIST_DEFAULT_LIMIT;
-
   return {
     ok: true,
     query: {
@@ -864,10 +865,52 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
       ...(pinned !== undefined ? { pinned } : {}),
       archived: archived ?? false,
       ...(projectId !== null ? { projectId } : {}),
-      limit,
+      limit: limitParam(params.get("limit"), SESSION_LIST_DEFAULT_LIMIT, SESSION_LIST_MAX_LIMIT),
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Session run list query
+// ---------------------------------------------------------------------------
+
+/**
+ * Ten is what the attempts panel asks for, and this is deliberately twice it:
+ * a default below what the only caller sends would make every request a
+ * truncation nobody asked for.
+ */
+export const SESSION_RUN_LIST_DEFAULT_LIMIT = 20;
+export const SESSION_RUN_LIST_MAX_LIMIT = 100;
+
+export interface SessionRunListQuery {
+  limit: number;
+}
+
+/**
+ * The attempt history's only knob.
+ *
+ * This returns the query rather than the `{ ok }` union its three siblings
+ * return, because there is nothing here that can fail: `limit` is clamped
+ * rather than refused, which is the repo's idiom for it, so a union would give
+ * the route a 400 branch no request could ever reach. The sibling shape is what
+ * to move back to the day this grows a cursor or a filter — both of which are
+ * parameters a client can get wrong, and wrong in a way worth naming.
+ *
+ * There is no cursor today because a session's attempts are bounded by the
+ * number of times a person pressed retry, unlike a schedule's runs, which
+ * accumulate every morning for as long as the schedule is enabled. See the
+ * route for why the order is `attempt` rather than `createdAt`.
+ */
+export function parseSessionRunListQuery(params: URLSearchParams): SessionRunListQuery {
+  return {
+    limit: limitParam(
+      params.get("limit"),
+      SESSION_RUN_LIST_DEFAULT_LIMIT,
+      SESSION_RUN_LIST_MAX_LIMIT
+    ),
+  };
+}
+
 /** Matches the constant the run-dispatch route and the scheduler each hold, for
  *  the same reason: turning cloud off should produce an honest refusal rather
  *  than schedules accepted for an executor that will never exist. */

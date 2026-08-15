@@ -28,14 +28,17 @@ import { staggerDelay } from "@/lib/motion";
  * spend, target, model and duration. Nothing new has to be recorded for this
  * panel — it only has to be read back.
  *
- * READ THIS BEFORE CHANGING THE FETCH. `GET /api/work/sessions/[id]/runs` does
- * not exist yet: the route file exports POST only, which is what dispatches a
- * run. The sibling `GET /api/work/schedules/[id]/runs` is the shape this expects
- * — `{ runs: ClientWorkRun[] }`, newest attempt first — and adding the session
- * equivalent is a handful of lines against the same serializer. Until somebody
- * does, this panel degrades to the honest sentence at the bottom of the file
- * rather than to an error, and it will light up the moment the route lands with
- * no change here.
+ * `GET /api/work/sessions/[id]/runs` answers `{ runs: ClientWorkRun[] }`, newest
+ * attempt first, off the same serializer the rest of the page reads. It returns
+ * the current attempt too, which is why the list below marks a row rather than
+ * prepending one. The route file also exports POST — that is what dispatches a
+ * run, and is unrelated to this.
+ *
+ * The `unavailable` state below is a genuine failure now rather than a missing
+ * endpoint: the request did not arrive, or answered with something this build
+ * cannot read. It degrades to the current attempt plus a sentence rather than
+ * to an error, because the one thing this panel must never do is imply that
+ * attempts it cannot read did not happen.
  *
  * The request is made only when `attempt > 1`. A task with one attempt has no
  * history to fetch and asking anyway would spend a request per page load on
@@ -112,17 +115,18 @@ export function WorkAttempts({
       <div className="space-y-1.5">
         <AttemptRow run={current} isCurrent />
         {/*
-         * Said plainly, and without a retry button, because retrying would not
-         * help: nothing this page can call knows about the earlier attempts.
-         * Promising them "soon" would be this panel making a commitment on
-         * somebody else's behalf.
+         * Said plainly, and without a retry button: the panel already re-reads
+         * whenever a new attempt starts, and a reload is the obvious move for a
+         * request that failed once. What matters is that the earlier attempts
+         * are stated as recorded — they are, on their own rows — so a reader
+         * does not conclude from an empty panel that the retries never ran.
          */}
         <p className="pt-1 text-ui leading-relaxed text-muted-foreground">
           {attempt === 2
             ? "One earlier attempt ran before this one."
             : `${attempt - 1} earlier attempts ran before this one.`}{" "}
-          Each was recorded, but nothing on this page can read them back yet, so what changed
-          between them isn’t something Juno can show you here.
+          Each was recorded, but Juno couldn’t load them just now, so what changed between them
+          isn’t something this panel can show you until it can read them back.
         </p>
       </div>
     );
