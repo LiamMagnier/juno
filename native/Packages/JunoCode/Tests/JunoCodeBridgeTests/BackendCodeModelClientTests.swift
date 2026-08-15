@@ -491,6 +491,33 @@ final class BackendCodeModelClientTests: XCTestCase {
         }
     }
 
+    func testGeminiTurnWithStopFinishReasonProducesToolUseCompletion() async throws {
+        let sse = """
+        data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_gemini_1","type":"function","function":{"name":"list_directory","arguments":"{}"}}]},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+        data: [DONE]
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        let (events, error) = await collect(
+            client,
+            makeRequest(modelID: "google:gemini-3.7-flash")
+        )
+        XCTAssertNil(error)
+        XCTAssertTrue(events.contains {
+            if case let .toolCallRequested(id, name, _) = $0 {
+                return id == "call_gemini_1" && name == "list_directory"
+            }
+            return false
+        })
+        guard case .turnCompleted(.toolUse) = events.last else {
+            return XCTFail("expected tool-use completion even when finish_reason is 'stop'")
+        }
+    }
+
     func testResponsesTurnUsesResponsesEndpointAndToolEvents() async throws {
         let sse = """
         data: {"type":"response.reasoning_summary_text.delta","delta":"I will inspect."}
