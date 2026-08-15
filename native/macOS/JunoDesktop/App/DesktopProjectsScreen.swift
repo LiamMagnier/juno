@@ -1274,6 +1274,11 @@ private struct DesktopProjectDetail: View {
             attachmentModel: configuration.attachmentModel,
             libraryModel: configuration.libraryModel,
             projectModel: model,
+            // This composer is locked to `project.id`, so the assistant's
+            // preferred model applies to everything started from here — see
+            // ``DesktopComposer/routedModelID(for:)``.
+            workspaceModel: configuration.projectWorkspaceModel,
+            documentIndex: configuration.documentIndexModel,
             connectorModel: configuration.connectorModel,
             draftProjectID: .constant(nil),
             draftPrompt: .constant(nil),
@@ -1910,7 +1915,11 @@ private struct DesktopProjectAssistantPanel: View {
                     }
                 }
                 .accessibilityIdentifier("Assistant preferred model")
-                Text("Recorded for this assistant on this Mac. Chat's own model picker still chooses the model for each turn — there is no backend field for an assistant's model to be sent in.")
+                // The caption this replaces admitted the setting did nothing —
+                // "Chat's own model picker still chooses the model for each
+                // turn". It does now, so this says what it does and, just as
+                // importantly, what still beats it.
+                Text("Chats in this project use this model. Choosing a different one in the composer overrides it for that conversation. Saved on this Mac only — there is no backend field for an assistant's model, so your other devices keep their own choice.")
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
             }
