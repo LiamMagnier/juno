@@ -108,6 +108,17 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.hasPrefix("/api/work/hosts") {
             return PreviewWorkFixtures.hostsBody(empty: empty)
         }
+        // Both before the session route, which matches the same prefix and would
+        // otherwise answer a start with a session and a message with a task
+        // list — bodies whose own decoders correctly refuse them.
+        if path.hasPrefix("/api/work/sessions"), path.hasSuffix("/runs") {
+            return PreviewWorkFixtures.startedRunBody(
+                sessionID: Self.workSessionID(in: path) ?? PreviewWorkFixtures.openSessionID
+            )
+        }
+        if path.hasPrefix("/api/work/sessions"), path.hasSuffix("/answer") {
+            return PreviewWorkFixtures.instructionOutcomeBody
+        }
         if path.hasPrefix("/api/work/sessions") {
             if let sessionID = Self.workSessionID(in: path) {
                 return PreviewWorkFixtures.sessionBody(id: sessionID, empty: empty)

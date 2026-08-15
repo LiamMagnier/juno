@@ -498,6 +498,7 @@ private struct JunoMobileWorkThread: View {
                 if isFollowing, let approval = model.currentApproval {
                     JunoMobileWorkApprovalCard(model: model, approval: approval)
                 }
+                refusal
                 // One slot, two cards, and never both. `composerMode` is the
                 // model's single answer to what this task can be told right now
                 // — shared with the Mac, mirroring the web's own rule — so
@@ -545,6 +546,32 @@ private struct JunoMobileWorkThread: View {
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 28)
+        }
+    }
+
+    /// The last thing this task refused, in the model's words.
+    ///
+    /// The composer sheet dismisses before its round trip so an impatient second
+    /// tap cannot send twice, and its comment says the outcome "lands on the card
+    /// behind this sheet". That was true of exactly one of the three things the
+    /// sheet sends. An instruction comes back as a `WorkInstructionOutcome` the
+    /// card prints; a **start** and a **restart** do not — a refused
+    /// ``NativeWorkModel/startOpenRun(carrying:)`` records a sentence on the
+    /// model and returns false, and this screen had nowhere to put it. So the
+    /// sheet closed, the words went with it, the card did not change, and the
+    /// reader was told nothing at all by the one control that moves a stopped
+    /// task. Work's list already prints this same sentence in this same strip;
+    /// the thread simply never did.
+    ///
+    /// Retry refreshes rather than re-sending. What failed was typed and is
+    /// gone, and a button that silently re-ran the last request would be
+    /// guessing at which one — but a task whose state is stale after a failure
+    /// is worth re-reading, and that is what the reader reaches for next.
+    @ViewBuilder
+    private var refusal: some View {
+        if isFollowing, let error = model.lastErrorDescription {
+            JunoInlineError(message: error) { Task { await model.refresh() } }
+                .accessibilityIdentifier("juno.mobile.work.thread-error")
         }
     }
 

@@ -92,6 +92,15 @@ struct JunoMobileApp: App {
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
                         privateChatModel: world.privateChatModel,
+                        // Work was built into the harness — `PreviewWorld`
+                        // constructs the model, `PreviewSender` serves its
+                        // fixtures in the wire shape — and then never handed to
+                        // the phone's shell, so `--juno-preview-tab work` spent
+                        // its whole life rendering "Something went wrong" and
+                        // the one screen on this device that supervises a Mac
+                        // could not be looked at without an account, a relay and
+                        // a real task in the right state.
+                        workModel: world.workModel,
                         libraryModel: world.libraryModel,
                         accountDataClient: world.accountDataClient,
                         previewSession: world.session

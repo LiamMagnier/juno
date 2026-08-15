@@ -91,6 +91,46 @@ public enum PreviewWorkFixtures {
         return json(root)
     }
 
+    /// The attempt a start request creates: queued, unclaimed, nothing spent.
+    ///
+    /// Without it `POST …/sessions/<id>/runs` fell through to the session route
+    /// and was answered with a *session*, which the run decoder is right to
+    /// refuse — so both apps' Start and Start-again controls reported "Juno
+    /// received Work data it could not read" in the one place built to inspect
+    /// them, and the surface most in need of visual QA was the surface QA could
+    /// only ever see fail.
+    ///
+    /// Queued rather than running, because that is what the route returns: an
+    /// attempt exists before any executor has claimed it, and the thread's job in
+    /// that moment is to say so.
+    public static func startedRunBody(sessionID: String) -> Data {
+        json([
+            "run": run(
+                id: "run-\(sessionID)-started",
+                session: sessionID,
+                status: "queued",
+                model: "claude-sonnet-4-6",
+                costMicroUsd: 0,
+                maxCostMicroUsd: 1_000_000,
+                lastSeq: 0,
+                startedAt: ago(seconds: 1)
+            )
+        ])
+    }
+
+    /// What the answer route says about a message it recorded.
+    ///
+    /// One sentence for both of its callers — an answer to a question and an
+    /// unprompted instruction — because the route writes one either way, and the
+    /// harness's job is to prove the client reads *the server's* words rather
+    /// than composing its own.
+    public static var instructionOutcomeBody: Data {
+        json([
+            "delivered": .bool(true),
+            "explanation": .string("Juno has this and will read it before its next step."),
+        ])
+    }
+
     /// The durable artifact index for the densest Work thread.
     public static func artifactsBody(sessionID: String) -> Data {
         guard sessionID == openSessionID else { return json(["artifacts": .array([])]) }
