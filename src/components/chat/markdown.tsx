@@ -83,19 +83,37 @@ function normalizeMathDelimiters(markdown: string): string {
     .join("\n");
 }
 
+interface SourceBlock {
+  text: string;
+  /** Where this block's first character sits in the markdown it was cut from. */
+  offset: number;
+}
+
 /**
  * Split raw markdown into stable top-level blocks — on blank lines, keeping
  * fenced code intact and indented continuations (nested list content) attached —
  * so streaming only re-parses the final, still-growing block.
+ *
+ * Each block carries the offset it was cut at, which is what lets a character
+ * position in the SOURCE be turned back into an element in the rendered DOM
+ * (see `rehypeSourceOffsets`). Without it every block's parse positions start
+ * again at zero and the twelfth paragraph of a report claims to begin at
+ * character 0, which is the same answer as the first paragraph.
  */
-function splitIntoBlocks(markdown: string): string[] {
+function splitIntoBlocks(markdown: string): SourceBlock[] {
   const lines = markdown.split("\n");
-  const blocks: string[] = [];
+  const blocks: SourceBlock[] = [];
   let current: string[] = [];
+  // Offset of the first line held in `current`, and of the line being read.
+  let start = 0;
+  let cursor = 0;
   let fence: Fence | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lineStart = cursor;
+    // `split("\n")` ate one character per line; the offsets have to put it back.
+    cursor += line.length + 1;
     const wasInFence = fence !== null;
     fence = trackFence(fence, line);
     if (!wasInFence && fence === null && line.trim() === "") {
@@ -104,14 +122,15 @@ function splitIntoBlocks(markdown: string): string[] {
       // An indented follow-up line continues the current block (list/quote content).
       if (next !== undefined && /^[ \t]/.test(next)) current.push(line);
       else {
-        blocks.push(current.join("\n"));
+        blocks.push({ text: current.join("\n"), offset: start });
         current = [];
       }
       continue;
     }
+    if (current.length === 0) start = lineStart;
     current.push(line);
   }
-  if (current.length > 0) blocks.push(current.join("\n"));
+  if (current.length > 0) blocks.push({ text: current.join("\n"), offset: start });
   return blocks;
 }
 
@@ -208,6 +227,18 @@ type MdNode = {
 
 const CITATION_RE = /\[(\d{1,3})\]/g;
 
+/**
+ * The marker a rendered citation chip wears in the DOM.
+ *
+ * A constant rather than the literal it was, because it is now load-bearing in
+ * two places at once: it is how a chip is recognised on the way IN, and how it
+ * is skipped on the way back OUT (`readAnchoredText` below). A chip is text the
+ * RENDERER injected — it draws its source number as a digit — so a paragraph
+ * ending "…rose sharply[3]." reads back as "…rose sharply3." unless it is left
+ * out, and then matches no claim the audit ever extracted.
+ */
+const CITATION_ATTR = "data-cite";
+
 /** Citation-marked pieces of `value`, or null when it holds no resolvable marker. */
 function splitCitations(value: string, sourceCount: number): MdNode[] | null {
   if (!value.includes("[")) return null;
@@ -224,7 +255,7 @@ function splitCitations(value: string, sourceCount: number): MdNode[] | null {
       type: "junoCitation",
       // An unknown mdast node carrying hName/hProperties survives mdast→hast as
       // this element, which the `span` component below picks back up.
-      data: { hName: "span", hProperties: { "data-cite": String(index) } },
+      data: { hName: "span", hProperties: { [CITATION_ATTR]: String(index) } },
       children: [],
     });
     last = m.index + m[0].length;
@@ -325,7 +356,9 @@ type HastNode = {
   type: string;
   tagName?: string;
   value?: string;
-  properties?: { className?: unknown };
+  properties?: Record<string, unknown>;
+  /** micromark's parse positions, kept by mdast→hast for every parsed node. */
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
   children?: HastNode[];
 };
 
@@ -377,14 +410,197 @@ function rehypeStreamWords() {
   };
 }
 
+/*
+ * ---- Source offsets ---------------------------------------------------------
+ * A rendered answer is the only copy of the text a reader is looking at, and
+ * several things about that text are recorded as CHARACTER RANGES into the
+ * markdown instead — `ResearchClaim.answerSpan` above all, which is where in
+ * the answer a validated claim was extracted from. Markdown rendering normally
+ * throws that mapping away: the DOM knows nothing about the string it came from.
+ *
+ * WHAT WAS REJECTED, and why. The obvious alternative is to skip offsets and
+ * search the rendered text for the claim's own sentence. It cannot stand alone:
+ * a report that says the same sentence twice (an executive summary that repeats
+ * a finding, which is the house style of every report this renders) gives two
+ * equally good matches and no way to choose, and choosing wrong in a CITATION
+ * feature means telling a reader "this sentence is what source [3] backs" about
+ * a sentence source [3] was never shown. So position locates and text verifies —
+ * see `locateClaimInAnswer` in citation-audit.tsx, which refuses to point
+ * anywhere when the two disagree.
+ *
+ * Stamped unconditionally rather than behind a prop: the audit strip is rendered
+ * by MessageItem as a SIBLING of the answer with no channel between them, so an
+ * opt-in flag would have to be threaded through a component that has no idea the
+ * audit exists. Two data attributes per block is the cheaper price.
+ */
+
+/*
+ * Offsets into the markdown this block was parsed from — start inclusive, end
+ * exclusive. Not exported: the attribute names are an implementation detail of
+ * `blocksForSourceOffset`, and a caller reading them itself would be a second
+ * place that has to agree about what "contains this offset" means.
+ */
+const SOURCE_START_ATTR = "data-src-start";
+const SOURCE_END_ATTR = "data-src-end";
+
+/*
+ * The elements a SENTENCE can live in, and deliberately not every positioned
+ * node. Stamping inline nodes too (`strong`, `em`, `a`) would make the deepest
+ * element containing a claim's first character an emphasis span half way through
+ * the sentence — a smaller target that cannot pass the "does this element hold
+ * the whole claim" check, so every emphasised sentence would go unlocatable.
+ *
+ * `pre` is absent because the `pre` component below rebuilds the node as
+ * AicssCodeBlock and drops these attributes anyway, and a fenced block is not
+ * prose a claim is drawn from.
+ */
+const SOURCE_OFFSET_TAGS = new Set([
+  "p",
+  "li",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "blockquote",
+  "td",
+  "th",
+  "dd",
+  "dt",
+  "figcaption",
+]);
+
+/**
+ * Publish each block element's position in the source string.
+ *
+ * `base` is the block's own offset within the whole message, because each
+ * MarkdownBlock parses one block in isolation and micromark numbers from zero
+ * within whatever it was handed.
+ *
+ * The one place this is approximate is a block `normalizeMathDelimiters`
+ * rewrote: `\(` becomes `$`, so positions after it are short by one per
+ * delimiter. The block's own base offset is exact regardless (normalisation is
+ * line-for-line and never moves a block boundary), so the error can only ever
+ * pick a neighbouring element INSIDE the right block — which the caller's text
+ * check then rejects rather than pointing at.
+ */
+function rehypeSourceOffsets(base: number) {
+  const walk = (node: HastNode) => {
+    if (node.type === "element" && node.tagName && SOURCE_OFFSET_TAGS.has(node.tagName)) {
+      const start = node.position?.start?.offset;
+      const end = node.position?.end?.offset;
+      if (typeof start === "number" && typeof end === "number") {
+        node.properties = {
+          ...node.properties,
+          [SOURCE_START_ATTR]: String(base + start),
+          [SOURCE_END_ATTR]: String(base + end),
+        };
+      }
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  // An attacher returning the transformer, the same shape `remarkCitations`
+  // uses: a plugin entry is CALLED by unified to build its transformer, so
+  // handing the array a bare transformer gets it invoked once at freeze time
+  // with no tree at all.
+  return function attacher() {
+    return function transformer(tree: HastNode) {
+      walk(tree);
+    };
+  };
+}
+
+/**
+ * The smallest stamped elements inside `root` whose source range covers
+ * `offset`, innermost only.
+ *
+ * A list item's paragraph and the item around it both cover the same character,
+ * and scrolling to the item when the paragraph is known would be throwing away
+ * precision that is already in hand — so anything containing another hit is
+ * dropped. More than one survivor is possible and is NOT an error: a message
+ * renders one Markdown per text part and each part numbers from its own zero,
+ * so the same offset legitimately names a block in each. Resolving that is the
+ * caller's job, and the honest resolution is to refuse (see `locateClaimInAnswer`).
+ */
+export function blocksForSourceOffset(root: ParentNode, offset: number): HTMLElement[] {
+  const hits = [...root.querySelectorAll<HTMLElement>(`[${SOURCE_START_ATTR}]`)].filter((el) => {
+    const start = Number(el.getAttribute(SOURCE_START_ATTR));
+    const end = Number(el.getAttribute(SOURCE_END_ATTR));
+    return Number.isFinite(start) && Number.isFinite(end) && offset >= start && offset < end;
+  });
+  return hits.filter((el) => !hits.some((other) => other !== el && el.contains(other)));
+}
+
+/** A text node and where its data starts in the string `readAnchoredText` returned. */
+export interface AnchoredTextSegment {
+  node: Text;
+  start: number;
+}
+
+/**
+ * A block's prose as the SOURCE had it, plus the map back to the text nodes it
+ * is spread across — so a match in the string can become a DOM Range.
+ *
+ * Citation chips are skipped whole (see CITATION_ATTR). Everything else is taken
+ * verbatim, including KaTeX's twin HTML/MathML output, which double-prints an
+ * expression; a claim containing maths therefore fails to match and goes
+ * unlocatable rather than being pointed at with an offset that is out by the
+ * length of a formula.
+ */
+export function readAnchoredText(block: HTMLElement): { text: string; segments: AnchoredTextSegment[] } {
+  const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.nodeType === Node.ELEMENT_NODE
+        ? // REJECT drops the whole subtree; SKIP would descend into the chip and
+          // pick its index digit back up, which is the failure this exists to avoid.
+          (node as Element).hasAttribute(CITATION_ATTR)
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_SKIP
+        : NodeFilter.FILTER_ACCEPT,
+  });
+  const segments: AnchoredTextSegment[] = [];
+  let text = "";
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const textNode = node as Text;
+    segments.push({ node: textNode, start: text.length });
+    text += textNode.data;
+  }
+  return { text, segments };
+}
+
+/** A DOM Range over `[start, end)` of the string `readAnchoredText` returned. */
+export function rangeFromAnchoredText(
+  segments: readonly AnchoredTextSegment[],
+  start: number,
+  end: number
+): Range | null {
+  const point = (index: number) => {
+    // `<=` on the far edge so a boundary between two text nodes resolves to the
+    // end of the first rather than to nothing at all.
+    const seg = segments.find((s) => index >= s.start && index <= s.start + s.node.data.length);
+    return seg ? { node: seg.node, offset: index - seg.start } : null;
+  };
+  const from = point(start);
+  const to = point(end);
+  if (!from || !to) return null;
+  const range = document.createRange();
+  range.setStart(from.node, from.offset);
+  range.setEnd(to.node, to.offset);
+  return range;
+}
+
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
 const MarkdownBlock = React.memo(function MarkdownBlock({
   content,
+  offset,
   streaming,
   animateTail,
   sources,
 }: {
   content: string;
+  /** Where this block starts in the message, for the source-offset attributes. */
+  offset: number;
   streaming?: boolean;
   /** True only for the final, still-growing block of a streaming message —
    *  the one block whose words get the entrance treatment. */
@@ -400,11 +616,18 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
     () => (sourceCount > 0 ? [...REMARK_PLUGINS, remarkCitations(sourceCount)] : REMARK_PLUGINS),
     [sourceCount],
   );
-  // Appended last so it walks the tree AFTER highlight and KaTeX have claimed
-  // their subtrees — the exemption test needs their classes in place.
+  // rehypeStreamWords is appended last so it walks the tree AFTER highlight and
+  // KaTeX have claimed their subtrees — the exemption test needs their classes
+  // in place. The offset stamp is indifferent to both: it only ever touches
+  // nodes carrying a parse position, and everything those two plugins invent
+  // has none.
   const rehypePlugins = React.useMemo<Options["rehypePlugins"]>(
-    () => (animateTail ? [...(REHYPE_PLUGINS ?? []), rehypeStreamWords] : REHYPE_PLUGINS),
-    [animateTail],
+    () => [
+      ...(REHYPE_PLUGINS ?? []),
+      rehypeSourceOffsets(offset),
+      ...(animateTail ? [rehypeStreamWords] : []),
+    ],
+    [animateTail, offset],
   );
   const components = React.useMemo<Components>(
     () => ({
@@ -424,10 +647,19 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
       // Only remarkCitations emits `data-cite`; every other span here (KaTeX
       // emits a great many) falls straight through untouched.
       span: ({ node: _node, ...props }) => {
-        const cite = (props as { "data-cite"?: string })["data-cite"];
+        const cite = (props as Record<string, string | undefined>)[CITATION_ATTR];
         const source = cite ? sources?.[Number(cite) - 1] : undefined;
         if (!source) return <span {...props} />;
-        return <SourceChip source={source} index={Number(cite)} />;
+        // The wrapper keeps the marker in the DOM. SourceChip renders its index
+        // as a digit and does not forward unknown props, so without something
+        // carrying `data-cite` out here a chip is indistinguishable from prose
+        // when a block's text is read back — and "…rose sharply[3]." comes back
+        // as "…rose sharply3.", which matches no claim the audit extracted.
+        return (
+          <span {...{ [CITATION_ATTR]: cite }}>
+            <SourceChip source={source} index={Number(cite)} />
+          </span>
+        );
       },
     }),
     [streaming, sources],
@@ -451,14 +683,25 @@ export const Markdown = React.memo(function Markdown({
   /** Web-search / deep-research sources backing this message, in citation order. */
   sources?: ClientSource[];
 }) {
-  const blocks = React.useMemo(() => splitIntoBlocks(normalizeMathDelimiters(content)), [content]);
+  // Split FIRST, normalise per block. Whole-document normalisation ran before
+  // the split and cost the blocks their offsets: `\(` → `$` shortens the text,
+  // so a block's position in the normalised string is not its position in the
+  // message the claim offsets were measured against. Per-block is equivalent —
+  // the transform is line-for-line, and splitIntoBlocks never cuts inside a
+  // fence, so every block starts with fence state closed exactly as the whole
+  // document did.
+  const blocks = React.useMemo(
+    () => splitIntoBlocks(content).map((block) => ({ ...block, text: normalizeMathDelimiters(block.text) })),
+    [content],
+  );
   return (
     <>
       <div className={cn("prose-juno", className)} data-streaming={streaming ? "true" : undefined} data-no-auto-translate>
         {blocks.map((block, i) => (
           <MarkdownBlock
             key={i}
-            content={streaming && i === blocks.length - 1 ? closeDangling(block) : block}
+            content={streaming && i === blocks.length - 1 ? closeDangling(block.text) : block.text}
+            offset={block.offset}
             streaming={streaming}
             animateTail={streaming && i === blocks.length - 1}
             sources={sources}

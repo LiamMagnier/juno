@@ -6,18 +6,39 @@ import {
   RESEARCH_TERMINAL_STATES,
   RESEARCH_WORKING_STATES,
   budgetAllows,
+  BRIEF_OUTPUT_TOKENS,
+  BRIEF_PROMPT_CHARS,
+  CORPUS_PER_SOURCE_CHARS,
+  CORPUS_PREAMBLE_CHARS,
+  EXPANSION_OUTPUT_TOKENS,
+  EXPANSION_PROMPT_CHARS,
   MAX_FOLLOW_UP_ROUNDS,
   nextPipelineState,
+  PAGE_FETCH_FEE_MICRO_USD,
   parsePlan,
+  PLANNER_OUTPUT_TOKENS,
+  PLANNER_PROMPT_CHARS,
+  REFERENCE_INPUT_MICRO_USD_PER_TOKEN,
+  REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN,
   resumeStateFor,
+  SEARCH_FEE_MICRO_USD,
   stageForState,
+  SYNTHESIS_OUTPUT_TOKENS,
+  SYSTEM_PROMPT_CHARS,
   transitionAllowed,
+  VENDOR_ESTIMATE_MARGIN,
   type ResearchState,
 } from "@/lib/research/domain";
 import {
   createResearchEngine,
+  EXPANSION_ESTIMATE_MICRO_USD,
   pageSkipMessage,
+  PLAN_ESTIMATE_MICRO_USD,
+  READ_ESTIMATE_MICRO_USD,
   SEARCH_CONCURRENCY,
+  SEARCH_ESTIMATE_MICRO_USD,
+  SNAPSHOT_CHARS,
+  synthesisEstimateMicroUsd,
   type ResearchDeps,
   type ResearchEventRow,
   type ResearchRunRow,
@@ -911,18 +932,31 @@ test("budgetAllows checks the estimate before the spend, not after", () => {
 
 test("the per-run budget stops the run and marks it partially_completed", async () => {
   const { store, events } = memoryStore();
-  // Enough for the plan and the first search, not enough for the synthesis.
+  /*
+   * Enough for the plan, the searches and the reads; nowhere near the
+   * synthesis. The budget was 20,000 when PLAN reserved a flat 5,000 — under a
+   * plan reservation priced at the dearest utility model that same 20,000 now
+   * fails at the gate with nothing gathered, which is a different test. It is
+   * raised to a number that still cannot buy a report: the writer's reservation
+   * is dominated by its 16,384-token reply cap, so it is north of 300,000 for
+   * any corpus at all.
+   */
   const engine = createResearchEngine(
     deps(store, { costs: { plan: 1_000, search: 2_000, fetch: 500, synthesis: 500_000 } })
   );
-  const run = await started(engine, { budgetMicroUsd: BigInt(20_000) });
+  const budget = 100_000;
+  assert.ok(
+    PLAN_ESTIMATE_MICRO_USD < budget,
+    "this test needs a run that gets past planning; the plan reservation now exceeds the budget"
+  );
+  const run = await started(engine, { budgetMicroUsd: BigInt(budget) });
   await engine.drive({ runId: run.id, userId: run.userId });
 
   const stopped = await store.loadRun(run.id, run.userId);
   assert.equal(stopped?.state, "partially_completed");
   assert.ok(
-    stopped!.costMicroUsd <= BigInt(20_000),
-    `the ceiling is hard: spent ${stopped!.costMicroUsd} of 20000`
+    stopped!.costMicroUsd <= BigInt(budget),
+    `the ceiling is hard: spent ${stopped!.costMicroUsd} of ${budget}`
   );
   assert.equal(stopped?.report, null, "the run must not be billed for a report it did not finish");
   assert.ok(
@@ -935,14 +969,37 @@ test("the per-run budget stops the run and marks it partially_completed", async 
   );
 });
 
+/*
+ * The numbers here moved because the estimates did; the property did not.
+ *
+ * It used to be a 17,000 ceiling against a 10,000-per-search reservation. The
+ * reservation is now 2,000 — VENDOR_ESTIMATE_MARGIN times the 1,000 a search
+ * actually bills — so a 17,000 budget no longer stops anything, and the plan
+ * reservation alone is larger than it. The configuration below restates the
+ * same shape at the new scale: a plan that eats most of the ceiling, leaving a
+ * sweep whose remaining headroom covers one query's reservation at a time.
+ *
+ * One query at a time is deliberate and is what keeps the per-query arithmetic
+ * below honest. `affordableCount` sizes each wave against the LIVE spend, so a
+ * ceiling with room for a single query yields consecutive one-query waves
+ * rather than one wide one — five planned queries still come out as exactly two
+ * issued. Cut the wave from a fixed partition instead and this drops to one,
+ * which is why the assertion stays at 2 rather than being relaxed to whatever
+ * the new loop happens to produce.
+ */
 test("the ceiling stops a query sweep midway, not once the sweep has been paid for", async () => {
   const { store } = memoryStore();
   const searched: string[] = [];
-  const base = deps(store, { costs: { plan: 1_000, search: 6_000 } });
+  // The search bills exactly what tools.ts records for one, so the arithmetic
+  // below is about the real fee rather than an invented one.
+  const PLAN_COST = 46_200;
+  const SEARCH_COST = SEARCH_FEE_MICRO_USD;
+  const CEILING = 50_000;
+  const base = deps(store, { costs: { plan: PLAN_COST, search: SEARCH_COST } });
   const engine = createResearchEngine({
     ...base,
     async plan() {
-      return { queries: ["q1", "q2", "q3", "q4", "q5"], costMicroUsd: 1_000 };
+      return { queries: ["q1", "q2", "q3", "q4", "q5"], costMicroUsd: PLAN_COST };
     },
     async search(input) {
       searched.push(input.query);
@@ -950,17 +1007,12 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
     },
   });
   // The gate is the ESTIMATE, not what the last call happened to cost — the
-  // engine has to decide before it knows. 17,000 leaves room for the plan and
-  // two searches; a third would put the projection over.
-  //
-  // The numbers are untouched from when the sweep was serial, and they are the
-  // point of the test now that it is not. A wave is sized by `affordableCount`
-  // against the LIVE spend, so a ceiling with room for one query at a time
-  // yields four one-query waves in a row rather than one four-query wave: five
-  // planned queries still come out as exactly two issued. Cut the wave from a
-  // fixed partition instead and this drops to one, which is why the assertion
-  // stays at 2 rather than being relaxed to whatever the new loop produces.
-  const run = await started(engine, { budgetMicroUsd: BigInt(17_000) });
+  // engine has to decide before it knows.
+  assert.ok(
+    PLAN_ESTIMATE_MICRO_USD <= CEILING && PLAN_COST < CEILING,
+    "the plan has to be affordable, or this stops at the wrong stage and asserts nothing about the sweep"
+  );
+  const run = await started(engine, { budgetMicroUsd: BigInt(CEILING) });
   await engine.drive({ runId: run.id, userId: run.userId });
 
   assert.equal(
@@ -971,24 +1023,174 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   /*
    * The arithmetic behind the 2, spelled out so the count above is derivable
    * rather than magic. Before the k-th query the run has really spent
-   * 1,000 (plan) + (k-1) × 6,000 (searches), and the gate is that number plus
-   * the 10,000 estimate. Both directions are asserted: the last query that went
-   * out had to fit, and the first one that did not go out had to not fit. A
-   * wave-sizing bug in either direction — dispatching on a stale spend, or
-   * refusing a query the ceiling could still cover — breaks one of these.
+   * 46,200 (plan) + (k-1) × 1,000 (searches), and the gate is that number plus
+   * the 2,000 reservation, against a 50,000 ceiling:
+   *
+   *   k=1  46,200 + 2,000 = 48,200  ≤ 50,000  → issued
+   *   k=2  47,200 + 2,000 = 49,200  ≤ 50,000  → issued
+   *   k=3  48,200 + 2,000 = 50,200  > 50,000  → refused, run stops
+   *
+   * Both directions are asserted, from the constants rather than the literals,
+   * so the day a reservation moves this fails loudly instead of quietly
+   * asserting something weaker. A wave-sizing bug in either direction —
+   * dispatching on a stale spend, or refusing a query the ceiling could still
+   * cover — breaks one of them.
    */
-  const spentBefore = (k: number) => 1_000 + (k - 1) * 6_000;
+  const spentBefore = (k: number) => PLAN_COST + (k - 1) * SEARCH_COST;
+  const projected = (k: number) => spentBefore(k) + SEARCH_ESTIMATE_MICRO_USD;
   assert.ok(
-    spentBefore(searched.length) + 10_000 <= 17_000,
-    `query ${searched.length} was dispatched against a projection of ${spentBefore(searched.length) + 10_000} over a 17,000 ceiling`
+    projected(searched.length) <= CEILING,
+    `query ${searched.length} was dispatched against a projection of ${projected(searched.length)} over a ${CEILING} ceiling`
   );
   assert.ok(
-    spentBefore(searched.length + 1) + 10_000 > 17_000,
-    `query ${searched.length + 1} was refused although the projection ${spentBefore(searched.length + 1) + 10_000} still fits under 17,000 — the sweep stopped earlier than the ceiling required`
+    projected(searched.length + 1) > CEILING,
+    `query ${searched.length + 1} was refused although the projection ${projected(searched.length + 1)} still fits under ${CEILING} — the sweep stopped earlier than the ceiling required`
   );
   const stopped = await store.loadRun(run.id, run.userId);
-  assert.ok(stopped!.costMicroUsd <= BigInt(17_000), `spent ${stopped!.costMicroUsd} of 17000`);
+  assert.ok(stopped!.costMicroUsd <= BigInt(CEILING), `spent ${stopped!.costMicroUsd} of ${CEILING}`);
   assert.equal(stopped?.state, "partially_completed");
+});
+
+/*
+ * The consequence of the reservation being right, stated as behaviour.
+ *
+ * The test above proves the ceiling stops the sweep at the boundary. It cannot
+ * catch the bug that mattered, because a wrong boundary is still a boundary:
+ * with SEARCH reserved at 10,000 against a 1,000 fee, the ceiling stopped
+ * sweeps correctly — it just stopped them after a tenth of the queries the
+ * money covered, and a user who paid for a deep run got a shallow one with
+ * "budget exhausted" as the only explanation.
+ *
+ * So this fixes the real money and asks how much research it buys. The run is
+ * given a plan it really pays for plus twelve searches' worth of actual vendor
+ * fees, and eleven of the twelve go out — the twelfth is lost to the stated 2x
+ * reservation margin, which is the honest price of deciding before you know. At
+ * the old 10,000 reservation the identical budget issued three.
+ */
+test("a ceiling holding twelve searches' worth of fees buys a sweep, not three queries", async () => {
+  const { store } = memoryStore();
+  const searched: string[] = [];
+  const PLANNED = Array.from({ length: 12 }, (_, i) => `q${i + 1}`);
+  const PLAN_COST = PLAN_ESTIMATE_MICRO_USD;
+  const CEILING = PLAN_COST + PLANNED.length * SEARCH_FEE_MICRO_USD;
+  const base = deps(store, { costs: { plan: PLAN_COST, search: SEARCH_FEE_MICRO_USD } });
+  const engine = createResearchEngine({
+    ...base,
+    async plan() {
+      return { queries: PLANNED, costMicroUsd: PLAN_COST };
+    },
+    async search(input) {
+      searched.push(input.query);
+      return base.search(input);
+    },
+  });
+  const run = await started(engine, { budgetMicroUsd: BigInt(CEILING) });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.deepEqual(
+    searched,
+    PLANNED.slice(0, 11),
+    "a budget holding twelve searches' worth of real fees has to issue close to twelve queries; anything near three means the reservation, not the money, is what ended the sweep"
+  );
+  // Two-sided at the boundary, same as above: the eleventh fitted, the twelfth
+  // did not. Spend rises by the fee, the gate rises by the reservation, and the
+  // gap between them is exactly what the run loses to deciding in advance.
+  const spentBefore = (k: number) => PLAN_COST + (k - 1) * SEARCH_FEE_MICRO_USD;
+  assert.ok(spentBefore(11) + SEARCH_ESTIMATE_MICRO_USD <= CEILING);
+  assert.ok(spentBefore(12) + SEARCH_ESTIMATE_MICRO_USD > CEILING);
+});
+
+/*
+ * The test that was missing, and whose absence is the whole reason the numbers
+ * above were wrong.
+ *
+ * Nothing compared a reservation to a bill. `engine.ts` said a search would
+ * cost 10,000 and `tools.ts` charged 1,000 for years, in adjacent files, with
+ * every other test passing — because a 10x over-reservation fails in the
+ * direction that still looks like a working ceiling. This pins the RELATIONSHIP
+ * rather than either number, so the pair cannot drift apart again without
+ * something going red.
+ */
+test("every stage reserves at least what it bills and no more than the stated margin", () => {
+  for (const [stage, estimate, fee] of [
+    ["search", SEARCH_ESTIMATE_MICRO_USD, SEARCH_FEE_MICRO_USD],
+    ["read", READ_ESTIMATE_MICRO_USD, PAGE_FETCH_FEE_MICRO_USD],
+  ] as const) {
+    assert.ok(
+      estimate >= fee,
+      `${stage} reserves ${estimate} for a call tools.ts bills ${fee} for — under-reserving is how a ceiling gets crossed by exactly one call`
+    );
+    assert.ok(
+      estimate <= fee * VENDOR_ESTIMATE_MARGIN,
+      `${stage} reserves ${estimate} against a flat, known fee of ${fee}: ${estimate / fee}x. A vendor fee is not uncertain enough to justify more than ${VENDOR_ESTIMATE_MARGIN}x, and every multiple of it is queries the sweep will refuse to issue`
+    );
+  }
+
+  /*
+   * The model stages are priced rather than fixed, so "what it bills" is the
+   * most the call can cost: its prompt and reply caps at the reference rate.
+   * Recomputed here from the caps and the rate directly rather than through
+   * `modelCallEstimateMicroUsd`, so a change inside that helper cannot move the
+   * estimate and the expectation together and prove nothing.
+   */
+  const worstCase = (promptChars: number, outputTokens: number) =>
+    Math.ceil(promptChars / 4) * REFERENCE_INPUT_MICRO_USD_PER_TOKEN +
+    outputTokens * REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN;
+  /** The margin a token-priced stage is allowed over its own worst case. */
+  const MODEL_STAGE_MAX_RATIO = 2;
+  const corpus = (count: number, chars: number): ResearchSourceRow[] =>
+    Array.from({ length: count }, (_, i) => ({
+      id: `src_${i}`,
+      url: `https://example.com/${i}`,
+      title: `Source ${i}`,
+      contentHash: `h${chars}`,
+      snapshot: "x".repeat(chars),
+      publishedAt: null,
+      authority: null,
+      fetchedAt: new Date(),
+    }));
+
+  const stages: Array<{ stage: string; estimate: number; ceiling: number }> = [
+    {
+      stage: "plan",
+      estimate: PLAN_ESTIMATE_MICRO_USD,
+      ceiling:
+        worstCase(BRIEF_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, BRIEF_OUTPUT_TOKENS) +
+        worstCase(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS),
+    },
+    {
+      stage: "expand",
+      estimate: EXPANSION_ESTIMATE_MICRO_USD,
+      ceiling: worstCase(EXPANSION_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, EXPANSION_OUTPUT_TOKENS),
+    },
+    {
+      stage: "synthesis (30 full sources)",
+      estimate: synthesisEstimateMicroUsd(corpus(30, SNAPSHOT_CHARS), false),
+      ceiling: worstCase(
+        CORPUS_PREAMBLE_CHARS + 30 * (SNAPSHOT_CHARS + CORPUS_PER_SOURCE_CHARS),
+        SYNTHESIS_OUTPUT_TOKENS
+      ),
+    },
+  ];
+  for (const { stage, estimate, ceiling } of stages) {
+    assert.ok(
+      estimate >= ceiling,
+      `${stage} reserves ${estimate} for a call that can bill ${ceiling} at the reference rate — the one direction a pre-spend check may never be wrong in`
+    );
+    assert.ok(
+      estimate <= ceiling * MODEL_STAGE_MAX_RATIO,
+      `${stage} reserves ${estimate} against a worst case of ${ceiling}: ${(estimate / ceiling).toFixed(1)}x, past the ${MODEL_STAGE_MAX_RATIO}x this file is willing to call a margin`
+    );
+  }
+
+  // And synthesis has to actually track the corpus. A constant passes every
+  // assertion above for the size it was tuned against and is wrong either side
+  // of it, which is exactly what the flat 120,000 was.
+  assert.ok(
+    synthesisEstimateMicroUsd(corpus(30, SNAPSHOT_CHARS), false) >
+      synthesisEstimateMicroUsd(corpus(3, SNAPSHOT_CHARS), false),
+    "a thirty-source report costs more to write than a three-source one, and the reservation has to know that before it commits"
+  );
 });
 
 test("a budget too small to gather anything fails rather than pretending to have results", async () => {

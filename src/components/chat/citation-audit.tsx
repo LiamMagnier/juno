@@ -1,14 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, CircleDashed, CircleSlash } from "lucide-react";
+// `TextSearch` is a raw lucide glyph like the three it joins: the registry names
+// concepts the product draws in more than one place, and "point at this sentence
+// in the text above" is drawn here and nowhere else.
+import { ChevronDown, CircleDashed, CircleSlash, TextSearch } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import {
+  blocksForSourceOffset,
+  rangeFromAnchoredText,
+  readAnchoredText,
+} from "@/components/chat/markdown";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
 import {
   PARTIAL_MIN,
   SUPPORTED_MIN,
   extractQuotes,
   normalizeText,
+  parseAnswerSpan,
   type AuditReason,
 } from "@/lib/research/claim-analysis";
 import { cn } from "@/lib/utils";
@@ -262,6 +271,17 @@ export const AUDIT_COPY = {
   previewOnly: "Judged against a search preview, not the page",
   previewOnlyDetail:
     "Juno never held the full text of this source, so a figure or quotation missing from the passage below is not evidence the page lacks it.",
+  /*
+   * Answer-span navigation. The unavailable line says what Juno DID — it looked
+   * and did not find this sentence — rather than where the sentence must
+   * therefore be. Both plausible explanations (it is in the report document
+   * rather than the reply, or the audit's repairs moved it) are guesses at
+   * this point in the code, and a guess stated as a fact is the failure this
+   * whole panel exists to prevent.
+   */
+  showInAnswer: "Show this sentence in the answer",
+  markedInAnswer: "Marked in the answer above",
+  notInAnswer: "Juno could not find this sentence in the answer above, so there is nothing to point at.",
 } as const;
 
 /**
@@ -368,31 +388,31 @@ export function describeLocator(locator: string | null): string | null {
 }
 
 /**
- * Where a claim's quotation sits inside the passage, in the passage's OWN
- * characters.
+ * Where `needle` sits inside `haystack`, in the HAYSTACK'S OWN characters.
  *
- * The server's test is `normalizeText(passage).includes(normalizeText(quote))`
- * (claim-analysis.ts) and normalisation is lossy — it folds case, curly quotes,
- * dashes and whitespace runs — so a match found in normalised space cannot be
- * sliced out of the raw string by its normalised offsets. This walks the raw
- * passage one character at a time, running each through the SAME exported
- * `normalizeText`, and keeps a map from every normalised character back to the
- * raw index it came from. The highlight is therefore the same verdict the
- * validator reached, drawn on the same text the reader is looking at — not a
- * second, looser match invented by the client.
+ * The server's tests are all of the form
+ * `normalizeText(a).includes(normalizeText(b))` (claim-analysis.ts) and
+ * normalisation is lossy — it folds case, curly quotes, dashes and whitespace
+ * runs — so a match found in normalised space cannot be sliced out of the raw
+ * string by its normalised offsets. This walks the raw haystack one character at
+ * a time, running each through the SAME exported `normalizeText`, and keeps a
+ * map from every normalised character back to the raw index it came from. The
+ * result is therefore the same verdict the server reached, on the same text the
+ * reader is looking at — not a second, looser match invented by the client.
  *
- * Returns null when there is no quotation, or when the quotation is absent —
- * in which case the validator has already capped the link's strength and said
- * so in `reasons`, and marking nothing is the honest drawing.
+ * EXACT OR NOTHING. There is deliberately no edit-distance or word-overlap
+ * fallback here, in either of this function's two callers: a near-miss in a
+ * citation feature is a false attribution, and both callers would rather show
+ * nothing than mark the wrong words.
  */
-export function matchedQuoteRange(passage: string, claim: string): [number, number] | null {
-  const quotes = extractQuotes(claim);
-  if (quotes.length === 0) return null;
+function normalizedRangeIn(haystack: string, needle: string): [number, number] | null {
+  const target = normalizeText(needle);
+  if (!target) return null;
 
   let normalized = "";
   const rawIndex: number[] = [];
-  for (let i = 0; i < passage.length; i += 1) {
-    const ch = passage[i]!;
+  for (let i = 0; i < haystack.length; i += 1) {
+    const ch = haystack[i]!;
     if (/\s/.test(ch)) {
       // Whitespace is collapsed by `normalizeText`, and a per-character call
       // would have it trimmed to nothing — so runs are folded here instead,
@@ -410,17 +430,137 @@ export function matchedQuoteRange(passage: string, claim: string): [number, numb
     }
   }
 
-  for (const quote of quotes) {
-    const needle = normalizeText(quote);
-    if (!needle) continue;
-    const at = normalized.indexOf(needle);
-    if (at < 0) continue;
-    const start = rawIndex[at];
-    const last = rawIndex[at + needle.length - 1];
-    if (start === undefined || last === undefined) continue;
-    return [start, last + 1];
+  const at = normalized.indexOf(target);
+  if (at < 0) return null;
+  const start = rawIndex[at];
+  const last = rawIndex[at + target.length - 1];
+  if (start === undefined || last === undefined) return null;
+  return [start, last + 1];
+}
+
+/**
+ * Where a claim's quotation sits inside the passage.
+ *
+ * Returns null when there is no quotation, or when the quotation is absent —
+ * in which case the validator has already capped the link's strength and said
+ * so in `reasons`, and marking nothing is the honest drawing.
+ */
+export function matchedQuoteRange(passage: string, claim: string): [number, number] | null {
+  for (const quote of extractQuotes(claim)) {
+    const range = normalizedRangeIn(passage, quote);
+    if (range) return range;
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Answer-span navigation: from a claim back to the sentence it was taken from
+// ---------------------------------------------------------------------------
+
+/**
+ * The sentence in the rendered answer that a claim was extracted from, or null
+ * when that cannot be established.
+ *
+ * TWO INDEPENDENT FACTS HAVE TO AGREE, and this refusing to point anywhere when
+ * they do not is the entire honesty argument for the feature. `answerSpan` is a
+ * character range into the string the audit read (claim-analysis.ts), and
+ * `Markdown` publishes each rendered block's own range as `data-src-start` /
+ * `data-src-end` — so the span picks a block. The claim's TEXT is then required
+ * to appear verbatim in that block, which is what catches every way the two can
+ * drift apart:
+ *
+ *  - The audit runs on the whole assistant turn, while the transcript renders it
+ *    as several parts; each part numbers its offsets from its own zero, so an
+ *    offset from the report can name a block in the recap that is nothing to do
+ *    with it.
+ *  - `repairReportFromClaims` rewrites unsupported sentences in place and the
+ *    rewritten message is what is re-read on reload — every span after the first
+ *    repair is then short by the length of the prefixes and suffixes it added.
+ *
+ * In both cases a span still RESOLVES to a block; it is just the wrong one. A
+ * reader sent to the wrong sentence and told it is what source [3] backs has
+ * been told something false by a feature whose whole purpose is checking, which
+ * is worse than the feature not being offered — so the caller offers no control
+ * at all unless exactly one block agrees on both counts.
+ *
+ * The one thing the text check cannot separate is a sentence the answer states
+ * twice, WORD FOR WORD, where a drifted span lands on the twin. That is as far
+ * as this goes and it is a bounded miss: the reader is shown the same words
+ * attributed to the same source, in the wrong paragraph. Every other kind of
+ * drift changes the words and is refused.
+ */
+export function locateClaimInAnswer(
+  root: ParentNode,
+  claim: { text: string; answerSpan: string | null }
+): { block: HTMLElement; range: Range | null } | null {
+  const span = parseAnswerSpan(claim.answerSpan);
+  if (!span) return null;
+  const hits: Array<{ block: HTMLElement; range: Range | null }> = [];
+  for (const block of blocksForSourceOffset(root, span.start)) {
+    const { text, segments } = readAnchoredText(block);
+    const at = normalizedRangeIn(text, claim.text);
+    if (!at) continue;
+    hits.push({ block, range: rangeFromAnchoredText(segments, at[0], at[1]) });
+  }
+  // Ambiguity is a refusal, not a coin toss: two blocks that both hold the
+  // sentence give no honest way to say which one the audit read.
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/*
+ * The mark left on the answer, and why it is drawn two different ways.
+ *
+ * `::highlight()` paints a Range without touching the DOM, which is the only
+ * way to mark ONE SENTENCE inside prose React owns — wrapping the words in a
+ * <mark> would mean mutating children React will overwrite on its next render,
+ * and the first re-render would silently drop the mark. Where the Custom
+ * Highlight API is missing the fallback marks the whole block instead, via an
+ * attribute React never set and therefore never diffs away. That is coarser and
+ * it is honest: the block genuinely contains the sentence, so a reader is told
+ * "somewhere in this paragraph" rather than shown the wrong words.
+ *
+ * No radius on either: `::highlight()` supports only colour-ish properties, and
+ * matching them keeps one drawing rather than two.
+ */
+const CLAIM_HIGHLIGHT = "juno-claim";
+const CLAIM_FOCUS_ATTR = "data-claim-focus";
+const CLAIM_FOCUS_CSS = `
+::highlight(${CLAIM_HIGHLIGHT}){background-color:hsl(var(--primary) / 0.22);color:hsl(var(--primary-ink));}
+[${CLAIM_FOCUS_ATTR}]{background-color:hsl(var(--primary) / 0.1);}
+`;
+
+/*
+ * One mark at a time, document-wide — module state because that is what it
+ * describes. `CSS.highlights` is a single global registry and a reader can only
+ * be looking at one sentence, so a per-component copy of "what is marked" would
+ * be several components each believing they own the same one entry.
+ */
+let clearClaimFocus: (() => void) | null = null;
+
+function focusClaimInAnswer(found: { block: HTMLElement; range: Range | null }) {
+  clearClaimFocus?.();
+  const supportsHighlight = typeof CSS !== "undefined" && "highlights" in CSS && typeof Highlight === "function";
+  if (found.range && supportsHighlight) {
+    CSS.highlights.set(CLAIM_HIGHLIGHT, new Highlight(found.range));
+    clearClaimFocus = () => {
+      CSS.highlights.delete(CLAIM_HIGHLIGHT);
+      clearClaimFocus = null;
+    };
+  } else {
+    found.block.setAttribute(CLAIM_FOCUS_ATTR, "");
+    clearClaimFocus = () => {
+      found.block.removeAttribute(CLAIM_FOCUS_ATTR);
+      clearClaimFocus = null;
+    };
+  }
+  // `block: "center"` and the block element rather than the range: a paragraph
+  // is shorter than a viewport, so centring it puts the marked sentence on
+  // screen, and scrollIntoView walks nested scrollers correctly where a manual
+  // scrollTop against the wrong container would not.
+  found.block.scrollIntoView({
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    block: "center",
+  });
 }
 
 /** One 0..1 support number, said in words against the thresholds that produced the label. */
@@ -617,7 +757,101 @@ function SourceInspector({
 // One claim
 // ---------------------------------------------------------------------------
 
-function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: CitationAuditSource[] }) {
+/**
+ * "Show me where this came from", when — and only when — that can be answered.
+ *
+ * It lives inside the disclosure rather than on the claim row for two reasons.
+ * The row itself is a <button>, so a second button inside it would be nested
+ * interactive content; and most of a report's claims are in the artifact
+ * document, not in the reply the strip sits under, so a per-row control would
+ * put twenty unavailable buttons in a list whose job is to be scanned. Opened,
+ * one row says one honest thing about one claim.
+ *
+ * Resolution happens twice on purpose: once on mount to decide whether to offer
+ * the control at all, and again on the click that uses it. Between those two
+ * moments the answer can be re-rendered — a regeneration, a version page — and
+ * acting on the first result would be scrolling to an element measured against
+ * a document that no longer exists.
+ */
+function ClaimInAnswer({
+  claim,
+  answerRoot,
+}: {
+  claim: CitationAuditClaim;
+  /** The rendered turn this claim was audited from, or null before it is found. */
+  answerRoot: ParentNode | null;
+}) {
+  // Three states, and `null` is not `false`: undecided renders nothing at all,
+  // because flashing "could not find this" for the frame before the lookup runs
+  // is a false statement, however briefly it is on screen.
+  const [locatable, setLocatable] = React.useState<boolean | null>(null);
+  const [marked, setMarked] = React.useState(false);
+
+  React.useEffect(() => {
+    setMarked(false);
+    if (!answerRoot) {
+      setLocatable(false);
+      return;
+    }
+    setLocatable(!!locateClaimInAnswer(answerRoot, claim));
+  }, [answerRoot, claim]);
+
+  if (locatable === null) return null;
+
+  if (!locatable) {
+    return (
+      <p className="mt-2 flex items-start gap-1.5 text-caption leading-snug text-muted-foreground">
+        <StatusIcons.info aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+        <span className="min-w-0 flex-1">{AUDIT_COPY.notInAnswer}</span>
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => {
+          const found = answerRoot ? locateClaimInAnswer(answerRoot, claim) : null;
+          if (!found) {
+            // The answer moved under us. Withdraw the control rather than
+            // scroll to whatever is nearest — this is the whole rule.
+            setLocatable(false);
+            return;
+          }
+          focusClaimInAnswer(found);
+          setMarked(true);
+        }}
+        className={cn(
+          "inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5",
+          "font-mono text-caption text-muted-foreground",
+          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "coarse:h-11"
+        )}
+      >
+        <TextSearch aria-hidden="true" className="size-3.5" />
+        {AUDIT_COPY.showInAnswer}
+      </button>
+      {/* The mark is a colour on text somewhere off screen; without this, the
+          only feedback for a keyboard or screen-reader user is a scroll they
+          cannot see. */}
+      <span aria-live="polite" className="sr-only">
+        {marked ? AUDIT_COPY.markedInAnswer : ""}
+      </span>
+    </div>
+  );
+}
+
+function ClaimRow({
+  claim,
+  sources,
+  answerRoot,
+}: {
+  claim: CitationAuditClaim;
+  sources: CitationAuditSource[];
+  answerRoot: ParentNode | null;
+}) {
   const [open, setOpen] = React.useState(false);
   const panelId = React.useId();
   const sourceOf = (index: number) => sources.find((s) => s.index === index);
@@ -693,6 +927,7 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
       >
         <div className="min-h-0 overflow-hidden" inert={!open}>
           <div className="px-2 pb-3">
+            <ClaimInAnswer claim={claim} answerRoot={answerRoot} />
             {hasEvidence ? (
               claim.links.map((link, i) => (
                 <SourceInspector
@@ -747,6 +982,32 @@ export function auditHeadline(s: CitationAudit["summary"]): string {
 export function CitationAuditPanel({ state, className }: { state: AuditState; className?: string }) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+
+  /*
+   * The rendered turn this strip is auditing — found by walking up to the
+   * `[data-message-id]` wrapper MessageList puts around each message, which is
+   * the nearest ancestor holding both the answer and this footer.
+   *
+   * A prop would be cleaner and there is nowhere to put one: MessageItem renders
+   * the answer and this panel as siblings and knows nothing of answer spans, so
+   * threading a ref through it would mean teaching a shared shell about a
+   * feature only research turns have. The wrapper is not incidental either — it
+   * exists precisely so a component can find one message in the transcript, and
+   * find-in-conversation already navigates by it.
+   *
+   * Scoped to that wrapper rather than the document on purpose: offsets are
+   * numbered per rendered part, so a document-wide search would be inviting
+   * blocks from other messages to answer for this one.
+   */
+  const [answerRoot, setAnswerRoot] = React.useState<ParentNode | null>(null);
+  React.useEffect(() => {
+    setAnswerRoot(rootRef.current?.closest("[data-message-id]") ?? null);
+  }, [state]);
+
+  // The mark outlives this component's DOM — it is painted on the answer above
+  // and, under the Custom Highlight API, held in a registry on `document`.
+  React.useEffect(() => () => clearClaimFocus?.(), []);
 
   const claims = React.useMemo(() => {
     if (state.phase !== "ready") return [];
@@ -788,7 +1049,11 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
   const trouble = audit.summary.contradicted + audit.summary.unsupported;
 
   return (
-    <div className={cn("mt-3", className)}>
+    <div ref={rootRef} className={cn("mt-3", className)}>
+      {/* Mounted with the panel and gone with it, for the same reason the
+          stream-word rule lives in markdown.tsx rather than globals.css: these
+          two selectors exist only while there is a claim that can be marked. */}
+      <style>{CLAIM_FOCUS_CSS}</style>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -835,7 +1100,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           {claims.length > 0 ? (
             <ul className="mt-1.5 max-w-2xl">
               {claims.map((claim) => (
-                <ClaimRow key={claim.id} claim={claim} sources={audit.sources} />
+                <ClaimRow key={claim.id} claim={claim} sources={audit.sources} answerRoot={answerRoot} />
               ))}
             </ul>
           ) : (

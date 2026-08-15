@@ -7,7 +7,20 @@ import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
 import { SNAPSHOT_CHARS, type ResearchDeps, type ResearchHit, type ResearchSourceRow } from "@/lib/research/engine";
-import { MAX_PLAN_STEPS, type ResearchPlan } from "@/lib/research/domain";
+import {
+  BRIEF_OUTPUT_TOKENS,
+  BRIEF_PROMPT_CHARS,
+  EXPANSION_OUTPUT_TOKENS,
+  EXPANSION_PROMPT_CHARS,
+  MAX_PLAN_STEPS,
+  PAGE_FETCH_FEE_MICRO_USD,
+  PLANNER_OUTPUT_TOKENS,
+  PLANNER_PROMPT_CHARS,
+  REVISION_REPORT_CHARS,
+  SEARCH_FEE_MICRO_USD,
+  SYNTHESIS_OUTPUT_TOKENS,
+  type ResearchPlan,
+} from "@/lib/research/domain";
 
 /**
  * What the durable research job farms out: planning, searching, fetching and
@@ -59,7 +72,6 @@ const EXPANDED_QUERIES = 8;
  * ever reached.
  */
 const PAGE_CONTENT_CHARS = 16_000;
-const REVISION_REPORT_CHARS = 48_000;
 
 /**
  * The planner writes TWO things, and the second one is why this prompt changed.
@@ -296,8 +308,12 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
     userId,
     model: planner,
     system: BRIEF_SYSTEM,
-    prompt: request.slice(0, 4_000),
-    maxTokens: 600,
+    // The slice and the cap come from domain.ts rather than from here because
+    // the engine has to price this call before it happens and cannot import
+    // this module. A number raised here and not there is a ceiling that
+    // silently stops holding; see the cost section of domain.ts.
+    prompt: request.slice(0, BRIEF_PROMPT_CHARS),
+    maxTokens: BRIEF_OUTPUT_TOKENS,
     timeoutMs: BRIEF_TIMEOUT_MS,
     signal,
     label: "brief",
@@ -314,8 +330,8 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
     userId,
     model: planner,
     system: PLANNER_SYSTEM,
-    prompt: prompt.slice(0, 6_000),
-    maxTokens: 1024,
+    prompt: prompt.slice(0, PLANNER_PROMPT_CHARS),
+    maxTokens: PLANNER_OUTPUT_TOKENS,
     timeoutMs: PLAN_TIMEOUT_MS,
     signal,
     label: "plan",
@@ -373,7 +389,10 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
 
     return {
       hits,
-      costMicroUsd: 1000,
+      // The engine reserves VENDOR_ESTIMATE_MARGIN times this before each wave.
+      // It used to reserve a flat 10,000 against this same 1,000, which is why
+      // the constant now lives beside the estimate that projects it.
+      costMicroUsd: SEARCH_FEE_MICRO_USD,
       engines,
       providers: {
         keyed: providers.keyed,
@@ -421,7 +440,7 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
     return {
       title: (outcome.page.title || url).slice(0, 300),
       text: outcome.page.text.slice(0, PAGE_CONTENT_CHARS),
-      costMicroUsd: 500,
+      costMicroUsd: PAGE_FETCH_FEE_MICRO_USD,
       links: outcome.page.links,
     };
   } catch (e) {
@@ -477,8 +496,8 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
     userId,
     model: planner,
     system: EXPANSION_SYSTEM,
-    prompt: prompt.slice(0, 6_000),
-    maxTokens: 512,
+    prompt: prompt.slice(0, EXPANSION_PROMPT_CHARS),
+    maxTokens: EXPANSION_OUTPUT_TOKENS,
     timeoutMs: PLAN_TIMEOUT_MS,
     signal,
     label: "expand",
@@ -594,7 +613,7 @@ Rewrite the draft below into a complete replacement report for the original requ
       model,
       system,
       history: [{ role: "USER", content: historyContent, attachments: [] }],
-      maxTokens: 16_384,
+      maxTokens: SYNTHESIS_OUTPUT_TOKENS,
       signal,
     })) {
       if (ev.type === "text") out += ev.text;

@@ -20,6 +20,21 @@ import {
   planIsConfirmed,
   resumeStateFor,
   transitionAllowed,
+  BRIEF_OUTPUT_TOKENS,
+  BRIEF_PROMPT_CHARS,
+  CORPUS_PER_SOURCE_CHARS,
+  CORPUS_PREAMBLE_CHARS,
+  EXPANSION_OUTPUT_TOKENS,
+  EXPANSION_PROMPT_CHARS,
+  modelCallEstimateMicroUsd,
+  PAGE_FETCH_FEE_MICRO_USD,
+  PLANNER_OUTPUT_TOKENS,
+  PLANNER_PROMPT_CHARS,
+  REVISION_REPORT_CHARS,
+  SEARCH_FEE_MICRO_USD,
+  SYNTHESIS_OUTPUT_TOKENS,
+  SYSTEM_PROMPT_CHARS,
+  VENDOR_ESTIMATE_MARGIN,
   type ResearchEventKind,
   type ResearchCoverageEntry,
   type ResearchConflict,
@@ -419,14 +434,79 @@ export interface ResearchValidationResult {
 /*
  * Estimates, not prices. `budgetAllows` needs a number BEFORE the call is made,
  * and the only alternative — spend first, compare after — is not a ceiling at
- * all. They are deliberately generous: over-estimating stops a run slightly
- * early, under-estimating lets it overrun the number the user set, and only one
- * of those is a bug worth having.
+ * all.
+ *
+ * Every one of them is now derived from what the stage actually bills (see the
+ * cost section of domain.ts) rather than picked. They used to be four literals,
+ * and "deliberately generous" turned out to mean two of them were an order of
+ * magnitude out in OPPOSITE directions:
+ *
+ *   SEARCH  10,000 against a recorded 1,000 — 10x. `affordableCount` multiplies
+ *           this by the wave width, so a run stopped after roughly a tenth of
+ *           the queries its budget could pay for. Recursive query expansion,
+ *           link hops and 20-50 sources per deep run were all being throttled
+ *           by this one number, and from inside the run it looked exactly like
+ *           a budget that had run out.
+ *   READ     2,000 against a recorded 500 — 4x, same mechanism, applied to
+ *           every page of every wave.
+ *   PLAN     5,000 against two model calls whose prompt and reply caps come to
+ *           ~35,000 at the dearest utility model. UNDER, not over: a run could
+ *           blow its ceiling on its very first act, which is precisely the
+ *           failure budgetAllows exists to stop.
+ *   SYNTH  120,000 flat, for a call whose prompt is the whole corpus. Thirty
+ *           full sources bill ~535,000 — four times the reservation — while
+ *           three short ones are nowhere near it. A constant cannot be right
+ *           about both, so this one is computed from the corpus at the point of
+ *           use (see `doSynthesis`).
+ *
+ * The remaining margins are stated, not incidental: VENDOR_ESTIMATE_MARGIN for
+ * the flat fees, and the reference model rate plus MODEL_ESTIMATE_MARGIN for
+ * the token-priced stages.
+ *
+ * Exported for the same reason SEARCH_CONCURRENCY is: the budget tests assert
+ * boundaries that are only boundaries relative to these numbers. A test holding
+ * its own copy of 10,000 kept passing, with the wrong meaning, for exactly as
+ * long as this file disagreed with tools.ts.
  */
-const PLAN_ESTIMATE_MICRO_USD = 5_000;
-const SEARCH_ESTIMATE_MICRO_USD = 10_000;
-const READ_ESTIMATE_MICRO_USD = 2_000;
-const SYNTHESIS_ESTIMATE_MICRO_USD = 120_000;
+export const SEARCH_ESTIMATE_MICRO_USD = SEARCH_FEE_MICRO_USD * VENDOR_ESTIMATE_MARGIN;
+export const READ_ESTIMATE_MICRO_USD = PAGE_FETCH_FEE_MICRO_USD * VENDOR_ESTIMATE_MARGIN;
+/** Both calls `planResearchQueries` makes: the brief expansion, then the planner. */
+export const PLAN_ESTIMATE_MICRO_USD =
+  modelCallEstimateMicroUsd(BRIEF_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, BRIEF_OUTPUT_TOKENS) +
+  modelCallEstimateMicroUsd(PLANNER_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, PLANNER_OUTPUT_TOKENS);
+/**
+ * The coverage-gap expansion, which is billed as `plan` but is a third of it:
+ * one call, a 512-token reply. Gating it on PLAN_ESTIMATE reserved 3.4x what it
+ * can cost, and the thing being refused was the run's only mechanism for going
+ * at an unmet objective from a new direction — the last stage that should lose
+ * a coin toss against an over-estimate.
+ */
+export const EXPANSION_ESTIMATE_MICRO_USD = modelCallEstimateMicroUsd(
+  EXPANSION_PROMPT_CHARS + SYSTEM_PROMPT_CHARS,
+  EXPANSION_OUTPUT_TOKENS
+);
+
+/**
+ * What the writer will be handed, so the reservation matches this run's corpus.
+ *
+ * `writeResearchReport` drops sources with no snapshot and builds the prompt
+ * from the rest, so the estimate counts exactly those. A revision additionally
+ * carries the previous draft back in, and that draft is up to 48,000 characters
+ * of prompt nobody was reserving for.
+ */
+export const synthesisEstimateMicroUsd = (
+  sources: readonly ResearchSourceRow[],
+  revising: boolean
+): number => {
+  const corpusChars = sources
+    .filter((source) => source.snapshot)
+    .reduce(
+      (total, source) =>
+        total + Math.min(source.snapshot?.length ?? 0, SNAPSHOT_CHARS) + CORPUS_PER_SOURCE_CHARS,
+      CORPUS_PREAMBLE_CHARS + (revising ? REVISION_REPORT_CHARS : 0)
+    );
+  return modelCallEstimateMicroUsd(corpusChars, SYNTHESIS_OUTPUT_TOKENS);
+};
 
 /** Sources carried into synthesis. Beyond this the corpus stops fitting. */
 const MAX_SOURCES = 250;
@@ -1652,7 +1732,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       deps.expandQueries &&
       followUps.length > 0 &&
       computed.gaps.length > 0 &&
-      (await affordable(run, PLAN_ESTIMATE_MICRO_USD))
+      (await affordable(run, EXPANSION_ESTIMATE_MICRO_USD))
     ) {
       const expanded = await deps.expandQueries({
         userId: run.userId,
@@ -1754,16 +1834,23 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     // waits at `synthesizing` for the caller that asked to be handed the
     // corpus. `drive({ until: "synthesizing" })` is how that caller stops here.
     if (!deps.synthesize) return { kind: "blocked", state: "synthesizing" };
-    if (!(await affordable(run, SYNTHESIS_ESTIMATE_MICRO_USD))) {
-      return stopForBudget(run, SYNTHESIS_ESTIMATE_MICRO_USD);
-    }
     const plan = parsePlan(run.plan);
     const revisionRound = plan.revisionRound ?? 0;
     const revision =
       revisionRound > 0 && run.report?.trim()
         ? { report: run.report, round: revisionRound }
         : undefined;
+    // The corpus is loaded BEFORE the ceiling check, which is the reverse of
+    // every other stage here and is the point: synthesis is the one call whose
+    // price is set by how much this particular run gathered, and a flat
+    // reservation is simultaneously far too much for a three-source run and not
+    // half enough for a fifty-source one. `listSources` is a single indexed read
+    // and the run is about to make it anyway.
     const sources = (await store.listSources(run.id, run.userId)).slice(0, MAX_SOURCES);
+    const estimate = synthesisEstimateMicroUsd(sources, !!revision);
+    if (!(await affordable(run, estimate))) {
+      return stopForBudget(run, estimate);
+    }
     const written = await deps.synthesize({
       userId: run.userId,
       goal: run.goal,

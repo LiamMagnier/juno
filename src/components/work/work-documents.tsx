@@ -16,7 +16,7 @@ import {
 } from "@/components/work/work-transport";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
-import { canPreviewArtifact, WorkSitePreview } from "@/components/work/work-site-preview";
+import { canPreviewArtifact, WorkDeliverablePreview } from "@/components/work/work-site-preview";
 import { cn, formatBytes } from "@/lib/utils";
 
 /*
@@ -42,12 +42,13 @@ import { cn, formatBytes } from "@/lib/utils";
  * indefinitely, and pulling every one of them for every document on first paint
  * would spend a second of somebody's time on rows nobody scrolls to.
  *
- * A `site` also gets a Preview, which is the other half of the sentence the
- * comment above starts: a download is not a look, and a deliverable you have to
- * put on disk and open in a second application before you can tell whether it is
- * any good is one nobody checks. It is offered for that one kind and no other,
- * for the reason `canPreviewArtifact` states — see work-site-preview.tsx, which
- * also carries the whole sandbox argument.
+ * A `site` and a `report` also get a Preview, which is the other half of the
+ * sentence the comment above starts: a download is not a look, and a deliverable
+ * you have to put on disk and open in a second application before you can tell
+ * whether it is any good is one nobody checks. It is offered for those two kinds
+ * and no other — `canPreviewArtifact` in work-site-preview.tsx states the case
+ * for each of the nine, including the four it refuses on their merits rather
+ * than by omission, and carries the sandbox argument for the one that needs it.
  */
 
 export function WorkDocuments({
@@ -358,7 +359,8 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
           the row's own state instead would take the dialog's exit animation
           with it. */}
       {canPreviewArtifact(artifact.kind) && (
-        <WorkSitePreview
+        <WorkDeliverablePreview
+          kind={artifact.kind}
           artifactId={artifact.id}
           version={artifact.currentVersion}
           title={artifact.title}

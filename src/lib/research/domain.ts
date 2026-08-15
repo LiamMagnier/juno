@@ -779,6 +779,128 @@ export function planIsConfirmed(plan: ResearchPlan): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// What a stage costs
+// ---------------------------------------------------------------------------
+
+/*
+ * The cost facts, in the one module both sides of the ceiling can import.
+ *
+ * `tools.ts` is what actually bills; `engine.ts` is what has to guess the bill
+ * BEFORE the call, and it cannot import `tools.ts` (server-only, and it would
+ * be a cycle — tools imports the engine's types). So the numbers lived in two
+ * places and drifted, badly: the engine estimated a search at 10,000 µUSD
+ * against a tools.ts that records 1,000, and a page fetch at 2,000 against a
+ * recorded 500. Because `affordableCount` sizes each wave by multiplying the
+ * estimate, a deep run stopped after roughly a tenth of the searches its
+ * budget could pay for, and the transcript said only "budget exhausted".
+ *
+ * Nothing below is a second opinion about a price. The vendor fees ARE the
+ * numbers tools.ts returns, and the caps ARE the slices and `maxTokens` it
+ * calls the model with — imported by both, so the estimate cannot drift from
+ * the bill again without the test in tests/research-run.test.ts failing.
+ */
+
+/** The flat fee `searchTheWeb` records for one multi-engine fan-out. */
+export const SEARCH_FEE_MICRO_USD = 1_000;
+/** The flat fee `fetchResearchPage` records for one extracted page. */
+export const PAGE_FETCH_FEE_MICRO_USD = 500;
+
+/**
+ * How much dearer than the recorded fee a vendor step is allowed to be before
+ * the ceiling stops projecting correctly.
+ *
+ * Two, not ten. These fees are flat and known — the estimate only has to
+ * absorb a vendor repricing between deploys, not the spread between a cheap
+ * model and an expensive one, which is what the model stages below carry.
+ */
+export const VENDOR_ESTIMATE_MARGIN = 2;
+
+/*
+ * The model stages, and why their estimate is arithmetic rather than a number.
+ *
+ * A search is a fixed fee; a planner or a writer is tokens times a rate, and
+ * neither factor is a constant. The engine cannot know which model
+ * `researchPlannerModel()` picked — it is chosen inside tools.ts, which the
+ * engine cannot import — so it prices at the DEAREST rate any model
+ * `utilityModelCandidates()` can return (sonnet-class, $3/$15 per MTok; see
+ * `baseRate` in src/lib/pricing.ts). Micro-USD per token is numerically equal
+ * to dollars per MTok, which is why these read as 3 and 15.
+ *
+ * That makes the model estimates deliberately conservative — a deployment
+ * whose fastest free model is Haiku-class pays about a third of this. That
+ * trade is taken on purpose and is the opposite of the search bug: PLAN and
+ * SYNTHESIS happen once per run, so over-estimating them costs a slice of one
+ * run's headroom, whereas over-estimating SEARCH multiplied across every query
+ * in the sweep and was throttling the breadth the whole feature is for.
+ */
+export const REFERENCE_INPUT_MICRO_USD_PER_TOKEN = 3;
+export const REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN = 15;
+/**
+ * Extra allowed on top of the char-derived token count.
+ *
+ * `estimateTokensFromChars` in pricing.ts divides characters by four, which is
+ * a good average for English prose and an under-count for what a research
+ * corpus is mostly made of — URLs, markdown tables and code fragments tokenize
+ * denser than that. Without this the estimate would be a floor on the input
+ * side rather than a bound, which is the one thing a pre-spend check may not be.
+ */
+export const MODEL_ESTIMATE_MARGIN = 1.25;
+/** pricing.ts's own chars-per-token rule; kept in step with it deliberately. */
+const CHARS_PER_TOKEN = 4;
+
+/** Goal characters `planResearchQueries` sends the brief expansion. */
+export const BRIEF_PROMPT_CHARS = 4_000;
+export const BRIEF_OUTPUT_TOKENS = 600;
+/** Brief-augmented characters it then sends the planner. */
+export const PLANNER_PROMPT_CHARS = 6_000;
+export const PLANNER_OUTPUT_TOKENS = 1_024;
+/** Gap description characters `expandResearchQueries` sends. */
+export const EXPANSION_PROMPT_CHARS = 6_000;
+export const EXPANSION_OUTPUT_TOKENS = 512;
+/** `writeResearchReport`'s reply cap. Real reports are far shorter; this is the
+ *  most the model is permitted to emit, and an upper bound has to use it. */
+export const SYNTHESIS_OUTPUT_TOKENS = 16_384;
+/** Previous-draft characters a citation-driven rewrite carries back in. */
+export const REVISION_REPORT_CHARS = 48_000;
+/**
+ * Allowance for the system prompt riding each model call.
+ *
+ * One number rather than four because the three research system prompts are
+ * 788, 1,690 and 857 characters and none of them is going to double; a
+ * per-prompt constant would be four things to keep in step for no extra
+ * accuracy.
+ */
+export const SYSTEM_PROMPT_CHARS = 2_500;
+/**
+ * Fixed characters of `buildResearchCorpus` before any source: the report
+ * contract, the untrusted-content rule and the restated goal.
+ */
+export const CORPUS_PREAMBLE_CHARS = 4_000;
+/**
+ * Per-source characters the corpus adds around the snapshot itself — the
+ * ordinal, a title capped at 200, the URL twice (once as the citation line,
+ * once as the untrusted envelope's `source=`) and the envelope markers.
+ */
+export const CORPUS_PER_SOURCE_CHARS = 700;
+
+/**
+ * What one model call may cost, priced at the reference ceiling.
+ *
+ * Exported so the estimate and the test that guards it compute it the same
+ * way. `maxOutputTokens` is a real contractual bound (the `maxTokens` the call
+ * is made with); `promptChars` is whatever the caller can actually put in front
+ * of the model, which for synthesis is a function of the corpus and therefore
+ * has to be passed in rather than baked into a constant.
+ */
+export function modelCallEstimateMicroUsd(promptChars: number, maxOutputTokens: number): number {
+  const promptTokens = Math.ceil(Math.max(0, promptChars) / CHARS_PER_TOKEN);
+  const raw =
+    promptTokens * REFERENCE_INPUT_MICRO_USD_PER_TOKEN +
+    Math.max(0, maxOutputTokens) * REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN;
+  return Math.ceil(raw * MODEL_ESTIMATE_MARGIN);
+}
+
+// ---------------------------------------------------------------------------
 // Budget
 // ---------------------------------------------------------------------------
 

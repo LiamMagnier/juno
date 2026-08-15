@@ -12,17 +12,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Markdown } from "@/components/chat/markdown";
 import { StatusIcons } from "@/lib/app-icons";
 import { workArtifactDownloadUrl } from "@/components/work/work-transport";
+import {
+  prepareReportPreview,
+  REPORT_PREVIEW_MAX_CHARS,
+} from "@/lib/work/deliverables/report-preview";
 
 /*
- * LOOKING AT A SITE A RUN PRODUCED, WITHOUT DOWNLOADING IT.
+ * LOOKING AT WHAT A RUN PRODUCED, WITHOUT DOWNLOADING IT.
+ *
+ * Two previewers live here, one per kind that has one, because they share the
+ * dialog shell, the download-and-race handling and the two states below — and
+ * because `canPreviewArtifact` is the single sentence about which kinds are
+ * offered a Preview at all, which is easiest to keep true when it sits beside
+ * everything it licenses. The file is named for the first of the two and is now
+ * one previewer behind its contents; a rename is a rename this change did not
+ * need to make, and the export it is reached through says what it covers.
+ *
+ * ── The site previewer ──────────────────────────────────────────────────────
  *
  * `src/lib/work/deliverables/site.ts` spends its whole header arguing that a
  * bundle is safe to look at, and then names the thing that should look at it:
  * "an opaque-origin iframe with no `allow-same-origin`, the way
- * src/components/canvas/sandbox-frame.tsx already does it". This file is that
- * previewer. It does not lean on the argument it is downstream of — the bundle
+ * src/components/canvas/sandbox-frame.tsx already does it". `WorkSitePreview`
+ * below is that previewer. It does not lean on the argument it is downstream of
+ * — the bundle
  * being script-free is the reason a preview is worth building, not a reason to
  * render it in the app origin.
  *
@@ -72,6 +88,16 @@ import { workArtifactDownloadUrl } from "@/components/work/work-transport";
  * this previewer could ever meet today would be one that does not exist. The
  * CSP admits `img-src data:` and nothing else, so if the block vocabulary grows
  * an image the honest failure is a broken image rather than a network request.
+ *
+ * ── The report previewer ────────────────────────────────────────────────────
+ *
+ * A `report`'s stored bytes are markdown, so it does NOT go in the frame above.
+ * The whole argument for why — what markdown can carry, what is done about each
+ * of those things, and the two ways the app's chat renderer silently corrupts a
+ * report file if it is handed one unprepared — is written out at the top of
+ * `src/lib/work/deliverables/report-preview.ts`, next to the code that acts on
+ * it. `WorkReportPreview` below is only the surface: fetch, prepare, render,
+ * and say on screen what was changed and what was cut.
  */
 
 /** The one entry `buildSite` guarantees. */
@@ -82,15 +108,47 @@ const STYLESHEET = "styles.css";
 /**
  * Which deliverables can be looked at rather than only downloaded.
  *
- * `site` alone, and the narrowness is the point: it is the only kind whose
- * builder refuses a spec without an `index.html`, so it is the only kind where
- * offering Preview cannot open onto "there is nothing in here to show". The
- * other three zip kinds — `bundle`, `archive`, and whatever a host relay
- * uploads — may or may not contain a page, and a button that dead-ends half the
- * time is worse than no button.
+ * Two of the nine, and the narrowness is the point. The rule the whole file is
+ * built on is that a Preview must not be able to open onto "there is nothing in
+ * here to show", so a kind earns the button only when something GUARANTEES
+ * there is a thing to show and this build can show it faithfully.
+ *
+ *   `site` — `buildSite` refuses a spec without an `index.html`, so there is
+ *   always an entry page, and `validate.ts` re-opens the produced zip to check
+ *   it. See the frame above for how it is rendered.
+ *
+ *   `report` — the stored bytes are markdown, which this product renders on
+ *   half a dozen other surfaces already, and `buildReport` throws rather than
+ *   store a report that rendered to nothing.
+ *
+ * The seven that are refused, each for its own reason rather than by default:
+ *
+ *   `bundle` and `archive` are generic zips with no guaranteed entry page, and
+ *   whatever a host relay uploads is a zip nothing in this repo composed. Half
+ *   of them would dead-end, and a button that dead-ends half the time is worse
+ *   than no button.
+ *
+ *   `document` is a .docx. Nothing in the tree reads one: `docx` is a writer
+ *   with no parser, so previewing one means hand-walking WordprocessingML —
+ *   several hundred lines to produce a layout that is wrong wherever the
+ *   document is interesting (tables, sections, numbering, anything floated).
+ *   The download opens in the application the file was written for.
+ *
+ *   `pdf` is the one that looked buildable, because `unpdf` is in the tree for
+ *   research extraction, and it is still refused. Rasterising a first page is
+ *   what a reader actually wants, and unpdf cannot do it without `@napi-rs/canvas`
+ *   — the optional native peer `pdf-text.ts` was specifically written to avoid —
+ *   plus a server route to run it on. What unpdf CAN give the browser is
+ *   `extractPdfText`'s output: 1.6 MB of pdf.js loaded to produce an unlaid-out
+ *   wall of text with no columns, no tables, no figures and, for a scan, the
+ *   `no_text_layer` verdict and nothing at all. That is not a preview of a PDF,
+ *   it is a different document; the row's download and its size say more.
+ *
+ *   `spreadsheet`, `presentation` and `image` are outside this milestone rather
+ *   than judged: nobody has argued them either way here, so they are absent.
  */
 export function canPreviewArtifact(kind: string): boolean {
-  return kind === "site";
+  return kind === "site" || kind === "report";
 }
 
 // ---------------------------------------------------------------------------
@@ -229,8 +287,10 @@ type LoadState =
 
 /** The download route answers a broken read with JSON that explains itself, and
  *  a 409 content-hash mismatch in particular is a sentence the reader needs
- *  verbatim: "these are not the bytes the run produced" is not a retry. */
-async function downloadProblem(response: Response): Promise<string> {
+ *  verbatim: "these are not the bytes the run produced" is not a retry. The
+ *  fallback is the caller's because the two previewers are reading different
+ *  things, and "this site's files" in front of a report names the wrong file. */
+async function downloadProblem(response: Response, fallback: string): Promise<string> {
   if (response.headers.get("content-type")?.includes("application/json")) {
     try {
       const body: unknown = await response.json();
@@ -241,27 +301,46 @@ async function downloadProblem(response: Response): Promise<string> {
       // A body that is not the JSON it claimed to be adds nothing to say.
     }
   }
-  return "Couldn’t read this site’s files. The download beside it is unaffected.";
+  return fallback;
 }
 
+/** Said whenever the bytes could not be reached at all, for either kind: the
+ *  download link in the row is a separate request and is not implicated. */
+const UNREACHABLE = "Couldn’t reach the file. The download beside it is unaffected.";
+
 // ---------------------------------------------------------------------------
-// The dialog
+// The dialogs
 // ---------------------------------------------------------------------------
 
-export function WorkSitePreview({
-  artifactId,
-  version,
-  title,
-  open,
-  onOpenChange,
-}: {
+/** What every previewer here needs, and nothing else. `version` travels with
+ *  the rest so the frame and the header cannot disagree about which one is on
+ *  screen. */
+interface PreviewProps {
   artifactId: string;
-  /** The version on screen, so the frame and the header cannot disagree. */
   version: number;
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+}
+
+/**
+ * The Preview control's one entry point, so the row does not have to know which
+ * previewer a kind gets.
+ *
+ * It refuses an unpreviewable kind itself rather than trusting the caller to
+ * have asked `canPreviewArtifact` first. Without that, the fallback branch
+ * would put a .docx through the site previewer the day a new kind is added and
+ * one of the two call sites is missed — and the failure would be a dialog
+ * saying "this file could not be opened as an archive", which reads as a
+ * corrupt document rather than as this component's mistake.
+ */
+export function WorkDeliverablePreview({ kind, ...props }: PreviewProps & { kind: string }) {
+  if (!canPreviewArtifact(kind)) return null;
+  if (kind === "report") return <WorkReportPreview {...props} />;
+  return <WorkSitePreview {...props} />;
+}
+
+function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
   const [state, setState] = React.useState<LoadState>({ kind: "loading" });
   const [path, setPath] = React.useState(INDEX_PAGE);
   const [html, setHtml] = React.useState<string | null>(null);
@@ -292,16 +371,19 @@ export function WorkSitePreview({
       const response = await fetch(workArtifactDownloadUrl(artifactId, version));
       if (generation.current !== mine) return;
       if (!response.ok) {
-        setState({ kind: "failed", message: await downloadProblem(response) });
+        setState({
+          kind: "failed",
+          message: await downloadProblem(
+            response,
+            "Couldn’t read this site’s files. The download beside it is unaffected."
+          ),
+        });
         return;
       }
       bytes = await response.arrayBuffer();
     } catch {
       if (generation.current !== mine) return;
-      setState({
-        kind: "failed",
-        message: "Couldn’t reach the file. The download beside it is unaffected.",
-      });
+      setState({ kind: "failed", message: UNREACHABLE });
       return;
     }
     if (generation.current !== mine) return;
@@ -454,6 +536,153 @@ export function WorkSitePreview({
               // a fill here would flash the wrong one before the page arrives.
               className="size-full border-0 bg-transparent"
             />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reports
+// ---------------------------------------------------------------------------
+
+type ReportState =
+  | { kind: "loading" }
+  | { kind: "ready"; markdown: string; truncated: boolean; imageRefs: number }
+  | { kind: "failed"; message: string };
+
+/**
+ * A report's markdown, laid out with the renderer the rest of the product uses.
+ *
+ * Simpler than the site previewer by exactly the amount the format is simpler:
+ * one request, one string, no archive to hold open and no second page to
+ * navigate to. What it does keep is the generation guard — a close-and-reopen
+ * still leaves an in-flight download racing a newer one, and a report that
+ * arrives after its dialog was reopened at a different version would otherwise
+ * paint the wrong version under the right header.
+ *
+ * The bytes are read on every open rather than cached for the same reason the
+ * site previewer re-reads: a schedule can write v4 while v3 is on screen, and
+ * every other part of this pipeline hashes specifically so that nobody is shown
+ * bytes that are no longer the current ones.
+ */
+function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
+  const [state, setState] = React.useState<ReportState>({ kind: "loading" });
+  const generation = React.useRef(0);
+
+  const load = React.useCallback(async () => {
+    const mine = ++generation.current;
+    setState({ kind: "loading" });
+
+    let text: string;
+    try {
+      const response = await fetch(workArtifactDownloadUrl(artifactId, version));
+      if (generation.current !== mine) return;
+      if (!response.ok) {
+        setState({
+          kind: "failed",
+          message: await downloadProblem(
+            response,
+            "Couldn’t read this report. The download beside it is unaffected."
+          ),
+        });
+        return;
+      }
+      // `text()` decodes as UTF-8 and replaces any byte that is not — which is
+      // the right failure for a preview. A strict decoder would refuse the whole
+      // file over one damaged byte, when what the reader needs to know is that
+      // the report exists and where the damage is; U+FFFD shows them exactly.
+      text = await response.text();
+    } catch {
+      if (generation.current !== mine) return;
+      setState({ kind: "failed", message: UNREACHABLE });
+      return;
+    }
+    if (generation.current !== mine) return;
+
+    const prepared = prepareReportPreview(text);
+    if (prepared.markdown.trim() === "") {
+      // `buildReport` throws rather than store a report that rendered to
+      // nothing, so reaching this means the stored object is not what the run
+      // wrote. Saying so beats laying out an empty page that reads like a
+      // report with nothing in it.
+      setState({
+        kind: "failed",
+        message: "There is no text in this version of the report. It can still be downloaded.",
+      });
+      return;
+    }
+    setState({ kind: "ready", ...prepared });
+  }, [artifactId, version]);
+
+  React.useEffect(() => {
+    if (!open) {
+      // Retires whatever is in flight, and drops the markdown with the state on
+      // the next open. Nothing else is held: there is no archive here.
+      generation.current += 1;
+      return;
+    }
+    void load();
+  }, [open, load]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        // Narrower than the site dialog on purpose. A site brings its own
+        // layout and deserves the width; a report is prose, and prose set to
+        // 64rem is a measure nobody can read a paragraph across. This one
+        // scrolls, because there is no frame inside it to do the scrolling.
+        className="h-[min(48rem,calc(100dvh-2rem))] max-w-3xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      >
+        <DialogHeader>
+          {/* pr-10 so a long report title never runs under the close button. */}
+          <DialogTitle className="pr-10">{title}</DialogTitle>
+          <DialogDescription>
+            {/* Deliberately says "in this report" rather than "this page",
+                which is what the site previewer can say about its frame and
+                this one cannot: the surrounding page is Juno's own and plainly
+                runs script. The claim being made is about the FILE — nothing in
+                it becomes markup, and nothing in it is fetched when this
+                paints. See report-preview.ts for why both hold. */}
+            Version {version} · <span className="font-mono">markdown</span> · nothing in this report
+            is run, and nothing in it is loaded from the network.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-h-0 overflow-y-auto overscroll-contain rounded-field border border-border/60 bg-card px-5 py-4">
+          {state.kind === "loading" ? (
+            <PreviewWait label="Reading the report…" />
+          ) : state.kind === "failed" ? (
+            <PreviewProblem message={state.message} onRetry={() => void load()} />
+          ) : (
+            <>
+              {(state.imageRefs > 0 || state.truncated) && (
+                <div className="mb-4 space-y-1 border-b border-border/60 pb-3">
+                  {state.imageRefs > 0 && (
+                    <p className="text-caption leading-relaxed text-muted-foreground">
+                      {state.imageRefs === 1
+                        ? "One image is shown as a link rather than loaded"
+                        : `${state.imageRefs} images are shown as links rather than loaded`}
+                      , so opening this preview tells nobody’s server that you did.
+                    </p>
+                  )}
+                  {state.truncated && (
+                    <p className="text-caption leading-relaxed text-muted-foreground">
+                      Only the first {REPORT_PREVIEW_MAX_CHARS.toLocaleString("en-US")} characters
+                      are laid out here. The download has the whole file.
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* No `sources`: the citation-chip contract belongs to deep
+                  research, which hands the model a numbered corpus. A report's
+                  own sources are prose written by `sourcesMarkdown`, and
+                  resolving a bracket in one positionally into a list this
+                  component does not have would attach a confident wrong source
+                  to a claim. */}
+              <Markdown content={state.markdown} />
+            </>
           )}
         </div>
       </DialogContent>
