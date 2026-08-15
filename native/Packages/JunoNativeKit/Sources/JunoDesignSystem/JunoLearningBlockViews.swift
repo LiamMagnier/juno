@@ -9,13 +9,18 @@ import SwiftUI
 /// not like a document. Structure comes from typography (serif titles, one
 /// monospaced marginalia voice) and whitespace, never from another container.
 ///
-/// The one deliberate divergence from the web: **Mermaid diagrams are not
-/// rendered natively.** The web draws them by handing the source to Mermaid 11 in
-/// a sandboxed, opaque-origin iframe. Native has no equivalent it can trust — a
-/// `WKWebView` loading a CDN inside the transcript is a different security
-/// posture, and drawing "a diagram" from a Mermaid graph without a Mermaid engine
-/// would be inventing a picture. A ```mermaid fence therefore stays a labelled
-/// code block, which is true.
+/// **Mermaid diagrams: superseded, and worth reading as a pair.** This file used
+/// to state that native would never draw them, because "a `WKWebView` loading a
+/// CDN inside the transcript is a different security posture". The premise was
+/// right and the conclusion was too broad: the objectionable part was the *CDN*,
+/// not the WebView. ``MermaidDiagramView`` now renders a ```mermaid fence from an
+/// engine the host app registers out of its own bundle, inside a network-isolated
+/// WebView with `default-src 'none'` — so nothing is fetched and the package
+/// stays offline-capable. See `JunoMermaidMarkup.swift` for the full posture.
+///
+/// The old behaviour survives *as the fallback*: with no engine registered, a
+/// fence is a labelled block of source, because drawing "a diagram" from a
+/// Mermaid graph without a Mermaid engine would still be inventing a picture.
 
 // MARK: - Shell
 

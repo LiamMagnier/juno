@@ -91,8 +91,28 @@ private struct JunoMarkdownBlockView: View {
                 .padding(.top, 8)
                 .accessibilityAddTraits(.isHeader)
 
-        case .code(let language, let source, _):
-            JunoCodeBlock(language: language, source: source)
+        case .code(let language, let source, let isClosed):
+            // The rich handlers only take over once the fence has CLOSED, and
+            // that gate is the whole reason streaming answers do not flicker. A
+            // half-written Mermaid graph is a syntax error on every keystroke,
+            // so a diagram that rendered eagerly would spend the entire stream
+            // flipping between an error state and a partial picture; a half-read
+            // CSV would chart a real-looking bar chart of the first two rows and
+            // then redraw it four times. While the fence is open the block is
+            // what it demonstrably is — source — and it becomes a diagram or a
+            // chart in one step when the author has finished writing it.
+            if isClosed, JunoMermaidMarkup.isMermaidFence(info: language) {
+                MermaidDiagramView(source: source)
+            } else if isClosed,
+                let chart = JunoChartMarkup.data(fenceInfo: language, source: source)
+            {
+                InlineChartRenderer(chart)
+            } else {
+                JunoCodeBlock(language: language, source: source)
+            }
+
+        case .math(let latex, _):
+            JunoDisplayMath(latex: latex)
 
         case .list(let ordered, let start, let items):
             JunoMarkdownList(ordered: ordered, start: start, items: items)
@@ -132,28 +152,24 @@ private struct JunoMarkdownBlockView: View {
     }
 }
 
-/// Inline Markdown (bold, italic, `code`, links) with a plain-text fallback.
+/// Inline Markdown (bold, italic, `code`, links) and inline maths, with a
+/// plain-text fallback.
 ///
-/// `AttributedString(markdown:)` throws on malformed input — routine while a
-/// message is still streaming and a `[link](` is half-written — so the raw
-/// string is shown rather than an error or an empty row.
+/// Every inline site in the renderer funnels through here — paragraphs, headings,
+/// list items, table cells, quotes — which is why maths belongs *in* it rather
+/// than beside it. A formula in a table cell and a formula in a sentence are the
+/// same thing to the reader, and the alternative to one shared entry point is
+/// five call sites that each decide separately whether `$…$` counts.
+///
+/// See ``AttributedString/junoInline(_:)`` for the two decisions that matter:
+/// why maths is extracted before Markdown parsing, and why its runs carry a
+/// presentation *intent* instead of a font.
 struct JunoInlineText: View {
     private let attributed: AttributedString
     private let caret: Bool
 
     init(_ source: String, caret: Bool = false) {
-        if let parsed = try? AttributedString(
-            markdown: source,
-            options: .init(
-                allowsExtendedAttributes: true,
-                interpretedSyntax: .inlineOnlyPreservingWhitespace,
-                failurePolicy: .returnPartiallyParsedIfPossible
-            )
-        ) {
-            attributed = parsed
-        } else {
-            attributed = AttributedString(source)
-        }
+        attributed = .junoInline(source)
         self.caret = caret
     }
 
