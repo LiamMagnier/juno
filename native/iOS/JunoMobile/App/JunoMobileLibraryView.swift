@@ -3,6 +3,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Library: everything you have ever attached to a chat or a project, shown
 /// as what it actually is.
@@ -15,8 +16,17 @@ import SwiftUI
 /// thumbnail for a picture, a real rendered first page for a document — and the
 /// name moves to where names are actually useful: search, the context menu and
 /// VoiceOver.
+/// **The second half of this screen is local.** Everything above describes files
+/// the *account* holds. `Add Document…` is the other direction: a file on this
+/// phone — or in iCloud Drive, or in any Files provider — read through
+/// ``DocumentIngestionPipeline`` into chunks and put in the account's retrieval
+/// index, so the search field at the bottom of this screen finds passages
+/// *inside* a PDF and not only file names.
 struct JunoMobileLibraryView: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+    /// This phone's local document index. See
+    /// ``JunoMobileRootView``, which owns it so it survives leaving this tab.
+    var documentIndex: NativeDocumentIndexModel?
     /// Everything the image editor needs. All optional, and the Edit action is
     /// absent rather than disabled when any of it is missing — a menu item that
     /// cannot work is worse than one that is not there.
@@ -36,6 +46,12 @@ struct JunoMobileLibraryView: View {
     @State private var renameFileID: String?
     @State private var renameValue = ""
     @State private var localError: String?
+    /// Whether the Files picker for `Add Document…` is up.
+    @State private var choosingDocument = false
+    /// A failure of the *picker*, not of the pipeline. Kept apart from
+    /// `documentIndex.lastErrorDescription`: "the picker errored" and "this PDF
+    /// has no text in it" want different sentences.
+    @State private var documentPickerFailure: String?
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -83,6 +99,26 @@ struct JunoMobileLibraryView: View {
             Text(localError ?? "Try again.")
         }
         .quickLookPreview($previewURL)
+        .fileImporter(
+            isPresented: $choosingDocument,
+            allowedContentTypes: NativeDocumentIndexModel.readableContentTypes,
+            // Several at once, read one after another below: the pipeline reports
+            // one file at a time, and a parallel import would make the progress
+            // line name whichever happened to finish last.
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case let .success(urls):
+                documentPickerFailure = nil
+                Task { await ingest(urls) }
+            case let .failure(error):
+                documentPickerFailure = error.localizedDescription
+            }
+        }
+        // One search field, two corpora. It already narrowed the account's files
+        // by name; this is what makes the same keystrokes look *inside* the
+        // documents indexed on this phone.
+        .onChange(of: searchText) { _, value in documentIndex?.setQuery(value) }
         .sheet(item: $editing) { file in
             if let accountID, let attachmentClient, let generateClient {
                 NativeImageEditSheet(
@@ -117,6 +153,19 @@ struct JunoMobileLibraryView: View {
                         Text(option.title).tag(option)
                     }
                 }
+                // Absent, not disabled, when there is no index to put a document
+                // in — the rule the Edit Image action above follows for the same
+                // reason. Absent while a read is in flight too: two imports
+                // racing would make the progress line describe neither.
+                if let documentIndex, documentIndex.isReady, !documentIndex.isIngesting {
+                    Button {
+                        documentPickerFailure = nil
+                        choosingDocument = true
+                    } label: {
+                        Label("Add Document…", systemImage: "doc.badge.plus")
+                    }
+                    .accessibilityIdentifier("juno.mobile.library-add-document")
+                }
                 Button {
                     Task { await model.reload() }
                 } label: {
@@ -133,6 +182,8 @@ struct JunoMobileLibraryView: View {
     private var content: some View {
         ScrollView {
             filterBar
+
+            documentIndexPanel
 
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(files) { file in
@@ -207,6 +258,180 @@ struct JunoMobileLibraryView: View {
             .padding(.horizontal, 16)
             .padding(.top, 2)
             .padding(.bottom, 12)
+        }
+    }
+
+    // MARK: - Local document index
+
+    /// What the on-device index has to say, or nothing at all.
+    ///
+    /// Above the grid rather than below it, because while a search is running
+    /// these passages are the *answer* and the thumbnails are context. It
+    /// collapses entirely when the index is empty and idle, so a reader who never
+    /// indexes a document never sees a strip of chrome for a feature they are not
+    /// using.
+    @ViewBuilder
+    private var documentIndexPanel: some View {
+        if let index = documentIndex, index.isReady, indexPanelHasContent(index) {
+            VStack(alignment: .leading, spacing: 10) {
+                indexSummary(index)
+                if let failure = documentPickerFailure ?? index.lastErrorDescription {
+                    indexFailure(failure, index: index)
+                }
+                indexResults(index)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(Color.junoSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Documents indexed on this phone")
+            .accessibilityIdentifier("juno.mobile.library-document-index")
+        }
+    }
+
+    private func indexPanelHasContent(_ index: NativeDocumentIndexModel) -> Bool {
+        !index.documents.isEmpty
+            || index.isIngesting
+            || index.lastErrorDescription != nil
+            || documentPickerFailure != nil
+    }
+
+    private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
+            Text(indexSummaryLine(index))
+                .font(.system(size: 15))
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            if index.isIngesting {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            } else if !index.documents.isEmpty {
+                Menu {
+                    ForEach(index.documents) { document in
+                        Button("Remove \(document.sourceName)", role: .destructive) {
+                            Task { await index.remove(document) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 17))
+                        .junoSecondaryInk()
+                }
+                .accessibilityLabel("Manage indexed documents")
+                .accessibilityIdentifier("juno.mobile.library-document-index-manage")
+            }
+        }
+    }
+
+    /// The counts come from the index, and the OCR clause appears only when some
+    /// document really was transcribed — a blanket "may contain OCR errors" over
+    /// documents that carried embedded text would warn about something that did
+    /// not happen. The memory-only note is stated rather than assumed: nothing
+    /// here writes document text to disk, so quitting does empty the index, and a
+    /// reader who expected otherwise would call the feature broken.
+    private func indexSummaryLine(_ index: NativeDocumentIndexModel) -> String {
+        if let name = index.ingestingFileName { return "Reading \(name)…" }
+        guard !index.documents.isEmpty else {
+            return "No documents indexed on this phone."
+        }
+        let documents = index.documents.count
+        var line = "\(documents) \(documents == 1 ? "document" : "documents")"
+        line += " · \(index.chunkCount) searchable \(index.chunkCount == 1 ? "passage" : "passages")"
+        line += ", kept on this phone until you quit"
+        if index.documents.contains(where: \.usedOpticalCharacterRecognition) {
+            line += " · some text was read by OCR"
+        }
+        return line
+    }
+
+    private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.junoCaution)
+                .accessibilityHidden(true)
+            Text(message)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Dismiss") {
+                documentPickerFailure = nil
+                index.clearError()
+            }
+            .buttonStyle(.plain)
+            .junoCaption()
+        }
+        .accessibilityIdentifier("juno.mobile.library-document-index-error")
+    }
+
+    /// Three states, kept apart because collapsing any two says something untrue:
+    /// nothing when no question was asked, "searching" while the ranker runs, and
+    /// "nothing mentions …" only once a search has actually come back empty.
+    @ViewBuilder
+    private func indexResults(_ index: NativeDocumentIndexModel) -> some View {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty, !index.documents.isEmpty {
+            Divider()
+            if index.isSearching, index.passages.isEmpty {
+                Text("Searching your documents…")
+                    .junoCaption()
+                    .junoSecondaryInk()
+            } else if index.passages.isEmpty {
+                Text("No indexed document mentions “\(query)”.")
+                    .junoCaption()
+                    .junoSecondaryInk()
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(index.passages) { passage in
+                        passageRow(passage)
+                    }
+                }
+                .accessibilityIdentifier("juno.mobile.library-document-passages")
+            }
+        }
+    }
+
+    /// One hit: where it came from, then what it says. The locator leads because
+    /// it is what a reader checks before trusting the quote, and it names only the
+    /// positional facts the extractor actually observed.
+    private func passageRow(_ passage: NativeDocumentPassage) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(passage.locator)
+                .junoCaption()
+                .junoSecondaryInk()
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(passage.text)
+                .font(.system(size: 15))
+                .lineLimit(4)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(passage.locator). \(passage.text)")
+    }
+
+    /// Reads the chosen files one after another, so the progress line always
+    /// names the file actually being read. The model re-ranks the query it is
+    /// holding as part of storing each document, so a file indexed while a search
+    /// was already typed answers that search immediately.
+    private func ingest(_ urls: [URL]) async {
+        guard let documentIndex else { return }
+        for url in urls {
+            await documentIndex.ingest(contentsOf: url)
         }
     }
 

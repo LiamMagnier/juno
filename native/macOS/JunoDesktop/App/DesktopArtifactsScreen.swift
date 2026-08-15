@@ -66,7 +66,7 @@ struct DesktopArtifactsScreen: View {
     /// `nil` while the editor is clean. The first keystroke stamps it, which is
     /// what makes Save honest about whether there is anything to save.
     @State private var draft: String?
-    @State private var mode = NativeArtifactDisplayMode.preview
+    @State private var mode = DesktopArtifactViewMode.preview
     @State private var showingChanges = false
     /// Whether the version pane is beside the document. Page state, not window
     /// state: it is only meaningful while a document is open, and it opens closed
@@ -150,7 +150,29 @@ struct DesktopArtifactsScreen: View {
         return draft != stored
     }
 
-    private var canPreview: Bool { artifact?.kind.supportsRenderedPreview ?? false }
+    /// The views the open artifact actually has. See ``DesktopArtifactViewMode``.
+    ///
+    /// `[.source]` while nothing is open, which is the honest floor: source is
+    /// the one view every artifact has, and the switcher collapses to a label at
+    /// a single option rather than drawing a control with one segment.
+    private var availableModes: [DesktopArtifactViewMode] {
+        guard let artifact else { return [.source] }
+        return DesktopArtifactViewMode.available(for: artifact.kind)
+    }
+
+    /// What is on screen, as opposed to what the reader last chose.
+    ///
+    /// Clamped here rather than by writing `mode` back, because the mismatch
+    /// exists for exactly as long as it takes a newly opened artifact of a
+    /// different kind to load, and mutating state from inside a body evaluation
+    /// to fix a one-frame mismatch is how SwiftUI is made to loop.
+    private var resolvedMode: DesktopArtifactViewMode {
+        availableModes.contains(mode) ? mode : (availableModes.first ?? .source)
+    }
+
+    private var modeSelection: Binding<DesktopArtifactViewMode> {
+        Binding(get: { resolvedMode }, set: { mode = $0 })
+    }
 
     private var baseVersion: Int? {
         guard let artifact, let targetVersion else { return nil }
@@ -216,10 +238,18 @@ struct DesktopArtifactsScreen: View {
             showingChanges = false
             diffLines = []
             localErrorDescription = nil
-            mode = canPreview ? .preview : .source
+            // Always Preview, and the kind-dependent fallback this line used to
+            // carry now lives in ``resolvedMode``, which clamps to whatever the
+            // open artifact offers. Two places deciding the same thing is how a
+            // switcher ends up lit on a segment that is not on screen.
+            mode = .preview
             guard let id = model.selectedArtifactID else { return }
             await model.openArtifact(id: id)
-            mode = canPreview ? .preview : .source
+            // Always Preview, and the kind-dependent fallback this line used to
+            // carry now lives in ``resolvedMode``, which clamps to whatever the
+            // open artifact offers. Two places deciding the same thing is how a
+            // switcher ends up lit on a segment that is not on screen.
+            mode = .preview
         }
         .onAppear {
             libraryVisible = true
@@ -737,7 +767,9 @@ struct DesktopArtifactsScreen: View {
             // `showingChanges`, because ⇧⌘D is an explicit request to compare two
             // versions and a design document diffs as text like any other body.
             designSurface(artifact)
-        } else if mode == .preview, artifact.kind == .markdown {
+        } else if resolvedMode == .canvas {
+            liveCanvas(artifact, version: version)
+        } else if resolvedMode == .preview, artifact.kind == .markdown {
             // Markdown is prose, and prose is the whole reason this page was
             // unreadable: `NativeArtifactPreview` renders it through
             // `AttributedString(markdown:)`, which flattens headings, lists,
@@ -749,7 +781,7 @@ struct DesktopArtifactsScreen: View {
                 JunoMarkdownText(displayedContent)
             }
             .accessibilityIdentifier("juno.artifact-preview")
-        } else if mode == .preview, artifact.kind.supportsRenderedPreview {
+        } else if resolvedMode == .preview, artifact.kind.supportsRenderedPreview {
             renderedPreview(artifact)
         } else if isLatest {
             sourceEditor(artifact, version: version)
@@ -847,6 +879,36 @@ struct DesktopArtifactsScreen: View {
         .id(previewReloadID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("juno.artifact-preview")
+    }
+
+    /// The live canvas: the source beside the running document, with everything
+    /// the page logged and everything the sandbox refused to load.
+    ///
+    /// **Why the library gets this and not only the chat dock.** A page artifact
+    /// that renders blank does so for a reason the page itself states — a CDN
+    /// script the sandbox blocked, an uncaught `TypeError` on line 12 — and until
+    /// now none of those reasons reached the Mac at all. The Preview showed a
+    /// white rectangle and the Source showed code that looks correct. The
+    /// artifacts library is where someone goes to work out what is wrong with an
+    /// artifact they kept, so it is the surface that most needs the console.
+    ///
+    /// `.sideBySide` here and `.tabbed` in the docked chat column: this pane is a
+    /// window's whole detail column, which is the width the split was designed
+    /// for.
+    ///
+    /// The identity deliberately includes `previewReloadID`, so the toolbar's
+    /// Reload reloads this the way it reloads the plain preview, and the *version*
+    /// rather than the artifact, because looking at v3 after v4 is a different
+    /// document and its console must not inherit v4's errors.
+    private func liveCanvas(_ artifact: NativeArtifact, version: Int) -> some View {
+        DesktopArtifactLiveCanvas(
+            kind: artifact.kind,
+            content: displayedContent,
+            layout: .sideBySide
+        )
+        .id("\(artifact.id)#v\(version)#\(previewReloadID)")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("juno.artifact-canvas")
     }
 
     /// A stored design, in the design editor — the same ``DesktopDesignSurface``
@@ -1152,7 +1214,11 @@ struct DesktopArtifactsScreen: View {
                 Label("Reload preview", systemImage: "arrow.clockwise")
             }
             .labelStyle(.iconOnly)
-            .disabled(mode != .preview || !canPreview || showingChanges)
+            // The Canvas is reloadable too, and re-running an artifact is the
+            // most useful thing this button does there: `documentWillLoad` clears
+            // the console, so a fixed artifact stops carrying the last run's
+            // errors. Source is the one view with nothing to reload.
+            .disabled(resolvedMode == .source || showingChanges)
             .help("Reload the interactive preview")
             .accessibilityIdentifier("juno.artifact-preview-reload")
 
@@ -1241,15 +1307,20 @@ struct DesktopArtifactsScreen: View {
         .accessibilityIdentifier("juno.artifact-command-bar")
     }
 
-    /// Preview against Source — or, for a design, the name of the one view there
-    /// is.
+    /// The views this artifact has — or, when it has only one, that view's name.
     ///
     /// A design gets a label rather than a dimmed pair, which is the same call the
     /// chat canvas's `viewBar` makes. Leaving the segmented control in place looked
-    /// right until it was looked at: `mode` starts at `.source` whenever
-    /// `canPreview` is false, so a design opened in the editor sat under a switch
+    /// right until it was looked at: `mode` started at `.source` for any kind with
+    /// no rendered preview, so a design opened in the editor sat under a switch
     /// whose selected half read "Source" — a control describing a view the reader
     /// was demonstrably not in, greyed out so they could not correct it either.
+    /// The same rule now covers Code and Mermaid, which have exactly one view, and
+    /// admits the third segment for the kinds that have three.
+    ///
+    /// The frame widens with the number of segments rather than staying at the
+    /// 148pt two segments needed: three words squeezed into that width truncate
+    /// to "Prev… Sour… Canv…", which is a switcher nobody can read.
     @ViewBuilder
     private var viewSwitch: some View {
         if artifact?.kind.isDesignDocument == true {
@@ -1259,22 +1330,34 @@ struct DesktopArtifactsScreen: View {
                 .frame(width: 148)
                 .help("A design opens in the design editor — there is no separate source view to switch to")
                 .accessibilityIdentifier("juno.artifact-view-mode")
-        } else {
-            Picker("View", selection: $mode) {
-                Text("Preview").tag(NativeArtifactDisplayMode.preview)
-                Text("Source").tag(NativeArtifactDisplayMode.source)
+        } else if availableModes.count > 1 {
+            Picker("View", selection: modeSelection) {
+                ForEach(availableModes) { option in
+                    Text(option.title).tag(option)
+                }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 148)
-            .disabled(!canPreview || showingChanges)
-            .help(
-                canPreview
-                    ? "Switch between the rendered artifact and its source"
-                    : "This artifact kind has no native renderer — its source is shown"
-            )
+            .frame(width: availableModes.count > 2 ? 214 : 148)
+            // Comparing two versions replaces the body with a diff, so no view
+            // choice applies while it is on screen.
+            .disabled(showingChanges)
+            .help(viewSwitchHelp)
             .accessibilityIdentifier("juno.artifact-view-mode")
+        } else {
+            Text(resolvedMode.title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 148)
+                .help("This artifact kind has no native renderer and nothing to run — its source is shown")
+                .accessibilityIdentifier("juno.artifact-view-mode")
         }
+    }
+
+    private var viewSwitchHelp: String {
+        availableModes.contains(.canvas)
+            ? "Switch between the rendered artifact, its source, and the live canvas with its console"
+            : "Switch between the rendered artifact and its source"
     }
 
     /// An explicit frame, deliberately: a self-sizing popover over a split view is
@@ -1370,8 +1453,20 @@ struct DesktopArtifactsScreen: View {
             subtitle: "\(DesktopArtifactKindName.singular(artifact.kind)) · v\(version)",
             kind: artifact.kind,
             content: entry.content,
-            mode: artifact.kind.supportsRenderedPreview ? mode : .source
+            mode: windowMode(for: artifact.kind)
         )
+    }
+
+    /// The view a detached window opens on.
+    ///
+    /// The page's own view when this artifact's kind offers it, and that kind's
+    /// first view otherwise. "Open in New Window" is reachable from the library
+    /// grid's context menu, where the page's view belongs to a *different*
+    /// document — carrying `.canvas` from an open page onto a Code artifact
+    /// would open a window on a canvas that has nothing to run.
+    private func windowMode(for kind: NativeArtifactKind) -> DesktopArtifactViewMode {
+        let modes = DesktopArtifactViewMode.available(for: kind)
+        return modes.contains(resolvedMode) ? resolvedMode : (modes.first ?? .source)
     }
 
     private func exportSource() {
@@ -1831,7 +1926,7 @@ private final class DesktopArtifactWindows: NSObject, NSWindowDelegate {
         subtitle: String,
         kind: NativeArtifactKind,
         content: String,
-        mode: NativeArtifactDisplayMode
+        mode: DesktopArtifactViewMode
     ) {
         let controller = NSHostingController(
             rootView: DesktopArtifactWindowContent(kind: kind, content: content, mode: mode)
@@ -1856,7 +1951,7 @@ private final class DesktopArtifactWindows: NSObject, NSWindowDelegate {
 private struct DesktopArtifactWindowContent: View {
     let kind: NativeArtifactKind
     let content: String
-    let mode: NativeArtifactDisplayMode
+    let mode: DesktopArtifactViewMode
 
     var body: some View {
         Group {
@@ -1867,6 +1962,16 @@ private struct DesktopArtifactWindowContent: View {
                 // accepted edits here would be collecting work it could only throw
                 // away when the window closed.
                 DesktopDesignSurface(content: content, readOnly: true)
+            } else if mode == .canvas {
+                // The canvas torn off into its own window is the best version of
+                // it there is: `.sideBySide` at 820pt gives the source and the
+                // running document a readable half each, and the console keeps
+                // reporting while the reader works in the main window.
+                DesktopArtifactLiveCanvas(
+                    kind: kind,
+                    content: content,
+                    layout: .sideBySide
+                )
             } else if mode == .preview, kind == .markdown {
                 // Same renderer and same page as the main canvas, so a document
                 // torn off into its own window is the document the reader was
@@ -1878,7 +1983,7 @@ private struct DesktopArtifactWindowContent: View {
                         .junoCard()
                 }
             } else {
-                NativeArtifactPreview(kind: kind, content: content, mode: mode)
+                NativeArtifactPreview(kind: kind, content: content, mode: mode.displayMode)
             }
         }
         .frame(minWidth: 480, minHeight: 360)

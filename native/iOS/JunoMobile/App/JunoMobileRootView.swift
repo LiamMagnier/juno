@@ -75,6 +75,16 @@ struct JunoMobileRootView: View {
     /// chat column through the environment. Held here rather than in the chat
     /// screen so a call survives the screen re-rendering underneath it.
     @State private var voiceSession: JunoMobileVoiceSession?
+    /// This phone's local document index — files read through
+    /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
+    ///
+    /// Owned here rather than by the Library screen, and for the same two reasons
+    /// the Mac keeps it at its composition root: it has to survive leaving the
+    /// tab, or nobody could index a document and then look for it; and it holds
+    /// the plaintext of what was indexed, so sign-out has to be able to reach it
+    /// and wipe it. It takes no transport, because nothing indexed here is
+    /// uploaded — extraction, chunking and ranking all happen on the device.
+    @State private var documentIndex = NativeDocumentIndexModel()
     #if DEBUG
     /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
     /// signed in — the launch flag fires before `restore()` finishes, and a
@@ -228,6 +238,7 @@ struct JunoMobileRootView: View {
                 Task { await codeModel?.start(for: session.profile.id) }
                 Task { await workModel?.start(for: session.profile.id) }
                 libraryModel?.start(for: session.profile.id)
+                documentIndex.start(for: session.profile.id)
                 #if DEBUG
                 if pendingVoiceLaunch {
                     pendingVoiceLaunch = false
@@ -261,6 +272,11 @@ struct JunoMobileRootView: View {
                 // machine the signed-out reader no longer has an account for.
                 workModel?.stop()
                 libraryModel?.stop()
+                // Not merely "forget the list": the plaintext of every indexed
+                // document is in that index, so `stop()` wipes the account's
+                // partition. Nothing indexed by the person signing out may be
+                // retrievable by whoever signs in next.
+                documentIndex.stop()
                 // A voice session outliving the account it was authorized for is
                 // a live microphone on a signed-out device.
                 voiceSession?.controller.end()
@@ -858,6 +874,7 @@ struct JunoMobileRootView: View {
             if let projectModel {
                 JunoMobileLibraryView(
                     model: projectModel,
+                    documentIndex: documentIndex,
                     accountID: currentSession?.profile.id,
                     attachmentClient: requestSender.map { NativeAttachmentAPIClient(sender: $0) },
                     generateClient: generateClient,

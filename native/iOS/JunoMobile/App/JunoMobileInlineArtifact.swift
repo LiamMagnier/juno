@@ -28,9 +28,26 @@ struct JunoMobileInlineArtifactView: View {
     let artifact: JunoMobileInlineArtifact
     let close: () -> Void
 
-    @State private var displayMode = NativeArtifactDisplayMode.preview
+    @State private var displayMode = JunoMobileArtifactViewMode.preview
 
     private var reference: NativeMessageContent.ArtifactReference { artifact.reference }
+
+    /// The views this artifact has. See ``JunoMobileArtifactViewMode``.
+    private var availableModes: [JunoMobileArtifactViewMode] {
+        JunoMobileArtifactViewMode.available(for: artifact.kind)
+    }
+
+    /// What is on screen, as opposed to what was last chosen. Clamped rather than
+    /// written back: this screen is presented per artifact, so the mismatch is
+    /// only possible for the first frame, and mutating state inside a body
+    /// evaluation to correct one frame is how SwiftUI is made to loop.
+    private var resolvedMode: JunoMobileArtifactViewMode {
+        availableModes.contains(displayMode) ? displayMode : (availableModes.first ?? .source)
+    }
+
+    private var modeSelection: Binding<JunoMobileArtifactViewMode> {
+        Binding(get: { resolvedMode }, set: { displayMode = $0 })
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,8 +62,11 @@ struct JunoMobileInlineArtifactView: View {
             JunoMobileArtifactBody(
                 kind: artifact.kind,
                 content: reference.content,
-                mode: displayMode
+                mode: resolvedMode
             )
+            // Keyed on the artifact so the canvas's console never carries one
+            // document's errors onto the next.
+            .id(artifact.id)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
@@ -101,15 +121,16 @@ struct JunoMobileInlineArtifactView: View {
 
     private var controls: some View {
         HStack(spacing: 10) {
-            if artifact.kind.supportsRenderedPreview {
+            // Nothing for a kind with one view — a one-segment switcher is a
+            // label wearing a control's clothes — and three for a page, a graphic
+            // or a component, which now includes the live canvas.
+            if availableModes.count > 1 {
                 JunoMobileSegmented(
-                    options: [
-                        .init(NativeArtifactDisplayMode.preview, "Preview"),
-                        .init(NativeArtifactDisplayMode.source, "Source"),
-                    ],
-                    selection: $displayMode,
+                    options: availableModes.map { .init($0, $0.title) },
+                    selection: modeSelection,
                     accessibilityLabel: "View"
                 )
+                .accessibilityIdentifier("juno.mobile.inline-artifact-view-mode")
             }
             Spacer(minLength: 0)
             ShareLink(item: reference.content) {

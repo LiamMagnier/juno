@@ -1046,7 +1046,7 @@ struct JunoMobileArtifactDetail: View {
     /// the navigation bar's back button already does this job.
     var close: (() -> Void)?
     @State private var selectedVersion = 0
-    @State private var displayMode = NativeArtifactDisplayMode.preview
+    @State private var displayMode = JunoMobileArtifactViewMode.preview
     @State private var showingRename = false
     @State private var renameValue = ""
     @State private var showingEditor = false
@@ -1064,6 +1064,22 @@ struct JunoMobileArtifactDetail: View {
 
     private var isLatestVersion: Bool {
         version?.version == artifact.currentVersion
+    }
+
+    /// The views this artifact has. See ``JunoMobileArtifactViewMode``.
+    private var availableModes: [JunoMobileArtifactViewMode] {
+        JunoMobileArtifactViewMode.available(for: artifact.kind)
+    }
+
+    /// What is on screen, as opposed to what the reader last chose. Clamped here
+    /// rather than written back, because writing state during a body evaluation
+    /// to correct a one-frame mismatch is how SwiftUI is made to loop.
+    private var resolvedMode: JunoMobileArtifactViewMode {
+        availableModes.contains(displayMode) ? displayMode : (availableModes.first ?? .source)
+    }
+
+    private var modeSelection: Binding<JunoMobileArtifactViewMode> {
+        Binding(get: { resolvedMode }, set: { displayMode = $0 })
     }
 
     private var isDesignDirty: Bool {
@@ -1154,17 +1170,15 @@ struct JunoMobileArtifactDetail: View {
         .accessibilityIdentifier("juno.mobile.artifact-version")
     }
 
-    /// One switch and the shares, on one line. Kinds with nothing to render — a
-    /// code artifact — get no switch at all rather than a disabled one.
+    /// One switch and the shares, on one line. Kinds with a single view — a code
+    /// artifact — get no switch at all rather than a disabled one. A page, a
+    /// graphic or a component gets three: Preview, Source and the live canvas.
     private var controls: some View {
         HStack(spacing: 10) {
-            if artifact.kind.supportsRenderedPreview {
+            if availableModes.count > 1 {
                 JunoMobileSegmented(
-                    options: [
-                        .init(NativeArtifactDisplayMode.preview, "Preview"),
-                        .init(NativeArtifactDisplayMode.source, "Source"),
-                    ],
-                    selection: $displayMode,
+                    options: availableModes.map { .init($0, $0.title) },
+                    selection: modeSelection,
                     accessibilityLabel: "View"
                 )
                 .accessibilityIdentifier("juno.mobile.artifact-view-mode")
@@ -1296,7 +1310,7 @@ struct JunoMobileArtifactDetail: View {
                 JunoMobileArtifactBody(
                     kind: artifact.kind,
                     content: version.content,
-                    mode: displayMode,
+                    mode: resolvedMode,
                     readOnly: !isLatestVersion,
                     onEdit: isLatestVersion ? { designDraft = $0 } : nil
                 )

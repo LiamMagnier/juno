@@ -329,23 +329,69 @@ enum JunoMobileDesignOutline {
     }
 }
 
+// MARK: - Which view of an artifact
+
+/// The three ways the phone can show one artifact. The Mac's
+/// `DesktopArtifactViewMode` is the same idea; the two are separate only because
+/// the apps share no view layer.
+///
+/// A type of its own rather than `NativeArtifactDisplayMode` plus a flag, because
+/// the switch above the body has to name the view the reader is *in*: a two-way
+/// Preview/Source control lit on one of its halves while a live canvas is on
+/// screen describes neither of them.
+enum JunoMobileArtifactViewMode: String, CaseIterable, Identifiable, Hashable {
+    case preview
+    case source
+    /// ``ArtifactCanvasView``: the code, the running document, and the page's own
+    /// console — including the resources the sandbox refused to load, which is the
+    /// single most common reason an artifact renders blank and the one thing the
+    /// phone previously had no way at all to show.
+    case canvas
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .preview: "Preview"
+        case .source: "Source"
+        case .canvas: "Canvas"
+        }
+    }
+
+    var displayMode: NativeArtifactDisplayMode {
+        self == .source ? .source : .preview
+    }
+
+    /// The modes worth offering for `kind`, in the order they are shown. A single
+    /// element means "no switch": the caller draws the body and no control, which
+    /// is what this screen already did for a code artifact.
+    static func available(for kind: NativeArtifactKind) -> [JunoMobileArtifactViewMode] {
+        var modes: [JunoMobileArtifactViewMode] = []
+        if kind.supportsRenderedPreview { modes.append(.preview) }
+        modes.append(.source)
+        if kind.supportsLiveCanvas { modes.append(.canvas) }
+        return modes
+    }
+}
+
 /// An artifact's body, whichever kind it is.
 ///
-/// One place decides that a design document goes to the design reader and
-/// everything else goes to the shared preview, because both artifact screens —
-/// the stored one and the copy carried in a reply — ask the same question and
-/// answering it twice is how they drift apart.
+/// One place decides that a design document goes to the design reader, that a
+/// runnable one can go to the live canvas, and that everything else goes to the
+/// shared preview — because both artifact screens (the stored one and the copy
+/// carried in a reply) ask the same question, and answering it twice is how they
+/// drift apart.
 struct JunoMobileArtifactBody: View {
     let kind: NativeArtifactKind
     let content: String
-    let mode: NativeArtifactDisplayMode
+    let mode: JunoMobileArtifactViewMode
     let readOnly: Bool
     var onEdit: ((String) -> Void)? = nil
 
     init(
         kind: NativeArtifactKind,
         content: String,
-        mode: NativeArtifactDisplayMode,
+        mode: JunoMobileArtifactViewMode,
         readOnly: Bool = true,
         onEdit: ((String) -> Void)? = nil
     ) {
@@ -359,8 +405,38 @@ struct JunoMobileArtifactBody: View {
     var body: some View {
         if kind.isDesignDocument {
             JunoMobileDesignArtifactBody(content: content, readOnly: readOnly, onEdit: onEdit)
+        } else if mode == .canvas {
+            JunoMobileArtifactLiveCanvas(kind: kind, content: content)
         } else {
-            NativeArtifactPreview(kind: kind, content: content, mode: mode)
+            NativeArtifactPreview(kind: kind, content: content, mode: mode.displayMode)
         }
+    }
+}
+
+/// Hosts one ``ArtifactCanvasModel`` for the artifact it was given.
+///
+/// **The model is `@State`, and callers key the body on the artifact.** It holds
+/// the console transcript, the error count and the bridge's connection state *of
+/// the loaded document*; reused across two artifacts it would show the first
+/// one's uncaught exception under the second one's code. Both call sites already
+/// apply an `.id(_:)` for the design editor's sake, and it covers this too.
+///
+/// `.tabbed`, always: a phone has no width for a split, and the canvas's own
+/// layout control is still there on an iPad in landscape.
+///
+/// No ``ArtifactCanvasRuntime`` is passed because none ships, so a React artifact
+/// says which runtime is missing rather than showing an empty white pane.
+private struct JunoMobileArtifactLiveCanvas: View {
+    private let content: String
+    @State private var model: ArtifactCanvasModel
+
+    init(kind: NativeArtifactKind, content: String) {
+        self.content = content
+        _model = State(initialValue: ArtifactCanvasModel(kind: kind, layout: .tabbed))
+    }
+
+    var body: some View {
+        ArtifactCanvasView(content: content, model: model)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

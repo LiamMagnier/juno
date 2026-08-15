@@ -86,6 +86,19 @@ struct JunoDesktopConfiguration {
     /// a dependency it has no use for.
     var workGrantStore: DesktopWorkGrantStore? = nil
     let libraryModel: NativeLibraryModel?
+    /// This Mac's local document index: files read into chunks by
+    /// ``DocumentIngestionPipeline`` and ranked by `JunoSearch`.
+    ///
+    /// Held at the composition root rather than as screen state for two reasons.
+    /// It has to outlive the Library page — an index that emptied every time
+    /// someone clicked Chat would be a feature nobody could use twice — and it
+    /// holds plaintext document text, so sign-out has to be able to reach it and
+    /// wipe it. ``JunoDesktopRootView`` does both, beside every other model.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the same reason
+    /// ``workGrantStore`` is: composition roots that describe a failed launch have
+    /// no account to index anything for and should not have to name it.
+    var documentIndexModel: NativeDocumentIndexModel? = nil
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?
     let voiceTranscriptClient: NativeVoiceTranscriptClient?
@@ -336,6 +349,9 @@ struct JunoDesktopConfiguration {
                     // bytes — the same route the Library screen already takes.
                     previewSource: NativeProjectAPIClient(sender: runtime)
                 ),
+                // No transport at all: extraction, chunking and ranking are
+                // entirely local, and nothing a person indexes here is uploaded.
+                documentIndexModel: NativeDocumentIndexModel(),
                 requestSender: runtime,
                 accountDataClient: NativeAccountDataClient(sender: runtime),
                 voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
