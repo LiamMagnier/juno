@@ -34,6 +34,26 @@ enum StorageValidation {
         }
     }
 
+    /// Rejects a branch edge that could not describe a real tree.
+    ///
+    /// The self-parent check is the important one: a message named as its own
+    /// parent makes the active-timeline walk loop forever, and the failure would
+    /// surface as a hung transcript rather than as the bad write it actually is.
+    /// Cycles longer than one hop cannot be caught here — a single edge carries
+    /// no path — so the projection is separately written to stop at a message it
+    /// has already visited.
+    static func branchLink(_ link: MessageBranchLink) throws {
+        guard validText(link.conversationID, maximumUTF8Bytes: 512),
+            validText(link.messageID, maximumUTF8Bytes: 512),
+            link.parentMessageID.map({ validText($0, maximumUTF8Bytes: 512) }) ?? true,
+            link.parentMessageID != link.messageID,
+            link.branchIndex >= 0,
+            link.createdAt.timeIntervalSince1970.isFinite
+        else {
+            throw AccountStorageError.invalidBranchLink(messageID: link.messageID)
+        }
+    }
+
     static func transaction(_ transaction: StorageTransaction) throws {
         try accountID(transaction.accountID)
         for operation in transaction.operations {

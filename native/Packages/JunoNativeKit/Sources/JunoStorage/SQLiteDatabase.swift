@@ -212,6 +212,37 @@ final class SQLiteDatabase: @unchecked Sendable {
         return String(cString: value)
     }
 
+    /// Binds text that may legitimately be absent.
+    ///
+    /// Separately named rather than an `String?` overload of ``bind(_:at:to:)``
+    /// because overloading on optionality means a plain `String` silently
+    /// promotes at the call site, and the one place that matters — a branch
+    /// edge's parent — would then write NULL or text depending on inference.
+    func bindOptionalText(
+        _ value: String?,
+        at index: Int32,
+        to statement: OpaquePointer
+    ) throws {
+        guard let value else {
+            try checkBind(sqlite3_bind_null(statement, index), operation: "bind null text")
+            return
+        }
+        try bind(value, at: index, to: statement)
+    }
+
+    /// Reads a column whose NULL means "there is none", not "it is empty".
+    ///
+    /// Any other stored type is still a corrupt value: this is the reader for a
+    /// nullable column, not a coercion that turns whatever is there into text.
+    func optionalText(
+        _ statement: OpaquePointer,
+        column: Int32,
+        field: String
+    ) throws -> String? {
+        if sqlite3_column_type(statement, column) == SQLITE_NULL { return nil }
+        return try text(statement, column: column, field: field)
+    }
+
     func data(
         _ statement: OpaquePointer,
         column: Int32,
@@ -277,8 +308,18 @@ final class SQLiteDatabase: @unchecked Sendable {
 
         try execute("BEGIN EXCLUSIVE", operation: "begin migration")
         do {
+            // FORWARD-ONLY, ONE STEP PER VERSION, NEVER REWRITTEN. Each `if`
+            // below is the migration a database *at that version* still needs,
+            // so a v1 file on a reader's device runs only the v2 step and keeps
+            // every row it already had. Editing or renumbering a shipped step
+            // would make the schema a function of which build wrote it rather
+            // than of `user_version`, and the first casualty would be an
+            // existing local database that stopped opening.
             if currentVersion < 1 {
                 try execute(Self.schemaV1, operation: "create schema version 1")
+            }
+            if currentVersion < 2 {
+                try execute(Self.schemaV2, operation: "create schema version 2")
             }
             try execute(
                 "PRAGMA user_version = \(targetVersion)",
@@ -356,8 +397,25 @@ final class SQLiteDatabase: @unchecked Sendable {
                 SchemaColumn(name: "value", type: "BLOB", notNull: true),
             ]
         )
+        try verifyTable(
+            "message_branches",
+            expected: [
+                SchemaColumn(name: "account_id", type: "TEXT", notNull: true, primaryKey: 1),
+                SchemaColumn(name: "message_id", type: "TEXT", notNull: true, primaryKey: 2),
+                SchemaColumn(name: "conversation_id", type: "TEXT", notNull: true),
+                // Deliberately nullable, and deliberately not defaulted: NULL is
+                // the tree's root, and any placeholder written in its place
+                // ("", "root") would be a message id that could one day collide
+                // with a real one.
+                SchemaColumn(name: "parent_message_id", type: "TEXT", notNull: false),
+                SchemaColumn(name: "branch_index", type: "INTEGER", notNull: true),
+                SchemaColumn(name: "is_active_branch", type: "INTEGER", notNull: true),
+                SchemaColumn(name: "created_at", type: "REAL", notNull: true),
+            ]
+        )
         try verifyCascadeForeignKey(table: "records")
         try verifyCascadeForeignKey(table: "metadata")
+        try verifyCascadeForeignKey(table: "message_branches")
 
         try withStatement(
             "PRAGMA foreign_key_check",
@@ -448,6 +506,37 @@ final class SQLiteDatabase: @unchecked Sendable {
             PRIMARY KEY(account_id, metadata_key),
             FOREIGN KEY(account_id) REFERENCES accounts(account_id) ON DELETE CASCADE
         ) WITHOUT ROWID;
+        """
+
+    /// Schema 2: the conversation message tree.
+    ///
+    /// Purely additive — it creates one new table and touches nothing that
+    /// version 1 wrote, which is what lets an existing local database open on
+    /// the new build with every record, every cursor and every queued mutation
+    /// exactly where it was. There is no `ALTER TABLE` here on purpose: adding a
+    /// column to `records` would have made every message row carry branch
+    /// columns that are meaningless for the twenty-one other synced namespaces,
+    /// and `verifySchema` would then have to accept two shapes of the same
+    /// table forever.
+    ///
+    /// The parent column is nullable because a root genuinely has no parent, and
+    /// `WITHOUT ROWID` keeps the (account, message) lookup a single index seek —
+    /// this table is read on every conversation load.
+    private static let schemaV2 = """
+        CREATE TABLE message_branches (
+            account_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            parent_message_id TEXT,
+            branch_index INTEGER NOT NULL CHECK(branch_index >= 0),
+            is_active_branch INTEGER NOT NULL CHECK(is_active_branch IN (0, 1)),
+            created_at REAL NOT NULL,
+            PRIMARY KEY(account_id, message_id),
+            FOREIGN KEY(account_id) REFERENCES accounts(account_id) ON DELETE CASCADE,
+            CHECK(parent_message_id IS NULL OR parent_message_id <> message_id)
+        ) WITHOUT ROWID;
+        CREATE INDEX message_branches_by_parent
+            ON message_branches(account_id, conversation_id, parent_message_id, branch_index);
         """
 }
 
