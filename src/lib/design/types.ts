@@ -345,6 +345,22 @@ export type BlendMode =
 /** Uniform radius, or per-corner starting top-left and going clockwise. */
 export type CornerRadius = number | [number, number, number, number];
 
+/**
+ * How the corner curve meets the straight edge: 0 is a circular arc, 1 is the
+ * flattest superellipse the renderer draws (the "squircle" every Apple surface
+ * is built from). One value for the whole node, because that is what the shape
+ * is — smoothing is a property of *how* a corner is rounded, not of which
+ * corner, and a per-corner tuple would let a box have two different curve
+ * families meeting in the middle of an edge.
+ *
+ * Kept to `[0, 1]` rather than exposing the superellipse exponent directly:
+ * the exponent is derived (see `superellipseExponent` in `render.ts`) so that
+ * the corner's closest approach to the vertex does not move as this slides, and
+ * a designer who could set the exponent could make a shape whose radius field
+ * no longer describes it.
+ */
+export type CornerSmoothing = number;
+
 export interface Typography {
   fontFamily: string;
   fontSize: number;
@@ -452,6 +468,20 @@ export interface BaseNode {
   fills: Paint[];
   strokes: Stroke[];
   cornerRadius: CornerRadius;
+  /**
+   * Squircle-ness of the rounded corners; 0 is the circular arc every document
+   * written before this field existed draws.
+   *
+   * Required on the decoded node, not optional, for the same reason `effects`
+   * is — and the reason is sharper here than it looks. `updateNode` refuses any
+   * patch key that is not already `in` the node, which is what stops a patch
+   * inventing `characters` on a rectangle. An *optional* smoothing is absent
+   * from every node in every stored document, so that guard would have refused
+   * to ever set it: the inspector control would have thrown on first use and no
+   * document could ever acquire a smoothed corner. The wire form still tolerates
+   * the missing key (`.default(0)` in the schema), so nothing on disk changes.
+   */
+  cornerSmoothing: CornerSmoothing;
   /**
    * The layer's effect stack, applied in list order (see `Effect`).
    *

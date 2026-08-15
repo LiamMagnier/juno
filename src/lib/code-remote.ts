@@ -254,6 +254,34 @@ const payloadNum = (payload: Prisma.JsonValue, key: string): number | null => {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 };
 
+/*
+ * THE UNIFIED DIFF A `file_change` EVENT MAY CARRY, AND WHAT IT COSTS.
+ *
+ * `ClientActivityEvent` is the CHAT vocabulary — every surface that renders a
+ * transcript reads it, and a patch is meaningful to exactly one of them. So the
+ * diff rides as an extra key on the write row rather than widening the shared
+ * shape: a reader that does not know the key sees precisely the row it saw
+ * before, which is the same absent-tolerance the producer side has.
+ *
+ * KNOWN GAP, and it is one line to close: `serializeActivity` in
+ * src/lib/serializers.ts rebuilds activity rows from a FIELD WHITELIST, so a
+ * `patch` written here is stored but dropped on read-back until `patch` is
+ * added to that whitelist. It is written anyway because the alternative is
+ * discarding hunks that the events table already holds and that this is the
+ * only pass to ever fold them; the live surface reads its diffs from the task
+ * stream directly (see use-code-session.ts) and does not depend on this.
+ *
+ * The two caps below exist because `Message.activity` is a JSON column that is
+ * loaded whole on every thread read. A fifty-file run at the cloud runner's
+ * 40 KB-per-file cap is a two-megabyte row, and an activity log that outweighs
+ * the conversation it annotates makes every history load slower for a diff
+ * almost nobody scrolls to. A patch that does not fit is dropped ENTIRE rather
+ * than sliced: a truncated-but-unlabelled hunk reads as the whole change.
+ */
+type WriteActivityEvent = ClientActivityEvent & { patch?: string };
+const MAX_PERSISTED_PATCH_CHARS = 16_000;
+const MAX_PERSISTED_PATCH_BUDGET = 120_000;
+
 /**
  * Persist the outcome of a conversation-linked task as a normal ASSISTANT
  * Message, so the code session's history reloads exactly like chat history.
@@ -276,12 +304,13 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
   });
 
   const textParts: string[] = [];
-  const activity: ClientActivityEvent[] = [];
+  const activity: WriteActivityEvent[] = [];
   const agentSnapshots = new Map<string, { event: CodeTaskEvent; agent: Record<string, unknown> }>();
   let promptTokens: number | null = null;
   let completionTokens: number | null = null;
   let errorMessage: string | null = null;
-  const push = (event: CodeTaskEvent, entry: Omit<ClientActivityEvent, "id" | "createdAt">) =>
+  let patchBudget = MAX_PERSISTED_PATCH_BUDGET;
+  const push = (event: CodeTaskEvent, entry: Omit<WriteActivityEvent, "id" | "createdAt">) =>
     activity.push({ id: `evt-${event.seq}`, createdAt: event.createdAt.toISOString(), ...entry });
 
   for (const event of events) {
@@ -302,7 +331,18 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
         const changeKind = payloadStr(event.payload, "changeKind") ?? "edit";
         const added = payloadNum(event.payload, "added") ?? 0;
         const removed = payloadNum(event.payload, "removed") ?? 0;
-        push(event, { kind: "write", title: `${changeKind} ${path}`, detail: `+${added} −${removed}` });
+        // `patch` is the documented key; `diff` is the one the deployed cloud
+        // runner writes (scripts/cloud-code-runner.mjs). Both, or the hunks the
+        // only producer that sends any would be thrown away here.
+        const patch = payloadStr(event.payload, "patch") ?? payloadStr(event.payload, "diff");
+        const keep = patch && patch.length <= MAX_PERSISTED_PATCH_CHARS && patch.length <= patchBudget ? patch : null;
+        if (keep) patchBudget -= keep.length;
+        push(event, {
+          kind: "write",
+          title: `${changeKind} ${path}`,
+          detail: `+${added} −${removed}`,
+          ...(keep ? { patch: keep } : {}),
+        });
         break;
       }
       case "approval_request": {

@@ -17,6 +17,7 @@ import {
   splitPassages,
   supportLabel,
   validateClaimAgainstPassage,
+  type AuditReason,
   type CitationJudge,
   type ClaimStatus,
   type ClaimType,
@@ -446,6 +447,11 @@ export async function recordCitationAudit(opts: {
       payload: {
         ...(opts.messageId ? { messageId: opts.messageId } : {}),
         sourceOrder: stored.map((s) => s.id),
+        // Which sources were judged from a search preview rather than the page.
+        // Always written, even empty: the inspector reads the ABSENCE of this
+        // key as "this audit predates the receipt", so an omitted empty array
+        // would make a fully-read corpus indistinguishable from an old one.
+        truncatedSources: stored.filter((s) => s.truncated).map((s) => s.id),
         judgeCalls,
         draftRevision,
         revision,
@@ -699,6 +705,25 @@ export interface ClaimAuditSourceView {
   sourceType: string | null;
   /** Set when this source is a syndicated copy of another in the same run. */
   duplicateOfIndex: number | null;
+  /**
+   * True when the body this audit judged against was a search preview rather
+   * than the page — two sentences of lede, not the document.
+   *
+   * It changes what a verdict MEANS, which is why the inspector has to be able
+   * to say it: a figure missing from a snippet is not evidence the page lacks
+   * it. `recordCitationAudit` already knows this (it is what demotes such a
+   * claim from "unsupported" to "unverified") and it was thrown away on the way
+   * out, so the panel showed a bare "unverified" badge with nothing to explain
+   * it.
+   *
+   * NULL means the audit predates this being recorded — not "the page was
+   * read". ResearchSource has no column for it and the snapshot cannot stand in
+   * (a truncated corpus stores no snapshot, and neither does a source that was
+   * simply never fetched), so it rides the audit event alongside `sourceOrder`,
+   * for the same reason: it is a property of the corpus the model was shown at
+   * that moment, not of a row that is still being updated afterwards.
+   */
+  truncated: boolean | null;
 }
 
 export interface ClaimAuditLinkView {
@@ -708,8 +733,27 @@ export interface ClaimAuditLinkView {
   /** The exact text the validator read — what the inspector quotes. */
   passage: string;
   locator: string | null;
-  /** Why the validator was unhappy, recomputed from the stored passage. */
+  /**
+   * Why the validator was unhappy, recomputed from the stored passage.
+   *
+   * The sentences only. Kept because two components render this array directly
+   * as text; `codedReasons` below is the same list with the machine-readable
+   * half attached, and is what anything new should read.
+   */
   reasons: string[];
+  /**
+   * The same findings with their reason code and the ceiling each imposed.
+   *
+   * `reasons` was a bare `string[]`, so a panel could print the sentences and
+   * nothing else: no way to tell a fabricated quote (`quote_absent`) from a
+   * thin-overlap warning (`thin_overlap`) from a figure the passage contradicts
+   * (`figure_mismatch`), and therefore no way to sort by severity, badge them
+   * differently, or count how often a corpus produces one kind of failure. It
+   * is a projection of the same array rather than a replacement so widening
+   * this did not have to be a coordinated change with the client that already
+   * renders `reasons`.
+   */
+  codedReasons: AuditReason[];
 }
 
 export interface ClaimAuditClaimView {
@@ -803,6 +847,23 @@ export async function loadCitationAuditForMessage(
   order.forEach((id, i) => indexOf.set(id, i + 1));
   for (const s of run.sources) if (!indexOf.has(s.id)) indexOf.set(s.id, indexOf.size + 1);
 
+  /*
+   * Which of those sources the verdicts were reached against a preview of,
+   * recorded on the event beside `sourceOrder` for the same reason: it is true
+   * of the corpus at the moment of the audit, and the row it describes keeps
+   * being updated afterwards — a later run that finally fetches the page would
+   * otherwise retro-actively make an old audit look like it had read one.
+   *
+   * `null` when the key is absent, which is every audit written before this
+   * shipped. Defaulting those to `false` would be the same lie in the other
+   * direction: the panel would print nothing, and nothing reads as "the page
+   * was read".
+   */
+  const recordedTruncation = (event.payload as { truncatedSources?: unknown })?.truncatedSources;
+  const truncatedIds = Array.isArray(recordedTruncation)
+    ? new Set(recordedTruncation.filter((id): id is string => typeof id === "string"))
+    : null;
+
   const sourceById = new Map(run.sources.map((s) => [s.id, s]));
   const sources: ClaimAuditSourceView[] = run.sources
     .map((s) => {
@@ -827,6 +888,7 @@ export async function loadCitationAuditForMessage(
         independence: s.independence ?? score.independence,
         sourceType: s.sourceType ?? sourceTypeOf({ url: s.url, text: body, authority: s.authority ?? score.authority }),
         duplicateOfIndex: s.duplicateOfId ? indexOf.get(s.duplicateOfId) ?? null : null,
+        truncated: truncatedIds ? truncatedIds.has(s.id) : null,
       };
     })
     .sort((a, b) => a.index - b.index);
@@ -874,6 +936,7 @@ export async function loadCitationAuditForMessage(
           passage: link.passage.text,
           locator: link.passage.locator,
           reasons: audit.reasons.map((r) => r.detail),
+          codedReasons: audit.reasons,
         };
       }),
     };

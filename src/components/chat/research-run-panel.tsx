@@ -8,13 +8,16 @@ import { auditHeadline } from "@/components/chat/citation-audit";
 import { hostOf } from "@/components/chat/source-chip";
 import { PlanReview, SteerControls } from "@/components/research/run-controls";
 import { formatMicroUsd } from "@/components/research/run-format";
+import { RunStateBadge } from "@/components/research/run-state-badge";
 import { RunTimeline } from "@/components/research/run-timeline";
+import { SourceGraph } from "@/components/research/source-graph";
 import { LiveSourceList } from "@/components/research/source-list";
 import { StageRail } from "@/components/research/stage-rail";
 import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
 import {
   RESEARCH_STATE_MESSAGE,
   isResearchState,
+  isWorkingResearchState,
   type ResearchState,
 } from "@/lib/research/domain";
 
@@ -157,11 +160,30 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
     >
       <header className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            {run.live ? (
+          {/* `run.live` is "not terminal", which is a wider set than "working":
+              it includes paused and both waiting states, so a run stopped dead
+              waiting for its owner spun this spinner as though a worker were
+              still on it. And the else-branch was an unconditional success
+              tick, which put a green check on FAILED and on CANCELLED — the
+              panel's most prominent glyph telling the opposite of what
+              happened. Both now come off the state itself. */}
+          <span
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-full",
+              state === "failed" ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"
+            )}
+          >
+            {isWorkingResearchState(state) ? (
               <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
-            ) : (
+            ) : state === "completed" ? (
               <StatusIcons.success className="size-4" />
+            ) : state === "failed" ? (
+              <StatusIcons.error className="size-4" />
+            ) : (
+              // Paused, cancelled, partially completed, awaiting the user: none
+              // of these is a success and none is a failure. The badge beside
+              // this says which one it is in words.
+              <StatusIcons.info className="size-4" />
             )}
           </span>
           <div className="min-w-0 flex-1">
@@ -169,16 +191,14 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
               <span className="font-mono text-micro font-semibold uppercase tracking-wider text-primary">
                 Deep Research
               </span>
-              {run.live && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-micro font-medium text-primary">
-                  Live
-                </span>
-              )}
-              {needsYou && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-warning/35 bg-warning/10 px-2 py-0.5 font-mono text-micro uppercase text-warning-foreground">
-                  {awaitingPlan ? "Review plan" : "Input needed"}
-                </span>
-              )}
+              {/* One badge, from `runBadge`, rather than the two hand-rolled
+                  chips that used to live here. They could say "Live" and
+                  "Review plan" and nothing else: every terminal state — failed,
+                  cancelled, stopped early at the budget — rendered no chip at
+                  all, so the header of a run that died looked like the header
+                  of a run that finished. RunStateBadge already covered all of
+                  them and was sitting unused. */}
+              <RunStateBadge state={run.state} />
             </div>
             <p className="mt-0.5 truncate text-ui font-medium text-foreground">{truncate(run.goal, 100)}</p>
           </div>
@@ -311,6 +331,20 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
                 {auditHeadline(run.auditSummary)}
               </span>
             </div>
+          )}
+
+          {/* The picture of the same matrix the objective list above counts.
+              "2/3 requirements met · 4 sources" cannot say whether those four
+              are regulators or forum posts, and that is the question a reader
+              of the report actually has. It is drawn from the score columns the
+              run view now carries and from nothing else. */}
+          {!awaitingPlan && (
+            <SourceGraph
+              sources={run.sources}
+              objectives={run.plan.objectives ?? []}
+              coverage={run.plan.coverage ?? []}
+              conflicts={conflicts}
+            />
           )}
 
           {!awaitingPlan && <RunTimeline events={events} live={run.live} />}

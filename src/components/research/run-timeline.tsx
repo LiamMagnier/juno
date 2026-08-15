@@ -82,7 +82,38 @@ export const TIMELINE_COPY = {
   resumed: "Resumed",
   cancelled: "Cancelled",
   earlierSteps: "earlier steps not shown",
+  /* The search backends, and what each of them did. See ENGINE_STATUS. */
+  noGoodIndex: "No indexed search provider is configured",
+  noGoodIndexDetail:
+    "This run could only reach keyless endpoints — no search API key, no self-hosted SearXNG. A short result list here is a limit of this deployment, not a verdict on the topic.",
+  searchedWith: "Searched with",
+  selfHosted: "self-hosted SearXNG",
+  alsoKeyless: "also",
 } as const;
+
+/**
+ * What one engine did for one query, in words a person can act on.
+ *
+ * The status codes are `EngineStatus` in src/lib/search/search-engine.ts, and
+ * they exist precisely because a provider that is out of quota and a provider
+ * that found nothing used to be the same silence. `problem` is what separates
+ * "this deployment is broken or throttled" from "this query is genuinely thin"
+ * — the first is fixable by the operator and the second is not, and the whole
+ * reason to draw this is that they looked identical.
+ *
+ * Anything not in this map is drawn by its raw code rather than dropped: the
+ * union lives in another module and a status added there must not vanish from
+ * the timeline until someone remembers to come back here.
+ */
+const ENGINE_STATUS: Record<string, { label: string; problem: boolean }> = {
+  ok: { label: "", problem: false },
+  empty: { label: "no results", problem: false },
+  bad_key: { label: "key missing or rejected", problem: true },
+  rate_limited: { label: "rate limited", problem: true },
+  provider_error: { label: "provider error", problem: true },
+  timeout: { label: "timed out", problem: true },
+  failed: { label: "failed", problem: true },
+};
 
 /**
  * How many steps are drawn at once.
@@ -112,6 +143,14 @@ const strings = (payload: Record<string, unknown>, key: string): string[] =>
 
 type StepTone = "muted" | "warning";
 
+/** One backend's answer to one query. Mirrors `ResearchEngineReport` on the wire. */
+interface EngineLine {
+  name: string;
+  results: number;
+  status: string;
+  httpStatus: number | null;
+}
+
 interface SearchStep {
   kind: "search";
   key: string;
@@ -119,6 +158,16 @@ interface SearchStep {
   query: string;
   results: number | null;
   sites: WebSearchSite[];
+  /**
+   * Which backends answered this query and with what.
+   *
+   * `results` above is the MERGED count after fusion dedupes across engines, so
+   * it cannot say whether 6 results came from six engines agreeing or from one
+   * engine while five returned 401. That difference is the difference between a
+   * thin topic and a broken deployment, and it is the reason this array is on
+   * the wire at all.
+   */
+  engines: EngineLine[];
 }
 
 interface NoteStep {
@@ -135,6 +184,65 @@ type Step = (SearchStep | NoteStep) & { durationMs: number | null };
 function timeOf(event: ResearchEventDTO): number {
   const t = Date.parse(event.createdAt);
   return Number.isFinite(t) ? t : 0;
+}
+
+/** The `engines` array off a `query_issued` payload, defensively — it is JSON from a column. */
+function engineLines(payload: Record<string, unknown>): EngineLine[] {
+  const raw = payload.engines;
+  if (!Array.isArray(raw)) return [];
+  const out: EngineLine[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "";
+    if (!name) continue;
+    out.push({
+      name,
+      results: typeof record.results === "number" ? record.results : 0,
+      status: typeof record.status === "string" ? record.status : "",
+      httpStatus: typeof record.httpStatus === "number" ? record.httpStatus : null,
+    });
+  }
+  return out;
+}
+
+/** What this deployment can actually search with. Mirrors `ResearchProviderStatus`. */
+export interface ProviderRoster {
+  keyed: string[];
+  keyless: string[];
+  selfHostedSearxng: boolean;
+  /** False when nothing keyed is configured: the run searched scraped endpoints only. */
+  hasGoodIndex: boolean;
+}
+
+/**
+ * The provider roster, which rides the FIRST `query_issued` of a sweep only.
+ *
+ * It is a property of the deployment rather than of the query, so the engine
+ * announces it once (engine.ts's `providersAnnounced`) rather than repeating
+ * the same fact a dozen times down a timeline someone has to read. The client
+ * therefore has to go looking for it instead of reading it off the step it
+ * happens to be drawing — which is also why a resumed run can legitimately have
+ * no roster at all in the page this client holds: the announcement was made on
+ * an earlier sweep. Null means "not stated in what we have", never "no
+ * providers", and nothing is drawn for it.
+ */
+export function readProviderRoster(events: ResearchEventDTO[]): ProviderRoster | null {
+  for (const event of events) {
+    if (event.kind !== "query_issued") continue;
+    const raw = event.payload.providers;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const record = raw as Record<string, unknown>;
+    const list = (key: string): string[] =>
+      Array.isArray(record[key]) ? (record[key] as unknown[]).filter((v): v is string => typeof v === "string") : [];
+    return {
+      keyed: list("keyed"),
+      keyless: list("keyless"),
+      selfHostedSearxng: record.selfHostedSearxng === true,
+      hasGoodIndex: record.hasGoodIndex === true,
+    };
+  }
+  return null;
 }
 
 /**
@@ -177,6 +285,7 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
           query,
           results: int(payload, "results"),
           sites: [],
+          engines: engineLines(payload),
         };
         byQuery.set(query, step);
         ordered.push(step);
@@ -329,6 +438,100 @@ function StepDuration({ ms }: { ms: number | null }) {
   );
 }
 
+/**
+ * Which backends answered this query, and with what.
+ *
+ * Drawn under every search rather than only under the failing ones: a roster
+ * that appears only when something is wrong teaches a reader to read its
+ * absence as "fine", and the absence is also what a build with no engine
+ * reporting at all looks like. Showing it always means the one query where
+ * `brave  key missing or rejected` appears is legible against eleven rows of
+ * the same shape.
+ *
+ * The count on a healthy engine is that ENGINE's hit count, which is why it can
+ * exceed the merged `results` figure to its right — fusion dedupes across
+ * backends, and two engines agreeing on a page is one result. That is the
+ * relationship worth being able to see: agreement, rather than reach.
+ */
+function EngineStrip({ engines }: { engines: EngineLine[] }) {
+  if (engines.length === 0) return null;
+  return (
+    <ul className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      {engines.map((engine) => {
+        const known = ENGINE_STATUS[engine.status];
+        const problem = known?.problem ?? false;
+        // An unmapped status is printed verbatim rather than swallowed — the
+        // union it comes from lives in another module and can gain a member
+        // without this file hearing about it.
+        const detail = known ? known.label : engine.status;
+        return (
+          <li
+            key={engine.name}
+            className={cn(
+              "inline-flex items-center gap-1 font-mono text-micro tabular-nums",
+              problem ? "text-warning-foreground" : "text-muted-foreground/70"
+            )}
+          >
+            {problem && <StatusIcons.warning aria-hidden className="size-2.5 shrink-0" />}
+            <span>{engine.name}</span>
+            <span className={problem ? undefined : "text-muted-foreground"}>
+              {detail
+                ? `${detail}${engine.httpStatus === null ? "" : ` ${engine.httpStatus}`}`
+                : engine.results}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * What this deployment could search with at all.
+ *
+ * This is the fix for the failure mode that made the whole roster worth
+ * emitting: a run that came back with four sources because three providers have
+ * no API key looked exactly like a run that came back with four sources because
+ * the topic is obscure. The first is an operator's problem and the second is
+ * the truth about the subject, and a reader deciding whether to trust a thin
+ * report needs to be told which one they are looking at.
+ *
+ * Deliberately NOT keyed off "is a paid key set" — `hasGoodIndex` is the
+ * server's own judgement (search-engine.ts), and it counts a self-hosted
+ * SearXNG as a first-class index. Re-deriving the test here from `keyed.length`
+ * would call a perfectly well-provisioned self-hosted deployment broken.
+ */
+function ProviderNotice({ roster, className }: { roster: ProviderRoster; className?: string }) {
+  if (!roster.hasGoodIndex) {
+    return (
+      <div
+        className={cn(
+          "flex items-start gap-2 rounded-field border border-warning/35 bg-warning/10 px-2 py-1.5",
+          className
+        )}
+      >
+        <StatusIcons.warning aria-hidden className="mt-0.5 size-3 shrink-0 text-warning-foreground" />
+        <p className="min-w-0 flex-1 text-caption leading-snug text-warning-foreground">
+          {TIMELINE_COPY.noGoodIndex}. {TIMELINE_COPY.noGoodIndexDetail}
+          {roster.keyless.length > 0 && (
+            <span className="mt-0.5 block font-mono text-micro">{roster.keyless.join(" · ")}</span>
+          )}
+        </p>
+      </div>
+    );
+  }
+  // The healthy case is detail, not news, so it sits inside the collapsed list
+  // as one muted line rather than pushing a green banner into the panel.
+  const indexed = [...roster.keyed, ...(roster.selfHostedSearxng ? [TIMELINE_COPY.selfHosted] : [])];
+  if (indexed.length === 0) return null;
+  return (
+    <p className={cn("font-mono text-micro text-muted-foreground", className)}>
+      {TIMELINE_COPY.searchedWith} {indexed.join(" · ")}
+      {roster.keyless.length > 0 ? ` · ${TIMELINE_COPY.alsoKeyless} ${roster.keyless.join(" · ")}` : ""}
+    </p>
+  );
+}
+
 function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
   return (
     <li className="flex min-w-0 items-start gap-2 py-1">
@@ -376,6 +579,7 @@ export function RunTimeline({
   const listId = React.useId();
 
   const steps = React.useMemo(() => toRunSteps(events, live), [events, live]);
+  const roster = React.useMemo(() => readProviderRoster(events), [events]);
   const searches = steps.filter((step): step is SearchStep & { durationMs: number | null } => step.kind === "search");
   const readCount = searches.reduce(
     (total, step) => total + step.sites.filter((site) => site.state === "done").length,
@@ -419,6 +623,13 @@ export function RunTimeline({
         />
       </button>
 
+      {/* Outside the collapse, and the only thing in this component that is.
+          A deployment with no index is why the run below it is thin, and a
+          reader who has collapsed the steps is exactly the reader who has
+          decided the steps are not the interesting part — so the one fact that
+          reframes every number in the panel cannot be hidden behind them. */}
+      {roster && !roster.hasGoodIndex && <ProviderNotice roster={roster} className="mt-1" />}
+
       <div
         id={listId}
         className={cn(
@@ -428,6 +639,11 @@ export function RunTimeline({
       >
         <div className="min-h-0 overflow-hidden" inert={!open}>
           <ul className="mt-1 space-y-1 px-1.5">
+            {roster?.hasGoodIndex && (
+              <li>
+                <ProviderNotice roster={roster} />
+              </li>
+            )}
             {hidden > 0 && (
               <li className="font-mono text-micro tabular-nums text-muted-foreground">
                 + {hidden} {TIMELINE_COPY.earlierSteps}
@@ -452,6 +668,7 @@ export function RunTimeline({
                       settled={!live || step.key !== lastStepKey}
                       defaultOpen={live && step.key === lastStepKey}
                     />
+                    <EngineStrip engines={step.engines} />
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5">
                     {step.results !== null && (

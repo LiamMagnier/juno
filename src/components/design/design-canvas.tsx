@@ -107,6 +107,16 @@ export interface DesignViewportHandle {
   zoomTo100: () => void;
   /** Fill the canvas with the selection; the whole page when there is none. */
   zoomToSelection: () => void;
+  /**
+   * The middle of what the canvas is currently showing, in scene coordinates.
+   *
+   * For placing something the user asked for without pointing at anywhere in
+   * particular — the component library's "place an instance" is the first, and
+   * it used to drop every instance at a hard-coded (40, 40). On a document
+   * scrolled anywhere else that is off screen, so the layer appeared, was
+   * selected, and was nowhere the eye was looking.
+   */
+  sceneCentre: () => { x: number; y: number };
 }
 
 export interface DesignCanvasProps {
@@ -300,6 +310,18 @@ export function DesignCanvas({
     onViewportChange?.(viewport.zoom);
   }, [onViewportChange, viewport.zoom]);
 
+  /**
+   * The latest pan/zoom, for the imperative handle below to read.
+   *
+   * A ref rather than a closure over `viewport`: the handle object is what the
+   * host holds, and rebuilding it on every frame of a pan would tear down and
+   * re-install it sixty times a second for a value only read on a click.
+   */
+  const viewportStateRef = React.useRef({ viewport, size });
+  React.useEffect(() => {
+    viewportStateRef.current = { viewport, size };
+  }, [viewport, size]);
+
   React.useEffect(() => {
     if (!viewportRef) return;
     viewportRef.current = {
@@ -307,6 +329,13 @@ export function DesignCanvas({
       zoomToFit,
       zoomTo100: () => zoomAboutCentre(() => 1),
       zoomToSelection,
+      sceneCentre: () => {
+        // The same arithmetic `toScene` uses, with the host's own middle as the
+        // screen point — so "the centre of the canvas" means the identical place
+        // whether it is reached by a click or by this.
+        const { viewport: v, size: s } = viewportStateRef.current;
+        return { x: s.width / (2 * v.zoom) + v.x, y: s.height / (2 * v.zoom) + v.y };
+      },
     };
     // Cleared on unmount so a host's toolbar cannot drive a canvas that is no
     // longer on screen — the fastest way to that is switching away from the

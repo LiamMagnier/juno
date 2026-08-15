@@ -16,6 +16,7 @@ import {
 } from "@/lib/research/domain";
 import {
   createResearchEngine,
+  SEARCH_CONCURRENCY,
   type ResearchDeps,
   type ResearchEventRow,
   type ResearchRunRow,
@@ -459,21 +460,37 @@ test("a worker lease fences a concurrent driver and can be reclaimed after expir
 // Control
 // ---------------------------------------------------------------------------
 
-test("cancel is honoured before the next unit of work is paid for", async () => {
+/*
+ * SEARCH used to be one query at a time, and this test asserted that a cancel
+ * during query 1 left `searched.length === 1`. The sweep now dispatches waves
+ * of `SEARCH_CONCURRENCY`, so the unit of work a cancel can still stop is a
+ * WAVE — four calls already handed to Promise.all are four calls paid for, and
+ * no check placed after them can undo that.
+ *
+ * The property being pinned is unchanged and is deliberately not "one query":
+ * a cancelled run must not go on paying for work it was told to abandon. So the
+ * plan here is two waves wide, and the assertion is that the SECOND wave never
+ * happens. Sizing the plan from the exported constant rather than writing 4 is
+ * what keeps this test meaning "one wave" if the width ever moves — a
+ * hard-coded 4 against a width of 8 would silently start asserting nothing.
+ */
+test("cancel is honoured before the next wave of work is paid for", async () => {
   const { store } = memoryStore();
   const searched: string[] = [];
   let runId = "";
   const base = deps(store);
+  const planned = Array.from({ length: SEARCH_CONCURRENCY * 2 }, (_, i) => `q${i + 1}`);
   // Self-referential on purpose: `search` cancels the run it is running inside,
   // which is the only way to reproduce a user pressing Cancel mid-sweep.
   const engine: ReturnType<typeof createResearchEngine> = createResearchEngine({
     ...base,
     async plan() {
-      return { queries: ["q1", "q2", "q3", "q4"], costMicroUsd: 0 };
+      return { queries: planned, costMicroUsd: 0 };
     },
     async search(input) {
       searched.push(input.query);
-      // The user presses Cancel while the first query is in flight.
+      // The user presses Cancel while the first query of the first wave is in
+      // flight — before any of that wave has come back.
       if (searched.length === 1) await engine.cancel({ runId, userId: "user_1" });
       return base.search(input);
     },
@@ -482,13 +499,54 @@ test("cancel is honoured before the next unit of work is paid for", async () => 
   runId = run.id;
   await engine.drive({ runId: run.id, userId: run.userId });
 
-  assert.equal(
-    searched.length,
-    1,
-    "the run must stop between queries, not finish the sweep it had started"
+  assert.deepEqual(
+    searched,
+    planned.slice(0, SEARCH_CONCURRENCY),
+    "the run must stop between waves: the wave in flight when the user cancelled is already paid for, but nothing after it may be dispatched"
   );
   const after = await store.loadRun(run.id, run.userId);
   assert.equal(after?.state, "cancelled");
+});
+
+/*
+ * The other half of the same change. Nothing above would fail if a future edit
+ * quietly restored the `for (… of …) await` sweep — the cancel and ceiling
+ * tests both pass under a serial loop — so the parallelism itself needs a pin.
+ *
+ * `maxInFlight` is deterministic rather than timing-dependent: Promise.all
+ * invokes every member of the wave before any of them can resume past their
+ * first await, so a wave-dispatching engine reaches exactly SEARCH_CONCURRENCY
+ * and a serial one never leaves 1.
+ */
+test("a search sweep dispatches a full wave at once, not one query at a time", async () => {
+  const { store } = memoryStore();
+  const base = deps(store);
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const engine = createResearchEngine({
+    ...base,
+    async plan() {
+      return {
+        queries: Array.from({ length: SEARCH_CONCURRENCY * 2 }, (_, i) => `q${i + 1}`),
+        costMicroUsd: 0,
+      };
+    },
+    async search(input) {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight -= 1;
+      return base.search(input);
+    },
+  });
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.equal(
+    maxInFlight,
+    SEARCH_CONCURRENCY,
+    `a sweep must go out ${SEARCH_CONCURRENCY} wide — a plan of a dozen queries against a serial loop is a dozen sequential round trips, which is the wall clock a run dies of`
+  );
 });
 
 test("a cancelled run stays cancelled — a late driver cannot revive it", async () => {
@@ -893,13 +951,39 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   // The gate is the ESTIMATE, not what the last call happened to cost — the
   // engine has to decide before it knows. 17,000 leaves room for the plan and
   // two searches; a third would put the projection over.
+  //
+  // The numbers are untouched from when the sweep was serial, and they are the
+  // point of the test now that it is not. A wave is sized by `affordableCount`
+  // against the LIVE spend, so a ceiling with room for one query at a time
+  // yields four one-query waves in a row rather than one four-query wave: five
+  // planned queries still come out as exactly two issued. Cut the wave from a
+  // fixed partition instead and this drops to one, which is why the assertion
+  // stays at 2 rather than being relaxed to whatever the new loop produces.
   const run = await started(engine, { budgetMicroUsd: BigInt(17_000) });
   await engine.drive({ runId: run.id, userId: run.userId });
 
   assert.equal(
     searched.length,
     2,
-    "the check has to happen before each query — a sweep that bills all five and compares afterwards is not a ceiling"
+    "the ceiling has to be checked before each query goes out — a sweep that dispatches all five and compares afterwards is not a ceiling, and a wave that ignores what the last wave cost is not one either"
+  );
+  /*
+   * The arithmetic behind the 2, spelled out so the count above is derivable
+   * rather than magic. Before the k-th query the run has really spent
+   * 1,000 (plan) + (k-1) × 6,000 (searches), and the gate is that number plus
+   * the 10,000 estimate. Both directions are asserted: the last query that went
+   * out had to fit, and the first one that did not go out had to not fit. A
+   * wave-sizing bug in either direction — dispatching on a stale spend, or
+   * refusing a query the ceiling could still cover — breaks one of these.
+   */
+  const spentBefore = (k: number) => 1_000 + (k - 1) * 6_000;
+  assert.ok(
+    spentBefore(searched.length) + 10_000 <= 17_000,
+    `query ${searched.length} was dispatched against a projection of ${spentBefore(searched.length) + 10_000} over a 17,000 ceiling`
+  );
+  assert.ok(
+    spentBefore(searched.length + 1) + 10_000 > 17_000,
+    `query ${searched.length + 1} was refused although the projection ${spentBefore(searched.length + 1) + 10_000} still fits under 17,000 — the sweep stopped earlier than the ceiling required`
   );
   const stopped = await store.loadRun(run.id, run.userId);
   assert.ok(stopped!.costMicroUsd <= BigInt(17_000), `spent ${stopped!.costMicroUsd} of 17000`);

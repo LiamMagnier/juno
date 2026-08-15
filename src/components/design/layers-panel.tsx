@@ -54,6 +54,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ColorField, NumberField, PanelSelect, SelectField, TextField } from "@/components/design/effects-panel";
 import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
+import { layoutPage, layoutSubtree } from "@/lib/design/layout";
+import type { DesignViewportHandle } from "@/components/design/design-canvas";
 import { activeModeId, hexToRgba, resolveVariable, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
 import {
   isContainer,
@@ -102,6 +104,7 @@ export function LayersPanel({
   interactiveNodeIds,
   onShowMotion,
   onShowInteractions,
+  viewportRef,
 }: {
   document: DesignDocument;
   pageId: string;
@@ -119,6 +122,15 @@ export function LayersPanel({
   onShowMotion?: (id: NodeId) => void;
   /** Select the layer and reveal its interactions. */
   onShowInteractions?: (id: NodeId) => void;
+  /**
+   * The canvas's viewport, when this editor's host supplied one.
+   *
+   * Only read to decide where a placed instance lands. It is genuinely optional
+   * — the chat canvas panel and the Mac host mount the editor without it — so
+   * `ComponentLibrary` carries a fallback rather than this being threaded on the
+   * assumption it is always there.
+   */
+  viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<NodeId>>(new Set());
   const [dragId, setDragId] = React.useState<NodeId | null>(null);
@@ -679,10 +691,39 @@ export function LayersPanel({
         })}
       </div>
 
-      <ComponentLibrary document={doc} pageId={pageId} onApply={onApply} onSelect={onSelect} readOnly={readOnly} />
+      <ComponentLibrary document={doc} pageId={pageId} onApply={onApply} onSelect={onSelect} readOnly={readOnly} viewportRef={viewportRef} />
       <VariableLibrary document={doc} onApply={onApply} readOnly={readOnly} />
     </div>
   );
+}
+
+/**
+ * The middle of everything drawn on a page.
+ *
+ * The stand-in for a viewport centre when the host mounted the editor without a
+ * `viewportRef`. It is the same rectangle `DesignCanvas.zoomToFit` frames, and
+ * the canvas fits on mount and on every page change — so on a canvas nobody has
+ * panned this is not an approximation of where the user is looking, it is
+ * exactly where they are looking. On one they have panned it is the middle of
+ * the artwork, which is still somewhere they have been.
+ *
+ * An empty page has no bounds to take a middle of, and answers with its origin —
+ * the only point on an empty page that means anything.
+ */
+function pageContentCentre(doc: DesignDocument, pageId: string): { x: number; y: number } {
+  const boxes = layoutPage(doc, pageId);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const box of boxes.values()) {
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.width);
+    maxY = Math.max(maxY, box.y + box.height);
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0 };
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
 /**
@@ -705,12 +746,14 @@ function ComponentLibrary({
   onApply,
   onSelect,
   readOnly,
+  viewportRef,
 }: {
   document: DesignDocument;
   pageId: string;
   onApply: (operations: DesignOperation[], summary: string) => void;
   onSelect: (ids: NodeId[], mode?: "replace" | "toggle" | "add") => void;
   readOnly?: boolean;
+  viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
 }) {
   const components = React.useMemo(() => Object.values(doc.components ?? {}), [doc.components]);
   const [open, setOpen] = React.useState(true);
@@ -739,11 +782,42 @@ function ComponentLibrary({
 
   if (components.length === 0) return null;
 
+  /**
+   * Where a placed instance lands.
+   *
+   * It used to be (40, 40) — a page coordinate, not a screen one — so on any
+   * document scrolled or zoomed away from its own top-left the layer appeared,
+   * got selected, and was nowhere the eye was. The canvas knows where it is
+   * looking, so it says.
+   *
+   * The fallback is not a guess. When no host supplied a `viewportRef` the
+   * canvas is the one that opened it, and `DesignCanvas` fits the page's content
+   * bounds on mount and on every page change — so the middle of those bounds is
+   * where an untouched canvas is in fact pointed. It is also the honest answer
+   * for a host that scrolled somewhere we cannot see: the middle of the artwork
+   * beats a corner of the page nobody chose.
+   *
+   * The point is a *centre*, so the instance is offset by half its own laid-out
+   * size. Placing a 320pt card with its top-left on the centre of the screen
+   * puts three quarters of it off the right edge, which is the same bug as
+   * (40, 40) wearing a better number.
+   */
+  const placementFor = (componentId: string) => {
+    const centre = viewportRef?.current?.sceneCentre() ?? pageContentCentre(doc, pageId);
+    const root = doc.components[componentId]?.rootNodeId;
+    // `layoutSubtree` rather than the node's own `width`/`height`: a component
+    // that hugs its contents carries whatever size it was last authored at, and
+    // the instance will be laid out, not read off the record.
+    const box = root ? layoutSubtree(doc, root).get(root) : undefined;
+    return { x: Math.round(centre.x - (box?.width ?? 0) / 2), y: Math.round(centre.y - (box?.height ?? 0) / 2) };
+  };
+
   const place = (componentId: string) => {
     if (readOnly) return;
     const instanceId = `inst-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const { x, y } = placementFor(componentId);
     onApply(
-      [{ op: "createInstance", componentId, parentId: null, pageId, instanceId, x: 40, y: 40 }],
+      [{ op: "createInstance", componentId, parentId: null, pageId, instanceId, x, y }],
       "Place instance"
     );
     // Selecting what you just made is the difference between placing a layer and

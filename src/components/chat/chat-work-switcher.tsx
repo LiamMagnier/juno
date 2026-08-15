@@ -49,14 +49,37 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
     (next: Surface) => {
       if (next === value) return;
       router.push(ROUTE[next]);
-      // Mirrors the sidebar's own Home behaviour: pushing a route you are
-      // already on does not remount, so the composer would keep the previous
-      // draft and thread. Chat listens for this and resets.
-      if (next === "chat") window.dispatchEvent(new CustomEvent("juno:new-chat"));
+      // NO `juno:new-chat` HERE, unlike the sidebar's Home button. The sidebar
+      // fires it because its push can be a no-op — it pushes /chat from /chat,
+      // which does not remount, so ChatView has to be told to clear itself. This
+      // control cannot reach that case: the guard above means the route always
+      // changes, so the event was dispatched from /work with no ChatView mounted
+      // to hear it, and the fresh one that mounts a tick later starts clean
+      // anyway. It was a listener-less dispatch pretending to be a reset.
     },
     [router, value],
   );
 
+  /**
+   * Incognito puts this control out of reach: an incognito chat is not saved,
+   * and navigating to Work would discard it with no warning.
+   *
+   * It is a MIRROR of ChatView's own `privateMode`, kept over an event rather
+   * than in shared state because this control lives in the shell and that state
+   * lives in the page. Two consequences the first version got wrong:
+   *
+   * 1. The mirror has to be corrected when the chat goes away. ChatView
+   *    dispatches `false` as it unmounts (see its private-mode effect) —
+   *    without that, leaving an incognito chat through the sidebar left this
+   *    control dimmed and unclickable on /work for the rest of the session,
+   *    with the one route that could reset it reachable only by the sidebar.
+   * 2. `pointer-events-none` is not "unavailable", it is "unavailable to a
+   *    mouse". The segments stayed focusable and the radiogroup's own arrow
+   *    keys still fired `onChange`, so a keyboard user could navigate away
+   *    from an incognito chat through a control that looked switched off.
+   *    `inert` is the whole answer — pointer, keyboard and the a11y tree — and
+   *    it is what the disclosure panels in this codebase already use.
+   */
   const [incognito, setIncognito] = React.useState(false);
   React.useEffect(() => {
     const handleIncognito = (event: Event) => setIncognito((event as CustomEvent<boolean>).detail);
@@ -65,7 +88,10 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
   }, []);
 
   return (
-    <div className={cn("flex justify-center transition-opacity duration-fast", className, incognito && "pointer-events-none opacity-50")}>
+    <div
+      inert={incognito}
+      className={cn("flex justify-center transition-opacity duration-fast", className, incognito && "opacity-50")}
+    >
       <SegmentedControl<Surface>
         value={value}
         onChange={go}

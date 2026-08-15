@@ -75,31 +75,63 @@ export function FileDiff({ file, rows, className }: { file: string; rows: DiffRo
  * and then walks the body. A malformed patch yields the lines it could read
  * rather than throwing, because this renders inside a transcript where a wrong
  * exception costs the whole message and a short diff costs a scroll.
+ *
+ * HEADERS ARE ONLY HEADERS OUTSIDE A HUNK, and that distinction is not
+ * pedantry — it decides whether the diff you are shown is the diff that was
+ * made. Header detection used to run on every line, so DELETING a line whose
+ * own text begins with `-- ` produced the raw line `--- …`, which matched the
+ * `--- ` file-header pattern and was silently dropped: a real removal vanished
+ * from a diff that still looked complete. Same for a removed line reading
+ * `index …` or an added one reading `++ …`. Inside a hunk, `-`/`+`/space are
+ * content and nothing else; a `diff ` line is what ends a hunk and starts the
+ * next file's preamble, which is what keeps multi-file patches working.
+ *
+ * A LINE NUMBER IS ONLY PRINTED WHERE A `@@` SAID WHAT IT WAS. Lines outside
+ * any hunk — a `Binary files … differ` note, or a headerless body handed
+ * straight to this function — render with empty number cells, because their
+ * position in the file is genuinely unknown and a confident `0` would be a
+ * figure this parser invented. A patch with no `@@` anywhere is treated as one
+ * long hunk body rather than as preamble, which is what keeps a bare fragment
+ * rendering as the additions and deletions it plainly is.
  */
 export function parseUnifiedDiff(patch: string): DiffRow[] {
   const rows: DiffRow[] = [];
   let oldLine = 0;
   let newLine = 0;
+  let numbered = false;
+  let inHunk = !/^@@ -\d/m.test(patch);
 
   for (const line of patch.split("\n")) {
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
     if (hunk) {
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
+      inHunk = true;
+      numbered = true;
       continue;
     }
-    // File headers carry no line content.
-    if (/^(diff |index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(line)) continue;
-    if (line.startsWith("+")) {
-      rows.push({ old: null, cur: newLine++, type: "add", text: line.slice(1) });
-    } else if (line.startsWith("-")) {
-      rows.push({ old: oldLine++, cur: null, type: "del", text: line.slice(1) });
+    if (line.startsWith("diff ")) {
+      inHunk = false;
+      numbered = false;
+      continue;
+    }
+    // File headers carry no line content — but only where a header can be.
+    if (!inHunk && /^(index |--- |\+\+\+ |new file|deleted file|similarity|rename )/.test(line)) continue;
+    if (inHunk && line.startsWith("+")) {
+      rows.push({ old: null, cur: numbered ? newLine++ : null, type: "add", text: line.slice(1) });
+    } else if (inHunk && line.startsWith("-")) {
+      rows.push({ old: numbered ? oldLine++ : null, cur: null, type: "del", text: line.slice(1) });
     } else if (line.startsWith("\\")) {
       // "\ No newline at end of file" — a note about the patch, not a line in it.
       continue;
     } else {
       const text = line.startsWith(" ") ? line.slice(1) : line;
-      rows.push({ old: oldLine++, cur: newLine++, type: "ctx", text });
+      rows.push({
+        old: inHunk && numbered ? oldLine++ : null,
+        cur: inHunk && numbered ? newLine++ : null,
+        type: "ctx",
+        text,
+      });
     }
   }
   return rows;

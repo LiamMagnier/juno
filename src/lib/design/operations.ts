@@ -31,6 +31,7 @@ import {
   componentPropertySchema,
   constraintsSchema,
   cornerRadiusSchema,
+  cornerSmoothingSchema,
   effectSchema,
   interactionSchema,
   layoutChildSchema,
@@ -46,6 +47,7 @@ import {
   DesignValidationError,
 } from "@/lib/design/schema";
 import { cloneDocument, isAncestorOf, subtreeIds } from "@/lib/design/document";
+import { canonicalVariantKey, variantRootFor } from "@/lib/design/instances";
 import {
   isContainer,
   type DesignDocument,
@@ -89,6 +91,7 @@ export const nodePatchSchema = z
     fills: z.array(paintSchema).max(32),
     strokes: z.array(strokeSchema).max(32),
     cornerRadius: cornerRadiusSchema,
+    cornerSmoothing: cornerSmoothingSchema,
     effects: z.array(effectSchema).max(64),
     constraints: constraintsSchema,
     widthMode: sizingModeSchema,
@@ -219,6 +222,23 @@ export const designOperationSchema = z.discriminatedUnion("op", [
     componentId: idSchema,
     property: componentPropertySchema,
   }),
+  /**
+   * Show a different variant of the set this instance belongs to.
+   *
+   * `updateNode` can already write `variantProperties`, and that is exactly the
+   * problem it replaces: writing the field changed a label on the node and not
+   * one pixel of what the node drew, because an instance's content is a copy of
+   * the main component's subtree taken once at `createInstance` and never
+   * revisited. This operation swaps the content, which is what makes the field
+   * mean something — and it is a structural operation rather than a patch
+   * because replacing a subtree is not a field write and cannot be inverted like
+   * one.
+   */
+  z.object({
+    op: z.literal("setInstanceVariant"),
+    instanceNodeId: idSchema,
+    variantProperties: z.record(z.string().max(120), z.string().max(200)),
+  }),
   z.object({ op: z.literal("deleteComponent"), componentId: idSchema }),
   z.object({ op: z.literal("createVariable"), variable: variableSchema, collection: collectionSchema.optional() }),
   z.object({ op: z.literal("deleteVariable"), variableId: idSchema }),
@@ -235,6 +255,17 @@ export const designOperationSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("deletePage"), pageId: idSchema }),
   z.object({ op: z.literal("renamePage"), pageId: idSchema, name: z.string().min(1).max(300) }),
+  /**
+   * The colour behind the artwork.
+   *
+   * `createPage` has always taken one and `deletePage`'s inverse has always
+   * carried one, so a page could be *born* any colour and could be *restored*
+   * to the colour it died with — and there was no way to change it in between.
+   * The inspector could show a well that reads `page.backgroundColor` and not a
+   * control that writes it, which is why the empty-selection panel said nothing
+   * about the background at all until this existed.
+   */
+  z.object({ op: z.literal("setPageBackground"), pageId: idSchema, color: rgbaSchema }),
   /**
    * The document's own name — what an SVG, PNG or handoff export is called.
    *
@@ -610,6 +641,7 @@ function nodeDefaultsFor(type: DesignNode["type"]): Record<string, unknown> {
     fills: [],
     strokes: [],
     cornerRadius: 0,
+    cornerSmoothing: 0,
     effects: [],
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
@@ -1098,6 +1130,22 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
       return { inverse: [{ op: "renamePage", pageId: page.id, name: before }], summary: `Rename page to ${operation.name}` };
     }
 
+    case "setPageBackground": {
+      const page = doc.pages.find((p) => p.id === operation.pageId);
+      if (!page) throw new DesignOperationError("not-found", `No page ${operation.pageId} in this document.`);
+      // The inverse carries a *copy* of the colour, not the object being
+      // replaced: `cloneDocument` gives this function its own document, but the
+      // inverse outlives the call and goes onto the undo stack, where a later
+      // `Object.assign` onto the live page would otherwise mutate the record
+      // undo is holding and turn "go back" into "stay here".
+      const before = { ...page.backgroundColor };
+      page.backgroundColor = { ...operation.color };
+      return {
+        inverse: [{ op: "setPageBackground", pageId: page.id, color: before }],
+        summary: `Set ${page.name} background`,
+      };
+    }
+
     case "renameDocument": {
       // The header's name field used to PATCH the artifact and stop there, so
       // the artifact was renamed and the document was not — and every export
@@ -1274,6 +1322,77 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
       attach(doc, instanceId, operation.parentId, operation.pageId);
       ctx.selection = [instanceId];
       return { inverse: [{ op: "deleteNodes", nodeIds: [instanceId] }], summary: `Insert ${component.name}` };
+    }
+
+    case "setInstanceVariant": {
+      const instance = requireUnlocked(doc, operation.instanceNodeId);
+      if (instance.type !== "instance") {
+        throw new DesignOperationError("invalid", `${instance.name} is a ${instance.type}, not an instance.`);
+      }
+      const component = doc.components[instance.componentId];
+      if (!component) throw new DesignOperationError("not-found", `No component ${instance.componentId}.`);
+      const variantRoot = variantRootFor(doc, component, operation.variantProperties);
+      if (!variantRoot) {
+        // Refused rather than shown as the default variant. An instance quietly
+        // displaying the wrong member of a set is the failure this whole module
+        // exists to prevent, and a caller that asked for a variant the component
+        // does not have has a bug worth hearing about.
+        throw new DesignOperationError(
+          "not-found",
+          `${component.name} has no variant ${canonicalVariantKey(operation.variantProperties) || "(default)"}.`
+        );
+      }
+
+      const before = { ...instance.variantProperties };
+      // Delegated to `deleteNodes` rather than torn down here, exactly as
+      // `deletePage` delegates: one code path for removing artwork means one
+      // rebuild inverse and one interaction/animation cleanup, and the undo of a
+      // variant swap restores anything that had been edited *inside* the old
+      // subtree instead of re-deriving a canonical copy that has forgotten it.
+      const rebuildOld = instance.children.length
+        ? applyOne(doc, { op: "deleteNodes", nodeIds: [...instance.children] }, ctx).inverse
+        : [];
+
+      const remap = new Map<NodeId, NodeId>();
+      const sourceIds = subtreeIds(doc, variantRoot.id);
+      for (const id of sourceIds) remap.set(id, id === variantRoot.id ? instance.id : ctx.mintId("n"));
+      const added: NodeId[] = [];
+      for (const id of sourceIds) {
+        // The variant's own root is not copied: this instance already *is* that
+        // node, and it carries the position, size and name the designer placed.
+        // Only the contents change, which is what a variant swap means — a
+        // button that moves across the canvas because it became `size=large` is
+        // not a swap, it is a relayout nobody asked for.
+        if (id === variantRoot.id) continue;
+        const original = doc.nodes[id];
+        const copy = cloneNodeShallow(original);
+        copy.id = remap.get(id)!;
+        copy.parentId = remap.get(original.parentId ?? "") ?? instance.id;
+        if ("children" in copy) {
+          (copy as { children: NodeId[] }).children = (original as { children: NodeId[] }).children.map((c) => remap.get(c)!);
+        }
+        doc.nodes[copy.id] = nodeSchema.parse(copy);
+        ctx.touched.add(copy.id);
+        added.push(copy.id);
+      }
+      instance.children = (isContainer(variantRoot) ? variantRoot.children : []).map((c) => remap.get(c)!);
+      instance.variantProperties = { ...operation.variantProperties };
+      ctx.touched.add(instance.id);
+
+      return {
+        // Take the new contents back out, put the old ones back, then restore
+        // the label — in that order, because the rebuild attaches under an
+        // instance that has to be empty first. The label is restored with a
+        // plain `updateNode`: the content is being replaced explicitly here, so
+        // a second swap would re-derive a subtree instead of returning the one
+        // that was actually on screen.
+        inverse: [
+          ...(added.length ? [{ op: "deleteNodes" as const, nodeIds: instance.children.slice() }] : []),
+          ...rebuildOld,
+          { op: "updateNode", nodeId: instance.id, patch: { variantProperties: before } },
+        ],
+        summary: `Show ${canonicalVariantKey(operation.variantProperties) || component.name}`,
+      };
     }
 
     case "createVariant": {
@@ -1513,6 +1632,8 @@ export function describePatch(patch: NodePatch): string {
     switch (k) {
       case "cornerRadius":
         return "corner radius";
+      case "cornerSmoothing":
+        return "corner smoothing";
       case "layoutChild":
         return "layout behaviour";
       case "widthMode":
@@ -1542,12 +1663,11 @@ export function describePatch(patch: NodePatch): string {
   return unique.length === 1 ? `Set ${unique[0]}` : `Set ${unique.slice(0, -1).join(", ")} and ${unique[unique.length - 1]}`;
 }
 
-export function canonicalVariantKey(properties: Record<string, string>): string {
-  return Object.keys(properties)
-    .sort()
-    .map((k) => `${k}=${properties[k]}`)
-    .join(",");
-}
+/** Re-exported from `instances.ts`, which is where the rest of the variant
+ *  reading lives. Kept exported from here because it has been imported from this
+ *  module since before that file existed, and one canonical key is the whole
+ *  point — two implementations that drift is a variant nobody can select. */
+export { canonicalVariantKey };
 
 /**
  * Whether a transaction stayed inside a permitted set of nodes.

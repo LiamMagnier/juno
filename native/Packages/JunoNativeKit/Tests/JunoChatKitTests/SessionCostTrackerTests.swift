@@ -170,3 +170,40 @@ final class SessionCostTrackerTests: XCTestCase {
         XCTAssertEqual(ledger.totals, .empty)
     }
 }
+
+/// Seeding a ledger from a reloaded transcript is what makes the receipt
+/// survive a relaunch. The rules it must not break are about double-billing and
+/// about not inventing a zero.
+final class SessionCostLedgerSeedingTests: XCTestCase {
+    private func usage(_ id: String, cost: Double?, cacheRead: Int? = nil) -> NativeTurnUsage {
+        NativeTurnUsage(
+            messageID: id, model: "m", promptTokens: 100, completionTokens: 10,
+            cacheReadTokens: cacheRead, costUsd: cost
+        )
+    }
+
+    /// The persisted row is authoritative — it is what the server actually
+    /// wrote — and re-seeding on every reload must correct, never re-bill.
+    func testReSeedingAnAlreadyRecordedTurnReplacesRatherThanDoubleBills() {
+        var ledger = SessionCostLedger()
+        ledger.record(usage("a", cost: 0.01))          // live `done` frame
+        ledger.record(usage("a", cost: 0.02, cacheRead: 80)) // persisted row on reload
+
+        XCTAssertEqual(ledger.totals.turns, 1, "One turn, not two")
+        XCTAssertEqual(ledger.totals.costUsd, 0.02, accuracy: 1e-9)
+        XCTAssertEqual(ledger.totals.cacheReadTokens, 80, "The persisted split wins")
+    }
+
+    /// A reload must not turn "the provider never reported" into a measured
+    /// zero — that is what keeps the "≥" in front of a partial total.
+    func testATurnWithNoReportedUsageStaysUnknownAfterReload() {
+        var ledger = SessionCostLedger()
+        ledger.record(usage("a", cost: 0.01))
+        ledger.record(NativeTurnUsage(messageID: "b")) // nothing reported
+
+        let totals = ledger.totals
+        XCTAssertEqual(totals.turns, 2)
+        XCTAssertEqual(totals.turnsReportingCost, 1)
+        XCTAssertTrue(totals.isPartial)
+    }
+}

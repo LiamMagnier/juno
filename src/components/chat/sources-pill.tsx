@@ -5,11 +5,13 @@ import { ChevronDown } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import {
   AUDIT_COPY,
+  AuditFindings,
   ScoreMeter,
   SupportBadge,
   evidenceForSource,
   type CitationAudit,
 } from "@/components/chat/citation-audit";
+import { StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
@@ -83,6 +85,21 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
                 ? `Published ${source.publishedAt.slice(0, 10)}`
                 : "No publication date — this source cannot be placed in time."}
             </p>
+            {/* What the four meters above were actually measured on. A preview
+                is two sentences of lede, and every verdict below was reached
+                against that rather than the document — which is what explains
+                an "unverified" badge that otherwise looks like Juno simply not
+                bothering. `=== true` because null is "this audit predates the
+                flag", and drawing nothing is the only honest answer to that;
+                see CitationAuditSource.truncated. */}
+            {source.truncated === true && (
+              <p className="mt-1 flex items-start gap-1.5 text-caption leading-snug text-warning-foreground">
+                <StatusIcons.warning aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  {AUDIT_COPY.previewOnly}. {AUDIT_COPY.previewOnlyDetail}
+                </span>
+              </p>
+            )}
             {source.duplicateOfIndex != null && (
               <p className="mt-1 text-caption text-warning-foreground">
                 The same story as source [{source.duplicateOfIndex}], so counting both would be counting one witness
@@ -101,11 +118,11 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
                 <blockquote className="mt-1.5 border-l-2 border-border pl-3 text-body leading-relaxed text-muted-foreground">
                   {link.passage}
                 </blockquote>
-                {link.reasons.map((reason, r) => (
-                  <p key={r} className="mt-1 text-caption leading-snug text-muted-foreground">
-                    {reason}
-                  </p>
-                ))}
+                {/* The same badged, worst-first findings the claim inspector
+                    draws, not a second flat rendering of the same objections —
+                    a reader who opens a source here and a claim there is
+                    reading one audit and must not be shown two gradings of it. */}
+                <AuditFindings reasons={link.codedReasons} />
               </div>
             ))}
           </div>

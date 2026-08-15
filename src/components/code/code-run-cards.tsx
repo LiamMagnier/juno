@@ -4,13 +4,14 @@ import * as React from "react";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
 import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
+import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import type { CodeAgentState, CodePendingApproval } from "@/hooks/use-code-session";
-import type { ClientMessage } from "@/types/chat";
+import type { CodeAgentState, CodeFileChangeEvent, CodePendingApproval } from "@/hooks/use-code-session";
+import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
 /*
  * THE RUN STACK — everything the reader has to know before they type the next
@@ -64,19 +65,55 @@ export interface CodeFileChange {
   path: string;
   changeKind: string;
   churn: string | null;
+  /**
+   * Unified diff for this file, when one was transported.
+   *
+   * Null means "no patch arrived", NOT "the change was empty" — the distinction
+   * the whole absent-tolerant design turns on, and the reason a row with null
+   * neither expands nor shows a diff pane. See `ChangedFilesCard`.
+   */
+  patch: string | null;
+}
+
+/**
+ * A patch carried on a persisted activity row, if this build's serializer kept
+ * one.
+ *
+ * Read at runtime rather than typed, because `ClientActivityEvent` is the chat
+ * vocabulary and the patch is a Juno Code extra key on the write row (see the
+ * note in src/lib/code-remote.ts). Written today by `persistCodeTaskOutcome`
+ * and dropped by `serializeActivity`'s field whitelist on the way back out — so
+ * this returns null on every reloaded transcript and will start returning
+ * hunks, with no change here, the day that whitelist learns the key. Checking
+ * the type instead of asserting it is what makes that safe either way.
+ */
+function activityPatch(event: ClientActivityEvent): string | null {
+  const value = (event as { patch?: unknown }).patch;
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 /*
- * WHAT THE RUN CHANGED, read back out of the transcript's activity rather than
- * from the task stream, because `useCodeSession` folds `file_change` events
- * straight into display strings ("edit src/foo.ts", "+3 −1") and keeps no
- * structured list. That is why the path is recovered with a split: the producer
- * composes `${changeKind} ${path}`, and a path cannot contain the first space.
+ * WHAT THE RUN CHANGED, from two sources that answer different questions.
  *
- * Latest write per path wins, so a file touched four times is one row with its
- * final churn — this is a summary of the result, not a log.
+ * `messages` is the history: every turn this session has ever persisted,
+ * including the ones from before this page load. Its write rows are display
+ * strings — the producer composes `${changeKind} ${path}` and a path cannot
+ * contain the first space, which is why the path is recovered with a split —
+ * and they are the ONLY record of turns that finished in an earlier visit.
+ *
+ * `live` is the current session's structured `file_change` events, which are
+ * the only place a unified diff exists at all: a persisted row cannot carry one
+ * (see `activityPatch`). Live wins per path, so a file the reader watched being
+ * written keeps its diff after the run settles and its live bubble is replaced
+ * by the persisted row saying the same thing in fewer fields.
+ *
+ * Latest write per path wins throughout — this is a summary of the result, not
+ * a log.
  */
-export function useSessionFileChanges(messages: ClientMessage[]): CodeFileChange[] {
+export function useSessionFileChanges(
+  messages: ClientMessage[],
+  live: readonly CodeFileChangeEvent[] = [],
+): CodeFileChange[] {
   return React.useMemo(() => {
     const byPath = new Map<string, CodeFileChange>();
     for (const message of messages) {
@@ -85,11 +122,22 @@ export function useSessionFileChanges(messages: ClientMessage[]): CodeFileChange
         const space = event.title.indexOf(" ");
         const changeKind = space === -1 ? "edit" : event.title.slice(0, space);
         const path = space === -1 ? event.title : event.title.slice(space + 1);
-        byPath.set(path, { path, changeKind, churn: event.detail ?? null });
+        byPath.set(path, { path, changeKind, churn: event.detail ?? null, patch: activityPatch(event) });
       }
     }
+    for (const change of live) {
+      byPath.set(change.path, {
+        path: change.path,
+        changeKind: change.changeKind,
+        // The same string the persisted rows carry, U+2212 and all — `totalChurn`
+        // parses one format, and a second spelling here would make every live
+        // row contribute nothing to the header's totals.
+        churn: `+${change.added} −${change.removed}`,
+        patch: change.patch,
+      });
+    }
     return [...byPath.values()];
-  }, [messages]);
+  }, [messages, live]);
 }
 
 /** The last thing the runner said it was doing, or null when nothing is live. */
@@ -399,6 +447,29 @@ function flattenTree(
 }
 
 /**
+ * One file's diff, parsed once per open row.
+ *
+ * A cloud run's patch is capped at 40 KB by the producer, and `parseUnifiedDiff`
+ * walks it line by line; doing that inside the row map meant re-parsing every
+ * open diff on every streamed token, on the surface that streams hardest.
+ *
+ * The height cap is not cosmetic. This card sits directly above the composer —
+ * an uncapped 40 KB diff would push the prompt field off the bottom of the
+ * screen, which is the one thing the card's collapsed-by-default design exists
+ * to prevent. `tabIndex` because a scroll region a keyboard cannot reach is one
+ * a keyboard user cannot read the end of, the same argument the approval card's
+ * detail well makes.
+ */
+function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
+  const rows = React.useMemo(() => parseUnifiedDiff(patch), [patch]);
+  return (
+    <div tabIndex={0} className="mb-1 mt-1 max-h-72 overflow-auto">
+      <FileDiff file={path} rows={rows} />
+    </div>
+  );
+}
+
+/**
  * WHAT THE RUN CHANGED.
  *
  * Both footers on this surface promise you can "review the changes", and the
@@ -406,16 +477,25 @@ function flattenTree(
  * with a path, a change kind and +added/−removed, and their only destination
  * was a run trace with no way to open.
  *
- * It is still not a diff, and the reason is upstream of this file rather than a
- * decision taken in it: the `file_change` payload carries `path`, `changeKind`,
- * `added` and `removed` and no patch text, so the readers that fold it into a
- * message (`use-code-session.ts`, `code-remote.ts`) have nothing to hand a diff
- * renderer. `src/components/aicss/file-diff.tsx` — parser and colour-blind-safe
- * row renderer both — is sitting there finished and waiting for the day the
- * producer sends the hunks. Until it does, drawing a diff here would mean
- * inventing one.
+ * IT IS NOW A DIFF, WHEREVER ONE WAS ACTUALLY SENT. The `file_change` payload
+ * carries an optional unified diff — `patch`, or `diff` as the deployed cloud
+ * runner spells it — and where it arrives the row opens onto
+ * `src/components/aicss/file-diff.tsx`, parser and colour-blind-safe renderer
+ * both. Where it does not, the row is exactly the summary line it has always
+ * been: not expandable, no chevron, nothing to click that could open an empty
+ * pane. Every device host in the field sends no hunks at all, so that is the
+ * common case and it must cost nothing.
  *
- * What this DOES do is give the paths back their shape. Fifty flat mono lines
+ * The one thing that IS said out loud is the mixed case — some rows with a
+ * diff, some without. That only happens when a producer that generally sends
+ * hunks could not produce them for one file (a failed `git diff`, a file over
+ * the size cap), and then the asymmetry is visible and needs a reason: a row
+ * that silently refuses to open next to rows that open would otherwise read as
+ * "this file changed by nothing". When NO row has a patch there is no asymmetry
+ * to explain and nothing is added, because fifty "no diff" tags on every device
+ * run is noise about a fact the surface never promised.
+ *
+ * What this ALSO does is give the paths back their shape. Fifty flat mono lines
  * sharing a prefix is fifty lines you read character by character to find the
  * one that is not under `src/components`; the same fifty as a tree is a handful
  * of rows you can shut. See `buildFileTree` for what the tree is and is not.
@@ -436,11 +516,23 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
   // first paint, which on a streaming run is most of them.
   const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   const rows = React.useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
+  // Opened diffs, by path. Opt-in per file for the same reason the card itself
+  // is collapsed: one 40 KB diff is taller than the transcript above it.
+  const [openDiffs, setOpenDiffs] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  // Whether this run transported hunks at all — see the mixed-case note above.
+  const anyPatch = React.useMemo(() => files.some((file) => file.patch), [files]);
 
   const toggleDirectory = (key: string) =>
     setCollapsed((current) => {
       const next = new Set(current);
       if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  const toggleDiff = (path: string) =>
+    setOpenDiffs((current) => {
+      const next = new Set(current);
+      if (!next.delete(path)) next.add(path);
       return next;
     });
 
@@ -515,6 +607,13 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
             {rows.map(({ node, depth }, i) => {
               const directory = node.children.length > 0;
               const shut = collapsed.has(node.key);
+              // A leaf opens onto its own diff only when one was transported.
+              // Bound to a local so the narrowing survives into the click
+              // handler — `node.file` is a property read, and TypeScript cannot
+              // keep a property narrowed across a closure.
+              const leaf = node.file;
+              const patch = leaf?.patch ?? null;
+              const diffOpen = !!leaf && openDiffs.has(leaf.path);
               const row = (
                 <>
                   {directory ? (
@@ -523,6 +622,14 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
                     ) : (
                       <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                     )
+                  ) : patch ? (
+                    <ChevronRight
+                      className={cn(
+                        "size-3 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+                        diffOpen && "rotate-90",
+                      )}
+                      aria-hidden="true"
+                    />
                   ) : (
                     // The same 12px the chevron occupies, so file names line up
                     // with the directory names above them instead of hanging
@@ -551,6 +658,12 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
                     <span aria-hidden="true">{node.file ? node.name : `${node.name}/`}</span>
                     <span className="sr-only">{node.file ? node.file.path : `${node.key}/`}</span>
                   </span>
+                  {/* Only where the run proved it CAN send hunks. Silence here
+                      would read as "this file changed by nothing"; on a run that
+                      sends none it would be fifty tags saying the same thing. */}
+                  {node.file && !patch && anyPatch && (
+                    <span className="shrink-0 font-mono text-caption text-muted-foreground/70">no diff</span>
+                  )}
                   {node.file?.churn ? (
                     <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
                       {node.file.churn}
@@ -580,19 +693,34 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
               // the reason a nested path stays legible at `text-caption`.
               const indent = { ...staggerDelay(i, "tight"), paddingLeft: 6 + depth * 12 };
 
+              // Out of the tab order while the CARD is shut, for both kinds of
+              // row. The rows stay in the document so the collapse has something
+              // to animate, and `aria-hidden` over a focusable control is the
+              // one way that trick goes wrong: Tab lands on a button no screen
+              // reader will name.
+              const rowTabIndex = open ? 0 : -1;
+              const diffId = `${listId}-diff-${node.key}`;
+
               return (
                 <li key={node.key}>
                   {directory ? (
                     <button
                       type="button"
                       aria-expanded={!shut}
-                      // Out of the tab order while the CARD is shut. The rows
-                      // stay in the document so the collapse has something to
-                      // animate, and `aria-hidden` over a focusable control is
-                      // the one way that trick goes wrong: Tab lands on a button
-                      // no screen reader will name.
-                      tabIndex={open ? 0 : -1}
+                      tabIndex={rowTabIndex}
                       onClick={() => toggleDirectory(node.key)}
+                      className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                      style={indent}
+                    >
+                      {row}
+                    </button>
+                  ) : leaf && patch ? (
+                    <button
+                      type="button"
+                      aria-expanded={diffOpen}
+                      aria-controls={diffOpen ? diffId : undefined}
+                      tabIndex={rowTabIndex}
+                      onClick={() => toggleDiff(leaf.path)}
                       className={cn(shared, "rounded-xs hover:bg-accent/60")}
                       style={indent}
                     >
@@ -602,6 +730,17 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
                     <span className={shared} style={indent}>
                       {row}
                     </span>
+                  )}
+                  {/* Unmounted while shut rather than height-collapsed, unlike
+                      the file list above it: that list animates because it is
+                      the card's own disclosure and its rows are cheap, whereas
+                      this is a parsed 40 KB document per open file and keeping
+                      every one ever opened in the document is how a fifty-file
+                      run ends up holding fifty parsed diffs. */}
+                  {leaf && patch && diffOpen && (
+                    <div id={diffId} style={{ paddingLeft: 6 + depth * 12 }}>
+                      <FileDiffPanel path={leaf.path} patch={patch} />
+                    </div>
                   )}
                 </li>
               );

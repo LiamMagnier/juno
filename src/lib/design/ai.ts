@@ -206,6 +206,7 @@ const REPORTED_FIELDS = [
   "visible",
   "locked",
   "cornerRadius",
+  "cornerSmoothing",
   "fills",
   "strokes",
   "effects",
@@ -291,6 +292,8 @@ const OPERATION_VOCABULARY = [
   `{"op":"createAnimation","animation":{"id":"…","name":"…","durationMs":300,"loop":false,"tracks":[{"nodeId":"<id>","property":"scale","keyframes":[{"time":0,"value":1,"easing":{"type":"spring","stiffness":300,"damping":22,"mass":1}}]}]}}`,
   `{"op":"setKeyframes","animationId":"<id>","track":{…as above…}}`,
   `{"op":"createPage","pageId":"<optional>","name":"<name>","index":<n?>}  /  {"op":"deletePage","pageId":"<id>"}  /  {"op":"renamePage","pageId":"<id>","name":"<name>"}`,
+  `{"op":"setPageBackground","pageId":"<id>","color":{"r":1,"g":1,"b":1,"a":1}}  — the colour behind the artwork; the only way to change it after the page is made`,
+  `{"op":"setInstanceVariant","instanceNodeId":"<id>","variantProperties":{"Size":"Large"}}  — swaps the instance's contents for that variant. Writing variantProperties through updateNode relabels the layer and changes nothing on screen; this is the operation that changes what it draws`,
   `{"op":"renameDocument","name":"<name>"}  — the whole design's name, which is what its exports are called`,
   `{"op":"createAsset","asset":{"id":"<optional>","name":"<name>","url":"<app-relative or data:image/…>","width":<n>,"height":<n>}}  /  {"op":"deleteAsset","assetId":"<id>"}`,
 ];

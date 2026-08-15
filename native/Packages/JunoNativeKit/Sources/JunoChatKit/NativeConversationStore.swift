@@ -94,6 +94,18 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// is nothing to recompute from anyway. Nil on user turns, on anything
     /// written before the column existed, and while a reply is still streaming.
     public var costUSD: Double?
+    /// The turn's token receipt, as the server persisted it.
+    ///
+    /// These arrive on the `message` sync entity, which is what makes a session
+    /// receipt survive a relaunch: before the columns existed the split lived
+    /// only on the live `done` frame, so a reloaded transcript could never show
+    /// a cache hit. Every one is nil on a user turn, on a row written before the
+    /// columns, and on a provider that reports no cache buckets — three distinct
+    /// reasons that all mean UNKNOWN. None of them mean zero.
+    public var promptTokens: Int?
+    public var completionTokens: Int?
+    public var cacheReadTokens: Int?
+    public var cacheWriteTokens: Int?
     /// The reader's rating, as the server holds it.
     public var feedback: NativeChatFeedback?
     /// Live media-generation progress, while `/api/generate` runs.
@@ -119,6 +131,10 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         isPending: Bool = false,
         errorDescription: String? = nil,
         costUSD: Double? = nil,
+        promptTokens: Int? = nil,
+        completionTokens: Int? = nil,
+        cacheReadTokens: Int? = nil,
+        cacheWriteTokens: Int? = nil,
         feedback: NativeChatFeedback? = nil,
         mediaProgress: NativeMediaProgress? = nil
     ) {
@@ -136,6 +152,10 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.isPending = isPending
         self.errorDescription = errorDescription
         self.costUSD = costUSD
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
         self.mediaProgress = mediaProgress
         self.feedback = feedback
     }
@@ -460,6 +480,14 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             // the column defaults to nothing for turns that were never billed,
             // and "$0" under an answer reads as a claim rather than a gap.
             costUSD: wire.costMicroUsd.flatMap { $0 > 0 ? Double($0) / 1_000_000 : nil },
+            // Carried through exactly as sent. Unlike `costUSD` above, a zero is
+            // NOT folded into nil here: the server writes these only when the
+            // provider reported them, so a 0 means "measured, and it was zero"
+            // — a real cache miss, which is a different fact from "never told".
+            promptTokens: wire.promptTokens,
+            completionTokens: wire.completionTokens,
+            cacheReadTokens: wire.cacheReadTokens,
+            cacheWriteTokens: wire.cacheWriteTokens,
             feedback: wire.feedback.flatMap(NativeChatFeedback.init(rawValue:))
         )
     }
@@ -761,19 +789,69 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var transientMessagesByConversation: [String: [NativeChatMessage]] = [:]
     private var retryContexts: [String: RetryContext] = [:]
 
-    /// What each conversation has cost SINCE THIS LAUNCH, keyed by conversation.
+    /// What each conversation has cost, keyed by conversation.
     ///
     /// Per-conversation rather than one running total: the badge sits in a
     /// conversation's own header, and a reader switching chats must not see the
-    /// previous one's spend attributed to this one. Not persisted, and honestly
-    /// so — it is a session receipt, not a billing record. `NativeUsageBreakdown`
-    /// is the account's durable history and remains the place to ask what a month
-    /// cost.
+    /// previous one's spend attributed to this one.
+    ///
+    /// Rebuilt on every reload from the persisted rows (see
+    /// ``seedSessionCostLedgers(from:)``) and corrected live from each `done`
+    /// frame. It was session-scoped until `Message` gained cache columns, for
+    /// the good reason that a reloaded transcript carried no split to show;
+    /// that limitation is gone. Still a per-conversation receipt rather than a
+    /// billing record — `NativeUsageBreakdown` remains the account's durable
+    /// history and the place to ask what a month cost.
     private var sessionCostLedgers: [String: SessionCostLedger] = [:]
 
     /// The receipt for a given conversation, empty when it has not answered yet.
     public func sessionCost(for conversationID: String) -> NativeSessionCostTotals {
         sessionCostLedgers[conversationID]?.totals ?? .empty
+    }
+
+    /// Rebuilds each conversation's receipt from what the server persisted.
+    ///
+    /// This is what makes the badge survive a relaunch. It became possible only
+    /// once `Message` gained `cacheReadTokens`/`cacheWriteTokens` and the sync
+    /// entity started carrying them; before that a reloaded transcript had no
+    /// split to show and the ledger was necessarily session-scoped.
+    ///
+    /// Safe to run on every reload because ``SessionCostLedger/record(_:)``
+    /// replaces by message id rather than appending. A turn already recorded
+    /// live from its `done` frame is corrected by the persisted row, not billed
+    /// a second time — and the persisted row is the authoritative one, since it
+    /// is what the server actually wrote.
+    ///
+    /// A turn the server reported nothing for is skipped entirely rather than
+    /// recorded as a zero: it must keep counting as "unknown" in
+    /// `turnsReportingCost`, which is what puts the "≥" in front of the total.
+    private func seedSessionCostLedgers(
+        from messages: [String: [NativeChatMessage]]
+    ) {
+        for (conversationID, rows) in messages {
+            var ledger = sessionCostLedgers[conversationID] ?? SessionCostLedger()
+            for row in rows where row.role == .assistant {
+                guard row.costUSD != nil
+                    || row.promptTokens != nil
+                    || row.completionTokens != nil
+                    || row.cacheReadTokens != nil
+                    || row.cacheWriteTokens != nil
+                else { continue }
+                ledger.record(NativeTurnUsage(
+                    messageID: row.id,
+                    model: row.model,
+                    promptTokens: row.promptTokens,
+                    completionTokens: row.completionTokens,
+                    cacheReadTokens: row.cacheReadTokens,
+                    cacheWriteTokens: row.cacheWriteTokens,
+                    costUsd: row.costUSD,
+                    recordedAt: row.createdAt
+                ))
+            }
+            // Only keep a ledger that actually has something in it, so an empty
+            // conversation still reports `.empty` and the badge stays hidden.
+            if !ledger.turns.isEmpty { sessionCostLedgers[conversationID] = ledger }
+        }
     }
 
     /// The receipt for whatever conversation is on screen.
@@ -976,6 +1054,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             guard self.accountID == accountID else { return }
             conversations = snapshot.conversations
             messagesByConversation = snapshot.messagesByConversation
+            seedSessionCostLedgers(from: snapshot.messagesByConversation)
             rebuildBranchTrees(from: snapshot)
             pruneTransientMessages()
             pendingMutationCount = snapshot.pendingMutationCount
@@ -2505,6 +2584,16 @@ private struct MessageWire: Decodable {
     /// message written before the column existed has none, and because a user
     /// turn never has one.
     let costMicroUsd: Int?
+    /// The persisted prompt-cache split, once `Message` gained columns for it.
+    ///
+    /// Optional for three separate real reasons, all of which mean UNKNOWN and
+    /// none of which mean zero: the message predates the columns, the provider
+    /// reported no cache buckets, or it is a user turn. Decoding these as 0
+    /// would make every historical turn claim a total cache miss.
+    let cacheReadTokens: Int?
+    let cacheWriteTokens: Int?
+    let promptTokens: Int?
+    let completionTokens: Int?
     let feedback: String?
     let createdAt: String
 }

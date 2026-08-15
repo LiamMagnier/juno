@@ -20,6 +20,39 @@ export interface ResearchSourceView {
   read: boolean;
   contentHash: string | null;
   fetchedAt: string;
+  /** As the source claims; distinct from the date of the event it describes. */
+  publishedAt: string | null;
+  /**
+   * The four gathering-time scores and their weighted roll-up, 0..1.
+   *
+   * NULL IS NOT ZERO, and this is the whole reason the source graph could not
+   * be drawn before these landed. A row written before the scoring columns
+   * existed — or by a legacy write path — has never been scored; folding that
+   * into 0 lets a graph draw a confident "we measured this and it is worthless"
+   * about a source nobody ever measured. Every consumer must branch on null and
+   * render the node AS unscored, and none of them may recompute a substitute:
+   * the client has neither the snapshot nor the scorer, so any number it
+   * invented would be a different quantity wearing the same name.
+   *
+   * `composite` is the one to size a node by — the other four are what it is
+   * made of, and showing all five at node scale says nothing.
+   */
+  authority: number | null;
+  freshness: number | null;
+  directness: number | null;
+  independence: number | null;
+  composite: number | null;
+  /**
+   * official | primary | reputable_secondary | general | user_generated |
+   * unknown — how the source was classified when it was gathered, and the
+   * single fact that says what the four scores above are worth.
+   *
+   * Null and `"unknown"` are different answers and must not be merged: null is
+   * "never classified" (the same legacy rows the scores are null on), while
+   * `"unknown"` is the classifier looking at the page and declining to place
+   * it. A graph that merges them turns "we did not look" into a verdict.
+   */
+  sourceType: string | null;
 }
 
 export interface ResearchRunView {
@@ -97,8 +130,19 @@ export interface RunPayload {
    * cursor.
    */
   events: ResearchEventDTO[];
-  /** Max `seq` the run has reached server-side. Not the cursor — see `load`. */
+  /**
+   * The last row OF THIS PAGE, server-side — a true cursor now, where it used
+   * to be max(seq) over the whole run. The hook still does not read it; see
+   * `absorb` for the one case where trusting it would be wrong.
+   */
   lastSeq: number;
+  /**
+   * Where the run has actually got to. `cursor < maxSeq` means the server is
+   * holding at least one more page, which is the difference between "nothing
+   * has happened yet" and "we are behind" — and those want opposite behaviour:
+   * sleep out the poll interval, or come straight back for the next page.
+   */
+  maxSeq: number;
 }
 
 /** Merge a page into the accumulated log, newest-wins on `seq`. */
@@ -138,12 +182,21 @@ export function useResearchRun(runId: string | null) {
   /**
    * Fold one response into the hook's view of the run.
    *
-   * THE CURSOR IS THE LAST ROW OF THE PAGE, NOT `lastSeq`. `lastSeq` is the max
-   * seq over ALL of the run's events, and the page is capped at 200 server-side
-   * — feeding it back as `after` would skip events 201..max outright on any run
-   * that emits more than one page. `readEvents` selects `seq > after` in
-   * ascending order, so the last row that actually arrived is the only value
-   * that cannot lose anything.
+   * THE CURSOR IS THE HIGH-WATER MARK OF WHAT THIS HOOK HAS SEEN, and it is
+   * still derived here rather than assigned from `lastSeq` — even though the
+   * server's `lastSeq` now means the last row of the page and is a cursor a
+   * caller may legitimately feed straight back.
+   *
+   * The reason is `post()` below. Every control route answers with the same
+   * full view read from `after: 0`, so its `lastSeq` is the last row of the
+   * HEAD page — a smaller number than where a run that has been open for
+   * minutes has got to. Assigning it would walk the cursor backwards on every
+   * pause, resume or steer, and the next poll would re-fetch and re-merge
+   * everything from the top for the rest of the session. Taking the max over
+   * the rows that actually arrived is what makes one absorb path safe for both
+   * responses, and it is the ONLY value that cannot lose an event either way:
+   * `readEvents` selects `seq > after` ascending, so anything above the highest
+   * row we hold is still waiting for us.
    */
   const absorb = React.useCallback((next: RunPayload): RunPayload => {
     const page = next.events ?? [];
@@ -188,15 +241,27 @@ export function useResearchRun(runId: string | null) {
       // leave a working run on the idle interval for its whole first stage.
       const fresh = await load().catch(() => null);
       if (stopped) return;
+      // Is the server still holding events we have not been given? The page is
+      // capped at 200 rows, and a gather phase across a dozen queries and forty
+      // fetches clears that easily — so this is a normal state, not an edge.
+      const behind = !!fresh && cursor.current < fresh.maxSeq;
       // A finished run never changes again: stop polling entirely rather than
-      // asking the same question of the same row for as long as the tab is open.
-      if (fresh && !fresh.run.live) return;
+      // asking the same question of the same row for as long as the tab is
+      // open. But "finished" is not "we have all of it": a run that completed
+      // while this client was three pages back would have had its timeline
+      // truncated at whatever the last poll happened to reach, silently. That
+      // could not be distinguished before `maxSeq` existed — `lastSeq` was the
+      // page's own end, so the log always looked complete.
+      if (fresh && !fresh.run.live && !behind) return;
       const working =
         !!fresh &&
         fresh.run.live &&
         fresh.run.state !== "paused" &&
         fresh.run.state !== "awaiting_plan_confirmation";
-      timer = setTimeout(tick, working ? WORKING_POLL_MS : IDLE_POLL_MS);
+      // Straight back for the next page rather than sleeping out an interval —
+      // 0ms rather than a synchronous loop so a run that emits faster than this
+      // drains cannot starve the render of the page it just absorbed.
+      timer = setTimeout(tick, behind ? 0 : working ? WORKING_POLL_MS : IDLE_POLL_MS);
     };
     void tick();
     return () => {

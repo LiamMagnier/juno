@@ -704,6 +704,7 @@ export function DesignEditor({
                 selectNodes([id]);
                 setRightPanel("prototype");
               }}
+              viewportRef={viewportRef}
             />
           ) : (
             <HistoryList state={state} onSelect={selectNodes} />

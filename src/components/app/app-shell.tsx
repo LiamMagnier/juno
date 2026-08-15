@@ -334,8 +334,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           // hairline carries layout (it is what separates the mode switch from
           // the conversation), and the token already dropped five points for the
           // black ground, so a call-site alpha on top of that erases it.
-          <div className="flex min-h-[52px] shrink-0 items-center justify-center border-b border-border px-4 py-2">
+          <div className="relative flex min-h-[52px] shrink-0 items-center justify-center border-b border-border px-4 py-2">
             <ChatWorkSwitcher />
+            {/* The chat's own top actions — share, model parameters, incognito —
+                land here through a portal (chat-view.tsx looks for this id).
+                The slot has to exist for that to happen, and it did not: the
+                portal silently fell back to `position: absolute` inside the
+                chat column, which put three floating buttons ON TOP of the
+                transcript, ten pixels below a header bar that was empty apart
+                from a centred switcher. The chat's own comment already claimed
+                they sat "in the top header on the same Y grid as Chat/Work" —
+                this is the row that makes that true.
+
+                Absolutely positioned rather than a flex sibling on purpose: the
+                switcher is centred on the WINDOW, and a sibling of any width
+                would push it off-centre by half of itself and move it every
+                time a button appeared or left. */}
+            <div
+              id="juno-top-actions-slot"
+              className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
+            />
           </div>
         )}
 

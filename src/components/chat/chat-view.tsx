@@ -8,6 +8,7 @@ import { GitFork, GripVertical, Loader2 } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
+import { splitBounds, useSplitPane } from "@/hooks/use-split-pane";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
@@ -55,6 +56,9 @@ interface ChatViewProps {
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
+/* The shell's header row (app-shell.tsx) reserves this node for the chat's own
+ * top actions. Named here and there, and nowhere else. */
+const TOP_ACTIONS_SLOT_ID = "juno-top-actions-slot";
 const CANVAS_WIDTH_KEY = "juno:canvas-width";
 const CANVAS_MIN_WIDTH = 420;
 const CHAT_MIN_WIDTH = 320;
@@ -69,18 +73,24 @@ function isApplePlatform() {
   return /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-function canvasWidthBounds(containerWidth: number) {
-  const minWidth = Math.min(CANVAS_MIN_WIDTH, Math.max(320, containerWidth - CHAT_MIN_WIDTH));
-  const maxByChat = containerWidth - CHAT_MIN_WIDTH;
-  const maxWidth = Math.max(minWidth, Math.min(Math.round(containerWidth * 0.82), maxByChat));
-  return { minWidth, maxWidth };
-}
+/* The width the SERVER renders. Unreachable in practice — the canvas is opened
+ * by a click, so it is never in the first HTML — but the column's whole width is
+ * an inline custom property, and a property with no value is not a narrow panel,
+ * it is a full-bleed one. */
+const CANVAS_SSR_WIDTH = 560;
 
-function clampCanvasWidth(width: number, containerWidth?: number) {
-  if (typeof window === "undefined") return width;
-  const availableWidth = containerWidth ?? window.innerWidth;
-  const { minWidth, maxWidth } = canvasWidthBounds(availableWidth);
-  return Math.min(Math.max(width, minWidth), maxWidth);
+function canvasWidthBounds(containerWidth: number) {
+  return splitBounds({
+    containerWidth,
+    paneMin: CANVAS_MIN_WIDTH,
+    // 320 in its own right, not CHAT_MIN_WIDTH reused: this is how far the
+    // canvas itself may be squeezed on a container that cannot give both
+    // columns what they want, and the two numbers coinciding is arithmetic
+    // rather than a shared rule.
+    paneFloor: 320,
+    primaryMin: CHAT_MIN_WIDTH,
+    fraction: 0.82,
+  });
 }
 
 /* ─── Thought dock width ──────────────────────────────────────────────────────
@@ -118,37 +128,40 @@ const THOUGHT_MIN_WIDTH = 400;
 const THOUGHT_DEFAULT_WIDTH = 480;
 
 function thoughtWidthBounds(containerWidth: number) {
-  const minWidth = Math.min(THOUGHT_MIN_WIDTH, Math.max(280, containerWidth - CHAT_MIN_WIDTH));
-  const maxByChat = containerWidth - CHAT_MIN_WIDTH;
-  // Reserves CHAT_MIN_WIDTH exactly as canvasWidthBounds does, so dragging the
-  // dock can never squeeze the chat below phone width. The 0.6 cap (vs the
-  // canvas's 0.82) is the one honest difference: the canvas holds documents the
-  // user edits, this holds receipts read beside the chat.
-  const preferredMax = Math.min(Math.round(containerWidth * 0.6), maxByChat);
-  // THE DEFAULT MUST ALWAYS BE REACHABLE. `lg:w-[30rem]` is rendered by CSS for
-  // an undragged dock no matter what these bounds say, so a max below 480 does
-  // not make the panel narrower — it only makes the HANDLE lie: pointer-down
-  // (which reads the live edge, i.e. 480) would clamp and snap the dock ~56px
-  // narrower before the user moved, and the "grow" arrow would shrink it. That
-  // happens on any lg container under 800px — a 1024 tablet or a half-screen
-  // window with the sidebar out. Capped by the container so the dock can still
-  // never exceed the layout it lives in.
-  const maxWidth = Math.max(minWidth, Math.min(containerWidth, Math.max(preferredMax, THOUGHT_DEFAULT_WIDTH)));
-  return { minWidth, maxWidth };
+  return splitBounds({
+    containerWidth,
+    paneMin: THOUGHT_MIN_WIDTH,
+    paneFloor: 280,
+    // Reserves CHAT_MIN_WIDTH exactly as canvasWidthBounds does, so dragging the
+    // dock can never squeeze the chat below phone width. The 0.6 cap (vs the
+    // canvas's 0.82) is the one honest difference: the canvas holds documents the
+    // user edits, this holds receipts read beside the chat.
+    primaryMin: CHAT_MIN_WIDTH,
+    fraction: 0.6,
+    // THE DEFAULT MUST ALWAYS BE REACHABLE. `lg:w-[30rem]` is rendered by CSS for
+    // an undragged dock no matter what these bounds say, so a max below 480 does
+    // not make the panel narrower — it only makes the HANDLE lie: pointer-down
+    // (which reads the live edge, i.e. 480) would clamp and snap the dock ~56px
+    // narrower before the user moved, and the "grow" arrow would shrink it. That
+    // happens on any lg container under 800px — a 1024 tablet or a half-screen
+    // window with the sidebar out. `splitBounds` caps it by the container so the
+    // dock can still never exceed the layout it lives in.
+    cssWidth: THOUGHT_DEFAULT_WIDTH,
+  });
 }
 
-/* Below lg the dock is full-bleed `w-full` and no `lg:w-[var(--juno-thought-width)]`
- * applies, so there is no width to constrain — and clamping there would destroy a
- * width chosen on a wide monitor to satisfy a constraint that does not exist. */
-const thoughtResizeApplies = () =>
+/* Below lg BOTH docked columns are full-bleed `w-full` — no
+ * `lg:w-[var(--juno-thought-width)]`, no `lg:w-[var(--juno-canvas-width)]` — so
+ * there is no width to constrain, and clamping there would destroy a width
+ * chosen on a wide monitor to satisfy a constraint that does not exist.
+ *
+ * The dock has always said so; the canvas did not, and clamped at every
+ * breakpoint. That was not harmless: `resize` fires continuously on a phone (the
+ * URL bar sliding away is enough), so one scroll rewrote a canvas width chosen on
+ * a monitor down to the phone bounds and persisted it — for a column that was
+ * rendering `w-full` and never read the number. One gate now, used by both. */
+const splitResizeApplies = () =>
   typeof window !== "undefined" && !window.matchMedia("(max-width: 1023px)").matches;
-
-function clampThoughtWidth(width: number, containerWidth?: number) {
-  if (typeof window === "undefined") return width;
-  const availableWidth = containerWidth ?? window.innerWidth;
-  const { minWidth, maxWidth } = thoughtWidthBounds(availableWidth);
-  return Math.min(Math.max(width, minWidth), maxWidth);
-}
 
 // A fork carries the transcript up to the fork point into a fresh, unsaved
 // branch. It rides the private-mode transport (full history is sent with each
@@ -192,8 +205,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const router = useRouter();
   const tts = useTts();
   const layoutRef = React.useRef<HTMLDivElement>(null);
-  const canvasResizeRef = React.useRef<{ pointerId: number; previousCursor: string; previousUserSelect: string } | null>(null);
-  const thoughtResizeRef = React.useRef<{ pointerId: number; previousCursor: string; previousUserSelect: string } | null>(null);
   // Tracks a conversation created on the new-chat page so we can switch to its
   // real /chat/[id] route once the first reply finishes streaming.
   const createdIdRef = React.useRef<string | null>(null);
@@ -217,29 +228,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // clock stay in ActivityTimeline. See thought-panel-context.
   const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
-  const [canvasWidth, setCanvasWidth] = React.useState(() => {
-    if (typeof window === "undefined") return 560;
-    const saved = Number(window.localStorage.getItem(CANVAS_WIDTH_KEY));
-    return clampCanvasWidth(Number.isFinite(saved) && saved > 0 ? saved : Math.round(window.innerWidth * 0.46));
-  });
-  const [resizingCanvas, setResizingCanvas] = React.useState(false);
-  // null = never dragged = the untouched 30rem default. A stored width is
-  // clamped on restore so one saved on a wide monitor cannot strand the dock
-  // off-screen on a narrow one.
-  const [thoughtWidth, setThoughtWidth] = React.useState<number | null>(() => {
-    if (typeof window === "undefined") return null;
-    const saved = Number(window.localStorage.getItem(THOUGHT_WIDTH_KEY));
-    if (!(Number.isFinite(saved) && saved > 0)) return null;
-    // Kept verbatim below lg, where the clamp does not apply — see
-    // `thoughtResizeApplies`. Restoring on a phone must not rewrite the width.
-    return thoughtResizeApplies() ? clampThoughtWidth(saved) : saved;
-  });
-  const [resizingThought, setResizingThought] = React.useState(false);
   // Entrance animation, armed on mount and disarmed by the first drag.
   const [animateDock, setAnimateDock] = React.useState(true);
-  // What the handle announces. Kept in sync with the live container width by the
-  // effect below.
-  const [thoughtBounds, setThoughtBounds] = React.useState({ min: THOUGHT_MIN_WIDTH, max: THOUGHT_DEFAULT_WIDTH });
+  /**
+   * The shell's header row, when there is one, is where this chat's top actions
+   * belong — see the portal at the top of the render. Resolved after mount
+   * because AppShell renders it in the same commit as this component, and
+   * because the server has no DOM to find it in.
+   */
+  const [topActionsSlot, setTopActionsSlot] = React.useState<HTMLElement | null>(null);
+  React.useLayoutEffect(() => {
+    setTopActionsSlot(document.getElementById(TOP_ACTIONS_SLOT_ID));
+  }, []);
   const [memoryFlash, setMemoryFlash] = React.useState(false);
   const [memoryLeaving, setMemoryLeaving] = React.useState(false);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
@@ -320,6 +320,24 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       document.documentElement.removeAttribute("data-private-mode");
     };
   }, [privateMode]);
+  /**
+   * Tell the shell incognito is over when this view goes away.
+   *
+   * `data-private-mode` is dropped by the cleanup above, but the EVENT was not,
+   * and the Chat/Work switcher in the shell outlives this component — it is
+   * rendered by AppShell for /chat and /work alike. So leaving an incognito chat
+   * by any door that is not the toggle (the sidebar, the command palette, a
+   * link) left the switcher mirroring a private mode that no longer existed:
+   * dimmed and unavailable on /work, with nothing on that route able to correct
+   * it. Its own dedicated effect rather than a line in the cleanup above, which
+   * runs on every toggle and would announce a false the very next line retracts.
+   */
+  React.useEffect(
+    () => () => {
+      window.dispatchEvent(new CustomEvent("juno:incognito", { detail: false }));
+    },
+    []
+  );
   // Set when this view is an unsaved branch forked from another conversation.
   const [forkedFrom, setForkedFrom] = React.useState<{ title: string; count: number } | null>(null);
   // The project this chat belongs to. For a brand-new chat it's the target the
@@ -953,221 +971,72 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [thoughtOpenId, openThoughtPanel, thoughtContainer]
   );
 
-  React.useEffect(() => {
-    window.localStorage.setItem(CANVAS_WIDTH_KEY, String(canvasWidth));
-  }, [canvasWidth]);
+  /* ─── The two docked columns ───────────────────────────────────────────────
+   * Both are `useSplitPane` now (src/hooks/use-split-pane.ts), which is where
+   * the ~180 lines this replaced went: two copies of pointer capture, cursor
+   * and user-select save/restore, clamp-on-resize and persistence, sitting 700
+   * lines apart in this file and already disagreeing about three things. The
+   * Work rail is the same object again on a different page, which is what made
+   * a third copy unthinkable.
+   *
+   * What each one still owns is exactly what differs: its bounds, whether it
+   * has a CSS default to fall back to, and whether it may take the sidebar.
+   */
+  const canvas = useSplitPane({
+    storageKey: CANVAS_WIDTH_KEY,
+    containerRef: layoutRef,
+    bounds: canvasWidthBounds,
+    // 46% of the container, not a stored constant: the canvas has no CSS
+    // default, so "reset" has to be a measurement.
+    resetWidth: (containerWidth) => Math.round(containerWidth * 0.46),
+    ssrWidth: CANVAS_SSR_WIDTH,
+    applies: splitResizeApplies,
+    active: !!openArtifact && !fullscreen,
+    // The canvas is the one pane with a legitimate "must be huge" case — it
+    // holds documents being edited — so a drag past the max asks the shell for
+    // the sidebar's width rather than simply refusing.
+    onRequestRoom: () => window.dispatchEvent(new CustomEvent("juno:collapse-sidebar")),
+  });
+  const reclampCanvas = canvas.reclamp;
 
-  React.useEffect(() => {
-    const onResize = () => {
-      const width = layoutRef.current?.getBoundingClientRect().width;
-      setCanvasWidth((w) => clampCanvasWidth(w, width));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  const thought = useSplitPane({
+    storageKey: THOUGHT_WIDTH_KEY,
+    containerRef: layoutRef,
+    bounds: thoughtWidthBounds,
+    // THE DEFAULT DOES NOT MOVE: null, not a recomputed number, so an undragged
+    // dock keeps rendering `lg:w-[30rem]` itself and stays honest at a root font
+    // size that is not 16px.
+    resetWidth: () => null,
+    cssWidth: THOUGHT_DEFAULT_WIDTH,
+    applies: splitResizeApplies,
+    active: thoughtOpenId != null,
+    // Deliberately no `onRequestRoom`. The canvas escalates because of what it
+    // holds; the dock is capped at 60% and reading receipts is never worth
+    // eating the sidebar.
+    onUserResize: () => setAnimateDock(false),
+  });
 
+  // Each open is a fresh mount of the dock, so the entrance is re-armed here
+  // rather than left disarmed by a drag in a previous open. Separate from the
+  // hook because it is about the dock's animation, not about its width.
+  React.useEffect(() => setAnimateDock(true), [thoughtOpenId]);
+
+  // Opening a canvas into a container too narrow for both columns buys the
+  // sidebar's width first and re-measures on the next frame. The threshold is
+  // "neither column can have its minimum plus a gap", which is a different
+  // question from the drag-time one above: this one fires with no pointer
+  // anywhere near the handle.
   React.useEffect(() => {
     if (!openArtifact || fullscreen) return;
     const availableWidth = layoutRef.current?.getBoundingClientRect().width;
     if (!availableWidth || availableWidth >= CANVAS_MIN_WIDTH + CHAT_MIN_WIDTH + 32) return;
     window.dispatchEvent(new CustomEvent("juno:collapse-sidebar"));
-    window.requestAnimationFrame(() => {
-      const nextWidth = layoutRef.current?.getBoundingClientRect().width;
-      setCanvasWidth((w) => clampCanvasWidth(w, nextWidth));
-    });
-  }, [fullscreen, openArtifact]);
-
-  const updateCanvasWidthFromPointer = React.useCallback((clientX: number) => {
-    const rect = layoutRef.current?.getBoundingClientRect();
-    const requestedWidth = rect ? rect.right - clientX : window.innerWidth - clientX;
-    if (rect && requestedWidth > canvasWidthBounds(rect.width).maxWidth) {
-      window.dispatchEvent(new CustomEvent("juno:collapse-sidebar"));
-      window.requestAnimationFrame(() => {
-        const nextRect = layoutRef.current?.getBoundingClientRect();
-        setCanvasWidth((w) => clampCanvasWidth(Math.max(w, requestedWidth), nextRect?.width));
-      });
-      return;
-    }
-    setCanvasWidth(clampCanvasWidth(requestedWidth, rect?.width));
-  }, []);
-
-  const stopCanvasResize = React.useCallback((target?: HTMLButtonElement, pointerId?: number) => {
-    const session = canvasResizeRef.current;
-    if (!session) return;
-    canvasResizeRef.current = null;
-    setResizingCanvas(false);
-    document.body.style.cursor = session.previousCursor;
-    document.body.style.userSelect = session.previousUserSelect;
-    if (target && pointerId != null && target.hasPointerCapture(pointerId)) {
-      target.releasePointerCapture(pointerId);
-    }
-  }, []);
-
-  const startCanvasResize = React.useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      canvasResizeRef.current = {
-        pointerId: e.pointerId,
-        previousCursor: document.body.style.cursor,
-        previousUserSelect: document.body.style.userSelect,
-      };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      setResizingCanvas(true);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      updateCanvasWidthFromPointer(e.clientX);
-    },
-    [updateCanvasWidthFromPointer]
-  );
-
-  const continueCanvasResize = React.useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (canvasResizeRef.current?.pointerId !== e.pointerId) return;
-      e.preventDefault();
-      updateCanvasWidthFromPointer(e.clientX);
-    },
-    [updateCanvasWidthFromPointer]
-  );
-
-  const resetCanvasWidth = React.useCallback(() => {
-    if (typeof window !== "undefined") {
-      const width = layoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      setCanvasWidth(clampCanvasWidth(Math.round(width * 0.46), width));
-    }
-  }, []);
-
-  // ── Thought dock resize ────────────────────────────────────────────────────
-  // Same shape as the canvas handlers above, with one deliberate omission: no
-  // `juno:collapse-sidebar` escalation. The canvas does that because it has a
-  // legitimate "must be huge" case; the dock is capped at 60% and reading
-  // receipts is never worth eating the sidebar.
-  React.useEffect(() => {
-    if (thoughtWidth == null) window.localStorage.removeItem(THOUGHT_WIDTH_KEY);
-    else window.localStorage.setItem(THOUGHT_WIDTH_KEY, String(thoughtWidth));
-  }, [thoughtWidth]);
-
-  // Re-clamp on window resize, exactly as the canvas does — and keep the
-  // handle's announced range truthful. The bounds live in state rather than
-  // being read off layoutRef at render time: a ref read during render is not
-  // reactive, so aria-valuemax would have been 0 on the first paint and then
-  // never corrected. Re-runs on open so the range is right before first focus.
-  React.useEffect(() => {
-    // Each open is a fresh mount of the dock, so the entrance is re-armed here
-    // rather than left disarmed by a drag in a previous open.
-    setAnimateDock(true);
-    const sync = () => {
-      const width = layoutRef.current?.getBoundingClientRect().width;
-      if (width) {
-        const { minWidth, maxWidth } = thoughtWidthBounds(width);
-        setThoughtBounds({ min: minWidth, max: maxWidth });
-      }
-      // ONLY WHERE THE WIDTH IS ACTUALLY APPLIED. `resize` fires continuously,
-      // so without this a single gesture that drags the window narrow and back
-      // would clamp a 700px preference down to the ~280 floor and persist it
-      // (the effect above writes every change straight to localStorage) — at a
-      // breakpoint where the dock is `w-full` and the number is not read at all.
-      if (thoughtResizeApplies()) setThoughtWidth((w) => (w == null ? w : clampThoughtWidth(w, width)));
-    };
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, [thoughtOpenId]);
-
-  const updateThoughtWidthFromPointer = React.useCallback((clientX: number) => {
-    const rect = layoutRef.current?.getBoundingClientRect();
-    // The dock is the last in-flow column (a closing canvas goes `absolute`), so
-    // its right edge is the layout's right edge.
-    const requestedWidth = rect ? rect.right - clientX : window.innerWidth - clientX;
-    setThoughtWidth(clampThoughtWidth(requestedWidth, rect?.width));
-  }, []);
-
-  const stopThoughtResize = React.useCallback((target?: HTMLElement, pointerId?: number) => {
-    const session = thoughtResizeRef.current;
-    if (!session) return;
-    thoughtResizeRef.current = null;
-    setResizingThought(false);
-    document.body.style.cursor = session.previousCursor;
-    document.body.style.userSelect = session.previousUserSelect;
-    if (target && pointerId != null && target.hasPointerCapture(pointerId)) {
-      target.releasePointerCapture(pointerId);
-    }
-  }, []);
-
-  // THE HANDLE CAN VANISH MID-DRAG. `stopThoughtResize` otherwise only runs from
-  // the button's own React handlers, and the dock unmounts under a live drag via
-  // Escape (nothing preventDefaults it during a pointer drag) or the self-heal
-  // above (a regenerate lands the answer under a fresh id). The implicit pointer
-  // release then fires at a DETACHED node, and React 19 delegates to the root
-  // container, so onLostPointerCapture never arrives: body would keep
-  // `cursor: col-resize` and `user-select: none` app-wide until a reload, and —
-  // worse — the still-non-null ref would make the NEXT drag save those stuck
-  // values as the ones to restore, so no clean pointer-up could ever undo it.
-  // Keyed on `thoughtOpenId`, not [], because the dock — not ChatView — is what
-  // unmounts; a no-op when no drag is in flight.
-  React.useEffect(() => () => stopThoughtResize(), [thoughtOpenId, stopThoughtResize]);
-
-  const startThoughtResize = React.useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (e.button !== 0) return;
-      // preventDefault + the saved userSelect are what stop a drag from
-      // selecting the panel's text and leaving the cursor stuck afterwards.
-      e.preventDefault();
-      thoughtResizeRef.current = {
-        pointerId: e.pointerId,
-        previousCursor: document.body.style.cursor,
-        previousUserSelect: document.body.style.userSelect,
-      };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      setAnimateDock(false);
-      setResizingThought(true);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-      updateThoughtWidthFromPointer(e.clientX);
-    },
-    [updateThoughtWidthFromPointer]
-  );
-
-  const continueThoughtResize = React.useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (thoughtResizeRef.current?.pointerId !== e.pointerId) return;
-      e.preventDefault();
-      updateThoughtWidthFromPointer(e.clientX);
-    },
-    [updateThoughtWidthFromPointer]
-  );
-
-  /** Back to the untouched default — null, not a recomputed number. */
-  const resetThoughtWidth = React.useCallback(() => setThoughtWidth(null), []);
-
-  // KEYBOARD, NOT AN AFTERTHOUGHT. A pointer-only splitter is unusable without a
-  // mouse, so the handle is a real focusable separator: arrows nudge, Shift
-  // jumps, Home restores the default. Left grows the dock because the dock is on
-  // the right — the edge moves the way the key points.
-  const nudgeThoughtWidth = React.useCallback((delta: number) => {
-    const rect = layoutRef.current?.getBoundingClientRect();
-    // Same reason as the pointer path: a keyboard resize must not replay the
-    // entrance slide on every keypress.
-    setAnimateDock(false);
-    setThoughtWidth((w) => clampThoughtWidth((w ?? THOUGHT_DEFAULT_WIDTH) + delta, rect?.width));
-  }, []);
-
-  const onThoughtHandleKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLButtonElement>) => {
-      const step = e.shiftKey ? 64 : 16;
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        nudgeThoughtWidth(step);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        nudgeThoughtWidth(-step);
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        resetThoughtWidth();
-      }
-    },
-    [nudgeThoughtWidth, resetThoughtWidth]
-  );
+    window.requestAnimationFrame(() => reclampCanvas());
+    // `reclampCanvas`, not `canvas`: the hook hands back a fresh object every
+    // render (its width changes on every pointer move), so depending on the
+    // whole thing would re-run this on each of them — i.e. fire
+    // `juno:collapse-sidebar` on repeat while a narrow layout stayed narrow.
+  }, [fullscreen, openArtifact, reclampCanvas]);
 
   // A canvas selection lands in the composer as a quote chip. Below lg the
   // canvas covers the chat, so close it to bring the composer back into view.
@@ -1770,7 +1639,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
     <div ref={layoutRef} data-juno-chat-root className="relative flex h-full min-h-0 w-full overflow-hidden">
-      {/* Model parameters + incognito ghost + share cluster: positioned in the top header on the same Y grid as Chat/Work */}
+      {/* Share + model parameters + the incognito ghost, on the same Y grid as
+          the Chat/Work switcher — which they now genuinely are: the shell
+          renders `#juno-top-actions-slot` in that header row and this portals
+          into it. Before the slot existed this fell through to its own
+          `absolute right-3 top-2.5`, i.e. three buttons floating over the top of
+          the transcript (and over the canvas's own header, when one was open)
+          under a header bar that had room for them and was otherwise empty. The
+          fallback stays for the case the slot is absent — never in the shipping
+          shell, but this component must not depend on a node it does not own. */}
       {(() => {
         const actionsContent = (
           <div
@@ -1816,15 +1693,32 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </div>
         );
 
-        if (typeof document !== "undefined" && document.getElementById("juno-top-actions-slot")) {
-          return createPortal(actionsContent, document.getElementById("juno-top-actions-slot")!);
-        }
-
-        return (
-          <div className="absolute right-3 top-2.5 z-20 hidden items-center gap-1.5 md:flex">
+        /* ONE wrapper for both destinations, so the visibility rule is written
+         * once: `hidden md:flex` is the cluster's own gate (below md the mobile
+         * bar in AppShell carries navigation and this row does not exist), and
+         * the fallback adds only the positioning it needs. Two separately
+         * classed branches drifted the moment the shell grew a slot — the
+         * portalled copy would have shown up on a phone, where nothing is
+         * arranged for it. */
+        const cluster = (
+          <div
+            className={cn(
+              "hidden items-center gap-1.5 md:flex",
+              !topActionsSlot && "absolute right-3 top-2.5 z-20"
+            )}
+          >
             {actionsContent}
           </div>
         );
+
+        // Read from STATE set in a layout effect, not from `document` during
+        // render. The server has no DOM and renders the fallback; a render-time
+        // getElementById would find the slot on the client's very first
+        // (hydrating) pass and portal away markup the server had put in place —
+        // a hydration mismatch, and React would throw the whole subtree away and
+        // re-render it client-side. The layout effect swaps them before paint,
+        // so nobody sees the fallback either.
+        return topActionsSlot ? createPortal(cluster, topActionsSlot) : cluster;
       })()}
 
       {/* Chat column */}
@@ -1841,8 +1735,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             project. Brand-new chats use the composer chip until they exist.
 
             Floats over the thread rather than occupying a full-width band, so
-            the reply keeps the vertical space. Mirrors the top-right action
-            cluster's inset (right-3/top-3, md:4) so the two read as one row.
+            the reply keeps the vertical space. It keeps the same inset the
+            top-right action cluster used to answer it with (left-3/top-3, md:4)
+            now that the cluster has moved up into the shell's header row — the
+            inset is the page's own margin for a thing floating over the
+            transcript, not a relationship to a control that is no longer there.
             Anchored to the chat column, not the chat root: the root also hosts
             the canvas panel, and a root-anchored pill would strand itself over
             the canvas on the breakpoint where this column is hidden. */}
@@ -2182,7 +2079,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       {thoughtOpenId && (
         <div
           ref={setThoughtContainer}
-          style={thoughtWidth != null ? ({ "--juno-thought-width": `${thoughtWidth}px` } as React.CSSProperties) : undefined}
+          style={thought.width != null ? ({ "--juno-thought-width": `${thought.width}px` } as React.CSSProperties) : undefined}
           className={cn(
             "relative z-40 size-full shrink-0 border-border/70 bg-card",
             // min-w-0 replaces the old lg:min-w-[26rem]: that floor would have
@@ -2190,33 +2087,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // unreachable. The real floor is enforced by thoughtWidthBounds.
             "lg:min-w-0 lg:border-l",
             // Undragged: the ORIGINAL default class, byte-for-byte.
-            thoughtWidth == null ? "lg:w-[30rem]" : "lg:w-[var(--juno-thought-width)]",
+            thought.width == null ? "lg:w-[30rem]" : "lg:w-[var(--juno-thought-width)]",
             // The entrance is a MOUNT effect, so it is dropped for good the
             // moment the user grabs the handle. Re-adding `animate-in` after a
             // drag re-triggers it — the dock would replay its 400ms slide on
             // every pointer-up. `duration-slow` travels with the animate-*
             // classes it belongs to and is never left behind on its own.
             animateDock && "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
-            resizingThought && "select-none"
+            thought.resizing && "select-none"
           )}
         >
           {/* Below lg the dock is full-bleed `w-full`, so there is nothing to
               resize and the handle is display:none — matching the canvas. */}
           <button
             type="button"
-            onPointerDown={startThoughtResize}
-            onPointerMove={continueThoughtResize}
-            onPointerUp={(event) => stopThoughtResize(event.currentTarget, event.pointerId)}
-            onPointerCancel={(event) => stopThoughtResize(event.currentTarget, event.pointerId)}
-            onLostPointerCapture={() => stopThoughtResize()}
-            onDoubleClick={resetThoughtWidth}
-            onKeyDown={onThoughtHandleKeyDown}
-            role="separator"
-            aria-orientation="vertical"
+            {...thought.separatorProps}
             aria-label="Resize thought process panel"
-            aria-valuenow={thoughtWidth ?? THOUGHT_DEFAULT_WIDTH}
-            aria-valuemin={thoughtBounds.min}
-            aria-valuemax={thoughtBounds.max}
             title="Drag to resize. Arrow keys adjust, Home resets."
             className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
           >
@@ -2238,27 +2124,28 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           brief fade-out plays, then unmounts. */}
       {(openArtifact ?? closingArtifact) && (
         <div
-          style={{ "--juno-canvas-width": `${canvasWidth}px` } as React.CSSProperties}
+          style={{ "--juno-canvas-width": `${canvas.width ?? CANVAS_SSR_WIDTH}px` } as React.CSSProperties}
           className={cn(
             "relative z-40 size-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
-            resizingCanvas ? "select-none transition-none" : "ease-out-expo",
+            canvas.resizing ? "select-none transition-none" : "ease-out-expo",
             openArtifact
-              ? !resizingCanvas && "duration-base animate-in fade-in slide-in-from-right-4"
+              ? !canvas.resizing && "duration-base animate-in fade-in slide-in-from-right-4"
               : "pointer-events-none absolute inset-y-0 right-0 duration-fast animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "lg:relative"
           )}
         >
+          {/* The same separator contract the dock has, which this handle
+              lacked: it was a focusable button labelled "Resize canvas" that
+              answered no key at all, so a keyboard user could reach it, be told
+              it resized the canvas, and find that nothing did. Arrows and Home
+              work here too now — the drag, the persistence key and the sidebar
+              escalation are untouched. */}
           {openArtifact && !fullscreen && (
             <button
               type="button"
-              onPointerDown={startCanvasResize}
-              onPointerMove={continueCanvasResize}
-              onPointerUp={(event) => stopCanvasResize(event.currentTarget, event.pointerId)}
-              onPointerCancel={(event) => stopCanvasResize(event.currentTarget, event.pointerId)}
-              onLostPointerCapture={() => stopCanvasResize()}
-              onDoubleClick={resetCanvasWidth}
+              {...canvas.separatorProps}
               aria-label="Resize canvas"
-              title="Drag to resize canvas. Double-click to reset."
+              title="Drag to resize canvas. Arrow keys adjust, Home resets."
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
             >
               <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">

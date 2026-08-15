@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import {
   CheckboxField,
+  ColorField,
   EffectsSection,
   FillControl,
   IconButton,
@@ -50,6 +51,8 @@ import {
 } from "@/components/design/effects-panel";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { collapseCornerRadius, cornerValues } from "@/lib/design/render";
+import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
+import { variantAxes } from "@/lib/design/instances";
 import {
   isContainer,
   type AutoLayout,
@@ -349,6 +352,8 @@ export function InspectorPanel({ document: doc, selection, pageId, onApply, onAl
 
       <EffectsSection nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />
 
+      {single?.type === "instance" && <InstanceSection node={single} document={doc} onApply={onApply} readOnly={readOnly} />}
+
       {single?.type === "image" && <ImageSection node={single} document={doc} onApply={onApply} readOnly={readOnly} />}
 
       {allSameType && first.type === "text" && (
@@ -393,13 +398,15 @@ export function InspectorPanel({ document: doc, selection, pageId, onApply, onAl
  * — a hero layout in a place a tool should be dense, and the only screen in the
  * editor where the eye has to travel to the middle of an empty rail to find one
  * line of text. Figma answers an empty selection with the page and document
- * instead, and so does this: the page's name, editable in place, and the counts
- * this panel can derive from the document it already holds.
+ * instead, and so does this: the page's name, editable in place, its background,
+ * and the counts this panel can derive from the document it already holds.
  *
- * The page's `backgroundColor` is deliberately absent, and it is the one thing
- * that belongs here and cannot be offered yet: the canvas paints it, `createPage`
- * takes one, and there is no operation that can change it afterwards. A colour
- * well that could show the colour and not set it would be worse than none.
+ * The background well was held back through two passes because the model could
+ * only set the colour at `createPage` — a well that showed the colour and could
+ * not write it would have been worse than none. `setPageBackground` is what
+ * changed, so the well is a real control and the alpha the picker offers is real
+ * too: `backgroundColor` is an `Rgba` and the canvas honours its alpha, which is
+ * how a page gets a transparent ground to export a sticker sheet against.
  */
 function DocumentSection({
   document: doc,
@@ -426,6 +433,22 @@ function DocumentSection({
             onCommit={(value) => value.trim() && value !== page.name && onApply([{ op: "renamePage", pageId: page.id, name: value.trim() }], "Rename page")}
           />
         )}
+        {page && (
+          <ColorField
+            label="Bg"
+            ariaLabel="Page background colour"
+            value={rgbaToHex(page.backgroundColor)}
+            disabled={readOnly}
+            // No `onClear`: every other well in the editor clears to "no paint",
+            // and a page has no such state — the schema requires an `Rgba` and
+            // the canvas has to paint something. Transparent is reachable through
+            // the picker's alpha, which is the honest way to say "nothing here".
+            onCommit={(hex) => {
+              const color = hexToRgba(hex);
+              if (color) onApply([{ op: "setPageBackground", pageId: page.id, color }], "Set page background");
+            }}
+          />
+        )}
         <p className="text-caption text-muted-foreground">Select a layer to edit its properties.</p>
       </Section>
 
@@ -447,6 +470,81 @@ function DocumentSection({
         </dl>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Which variant of its component this instance shows.
+ *
+ * This section was refused twice on honesty grounds, and the refusals were
+ * right: `variantProperties` was a field the AI panel and the prototype editor
+ * could write and *nothing that draws* could read, so a variant picker would
+ * have relabelled a layer and changed no pixel. `setInstanceVariant` is what
+ * changed — it swaps the instance's subtree for the variant's — so the control
+ * below is a control.
+ *
+ * The axes come from `variantAxes`, which reads the keys of `component.variants`
+ * rather than `component.properties`: `properties` is an optional description
+ * that a component made by "promote to component" or by the AI simply does not
+ * have, so a picker built from it would be empty for most real components. Every
+ * option listed therefore has a node behind it, and the operation refuses a
+ * combination that does not — which is why there is no "Mixed"-style fallback
+ * here: an unresolvable variant cannot be reached from these menus.
+ *
+ * Component *properties* — the boolean/text/instance-swap half — are still not
+ * offered, and still for the original reason. `targetNodeId` names a node inside
+ * the main component, and nothing in the document maps that to the corresponding
+ * node inside this instance, so those controls would write to a record nobody
+ * reads. Half a section that works beats a whole one that lies.
+ */
+function InstanceSection({
+  node,
+  document: doc,
+  onApply,
+  readOnly,
+}: {
+  node: DesignNode & { type: "instance" };
+  document: DesignDocument;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const component = doc.components[node.componentId];
+  const axes = component ? variantAxes(component) : [];
+  // A component with no variant set has nothing to choose between, and a section
+  // whose only content is the name of something is a row of chrome.
+  if (!component || axes.length === 0) return null;
+
+  return (
+    <Section title="Instance">
+      <p className="truncate font-mono text-micro text-muted-foreground" title={component.name}>
+        {component.name}
+      </p>
+      {axes.map((axis) => (
+        <SelectField
+          key={axis.name}
+          label={axis.name}
+          ariaLabel={`${axis.name} variant`}
+          value={node.variantProperties[axis.name] ?? ""}
+          options={[
+            // The blank row is the component's own root, which is what an
+            // instance placed before the set existed is showing — reachable, and
+            // named for what it is rather than left as an unlabelled gap.
+            { value: "", label: "Default" },
+            ...axis.values.map((value) => ({ value, label: value })),
+          ]}
+          disabled={readOnly}
+          onChange={(value) => {
+            const next = { ...node.variantProperties };
+            // Removing the key rather than storing "" — the empty string is not
+            // a variant value and `canonicalVariantKey` would build `size=` for
+            // it, a key no `createVariant` has ever written.
+            if (value) next[axis.name] = value;
+            else delete next[axis.name];
+            onApply([{ op: "setInstanceVariant", instanceNodeId: node.id, variantProperties: next }], "Set variant");
+          }}
+        />
+      ))}
+    </Section>
   );
 }
 
@@ -594,6 +692,17 @@ function CornerRadiusControl({
   const separate = unlinked || perCorner;
 
   const uniform = shared(nodes, (n) => cornerValues(n.cornerRadius)[0]);
+  const smoothing = shared(nodes, (n) => Math.round((n.cornerSmoothing ?? 0) * 100));
+  /**
+   * Smoothing is only offered once a corner is actually round.
+   *
+   * At radius 0 the superellipse and the arc are the same point, so the field
+   * would move and the shape would not — a control that does nothing, which is
+   * the one thing this panel is not allowed to contain. It appears the moment
+   * any selected layer has a corner to smooth, and takes the whole selection
+   * with it, because that is how every other field here behaves.
+   */
+  const roundedSomewhere = nodes.some((node) => cornerValues(node.cornerRadius).some((value) => value > 0));
 
   return (
     <div className="space-y-1.5">
@@ -650,6 +759,25 @@ function CornerRadiusControl({
           {separate ? <Link2Off className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
         </IconButton>
       </div>
+      {roundedSomewhere && (
+        <NumberField
+          label="Smooth"
+          ariaLabel="Corner smoothing"
+          // Shown as a percentage because that is the number designers say to
+          // each other ("60% smoothing is the iOS corner"); the model stores the
+          // 0–1 the geometry actually uses, and the two are converted here
+          // rather than storing percent and dividing in four render paths.
+          value={smoothing.value}
+          mixed={smoothing.mixed}
+          min={0}
+          max={100}
+          suffix="%"
+          disabled={readOnly}
+          onCommit={(v) =>
+            patchEach(() => ({ cornerSmoothing: Math.min(1, Math.max(0, v / 100)) }), "Set corner smoothing")
+          }
+        />
+      )}
     </div>
   );
 }

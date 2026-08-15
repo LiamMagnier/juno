@@ -18,6 +18,12 @@ import type { ResearchSourceView } from "@/components/research/use-research-run"
  * trustworthy while it is still running. It comes from `SourceFavicon`, which
  * loads it from the source's OWN origin rather than a favicon proxy, so the
  * reading list is not handed to a third party.
+ *
+ * The rows are on `text-ui`, not Tailwind's `text-xs`. They were the same 12px
+ * only by coincidence — `ui` is 13px with a 1.5 line height chosen for exactly
+ * this, a one-line list row — and the panel this list sits inside had already
+ * moved to the named rungs, so the source list was reading a hair tighter than
+ * everything around it for no reason anybody had chosen.
  */
 export function LiveSourceList({
   sources,
@@ -33,7 +39,7 @@ export function LiveSourceList({
   return (
     <div className={className}>
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-xs font-semibold text-foreground">
+        <p className="text-ui font-semibold text-foreground">
           {sources.length === 0
             ? "No sources yet"
             : `${sources.length} ${sources.length === 1 ? "source" : "sources"}`}
@@ -70,7 +76,7 @@ export function LiveSourceList({
                     href={source.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="min-w-0 truncate text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                    className="min-w-0 truncate text-ui text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                     title={source.read ? source.title : `${source.title} — found, not read yet`}
                   >
                     {source.title || source.url}
@@ -78,7 +84,7 @@ export function LiveSourceList({
                 ) : (
                   // A non-web scheme still gets listed — hiding it would drop a
                   // source the run leaned on — but never becomes an anchor.
-                  <span className="min-w-0 truncate text-xs text-muted-foreground" title={source.title}>
+                  <span className="min-w-0 truncate text-ui text-muted-foreground" title={source.title}>
                     {source.title || source.url}
                   </span>
                 )}

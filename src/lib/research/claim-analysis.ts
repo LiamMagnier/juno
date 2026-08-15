@@ -844,6 +844,19 @@ export interface AuditReason {
     | "off_topic"
     | "thin_overlap";
   detail: string;
+  /**
+   * The support ceiling THIS reason imposed, 0..1 — the severity, stated once
+   * by the side that decided it.
+   *
+   * Without it a reader (or an inspector trying to rank findings) has only the
+   * sentence, and every sentence looks equally grave: "the quoted words are not
+   * in the passage" (0.2 — the citation is fabricated) reads exactly like "the
+   * passage attributes this to someone" (0.75 — the claim is true but flattened).
+   * The alternative was a severity table keyed by `code` on the consuming side,
+   * which is `CEILING` copied into a second place and free to drift from it the
+   * first time one of these numbers is tuned.
+   */
+  ceiling: number;
 }
 
 export interface EvidenceAudit {
@@ -901,9 +914,13 @@ export function auditEvidence(opts: {
   const reasons: AuditReason[] = [];
   let ceiling = 1;
   let contradicted = false;
-  const cap = (value: number, reason: AuditReason) => {
+  // `cap` stamps the ceiling onto the reason rather than asking each call site
+  // to repeat it: the two are the same decision, and a site that passed
+  // CEILING.quoteAbsent to one and a stale number to the other would publish a
+  // severity the validator does not actually enforce.
+  const cap = (value: number, reason: Omit<AuditReason, "ceiling">) => {
     ceiling = Math.min(ceiling, value);
-    reasons.push(reason);
+    reasons.push({ ...reason, ceiling: value });
   };
 
   const coverage = tokenCoverage(claim, passage);

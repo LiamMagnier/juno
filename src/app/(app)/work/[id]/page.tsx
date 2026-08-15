@@ -4,9 +4,10 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Pause, Play, Square } from "lucide-react";
+import { ArrowLeft, GripVertical, Pause, Play, Square } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { splitBounds, useSplitPane } from "@/hooks/use-split-pane";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { cn } from "@/lib/utils";
 import { isTerminalStatus } from "@/lib/work/domain";
@@ -130,6 +131,55 @@ import {
  * placed by grid rather than duplicated per breakpoint, so there is never a
  * second copy of an Allow button to press by mistake.
  */
+/* ─── The rail's width ────────────────────────────────────────────────────────
+ * The second column was a fixed track — 22rem, 26rem at xl — which is the one
+ * thing this page could not answer for the reader: whether the transcript or
+ * the receipts deserve the room is a judgement about the task in front of them,
+ * and it changes between a two-step errand and a run with forty tool calls.
+ *
+ * It is the same drag the canvas and the thought dock have in chat, from the
+ * same hook, with the same feel and the same "reset by double-click or Home".
+ * A page that morphs differently from the chat two clicks away is a second
+ * idiom to learn for no reason. */
+const WORK_RAIL_WIDTH_KEY = "juno:work-rail-width";
+/* The rail's own floor. Its narrowest content is not prose but the label/value
+ * meta rows and the budget bars in "How it ran" — mono captions with a number
+ * on the right — and below roughly this they wrap onto two lines each, at which
+ * point the reference column costs more height than the width it gave back. */
+const WORK_RAIL_MIN_WIDTH = 288;
+/* What the conversation keeps no matter what — plus the 40px `gap-x-10` between
+ * the columns, which comes out of the same total. Wider than chat's 320 floor
+ * on purpose: this column is prose and tool output, not a phone-width fallback,
+ * and squeezing it is how you end up reading a transcript four words wide. */
+const WORK_CONVERSATION_MIN_WIDTH = 480 + 40;
+/* 26rem — the widest track the undragged CSS can hand out (xl). Same rule as the
+ * thought dock's 30rem: the class renders regardless of these bounds, so a max
+ * below it would only make the handle snap the rail inwards before the user had
+ * moved. */
+const WORK_RAIL_CSS_WIDTH = 416;
+
+function workRailBounds(containerWidth: number) {
+  return splitBounds({
+    containerWidth,
+    paneMin: WORK_RAIL_MIN_WIDTH,
+    paneFloor: 240,
+    primaryMin: WORK_CONVERSATION_MIN_WIDTH,
+    // Half, not the canvas's 0.82: the rail answers questions about the
+    // conversation beside it, so a rail wider than the thing it annotates is
+    // never the layout the reader wanted.
+    fraction: 0.5,
+    cssWidth: WORK_RAIL_CSS_WIDTH,
+  });
+}
+
+/* The grid drops to one column below lg, where the rail is a section stacked
+ * under the transcript and its width is whatever the page is. Same gate the
+ * chat panes use, and for the same reason: clamping a stored width against a
+ * layout that never reads it is how a width chosen on a monitor gets rewritten
+ * to phone bounds by a phone's own scroll. */
+const workRailResizeApplies = () =>
+  typeof window !== "undefined" && !window.matchMedia("(max-width: 1023px)").matches;
+
 export default function WorkThreadPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -166,6 +216,9 @@ export default function WorkThreadPage() {
    * receiving the updates it is asking everyone else to go and fetch. Only the
    * two facts other surfaces actually render are worth waking them for.
    */
+  /** The two-column grid, measured by the split handle below. */
+  const gridRef = React.useRef<HTMLDivElement>(null);
+
   const broadcastRef = React.useRef<string | null>(null);
   const broadcast = React.useCallback((current: ClientWorkSession) => {
     const signature = `${current.status}:${current.needsAttention}:${current.title}`;
@@ -514,6 +567,35 @@ export default function WorkThreadPage() {
     },
     [dispatch, id]
   );
+
+  /**
+   * The split between the conversation and the rail.
+   *
+   * Measured from the grid rather than from the rail: mid-drag the rail's own
+   * width is the thing being changed, and the grid's right edge IS the rail's
+   * right edge (the page padding moved out to the scroll container below,
+   * precisely so that is true — with the padding still on the grid, every drag
+   * landed the rail's edge 24px to the left of the pointer).
+   *
+   * Declared above the early returns, like every other hook here: the loading
+   * and error states render a different tree, and a hook called only on the
+   * loaded one would change the hook order between renders.
+   */
+  const rail = useSplitPane({
+    storageKey: WORK_RAIL_WIDTH_KEY,
+    containerRef: gridRef,
+    bounds: workRailBounds,
+    // null = never dragged = the 22rem/26rem track the CSS already gives it.
+    resetWidth: () => null,
+    cssWidth: WORK_RAIL_CSS_WIDTH,
+    applies: workRailResizeApplies,
+    // The grid only exists once the task has loaded — the pre-content states
+    // below render a single narrow column instead. Without this the hook would
+    // measure its bounds against nothing while the skeleton was up and never
+    // look again, so a width stored on a wider window survived into a layout
+    // that could not hold it until the next window resize.
+    active: session !== null,
+  });
 
   if (loadFailure !== null) {
     return (
@@ -967,8 +1049,29 @@ export default function WorkThreadPage() {
        * reading the thing it is about, which is the invariant the old single
        * scrolling column only had by luck.
        */}
-      <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-        <div className="mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 px-4 py-6 sm:px-6 lg:h-full lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:py-0 xl:grid-cols-[minmax(0,1fr)_26rem]">
+      {/* The page padding lives on the SCROLL box, not on the grid, so the grid's
+          box is exactly the two columns and nothing else. The split handle
+          measures `grid.right - pointerX`; with `px-4 sm:px-6` still on the grid
+          that measurement was over by the padding, and the rail's edge landed a
+          padding-width to the left of the pointer for the whole drag. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 lg:overflow-hidden">
+        <div
+          ref={gridRef}
+          style={
+            rail.width != null
+              ? ({ "--juno-work-rail-width": `${rail.width}px` } as React.CSSProperties)
+              : undefined
+          }
+          className={cn(
+            "mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 py-6 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:py-0",
+            // Undragged: the ORIGINAL tracks, byte-for-byte, including the xl
+            // step. A dragged width is one number at every size above lg —
+            // stepping it at xl would move a column the user had just placed.
+            rail.width == null
+              ? "lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem]"
+              : "lg:grid-cols-[minmax(0,1fr)_var(--juno-work-rail-width)]"
+          )}
+        >
           {needsYou && (
             <section
               id="work-needs-you"
@@ -1037,6 +1140,35 @@ export default function WorkThreadPage() {
           >
             {RAIL_ORDER.map((name) => sections[name])}
           </aside>
+
+          {/* The handle spans BOTH rows of the second column, because both of
+              them move: the block that needs answering sits in row 1 and the
+              reference panels in row 2, and a grip that only covered the rail
+              would be missing exactly when an approval is open. An overlay grid
+              item rather than a child of either — it is `pointer-events-none`
+              apart from the 12px grip, so the panels underneath keep every
+              click. Hidden below lg, where there is one column and nothing to
+              split.
+
+              LAST in the DOM although it paints down the middle: grid places it
+              explicitly, so source order is free to be tab order, and a splitter
+              is the last thing a keyboard user wants between them and the
+              conversation. */}
+          <div className="pointer-events-none relative hidden lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:block">
+            <button
+              type="button"
+              {...rail.separatorProps}
+              aria-label="Resize the detail column"
+              title="Drag to resize. Arrow keys adjust, Home resets."
+              className="group pointer-events-auto absolute inset-y-0 left-0 z-popper flex w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center"
+            >
+              {/* The same grip the canvas and the thought dock use, down to the
+                  rung it floats on. */}
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
+                <GripVertical className="size-3.5" />
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

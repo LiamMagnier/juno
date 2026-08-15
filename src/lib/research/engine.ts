@@ -446,6 +446,22 @@ const MAX_GOAL_CHARS = 8_000;
  */
 const READ_CONCURRENCY = 8;
 /**
+ * How many queries SEARCH issues at once.
+ *
+ * Half of READ's width, and not because a sweep is less urgent. One "query"
+ * here is not one request: `searchTheWeb` fans it out to every configured
+ * backend at once, so four queries in flight is already a couple of dozen
+ * outbound calls, and the keyless providers in that roster are the ones that
+ * start returning 429s first. Four is the width at which a fourteen-query plan
+ * costs four round trips instead of fourteen without turning the roster hostile.
+ *
+ * Exported because `tests/research-run.test.ts` pins the cancel and ceiling
+ * boundaries at exactly one wave. A test that hard-coded 4 would keep passing
+ * with the wrong meaning the day this number changes; one that imports it keeps
+ * asserting "one wave", which is the property.
+ */
+export const SEARCH_CONCURRENCY = 4;
+/**
  * Outbound links one READ stage will follow.
  *
  * The hop is deliberately ONE deep and small. Following links transitively is
@@ -1002,27 +1018,29 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let providersAnnounced = plannedIssued.size > 0;
 
     /*
-     * SEARCH stays one query at a time, and that is a decision rather than an
-     * oversight — READ, next door, runs its fetches in waves.
+     * SEARCH dispatches in waves, the same shape READ uses, and the two
+     * properties that used to justify keeping it serial are why the wave is
+     * sized the way it is rather than partitioned up front.
      *
-     * Two properties depend on it, both of them the reason the loop reads the
-     * run row between iterations. A cancel pressed while a query is in flight
-     * has to stop the sweep rather than let the queries already dispatched run
-     * to completion and bill; and the ceiling is checked against an ESTIMATE
-     * before each query, so the run stops at the first query it cannot project
-     * paying for rather than one wave later. Neither survives a batch: the
-     * moment four `deps.search` calls are handed to Promise.all, four queries
-     * are paid for whatever the fifth check would have said.
+     * `waves()` is deliberately NOT used here. It cuts a fixed partition, so a
+     * ceiling that can only afford one query of a four-wide slice would drop
+     * the other three on the floor and stop — which is how a 17k budget that
+     * paid for two queries serially came back paying for one. The cursor below
+     * re-asks `affordableCount` from the LIVE spend on every pass, so the wave
+     * is exactly as wide as the projection can cover and the queries it could
+     * not take are reconsidered against the money the last wave actually cost.
+     * That is what keeps "the ceiling stops the sweep midway" true query for
+     * query, not merely wave for wave.
      *
-     * The cost of keeping it serial is bounded, which is why this is the loop
-     * that gives way: a query fans out to seven backends concurrently
-     * underneath, so a sweep is dozens of requests wide already, and there are
-     * tens of queries against the hundreds of page fetches READ has to make.
+     * Cancellation moves from a per-query boundary to a per-wave one, and that
+     * is the honest cost of parallelism: four calls handed to Promise.all are
+     * four calls paid for whatever the next check would have said. What still
+     * holds — and is what the user is actually owed — is that a cancel stops
+     * the run before it pays for the NEXT wave, because the state re-read at
+     * the top of the loop happens before anything is dispatched.
      */
-    for (const query of pending) {
-      if (!(await affordable(current, SEARCH_ESTIMATE_MICRO_USD))) {
-        return stopForBudget(current, SEARCH_ESTIMATE_MICRO_USD);
-      }
+    let cursor = 0;
+    while (cursor < pending.length) {
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "searching") return { kind: "raced" };
       current = fresh;
@@ -1031,56 +1049,84 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       // driven — the same queries, billed twice.
       await heartbeat?.();
 
-      const found = await deps.search({ userId: run.userId, query, signal });
-      await bill(current, found.costMicroUsd, "search");
-      await append(run.id, run.userId, [
-        {
-          kind: "query_issued",
-          payload: {
-            query,
-            results: found.hits.length,
-            ...(found.engines?.length ? { engines: found.engines } : {}),
-            ...(!providersAnnounced && found.providers ? { providers: found.providers } : {}),
+      // One budget decision for the whole wave, taken BEFORE anything goes out.
+      // Checking per query and then firing four in parallel is not a ceiling:
+      // requests already in flight cannot be recalled.
+      const allowed = await affordableCount(
+        current,
+        SEARCH_ESTIMATE_MICRO_USD,
+        Math.min(SEARCH_CONCURRENCY, pending.length - cursor)
+      );
+      if (allowed === 0) return stopForBudget(current, SEARCH_ESTIMATE_MICRO_USD);
+      const wave = pending.slice(cursor, cursor + allowed);
+      cursor += allowed;
+
+      const found = await Promise.all(
+        wave.map(async (query) => ({
+          query,
+          result: await deps.search({ userId: run.userId, query, signal }),
+        }))
+      );
+
+      // Persisting is sequential on purpose — the same reason READ gives. The
+      // parallel part is the network; the ledger, the event seq and the plan
+      // row are per-run serial resources, and interleaving writes to them buys
+      // nothing and races.
+      for (const { query, result } of found) {
+        await bill(current, result.costMicroUsd, "search");
+        await append(run.id, run.userId, [
+          {
+            kind: "query_issued",
+            payload: {
+              query,
+              results: result.hits.length,
+              ...(result.engines?.length ? { engines: result.engines } : {}),
+              ...(!providersAnnounced && result.providers ? { providers: result.providers } : {}),
+            },
           },
-        },
-      ]);
-      providersAnnounced = true;
-      for (const hit of found.hits.slice(0, MAX_SOURCES)) {
-        // Search backends that return the page body in the same call (Tavily's
-        // `include_raw_content`) have already been paid for it. Storing the
-        // snapshot here is what stops READ fetching the identical page a second
-        // time and billing the run twice for one document.
-        const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
-        const score = scoreSource({
-          url: hit.url,
-          text: body ?? hit.snippet,
-          publishedAt: hit.publishedAt,
-        });
-        const sourceType = sourceTypeOf({ url: hit.url, text: body ?? hit.snippet, authority: score.authority });
-        const stored = await store.upsertSource({
-          runId: run.id,
-          userId: run.userId,
-          url: hit.url,
-          title: hit.title,
-          publishedAt: hit.publishedAt,
-          ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
-          ...score,
-          sourceType,
-        });
-        if (stored.created) {
-          await append(run.id, run.userId, [
-            { kind: "source_found", payload: { url: hit.url, title: hit.title, query } },
-          ]);
+        ]);
+        providersAnnounced = true;
+        for (const hit of result.hits.slice(0, MAX_SOURCES)) {
+          // Search backends that return the page body in the same call (Tavily's
+          // `include_raw_content`) have already been paid for it. Storing the
+          // snapshot here is what stops READ fetching the identical page a second
+          // time and billing the run twice for one document.
+          const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
+          const score = scoreSource({
+            url: hit.url,
+            text: body ?? hit.snippet,
+            publishedAt: hit.publishedAt,
+          });
+          const sourceType = sourceTypeOf({ url: hit.url, text: body ?? hit.snippet, authority: score.authority });
+          const stored = await store.upsertSource({
+            runId: run.id,
+            userId: run.userId,
+            url: hit.url,
+            title: hit.title,
+            publishedAt: hit.publishedAt,
+            ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
+            ...score,
+            sourceType,
+          });
+          if (stored.created) {
+            await append(run.id, run.userId, [
+              { kind: "source_found", payload: { url: hit.url, title: hit.title, query } },
+            ]);
+          }
         }
+        issued.add(query);
+        // Per query rather than once per wave: a worker killed between two
+        // members of a wave has already been billed for the ones behind it, and
+        // a resumed run that re-issued them would pay the vendor twice for the
+        // same results.
+        const latest = (await store.loadRun(current.id, current.userId)) ?? current;
+        const latestPlan = parsePlan(latest.plan);
+        await store.savePlan({
+          runId: current.id,
+          userId: current.userId,
+          plan: { ...latestPlan, issuedQueries: [...issued] },
+        });
       }
-      issued.add(query);
-      const latest = (await store.loadRun(current.id, current.userId)) ?? current;
-      const latestPlan = parsePlan(latest.plan);
-      await store.savePlan({
-        runId: current.id,
-        userId: current.userId,
-        plan: { ...latestPlan, issuedQueries: [...issued] },
-      });
     }
     const moved = await advance(current, "browsing");
     return moved ? { kind: "advanced", state: "browsing" } : { kind: "raced" };

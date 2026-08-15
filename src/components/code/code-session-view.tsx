@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { MessageList } from "@/components/chat/message-list";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { CodeSessionBanner } from "@/components/code/code-session-banner";
@@ -21,7 +22,13 @@ import { useCodeSession, isLiveId } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
-import type { ClientAttachment, ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
+import type {
+  ClientArtifact,
+  ClientAttachment,
+  ClientConversation,
+  ClientMessage,
+  GenerationStatus,
+} from "@/types/chat";
 
 /*
  * The chat surface for a kind:"code" conversation. Same rendering language as
@@ -52,9 +59,20 @@ import type { ClientAttachment, ClientConversation, ClientMessage, GenerationSta
 interface CodeSessionViewProps {
   conversation: ClientConversation;
   initialMessages: ClientMessage[];
+  /**
+   * The conversation's artifacts, loaded by the page alongside the messages.
+   *
+   * Passed down rather than fetched here, and that is the whole point: the page
+   * already reads them in `getConversationThread`, so a fetch on this side would
+   * be a SECOND data path for one set of rows, with its own loading state and
+   * its own opportunity to disagree with the first. This surface used to hand
+   * `MessageList` a literal `[]` and a no-op opener, which meant an artifact
+   * card in a code transcript rendered and then did nothing when pressed.
+   */
+  initialArtifacts: ClientArtifact[];
 }
 
-export function CodeSessionView({ conversation, initialMessages }: CodeSessionViewProps) {
+export function CodeSessionView({ conversation, initialMessages, initialArtifacts }: CodeSessionViewProps) {
   const { setActiveConversationId, updateConversation, conversations, features } = useApp();
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
@@ -433,9 +451,70 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
    */
   const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
   const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
+
+  /*
+   * THE CANVAS, WHICH THIS SURFACE HAD STUBBED OUT.
+   *
+   * `artifacts={[]}` plus `onOpenArtifact={() => {}}` meant MessageList could
+   * never match an artifact card to its content and its press did nothing. The
+   * rows exist — the page loads them with the thread — so the stub was the only
+   * thing between an artifact in a code session and the workspace that opens it.
+   *
+   * State, not a derived id: `openArtifact` is DERIVED from `artifacts` below,
+   * so anything that removes an artifact drops the canvas for free.
+   */
+  const [artifacts, setArtifacts] = React.useState<ClientArtifact[]>(initialArtifacts);
+  const [openArtifactId, setOpenArtifactId] = React.useState<string | null>(null);
+  const [artifactFullscreen, setArtifactFullscreen] = React.useState(false);
+  React.useEffect(() => {
+    setArtifacts(initialArtifacts);
+    setOpenArtifactId(null);
+    setArtifactFullscreen(false);
+    // Session identity, exactly as the transcript reset above: `initialArtifacts`
+    // is a new array on every parent render, and depending on it would slam the
+    // canvas shut mid-read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id]);
+
+  const openArtifact = React.useMemo(
+    () => artifacts.find((a) => a.id === openArtifactId) ?? null,
+    [artifacts, openArtifactId],
+  );
+  const closeArtifact = React.useCallback(() => {
+    setOpenArtifactId(null);
+    setArtifactFullscreen(false);
+  }, []);
+  const openArtifactByIdentifier = React.useCallback(
+    (identifier: string, opts?: { fullscreen?: boolean }) => {
+      const found = artifacts.find((a) => a.identifier === identifier);
+      if (!found) return;
+      setOpenArtifactId(found.id);
+      setArtifactFullscreen(!!opts?.fullscreen);
+      // COEXISTENCE RULE, the same one chat-view states: the canvas and the
+      // thought dock are both docked right-hand columns, and transcript +
+      // canvas + dock does not fit. The newest request wins.
+      setThoughtOpenId(null);
+    },
+    [artifacts],
+  );
+  const handleArtifactUpdated = React.useCallback((updated: ClientArtifact) => {
+    setArtifacts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    // Re-point, never re-open: a save can land from a fetch closure that
+    // outlives the panel, and forcing the canvas back open would put both
+    // docked columns in flow at once.
+    setOpenArtifactId((prev) => (prev ? updated.id : prev));
+  }, []);
+
+  const openThoughtPanel = React.useCallback(
+    (id: string | null) => {
+      setThoughtOpenId(id);
+      if (id) closeArtifact();
+    },
+    [closeArtifact],
+  );
   const thoughtPanel = React.useMemo(
-    () => ({ openId: thoughtOpenId, setOpenId: setThoughtOpenId, container: thoughtContainer }),
-    [thoughtOpenId, thoughtContainer],
+    () => ({ openId: thoughtOpenId, setOpenId: openThoughtPanel, container: thoughtContainer }),
+    [thoughtOpenId, openThoughtPanel, thoughtContainer],
   );
   // Self-heal, for the reason chat-view reconciles too: the dock is raw state
   // naming a message, and this surface swaps ids under it routinely — the live
@@ -457,7 +536,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [thoughtOpenId]);
 
-  const fileChanges = useSessionFileChanges(session.messages);
+  const fileChanges = useSessionFileChanges(session.messages, session.fileChanges);
   const currentActivity = useCurrentActivity(
     session.messages,
     session.status === "running" || session.status === "awaiting_approval",
@@ -595,15 +674,20 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           activity={currentActivity}
         />
 
-        {/* Transcript column ⇄ thought dock. Below lg the dock replaces the
-            transcript entirely, the precedent chat-view sets for both of its
+        {/* Transcript column ⇄ thought dock ⇄ canvas. Below lg a dock replaces
+            the transcript entirely, the precedent chat-view sets for both of its
             docked columns: a split there leaves the transcript narrower than a
-            phone. */}
+            phone. A fullscreened canvas takes the row at every width, which is
+            what "fullscreen" means. One expression rather than stacked
+            conditional classes: `hidden lg:flex` and `lg:hidden` land in the
+            same cascade layer, so which won would depend on stylesheet order. */}
         <div className="flex min-h-0 flex-1">
           <div
             className={cn(
               "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
-              thoughtOpenId && "hidden lg:flex",
+              openArtifact && artifactFullscreen
+                ? "hidden"
+                : (thoughtOpenId || openArtifact) && "hidden lg:flex",
             )}
           >
             {hasMessages ? (
@@ -612,8 +696,8 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                   messages={session.messages}
                   busy={session.isBusy}
                   status={listStatus}
-                  artifacts={[]}
-                  onOpenArtifact={() => {}}
+                  artifacts={artifacts}
+                  onOpenArtifact={openArtifactByIdentifier}
                   onFeedback={session.setFeedback}
                   // Live bubbles are client-side until the run's row comes back.
                   canFeedback={(m) => !isLiveId(m.id)}
@@ -679,6 +763,36 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
               // z-popper.
               className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 lg:w-[30rem] lg:min-w-0 lg:border-l"
             />
+          )}
+
+          {/* The canvas, on the same terms as the dock beside it: a real column,
+              no z-index (an in-flow flex sibling already paints after the
+              transcript, and naming a layer here would put it over the
+              composer's portalled dropdowns), and no drag-to-resize — the width
+              that matters on this surface is the one chat-view uses undragged.
+
+              No `onQuote`: quoting a selection back into the prompt needs the
+              composer's quote chip, which this composer does not have, and
+              CanvasPanel hides every selection affordance when the prop is
+              absent rather than offering a control that would go nowhere. */}
+          {openArtifact && (
+            <div
+              className={cn(
+                "relative h-full w-full min-w-0 bg-background duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
+                artifactFullscreen ? "flex-1" : "shrink-0 border-border lg:w-[34rem] lg:border-l",
+              )}
+            >
+              <CanvasPanel
+                artifact={openArtifact}
+                onClose={closeArtifact}
+                onArtifactUpdated={handleArtifactUpdated}
+                fullscreen={artifactFullscreen}
+                onToggleFullscreen={() => setArtifactFullscreen((v) => !v)}
+                // Code sessions are ordinary persisted conversations — there is
+                // no incognito variant here, so there is always a row to share.
+                shareable
+              />
+            </div>
           )}
         </div>
       </div>

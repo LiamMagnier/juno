@@ -20,7 +20,7 @@
  */
 
 import { layoutPage, layoutSubtree, lineHeightPx, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
-import { renderNodeSvg, renderPageSvg, escapeXml } from "@/lib/design/render";
+import { cornerValues, renderNodeSvg, renderPageSvg, escapeXml } from "@/lib/design/render";
 import { applyBoundVariables, exportTokens, rgbaToCss, rgbaToHex, type TokenExport } from "@/lib/design/variables";
 import { effectLabel } from "@/lib/design/operations";
 import {
@@ -195,6 +195,17 @@ export function exportPdf(doc: DesignDocument, pageId: PageId): ExportResult & {
         // the substitution is recorded rather than hidden.
         if (resolved.type === "image" || resolved.type === "path") {
           unsupported.push(`${resolved.name}: ${resolved.type} exported as its bounding fill`);
+        }
+        // `re` is the only rectangle PDF has and it has square corners. A
+        // rounded one is four Bézier segments this exporter could emit, but
+        // `roundedRectPathData` already knows how to walk them and lives in the
+        // renderer in SVG's own command vocabulary — reimplementing the walk in
+        // PDF operators here would be the second geometry this module exists to
+        // avoid. Every other corner-radius consumer in the product honours the
+        // per-corner tuple, so a PDF quietly squaring it off is the one place a
+        // designer could not tell what had happened.
+        if (cornerValues(resolved.cornerRadius).some((r) => r > 0)) {
+          unsupported.push(`${resolved.name}: corner radius is not drawn in PDF; the box is square`);
         }
         if (solid) {
           ops.push(`${pdfColor(solid)} rg`);
@@ -551,6 +562,17 @@ function cssFor(
 
   const radius = typeof resolved.cornerRadius === "number" ? resolved.cornerRadius : resolved.cornerRadius.join("px ");
   if (radius) style.borderRadius = typeof radius === "number" ? `${radius}px` : `${radius}px`;
+  // `border-radius` is an ellipse quadrant and nothing else. CSS grew a
+  // `corner-shape: superellipse()` that says exactly this, but it lands in one
+  // engine and the generated prototype is a file people open in whatever they
+  // have — emitting it would make the same HTML draw two different shapes and
+  // give nobody a way to know which one they were looking at. So the browser
+  // gets the circular corner it can actually draw, and the caveat is named.
+  if (radius && resolved.cornerSmoothing) {
+    unsupported.push(
+      `${resolved.name}: corner smoothing ${Math.round(resolved.cornerSmoothing * 100)}% has no portable CSS form — border-radius draws a circular corner`
+    );
+  }
 
   const stroke = resolved.strokes[0];
   if (stroke?.paint.type === "solid") style.border = `${stroke.weight}px solid ${rgbaToCss(stroke.paint.color)}`;
@@ -1327,6 +1349,9 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
   const mappings: CodeSymbolMapping[] = [];
   const unsupported: string[] = [];
+  /** Layers whose document corner is a circular arc, collected so the corner
+   *  style substitution can be stated once at the end instead of once per card. */
+  const circularCorners = new Set<string>();
   const taken = new Set<string>(["View", "Text", "Image", "Color"]);
   const lines: string[] = [];
   const file = `${(doc.name.replace(/[^A-Za-z0-9]+/g, "") || "Design")}.swift`;
@@ -1444,8 +1469,51 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
     if (resolved.type === "text") {
       out.push(`${indent}    .font(.system(size: ${round(resolved.typography.fontSize)}, weight: ${swiftWeight(resolved.typography.fontWeight)}))`);
     }
-    const radius = typeof resolved.cornerRadius === "number" ? resolved.cornerRadius : Math.max(...resolved.cornerRadius);
-    if (radius > 0) out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous))`);
+    /**
+     * The corner, as the one shape SwiftUI has for it.
+     *
+     * `RoundedRectangle` takes a single radius, so a per-corner tuple has to
+     * collapse. `Math.max` keeps the largest corner rather than averaging,
+     * because the radius is also what the clip and every shadow below are cast
+     * from and a too-small silhouette clips artwork off — but a collapse is a
+     * loss either way, so it is named instead of being taken silently, which is
+     * what this line did for as long as the tuple has existed.
+     */
+    const corners = cornerValues(resolved.cornerRadius);
+    const radius = Math.max(...corners);
+    if (radius > 0 && corners.some((value) => value !== radius)) {
+      unsupported.push(
+        `${resolved.name}: SwiftUI's RoundedRectangle has one radius; corners ${corners.map((value) => round(value)).join("/")} were emitted as ${round(radius)}`
+      );
+    }
+    /**
+     * `.continuous` *is* the squircle. It is one fixed curve with no parameter —
+     * roughly what this document model calls a smoothing of
+     * `APPLE_CONTINUOUS_SMOOTHING` — and `.circular` is the arc. Two positions,
+     * no dial, so a smoothing anywhere between them lands on the nearer one.
+     *
+     * It was emitted unconditionally, which meant an unsmoothed design — every
+     * design, until the field existed — was told its circular corners were
+     * squircles by an export that had no way to know otherwise. Now the note
+     * below states the substitution: `.continuous` stays the emitted style,
+     * because it is what hand-written SwiftUI uses and what the generated file's
+     * consumers already read, but a design whose corners are genuinely circular
+     * is no longer allowed to find that out by eye.
+     *
+     * Counted rather than filed per layer: a card-heavy screen is thirty rounded
+     * layers and thirty copies of one sentence is a caveat list nobody finishes
+     * reading, which is the same as not having filed it.
+     */
+    const smoothing = resolved.cornerSmoothing ?? 0;
+    if (radius > 0) {
+      if (smoothing < APPLE_CONTINUOUS_SMOOTHING / 2) circularCorners.add(resolved.name);
+      else if (Math.abs(smoothing - APPLE_CONTINUOUS_SMOOTHING) > 0.15) {
+        unsupported.push(
+          `${resolved.name}: corner smoothing ${Math.round(smoothing * 100)}% exported as .continuous — SwiftUI's corner styles are not parameterised (its curve is about ${Math.round(APPLE_CONTINUOUS_SMOOTHING * 100)}%)`
+        );
+      }
+      out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous))`);
+    }
 
     // Effects come after the clip so a shadow is cast by the rounded silhouette
     // rather than by the square frame behind it — and they are emitted in list
@@ -1559,9 +1627,26 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   if (Object.values(doc.nodes).some((n) => "layout" in n && n.layout)) {
     unsupported.push("Auto layout is emitted as absolute offsets; the handoff bundle records the original stacks.");
   }
+  if (circularCorners.size > 0) {
+    unsupported.push(
+      `${circularCorners.size} layer(s) draw a circular corner on the canvas and are emitted with style: .continuous, Apple's squircle — change those to style: .circular to match the artboard exactly (${[...circularCorners].slice(0, 6).join(", ")}${circularCorners.size > 6 ? ", …" : ""}).`
+    );
+  }
 
   return { format: "swiftui", fileName: file, mimeType: "text/plain", content: lines.join("\n"), mappings, unsupported };
 }
+
+/**
+ * Where SwiftUI's `.continuous` corner sits on the document's smoothing scale.
+ *
+ * `.continuous` is a single fixed curve with no knob, and it is the same corner
+ * an iOS app icon is cut with — which is the corner a smoothing of about 0.6
+ * draws here, because both scales stretch the corner's run along the edge by
+ * `1 + s` and this one solves for the exponent that keeps the visual radius put.
+ * Used for two different jobs and so named once: choosing between the two styles
+ * SwiftUI has, and deciding whether the choice is close enough to go unremarked.
+ */
+const APPLE_CONTINUOUS_SMOOTHING = 0.6;
 
 /**
  * The material closest to a blur radius.

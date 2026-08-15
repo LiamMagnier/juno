@@ -4,7 +4,13 @@ import * as React from "react";
 import { ChevronDown, CircleDashed, CircleSlash } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
-import { PARTIAL_MIN, SUPPORTED_MIN, extractQuotes, normalizeText } from "@/lib/research/claim-analysis";
+import {
+  PARTIAL_MIN,
+  SUPPORTED_MIN,
+  extractQuotes,
+  normalizeText,
+  type AuditReason,
+} from "@/lib/research/claim-analysis";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
@@ -48,6 +54,20 @@ export interface CitationAuditSource {
    */
   sourceType: string | null;
   duplicateOfIndex: number | null;
+  /**
+   * True when every verdict against this source was reached against a search
+   * PREVIEW — two sentences of lede — rather than the page.
+   *
+   * It changes what a verdict means, which is the only reason it is worth
+   * carrying: a figure missing from a snippet is not evidence the page lacks
+   * it, and it is what demoted such a claim to "unverified" in the first place.
+   * The panel used to show that bare badge with nothing to explain it.
+   *
+   * NULL IS NOT FALSE. Null means the audit predates the flag being recorded,
+   * so nothing is drawn; false means Juno held the document. Collapsing null
+   * into false would print "the page was read" about an audit that has no idea.
+   */
+  truncated: boolean | null;
 }
 
 export interface CitationAuditLink {
@@ -56,7 +76,26 @@ export interface CitationAuditLink {
   strength: number | null;
   passage: string;
   locator: string | null;
-  reasons: string[];
+  /**
+   * Every objection the validator raised, each with the code that names it and
+   * the support ceiling it imposed.
+   *
+   * This replaces the `reasons: string[]` this interface used to mirror, which
+   * is still on the wire for callers that have not moved. A bare string list
+   * made a fabricated quotation (`quote_absent`, ceiling 0.2 — the citation
+   * does not say what the report claims it says) and a thin overlap warning
+   * (`thin_overlap`, 0.5) two indistinguishable lines of an undifferentiated
+   * <ul>, in a panel whose entire job is telling a reader which citations they
+   * cannot lean on.
+   *
+   * Severity is `ceiling` and never `code`: the ceiling is stamped on by the
+   * `cap()` that enforced it, so it cannot disagree with the validator. A
+   * severity table keyed by code on this side would be `CEILING` in
+   * claim-analysis.ts copied into a second place, free to drift the first time
+   * one of those numbers is tuned — and the drift would be silent, because both
+   * copies would still render.
+   */
+  codedReasons: AuditReason[];
 }
 
 export interface CitationAuditClaim {
@@ -215,7 +254,84 @@ export const AUDIT_COPY = {
   belowBars: "below the 40% floor — the passage is barely about this claim",
   savedCopy: "of the copy Juno saved",
   characters: "characters",
+  capsSupportAt: "caps support at",
+  /* Said aloud beside each finding's glyph, so severity is never icon-only. */
+  findingFatal: "Serious",
+  findingWarning: "Qualified",
+  findingNote: "Noted",
+  previewOnly: "Judged against a search preview, not the page",
+  previewOnlyDetail:
+    "Juno never held the full text of this source, so a figure or quotation missing from the passage below is not evidence the page lacks it.",
 } as const;
+
+/**
+ * How gravely one finding damages the citation, from the ceiling it imposed.
+ *
+ * The two thresholds are the SAME exported constants `strengthNote` reads a few
+ * lines down, which is what keeps the glyph and the sentence under it telling
+ * one story: a finding is fatal exactly when it alone drops the citation under
+ * the floor the panel already describes as "barely about this claim", and
+ * qualified exactly when it alone stops the citation clearing the bar the panel
+ * already describes as good enough to cite unhedged. Inventing a third scale
+ * here would put a red circle next to the words "at or above the 70% bar".
+ *
+ * The glyphs come from the registry and mean what it says they mean: a TRIANGLE
+ * is a warning, a CIRCLE is an error (src/lib/app-icons.ts).
+ */
+function findingSeverity(ceiling: number): {
+  Icon: (typeof StatusIcons)[keyof typeof StatusIcons];
+  tone: string;
+  word: string;
+} {
+  if (ceiling < PARTIAL_MIN) {
+    return { Icon: StatusIcons.error, tone: "text-destructive-ink", word: AUDIT_COPY.findingFatal };
+  }
+  if (ceiling < SUPPORTED_MIN) {
+    return { Icon: StatusIcons.warning, tone: "text-warning-foreground", word: AUDIT_COPY.findingWarning };
+  }
+  return { Icon: StatusIcons.info, tone: "text-muted-foreground", word: AUDIT_COPY.findingNote };
+}
+
+/**
+ * What the validator objected to, worst first.
+ *
+ * Sorted on `ceiling` ascending rather than left in emission order: the reasons
+ * come out of `auditEvidence` in the order its checks happen to run, so a
+ * fabricated quotation could sit third under two cosmetic notes. A reader who
+ * has opened a citation inspector is looking for the reason not to trust the
+ * sentence, and burying it is the same failure the claim list already sorts
+ * worst-first to avoid.
+ */
+export function AuditFindings({ reasons }: { reasons: AuditReason[] }) {
+  const sorted = React.useMemo(() => [...reasons].sort((a, b) => a.ceiling - b.ceiling), [reasons]);
+  if (sorted.length === 0) return null;
+  return (
+    <ul className="mt-2 space-y-1">
+      {sorted.map((reason, i) => {
+        const severity = findingSeverity(reason.ceiling);
+        return (
+          // `code` is not unique within a link — two figures can each go
+          // missing — so the index stays part of the key.
+          <li key={`${reason.code}-${i}`} className="flex items-start gap-1.5">
+            <severity.Icon aria-hidden="true" className={cn("mt-0.5 size-3 shrink-0", severity.tone)} />
+            <span className="min-w-0 flex-1 text-caption leading-snug text-muted-foreground">
+              <span className="sr-only">{severity.word}: </span>
+              {reason.detail}{" "}
+              {/* The number the finding actually enforced. "The quoted words
+                  are not in the passage" and "the passage attributes this to
+                  someone" are both objections; only one of them means the
+                  citation cannot be leaned on at all, and the ceiling is the
+                  validator's own statement of which. */}
+              <span className={cn("whitespace-nowrap font-mono tabular-nums", severity.tone)}>
+                {AUDIT_COPY.capsSupportAt} {Math.round(reason.ceiling * 100)}%
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 /**
  * What `ResearchSource.sourceType` means to a reader.
@@ -416,6 +532,25 @@ function SourceInspector({
         </button>
       </div>
 
+      {/* `=== true` on purpose, not a truthiness test: `truncated` is
+          boolean|null and null means the audit predates the flag. An audit that
+          does not know whether the page was read must say nothing, because the
+          alternative — silence meaning "read" — is the confident version of an
+          answer nobody has. See CitationAuditSource.truncated.
+
+          It sits ABOVE the passage rather than with the score meters below it,
+          because it is a statement about what the passage IS: the reader has to
+          know they are looking at a lede before they judge what is missing from
+          it, not after. */}
+      {source?.truncated === true && (
+        <p className="mt-2 flex items-start gap-1.5 text-caption leading-snug text-warning-foreground">
+          <StatusIcons.warning aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {AUDIT_COPY.previewOnly}. {AUDIT_COPY.previewOnlyDetail}
+          </span>
+        </p>
+      )}
+
       <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground/85">
         {quoteRange ? (
           <>
@@ -473,15 +608,7 @@ function SourceInspector({
         </p>
       )}
 
-      {link.reasons.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {link.reasons.map((reason, i) => (
-            <li key={i} className="text-caption leading-snug text-muted-foreground">
-              {reason}
-            </li>
-          ))}
-        </ul>
-      )}
+      <AuditFindings reasons={link.codedReasons} />
     </div>
   );
 }

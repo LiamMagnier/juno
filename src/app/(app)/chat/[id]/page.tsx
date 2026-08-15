@@ -32,7 +32,16 @@ export default async function ConversationPage({
   const codeSessionHasTarget =
     !!thread.conversation.codeWorkspacePath || !!thread.conversation.codeWorkspaceKey;
   if (thread.conversation.kind === "code" && codeSessionHasTarget) {
-    return <CodeSessionView conversation={thread.conversation} initialMessages={thread.messages} />;
+    // `thread.artifacts` is loaded for every conversation this route renders,
+    // code or not — handing it to both surfaces is what stops the code one
+    // needing a fetch of its own for rows the page already has.
+    return (
+      <CodeSessionView
+        conversation={thread.conversation}
+        initialMessages={thread.messages}
+        initialArtifacts={thread.artifacts}
+      />
+    );
   }
 
   return (

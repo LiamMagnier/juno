@@ -571,6 +571,26 @@ export interface ResearchRunView {
   live: boolean;
   createdAt: string;
   finishedAt: string | null;
+  /**
+   * The corpus, with the weights it was gathered under.
+   *
+   * `listSources` has always selected the four score dimensions, the composite
+   * and the classification, and this view dropped every one of them — so the
+   * panel could list a run's sources but had nothing to draw a weighted graph
+   * with: no way to size a node by how much the run trusted it, no way to
+   * colour a regulator's own filing differently from a forum post, and no way
+   * to date either — `publishedAt` went the same way, so not even the freshness
+   * the run had already computed could be explained. They are carried through
+   * as stored, with no recomputation on this path.
+   *
+   * NULL IS NOT ZERO in any of these. A source gathered before the scoring
+   * columns landed, or one a legacy path wrote, has no score — which is a
+   * different fact from "scored, and scored badly", and a renderer that folds
+   * the two together would draw a confident nothing. Anything consuming these
+   * has to treat null as unknown; the scores are recomputed at read time in the
+   * citation inspector (`loadCitationAuditForMessage`) precisely because that
+   * surface needs a number and this one must not invent one.
+   */
   sources: Array<{
     id: string;
     url: string;
@@ -578,6 +598,17 @@ export interface ResearchRunView {
     read: boolean;
     contentHash: string | null;
     fetchedAt: string;
+    /** As claimed by the source; distinct from the date of the event described. */
+    publishedAt: string | null;
+    /** 0..1, as scored when the source was gathered. Null when never scored. */
+    authority: number | null;
+    freshness: number | null;
+    directness: number | null;
+    independence: number | null;
+    /** The weighted roll-up of the four above — the size of a node in the graph. */
+    composite: number | null;
+    /** official | primary | reputable_secondary | general | user_generated | unknown */
+    sourceType: string | null;
   }>;
 }
 
@@ -587,15 +618,33 @@ export interface ResearchRunView {
  * One query rather than two endpoints because the state and the events have to
  * agree: a client that reads events at t and state at t+1 renders a finished
  * run that is still showing a live stage, which is the exact confusion the
- * stage list exists to remove. `lastSeq` is what the caller sends back as
- * `after` next time.
+ * stage list exists to remove.
+ *
+ * `lastSeq` is what the caller sends back as `after` next time, and it is the
+ * last row OF THIS PAGE. It used to be max(seq) over the whole run, which is a
+ * cursor that skips: the page is capped (200 at the route, 500 here), so any
+ * run that emitted more than one page's worth handed back a cursor past events
+ * the caller had never been given, and 201..max were lost silently — no gap, no
+ * error, just a timeline missing its middle. `readEvents` selects `seq > after`
+ * ascending, so the last row that actually arrived is the only value that
+ * cannot lose anything.
+ *
+ * `maxSeq` is where the run has really got to, and exists so the caller can
+ * tell "caught up" from "one page behind": `lastSeq < maxSeq` means fetch the
+ * next page now rather than waiting out a poll interval. Splitting the two is
+ * the whole fix — one number cannot be both a cursor and a total.
  */
 export async function readResearchRun(input: {
   runId: string;
   userId: string;
   after?: number;
   limit?: number;
-}): Promise<{ run: ResearchRunView; events: ResearchEventDTO[]; lastSeq: number } | null> {
+}): Promise<{
+  run: ResearchRunView;
+  events: ResearchEventDTO[];
+  lastSeq: number;
+  maxSeq: number;
+} | null> {
   const store = createPrismaResearchStore();
   const run = await store.loadRun(input.runId, input.userId);
   if (!run) return null;
@@ -668,6 +717,13 @@ export async function readResearchRun(input: {
         read: !!source.snapshot,
         contentHash: source.contentHash,
         fetchedAt: source.fetchedAt.toISOString(),
+        publishedAt: source.publishedAt?.toISOString() ?? null,
+        authority: source.authority ?? null,
+        freshness: source.freshness ?? null,
+        directness: source.directness ?? null,
+        independence: source.independence ?? null,
+        composite: source.composite ?? null,
+        sourceType: source.sourceType ?? null,
       })),
     },
     events: events.map((event) => ({
@@ -680,7 +736,10 @@ export async function readResearchRun(input: {
           : {},
       createdAt: event.createdAt.toISOString(),
     })),
-    lastSeq: latestEvent._max.seq ?? Math.max(0, input.after ?? 0),
+    // An empty page returns the caller's own cursor rather than 0: a poll that
+    // found nothing new must not rewind the client to the start of the run.
+    lastSeq: events.length > 0 ? events[events.length - 1].seq : Math.max(0, input.after ?? 0),
+    maxSeq: latestEvent._max.seq ?? 0,
   };
 }
 

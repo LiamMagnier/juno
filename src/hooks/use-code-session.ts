@@ -38,6 +38,33 @@ export interface CodeAgentState {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+/**
+ * One file the run touched, as the `file_change` event described it.
+ *
+ * This exists because the hook used to fold `file_change` straight into a
+ * display string — `edit src/foo.ts` / `+3 −1` — and keep nothing else, so the
+ * numbers had to be recovered by splitting the title back apart downstream and
+ * anything the payload carried BESIDES those four fields was dropped on the
+ * floor. `patch` is the field that made that unaffordable: a unified diff
+ * cannot survive a round trip through a two-word title.
+ */
+export interface CodeFileChangeEvent {
+  path: string;
+  changeKind: string;
+  added: number;
+  removed: number;
+  /**
+   * Unified diff for this one file, or null when the producer sent none.
+   *
+   * NULL IS THE NORMAL CASE AND MUST STAY CHEAP. Every device host in the field
+   * sends path/changeKind/added/removed and nothing else; only the cloud runner
+   * sends hunks today. A reader that treats null as "empty diff" would draw an
+   * empty pane over a change that had plenty of content — so null means "no
+   * diff was transported", never "nothing changed".
+   */
+  patch: string | null;
+}
+
 export interface CodePendingApproval {
   requestId: string;
   summary: string;
@@ -161,6 +188,21 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   const [responding, setResponding] = React.useState(false);
   /** Delegated child agents of the live task, newest state per id. */
   const [agents, setAgents] = React.useState<CodeAgentState[]>([]);
+  /*
+   * Structured file changes for this SESSION, newest state per path.
+   *
+   * Not reset between prompts, unlike `agents`: the changed-files card
+   * summarises what the session has done to the working tree, and a second
+   * instruction does not un-write the first one's files. Reset only when the
+   * conversation identity changes, below.
+   *
+   * Kept here rather than folded into the live bubble's activity because the
+   * bubble is REPLACED by its persisted row the moment a run settles, and the
+   * persisted row cannot carry the patch (see `useSessionFileChanges`). Holding
+   * it in session state is what stops the diffs blinking out of existence at
+   * exactly the moment somebody wants to read them.
+   */
+  const [fileChanges, setFileChanges] = React.useState<CodeFileChangeEvent[]>([]);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const lastSeqRef = React.useRef(0);
@@ -182,6 +224,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setPendingApproval(null);
     setActiveTask(null);
     setAgents([]);
+    setFileChanges([]);
     lastSeqRef.current = 0;
     liveRef.current = null;
     // Session-identity reset, keyed only on conversationId — opts.initialMessages
@@ -248,12 +291,40 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             if (!path) break;
             const added = num(event.payload, "added") ?? 0;
             const removed = num(event.payload, "removed") ?? 0;
+            const changeKind = str(event.payload, "changeKind") ?? "edit";
             live.activity.push({
               id: `evt-${event.seq}`,
               kind: "write",
-              title: `${str(event.payload, "changeKind") ?? "edit"} ${path}`,
+              title: `${changeKind} ${path}`,
               detail: `+${added} −${removed}`,
               createdAt: event.createdAt,
+            });
+            /*
+             * TWO SPELLINGS FOR ONE FIELD, AND BOTH ARE LOAD-BEARING.
+             *
+             * `patch` is the name this payload documents; `diff` is the key the
+             * runner that is deployed RIGHT NOW actually writes
+             * (scripts/cloud-code-runner.mjs emits `{path, changeKind, added,
+             * removed, diff}` from `git diff --cached -- <file>`). Reading only
+             * `patch` would have shipped a diff viewer that never once fired,
+             * against the single producer in the tree that already sends hunks.
+             *
+             * Absent stays absent. A host that sends neither key lands here with
+             * null and keeps the summary row it has always had.
+             */
+            const patch = str(event.payload, "patch") ?? str(event.payload, "diff");
+            setFileChanges((prev) => {
+              const next = { path, changeKind, added, removed, patch: patch || null };
+              const index = prev.findIndex((change) => change.path === path);
+              if (index === -1) return [...prev, next];
+              const merged = [...prev];
+              // Last write per path wins on everything EXCEPT the patch, which
+              // is kept if the newer event has none: a run that writes a file
+              // twice, and whose second event lost its hunks (size cap, a
+              // failed `git diff`), must not silently lose the diff it already
+              // showed.
+              merged[index] = { ...next, patch: next.patch ?? prev[index].patch };
+              return merged;
             });
             break;
           }
@@ -602,6 +673,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     activeTask,
     pendingApproval,
     agents,
+    fileChanges,
     responding,
     isBusy: status !== "idle",
     send,

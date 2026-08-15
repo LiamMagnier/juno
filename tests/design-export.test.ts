@@ -12,6 +12,8 @@ import {
   pngRequest,
   symbolName,
 } from "../src/lib/design/export";
+import { collapseCornerRadius, superellipseExponent } from "../src/lib/design/render";
+import { variantAxes, variantRootFor } from "../src/lib/design/instances";
 import { layoutPage } from "../src/lib/design/layout";
 import { parseStoredDesignDocument } from "../src/lib/design/migrations";
 import { PAGE_ID, run, signInDocument, withTokens } from "./design-fixtures";
@@ -434,4 +436,210 @@ test("the bundle records everything the generators dropped", () => {
   const bundle = buildHandoffBundle(richDocument(), PAGE_ID, "2026-01-01T00:00:00.000Z");
   assert.ok(bundle.unsupported.length > 0, "a document with motion and layout has caveats worth stating");
   assert.ok(bundle.unsupported.every((u) => typeof u === "string" && u.length > 0));
+});
+
+// ---------------------------------------------------------------------------
+// Corners
+// ---------------------------------------------------------------------------
+
+/**
+ * `collapseCornerRadius` is what every corner write in the inspector goes
+ * through, so it decides two things no snapshot would catch: whether a document
+ * quietly grows from the scalar form to the four-element form the first time
+ * anyone touches a radius, and what a typed negative becomes.
+ */
+test("collapseCornerRadius keeps the narrowest shape that says the same thing", () => {
+  assert.equal(collapseCornerRadius([8, 8, 8, 8]), 8, "a uniform tuple is a scalar");
+  assert.equal(collapseCornerRadius([0, 0, 0, 0]), 0);
+  assert.deepEqual(collapseCornerRadius([8, 8, 0, 0]), [8, 8, 0, 0], "a genuinely per-corner radius stays a tuple");
+});
+
+test("collapseCornerRadius clamps a negative rather than rejecting it", () => {
+  // The schema's floor is 0, so an unclamped -4 would be refused by the
+  // transaction — a worse answer to "I typed -4" than the 0 the shape would
+  // have drawn anyway.
+  assert.equal(collapseCornerRadius([-4, -4, -4, -4]), 0);
+  assert.deepEqual(collapseCornerRadius([-4, 8, 8, 8]), [0, 8, 8, 8]);
+});
+
+/**
+ * The exponent is the whole claim corner smoothing makes: that sliding it
+ * changes how the curve meets the edge and *not* how round the corner looks. If
+ * this drifts, a designer who smooths a 12pt corner gets a corner that is no
+ * longer 12pt and no field on screen says so.
+ */
+test("corner smoothing holds the corner's closest approach to the vertex", () => {
+  for (const smoothing of [0, 0.25, 0.6, 1]) {
+    const n = superellipseExponent(smoothing);
+    const run = 1 * (1 + smoothing);
+    // The 45° point of the superellipse, as a distance from the vertex.
+    const offset = run * (1 - Math.pow(2, -1 / n));
+    assert.ok(
+      Math.abs(offset * Math.SQRT2 - (Math.SQRT2 - 1)) < 1e-9,
+      `smoothing ${smoothing} moved the corner to ${offset * Math.SQRT2}`
+    );
+  }
+  assert.ok(Math.abs(superellipseExponent(0) - 2) < 1e-9, "no smoothing is exactly the circle");
+});
+
+test("an unsmoothed document renders exactly the markup it always did", () => {
+  const plain = signInDocument();
+  const zeroed = run(plain, [{ op: "updateNode", nodeId: "card", patch: { cornerSmoothing: 0 } }]).document;
+  assert.equal(exportSvg(zeroed, PAGE_ID).content, exportSvg(plain, PAGE_ID).content);
+});
+
+test("smoothing replaces the rounded rect with a curve the browser cannot fake", () => {
+  const smoothed = run(signInDocument(), [{ op: "updateNode", nodeId: "card", patch: { cornerSmoothing: 1 } }]).document;
+  const svg = exportSvg(smoothed, PAGE_ID).content;
+  // The card was a `<rect rx="16">`; a squircle has no `rx` that can say it.
+  assert.doesNotMatch(svg, /rx="16"/);
+  assert.match(svg, /<path d="M\d/);
+
+  // CSS has no portable form for it, so the prototype says so rather than
+  // shipping a corner that is subtly rounder than the artboard.
+  const html = exportHtmlPrototype(smoothed, PAGE_ID);
+  assert.ok(html.unsupported.some((line) => /corner smoothing/.test(line) && /Card/.test(line)));
+});
+
+test("SwiftUI names the corner substitutions it makes instead of taking them silently", () => {
+  const doc = run(signInDocument(), [
+    { op: "updateNode", nodeId: "card", patch: { cornerRadius: [16, 16, 0, 0] } },
+  ]).document;
+  const swift = exportSwiftUI(doc, PAGE_ID);
+  assert.ok(
+    swift.unsupported.some((line) => /Card/.test(line) && /one radius/.test(line) && /16\/16\/0\/0/.test(line)),
+    "a per-corner tuple collapsed to one radius is a loss worth stating"
+  );
+  // `.continuous` is Apple's squircle and the document's corners are arcs.
+  assert.ok(swift.unsupported.some((line) => /circular corner/.test(line) && /\.continuous/.test(line)));
+});
+
+test("PDF admits it drew the corners square", () => {
+  // `re` is the only rectangle PDF has. The card is rounded on the canvas and in
+  // every other export; a PDF that quietly squares it is the one output a
+  // designer cannot tell apart from the real thing at a glance.
+  const result = exportPdf(signInDocument(), PAGE_ID);
+  assert.ok(result.unsupported.some((line) => /Card/.test(line) && /corner radius/.test(line)));
+});
+
+// ---------------------------------------------------------------------------
+// Instances and variants
+//
+// These belong beside the operation tests rather than here; they live in this
+// file because it is the one test file the pass that wrote them was allowed to
+// touch. Move them to `design-instances.test.ts` when something else is being
+// changed nearby.
+// ---------------------------------------------------------------------------
+
+/** The sign-in button, promoted to a component with a second variant that has a
+ *  visibly different subtree — a label and a badge rather than just a label. */
+function variantDocument(): DesignDocument {
+  let doc = signInDocument();
+  doc = run(doc, [
+    { op: "createComponent", nodeId: "button", componentId: "cmp1", name: "Button", description: "" },
+    {
+      op: "createNode",
+      parentId: "screen",
+      pageId: PAGE_ID,
+      node: { type: "frame", id: "buttonLarge", name: "Button/large", patch: { x: 400, y: 0, width: 320, height: 64 } },
+    },
+    {
+      op: "createNode",
+      parentId: "buttonLarge",
+      pageId: PAGE_ID,
+      node: { type: "text", id: "buttonLargeLabel", name: "Label", patch: { characters: "Sign in now" } },
+    },
+    {
+      op: "createNode",
+      parentId: "buttonLarge",
+      pageId: PAGE_ID,
+      node: { type: "ellipse", id: "buttonLargeBadge", name: "Badge", patch: { width: 8, height: 8 } },
+    },
+    { op: "createVariant", componentId: "cmp1", nodeId: "button", variantProperties: { size: "small" } },
+    { op: "createVariant", componentId: "cmp1", nodeId: "buttonLarge", variantProperties: { size: "large" } },
+  ]).document;
+  return doc;
+}
+
+test("the variant axes a component offers come from the variants that exist", () => {
+  const doc = variantDocument();
+  assert.deepEqual(variantAxes(doc.components.cmp1), [{ name: "size", values: ["large", "small"] }]);
+  // A component with no variant set offers no switches — rather than one axis
+  // with an empty value, which is what splitting the "" key would produce.
+  const plain = run(signInDocument(), [
+    { op: "createComponent", nodeId: "card", componentId: "cmp2", name: "Card", description: "" },
+  ]).document;
+  assert.deepEqual(variantAxes(plain.components.cmp2), []);
+});
+
+test("an unknown variant resolves to nothing rather than to the default", () => {
+  const doc = variantDocument();
+  assert.equal(variantRootFor(doc, doc.components.cmp1, { size: "jumbo" }), null);
+  // An empty selection is the component's own root: that is what an instance
+  // placed before any variant existed is showing.
+  assert.equal(variantRootFor(doc, doc.components.cmp1, {})?.id, "button");
+  assert.equal(variantRootFor(doc, doc.components.cmp1, { size: "large" })?.id, "buttonLarge");
+});
+
+test("selecting a variant replaces what the instance draws, not just what it says", () => {
+  const doc = run(variantDocument(), [
+    { op: "createInstance", componentId: "cmp1", parentId: null, pageId: PAGE_ID, instanceId: "inst1", x: 0, y: 900 },
+  ]).document;
+  const before = doc.nodes.inst1;
+  assert.ok("children" in before && before.children.length === 1, "the default variant has one child");
+
+  const swapped = run(doc, [
+    { op: "setInstanceVariant", instanceNodeId: "inst1", variantProperties: { size: "large" } },
+  ]).document;
+  const after = swapped.nodes.inst1;
+  assert.ok("children" in after);
+  assert.equal(after.children.length, 2, "the large variant's label and badge both arrived");
+  assert.deepEqual(
+    after.children.map((id) => swapped.nodes[id].type),
+    ["text", "ellipse"]
+  );
+  assert.deepEqual((after as { variantProperties: Record<string, string> }).variantProperties, { size: "large" });
+
+  // The instance keeps the place the designer put it. A swap is a change of
+  // contents, not a relayout.
+  assert.equal(after.x, before.x);
+  assert.equal(after.y, before.y);
+
+  // The old subtree is gone rather than orphaned in `nodes`.
+  const orphan = Object.values(swapped.nodes).find((n) => n.parentId === null && n.id !== "inst1" && !swapped.pages[0].children.includes(n.id));
+  assert.equal(orphan, undefined);
+});
+
+test("undoing a variant swap restores the subtree that was on screen", () => {
+  const doc = run(variantDocument(), [
+    { op: "createInstance", componentId: "cmp1", parentId: null, pageId: PAGE_ID, instanceId: "inst1", x: 0, y: 900 },
+  ]).document;
+  // An edit made *inside* the instance — the editor allows it, an instance being
+  // an ordinary container — is the thing a re-derived subtree would silently
+  // lose, which is why the inverse rebuilds rather than swapping back.
+  const edited = run(doc, [
+    { op: "updateNode", nodeId: (doc.nodes.inst1 as { children: string[] }).children[0], patch: { name: "Hand-edited" } },
+  ]).document;
+
+  const result = run(edited, [{ op: "setInstanceVariant", instanceNodeId: "inst1", variantProperties: { size: "large" } }]);
+  const undone = run(result.document, result.inverse).document;
+
+  const restored = undone.nodes.inst1 as { children: string[]; variantProperties: Record<string, string> };
+  assert.equal(restored.children.length, 1);
+  assert.equal(undone.nodes[restored.children[0]].name, "Hand-edited");
+  assert.deepEqual(restored.variantProperties, {});
+});
+
+test("a variant the component does not have is refused, not approximated", () => {
+  const doc = run(variantDocument(), [
+    { op: "createInstance", componentId: "cmp1", parentId: null, pageId: PAGE_ID, instanceId: "inst1", x: 0, y: 900 },
+  ]).document;
+  assert.throws(
+    () => run(doc, [{ op: "setInstanceVariant", instanceNodeId: "inst1", variantProperties: { size: "jumbo" } }]),
+    /no variant/i
+  );
+  assert.throws(
+    () => run(doc, [{ op: "setInstanceVariant", instanceNodeId: "card", variantProperties: { size: "large" } }]),
+    /not an instance/i
+  );
 });

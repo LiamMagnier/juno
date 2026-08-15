@@ -244,6 +244,12 @@ export const cornerRadiusSchema = z.union([
   z.tuple([finite.min(0).max(10_000), finite.min(0).max(10_000), finite.min(0).max(10_000), finite.min(0).max(10_000)]),
 ]);
 
+/** 0 is a circular arc, 1 the flattest superellipse the renderer draws. The
+ *  ceiling is not a taste call: past 1 the corner's run along the edge grows
+ *  faster than the exponent can compensate for, so the shape stops reading as
+ *  "the same radius, smoothed" and starts reading as a bigger radius. */
+export const cornerSmoothingSchema = unit;
+
 export const typographySchema = z.object({
   fontFamily: z.string().min(1).max(200),
   fontSize: finite.min(1).max(2_000),
@@ -317,6 +323,13 @@ const baseNodeShape = {
   fills: z.array(paintSchema).max(32),
   strokes: z.array(strokeSchema).max(32),
   cornerRadius: cornerRadiusSchema,
+  // `.default(0)` rather than `.optional()`, for the reason `effects` takes the
+  // same shape: the *wire* form tolerates a missing key because every document
+  // written before smoothing existed lacks it, but the *decoded* form never
+  // does — and here that is load-bearing rather than tidy. `updateNode` refuses
+  // a patch key that is not already `in` the node, so an optional smoothing
+  // would be a field the inspector could never once succeed in writing.
+  cornerSmoothing: cornerSmoothingSchema.default(0),
   // `.default([])` rather than `.optional()`: the *wire* form tolerates a
   // missing key, because every document written before the effect stack existed
   // is missing it — but the *decoded* form never is, so `types.ts` can keep
@@ -711,6 +724,7 @@ export function baseNodeDefaults(): Omit<DesignNode, "id" | "type" | "name"> & R
     fills: [],
     strokes: [],
     cornerRadius: 0,
+    cornerSmoothing: 0,
     effects: [],
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
