@@ -81,6 +81,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // NULL: unknown stays unknown rather than becoming a zero.
           cacheReadTokens: m.cacheReadTokens,
           cacheWriteTokens: m.cacheWriteTokens,
+          // The exact price of the same generation, so the branch does not
+          // quote a different one. serializeMessage prefers this over
+          // recomputing from promptTokens/completionTokens, and that recompute
+          // drops cache writes and web-search fees — so dropping the column
+          // here does not make the cost unknown, it makes it silently WRONG:
+          // the branch renders a cheaper number than the thread it was copied
+          // from, for identical rows. NULL copies as NULL, which lands on the
+          // same estimate the original already falls back to.
+          costMicroUsd: m.costMicroUsd,
           sources: m.sources === null ? Prisma.DbNull : (m.sources as unknown as Prisma.InputJsonValue),
           activity: m.activity === null ? Prisma.DbNull : (m.activity as unknown as Prisma.InputJsonValue),
           // Preserve original timestamps so ordering and history windows match.
