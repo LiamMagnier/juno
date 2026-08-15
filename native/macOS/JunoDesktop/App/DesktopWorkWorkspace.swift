@@ -430,6 +430,7 @@ struct DesktopWorkWorkspace: View {
         ToolbarItem(placement: .principal) {
             DesktopChatWorkSwitcher(selection: $product)
         }
+        .sharedBackgroundVisibility(.hidden)
 
         ToolbarItem(placement: .primaryAction) {
             Button(action: compose) {
@@ -4361,7 +4362,7 @@ private struct DesktopWorkThreadComposer: View {
             .overlay(
                 RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
                     .strokeBorder(
-                        focused ? Color.junoAccent.opacity(0.45) : Color.junoBorder,
+                        focused ? Color.junoFocusRing : Color.junoBorder,
                         lineWidth: focused ? 1 : 0.5
                     )
             )

@@ -56,6 +56,13 @@ public extension JunoColorToken {
     static let borderLight = JunoColorToken(unchecked: 0, 0, 0, 0.12)
     static let borderDark = JunoColorToken(unchecked: 1, 1, 1, 0.14)
 
+    // Keyboard focus follows the web's neutral `--ring`, not the account's
+    // accent. Every accent palette intentionally projects the same pair, so a
+    // user can change Juno's action colour without turning every focused field,
+    // list and button into a coloured outline.
+    static let focusRingLight = JunoAccent.coral.generatedPalette.ring.light
+    static let focusRingDark = JunoAccent.coral.generatedPalette.ring.dark
+
     // Developer surfaces — terminal and diff, slightly deeper than the canvas
     // so monospaced output reads as machine output.
     static let terminalLight = JunoColorToken(unchecked: 0.965, 0.963, 0.957)
@@ -86,6 +93,10 @@ public extension Color {
     )
     /// Outlines a control or panel.
     static let junoBorder = Color.junoAdaptive(light: .borderLight, dark: .borderDark)
+    /// Keyboard-focus outline — neutral, visible, and matched to the web's `--ring`.
+    static let junoFocusRing = Color.junoAdaptive(
+        light: .focusRingLight, dark: .focusRingDark
+    )
     /// Terminal and diff output.
     static let junoTerminal = Color.junoAdaptive(light: .terminalLight, dark: .terminalDark)
     /// The navigation column's selected row — the web's `--sidebar-accent`.

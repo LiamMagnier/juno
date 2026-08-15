@@ -75,12 +75,12 @@ public struct JunoCostMetrics: Equatable, Sendable {
 // sites that were writing `.formatted(.currency(code: "USD"))` — and therefore
 // rendering `0,41 US$` on a French Mac — round money the same way.
 
-/// A quiet, collapsible receipt for the current conversation.
+/// A quiet receipt trigger for the current conversation.
 ///
-/// Collapsed it is one line: total tokens and what they cost. Expanded it
-/// breaks that into input, output and the prompt-cache split. It starts
-/// collapsed and stays out of the way — this is provenance, not a feature, and
-/// a reader who never opens it should only ever notice a small grey number.
+/// The toolbar always stays one line: total tokens and what they cost. Pressing
+/// it opens the breakdown in a native popover. Keeping the expanded rows out of
+/// the toolbar is important on Liquid Glass: inline padding and an opaque chip
+/// otherwise enlarge the shared material behind every neighbouring action.
 ///
 /// The cache rows are drawn only when a turn actually reported them. Absent is
 /// not zero: the split rides the live `done` frame, so a reloaded transcript
@@ -101,17 +101,20 @@ public struct JunoCostMetricsBadge: View {
             // conversation is worse than drawing nothing.
             EmptyView()
         } else {
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                summaryRow
-                if isExpanded { detailRows }
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-                    .fill(Color.junoMuted)
-            )
-            .animation(JunoMotion.fast, value: isExpanded)
+            summaryRow
+                .popover(
+                    isPresented: $isExpanded,
+                    attachmentAnchor: .rect(.bounds),
+                    arrowEdge: .top
+                ) {
+                    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                        Text("Session usage")
+                            .junoRowLabel()
+                        detailRows
+                    }
+                    .padding(JunoSpace.regular)
+                    .frame(width: 220)
+                }
         }
     }
 
@@ -132,10 +135,8 @@ public struct JunoCostMetricsBadge: View {
             }
             .junoCaption()
             .junoSecondaryInk()
-            // The chip is small enough to read as decoration; the control it
-            // sits in must still be a control. `contentShape` matches the whole
-            // row so the gap between the count and the chevron is not dead.
-            .frame(minHeight: minimumHitTarget)
+            // NSToolbar supplies the hit target and shared glass. Stating a
+            // second 44-point target here made the whole toolbar group taller.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -215,9 +216,3 @@ public struct JunoCostMetricsBadge: View {
         return parts.joined(separator: ", ")
     }
 }
-
-/// The platform minimum for anything a finger or a pointer has to acquire.
-/// Local to this file on purpose — the design system has no hit-target scale
-/// yet, and inventing a half-adopted one here is how the last three migrations
-/// started.
-private let minimumHitTarget: CGFloat = 44

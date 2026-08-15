@@ -1096,6 +1096,7 @@ struct DesktopCodeWorkspace: View {
         ToolbarItem(placement: .principal) {
             DesktopChatWorkSwitcher(selection: $product)
         }
+        .sharedBackgroundVisibility(.hidden)
 
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up

@@ -321,6 +321,7 @@ struct DesktopChatWorkspace: View {
         ToolbarItem(placement: .principal) {
             DesktopChatWorkSwitcher(selection: $product)
         }
+        .sharedBackgroundVisibility(.hidden)
 
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -350,6 +351,8 @@ struct DesktopChatWorkspace: View {
         // badge would have to render "$0.00" above a conversation that has not
         // been billed for anything, which states something false.
         if !model.selectedSessionCost.costMetrics.isEmpty {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+
             ToolbarItem(placement: .primaryAction) {
                 JunoCostMetricsBadge(
                     metrics: model.selectedSessionCost.costMetrics,
@@ -362,6 +365,8 @@ struct DesktopChatWorkspace: View {
         // Only for a conversation that exists. A draft has nothing to publish,
         // and an item that is present but inert is worse than one that is absent.
         if configuration.shareClient != nil, model.selectedConversationID != nil {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await createShare() }
@@ -501,10 +506,6 @@ private struct DesktopChatSidebar: View {
             selection = .destination(.projects)
         } label: {
             HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "star.fill")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(width: 12)
                 Text(project.name)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -550,36 +551,6 @@ private struct DesktopChatSidebar: View {
 
     private func conversationRow(_ conversation: NativeConversation) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            // Juno's own pin, not SF's, and the one place coral is spent in this
-            // column. The web's sidebar is greyscale apart from exactly two
-            // `fill-primary` marks — the pinned conversation and the starred
-            // project — and the Code sidebar already draws this concept as
-            // `JunoIconView(.pin)`. Two clients drawing the same idea with two
-            // different glyphs is the drift that unified here.
-            //
-            // **The slot is reserved on every row, and that is the alignment fix.**
-            // This used to be `if conversation.pinned { … }`, so the mark was
-            // inserted into the row's leading edge only when it applied and the
-            // title behind it was pushed 12pt of glyph plus 6pt of spacing to the
-            // right. The result was measured at 35.0pt against 16.5pt on the rows
-            // immediately above and below it — an 18.5pt step inside one list,
-            // visible in both appearances, and worst on the pinned row because
-            // that is also usually the selected one, so the selection shape made
-            // the offset impossible to miss.
-            //
-            // A reserved gutter rather than a moved mark: the pin is a *leading*
-            // mark in the web's rail and in the Code sidebar, and keeping one
-            // text edge by holding the column open on rows that have no mark is
-            // how every list on the platform does this — Mail's unread dot and
-            // Finder's tag dot both occupy a slot that is always there.
-            // `accessibilityHidden` on the unpinned case so the reserved space
-            // stays silent to VoiceOver instead of announcing an empty image.
-            JunoIconView(.pin, size: 12)
-                .foregroundStyle(Color.junoAccent)
-                .opacity(conversation.pinned ? 1 : 0)
-                .frame(width: 12)
-                .accessibilityLabel(conversation.pinned ? "Pinned" : "")
-                .accessibilityHidden(!conversation.pinned)
             Text(conversation.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -1764,7 +1735,7 @@ private struct DesktopMessageRow: View {
                 .background(Self.bubbleShape.fill(Color.junoMuted))
                 .overlay(
                     Self.bubbleShape
-                        .strokeBorder(Color.junoAccent, lineWidth: 1)
+                        .strokeBorder(Color.junoFocusRing, lineWidth: 1)
                 )
                 .frame(maxWidth: 560)
                 .accessibilityLabel("Edit message")

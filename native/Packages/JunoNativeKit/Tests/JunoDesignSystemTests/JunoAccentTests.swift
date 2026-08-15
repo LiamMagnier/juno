@@ -63,6 +63,20 @@ final class JunoAccentTests: XCTestCase {
         }
     }
 
+    func testEveryAccentKeepsKeyboardFocusNeutral() {
+        let neutral = JunoAccent.coral.generatedPalette.ring
+
+        for accent in JunoAccent.allCases {
+            XCTAssertEqual(
+                accent.generatedPalette.ring,
+                neutral,
+                "\(accent.rawValue) must not tint keyboard focus"
+            )
+        }
+        XCTAssertEqual(JunoColorToken.focusRingLight, neutral.light)
+        XCTAssertEqual(JunoColorToken.focusRingDark, neutral.dark)
+    }
+
     // MARK: - Resolving the stored setting
 
     func testResolvesEveryAccentTheWebPublishes() {
