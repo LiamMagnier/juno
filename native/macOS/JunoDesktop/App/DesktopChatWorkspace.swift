@@ -99,6 +99,12 @@ struct DesktopChatWorkspace: View {
     /// prompt field.
     @State private var draftPrompt: String?
     @State private var sharing = false
+    /// Whether the session-cost receipt is open.
+    ///
+    /// Kept here rather than inside the badge so the disclosure survives the
+    /// toolbar being rebuilt mid-stream — a receipt that snapped shut every time
+    /// a token arrived would be unreadable while it was actually changing.
+    @State private var costBadgeExpanded = false
     /// One line under the toolbar after a Share, so the copy is acknowledged.
     @State private var shareNotice: String?
 
@@ -342,6 +348,23 @@ struct DesktopChatWorkspace: View {
             }
             .help("Search chats, projects and files (⌘⇧F)")
             .accessibilityIdentifier("Search")
+        }
+
+        // The session receipt. Unlike its neighbours this one IS conditional,
+        // which the comment at the top of this builder warns against — but the
+        // rebuild it warns about is driven by items appearing and disappearing
+        // during ordinary use, and this appears exactly once per conversation
+        // (on the first answer) and never flickers back. An always-present
+        // badge would have to render "$0.00" above a conversation that has not
+        // been billed for anything, which states something false.
+        if !model.selectedSessionCost.costMetrics.isEmpty {
+            ToolbarItem(placement: .primaryAction) {
+                JunoCostMetricsBadge(
+                    metrics: model.selectedSessionCost.costMetrics,
+                    isExpanded: $costBadgeExpanded
+                )
+                .accessibilityIdentifier("Session cost")
+            }
         }
 
         // Only for a conversation that exists. A draft has nothing to publish,
@@ -2363,6 +2386,11 @@ struct DesktopComposer: View {
     // deliberately per-send and webSearch/canvas are per-view here already.
     @AppStorage("juno.desktop.composer.fast-mode") private var fastMode = false
     @AppStorage("juno.desktop.composer.pro-mode") private var proMode = false
+    /// Let Juno pick the model per turn instead of always using the selection.
+    ///
+    /// Defaults to false so an existing reader's model choice keeps being obeyed
+    /// exactly as before. See ``routedModelID(for:)`` for why this is opt-in.
+    @AppStorage("juno.desktop.composer.auto-route-model") private var autoRouteModel = false
     @State private var selectedProjectID: String?
     @State private var selectedConnectors: Set<String> = []
     @State private var showingFileImporter = false
@@ -3262,6 +3290,36 @@ struct DesktopComposer: View {
         }
     }
 
+    /// The model this turn will actually go to.
+    ///
+    /// **Off by default, and that default is deliberate.** Auto-routing changes
+    /// which model answers without the reader asking, and a picker that shows one
+    /// name while another model replies is a control that lies. So the reader's
+    /// selection is a `manualLock` until they explicitly turn routing on, and
+    /// this function returns `selectedModelID` unchanged in every other case.
+    ///
+    /// The routed id is not written back into `selectedModelID`: the picker keeps
+    /// showing what the reader chose as their default, and routing stays a
+    /// per-turn decision rather than something that silently rewrites a setting.
+    private func routedModelID(for content: String) -> String {
+        guard autoRouteModel else { return selectedModelID }
+        let signals = NativeComposerSignals(
+            prompt: content,
+            hasAttachments: !(attachmentModel?.uploadedIDs ?? []).isEmpty,
+            deepResearch: deepResearch,
+            webSearch: webSearch,
+            connectorCount: selectedConnectors.count
+        )
+        return ModelTierRouter().route(
+            task: NativeChatTaskClassifier.classify(signals),
+            preference: .automatic,
+            models: model.modelCatalog,
+            // An empty catalog (offline, or a failed manifest fetch) must still
+            // send to what the reader picked rather than to nothing.
+            fallback: selectedModelID
+        ).modelID
+    }
+
     private func send() {
         guard canSend else { return }
         // A live call takes the turn before the chat route ever sees it. Without
@@ -3277,7 +3335,7 @@ struct DesktopComposer: View {
         // flag in exactly the same place inside `sendFromComposer`.
         aura?.fireSendSwell()
         let content = prompt
-        let modelID = selectedModelID
+        let modelID = routedModelID(for: content)
         let effort = reasoningEffort
         let uploadedIDs = attachmentModel?.uploadedIDs ?? []
         let research = deepResearch

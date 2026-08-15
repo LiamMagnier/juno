@@ -176,3 +176,55 @@ final class ModelTierRouterTests: XCTestCase {
         XCTAssertFalse(decision.isSwap(from: nil), "Nothing was selected, so nothing was swapped")
     }
 }
+
+/// The classifier decides how a turn gets billed and how good its answer is.
+/// Its bias towards `.deep` is the property under test, not an accident.
+final class NativeChatTaskClassifierTests: XCTestCase {
+    private func signals(
+        _ prompt: String,
+        attachments: Bool = false,
+        research: Bool = false,
+        search: Bool = false,
+        connectors: Int = 0
+    ) -> NativeComposerSignals {
+        NativeComposerSignals(
+            prompt: prompt,
+            hasAttachments: attachments,
+            deepResearch: research,
+            webSearch: search,
+            connectorCount: connectors
+        )
+    }
+
+    func testAnyToolAxisMeansMultiStep() {
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("hi", research: true)), .multiStepTools)
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("hi", search: true)), .multiStepTools)
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("hi", connectors: 1)), .multiStepTools)
+    }
+
+    func testCodeShapedPromptsClassifyAsCoding() {
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("```swift\nlet x = 1\n```")), .coding)
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("why does func foo() crash")), .coding)
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("SELECT * FROM users")), .coding)
+    }
+
+    func testAShortSingleLineQuestionIsTheOnlyThingCalledSimple() {
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("what is the capital of France?")), .simpleQuestion)
+    }
+
+    /// Each of these must NOT be called simple — the bias that protects answer
+    /// quality when the guess is wrong.
+    func testAmbiguousWorkFallsBackToGeneralRatherThanCheap() {
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("summarise this", attachments: true)), .general,
+                       "A document to reason over is not a quick question")
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals("do this:\n- a\n- b")), .general,
+                       "Multi-line means structure")
+        XCTAssertEqual(NativeChatTaskClassifier.classify(signals(String(repeating: "a", count: 400))), .general,
+                       "A long prompt is not a quick question")
+    }
+
+    /// `.general` must route deep, or the bias above buys nothing.
+    func testGeneralRoutesDeepUnderTheDefaultPolicy() {
+        XCTAssertEqual(NativeDefaultModelTierPolicy().tier(for: .general), .deep)
+    }
+}

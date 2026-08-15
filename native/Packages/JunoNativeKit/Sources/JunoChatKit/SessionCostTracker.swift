@@ -1,4 +1,28 @@
 import Foundation
+import JunoDesignSystem
+
+public extension NativeSessionCostTotals {
+    /// The design system's render-ready shape.
+    ///
+    /// The mapping lives on THIS side of the boundary because the dependency
+    /// runs this way: `JunoChatKit` can see `JunoDesignSystem`, never the
+    /// reverse. Putting `JunoCostMetrics` in the design system is what keeps the
+    /// badge previewable with no client, no session and no network — and the
+    /// `reporting…` counts travel with it so the view can still tell an
+    /// unreported zero from a real one.
+    var costMetrics: JunoCostMetrics {
+        JunoCostMetrics(
+            turns: turns,
+            inputTokens: promptTokens,
+            outputTokens: completionTokens,
+            cacheReadTokens: cacheReadTokens,
+            cacheWriteTokens: cacheWriteTokens,
+            costUsd: costUsd,
+            turnsReportingCache: turnsReportingCache,
+            turnsReportingCost: turnsReportingCost
+        )
+    }
+}
 
 /// One turn's billed usage, exactly as the server reported it.
 ///

@@ -49,6 +49,73 @@ public enum NativeModelRoutingPreference: Equatable, Sendable {
     }
 }
 
+/// What the composer knows about a turn at the moment Send is pressed.
+///
+/// Only facts already on screen — no lookahead, no extra request. A router that
+/// had to ask a model what kind of turn this is would pay for a model call to
+/// decide which model to call.
+public struct NativeComposerSignals: Equatable, Sendable {
+    public let prompt: String
+    public let hasAttachments: Bool
+    public let deepResearch: Bool
+    public let webSearch: Bool
+    public let connectorCount: Int
+
+    public init(
+        prompt: String,
+        hasAttachments: Bool = false,
+        deepResearch: Bool = false,
+        webSearch: Bool = false,
+        connectorCount: Int = 0
+    ) {
+        self.prompt = prompt
+        self.hasAttachments = hasAttachments
+        self.deepResearch = deepResearch
+        self.webSearch = webSearch
+        self.connectorCount = connectorCount
+    }
+}
+
+/// Guesses what a composed turn is for.
+///
+/// **Biased towards `.deep` on purpose, and the bias is the design.** Every rule
+/// below either proves a turn is disposable or gives up and says `.general`,
+/// which the default policy routes deep. Guessing "simple" wrongly downgrades an
+/// answer the reader is relying on, and they cannot see why it got worse;
+/// guessing "complex" wrongly costs a fraction of a cent. Those two errors are
+/// not worth trading against each other symmetrically.
+public enum NativeChatTaskClassifier {
+    /// Fences, or the shape of a shell/diff/stack-trace paste.
+    private static let codeMarkers = ["```", "func ", "class ", "def ", "import ",
+                                      "SELECT ", "npm ", "git ", "=>", "();"]
+
+    /// Above this, a prompt is doing more than asking a quick question.
+    private static let shortPromptCharacterCeiling = 160
+
+    public static func classify(_ signals: NativeComposerSignals) -> NativeChatTaskClass {
+        // Any tool axis means at least one extra round trip before an answer —
+        // exactly the case the deep tier exists for.
+        if signals.deepResearch || signals.webSearch || signals.connectorCount > 0 {
+            return .multiStepTools
+        }
+        let prompt = signals.prompt
+        if codeMarkers.contains(where: { prompt.localizedCaseInsensitiveContains($0) }) {
+            return .coding
+        }
+        // An attachment is a document to reason over, not a quick question, and
+        // the fast tier is the wrong place to read someone's contract.
+        if signals.hasAttachments { return .general }
+
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Multi-line means structure — a list, a spec, a pasted block.
+        guard !trimmed.contains("\n"),
+              trimmed.count <= shortPromptCharacterCeiling
+        else { return .general }
+
+        return .simpleQuestion
+    }
+}
+
 /// Maps work onto a tier. Separate protocol so the table is mockable and so a
 /// server-published policy can replace the built-in one without touching the
 /// selection logic below.
@@ -184,6 +251,32 @@ public struct ModelTierRouter: Sendable {
         }
 
         return NativeModelRoutingDecision(modelID: fallback, reason: .fallback)
+    }
+
+    /// Routes from a bare model list.
+    ///
+    /// The conversation model publishes `[NativeChatModelOption]`, not the
+    /// manifest wrapper. Without this overload every call site would have to
+    /// invent a `manifestVersion`, a `contractDigest` and a `generatedAt` purely
+    /// to satisfy a parameter the routing never reads — three fabricated values
+    /// standing in for provenance the client does not have.
+    public func route(
+        task: NativeChatTaskClass,
+        preference: NativeModelRoutingPreference,
+        models: [NativeChatModelOption],
+        fallback: String
+    ) -> NativeModelRoutingDecision {
+        route(
+            task: task,
+            preference: preference,
+            catalog: NativeChatModelCatalog(
+                manifestVersion: "",
+                contractDigest: "",
+                generatedAt: .distantPast,
+                models: models
+            ),
+            fallback: fallback
+        )
     }
 
     /// The models this account may actually send to, in the tier's preferred

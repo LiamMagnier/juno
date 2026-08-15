@@ -760,6 +760,35 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var isReconciling = false
     private var transientMessagesByConversation: [String: [NativeChatMessage]] = [:]
     private var retryContexts: [String: RetryContext] = [:]
+
+    /// What each conversation has cost SINCE THIS LAUNCH, keyed by conversation.
+    ///
+    /// Per-conversation rather than one running total: the badge sits in a
+    /// conversation's own header, and a reader switching chats must not see the
+    /// previous one's spend attributed to this one. Not persisted, and honestly
+    /// so — it is a session receipt, not a billing record. `NativeUsageBreakdown`
+    /// is the account's durable history and remains the place to ask what a month
+    /// cost.
+    private var sessionCostLedgers: [String: SessionCostLedger] = [:]
+
+    /// The receipt for a given conversation, empty when it has not answered yet.
+    public func sessionCost(for conversationID: String) -> NativeSessionCostTotals {
+        sessionCostLedgers[conversationID]?.totals ?? .empty
+    }
+
+    /// The receipt for whatever conversation is on screen.
+    public var selectedSessionCost: NativeSessionCostTotals {
+        guard let selectedConversationID else { return .empty }
+        return sessionCost(for: selectedConversationID)
+    }
+
+    /// Per-model subtotals for the selected conversation, heaviest spend first.
+    public var selectedSessionCostByModel: [(model: String?, totals: NativeSessionCostTotals)] {
+        guard let selectedConversationID,
+              let ledger = sessionCostLedgers[selectedConversationID]
+        else { return [] }
+        return ledger.totalsByModel()
+    }
     private var generationTask: Task<Void, Never>?
     private var activeGenerationID: String?
     private var chatApprovalErrors: [String: String] = [:]
@@ -1882,6 +1911,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         _ message: NativeCompletedChatMessage,
         conversationID: String
     ) {
+        // The receipt is recorded HERE, off the live `done` frame, and nowhere
+        // else. The prompt-cache split exists only on this frame — `Message` has
+        // no column for it — so a ledger built from reloaded rows could never
+        // show a cache hit. Recording at the same instant the answer completes is
+        // what makes the badge's cache figures possible at all.
+        sessionCostLedgers[conversationID, default: SessionCostLedger()]
+            .record(message: message)
         updateTransientAssistant(for: conversationID) {
             $0.id = message.id
             $0.content = message.content
