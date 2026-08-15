@@ -10,6 +10,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Wrapped up"
   },
   {
+    "id": "002474e368210827",
+    "source": "Badge"
+  },
+  {
     "id": "002ef0737bf8a28f",
     "source": "Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades."
   },
@@ -2310,6 +2314,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "List the user's iCloud calendars by name."
   },
   {
+    "id": "2377070e17c10949",
+    "source": "Connected · 3"
+  },
+  {
     "id": "2380f018cc45becc",
     "source": "Search models…"
   },
@@ -2608,6 +2616,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "28248229fd3adbab",
     "source": "” and its messages are removed for good. This can’t be undone."
+  },
+  {
+    "id": "2831192c95cbf41e",
+    "source": "Diagrams"
   },
   {
     "id": "28391d3bc64ec15c",
@@ -4990,6 +5002,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Timezone"
   },
   {
+    "id": "4cee5a4822895a8a",
+    "source": "A row"
+  },
+  {
     "id": "4d09cded16c72aef",
     "source": "Uploads are not available — configure a storage bucket."
   },
@@ -5314,6 +5330,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· Updated"
   },
   {
+    "id": "5263293fc202649b",
+    "source": "Small"
+  },
+  {
     "id": "526811f8fad9f20a",
     "source": "Delete all conversations?"
   },
@@ -5456,6 +5476,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "550aafe3f08a78db",
     "source": "Reading the report…"
+  },
+  {
+    "id": "552d6551626689db",
+    "source": "Large chip"
   },
   {
     "id": "55490a4bf3a8e8cb",
@@ -5692,6 +5716,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5a23444828db654a",
     "source": "Manage"
+  },
+  {
+    "id": "5a415ca1d46cddf4",
+    "source": "Button · variants"
   },
   {
     "id": "5a4918e0201c877c",
@@ -6094,6 +6122,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The planner may pick this up when a task looks like it fits, without you naming it."
   },
   {
+    "id": "5fe0782525f6b1b9",
+    "source": "SegmentedControl"
+  },
+  {
     "id": "5fec248d4c1ee6ec",
     "source": "Couldn’t disconnect. Please try again."
   },
@@ -6140,6 +6172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "607cf89ccdfabdfd",
     "source": "Invalid JSON body."
+  },
+  {
+    "id": "6090b1e092663b63",
+    "source": "Every control the product uses, rendered together."
   },
   {
     "id": "60945d49535300be",
@@ -6296,6 +6332,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "62ebd0edacef1c72",
     "source": "An email arrives"
+  },
+  {
+    "id": "62f2ccfffcc5103e",
+    "source": "Secondary"
   },
   {
     "id": "6300ef800bb88429",
@@ -6712,6 +6752,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "68d00a3c1db02e17",
     "source": "Exports up to 100 MB. Nothing is sent to a third party — the archive is read on Juno's own server and discarded once its conversations are stored."
+  },
+  {
+    "id": "68e0fff948ecbc96",
+    "source": "Pressable · row / tile / icon"
   },
   {
     "id": "68eb5a4dd97d0287",
@@ -7194,6 +7238,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ".dark"
   },
   {
+    "id": "6f8046e911c5e177",
+    "source": "Button · sizes"
+  },
+  {
     "id": "6fa271453f8ac490",
     "source": "Cancel edit"
   },
@@ -7402,6 +7450,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A reason of 3–500 characters is required."
   },
   {
+    "id": "722389087c7a7441",
+    "source": "Chip"
+  },
+  {
     "id": "724804a1286d8c4f",
     "source": "Invalid origin"
   },
@@ -7420,6 +7472,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7280e2d1b68d0251",
     "source": "Invalid export request"
+  },
+  {
+    "id": "728fa88646c0f66e",
+    "source": "A selected row"
   },
   {
     "id": "72b5fed2c985ba8d",
@@ -7580,6 +7636,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "74fb138973c6fd6b",
     "source": "Request submitted — thanks!"
+  },
+  {
+    "id": "75081b593d15cf6e",
+    "source": "Disabled"
   },
   {
     "id": "750af77aa42eea62",
@@ -7864,6 +7924,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7992e69d1677c5d7",
     "source": "This page didn’t come back. Nothing has changed — every task and every Mac keeps exactly the permissions it had, and Juno still stops for everything it always stops for."
+  },
+  {
+    "id": "799c269135742a36",
+    "source": "Controls"
   },
   {
     "id": "79a1a2602eeb6e95",
@@ -8162,6 +8226,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No matching files"
   },
   {
+    "id": "7eaf46581a1e55da",
+    "source": "Pressable · chip"
+  },
+  {
     "id": "7eb124b0e318ccb0",
     "source": "Reading private context"
   },
@@ -8288,6 +8356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8053f9c1e94c2741",
     "source": "Marin"
+  },
+  {
+    "id": "806f6dd797bf72d0",
+    "source": "Selected tile"
   },
   {
     "id": "807d0fbcae7c4b20",
@@ -9004,6 +9076,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8d0160c0d84236dd",
     "source": "Faster"
+  },
+  {
+    "id": "8d0983cf965998ed",
+    "source": "Destructive outline"
   },
   {
     "id": "8d14f6e72de8f18a",
@@ -10158,6 +10234,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add a file"
   },
   {
+    "id": "9d7690937436d9e3",
+    "source": "Sites"
+  },
+  {
     "id": "9d98ce221dd52ecc",
     "source": "quiz"
   },
@@ -10478,6 +10558,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your device"
   },
   {
+    "id": "a263c39ce6fd3c9a",
+    "source": "The /artifacts toolbar"
+  },
+  {
     "id": "a292ab76d1442dae",
     "source": "Your plan does not include that model, so nothing was created. Pick another one, or upgrade."
   },
@@ -10504,6 +10588,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a2f4f36e49789c04",
     "source": "Juno runs this prompt on a schedule — results land in a chat thread."
+  },
+  {
+    "id": "a2fb7ff049b95b0c",
+    "source": "The /artifacts toolbar · every type present"
   },
   {
     "id": "a318f18a21e74c9b",
@@ -10838,6 +10926,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Undo"
   },
   {
+    "id": "a874fca87cdd5e4e",
+    "source": "Graphics"
+  },
+  {
     "id": "a87678674a53668e",
     "source": "notes on this file"
   },
@@ -10872,6 +10964,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a8dabfe94b955576",
     "source": "Share research link"
+  },
+  {
+    "id": "a9095629925773ea",
+    "source": "project-name"
   },
   {
     "id": "a92f0449a9f7235b",
@@ -11044,6 +11140,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ab604a360777735f",
     "source": "Reject"
+  },
+  {
+    "id": "ab80540d98d27456",
+    "source": "Large"
   },
   {
     "id": "ab827e3fe17da220",
@@ -11402,6 +11502,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search projects…"
   },
   {
+    "id": "b0c70a73470afbd8",
+    "source": "Designs"
+  },
+  {
     "id": "b0e1b8889847a6d1",
     "source": "Loading design"
   },
@@ -11744,10 +11848,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b5c582d555b204b0",
     "source": "Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the same way."
-  },
-  {
-    "id": "b5c7aed7cd2a3085",
-    "source": "ALL"
   },
   {
     "id": "b5e1b1ba4e156b7a",
@@ -13418,6 +13518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Permanently delete your account, conversations, and memories."
   },
   {
+    "id": "cfeff50cc3407b52",
+    "source": "Dialog footer"
+  },
+  {
     "id": "cff0f4958b038576",
     "source": "This run has finished, so nothing can be rolled back now."
   },
@@ -14546,6 +14650,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "As much as fits, then say what is left"
   },
   {
+    "id": "df1bc4984a055e10",
+    "source": "Ghost"
+  },
+  {
     "id": "df1c5c254fafc261",
     "source": "The flag list didn’t come back. No strike, ban or dismissal has been applied by the attempt."
   },
@@ -15328,6 +15436,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eab4d489835897f0",
     "source": "Delete account permanently"
+  },
+  {
+    "id": "eabbf3abaf8d98ab",
+    "source": "Outline"
   },
   {
     "id": "eacadb06043db065",

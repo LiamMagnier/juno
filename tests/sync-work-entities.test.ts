@@ -44,7 +44,7 @@ function code(source: string): string {
 const LOADERS = code(readFileSync("src/lib/sync-entities.ts", "utf8"));
 const SCHEMA = readFileSync("prisma/schema.prisma", "utf8");
 const TRIGGER_MIGRATION = readFileSync(
-  "prisma/migrations/20260815141000_work_change_capture_triggers/migration.sql",
+  "prisma/migrations-pending/20260815141000_work_change_capture_triggers/migration.sql",
   "utf8"
 );
 const FUNCTION_MIGRATION = readFileSync(

@@ -30,7 +30,7 @@ import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Pressable } from "@/components/ui/pressable";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -254,8 +254,13 @@ export default function ArtifactsPage() {
 
         {/* Search + type filters — only once there is something to filter. */}
         {!loading && !empty && !error && (
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative sm:max-w-xs sm:flex-1">
+          // `sm:flex-wrap` + a floor under the search field, because this row has
+          // a variable number of segments: a user with all seven artifact types
+          // gets an eight-segment filter, and without both of these the filter
+          // takes the width it needs and crushes the search box down to its
+          // magnifier. The filter drops to its own line instead.
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="relative sm:min-w-48 sm:max-w-xs sm:flex-1">
               <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="search"
@@ -267,28 +272,25 @@ export default function ArtifactsPage() {
               />
             </div>
             {presentTypes.length > 1 && (
-              // radiogroup, not a group of aria-pressed toggles: setTypeFilter
-              // replaces the filter, it never toggles one, so a screen reader was
-              // hearing four independent switches instead of one choice.
-              <div role="radiogroup" aria-label="Filter by type" className="flex flex-wrap items-center gap-1.5">
-                {(["ALL", ...presentTypes] as const).map((t) => {
-                  const selected = typeFilter === t;
-                  return (
-                    <Pressable
-                      key={t}
-                      kind="chip"
-                      size="sm"
-                      selected={selected}
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setTypeFilter(t)}
-                      className="font-mono text-caption"
-                    >
-                      {t === "ALL" ? "All" : TYPE_LABELS[t]}
-                    </Pressable>
-                  );
-                })}
-              </div>
+              // The shared control, not a local restatement of it. These were
+              // `Pressable kind="chip"` in `font-mono text-caption` — 11px mono
+              // pills, a face and a shape nothing else on the page wears — so a
+              // one-of-N filter sat between an `outline` Button and the sidebar's
+              // own Home/Code toggle looking like a third system. A mutually
+              // exclusive filter is precisely what SegmentedControl is for, and it
+              // brings the radiogroup semantics, roving tabindex and arrow-key nav
+              // the hand-rolled version had to restate in a comment.
+              <SegmentedControl<ArtifactType | "ALL">
+                value={typeFilter}
+                onChange={setTypeFilter}
+                ariaLabel="Filter by type"
+                className="w-fit max-w-full shrink-0"
+                optionClassName="whitespace-nowrap"
+                options={(["ALL", ...presentTypes] as const).map((t) => ({
+                  value: t,
+                  label: t === "ALL" ? "All" : TYPE_LABELS[t],
+                }))}
+              />
             )}
           </div>
         )}
