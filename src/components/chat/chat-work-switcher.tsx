@@ -87,10 +87,11 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
     return () => window.removeEventListener("juno:incognito", handleIncognito);
   }, []);
 
+  if (incognito) return null;
+
   return (
     <div
-      inert={incognito}
-      className={cn("flex justify-center transition-opacity duration-fast", className, incognito && "opacity-50")}
+      className={cn("flex justify-center transition-opacity duration-fast", className)}
     >
       <SegmentedControl<Surface>
         value={value}

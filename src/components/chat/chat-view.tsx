@@ -1749,14 +1749,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </div>
         );
 
-        // Read from STATE set in a layout effect, not from `document` during
-        // render. The server has no DOM and renders the fallback; a render-time
-        // getElementById would find the slot on the client's very first
-        // (hydrating) pass and portal away markup the server had put in place —
-        // a hydration mismatch, and React would throw the whole subtree away and
-        // re-render it client-side. The layout effect swaps them before paint,
-        // so nobody sees the fallback either.
-        return topActionsSlot ? createPortal(cluster, topActionsSlot) : cluster;
+        return topActionsSlot ? createPortal(cluster, topActionsSlot) : null;
       })()}
 
       {/* Chat column */}

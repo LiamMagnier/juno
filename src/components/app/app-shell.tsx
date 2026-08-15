@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -9,7 +9,6 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
-import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
@@ -33,18 +32,6 @@ function clampWidth(w: number) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
-  const pathname = usePathname();
-
-  /**
-   * The Chat/Work slider is scoped to the two surfaces it switches between.
-   *
-   * Not shown app-wide: on /settings or /projects it would be a control that
-   * navigates away from the page you are on, which is a nav item pretending to
-   * be a toggle. Those places reach Work through the sidebar and the command
-   * palette, as they already did.
-   */
-  const showSurfaceSwitcher =
-    pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
 
   const [collapsed, setCollapsed] = React.useState(false);
   // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
@@ -323,39 +310,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Plus className="size-5" />
           </Button>
         </div>
-
-        {/* Chat ⇄ Work. Centred over the conversation rather than parked in the
-            sidebar: the choice belongs where you are already looking when you
-            decide what to ask for, and it survives the sidebar being collapsed
-            or absent. The hairline anchors the mode switch to the product shell
-            without turning it into a second toolbar. */}
-        {showSurfaceSwitcher && (
-          // Full --border, like the sidebar edge and the palette's rules: this
-          // hairline carries layout (it is what separates the mode switch from
-          // the conversation), and the token already dropped five points for the
-          // black ground, so a call-site alpha on top of that erases it.
-          <div className="relative flex min-h-[52px] shrink-0 items-center justify-center border-b border-border px-4 py-2">
-            <ChatWorkSwitcher />
-            {/* The chat's own top actions — share, model parameters, incognito —
-                land here through a portal (chat-view.tsx looks for this id).
-                The slot has to exist for that to happen, and it did not: the
-                portal silently fell back to `position: absolute` inside the
-                chat column, which put three floating buttons ON TOP of the
-                transcript, ten pixels below a header bar that was empty apart
-                from a centred switcher. The chat's own comment already claimed
-                they sat "in the top header on the same Y grid as Chat/Work" —
-                this is the row that makes that true.
-
-                Absolutely positioned rather than a flex sibling on purpose: the
-                switcher is centred on the WINDOW, and a sibling of any width
-                would push it off-centre by half of itself and move it every
-                time a button appeared or left. */}
-            <div
-              id="juno-top-actions-slot"
-              className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
-            />
-          </div>
-        )}
 
         <div className="relative min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>
