@@ -137,7 +137,7 @@ public enum ConversationCompactor {
                 line = "User: \(text)\(attachment)"
             case let .assistant(text):
                 line = "Assistant: \(text)"
-            case let .toolCall(id, name, input):
+            case let .toolCall(id, name, input), let .toolCallWithExtra(id, name, input, _):
                 line = "Tool call \(name) (\(id)): \(input.canonicalJSONString())"
             case let .toolResult(id, content, isError):
                 line = "Tool result \(id)\(isError ? " [error]" : ""): \(content)"

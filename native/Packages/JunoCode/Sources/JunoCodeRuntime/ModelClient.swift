@@ -38,6 +38,7 @@ public enum ModelMessage: Hashable, Codable, Sendable {
     case userWithImages(String, [ModelImage])
     case assistant(String)
     case toolCall(id: String, name: String, input: JSONValue)
+    case toolCallWithExtra(id: String, name: String, input: JSONValue, extraContent: JSONValue)
     case toolResult(id: String, content: String, isError: Bool)
     /// Tool output with images for the immediately following model turn.
     /// ``CodeSessionStore`` persists only its redacted text counterpart.
@@ -131,6 +132,7 @@ public enum ModelStreamEvent: Sendable {
     /// Product-facing reasoning summary, never raw private reasoning.
     case reasoningSummary(String)
     case toolCallRequested(id: String, name: String, input: JSONValue)
+    case toolCallRequestedWithExtra(id: String, name: String, input: JSONValue, extraContent: JSONValue)
     /// Token accounting for the turn, as the provider reported it.
     ///
     /// `inputTokens` is the whole prompt the provider actually billed — system

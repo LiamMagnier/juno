@@ -315,7 +315,7 @@ public actor AgentOrchestrator {
 
             var turnText = ""
             var turnReasoningSummary = ""
-            var toolCalls: [(id: String, name: String, input: JSONValue)] = []
+            var toolCalls: [(id: String, name: String, input: JSONValue, extraContent: JSONValue?)] = []
             var stopReason: ModelStopReason?
             lastLiveTextEmit = .distantPast
             emitLiveText("", force: true)
@@ -337,7 +337,9 @@ public actor AgentOrchestrator {
                             emitLiveText(turnReasoningSummary)
                         }
                     case let .toolCallRequested(id, name, input):
-                        toolCalls.append((id, name, input))
+                        toolCalls.append((id, name, input, nil))
+                    case let .toolCallRequestedWithExtra(id, name, input, extra):
+                        toolCalls.append((id, name, input, extra))
                     case let .usage(inputTokens, outputTokens):
                         // Replaced, not accumulated: `inputTokens` is the whole
                         // billed prompt for this turn, so the newest report *is*
@@ -500,8 +502,12 @@ public actor AgentOrchestrator {
             var terminalGoalLifecycle: GoalLifecycle?
             for call in toolCalls {
                 if Task.isCancelled { break }
-                conversation.append(.toolCall(id: call.id, name: call.name, input: call.input))
-                let execution = await executeToolCall(call)
+                if let extra = call.extraContent {
+                    conversation.append(.toolCallWithExtra(id: call.id, name: call.name, input: call.input, extraContent: extra))
+                } else {
+                    conversation.append(.toolCall(id: call.id, name: call.name, input: call.input))
+                }
+                let execution = await executeToolCall((call.id, call.name, call.input))
                 for sideEffect in execution.sideEffects {
                     if case let .fileChanged(change) = sideEffect {
                         filesChanged.insert(change.path.value)

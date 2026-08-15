@@ -502,7 +502,7 @@ enum AnthropicRequestBuilder {
                 }
             case let .assistant(text):
                 append(role: "assistant", block: .object(["type": "text", "text": .string(text)]))
-            case let .toolCall(id, name, input):
+            case let .toolCall(id, name, input), let .toolCallWithExtra(id, name, input, _):
                 append(
                     role: "assistant",
                     block: .object([
@@ -650,6 +650,22 @@ enum OpenAIChatRequestBuilder {
                         ]),
                     ]),
                 ]))
+            case let .toolCallWithExtra(id, name, input, extraContent):
+                messages.append(.object([
+                    "role": .string("assistant"),
+                    "content": .null,
+                    "tool_calls": .array([
+                        .object([
+                            "id": .string(id),
+                            "type": .string("function"),
+                            "function": .object([
+                                "name": .string(name),
+                                "arguments": .string(jsonString(input)),
+                            ]),
+                            "extra_content": extraContent,
+                        ]),
+                    ]),
+                ]))
             case let .toolResult(id, content, _):
                 messages.append(.object([
                     "role": .string("tool"),
@@ -755,7 +771,7 @@ enum OpenAIResponsesRequestBuilder {
                         .object(["type": .string("output_text"), "text": .string(text)]),
                     ]),
                 ]))
-            case let .toolCall(id, name, arguments):
+            case let .toolCall(id, name, arguments), let .toolCallWithExtra(id, name, arguments, _):
                 input.append(.object([
                     "type": .string("function_call"),
                     "call_id": .string(id),
@@ -1183,6 +1199,7 @@ struct OpenAIChatStreamDecoder {
         var id = ""
         var name = ""
         var arguments = ""
+        var extraContent: JSONValue?
     }
 
     private var sse = RawSSEDecoder()
@@ -1199,8 +1216,17 @@ struct OpenAIChatStreamDecoder {
 
     mutating func events(from payload: Data) throws -> [ModelStreamEvent] {
         guard !payload.isEmpty, payload != Data("[DONE]".utf8) else { return [] }
-        let root = try decodeObject(payload)
-        if let error = root["error"]?["message"]?.stringValue {
+        let rootValue = try decodeObject(payload)
+        let root: [String: JSONValue]
+        if let obj = rootValue.objectValue {
+            root = obj
+        } else if let array = rootValue.arrayValue, let first = array.first?.objectValue {
+            root = first
+        } else {
+            return []
+        }
+
+        if let error = root["error"]?["message"]?.stringValue ?? root["error"]?.stringValue {
             throw AgentModelClientError.transport(message: error)
         }
         // Read usage *before* the choices guard.
@@ -1250,7 +1276,7 @@ struct OpenAIChatStreamDecoder {
             }
 
             for call in delta["tool_calls"]?.arrayValue ?? [] {
-                guard let index = call["index"]?.intValue else { continue }
+                guard let index = call["index"]?.intValue ?? (delta["tool_calls"]?.arrayValue?.count == 1 ? 0 : nil) else { continue }
                 var block = toolBlocks[index] ?? ToolBlock()
                 if let id = call["id"]?.stringValue { block.id = id }
                 if let name = call["function"]?["name"]?.stringValue {
@@ -1258,6 +1284,11 @@ struct OpenAIChatStreamDecoder {
                 }
                 if let arguments = call["function"]?["arguments"]?.stringValue {
                     block.arguments += arguments
+                }
+                if let extra = call["extra_content"] {
+                    block.extraContent = extra
+                } else if let extra = delta["extra_content"] {
+                    block.extraContent = extra
                 }
                 toolBlocks[index] = block
             }
@@ -1269,11 +1300,20 @@ struct OpenAIChatStreamDecoder {
                 where !block.id.isEmpty && !block.name.isEmpty
             {
                 sawTools = true
-                events.append(.toolCallRequested(
-                    id: block.id,
-                    name: block.name,
-                    input: parseToolInput(block.arguments)
-                ))
+                if let extra = block.extraContent, !extra.isNull {
+                    events.append(.toolCallRequestedWithExtra(
+                        id: block.id,
+                        name: block.name,
+                        input: parseToolInput(block.arguments),
+                        extraContent: extra
+                    ))
+                } else {
+                    events.append(.toolCallRequested(
+                        id: block.id,
+                        name: block.name,
+                        input: parseToolInput(block.arguments)
+                    ))
+                }
             }
             let reason: ModelStopReason
             if sawTools {
