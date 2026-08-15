@@ -277,7 +277,8 @@ actor DesktopWorkRunHost: WorkRunHosting {
                     switch event {
                     case .textDelta(let delta):
                         reply += delta
-                    case .toolCallRequested(let id, let name, let input):
+                    case .toolCallRequested(let id, let name, let input),
+                         .toolCallRequestedWithExtra(let id, let name, let input, _):
                         calls.append((id: id, name: name, input: input))
                     case .turnCompleted(let reason):
                         stop = reason
