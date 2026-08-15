@@ -239,6 +239,10 @@ public struct CodeSessionCanvas: View {
                 beginDictation: beginDictation,
                 beginVoice: beginVoice
             )
+            .frame(maxWidth: 860)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.bottom, JunoSpace.snug)
         }
     }
 

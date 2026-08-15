@@ -15,6 +15,7 @@ struct DesktopDestinationView: View {
     @Bindable var conversationModel: NativeConversationModel<SQLiteAccountRepository>
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
+    @Binding var requestedProjectID: String?
 
     var body: some View {
         switch destination {
@@ -56,7 +57,8 @@ struct DesktopDestinationView: View {
                     configuration: configuration,
                     session: session,
                     openConversation: openConversation,
-                    startConversation: startConversation
+                    startConversation: startConversation,
+                    requestedProjectID: $requestedProjectID
                 )
             } else {
                 unavailable("Projects", "The synchronized project store is unavailable.")

@@ -76,11 +76,66 @@ export function AppleMusicMark({ className }: { className?: string }) {
   );
 }
 
+export function LinearMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="m3.5 18.5 15-15M8.5 20.5l12-12M3.5 13.5l10-10M3.5 8.5l5-5M13.5 20.5l7-7"
+        className="stroke-current"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function SlackMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
+    </svg>
+  );
+}
+
+export function PostgresMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <ellipse cx="12" cy="6" rx="8" ry="3" className="stroke-current" strokeWidth="1.5" />
+      <path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6" className="stroke-current" strokeWidth="1.5" />
+      <path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" className="stroke-current" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+export function TerminalMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <rect x="3" y="4" width="18" height="16" rx="3" className="stroke-current" strokeWidth="1.5" />
+      <path d="m7 9 3 3-3 3M13 15h4" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function WebSearchMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <circle cx="11" cy="11" r="7" className="stroke-current" strokeWidth="1.5" />
+      <path d="m20 20-3.5-3.5" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M11 4a7 7 0 0 0 0 14" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" opacity="0.4" />
+    </svg>
+  );
+}
+
 /** Brand mark for a connector id; generic plug for unknown ids. */
 export function ConnectorMark({ id, className }: { id: string; className?: string }) {
   if (id === "github") return <GitHubMark className={className} />;
   if (id === "figma") return <FigmaMark className={className} />;
   if (id === "notion") return <NotionMark className={className} />;
+  if (id === "linear") return <LinearMark className={className} />;
+  if (id === "slack") return <SlackMark className={className} />;
+  if (id === "postgres" || id === "postgresql" || id === "database" || id === "supabase") return <PostgresMark className={className} />;
+  if (id === "terminal" || id === "shell" || id === "bash") return <TerminalMark className={className} />;
+  if (id === "web" || id === "web-search" || id === "search" || id === "browser") return <WebSearchMark className={className} />;
   if (id === "apple-calendar") return <AppleCalendarMark className={className} />;
   if (id === "apple-mail") return <AppleMailMark className={className} />;
   if (id === "apple-music") return <AppleMusicMark className={className} />;

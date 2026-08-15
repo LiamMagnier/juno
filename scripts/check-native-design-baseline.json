@@ -136,16 +136,16 @@
     }
   },
   "type": {
-    "total": 91,
+    "total": 90,
     "modules": {
       "JunoNativeKit (shared)": 59,
-      "JunoCode (shared)": 6,
+      "JunoCode (shared)": 5,
       "JunoDesktop (macOS)": 9,
       "JunoMobile (iOS)": 17
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Composer.swift": 2,
-      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Inspector/SubagentInspector.swift": 2,
+      "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Inspector/SubagentInspector.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/SidebarView.swift": 1,
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Simulator/SimulatorPane.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeBranchNavigator.swift": 2,

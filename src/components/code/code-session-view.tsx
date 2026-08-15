@@ -21,6 +21,8 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
+import { DEFAULT_MODEL } from "@/lib/models";
+import type { ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
 import type {
   ClientArtifact,
@@ -73,7 +75,7 @@ interface CodeSessionViewProps {
 }
 
 export function CodeSessionView({ conversation, initialMessages, initialArtifacts }: CodeSessionViewProps) {
-  const { setActiveConversationId, updateConversation, conversations, features } = useApp();
+  const { setActiveConversationId, updateConversation, conversations, features, settings } = useApp();
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
   const workspaceKey = conversation.codeWorkspaceKey ?? null;
@@ -130,6 +132,35 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
 
   const [draft, setDraft] = React.useState("");
   const [dictating, setDictating] = React.useState(false);
+  const [model, setModel] = React.useState(conversation.model || settings.defaultModel || DEFAULT_MODEL);
+  const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(null);
+  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>(
+    conversation.activeConnectors?.length ? conversation.activeConnectors : ["github", "terminal", "web-search"]
+  );
+
+  const toggleConnector = React.useCallback((id: string) => {
+    setEnabledConnectors((prev) => {
+      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
+      updateConversation(conversation.id, { activeConnectors: next });
+      void fetch(`/api/conversations/${conversation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activeConnectors: next }),
+      }).catch(() => {});
+      return next;
+    });
+  }, [conversation.id, updateConversation]);
+
+  const handleModelChange = React.useCallback((next: string) => {
+    setModel(next);
+    updateConversation(conversation.id, { model: next });
+    void fetch(`/api/conversations/${conversation.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: next }),
+    }).catch(() => {});
+  }, [conversation.id, updateConversation]);
+
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(
     conversation.id,
@@ -668,6 +699,12 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       status={session.status}
       isBusy={session.isBusy}
       onCancel={() => void session.cancel()}
+      model={model}
+      onModelChange={handleModelChange}
+      reasoningEffort={reasoningEffort}
+      onReasoningChange={setReasoningEffort}
+      connectorsEnabled={enabledConnectors}
+      onToggleConnector={toggleConnector}
       attachments={{
         enabled: canAttach,
         uploads,

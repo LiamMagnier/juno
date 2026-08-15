@@ -346,7 +346,12 @@ struct DesktopCodeSidebar: View {
     let openRepository: () -> Void
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
+    @Binding var searchText: String
+    var searchFocused: FocusState<Bool>.Binding
     @State private var projectPendingDeletion: ProjectGroup?
+    @State private var projectPendingRename: ProjectGroup?
+    @State private var projectRenameDraft = ""
+    @State private var expandedProjects: Set<WorkspaceID> = []
     /// The footer bar's glass namespace. One container, one participant, one
     /// identity — a loose `.glassEffect` gets inconsistent sampling and no
     /// morphing, which is the failure `GlassEffectContainer` exists to prevent.
@@ -454,6 +459,33 @@ struct DesktopCodeSidebar: View {
         let groups = projectGroups(from: allRuns)
 
         return List(selection: $selection) {
+            HStack(spacing: JunoSpace.tight) {
+                Image(systemName: "magnifyingglass")
+                    .junoSecondaryInk()
+                    .accessibilityHidden(true)
+                TextField("Search sessions", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .focused(searchFocused)
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .junoMetaInk()
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(.rect)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 30)
+            .background(Color.junoMuted.opacity(0.55), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+            .listRowInsets(EdgeInsets(top: JunoSpace.tight, leading: JunoSpace.snug, bottom: JunoSpace.snug, trailing: JunoSpace.snug))
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
+            .accessibilityIdentifier("juno.code.sidebar-search")
+
             Label {
                 Text("New task").junoRowLabel()
             } icon: {
@@ -538,6 +570,12 @@ struct DesktopCodeSidebar: View {
 
                     ForEach(groups) { group in
                         projectSummaryRow(group)
+                        if expandedProjects.contains(group.workspaceID) {
+                            ForEach(group.runs) { run in
+                                row(run, nested: true)
+                                    .padding(.leading, JunoSpace.cozy)
+                            }
+                        }
                     }
 
                     Button(action: openRepository) {
@@ -593,6 +631,15 @@ struct DesktopCodeSidebar: View {
                 secondaryButton: .cancel()
             )
         }
+        .alert("Rename project", isPresented: Binding(
+            get: { projectPendingRename != nil },
+            set: { if !$0 { projectPendingRename = nil } }
+        )) {
+            TextField("Name", text: $projectRenameDraft)
+            Button("Cancel", role: .cancel) { projectPendingRename = nil }
+            Button("Rename") { commitProjectRename() }
+                .disabled(projectRenameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
     }
 
     private var matchingRemoteSessions: [CodeRemoteSessionSummary] {
@@ -616,17 +663,41 @@ struct DesktopCodeSidebar: View {
     /// and how many local runs are available there.
     private func projectSummaryRow(_ group: ProjectGroup) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            Label {
-                Text(group.name)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                JunoIconView(.projects, size: 15)
-                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
+            Button {
+                withAnimation(JunoMotion.fast) {
+                    if expandedProjects.contains(group.workspaceID) {
+                        expandedProjects.remove(group.workspaceID)
+                    } else {
+                        expandedProjects.insert(group.workspaceID)
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(expandedProjects.contains(group.workspaceID) ? 90 : 0))
+                    .frame(width: 14, height: 18)
+                    .contentShape(.rect)
             }
+            .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .junoSecondaryInk()
+            .help(expandedProjects.contains(group.workspaceID) ? "Collapse project" : "Expand project")
 
-            Spacer(minLength: JunoSpace.hairline)
+            Button {
+                selection = .repository(group.workspaceID)
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(.projects, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
+                    Text(group.name)
+                        .junoRowLabel()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
 
             if group.runs.count > 0 {
                 Text(group.runs.count, format: .number)
@@ -636,7 +707,6 @@ struct DesktopCodeSidebar: View {
             projectMenu(group)
         }
         .junoSidebarRowInk()
-        .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
         .contextMenu {
             projectActions(group)
         }
@@ -651,6 +721,8 @@ struct DesktopCodeSidebar: View {
                 .contentShape(.rect)
         }
         .menuStyle(.borderlessButton)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         .fixedSize()
         .help("Project actions")
         .accessibilityLabel("Project actions for \(group.name)")
@@ -667,10 +739,22 @@ struct DesktopCodeSidebar: View {
                 URL(fileURLWithPath: group.path)
             ])
         }
+        Button("Rename…") {
+            projectRenameDraft = group.name
+            projectPendingRename = group
+        }
         Divider()
         Button("Delete Project…", role: .destructive) {
             projectPendingDeletion = group
         }
+    }
+
+    private func commitProjectRename() {
+        guard let project = projectPendingRename else { return }
+        let name = projectRenameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        projectPendingRename = nil
+        Task { await workbench.renameWorkspace(id: project.workspaceID, displayName: name) }
     }
 
     /// "Delete Project" deletes Juno's Code sessions and the stored folder
@@ -744,19 +828,7 @@ struct DesktopCodeSidebar: View {
             title: run.title,
             caption: nested ? run.nestedCaption : run.caption,
             status: run.status
-        ) {
-            if isFavorite(run) {
-                // The accent, because a pin is one of exactly two places the
-                // website spends `--primary` inside the whole column
-                // (`app-sidebar.tsx` draws both the pinned conversation and the
-                // starred project `fill-primary`). It was `junoCaution` here —
-                // an amber that matched neither the web's pin nor the Chat
-                // column's, so one mark had three colours across two windows.
-                JunoIconView(.pin, size: 11)
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityLabel("Favorite")
-            }
-        }
+        ) {}
         .junoSidebarRowInk()
         .tag(run.item)
         .contextMenu { rowMenu(run) }
@@ -1438,14 +1510,14 @@ struct DesktopCodeDraftDetail: View {
             Divider()
 
             Color.clear.overlay {
-                VStack(spacing: JunoSpace.cozy) {
+                VStack(spacing: JunoSpace.section) {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         Text(record == nil ? "What would you like to explore?" : "What are we working on?")
                             // The draft's one display moment; 27pt is
                             // load-bearing, so it goes through `junoFont` to
                             // keep moving with Dynamic Type. `.largeTitle` is
                             // the role: this is the screen's primary title.
-                            .junoFont(size: 27, relativeTo: .largeTitle, weight: .semibold, design: .rounded)
+                            .junoFont(size: 24, relativeTo: .title, weight: .semibold, design: .rounded)
                             .junoInk()
                         Text(
                             record == nil
@@ -1455,7 +1527,7 @@ struct DesktopCodeDraftDetail: View {
                             .font(.callout)
                             .junoSecondaryInk()
                     }
-                    .frame(maxWidth: 680, alignment: .leading)
+                    .frame(maxWidth: 720, alignment: .leading)
 
                     if trimmedPrompt.isEmpty {
                         launchIntentList
@@ -1475,7 +1547,7 @@ struct DesktopCodeDraftDetail: View {
                         .multilineTextAlignment(.center)
                         .accessibilityHidden(true)
                 }
-                .frame(maxWidth: 760)
+                .frame(maxWidth: 800)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .padding(.horizontal, JunoSpace.roomy)
                 .padding(.vertical, JunoSpace.region)
@@ -1496,66 +1568,57 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private var launchIntentList: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text("Suggested starts")
                 .font(.caption.weight(.semibold))
                 .junoMetaInk()
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.top, JunoSpace.cozy)
-                .padding(.bottom, JunoSpace.tight)
 
-            ForEach(Array(launchIntents.enumerated()), id: \.element.id) { index, intent in
-                Button {
-                    apply(intent)
-                } label: {
-                    HStack(spacing: JunoSpace.snug) {
-                        Image(systemName: intent.icon)
-                            // Scaled against the callout row title it marks,
-                            // so glyph and title grow together under Dynamic
-                            // Type.
-                            .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                            .foregroundStyle(Color.junoAccent)
-                            .frame(width: 26, height: 26)
-                            .background(Color.junoAccent.opacity(0.10), in: Circle())
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(intent.title)
-                                .font(.callout.weight(.medium))
-                                .junoInk()
-                            Text(intent.detail)
-                                .font(.caption)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: JunoSpace.snug),
+                    GridItem(.flexible(), spacing: JunoSpace.snug),
+                ],
+                alignment: .leading,
+                spacing: JunoSpace.snug
+            ) {
+                ForEach(launchIntents) { intent in
+                    Button {
+                        apply(intent)
+                    } label: {
+                        HStack(spacing: JunoSpace.snug) {
+                            Image(systemName: intent.icon)
+                                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
                                 .junoSecondaryInk()
+                                .frame(width: 24, height: 24)
+                                .background(Color.junoMuted.opacity(0.7), in: Circle())
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(intent.title)
+                                    .font(.callout.weight(.medium))
+                                    .junoInk()
+                                Text(intent.detail)
+                                    .font(.caption)
+                                    .junoSecondaryInk()
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 0)
                         }
-
-                        Spacer(minLength: JunoSpace.snug)
-
-                        Image(systemName: "arrow.up.right")
-                            .font(.caption.weight(.semibold))
-                            .junoMetaInk()
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .padding(.vertical, JunoSpace.tight)
+                        .background(
+                            Color.junoRaised.opacity(0.72),
+                            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                        )
+                        .contentShape(.rect)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
-
-                if index < launchIntents.count - 1 {
-                    Divider()
-                        .padding(.leading, 26 + JunoSpace.snug + JunoSpace.cozy)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
                 }
             }
         }
-        .frame(maxWidth: 680, alignment: .leading)
-        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                // `junoBorder` is the token whose documented job is outlining
-                // a panel. The hand-diluted separator this replaces was a
-                // third hairline strength no other surface used.
-                .stroke(Color.junoBorder, lineWidth: 1)
-        }
+        .frame(maxWidth: 720, alignment: .leading)
     }
 
     private func apply(_ intent: LaunchIntent) {
@@ -1642,7 +1705,8 @@ struct DesktopCodeDraftDetail: View {
             // diluted accent stops establishing a predictable luminance and
             // reads as whatever is behind the window. A drop hover is the
             // composer's one moment of full emphasis.
-            tint: isDropTargeted ? Color.junoAccent : nil
+            tint: isDropTargeted ? Color.junoAccent : nil,
+            maxWidth: 720
         ) {
             destinationRow
         } input: {
@@ -1852,6 +1916,7 @@ struct DesktopCodeDraftDetail: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .frame(minWidth: 44, minHeight: 44)
         .fixedSize()
         .help("Choose the project this conversation works in")
         .accessibilityIdentifier("juno.code.draft-project")
@@ -2145,6 +2210,7 @@ struct DesktopCodeDraftDetail: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .frame(minWidth: 44, minHeight: 44)
         .fixedSize()
         .foregroundStyle(.primary)
         .help("Add files, pictures, connected apps, or projects")

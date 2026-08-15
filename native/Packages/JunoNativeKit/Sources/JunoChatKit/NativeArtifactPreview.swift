@@ -48,10 +48,12 @@ public struct NativeArtifactPreview: View {
                 ScrollView([.horizontal, .vertical]) {
                     Text(content)
                         .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(sourceInk)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                 }
+                .background(sourceBackground)
             } else if kind == .markdown {
                 ScrollView {
                     Text(markdown)
@@ -78,6 +80,22 @@ public struct NativeArtifactPreview: View {
             markdown: content,
             options: .init(interpretedSyntax: .full)
         )) ?? AttributedString(content)
+    }
+
+    private var sourceInk: Color {
+        #if os(macOS)
+        Color(nsColor: .textColor)
+        #else
+        Color(uiColor: .label)
+        #endif
+    }
+
+    private var sourceBackground: Color {
+        #if os(macOS)
+        Color(nsColor: .textBackgroundColor)
+        #else
+        Color(uiColor: .systemBackground)
+        #endif
     }
 }
 

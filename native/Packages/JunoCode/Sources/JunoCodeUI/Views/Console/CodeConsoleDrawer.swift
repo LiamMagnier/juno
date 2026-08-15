@@ -163,6 +163,7 @@ public struct CodeConsoleDrawer: View {
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .frame(minWidth: 44, minHeight: 44)
                     .focusEffectDisabled()
                     .accessibilityAddTraits(segment == candidate ? .isSelected : [])
                 }

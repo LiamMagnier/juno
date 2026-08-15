@@ -98,6 +98,9 @@ struct DesktopChatWorkspace: View {
     /// composer consumes this once, so the project page never presents a fake
     /// prompt field.
     @State private var draftPrompt: String?
+    /// A one-shot deep link into Projects. The Projects destination itself still
+    /// opens the index; only a concrete project row writes this value.
+    @State private var requestedProjectID: String?
     @State private var sharing = false
     /// Whether the session-cost receipt is open.
     ///
@@ -139,6 +142,10 @@ struct DesktopChatWorkspace: View {
                 )
             },
             set: { item in
+                // A sidebar destination means "open its root". A concrete
+                // pinned-project row writes its id again after this selection,
+                // so only that path deep-links into a project.
+                requestedProjectID = nil
                 let resolved = DesktopNavigationState.resolve(
                     selection: item,
                     current: (currentDestination, model.selectedConversationID)
@@ -163,7 +170,8 @@ struct DesktopChatWorkspace: View {
                 session: session,
                 product: $product,
                 destination: destination,
-                selection: selection
+                selection: selection,
+                requestedProjectID: $requestedProjectID
             )
             .junoSidebarColumn()
         } detail: {
@@ -173,7 +181,8 @@ struct DesktopChatWorkspace: View {
                 session: session,
                 conversationModel: model,
                 draftProjectID: $draftProjectID,
-                draftPrompt: $draftPrompt
+                draftPrompt: $draftPrompt,
+                requestedProjectID: $requestedProjectID
             )
             // The Tasks page reads its selection from here; the inspector below
             // writes it. One object, injected once, because the page is built by
@@ -321,7 +330,6 @@ struct DesktopChatWorkspace: View {
         ToolbarItem(placement: .principal) {
             DesktopChatWorkSwitcher(selection: $product)
         }
-        .sharedBackgroundVisibility(.hidden)
 
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -439,6 +447,11 @@ private struct DesktopChatSidebar: View {
     @Binding var product: DesktopProductMode
     @Binding var destination: DesktopDestination
     @Binding var selection: DesktopSidebarItem?
+    @Binding var requestedProjectID: String?
+    @State private var renameProjectTarget: NativeProject?
+    @State private var renameChatTarget: NativeConversation?
+    @State private var renameDraft = ""
+    @State private var deleteProjectTarget: NativeProject?
 
     private var pinnedProjects: [NativeProject] {
         (projectModel?.projects ?? [])
@@ -497,6 +510,32 @@ private struct DesktopChatSidebar: View {
             accountFooter
         }
         .junoSidebarScrollEdge()
+        .alert("Rename", isPresented: renamePresentation) {
+            TextField("Name", text: $renameDraft)
+            Button("Cancel", role: .cancel) {
+                renameProjectTarget = nil
+                renameChatTarget = nil
+            }
+            Button("Save") { commitRename() }
+                .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .confirmationDialog(
+            deleteProjectTarget.map { "Delete “\($0.name)”?" } ?? "",
+            isPresented: Binding(
+                get: { deleteProjectTarget != nil },
+                set: { if !$0 { deleteProjectTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete project", role: .destructive) {
+                guard let project = deleteProjectTarget else { return }
+                deleteProjectTarget = nil
+                Task { await projectModel?.deleteProject(id: project.id) }
+            }
+            Button("Cancel", role: .cancel) { deleteProjectTarget = nil }
+        } message: {
+            Text("Chats stay in Juno and are unlinked from the project. The project’s files are removed.")
+        }
     }
 
     private func projectRow(_ project: NativeProject) -> some View {
@@ -504,6 +543,7 @@ private struct DesktopChatSidebar: View {
             projectModel?.selectedProjectID = project.id
             destination = .projects
             selection = .destination(.projects)
+            requestedProjectID = project.id
         } label: {
             HStack(spacing: JunoSpace.tight) {
                 Text(project.name)
@@ -512,10 +552,27 @@ private struct DesktopChatSidebar: View {
                 Spacer(minLength: 0)
             }
             .junoSidebarRowInk()
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Pinned project, \(project.name)")
         .accessibilityIdentifier("juno.desktop.project.\(project.id)")
+        .contextMenu {
+            Button("Open") {
+                projectModel?.selectedProjectID = project.id
+                destination = .projects
+                selection = .destination(.projects)
+                requestedProjectID = project.id
+            }
+            Button("Unpin") {
+                Task { await projectModel?.updateProject(id: project.id, starred: false) }
+            }
+            Button("Rename…") { beginRename(project) }
+            Divider()
+            Button("Delete project…", role: .destructive) {
+                deleteProjectTarget = project
+            }
+        }
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {
@@ -572,6 +629,7 @@ private struct DesktopChatSidebar: View {
                     )
                 }
             }
+            Button("Rename…") { beginRename(conversation) }
             Divider()
             // One destructive action, and it really deletes: `deleteConversation`
             // enqueues `conversation.delete`, not an archive flag. There is no
@@ -581,6 +639,42 @@ private struct DesktopChatSidebar: View {
                 Task { await model.deleteConversation(id: conversation.id) }
             }
         }
+    }
+
+    private var renamePresentation: Binding<Bool> {
+        Binding(
+            get: { renameProjectTarget != nil || renameChatTarget != nil },
+            set: {
+                if !$0 {
+                    renameProjectTarget = nil
+                    renameChatTarget = nil
+                }
+            }
+        )
+    }
+
+    private func beginRename(_ project: NativeProject) {
+        renameDraft = project.name
+        renameProjectTarget = project
+        renameChatTarget = nil
+    }
+
+    private func beginRename(_ conversation: NativeConversation) {
+        renameDraft = conversation.title
+        renameChatTarget = conversation
+        renameProjectTarget = nil
+    }
+
+    private func commitRename() {
+        let name = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        if let project = renameProjectTarget {
+            Task { await projectModel?.updateProject(id: project.id, name: name) }
+        } else if let conversation = renameChatTarget {
+            Task { await model.renameConversation(id: conversation.id, title: name) }
+        }
+        renameProjectTarget = nil
+        renameChatTarget = nil
     }
 
     /// The door to Design, a staged update, and then the account row — pinned to
@@ -806,7 +900,14 @@ struct DesktopConversationView: View {
             // conversation exactly as the website's does, so the reply the
             // artifact came out of stays readable next to it — which is the whole
             // difference between docking and covering.
-            DesktopArtifactDock(artifact: openArtifact, close: closeArtifact) {
+            DesktopArtifactDock(
+                artifact: openArtifact,
+                close: closeArtifact,
+                requestEdit: { prompt in
+                    draftPrompt = prompt
+                    closeArtifact()
+                }
+            ) {
                 transcriptColumn
             }
         }
@@ -1697,6 +1798,7 @@ private struct DesktopMessageRow: View {
             .junoSecondaryInk()
         }
         .buttonStyle(.plain)
+        .contentShape(.rect)
         .accessibilityIdentifier("juno.desktop.chat.message-expand")
     }
 
@@ -2857,12 +2959,12 @@ struct DesktopComposer: View {
     }
 
     private func consumeDraftPrompt() {
-        guard model.selectedConversationID == nil,
-            prompt.isEmpty,
+        guard prompt.isEmpty,
             let seededPrompt = draftPrompt
         else { return }
         prompt = seededPrompt
         draftPrompt = nil
+        focused = true
     }
 
     /// The quiet offer under a long draft: "That's a long one — send it as a
@@ -3100,10 +3202,9 @@ struct DesktopComposer: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .junoGlass(in: Capsule(), interactive: true)
             .contentShape(.capsule)
         }
-        .buttonStyle(.junoPress)
+        .buttonStyle(.borderless)
         .fixedSize(horizontal: true, vertical: false)
         .help("Choose model")
         .accessibilityLabel("Model")
@@ -3174,10 +3275,9 @@ struct DesktopComposer: View {
                 .junoInk()
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .junoGlass(in: Capsule(), interactive: true)
                 .contentShape(.capsule)
             }
-            .buttonStyle(.junoPress)
+            .buttonStyle(.borderless)
             .fixedSize()
             .help("How much thinking the model does before answering")
             .accessibilityLabel("Thinking")

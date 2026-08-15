@@ -55,12 +55,20 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             app.textFields["juno.code.launch-prompt"]
                 .waitForExistence(timeout: 12)
         )
-        // SwiftUI `Menu` is exposed as `XCUIElementTypeMenuButton` on macOS.
+        // Ordinary SwiftUI menus are exposed as menu buttons on macOS.
         XCTAssertTrue(app.menuButtons["juno.code.launch-target"].exists)
         XCTAssertTrue(app.menuButtons["juno.code.launch-contract"].exists)
         XCTAssertTrue(app.buttons["juno.code.launch-model"].exists)
-        XCTAssertTrue(app.buttons["juno.code.composer.voice"].exists)
-        XCTAssertTrue(app.buttons["juno.code.composer.dictate"].exists)
+        // The first-turn composer deliberately merges dictation and realtime
+        // voice into one native split-menu. Active sessions still expose the
+        // two distinct controls because there is enough horizontal context to
+        // label both jobs without making the empty-state composer noisy.
+        // A `Menu(primaryAction:)` changed from menuButton to button in the
+        // macOS 27 accessibility bridge. The identifier is the stable contract;
+        // the platform's private element classification is not.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.code.composer.voice"].exists
+        )
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.product-brand.code"]
                 .waitForExistence(timeout: 5)
@@ -184,6 +192,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             "--juno-preview-tab", "code",
             "--juno-preview-code-session",
             "--juno-preview-inspector",
+            "--juno-preview-inspector-pane", "subagents",
             "--juno-preview-size", "1240x800",
         ]
         app.launch()
@@ -201,17 +210,25 @@ final class JunoDesktopLaunchUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(
+            app.descendants(matching: .any)["juno.code.subagents"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
             app.descendants(matching: .any)["juno.code.goal.bar"]
                 .waitForExistence(timeout: 5)
         )
-        let goalDetails = app.buttons["juno.code.goal.details"]
-        XCTAssertTrue(goalDetails.exists)
-        goalDetails.click()
+
+        // Exercise the exact regression: closing and restoring the trailing
+        // Sub-agents rail while the transcript is live must neither crash nor
+        // leave the right pane detached from its toolbar control.
+        let inspectorToggle = app.buttons["juno.code.inspector.toggle"]
+        inspectorToggle.click()
+        XCTAssertFalse(app.descendants(matching: .any)["juno.code.subagents"].exists)
+        inspectorToggle.click()
         XCTAssertTrue(
-            app.descendants(matching: .any)["juno.code.goal.popover"]
+            app.descendants(matching: .any)["juno.code.subagents"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.descendants(matching: .any)["juno.code.changes"].exists)
         XCTAssertTrue(app.exists)
     }
 

@@ -25,7 +25,11 @@ export async function GET(req: Request) {
 // workspace fields reuse PATCH's schema so creating a session and retro-marking
 // one accept identical values — a single shared clamp used to truncate every
 // field at 300, quietly cutting long paths and losing path-fallback grouping.
-const createSchema = z.object(codeWorkspaceAttributionShape);
+const createSchema = z.object({
+  ...codeWorkspaceAttributionShape,
+  model: z.string().trim().min(1).max(200).optional(),
+  activeConnectors: z.array(z.string().min(1).max(100)).max(50).optional(),
+});
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -43,6 +47,8 @@ export async function POST(req: Request) {
       userId: user.id,
       titleSource: "default",
       kind,
+      model: d.model ?? undefined,
+      activeConnectors: d.activeConnectors ?? [],
       ...(kind === "code"
         ? {
             // A code session isn't a chat: the schema's "New chat" default read

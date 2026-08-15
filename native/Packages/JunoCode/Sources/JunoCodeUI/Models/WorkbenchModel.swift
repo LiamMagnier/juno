@@ -420,6 +420,16 @@ public final class WorkbenchModel {
         workspaces = await workspaceDirectory.allWorkspaces()
     }
 
+    public func renameWorkspace(id: WorkspaceID, displayName: String) async {
+        do {
+            try await workspaceDirectory.rename(id: id, displayName: displayName)
+            workspaces = await workspaceDirectory.allWorkspaces()
+            lastError = nil
+        } catch {
+            lastError = "Could not rename the project: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Sessions
 
     /// - Parameter workspaceID: nil starts a conversation with no project.

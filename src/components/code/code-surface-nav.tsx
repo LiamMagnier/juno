@@ -30,10 +30,17 @@ export function CodeSurfaceNav({
   active,
   className,
 }: {
-  active: "runs" | "pulls";
+  active: "new" | "runs" | "pulls";
   className?: string;
 }) {
   const views = [
+    {
+      id: "new" as const,
+      href: "/code/new",
+      label: "New session",
+      icon: AppIcons.new,
+      description: "Start a new Juno Code task",
+    },
     {
       id: "runs" as const,
       href: "/code",

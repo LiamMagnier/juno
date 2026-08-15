@@ -299,15 +299,18 @@ enum DesktopArtifactCanvasMetrics {
 struct DesktopArtifactDock<Content: View>: View {
     let artifact: DesktopChatArtifact?
     let close: () -> Void
+    let requestEdit: (String) -> Void
     private let content: Content
 
     init(
         artifact: DesktopChatArtifact?,
         close: @escaping () -> Void,
+        requestEdit: @escaping (String) -> Void,
         @ViewBuilder content: () -> Content
     ) {
         self.artifact = artifact
         self.close = close
+        self.requestEdit = requestEdit
         self.content = content()
     }
 
@@ -401,7 +404,11 @@ struct DesktopArtifactDock<Content: View>: View {
                 if !isCompact {
                     resizeHandle
                 }
-                DesktopArtifactCanvas(artifact: artifact, close: close)
+                DesktopArtifactCanvas(
+                    artifact: artifact,
+                    close: close,
+                    requestEdit: requestEdit
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(width: isCompact ? nil : canvasWidth)
             }
@@ -513,8 +520,12 @@ struct DesktopArtifactDock<Content: View>: View {
 struct DesktopArtifactCanvas: View {
     let artifact: DesktopChatArtifact
     let close: () -> Void
+    let requestEdit: (String) -> Void
 
     @State private var mode = DesktopArtifactViewMode.preview
+    @State private var draftContent = ""
+    @State private var sourceIsEditing = false
+    @State private var selectedComponent: DesktopArtifactComponent?
     @State private var pendingDownload: DesktopChatArtifactDownload?
     @State private var downloadError: String?
 
@@ -542,7 +553,13 @@ struct DesktopArtifactCanvas: View {
             // through to source for those, so this cannot leave the switch
             // pointing at a segment that is not on screen.
             mode = .preview
+            draftContent = artifact.reference.content
+            sourceIsEditing = false
+            selectedComponent = nil
             downloadError = nil
+        }
+        .onAppear {
+            if draftContent.isEmpty { draftContent = artifact.reference.content }
         }
         .fileExporter(
             isPresented: Binding(
@@ -588,7 +605,7 @@ struct DesktopArtifactCanvas: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            ShareLink(item: artifact.reference.content, subject: Text(artifact.title)) {
+            ShareLink(item: resolvedContent, subject: Text(artifact.title)) {
                 headerGlyph("square.and.arrow.up")
             }
             .buttonStyle(.plain)
@@ -597,13 +614,13 @@ struct DesktopArtifactCanvas: View {
 
             Menu {
                 Button("Copy Source") {
-                    JunoPasteboard.copy(artifact.reference.content)
+                    JunoPasteboard.copy(resolvedContent)
                 }
                 Button("Save Source As…") {
                     downloadError = nil
                     pendingDownload = DesktopChatArtifactDownload(
                         document: DesktopChatArtifactDocument(
-                            text: artifact.reference.content
+                            text: resolvedContent
                         ),
                         name: DesktopArtifactKindLabel.fileName(
                             title: artifact.reference.title,
@@ -727,6 +744,49 @@ struct DesktopArtifactCanvas: View {
 
             Spacer(minLength: JunoSpace.snug)
 
+            if supportsComponentSelection, !componentCandidates.isEmpty {
+                Menu {
+                    ForEach(componentCandidates) { component in
+                        Button(component.label) { selectedComponent = component }
+                    }
+                } label: {
+                    Label(selectedComponent?.shortLabel ?? "Select component", systemImage: "scope")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .contentShape(.rect)
+                .help("Choose an element to target in an edit")
+
+                if let selectedComponent {
+                    Button("Edit") {
+                        requestEdit(
+                            "Edit the \(selectedComponent.promptDescription) in “\(artifact.title)”. "
+                                + "Keep the rest of the artifact unchanged."
+                        )
+                    }
+                    .buttonStyle(.borderless)
+                    .contentShape(.rect)
+                    .help("Put a targeted edit request in the conversation composer")
+                }
+            }
+
+            if resolvedMode == .source {
+                Button(sourceIsEditing ? "Done" : "Edit source") {
+                    sourceIsEditing.toggle()
+                }
+                .buttonStyle(.borderless)
+                .contentShape(.rect)
+            }
+
+            if hasDraftChanges {
+                Button("Reset") {
+                    draftContent = artifact.reference.content
+                    selectedComponent = nil
+                }
+                .buttonStyle(.borderless)
+                .contentShape(.rect)
+            }
+
             if let downloadError {
                 Text(downloadError)
                     .font(.caption)
@@ -762,7 +822,7 @@ struct DesktopArtifactCanvas: View {
             // gives: the console transcript belongs to one document.
             DesktopArtifactLiveCanvas(
                 kind: artifact.kind,
-                content: artifact.reference.content,
+                content: resolvedContent,
                 layout: .tabbed
             )
             .id(artifact.id)
@@ -775,18 +835,114 @@ struct DesktopArtifactCanvas: View {
             // `JunoDetailPage` clamps the measure — the same substitution
             // ``DesktopArtifactsScreen`` makes, for the same reason.
             JunoDetailPage {
-                JunoMarkdownText(artifact.reference.content)
+                JunoMarkdownText(resolvedContent)
                     .padding(JunoSpace.section)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .junoCard()
             }
+        } else if resolvedMode == .source, sourceIsEditing {
+            TextEditor(text: $draftContent)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(Color.junoForeground)
+                .scrollContentBackground(.hidden)
+                .padding(JunoSpace.snug)
+                .background(Color.junoCanvasWarm)
+                .accessibilityLabel("Artifact source editor")
+                .accessibilityIdentifier("juno.desktop.chat.artifact-source-editor")
         } else {
             NativeArtifactPreview(
                 kind: artifact.kind,
-                content: artifact.reference.content,
+                content: resolvedContent,
                 mode: resolvedMode.displayMode
             )
         }
+    }
+
+    private var resolvedContent: String {
+        draftContent.isEmpty ? artifact.reference.content : draftContent
+    }
+
+    private var hasDraftChanges: Bool {
+        resolvedContent != artifact.reference.content
+    }
+
+    private var supportsComponentSelection: Bool {
+        artifact.kind == .html || artifact.kind == .svg
+    }
+
+    private var componentCandidates: [DesktopArtifactComponent] {
+        DesktopArtifactComponent.extract(from: resolvedContent)
+    }
+}
+
+struct DesktopArtifactComponent: Identifiable, Hashable {
+    let id: String
+    let tag: String
+    let elementID: String?
+    let className: String?
+
+    var shortLabel: String {
+        if let elementID { return "#\(elementID)" }
+        if let className, let first = className.split(separator: " ").first {
+            return ".\(first)"
+        }
+        return tag
+    }
+
+    var label: String {
+        var value = "<\(tag)>"
+        if let elementID { value += "  #\(elementID)" }
+        if let className, !className.isEmpty { value += "  .\(className.replacingOccurrences(of: " ", with: "."))" }
+        return value
+    }
+
+    var promptDescription: String {
+        if let elementID { return "<\(tag)> element with id \"\(elementID)\"" }
+        if let className { return "<\(tag)> element with class \"\(className)\"" }
+        return "<\(tag)> component"
+    }
+
+    static func extract(from source: String) -> [Self] {
+        guard let expression = try? NSRegularExpression(
+            pattern: #"<([A-Za-z][A-Za-z0-9:-]*)([^>]*)>"#
+        ) else { return [] }
+        let nsSource = source as NSString
+        let matches = expression.matches(
+            in: source,
+            range: NSRange(location: 0, length: nsSource.length)
+        )
+        let skipped: Set<String> = ["html", "head", "meta", "link", "script", "style"]
+        var rows: [Self] = []
+        var seen: Set<String> = []
+
+        for (index, match) in matches.enumerated() {
+            guard match.numberOfRanges >= 3 else { continue }
+            let tag = nsSource.substring(with: match.range(at: 1)).lowercased()
+            guard !skipped.contains(tag) else { continue }
+            let attributes = nsSource.substring(with: match.range(at: 2))
+            let elementID = attribute("id", in: attributes)
+            let className = attribute("class", in: attributes)
+            let identity = elementID.map { "#\($0)" }
+                ?? className.map { "\(tag).\($0)" }
+                ?? "\(tag)-\(index)"
+            guard seen.insert(identity).inserted else { continue }
+            rows.append(Self(id: identity, tag: tag, elementID: elementID, className: className))
+            if rows.count == 60 { break }
+        }
+        return rows
+    }
+
+    private static func attribute(_ name: String, in attributes: String) -> String? {
+        guard let expression = try? NSRegularExpression(
+            pattern: "\\b\(NSRegularExpression.escapedPattern(for: name))\\s*=\\s*[\\\"']([^\\\"']+)[\\\"']",
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let nsAttributes = attributes as NSString
+        guard let match = expression.firstMatch(
+            in: attributes,
+            range: NSRange(location: 0, length: nsAttributes.length)
+        ), match.numberOfRanges > 1 else { return nil }
+        return nsAttributes.substring(with: match.range(at: 1))
     }
 }
 

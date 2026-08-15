@@ -4,12 +4,24 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Mic } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUp,
+  ChevronDown,
+  Clock,
+  Laptop,
+  Loader2,
+  Mic,
+  Sparkles,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ComposerShell } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { ModelSelector } from "@/components/chat/model-selector";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { JunoMark } from "@/components/brand/logo";
 import {
   CodeTargetPicker,
@@ -23,29 +35,40 @@ import {
   ComposerDropOverlay,
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
+import {
+  CodeConnectorsMenu,
+  CodeActiveConnectorsBar,
+} from "@/components/code/code-connectors-menu";
+import { CodePresetsGrid, type CodePreset } from "@/components/code/code-presets";
+import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
+import { useCodeRuns } from "@/components/code/use-code-runs";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
+import { isAutoModelId } from "@/lib/auto-model";
+import {
+  clampReasoningEffort,
+  defaultReasoning,
+  reasoningGlow,
+  reasoningOptions,
+  type ReasoningEffort,
+} from "@/lib/model-metrics";
+import { providerAccent } from "@/lib/provider-colors";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
+const MODEL_KEY = "juno:code:model";
+const EFFORT_KEY = "juno:code:reasoning";
+const CONNECTORS_KEY = "juno:code:connectors";
 
-/*
- * The composer's separator, one string, used everywhere one is needed on this
- * screen. chat/composer.tsx:2205 records what the alternative shipped: two
- * heights (h-5/h-4) behind two breakpoints (min-[420px]/min-[380px]), so
- * between 380 and 420px two different separators were on screen at once. This
- * file carried the losing half of that pair until now.
- */
 const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block";
 
-/** Cloud task-dispatch failures surfaced inline under the composer (503/502). */
 type CloudStartError = "not_configured" | "dispatch_failed" | null;
 
 function CodeGreeting() {
@@ -54,93 +77,35 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      {/*
-        THIS CONTROL IS THE WAY BACK, and that is the whole navigational change
-        this screen needed. Until `/code` existed there was nowhere for it to
-        go, so the composer was a screen you could only leave through the
-        sidebar — which is why the sidebar had to make `/code/new` the landing
-        route for the entire mode. A run list you cannot get to from the screen
-        that fills it is a run list most people never see.
+      <div className="mb-3.5 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-mono text-caption font-medium text-primary">
+        <JunoMark className="size-3.5 text-primary" />
+        <span>Juno Code Agent</span>
+      </div>
 
-        A real <Link>, so it is middle-clickable, cmd-clickable and announced as
-        a link — the same argument AppPageHeader makes about its own back
-        control, which six pages had got wrong with a router.push onClick.
-
-        It is a ghost <Button asChild> now, which is that same idiom rather than
-        a hand-drawn pill. What it was: a bordered capsule setting its label in
-        `font-mono text-micro uppercase tracking-wider` — full uppercase mono at
-        10.5px, off the type scale, on the only way off this screen. The label
-        is sentence case in the sans face at a real rung now, and the hit area
-        grows on touch because the size variant already does that.
-      */}
-      <Button asChild variant="ghost" size="sm" className="mb-3 text-muted-foreground">
-        <Link href="/code">
-          <JunoMark className="size-3.5" />
-          <span>Juno Code</span>
-          <span className="sr-only">— see all runs</span>
-        </Link>
-      </Button>
-      {/* `text-display`, the same rung the session view's own hero uses. The
-          old `text-3xl sm:text-4xl` pair is not on the product type scale, and
-          it put the two Code screens' headings at two different sizes one
-          navigation apart — the token's clamp already does the responsive work
-          the breakpoint was hand-rolling. */}
       <h1 className="text-center font-serif text-display font-normal tracking-tight text-foreground">
         What are we building today{firstName ? `, ${firstName}` : ""}?
       </h1>
-      <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground sm:text-base">
-        Juno Code works in a synced project on your Mac, or on a fresh cloud machine that opens a
-        pull request. Pick where it runs below, then say what to change.
+      <p className="mt-2.5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
+        Autonomous coding tasks in your Mac&apos;s workspace or on an isolated cloud runner with full GitHub review.
       </p>
     </div>
   );
 }
 
-/**
- * WHAT WILL STOP TO ASK YOU, STATED — AND WHY IT IS A FACT AND NOT A PICKER.
- *
- * Every comparable product puts a three-tier permission selector beside the
- * composer, and the instinct to add one here is right about the goal and wrong
- * about the mechanism. `POST /api/code/tasks` carries no permission field. A
- * selector on this screen would change nothing about the run — which is exactly
- * what the model picker and the thinking slider did before they were removed
- * from this file, for reasons the comment above `model` still spells out. A
- * control that lies about its own effect is worse than no control, and shipping
- * a second one here would undo a fix this screen already made.
- *
- * So the gate is REPORTED instead, and the two answers are genuinely different:
- *
- *   Device — the Mac decides, and its default is `askBeforeChanges`. Risky
- *            steps raise an approval you answer here or in the run list.
- *   Cloud  — the runner auto-approves every step and logs an audit trail
- *            (`requestApproval` in scripts/cloud-code-runner.mjs returns
- *            "allow"). Nothing will stop to ask you; the pull request at the
- *            end is the review.
- *
- * That second sentence is the one worth the pixels. A reader who believes a
- * cloud run will pause before something destructive is a reader who has been
- * misled by the absence of a statement, and no competitor's permission picker
- * tells them either.
- *
- * The words are the Mac app's own (`PermissionModeLabel` in
- * JunoCodeUI/Views/Composer.swift). ONE vocabulary across the web and the
- * native client, because two names for one concept is the single most-cited
- * confusion in this whole product category.
- */
 function PermissionFact({ target }: { target: Target }) {
   const cloud = target === "cloud";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex min-w-0 cursor-help items-center gap-1">
-          <CodeIcons.permission className="size-3 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate">{cloud ? "Full access" : "Ask before changes"}</span>
+        <span className="flex min-w-0 cursor-help items-center gap-1.5 font-mono text-ui text-muted-foreground hover:text-foreground transition-colors">
+          <CodeIcons.permission className="size-3 shrink-0 text-primary/80" aria-hidden="true" />
+          <span className="min-w-0 truncate">{cloud ? "Full access (PR review)" : "Ask before changes"}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">
         {cloud
-          ? "A cloud run approves its own steps on a throwaway machine and records what it did. Nothing will pause to ask you — the pull request is the review."
-          : "Your Mac pauses and asks before anything risky. Answer from the run list without opening the session."}
+          ? "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review."
+          : "Your Mac pauses and prompts for approval before applying high-impact changes or terminal commands."}
       </TooltipContent>
     </Tooltip>
   );
@@ -150,7 +115,7 @@ export default function NewCodeSessionPage() {
   const router = useRouter();
   const { settings, upsertConversation, removeConversation, features } = useApp();
 
-  // —— Target (Device ⇄ Cloud), restored after mount (SSR renders "device") ——
+  // —— Target (Device ⇄ Cloud) ——
   const [target, setTarget] = React.useState<Target>("device");
   React.useEffect(() => {
     try {
@@ -158,29 +123,14 @@ export default function NewCodeSessionPage() {
       if (saved === "cloud" || saved === "device") setTarget(saved);
     } catch {}
   }, []);
-  // Reuse one cloud conversation across retries so a transient dispatch failure
-  // doesn't leak an empty session on every attempt.
+
   const cloudConversationId = React.useRef<string | null>(null);
 
-  /*
-   * Retries reused that conversation, and nothing ever cleaned it up — so a
-   * failed cloud start still left exactly one empty untitled session in the
-   * sidebar with no run behind it, and switching to Device or walking away
-   * stranded it there for good.
-   *
-   * Called on every path that ends the retry: a non-retryable failure, leaving
-   * Cloud, and picking a DIFFERENT repository — that last one is not tidiness.
-   * The orphan carries the first repo's name and path, and `startCloud` only
-   * creates a conversation when the ref is empty, so without this the retry
-   * would stream a run against repo B into a session labelled repo A.
-   */
   const discardOrphanCloudSession = React.useCallback(() => {
     const id = cloudConversationId.current;
     if (!id) return;
     cloudConversationId.current = null;
     removeConversation(id);
-    // Fire-and-forget: the user is not waiting on this, and a failed delete
-    // leaves exactly what failing to try would have.
     void fetch(`/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
   }, [removeConversation]);
 
@@ -196,107 +146,122 @@ export default function NewCodeSessionPage() {
     [discardOrphanCloudSession],
   );
 
-  // —— Selection state (kept per target so toggling never loses a pick) ——
+  // —— Workspace / Repository Selection ——
   const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
 
-  // —— Prompt (the only thing this screen actually decides, besides target) ——
+  // —— Model Selector State ——
+  const [model, setModel] = React.useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(MODEL_KEY);
+      if (saved) return saved;
+    } catch {}
+    return resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL;
+  });
+
+  const changeModel = React.useCallback((next: string) => {
+    setModel(next);
+    try {
+      localStorage.setItem(MODEL_KEY, next);
+    } catch {}
+  }, []);
+
+  const modelInfo = React.useMemo(() => resolveModel(model), [model]);
+
+  // —— Thinking Slider / Reasoning Effort State ——
+  const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(() => {
+    try {
+      const saved = localStorage.getItem(EFFORT_KEY);
+      if (saved) return saved as ReasoningEffort;
+    } catch {}
+    return modelInfo ? defaultReasoning(modelInfo) : null;
+  });
+
+  const changeReasoning = React.useCallback((next: ReasoningEffort) => {
+    setReasoningEffort(next);
+    try {
+      if (next) localStorage.setItem(EFFORT_KEY, next);
+      else localStorage.removeItem(EFFORT_KEY);
+    } catch {}
+  }, []);
+
+  const [fastMode, setFastMode] = React.useState(false);
+  const [proMode, setProMode] = React.useState(false);
+
+  // —— Connectors State ——
+  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(CONNECTORS_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return ["github", "terminal", "web-search"];
+  });
+
+  const toggleConnector = React.useCallback((id: string) => {
+    setEnabledConnectors((prev) => {
+      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
+      try {
+        localStorage.setItem(CONNECTORS_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // —— Prompt & Uploads ——
   const [prompt, setPrompt] = React.useState("");
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [dictating, setDictating] = React.useState(false);
-  /*
-   * THE MODEL PICKER AND THE THINKING SLIDER ARE GONE, and this is what they
-   * were: two controls that changed nothing about the run.
-   *
-   * POST /api/code/tasks carries no `model` and no `reasoningEffort` field, and
-   * dispatchCloudRunner never reads one — the picked model was only ever
-   * written onto the local conversation record (still is, below). The effort
-   * control was worse than inert: it wrote through `setComposerPrefs`, which
-   * persists to the shared `juno:composer-prefs` key, so dragging it here
-   * silently and permanently changed the effort the CHAT composer would use
-   * next, while doing nothing to the code task being started. The session
-   * composer in code-session-view already ships without both, which is the
-   * honest shape; these come back when the task API can carry them.
-   *
-   * The model still rides onto the conversation so the sidebar's record matches
-   * the account default — a value, not a choice, so no control claims otherwise.
-   */
-  const model = React.useMemo(
-    () => resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL,
-    [settings.defaultModel],
-  );
   const canAttach = features.storage;
 
-  /*
-   * Composer aura — the accent bloom behind an empty composer (globals.css
-   * ".composer-aura"), which the empty chat has had and this screen has not.
-   * They are the same screen: a greeting, a composer under it, and nothing else
-   * yet. The bloom's stated job is that a brand-new session is the warmest
-   * thing on the page, and a brand-new Code session is exactly that.
-   *
-   * It rides on the CSS defaults rather than on custom properties from here,
-   * because the two properties it can take — `--aura-provider` (the lab colour
-   * behind the picked model) and `--aura-think` (how hard it is set to think) —
-   * are answers to questions this screen no longer asks. Both are registered
-   * with real initial values (`hsl(var(--primary))` and 0.5), so the bloom is
-   * the brand tint at mid effort: the light says "a new session", which is the
-   * only thing left that is true here.
-   *
-   * The remaining two inputs need no wiring and are live for free: focus is
-   * `:focus-within` on the `.composer-surface` class this composer already
-   * carries, and reduced motion is handled inside the same CSS.
-   */
-
-  // Send swells the bloom once. Cleared on a timer rather than `animationend`:
-  // under prefers-reduced-motion the keyframes are switched off, so that event
-  // would never arrive and the class would stick for the rest of the visit.
+  // —— Dynamic Aura Glow ——
   const [auraSending, setAuraSending] = React.useState(false);
   React.useEffect(() => {
     if (!auraSending) return;
     const t = window.setTimeout(() => setAuraSending(false), 1150);
     return () => window.clearTimeout(t);
   }, [auraSending]);
+
+  const auraProvider = React.useMemo(() => {
+    if (!modelInfo?.provider) return "hsl(var(--primary))";
+    return providerAccent(modelInfo.provider);
+  }, [modelInfo?.provider]);
+
+  const auraThink = React.useMemo(() => {
+    return reasoningGlow(reasoningEffort);
+  }, [reasoningEffort]);
+
   const { supported: speechSupported } = useSpeechRecognition();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
-  // —— Submission ——
+  // —— Submission & Status ——
   const [submitting, setSubmitting] = React.useState(false);
   const [cloudStartError, setCloudStartError] = React.useState<CloudStartError>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
 
+  const { runs } = useCodeRuns();
+  const recentRun = runs[0] ?? null;
+
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, []);
+
   React.useEffect(() => {
     autoresize();
   }, [prompt, autoresize]);
-  /*
-   * Mount: take the seed the empty run list may have sent, then focus.
-   *
-   * Read from `window.location` rather than through `useSearchParams`, and that
-   * is not laziness — this is a one-shot prefill of a field the user is about to
-   * edit, so it wants a value ONCE at mount, not a subscription that re-runs on
-   * every navigation. It also keeps the whole screen off the Suspense boundary
-   * `useSearchParams` drags in.
-   *
-   * The seed only ever lands in an EMPTY field. A draft already in progress
-   * beats anything a URL has to say about what the user meant to type.
-   */
+
   React.useEffect(() => {
     try {
       const seed = new URLSearchParams(window.location.search).get("seed");
       if (seed?.trim()) setPrompt((current) => (current.trim() ? current : seed));
-    } catch {
-      /* a malformed query is not worth a broken composer */
-    }
+    } catch {}
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
@@ -304,18 +269,8 @@ export default function NewCodeSessionPage() {
   const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
   const canSubmit = hasTarget && hasPayload && !submitting && !isUploading;
 
-  /*
-   * Voice mode, which this screen has never had — only dictation, which is a
-   * different thing (dictation types for you; voice is a conversation). Gated
-   * in `useCodeVoice`: paid plan, a relay configured, not already live, and not
-   * while this screen is mid-submit or mid-dictation, since both of those want
-   * the same microphone.
-   */
   const codeVoice = useCodeVoice({ disabled: submitting || dictating });
 
-  // Every start path answers the same question — did the session actually
-  // begin? — because the voice panel's hand-off has to know: a refusal leaves
-  // the spoken line on screen to be sent again, and a success ends the call.
   const startDevice = React.useCallback(
     async (w: Workspace, text: string, attachments: ClientAttachment[]): Promise<boolean> => {
       const res = await fetch("/api/conversations", {
@@ -325,28 +280,23 @@ export default function NewCodeSessionPage() {
           kind: "code",
           codeWorkspaceName: w.name,
           codeWorkspacePath: w.path,
-          // Stable identity when the mirror has one — sessions then follow the
-          // workspace even if the folder moves on disk.
           codeWorkspaceKey: w.key ?? undefined,
+          model,
+          activeConnectors: enabledConnectors,
         }),
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
-      // Hand the first prompt (+ attachments) off to the session view, which
-      // dispatches once the Mac is reachable (create contract stays prompt-free).
       setPendingCodePrompt(conversation.id, text, attachments);
-      // Carry the chosen model into the client-side session record.
-      upsertConversation({ ...conversation, model });
+      upsertConversation({ ...conversation, model, activeConnectors: enabledConnectors });
       router.push(`/chat/${conversation.id}`);
       return true;
     },
-    [model, router, upsertConversation],
+    [enabledConnectors, model, router, upsertConversation],
   );
 
   const startCloud = React.useCallback(
     async (repo: CloudRepo, text: string, ref: string | null, attachments: ClientAttachment[]): Promise<boolean> => {
-      // 1) Ensure a kind:"code" session to stream the run into. The repo is the
-      //    cloud "workspace": name for display, owner/name as the path.
       let conversation: ClientConversation | null = null;
       if (!cloudConversationId.current) {
         const cRes = await fetch("/api/conversations", {
@@ -356,6 +306,8 @@ export default function NewCodeSessionPage() {
             kind: "code",
             codeWorkspaceName: repo.name,
             codeWorkspacePath: `${repo.owner}/${repo.name}`,
+            model,
+            activeConnectors: enabledConnectors,
           }),
         });
         if (!cRes.ok) throw new Error("conversation");
@@ -368,7 +320,6 @@ export default function NewCodeSessionPage() {
         text.slice(0, 60) ||
         (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
 
-      // 2) Dispatch the cloud task against the selected repo.
       const tRes = await fetch("/api/code/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -390,6 +341,7 @@ export default function NewCodeSessionPage() {
             title: titleFallback.slice(0, 48),
             titleSource: "manual",
             model,
+            activeConnectors: enabledConnectors,
           });
         }
         clear();
@@ -398,10 +350,6 @@ export default function NewCodeSessionPage() {
       }
 
       const err = ((await tRes.json().catch(() => ({}))) as { error?: string }).error;
-      // Only `dispatch_failed` is worth holding the session open for — its
-      // banner is the one with a Try again. Every other failure here needs a
-      // different server, a different connection or a different file, so the
-      // empty session it would leave behind is pure litter.
       if (tRes.status === 503 && err === "cloud_runner_not_configured") {
         setCloudStartError("not_configured");
         discardOrphanCloudSession();
@@ -419,7 +367,7 @@ export default function NewCodeSessionPage() {
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, model, router, upsertConversation],
+    [clear, discardOrphanCloudSession, enabledConnectors, model, router, upsertConversation],
   );
 
   const submit = React.useCallback(
@@ -429,8 +377,6 @@ export default function NewCodeSessionPage() {
       if ((!text && attachments.length === 0) || submitting || isUploading) return false;
       if (target === "device" ? !selectedWorkspace : !selectedRepo) return false;
 
-      // Past every guard that can still refuse the turn, so the bloom only
-      // swells for a session that is genuinely being started.
       setAuraSending(true);
       setSubmitting(true);
       setCloudStartError(null);
@@ -480,8 +426,6 @@ export default function NewCodeSessionPage() {
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
       }
-      // Gate the same way the send button does — if target is missing, park the
-      // words in the field so the user can finish setup without losing them.
       if (!(target === "device" ? selectedWorkspace : selectedRepo)) {
         setPrompt(merged);
         requestAnimationFrame(() => {
@@ -509,17 +453,6 @@ export default function NewCodeSessionPage() {
         : "Pick a repository to start"
       : null;
 
-  /*
-   * What the call is told. The relay has no tools and no database, so this is
-   * the model's entire knowledge of the session about to be started — and on
-   * this screen that is exactly the utility strip's contents, which is the
-   * point: what persists across the send is what a conversation about the run
-   * needs to know.
-   *
-   * The default branch stands in when no override is typed, because that is
-   * what the run will actually use — `startCloud` sends `baseRef ?? undefined`
-   * and the runner falls back to the repo's default.
-   */
   const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
     () => ({
       stage: "new",
@@ -532,81 +465,92 @@ export default function NewCodeSessionPage() {
     [baseRef, gateHint, selectedRepo, selectedWorkspace, target],
   );
 
-  /*
-   * The one channel out of the call. `submit` already took an override, which
-   * is the whole adapter — the spoken line goes through the identical start
-   * path as a typed one, gates and all, so a call cannot start a session the
-   * keyboard could not have.
-   */
   const voiceSend = React.useMemo<CodeVoiceSend>(
     () => ({
       intent: "start",
-      // The screen's own gate sentence, verbatim. A second wording here would
-      // read as a second rule.
       blockedReason: gateHint ? `${gateHint} — then these words can start it.` : null,
       sending: submitting,
-      // Starting navigates to the new session, so the call cannot survive it.
       endsCall: true,
-      // Merge, never replace — see the note on the session view's onSend. It
-      // matters more here: this screen navigates to the new session on success,
-      // so a typed draft dropped on a voice send is gone past recovery.
       onSend: (text: string) => submit([prompt.trim(), text.trim()].filter(Boolean).join(" ")),
     }),
     [gateHint, prompt, submit, submitting],
   );
 
-  // Nothing to send yet → the primary action is the way into a conversation
-  // instead of a dead button. Keyed on the payload rather than on `canSubmit`:
-  // with words typed and no project picked, `canSubmit` is false too, and
-  // swapping Send for a phone call at that moment would hide the one control
-  // whose disabled label says what is missing.
   const showVoiceButton = !submitting && !hasPayload && !!codeVoice.onOpenVoiceMode;
 
+  const effortOptions = React.useMemo(
+    () => (modelInfo ? reasoningOptions(modelInfo) : []),
+    [modelInfo],
+  );
+  const isAuto = isAutoModelId(model);
+
+  const onSelectPreset = React.useCallback((preset: CodePreset) => {
+    setPrompt(preset.prompt);
+    requestAnimationFrame(() => {
+      autoresize();
+      textareaRef.current?.focus();
+    });
+  }, [autoresize]);
+
   return (
-    // overflow-x-clip so the composer aura, which is deliberately wider than
-    // the column it lights, can never put a horizontal scrollbar over dead
-    // space. Vertical scrolling is untouched.
     <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto overflow-x-clip">
-      {/* Greeting + composer, centered as one calm group and free to scroll on
-          short viewports. py accounts for the floating back button so a short
-          viewport never tucks the greeting under it. */}
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-14 sm:px-6">
-        {/* `isolate` is the floor the aura is allowed to fall to. It paints on
-            z-index -1 and the host below deliberately does NOT create a
-            stacking context, so without a floor here the bloom would drop to
-            whatever distant ancestor happens to establish one. Here it lands
-            just above this column's background: under the greeting, under the
-            composer, over nothing else. */}
-        <div className="relative isolate flex w-full max-w-[44rem] flex-col items-center gap-7 sm:gap-9">
+      {/* Top Nav Bar for quick switching between New session, Runs, and PRs */}
+      <div className="sticky top-0 z-20 flex w-full items-center justify-between border-b border-border/40 bg-background/80 px-4 py-2.5 backdrop-blur-md sm:px-6">
+        <CodeSurfaceNav active="new" className="mb-0" />
+        {recentRun && (
+          <Link
+            href="/code"
+            className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors md:flex"
+          >
+            <Clock className="size-3.5" />
+            <span>Latest run: {recentRun.title.slice(0, 30)}…</span>
+            <ArrowRight className="size-3" />
+          </Link>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col items-center justify-start px-4 py-8 sm:px-6 md:py-12">
+        <div className="relative isolate flex w-full max-w-[44rem] flex-col items-center gap-6 sm:gap-8">
           <CodeGreeting />
 
-          <div className="w-full">
-            {/* The aura's host is its own element rather than the grid below,
-                and that is not tidiness. `.composer-aura-host` carries a
-                `transition` shorthand that eases the tint and the effort, and
-                the grid carries a `transition-[min-height]` utility — Tailwind
-                emits utilities after components at equal specificity, so
-                hosting the aura there would replace that whole declaration and
-                silently drop both easings, leaving a bloom that jumps colour
-                instead of turning over. Deliberately no `isolate` here either:
-                that belongs to the column above, so the light falls behind the
-                greeting rather than being trapped in front of it.
+          {/* Execution Environment Status Pill */}
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
+            <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-muted-foreground">
+              {target === "device" ? (
+                <>
+                  <Laptop className="size-3.5 text-primary" />
+                  <span>Target: <strong className="text-foreground font-medium">{selectedWorkspace?.name || "Mac Workspace"}</strong></span>
+                </>
+              ) : (
+                <>
+                  <CodeIcons.cloud className="size-3.5 text-primary" />
+                  <span>Target: <strong className="text-foreground font-medium">{selectedRepo?.fullName || "GitHub Cloud Runner"}</strong></span>
+                </>
+              )}
+            </div>
 
-                It wraps the composer and the voice call and nothing else, so
-                the bloom centres on the capsule — the error banners and the
-                footer line below are not part of what is being lit. */}
-            <div className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}>
-              {/* One light at a time: the idle bloom steps aside while the
-                  voice field is live, because two of them behind one composer
-                  read as a mix rather than a colour. */}
+            <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-muted-foreground">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Ready for tasks</span>
+            </div>
+          </div>
+
+          {/* The Main Composer */}
+          <div className="w-full">
+            <div
+              className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}
+              style={
+                {
+                  "--aura-provider": auraProvider,
+                  "--aura-think": auraThink,
+                } as React.CSSProperties
+              }
+            >
               {!codeVoice.open && <div aria-hidden className="composer-aura" />}
-              {/* A FRAGMENT, and a SIBLING of the composer. The voice field
-                  paints at z-index -1, so anything that boxed it here would put
-                  it behind that box instead of behind the composer — the same
-                  arrangement chat-view.tsx keeps, for the same reason. */}
               {codeVoice.open && (
                 <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
               )}
+
               <div
                 className={cn(
                   "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
@@ -630,21 +574,6 @@ export default function NewCodeSessionPage() {
                   )}
                 </div>
 
-                {/*
-                  The dictation cross-fade and the drop target live on this
-                  wrapper rather than on the shell itself.
-
-                  <ComposerShell> already owns a
-                  `transition-[border-color,box-shadow]`; putting a second
-                  `transition-[opacity,transform,…]` on the same element is two
-                  `transition-property` declarations at equal specificity, where
-                  which one survives is decided by Tailwind's emit order rather
-                  than by anything written here. Separating them also fixes the
-                  drop overlay: `absolute inset-0` inside the shell can only
-                  cover one slot, and the shell cannot clip (the drop state has
-                  to reach the utility strip too), so the overlay is a sibling
-                  that covers both tiers and traces the same corners.
-                */}
                 <div
                   onDragOver={(e) => {
                     if (!canAttach || submitting || dictating) return;
@@ -679,25 +608,15 @@ export default function NewCodeSessionPage() {
                         onKeyDown={onKeyDown}
                         rows={1}
                         disabled={submitting}
-                        placeholder="Describe a task or ask a question"
+                        placeholder="Describe what to build, test, refactor, or fix…"
                         aria-label="Describe the task for this Juno Code session"
-                        // The eased height is real layout movement — the
-                        // composer and the greeting above it both shift — so it
-                        // takes the reduced-motion escape the rest of this
-                        // screen's transitions already carry.
-                        //
-                        // Placeholder at full --muted-foreground, matching the
-                        // session composer: input.tsx, textarea.tsx and
-                        // select.tsx each removed `/70` with a note recording it
-                        // as a 2.91:1 failure against a token tuned to 5.3:1,
-                        // and this is the only instruction on an otherwise empty
-                        // screen.
-                        className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
+                        className="max-h-[240px] min-h-[68px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
                       />
                     }
                     controls={
                       <>
-                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto no-scrollbar">
+                          {/* Attach Button */}
                           {canAttach && (
                             <ComposerAddMenu
                               open={plusOpen}
@@ -708,8 +627,102 @@ export default function NewCodeSessionPage() {
                               onPickLibrary={() => setLibraryOpen(true)}
                             />
                           )}
+
+                          {/* Connectors / Tools Selector */}
+                          <CodeConnectorsMenu
+                            enabledConnectors={enabledConnectors}
+                            onToggleConnector={toggleConnector}
+                            disabled={submitting}
+                          />
+
+                          <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+
+                          {/* Model Selector */}
+                          <div className="min-w-0 shrink-0">
+                            <ModelSelector
+                              value={model}
+                              onChange={changeModel}
+                              reasoningEffort={reasoningEffort}
+                              onReasoningChange={changeReasoning}
+                            />
+                          </div>
+
+                          {/* Thinking Slider / Reasoning Depth Control */}
+                          {isAuto && (
+                            <>
+                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-disabled
+                                    className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent"
+                                  >
+                                    <Sparkles className="size-3 text-primary/70" />
+                                    <span>Auto</span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+                              </Tooltip>
+                            </>
+                          )}
+
+                          {!isAuto && effortOptions.length > 0 && (() => {
+                            const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
+                            const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
+                            const label = current.label === "Extra high" ? "X-high" : current.label;
+                            const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
+
+                            return (
+                              <>
+                                <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                                <Tooltip>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          disabled={submitting}
+                                          aria-label={`Thinking effort: ${current.label}`}
+                                          className={cn(
+                                            "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
+                                            atTop ? "text-primary" : "text-foreground"
+                                          )}
+                                        >
+                                          <span className="min-w-0 flex-1 truncate text-center">{label}</span>
+                                          <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                    </PopoverTrigger>
+                                    <PopoverContent
+                                      align="start"
+                                      sideOffset={10}
+                                      className="w-[300px] origin-popper rounded-2xl border border-border/80 bg-popover/95 p-4 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95"
+                                    >
+                                      <ReasoningSlider
+                                        options={effortOptions}
+                                        value={reasoningEffort}
+                                        onChange={changeReasoning}
+                                        disabled={submitting}
+                                        fastMode={fastMode}
+                                        onFastModeChange={setFastMode}
+                                        proMode={proMode}
+                                        onProModeChange={setProMode}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                  <TooltipContent>Thinking effort & depth</TooltipContent>
+                                </Tooltip>
+                              </>
+                            );
+                          })()}
                         </div>
 
+                        {/* Right: Mic Dictation + Send Button */}
                         <div className="ml-auto flex shrink-0 items-center gap-1">
                           {speechSupported && (
                             <>
@@ -720,9 +733,6 @@ export default function NewCodeSessionPage() {
                                     variant="ghost"
                                     size="icon-sm"
                                     onClick={() => setDictating(true)}
-                                    // A live call already owns the microphone —
-                                    // the same interlock the Work thread
-                                    // composer keeps between these two.
                                     disabled={submitting || dictating || codeVoice.open}
                                     aria-label="Dictate"
                                     aria-pressed={dictating}
@@ -736,11 +746,7 @@ export default function NewCodeSessionPage() {
                               <span className={COMPOSER_DIVIDER} aria-hidden="true" />
                             </>
                           )}
-                          {/* One button, three jobs: start the session, wait
-                              for the one it started, or — with nothing written
-                              — open a conversation about what to ask for. Chat
-                              and the Work thread both morph this same control
-                              rather than adding a fourth icon to the row. */}
+
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -789,14 +795,6 @@ export default function NewCodeSessionPage() {
                         </div>
                       </>
                     }
-                    /*
-                      THE SECOND TIER. What used to be a chip row ABOVE the
-                      field, which read as part of the message being composed
-                      when it is the opposite of that: the machine, the checkout
-                      and the branch are all still true after you press start,
-                      and are still true of the session that follows. Under the
-                      hairline they say so.
-                    */
                     utility={
                       <>
                         <CodeTargetPicker
@@ -812,8 +810,6 @@ export default function NewCodeSessionPage() {
                             setSelectedRepo(r);
                             setBaseRef("");
                             setCloudStartError(null);
-                            // A held-over session from a failed start belongs to
-                            // the repo it was named for, not this one.
                             if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
                           }}
                           baseRef={baseRef}
@@ -821,16 +817,11 @@ export default function NewCodeSessionPage() {
                           disabled={submitting}
                           className="h-7"
                         />
-                        {/* The branch a cloud run starts from — read-only here,
-                            edited in the picker's own popover where it belongs
-                            (it only exists once a repo does). The repo default
-                            stands in when nothing is typed because that is what
-                            actually runs: `startCloud` sends `ref ?? undefined`
-                            and the runner falls back to it. */}
+
                         {target === "cloud" && selectedRepo && (
                           <>
                             <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                            <span className="flex min-w-0 items-center gap-1 font-mono">
+                            <span className="flex min-w-0 items-center gap-1 font-mono text-ui text-muted-foreground">
                               <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
                               <span className="sr-only">Base branch </span>
                               <span className="min-w-0 truncate">
@@ -839,8 +830,19 @@ export default function NewCodeSessionPage() {
                             </span>
                           </>
                         )}
+
                         <span className={COMPOSER_DIVIDER} aria-hidden="true" />
                         <PermissionFact target={target} />
+
+                        {enabledConnectors.length > 0 && (
+                          <>
+                            <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                            <CodeActiveConnectorsBar
+                              enabledConnectors={enabledConnectors}
+                              onToggleConnector={toggleConnector}
+                            />
+                          </>
+                        )}
                       </>
                     }
                   />
@@ -864,11 +866,8 @@ export default function NewCodeSessionPage() {
               </div>
             </div>
 
-            {/* Inline task-dispatch failures (cloud only). */}
+            {/* Error notifications */}
             {cloudStartError === "not_configured" && (
-              // bg-warning/10, the alpha globals.css names as the product's
-              // warning chip. At /5 the fill was ~1% lightness on the black
-              // ground, so the border carried the banner alone.
               <p
                 role="alert"
                 className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
@@ -876,10 +875,6 @@ export default function NewCodeSessionPage() {
                 <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
                 <span>
                   Cloud runs aren’t enabled on this server yet. Ask an admin to configure the cloud runner, or switch to{" "}
-                  {/* rounded-xs so the global 2px focus outline traces a corner
-                      rather than a bare rectangle through the sentence, and a
-                      real colour transition — this is the banner's only way
-                      out and it changed colour instantly on hover. */}
                   <button
                     type="button"
                     onClick={() => switchTarget("device")}
@@ -891,24 +886,16 @@ export default function NewCodeSessionPage() {
                 </span>
               </p>
             )}
+
             {cloudStartError === "dispatch_failed" && (
-              // role="alert" for the same reason its sibling above has one:
-              // both appear in this slot for the same gesture, and this is the
-              // recoverable one carrying the retry — it was the silent one.
               <div
                 role="alert"
-                // `flex-wrap` + `gap-y-2`: at 320px the sentence and the retry
-                // shared one nowrap row, so the button was squeezed to its
-                // padding and the message truncated to nothing.
                 className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
               >
                 <span className="flex min-w-0 flex-1 items-start gap-2">
                   <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   Couldn’t start the cloud run — this is usually temporary.
                 </span>
-                {/* The button's border matches the banner's: at /30 against the
-                    frame's /40 the retry read as a lighter-weight edge inside a
-                    heavier one, which is a hierarchy the two do not have. */}
                 <Button
                   variant="outline"
                   size="sm"
@@ -926,17 +913,18 @@ export default function NewCodeSessionPage() {
               </div>
             )}
 
-            {/* Quiet, honest footer — the gate hint (when send is blocked) then
-                what happens on send, per target. Calm, never a nag. */}
             <p className="mt-3 text-center text-caption text-muted-foreground">
               {gateHint && !cloudStartError ? (
                 <span className="text-foreground/70">{gateHint}. </span>
               ) : null}
               {target === "cloud"
-                ? "Runs on a fresh cloud machine and opens a pull request to review."
-                : "Runs with Juno Code on your Mac and streams the work here."}
+                ? "Runs on a fresh cloud runner and opens a pull request to review."
+                : "Runs with Juno Code on your Mac and streams the output directly."}
             </p>
           </div>
+
+          {/* Workflow Prompt Presets */}
+          <CodePresetsGrid onSelectPreset={onSelectPreset} />
         </div>
       </div>
     </div>

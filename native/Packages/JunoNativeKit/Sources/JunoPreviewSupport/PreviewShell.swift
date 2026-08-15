@@ -178,8 +178,30 @@ private struct JunoWindowSizer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         guard let size else { return view }
+        // JunoDesktop's scene already declares this exact default. Reapplying
+        // it after a window containing NavigationSplitView has entered its
+        // first layout pass is both redundant and, on macOS 27, capable of
+        // raising AppKit's update-constraints exception. Non-default responsive
+        // captures still take the controlled resize path below.
+        guard abs(size.width - 1_240) >= 1 || abs(size.height - 800) >= 1 else {
+            return view
+        }
         DispatchQueue.main.async { [weak view] in
             guard let window = view?.window else { return }
+            // `setContentSize(_:)` is not an idempotent no-op in AppKit. Even
+            // when the window already has the requested size it posts another
+            // constraint update through every hosting view. A dense split-view
+            // preview can still be inside its first constraint pass here, and
+            // posting the redundant update re-enters AppKit's display cycle and
+            // aborts with `_postWindowNeedsUpdateConstraints`. Most captures use
+            // the scene's 1240x800 default, so avoid touching the window at all
+            // when it is already within a pixel of the requested content size.
+            if let current = window.contentView?.bounds.size,
+                abs(current.width - size.width) < 1,
+                abs(current.height - size.height) < 1
+            {
+                return
+            }
             // The content minimum has to come down too, or a window whose
             // content declares `minWidth: 900` refuses anything narrower.
             window.contentMinSize = CGSize(

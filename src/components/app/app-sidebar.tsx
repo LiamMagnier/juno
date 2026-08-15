@@ -102,14 +102,8 @@ type ToggleMode = Exclude<SidebarMode, "work">;
 /** Landing route per mode — what switching the toggle actually navigates to. */
 const MODE_HOME: Record<SidebarMode, string> = {
   home: "/chat",
-  // `/work` is a real page, unlike `/code`, which has no index and is why Code
-  // has to land on `/code/new`.
   work: "/work",
-  // `/code` is a real page now — the run list — so Code lands on its index like
-  // every other mode. It used to land on `/code/new` because no index existed,
-  // which meant switching INTO Code always opened a blank composer and never
-  // showed the runs already going.
-  code: "/code",
+  code: "/code/new",
 };
 
 type SidebarProject = {

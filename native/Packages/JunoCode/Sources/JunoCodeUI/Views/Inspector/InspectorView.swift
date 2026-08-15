@@ -180,6 +180,17 @@ public struct InspectorView: View {
             max: JunoInspectorMetrics.maximum
         )
         .task(id: controller.sessionID) {
+            #if DEBUG
+            let arguments = CommandLine.arguments
+            if let flag = arguments.firstIndex(of: "--juno-preview-inspector-pane"),
+               arguments.indices.contains(arguments.index(after: flag)),
+               let requested = CodeInspectorPane(
+                   rawValue: arguments[arguments.index(after: flag)]
+               )
+            {
+                storedPane = requested.rawValue
+            }
+            #endif
             await controller.refreshWorkspacePanels()
         }
     }

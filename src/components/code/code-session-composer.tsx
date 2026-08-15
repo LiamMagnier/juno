@@ -1,14 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, Mic, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Mic, Sparkles, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ComposerShell } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { ModelSelector } from "@/components/chat/model-selector";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import {
+  CodeConnectorsMenu,
+  CodeActiveConnectorsBar,
+} from "@/components/code/code-connectors-menu";
 import { AppIcons, CodeIcons } from "@/lib/app-icons";
+import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
+import { isAutoModelId } from "@/lib/auto-model";
+import {
+  clampReasoningEffort,
+  reasoningOptions,
+  type ReasoningEffort,
+} from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment } from "@/types/chat";
 import type { PendingUpload } from "@/hooks/use-uploads";
@@ -21,37 +35,12 @@ import {
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
 
-/*
- * The Code session composer — chrome only.
- *
- * It was 470 lines inside code-session-view.tsx, assigned to a `const composer`
- * and rendered from two branches, which is what made the view impossible to
- * read: the twenty lines that decide whether a session can run at all were
- * separated from the twenty that decide what to do about it by an entire
- * textarea, an attachment tray, two dropdown menus and a file picker.
- *
- * Nothing here decides anything. Every gate arrives as a boolean the view
- * computed and every action as a callback, so the rules about presence, cloud
- * repos and busy runs stay in one place — this file only draws them. The three
- * pieces of state it does own (`dragging`, the "+" menu, the library sheet) are
- * about this widget and nothing else.
- */
-
-/*
- * The composer's separator, one string, both places one is needed. The comment
- * at chat/composer.tsx:2205 records what happens otherwise: two heights
- * (h-5/h-4) behind two breakpoints (min-[420px]/min-[380px]) put two different
- * separators on screen at once between 380 and 420px.
- */
 const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block";
 
 export interface CodeSessionComposerProps {
-  /** Cards stacked above the composer — the run stack. Always rendered. */
   above: React.ReactNode;
-  /** The live voice call, or null. A SIBLING of the composer, never a wrapper. */
   voicePanel: React.ReactNode;
 
-  // —— run context, drawn in the utility tier ——
   resolving: boolean;
   isCloud: boolean;
   workspaceName: string;
@@ -60,34 +49,28 @@ export interface CodeSessionComposerProps {
   baseRef: string | null;
   presenceState: PresenceState;
 
-  // —— the draft ——
   draft: string;
   onDraftChange: (value: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 
-  // —— gates ——
-  /**
-   * Why this session cannot dispatch right now, in a sentence, or null.
-   *
-   * It does NOT disable the field, and that is the change. Blocking the
-   * textarea on an unreachable Mac contradicted the machinery right beside it:
-   * a handed-off first prompt already waits in this composer and fires the
-   * moment presence resolves, and dictation already parks its words here for
-   * the same reason. Writing the instruction while the Mac wakes up is the
-   * normal case, so the field stays live, the send button carries the refusal,
-   * and the run stack above says why with a way out. Kept here only as the
-   * field's accessible description.
-   */
   blockedReason: string | null;
   canSend: boolean;
-  /** Words typed, or a finished upload staged. Decides send-vs-voice. */
   hasPayload: boolean;
   onSubmit: () => void;
 
-  // —— the live run ——
   status: CodeSessionStatus;
   isBusy: boolean;
   onCancel: () => void;
+
+  // Model & Reasoning
+  model?: string;
+  onModelChange?: (model: string) => void;
+  reasoningEffort?: ReasoningEffort;
+  onReasoningChange?: (effort: ReasoningEffort) => void;
+
+  // Connectors
+  connectorsEnabled?: string[];
+  onToggleConnector?: (id: string) => void;
 
   attachments: {
     enabled: boolean;
@@ -108,7 +91,6 @@ export interface CodeSessionComposerProps {
 
   voice: {
     open: boolean;
-    /** Undefined means "draw no voice affordance" — never a no-op handler. */
     onOpen: (() => void) | undefined;
   };
 }
@@ -133,6 +115,12 @@ export function CodeSessionComposer({
   status,
   isBusy,
   onCancel,
+  model = DEFAULT_MODEL,
+  onModelChange,
+  reasoningEffort = null,
+  onReasoningChange,
+  connectorsEnabled = [],
+  onToggleConnector,
   attachments,
   dictation,
   voice,
@@ -140,17 +128,21 @@ export function CodeSessionComposer({
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [fastMode, setFastMode] = React.useState(false);
+  const [proMode, setProMode] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  // Nothing written → the primary action opens the conversation instead of
-  // sitting there disabled. Keyed on the payload, not on `canSend`: with words
-  // in the field and an unreachable Mac, `canSend` is false too, and swapping
-  // Send for a phone call there would hide the control whose disabled state is
-  // the only thing pointing at the problem.
   const showVoiceButton = !isBusy && !hasPayload && !!voice.onOpen;
   const dropEnabled = attachments.enabled && !isBusy && !dictation.active;
+
+  const modelInfo = React.useMemo(() => resolveModel(model), [model]);
+  const effortOptions = React.useMemo(
+    () => (modelInfo ? reasoningOptions(modelInfo) : []),
+    [modelInfo],
+  );
+  const isAuto = isAutoModelId(model);
 
   return (
     <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4">
@@ -162,13 +154,8 @@ export function CodeSessionComposer({
       )}
 
       <div className="composer-aura-host relative isolate w-full">
-        {/* Sibling of the composer, never a wrapper: the voice field paints at
-            `z-index: -1`, and the `isolate` above is the floor it is allowed to
-            fall to. No idle bloom on this surface — a transcript sits above the
-            composer, so the only light here is a live call. */}
         {voicePanel}
 
-        {/* Composer ⇄ Dictation share one grid cell and cross-fade. */}
         <div
           className={cn(
             "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
@@ -176,12 +163,6 @@ export function CodeSessionComposer({
           )}
         >
           <div
-            // `inert` is what actually takes this half of the cross-fade out of
-            // the page. `opacity-0 pointer-events-none` hides it from the eye
-            // and the mouse and leaves it in the tab order and the
-            // accessibility tree, so a keyboard or screen-reader user could
-            // reach a composer that is not on screen — and, mid-dictation, type
-            // into it.
             inert={!dictation.active}
             className={cn(
               "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
@@ -199,16 +180,6 @@ export function CodeSessionComposer({
             )}
           </div>
 
-          {/*
-            The cross-fade and the drop target sit on this wrapper, not on the
-            shell. <ComposerShell> owns a `transition-[border-color,box-shadow]`
-            already, and a second `transition-[opacity,transform,…]` on the same
-            element is two `transition-property` declarations at equal
-            specificity — which one survives would be decided by Tailwind's emit
-            order rather than by anything written here. It also lets the drop
-            overlay cover both tiers: `absolute inset-0` inside the shell
-            reaches only one slot, and the shell cannot clip.
-          */}
           <div
             onDragOver={(e) => {
               if (!dropEnabled) return;
@@ -259,26 +230,14 @@ export function CodeSessionComposer({
                         : "Describe what to build or fix…"
                   }
                   aria-label="Prompt for this code session"
-                  // The blocked sentence is on screen in the run stack above,
-                  // and is also this field's description: a keyboard user who
-                  // tabs straight into a composer whose send is refusing has to
-                  // hear the reason without going looking for it.
                   aria-describedby={blockedReason ? blockedId : undefined}
-                  // The height eased here is real layout movement — the whole
-                  // composer, and everything stacked on it, rises as you type —
-                  // so it needs the same reduced-motion escape every other
-                  // transition on this surface carries.
-                  //
-                  // PLACEHOLDER AT FULL --muted-foreground: input.tsx,
-                  // textarea.tsx and select.tsx each removed `/70` with a note
-                  // recording it as a 2.91:1 contrast failure against a token
-                  // tuned to 5.3:1.
                   className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
                 />
               }
               controls={
                 <>
-                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {/* Add Menu */}
                     {attachments.enabled && (
                       <ComposerAddMenu
                         open={plusOpen}
@@ -289,6 +248,104 @@ export function CodeSessionComposer({
                         onPickLibrary={() => setLibraryOpen(true)}
                       />
                     )}
+
+                    {/* Connectors Menu */}
+                    {onToggleConnector && (
+                      <CodeConnectorsMenu
+                        enabledConnectors={connectorsEnabled}
+                        onToggleConnector={onToggleConnector}
+                        disabled={isBusy}
+                      />
+                    )}
+
+                    {/* Model Selector */}
+                    {onModelChange && (
+                      <>
+                        <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                        <div className="min-w-0 shrink-0">
+                          <ModelSelector
+                            value={model}
+                            onChange={onModelChange}
+                            reasoningEffort={reasoningEffort}
+                            onReasoningChange={onReasoningChange}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Thinking Slider */}
+                    {isAuto && (
+                      <>
+                        <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              aria-disabled
+                              className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent"
+                            >
+                              <Sparkles className="size-3 text-primary/70" />
+                              <span>Auto</span>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+                        </Tooltip>
+                      </>
+                    )}
+
+                    {!isAuto && effortOptions.length > 0 && onReasoningChange && (() => {
+                      const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
+                      const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
+                      const label = current.label === "Extra high" ? "X-high" : current.label;
+                      const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
+
+                      return (
+                        <>
+                          <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                          <Tooltip>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isBusy}
+                                    aria-label={`Thinking effort: ${current.label}`}
+                                    className={cn(
+                                      "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
+                                      atTop ? "text-primary" : "text-foreground"
+                                    )}
+                                  >
+                                    <span className="min-w-0 flex-1 truncate text-center">{label}</span>
+                                    <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                                  </Button>
+                                </TooltipTrigger>
+                              </PopoverTrigger>
+                              <PopoverContent
+                                align="start"
+                                sideOffset={10}
+                                className="w-[300px] origin-popper rounded-2xl border border-border/80 bg-popover/95 p-4 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95"
+                              >
+                                <ReasoningSlider
+                                  options={effortOptions}
+                                  value={reasoningEffort}
+                                  onChange={onReasoningChange}
+                                  disabled={isBusy}
+                                  fastMode={fastMode}
+                                  onFastModeChange={setFastMode}
+                                  proMode={proMode}
+                                  onProModeChange={setProMode}
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <TooltipContent>Thinking effort & depth</TooltipContent>
+                          </Tooltip>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -301,9 +358,6 @@ export function CodeSessionComposer({
                               variant="ghost"
                               size="icon-sm"
                               onClick={dictation.onStart}
-                              // A live call already holds the microphone — the
-                              // same interlock every other composer keeps
-                              // between dictation and voice.
                               disabled={isBusy || dictation.active || voice.open}
                               aria-label="Dictate"
                               aria-pressed={dictation.active}
@@ -318,11 +372,6 @@ export function CodeSessionComposer({
                       </>
                     )}
 
-                    {/* One button, three jobs: stop the run, send the next
-                        instruction, or — with nothing written — open a
-                        conversation about what the run did. Same morph as chat
-                        and the Work thread, so the gesture is one gesture
-                        across the product. */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -351,9 +400,6 @@ export function CodeSessionComposer({
                           }
                           className={cn(
                             "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong",
-                            // ring-primary/30, not /15: the halo that says "this
-                            // is now a stop button" was ~2% lightness against
-                            // the black ground and did not read at all.
                             isBusy && status !== "submitting"
                               ? "w-11 rounded-composer-control ring-2 ring-primary/30"
                               : "rounded-composer-action",
@@ -385,26 +431,17 @@ export function CodeSessionComposer({
               }
               utility={
                 <>
-                  {/* Identity is the workspace NAME (device) or the repo
-                      (cloud); the device-local path stays honest secondary
-                      metadata, on hover. While `resolving` neither can be
-                      claimed, so the strip says only that. */}
                   <span
                     title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
-                    className="flex min-w-0 items-center gap-1.5 font-mono"
+                    className="flex min-w-0 items-center gap-1.5 font-mono text-ui text-muted-foreground"
                   >
                     {resolving ? (
                       <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
                     ) : isCloud ? (
-                      <CodeIcons.cloud className="size-3 shrink-0" aria-hidden="true" />
+                      <CodeIcons.cloud className="size-3 shrink-0 text-primary" aria-hidden="true" />
                     ) : (
-                      <AppIcons.projects className="size-3 shrink-0" aria-hidden="true" />
+                      <AppIcons.projects className="size-3 shrink-0 text-primary" aria-hidden="true" />
                     )}
-                    {/* The glyph carries "device or cloud" for everyone who can
-                        see it; this is the same fact for everyone who cannot.
-                        Suppressed while resolving, where the following text is
-                        a sentence and "Runs in Getting this session ready" is
-                        not one. */}
                     {!resolving && <span className="sr-only">Runs in </span>}
                     <span className="min-w-0 truncate">
                       {resolving
@@ -414,14 +451,25 @@ export function CodeSessionComposer({
                           : workspaceName}
                     </span>
                   </span>
+
                   {!resolving && isCloud && baseRef && (
                     <>
                       <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                      <span className="flex min-w-0 items-center gap-1 font-mono">
+                      <span className="flex min-w-0 items-center gap-1 font-mono text-ui text-muted-foreground">
                         <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
                         <span className="sr-only">Base branch </span>
                         <span className="min-w-0 truncate">{baseRef}</span>
                       </span>
+                    </>
+                  )}
+
+                  {connectorsEnabled.length > 0 && onToggleConnector && (
+                    <>
+                      <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                      <CodeActiveConnectorsBar
+                        enabledConnectors={connectorsEnabled}
+                        onToggleConnector={onToggleConnector}
+                      />
                     </>
                   )}
                 </>

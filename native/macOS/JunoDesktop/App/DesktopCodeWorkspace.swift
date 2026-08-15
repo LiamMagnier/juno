@@ -12,40 +12,31 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Code inspector shares the trailing toolbar with the session search
-/// field. Keep its narrowest state wide enough for that field, with the same
-/// 12-point shoulder on both sides, so resizing never clips or crowds Search
-/// sessions.
+/// The Code workspace rail is deliberately fixed to one readable desktop
+/// width. It is a sibling of the navigation split view rather than another
+/// AppKit split item, so opening it cannot renegotiate the window while the
+/// transcript is also replacing its loading state.
 private enum DesktopCodeInspectorMetrics {
-    // Search lives in the detail toolbar, not inside the inspector. Tying the
-    // inspector's minimum to that field made the trailing pane open at 332pt
-    // even though its content is readable at the design-system minimum.
-    static let minimum = JunoInspectorMetrics.minimum
     static let ideal: CGFloat = 320
-    static let maximum: CGFloat = 380
 }
 
-/// The Code window: one layout owner, two columns, one optional trailing
-/// inspector.
+/// The Code window: one navigation split view and one optional trailing
+/// workspace rail.
 ///
-/// This is byte-for-byte the shell ``DesktopChatWorkspace`` uses — a
-/// `NavigationSplitView` whose sidebar is `.junoSidebarColumn()` and whose detail
-/// is `.junoReadingCanvas()` plus `.navigationTitle`, `.toolbar` and
-/// `.inspector(isPresented:)` — so Chat and Code stop being two different
-/// applications sharing a window.
-///
-/// Three stability constraints are honoured deliberately, because `.inspector`
-/// and the window toolbar are both `NSSplitViewItem`-backed and that is the
-/// surface an earlier build crashed in:
+/// Two stability constraints are honoured deliberately:
 ///
 /// 1. Every `ToolbarItem` is always present and uses `.disabled()`. A toolbar item
 ///    that appears and disappears makes SwiftUI rebuild the AppKit toolbar under a
-///    live window, and that rebuild is what drove the split-view constraint loop.
+///    live window.
 /// 2. Column visibility is restored by hand, because
 ///    `NavigationSplitViewVisibility` is not `RawRepresentable` and cannot be put
 ///    in `@SceneStorage` directly.
-/// 3. The detail column has exactly two mutually exclusive contents — the
-///    transcript or the review canvas — and nothing else ever occupies it.
+///
+/// The inspector used to be a native `.inspector`, which inserts a second
+/// `NSSplitViewItem`. Restoring it while the selected session resolved caused
+/// AppKit to re-enter `_postWindowNeedsUpdateConstraints` and terminate the app.
+/// A plain SwiftUI sibling gives the pane a single layout owner, keeps the native
+/// toolbar affordance, and makes the sub-agent report reliably available.
 struct DesktopCodeWorkspace: View {
     let workbenchModel: WorkbenchModel
     let codeModel: NativeCodeModel
@@ -81,6 +72,9 @@ struct DesktopCodeWorkspace: View {
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var controller: SessionController?
+    /// A restored rail joins after the session controller resolves, so it never
+    /// flashes an unrelated empty state while Code is reopening the last run.
+    @State private var inspectorReady = false
     @State private var isBootstrapping = true
     @State private var isStartingSession = false
     @State private var isChoosingRepository = false
@@ -170,7 +164,7 @@ struct DesktopCodeWorkspace: View {
                 guard case .session = selection.wrappedValue else {
                     return false
                 }
-                return inspectorVisible
+                return inspectorVisible && inspectorReady && controller != nil
             },
             set: { inspectorVisible = $0 }
         )
@@ -219,58 +213,45 @@ struct DesktopCodeWorkspace: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            DesktopCodeSidebar(
-                workbench: workbenchModel,
-                code: codeModel,
-                remote: remoteModel,
-                selection: selection,
-                remoteDeviceID: $remoteDeviceID,
-                product: $product,
-                isBootstrapping: isBootstrapping,
-                session: session,
-                avatarModel: configuration?.avatarModel,
-                syncModel: configuration?.syncModel,
-                plan: plan,
-                openRepository: { isChoosingRepository = true },
-                newSession: { selection.wrappedValue = .repository($0) },
-                rename: beginRename
-            )
-            .searchable(
-                text: sessionSearchText,
-                placement: .sidebar,
-                prompt: "Search sessions"
-            )
-            .searchFocused($sidebarSearchFocused)
-            .junoSidebarColumn()
-        } detail: {
-            // `CodeSessionCanvas` owns the single Output / Terminal / Tests
-            // drawer. Keeping a second shell terminal here produced two
-            // consoles, a hard black slab, and two incompatible resize models.
-            editorCanvas
-            .junoReadingCanvas()
-            .navigationTitle("")
-            .toolbar { detailToolbar }
+        HStack(spacing: 0) {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                DesktopCodeSidebar(
+                    workbench: workbenchModel,
+                    code: codeModel,
+                    remote: remoteModel,
+                    selection: selection,
+                    remoteDeviceID: $remoteDeviceID,
+                    product: $product,
+                    isBootstrapping: isBootstrapping,
+                    session: session,
+                    avatarModel: configuration?.avatarModel,
+                    syncModel: configuration?.syncModel,
+                    plan: plan,
+                    openRepository: { isChoosingRepository = true },
+                    newSession: { selection.wrappedValue = .repository($0) },
+                    rename: beginRename,
+                    searchText: sessionSearchText,
+                    searchFocused: $sidebarSearchFocused
+                )
+                .junoSidebarColumn()
+            } detail: {
+                // `CodeSessionCanvas` owns the single Output / Terminal / Tests
+                // drawer. Keeping a second shell terminal here produced two
+                // consoles, a hard black slab, and two incompatible resize models.
+                editorCanvas
+                    .junoReadingCanvas()
+                    .navigationTitle("")
+                    .toolbar { detailToolbar }
+            }
+
+            if inspectorPresentation.wrappedValue {
+                Divider()
+                    .overlay(Color.junoSeparator)
+                inspector
+                    .frame(width: DesktopCodeInspectorMetrics.ideal)
+                    .background(Color.junoCanvas)
+            }
         }
-        // `.inspector` goes on the split view, **not** on the detail column.
-        //
-        // This is not a style choice, it is the fix for a hard crash. Applied to
-        // the detail column, the inspector makes SwiftUI's `NSHostingView`
-        // call `setNeedsUpdateConstraints:` from inside its own
-        // `updateConstraints`, while the window's constraint pass is already
-        // running for that display cycle. AppKit throws from
-        // `-[NSWindow _postWindowNeedsUpdateConstraints]` and the process takes
-        // SIGTRAP — reproducibly, on every Chat -> Code switch, on macOS 27.0
-        // (26A5388g).
-        //
-        // Bisected: with `.inspector` on the detail column the switch always
-        // crashes; removing it entirely fixes the switch; moving it here fixes the
-        // switch and keeps the native inspector. An earlier revision of
-        // `MACOS_ARCHITECTURE_V2.md` read this crash as proof that
-        // `NavigationSplitView` and `.inspector` cannot coexist and replaced both
-        // with a hand-rolled `HStack`. They can coexist; the placement is what
-        // matters.
-        .inspector(isPresented: inspectorPresentation) { inspector }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         .fileImporter(
             isPresented: $isChoosingRepository,
@@ -312,7 +293,13 @@ struct DesktopCodeWorkspace: View {
         }
         .task { await bootstrap() }
         .task(id: liveRunCount) { await readPlan() }
-        .task(id: selectedSessionID) { await resolveController() }
+        .task(id: selectedSessionID) {
+            inspectorReady = false
+            await resolveController()
+            guard controller != nil else { return }
+            await Task.yield()
+            inspectorReady = true
+        }
         // `open_preview` is an agent action, but the selected Code workbench
         // remains the authority that presents a pane. Bind it to both the
         // session and the granted root so a request from another window cannot
@@ -940,11 +927,7 @@ struct DesktopCodeWorkspace: View {
                 )
             }
         }
-        .inspectorColumnWidth(
-            min: DesktopCodeInspectorMetrics.minimum,
-            ideal: DesktopCodeInspectorMetrics.ideal,
-            max: DesktopCodeInspectorMetrics.maximum
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Floating status controls
@@ -1080,11 +1063,6 @@ struct DesktopCodeWorkspace: View {
         //
         // Both windows still move together: the header is one view, so the switch
         // cannot sit in one place in Chat and another in Code.
-
-        ToolbarItem(placement: .principal) {
-            DesktopChatWorkSwitcher(selection: $product)
-        }
-        .sharedBackgroundVisibility(.hidden)
 
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up

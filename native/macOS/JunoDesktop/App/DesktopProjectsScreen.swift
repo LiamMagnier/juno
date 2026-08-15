@@ -34,6 +34,10 @@ struct DesktopProjectsScreen: View {
     let session: NativeAuthenticatedSession
     let openConversation: (String) -> Void
     let startConversation: (String, String?) -> Void
+    /// A one-shot route supplied by a concrete sidebar project row. Opening the
+    /// Projects destination normally leaves this nil and therefore shows the
+    /// index, matching the website.
+    @Binding var requestedProjectID: String?
 
     @State private var route = DesktopProjectRoute.index
     @State private var sort = DesktopProjectSort.updated
@@ -108,7 +112,8 @@ struct DesktopProjectsScreen: View {
             // switch in ``DesktopDestinationView`` rebuilds this view, so the
             // route already starts at the index; saying it out loud means the
             // guarantee survives a future shell that keeps the view alive.
-            .onAppear { route = .index }
+            .onAppear { consumeRequestedProject() }
+            .onChange(of: requestedProjectID) { _, _ in consumeRequestedProject() }
             .sheet(isPresented: $showingNewProject) {
                 // Straight into the new project, as `router.push` does on the
                 // website — and as this screen used to do by accident, through
@@ -181,6 +186,16 @@ struct DesktopProjectsScreen: View {
                 },
                 confirm: { deleteTarget = model.projects.first }
             )
+    }
+
+    private func consumeRequestedProject() {
+        guard let projectID = requestedProjectID,
+              model.projects.contains(where: { $0.id == projectID })
+        else {
+            route = .index
+            return
+        }
+        route = .project(projectID)
     }
 
     @ViewBuilder

@@ -150,6 +150,18 @@ public actor WorkspaceDirectory {
         try persist()
     }
 
+    /// Renames Juno's saved project label without renaming the folder on disk.
+    public func rename(id: WorkspaceID, displayName: String) throws {
+        try loadIfNeeded()
+        guard let index = records.firstIndex(where: { $0.id == id }) else {
+            throw WorkspaceDirectoryError.workspaceNotFound
+        }
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        records[index].descriptor.displayName = name
+        try persist()
+    }
+
     // MARK: - Persistence
 
     private func loadIfNeeded() throws {
