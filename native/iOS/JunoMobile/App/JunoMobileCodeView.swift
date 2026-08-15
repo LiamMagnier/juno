@@ -189,7 +189,13 @@ struct JunoMobileCodeView: View {
                 accountBar
 
                 if model.tasks.isEmpty {
-                    JunoMobileCodeGreeting(targetless: model.isTargetless)
+                    JunoMobileCodeGreeting(
+                        targetless: model.isTargetless,
+                        onSelectIntent: { selected in
+                            prompt = selected
+                            composerFocused = true
+                        }
+                    )
                         .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
                 } else {
                     JunoGroupLabel(text: String(localized: "code.group.sessions"))
@@ -386,6 +392,24 @@ private struct JunoMobileCodeGreeting: View {
     /// The promise below is different without a target: there is no pull
     /// request coming and no folder being worked in.
     let targetless: Bool
+    var onSelectIntent: ((String) -> Void)? = nil
+
+    private struct MobilePreset: Identifiable {
+        let id: String
+        let title: String
+        let prompt: String
+        let icon: String
+        let color: Color
+    }
+
+    private static let presets: [MobilePreset] = [
+        MobilePreset(id: "scaffold", title: "Scaffold Feature", prompt: "Scaffold a new feature with clean architecture, types, and unit tests.", icon: "sparkles", color: .junoAccent),
+        MobilePreset(id: "survey", title: "Codebase Audit", prompt: "Audit this codebase for architectural patterns, performance bottlenecks, and security.", icon: "scope", color: .blue),
+        MobilePreset(id: "refactor", title: "Refactor", prompt: "Refactor and modernize code to reduce technical debt and improve type safety.", icon: "bolt.fill", color: .orange),
+        MobilePreset(id: "tests", title: "Generate Tests", prompt: "Write comprehensive unit and integration tests covering core workflows.", icon: "checkmark.seal.fill", color: .green),
+        MobilePreset(id: "fix", title: "Fix Bug", prompt: "Diagnose and fix the root cause of this error. Propose the most reliable patch.", icon: "wrench.and.screwdriver.fill", color: .red),
+        MobilePreset(id: "plan", title: "API & Schema", prompt: "Design the data models, database migration schema, and API contracts.", icon: "network", color: .purple),
+    ]
 
     private static let phrases = [
         "code.greeting.building", "code.greeting.task", "code.greeting.next",
@@ -417,6 +441,36 @@ private struct JunoMobileCodeGreeting: View {
                 .junoSecondaryInk()
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
+
+            if let onSelectIntent {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Self.presets) { preset in
+                            Button {
+                                onSelectIntent(preset.prompt)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: preset.icon)
+                                        .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                                        .foregroundStyle(preset.color)
+                                    Text(preset.title)
+                                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                                        .foregroundStyle(.primary)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color.junoRaised.opacity(0.8), in: Capsule())
+                                .overlay(Capsule().stroke(Color.junoHairline, lineWidth: 0.5))
+                                .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Preset: \(preset.title)")
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+                .padding(.top, 6)
+            }
         }
         .frame(maxWidth: .infinity)
         .onAppear { phrase = LocalizedStringKey(Self.phrases.randomElement() ?? "code.greeting.ready") }

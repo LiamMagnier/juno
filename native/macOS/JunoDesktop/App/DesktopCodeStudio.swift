@@ -1310,6 +1310,7 @@ struct DesktopCodeDraftDetail: View {
     @State private var isDropTargeted = false
     @State private var importError: String?
     @FocusState private var focused: Bool
+    @State private var auraState = DesktopChatAuraState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Cloud and device runs both need somewhere to run — a repository, or a
@@ -1412,94 +1413,123 @@ struct DesktopCodeDraftDetail: View {
         let prompt: String
         let behavior: AgentBehavior
         let icon: String
+        let color: Color
     }
 
     private var launchIntents: [LaunchIntent] {
         if record == nil {
             return [
                 LaunchIntent(
-                    id: "explain",
-                    title: "Explain an idea",
-                    detail: "Get a clear answer",
-                    prompt: "Explain this idea clearly, including the important trade-offs and a practical next step.",
-                    behavior: .ask,
-                    icon: "questionmark"
-                ),
-                LaunchIntent(
-                    id: "plan",
-                    title: "Make a plan",
-                    detail: "Turn a goal into steps",
-                    prompt: "Turn this goal into a focused implementation plan with milestones, risks, and the first step.",
-                    behavior: .plan,
-                    icon: "list.bullet"
+                    id: "scaffold",
+                    title: "Scaffold Feature",
+                    detail: "Generate components & models",
+                    prompt: "Scaffold a new feature with clean architecture, typed data models, robust error handling, and unit tests.",
+                    behavior: .code,
+                    icon: "sparkles",
+                    color: Color.junoAccent
                 ),
                 LaunchIntent(
                     id: "survey",
-                    title: "Survey a project",
-                    detail: "Map the codebase first",
-                    prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
+                    title: "Codebase Audit",
+                    detail: "Analyze patterns & risks",
+                    prompt: "Audit this codebase for architectural patterns, performance bottlenecks, and security vulnerabilities.",
                     behavior: .survey,
-                    icon: "scope"
+                    icon: "scope",
+                    color: .blue
                 ),
                 LaunchIntent(
-                    id: "draft",
-                    title: "Draft a feature",
-                    detail: "Start from an outcome",
-                    prompt: "Design and implement this feature from the outcome I describe, keeping the solution focused and maintainable.",
+                    id: "refactor",
+                    title: "Refactor & Modernize",
+                    detail: "Clean debt & improve types",
+                    prompt: "Refactor and modernize code to reduce technical debt, improve type safety, and eliminate redundant logic.",
                     behavior: .code,
-                    icon: "hammer"
+                    icon: "bolt.fill",
+                    color: .orange
+                ),
+                LaunchIntent(
+                    id: "tests",
+                    title: "Generate Tests",
+                    detail: "Unit, integration & E2E",
+                    prompt: "Write comprehensive unit and integration tests covering core workflows, edge cases, and error states.",
+                    behavior: .code,
+                    icon: "checkmark.seal.fill",
+                    color: .green
                 ),
                 LaunchIntent(
                     id: "troubleshoot",
-                    title: "Troubleshoot",
-                    detail: "Find the likely cause",
-                    prompt: "Help me diagnose this problem. Ask only the questions you need, then propose the smallest reliable fix.",
+                    title: "Troubleshoot & Fix",
+                    detail: "Trace root cause & patch",
+                    prompt: "Diagnose and fix the root cause of this error. Propose the most reliable and minimal patch.",
                     behavior: .ask,
-                    icon: "stethoscope"
+                    icon: "wrench.and.screwdriver.fill",
+                    color: .red
+                ),
+                LaunchIntent(
+                    id: "plan",
+                    title: "Architecture & Schema",
+                    detail: "Design models & contracts",
+                    prompt: "Design the data models, database migration schema, and API contracts for this system.",
+                    behavior: .plan,
+                    icon: "network",
+                    color: .purple
                 ),
             ]
         }
 
         return [
             LaunchIntent(
-                id: "explain-project",
-                title: "Explain this project",
-                detail: "Map the architecture",
-                prompt: "Explain the architecture of this project, its main entry points, and where a new contributor should start.",
-                behavior: .ask,
-                icon: "text.book.closed"
+                id: "draft",
+                title: "Draft a Feature",
+                detail: "Build and implement outcome",
+                prompt: "Design and implement this feature from the outcome I describe, keeping the solution focused and maintainable.",
+                behavior: .code,
+                icon: "hammer.fill",
+                color: Color.junoAccent
             ),
             LaunchIntent(
                 id: "survey-project",
-                title: "Survey the codebase",
+                title: "Survey Codebase",
                 detail: "Map boundaries and risks",
                 prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
                 behavior: .survey,
-                icon: "scope"
+                icon: "scope",
+                color: .blue
             ),
             LaunchIntent(
                 id: "review",
-                title: "Review current changes",
+                title: "Review Changes",
                 detail: "Spot risks before commit",
                 prompt: "Review the current working tree for correctness, regressions, and missing tests. Summarize the highest-value fixes.",
                 behavior: .ask,
-                icon: "checklist"
-            ),
-            LaunchIntent(
-                id: "fix",
-                title: "Fix a bug",
-                detail: "Trace it to the cause",
-                prompt: "Find the root cause of this bug, implement a focused fix, and add or update the smallest useful regression test.",
-                behavior: .code,
-                icon: "ladybug"
+                icon: "checklist",
+                color: .orange
             ),
             LaunchIntent(
                 id: "tests",
-                title: "Run the tests",
-                detail: "Check the current state",
+                title: "Run Test Suite",
+                detail: "Check state & fix regressions",
                 prompt: "Run the relevant test suite, report failures clearly, and fix failures that are caused by this project.",
                 behavior: .code,
-                icon: "checkmark.seal"
+                icon: "checkmark.seal.fill",
+                color: .green
+            ),
+            LaunchIntent(
+                id: "fix",
+                title: "Fix a Bug",
+                detail: "Trace root cause & patch",
+                prompt: "Find the root cause of this bug, implement a focused fix, and add or update the smallest useful regression test.",
+                behavior: .code,
+                icon: "ladybug.fill",
+                color: .red
+            ),
+            LaunchIntent(
+                id: "explain-project",
+                title: "Explain Architecture",
+                detail: "Map modules & entry points",
+                prompt: "Explain the architecture of this project, its main entry points, and where a new contributor should start.",
+                behavior: .ask,
+                icon: "text.book.closed.fill",
+                color: .purple
             ),
         ]
     }
@@ -1509,19 +1539,41 @@ struct DesktopCodeDraftDetail: View {
             repositoryContextBar
             Divider()
 
-            Color.clear.overlay {
-                VStack(spacing: JunoSpace.section) {
-                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                        Text(record == nil ? "What would you like to explore?" : "What are we working on?")
-                            // The draft's one display moment; 27pt is
-                            // load-bearing, so it goes through `junoFont` to
-                            // keep moving with Dynamic Type. `.largeTitle` is
-                            // the role: this is the screen's primary title.
-                            .junoFont(size: 24, relativeTo: .title, weight: .semibold, design: .rounded)
+            ZStack {
+                DesktopChatAuraLayer(
+                    state: auraState,
+                    docked: false,
+                    viewport: nil
+                )
+                .allowsHitTesting(false)
+
+                VStack(spacing: JunoSpace.roomy) {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        HStack(spacing: JunoSpace.tight) {
+                            Image(systemName: "sparkles")
+                                .junoFont(size: 11, relativeTo: .caption, weight: .bold)
+                                .foregroundStyle(Color.junoAccent)
+                            Text("Juno Code Studio")
+                                .font(.caption.weight(.semibold))
+                                .junoSecondaryInk()
+                        }
+                        .padding(.horizontal, JunoSpace.snug)
+                        .padding(.vertical, JunoSpace.hairline + 1)
+                        .background(
+                            Color.junoRaised.opacity(0.8),
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
+                        )
+
+                        Text(record == nil ? "Build, debug, and automate at warp speed." : "What are we working on?")
+                            .junoFont(size: 26, relativeTo: .title, weight: .bold, design: .rounded)
                             .junoInk()
+
                         Text(
                             record == nil
-                                ? "Ask a question, shape a plan, or open a project when you want Juno to work with files."
+                                ? "Full-stack autonomous agent with terminal execution, live reasoning, git integration, and cloud runners."
                                 : "Describe the outcome. Juno will inspect the repository before it changes anything."
                         )
                             .font(.callout)
@@ -1550,7 +1602,7 @@ struct DesktopCodeDraftDetail: View {
                 .frame(maxWidth: 800)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .padding(.horizontal, JunoSpace.roomy)
-                .padding(.vertical, JunoSpace.region)
+                .padding(.vertical, JunoSpace.regular)
             }
         }
         .animation(
@@ -1561,10 +1613,29 @@ struct DesktopCodeDraftDetail: View {
             configureModel()
             configureNativeTarget(target)
             focused = true
+            syncAura()
         }
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, _ in
             configureModel()
+            syncAura()
         }
+        .onChange(of: modelID) { _, _ in
+            syncAura()
+        }
+        .onChange(of: reasoningEffort) { _, _ in
+            syncAura()
+        }
+        .onChange(of: focused) { _, next in
+            auraState.focused = next
+        }
+    }
+
+    private func syncAura() {
+        auraState.providerID = selectedModel?.providerID ?? ""
+        auraState.think = JunoProviderGlow.auraThink(
+            effort: reasoningEffort.rawValue,
+            hasEffortControl: selectedModel?.supportedReasoningEfforts.isEmpty == false
+        )
     }
 
     private var launchIntentList: some View {
@@ -1587,12 +1658,12 @@ struct DesktopCodeDraftDetail: View {
                     } label: {
                         HStack(spacing: JunoSpace.snug) {
                             Image(systemName: intent.icon)
-                                .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                                .junoSecondaryInk()
-                                .frame(width: 24, height: 24)
-                                .background(Color.junoMuted.opacity(0.7), in: Circle())
+                                .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
+                                .foregroundStyle(intent.color)
+                                .frame(width: 28, height: 28)
+                                .background(intent.color.opacity(0.14), in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
 
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(intent.title)
                                     .font(.callout.weight(.medium))
                                     .junoInk()
@@ -1604,16 +1675,20 @@ struct DesktopCodeDraftDetail: View {
 
                             Spacer(minLength: 0)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .padding(.horizontal, JunoSpace.snug)
-                        .padding(.vertical, JunoSpace.tight)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.vertical, JunoSpace.snug)
                         .background(
-                            Color.junoRaised.opacity(0.72),
+                            Color.junoRaised.opacity(0.7),
                             in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                                .stroke(Color.junoHairline.opacity(0.7), lineWidth: 0.5)
                         )
                         .contentShape(.rect)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.junoPress)
                     .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
                 }
             }
@@ -1712,14 +1787,18 @@ struct DesktopCodeDraftDetail: View {
         } input: {
             composerInput
         } actions: {
-            HStack(spacing: JunoSpace.snug) {
-                composerAddMenu
-                localControls
+            VStack(spacing: JunoSpace.tight) {
+                activeConnectorsBar
 
-                Spacer(minLength: JunoSpace.cozy)
+                HStack(spacing: JunoSpace.snug) {
+                    composerAddMenu
+                    localControls
 
-                voiceButton
-                sendButton
+                    Spacer(minLength: JunoSpace.cozy)
+
+                    voiceButton
+                    sendButton
+                }
             }
         }
         .padding(.horizontal, JunoSpace.roomy)
@@ -1965,8 +2044,148 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
+    private struct DevToolOption: Identifiable {
+        let id: String
+        let name: String
+        let icon: String
+    }
+
+    private var defaultDevTools: [DevToolOption] {
+        [
+            DevToolOption(id: "github", name: "GitHub", icon: "arrow.triangle.branch"),
+            DevToolOption(id: "terminal", name: "Terminal", icon: "terminal"),
+            DevToolOption(id: "postgres", name: "PostgreSQL", icon: "cylinder.split.1x2"),
+            DevToolOption(id: "web_search", name: "Web Search", icon: "globe"),
+            DevToolOption(id: "linear", name: "Linear", icon: "checklist"),
+            DevToolOption(id: "slack", name: "Slack", icon: "bubble.left.and.bubble.right"),
+        ]
+    }
+
+    private func connectorIcon(for id: String) -> String {
+        switch id {
+        case "github": return "arrow.triangle.branch"
+        case "terminal": return "terminal"
+        case "postgres": return "cylinder.split.1x2"
+        case "web_search": return "globe"
+        case "linear": return "checklist"
+        case "slack": return "bubble.left.and.bubble.right"
+        default: return "network"
+        }
+    }
+
+    private func connectorName(for id: String) -> String {
+        if let found = defaultDevTools.first(where: { $0.id == id }) {
+            return found.name
+        }
+        if let found = connectedConnectors.first(where: { $0.id == id }) {
+            return found.label
+        }
+        return id.capitalized
+    }
+
+    @ViewBuilder
+    private var activeConnectorsBar: some View {
+        if !selectedConnectors.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: JunoSpace.tight) {
+                    ForEach(Array(selectedConnectors).sorted(), id: \.self) { connectorID in
+                        Button {
+                            selectedConnectors.remove(connectorID)
+                        } label: {
+                            HStack(spacing: JunoSpace.hairline) {
+                                Image(systemName: connectorIcon(for: connectorID))
+                                    .font(.caption2)
+                                Text(connectorName(for: connectorID))
+                                    .font(.caption2.weight(.medium))
+                                Image(systemName: "xmark")
+                                    .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
+                                    .foregroundStyle(Color.junoSecondaryForeground)
+                            }
+                            .padding(.horizontal, JunoSpace.snug)
+                            .padding(.vertical, JunoSpace.hairline + 2)
+                            .background(
+                                Color.junoRaised.opacity(0.8),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
+                            )
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(connectorName(for: connectorID))")
+                    }
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.bottom, JunoSpace.tight)
+            }
+        }
+    }
+
+    private var connectorsMenuButton: some View {
+        Menu {
+            Section("Developer Tools & Integrations") {
+                ForEach(defaultDevTools) { tool in
+                    Button {
+                        toggleConnector(tool.id)
+                    } label: {
+                        HStack {
+                            Label(tool.name, systemImage: tool.icon)
+                            if selectedConnectors.contains(tool.id) {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !connectedConnectors.isEmpty {
+                Divider()
+                Section("Connected Services") {
+                    ForEach(connectedConnectors) { connector in
+                        Button {
+                            toggleConnector(connector.id)
+                        } label: {
+                            HStack {
+                                Text(connector.label)
+                                if selectedConnectors.contains(connector.id) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Image(systemName: "network")
+                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
+                Text(selectedConnectors.isEmpty ? "Connectors" : "Connectors (\(selectedConnectors.count))")
+                    .font(.caption)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(selectedConnectors.isEmpty ? Color.junoSecondaryForeground : Color.junoAccent)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+            .frame(minHeight: CodeRowMetrics.minHeight)
+            .background(
+                selectedConnectors.isEmpty ? Color.junoMuted.opacity(0.4) : Color.junoAccent.opacity(0.12),
+                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+            )
+            .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Toggle developer tools and active connectors")
+        .accessibilityIdentifier("juno.code.composer.connectors-menu")
+    }
+
     private var localControls: some View {
         HStack(spacing: JunoSpace.snug) {
+            connectorsMenuButton
+
             contractMenu
 
             JunoModelSelectorButton(

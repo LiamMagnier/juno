@@ -1422,7 +1422,11 @@ public final class JunoRealtimeVoiceController {
         // here, and a conversation without echo cancellation is still a
         // conversation. The devices that *accept* the flag and then fail to
         // initialise are what the caller's second attempt exists for.
-        if voiceProcessing { try? input.setVoiceProcessingEnabled(true) }
+        if voiceProcessing {
+            try? input.setVoiceProcessingEnabled(true)
+        } else {
+            try? input.setVoiceProcessingEnabled(false)
+        }
 
         // Model speech arrives as PCM16 mono 24 kHz. Scheduling Float32 mono
         // 24 kHz and letting the mixer resample is what keeps this correct on
@@ -1513,12 +1517,24 @@ public final class JunoRealtimeVoiceController {
     private nonisolated static func usableInputFormat(
         of input: AVAudioInputNode
     ) -> AVAudioFormat {
-        let format = input.outputFormat(forBus: 0)
-        guard !RealtimeInputFormat.isUsable(
+        var format = input.outputFormat(forBus: 0)
+        if !RealtimeInputFormat.isUsable(
             sampleRate: format.sampleRate, channelCount: format.channelCount
-        ) else { return format }
-        try? input.setVoiceProcessingEnabled(false)
-        return input.outputFormat(forBus: 0)
+        ) {
+            try? input.setVoiceProcessingEnabled(false)
+            format = input.outputFormat(forBus: 0)
+        }
+        if !RealtimeInputFormat.isUsable(
+            sampleRate: format.sampleRate, channelCount: format.channelCount
+        ) {
+            let busFormat = input.inputFormat(forBus: 0)
+            if RealtimeInputFormat.isUsable(
+                sampleRate: busFormat.sampleRate, channelCount: busFormat.channelCount
+            ) {
+                format = busFormat
+            }
+        }
+        return format
     }
 
     /// Takes an engine apart far enough that the audio device is genuinely free.
@@ -1642,20 +1658,16 @@ public final class JunoRealtimeVoiceController {
 
         // "The audio unit is unable to be initialized." By the time this is
         // reached ``startAudioEngine()`` has already retried against the plain
-        // hardware format, so the configuration is not what is wrong — what is
-        // left is that this process is not really allowed to record.
-        // `AVCaptureDevice.authorizationStatus` answers out of a TCC cache, and
-        // a build shipped under a changed signature (0.2.0 → 0.3.0) can read
-        // back `.authorized` for a grant the audio HAL has already dropped.
-        // Reported as the refusal it nearly always is, so the UI offers Privacy
-        // Settings rather than a retry that would fail in exactly the same way.
-        //
-        // iOS keeps the generic message: there the record permission is asked
-        // through `AVAudioApplication`, which does not go stale the same way, so
-        // the same code there is much more likely to be the session.
+        // hardware format, so the configuration is not what is wrong.
         case kAudioUnitErr_FailedInitialization:
             #if os(macOS)
-            return .micPermissionDenied
+            let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+            if micStatus == .denied || micStatus == .restricted {
+                return .micPermissionDenied
+            }
+            return .audioEngineFailed(
+                "Juno couldn't start the audio stream. Check default input in System Settings › Sound, or retry. (audio error \(status))"
+            )
             #else
             return .audioEngineFailed(
                 "Juno couldn't open the microphone. Close anything else that might be "

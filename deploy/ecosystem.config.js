@@ -296,8 +296,7 @@ module.exports = {
       // The relay is its own package inside the release, so it is the one app
       // whose cwd is a subdirectory rather than the release root.
       cwd: path.join(runRoot, "relay"),
-      script: "npm",
-      args: "run start",
+      script: "dist/server.js",
       watch: false,
       max_memory_restart: "300M",
       env: {

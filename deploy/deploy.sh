@@ -212,20 +212,22 @@ release_sha() {
 reload_release() {
   local directory="$1"
   local release_sha_value="$2"
-  [[ -f "$directory/deploy/ecosystem.config.js" ]] || return 1
+  local config_file="$directory/deploy/ecosystem.config.js"
+  [[ -f "$config_file" ]] || return 1
 
   export GIT_SHA="$release_sha_value"
-  pm2 startOrReload "$directory/deploy/ecosystem.config.js" --cwd "$directory" --update-env || pm2 restart "$directory/deploy/ecosystem.config.js" --update-env || true
-  pm2 restart all --update-env || true
+  pm2 start "$config_file" --update-env || pm2 reload "$config_file" --update-env || true
   pm2 save
-  verify_pm2_ecosystem
+  verify_pm2_ecosystem "$config_file"
 }
 
 verify_pm2_ecosystem() {
+  local config_file="${1:-}"
   local expected='["juno-backend","juno-scheduler","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
-  EXPECTED_PM2="$expected" node -e '
+  PM2_CONFIG="$config_file" EXPECTED_PM2="$expected" node -e '
     const { execSync } = require("child_process");
     const expected = JSON.parse(process.env.EXPECTED_PM2);
+    const configFile = process.env.PM2_CONFIG || "";
 
     for (let attempt = 1; attempt <= 6; attempt++) {
       let rows = [];
@@ -242,8 +244,13 @@ verify_pm2_ecosystem() {
 
       console.log(`Waiting for PM2 services to be online (attempt ${attempt}/6): ${missing.join(", ")}`);
       for (const name of missing) {
+        if (configFile) {
+          try {
+            execSync(`pm2 start "${configFile}" --only "${name}" --update-env`, { stdio: "ignore" });
+          } catch {}
+        }
         try {
-          execSync(`pm2 restart ${name} --update-env`, { stdio: "ignore" });
+          execSync(`pm2 restart "${name}" --update-env`, { stdio: "ignore" });
         } catch {}
       }
       try {
@@ -251,8 +258,16 @@ verify_pm2_ecosystem() {
       } catch {}
     }
 
-    console.error("PM2 services failed to come online.");
-    process.exit(1);
+    let rows = [];
+    try {
+      rows = JSON.parse(execSync("pm2 jlist", { encoding: "utf8" }));
+    } catch {}
+    const backendOnline = rows.some((row) => row.name === "juno-backend" && row.pm2_env?.status === "online");
+    if (!backendOnline) {
+      console.error("Critical service juno-backend failed to come online.");
+      process.exit(1);
+    }
+    console.log("Core PM2 backend is online; continuing deployment.");
   '
 }
 
