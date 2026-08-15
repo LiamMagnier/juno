@@ -105,7 +105,11 @@ const MODE_HOME: Record<SidebarMode, string> = {
   // `/work` is a real page, unlike `/code`, which has no index and is why Code
   // has to land on `/code/new`.
   work: "/work",
-  code: "/code/new",
+  // `/code` is a real page now — the run list — so Code lands on its index like
+  // every other mode. It used to land on `/code/new` because no index existed,
+  // which meant switching INTO Code always opened a blank composer and never
+  // showed the runs already going.
+  code: "/code",
 };
 
 type SidebarProject = {
@@ -700,6 +704,7 @@ export function AppSidebar({
                   <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
+              <RailIcon href="/code" active={pathname === "/code"} label="Runs"><SidebarMotionIcon kind="code" /></RailIcon>
               <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><SidebarMotionIcon kind="pulls" /></RailIcon>
               <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
               <RailIcon href="/connections" active={pathname === "/connections"} label="Plugins"><SidebarMotionIcon kind="connections" /></RailIcon>
@@ -848,6 +853,7 @@ export function AppSidebar({
               }
               label="New session"
             />
+            <NavRow href="/code" active={pathname === "/code"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="code" />} label="Runs" />
             <NavRow href="/code/pulls" active={pathname === "/code/pulls"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="pulls" />} label="Pull requests" />
             <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Scheduled" />
             <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Plugins" />

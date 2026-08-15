@@ -999,10 +999,12 @@ function CommandMenu() {
 
     const actions: PaletteItem[] = [
       { id: "projects", group: "Actions", label: "Projects", icon: AppIcons.projects, keywords: "workspaces group", run: () => go("/projects") },
-      // Work lands on its own index, unlike Code, whose "/code" route has no
-      // page and so has to send people to the pull request list instead.
       { id: "work", group: "Actions", label: "Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
-      { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions pull requests github reviews juno code", run: () => go("/code/pulls") },
+      // Both modes now land on their own index. Code used to send people to the
+      // pull request list — a list of OUTCOMES standing in as the front door of
+      // the feature that produces them — purely because "/code" had no page.
+      { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions runs agents pull requests github reviews juno code", run: () => go("/code") },
+      { id: "code-pulls", group: "Actions", label: "Pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
       { id: "design", group: "Actions", label: "Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
       { id: "artifacts", group: "Actions", label: "Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
       { id: "library", group: "Actions", label: "Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
