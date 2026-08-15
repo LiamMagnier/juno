@@ -1615,7 +1615,7 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private func syncAura() {
-        auraState.providerID = selectedModel?.providerID ?? ""
+        auraState.providerID = selectedModel?.catalog?.providerID ?? ""
         auraState.think = JunoProviderGlow.auraThink(
             effort: reasoningEffort.rawValue,
             hasEffortControl: selectedModel?.supportedReasoningEfforts.isEmpty == false
@@ -2044,37 +2044,44 @@ struct DesktopCodeDraftDetail: View {
         return id.capitalized
     }
 
+    private func connectorChip(for connectorID: String) -> some View {
+        let name = connectorName(for: connectorID)
+        let icon = connectorIcon(for: connectorID)
+        return Button {
+            selectedConnectors.remove(connectorID)
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(name)
+                    .font(.caption2.weight(.medium))
+                Image(systemName: "xmark")
+                    .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
+                    .foregroundStyle(Color.secondary)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.hairline + 2)
+            .background(
+                Color.junoRaised.opacity(0.8),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove \(name)")
+    }
+
     @ViewBuilder
     private var activeConnectorsBar: some View {
         if !selectedConnectors.isEmpty {
+            let sortedIDs = Array(selectedConnectors).sorted()
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: JunoSpace.tight) {
-                    ForEach(Array(selectedConnectors).sorted(), id: \.self) { connectorID in
-                        Button {
-                            selectedConnectors.remove(connectorID)
-                        } label: {
-                            HStack(spacing: JunoSpace.hairline) {
-                                Image(systemName: connectorIcon(for: connectorID))
-                                    .font(.caption2)
-                                Text(connectorName(for: connectorID))
-                                    .font(.caption2.weight(.medium))
-                                Image(systemName: "xmark")
-                                    .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
-                                    .foregroundStyle(Color.junoSecondaryForeground)
-                            }
-                            .padding(.horizontal, JunoSpace.snug)
-                            .padding(.vertical, JunoSpace.hairline + 2)
-                            .background(
-                                Color.junoRaised.opacity(0.8),
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
-                            )
-                            .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(connectorName(for: connectorID))")
+                    ForEach(sortedIDs, id: \.self) { connectorID in
+                        connectorChip(for: connectorID)
                     }
                 }
                 .padding(.horizontal, JunoSpace.cozy)
@@ -2126,7 +2133,7 @@ struct DesktopCodeDraftDetail: View {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
-            .foregroundStyle(selectedConnectors.isEmpty ? Color.junoSecondaryForeground : Color.junoAccent)
+            .foregroundStyle(selectedConnectors.isEmpty ? Color.secondary : Color.junoAccent)
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
             .frame(minHeight: CodeRowMetrics.minHeight)
