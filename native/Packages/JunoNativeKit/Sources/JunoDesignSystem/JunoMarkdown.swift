@@ -30,6 +30,18 @@ public enum JunoMarkdownBlock: Equatable, Sendable, Identifiable {
     case quote(String)
     /// `---`, `***`, `___`.
     case thematicBreak
+    /// Display maths: a `$$ … $$` or `\[ … \]` run that owns its own lines.
+    ///
+    /// A block rather than an inline run because display maths is *centred and
+    /// given air* — that is the whole difference between `$x$` and `$$x$$` — and
+    /// a paragraph cannot centre one of its runs. `isClosed` mirrors `.code`:
+    /// false while the closing delimiter is still in flight.
+    ///
+    /// Inline `$…$` is deliberately **not** a block. It stays inside the
+    /// paragraph's source and is split out by ``JunoMathMarkup/segments(in:)`` at
+    /// render time, so a sentence with three formulas in it still wraps as one
+    /// sentence.
+    case math(latex: String, isClosed: Bool)
 
     /// A single list item. `depth` is the nesting level (0 = top level), so the
     /// renderer can indent without the parser building a tree it would only
@@ -60,6 +72,7 @@ public enum JunoMarkdownBlock: Equatable, Sendable, Identifiable {
             "t:\(header.joined().hashValue):\(rows.count)"
         case .quote(let text): "q:\(text.hashValue)"
         case .thematicBreak: "hr"
+        case .math(let latex, _): "m:\(latex.hashValue)"
         }
     }
 }
@@ -128,6 +141,40 @@ public enum JunoMarkdown {
                     .code(
                         language: fence.language,
                         source: body.joined(separator: "\n"),
+                        isClosed: closed
+                    )
+                )
+                continue
+            }
+
+            // Display maths, checked immediately after code so a `$$` inside a
+            // fence stays source. It has to run before the blank-line flush
+            // because a `$$ … $$` run may contain blank lines between its rows
+            // and must not be split into three paragraphs by them.
+            if let fence = MathFence(line: trimmed) {
+                flushAll()
+                if let body = fence.singleLineBody {
+                    blocks.append(.math(latex: body, isClosed: true))
+                    index += 1
+                    continue
+                }
+                var body: [String] = []
+                var closed = false
+                index += 1
+                while index < lines.count {
+                    if let head = fence.textBeforeClose(in: lines[index]) {
+                        if !head.trimmingCharacters(in: .whitespaces).isEmpty { body.append(head) }
+                        closed = true
+                        index += 1
+                        break
+                    }
+                    body.append(lines[index])
+                    index += 1
+                }
+                blocks.append(
+                    .math(
+                        latex: body.joined(separator: "\n")
+                            .trimmingCharacters(in: .whitespacesAndNewlines),
                         isClosed: closed
                     )
                 )
@@ -237,6 +284,43 @@ public enum JunoMarkdown {
             guard run.count >= length else { return false }
             // A closing fence carries no info string.
             return line.dropFirst(run.count).trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
+    /// A display-maths delimiter pair, opened at the start of a line.
+    ///
+    /// Only `$$`/`\[` *at the start of a line* opens a block. A `$$` in the
+    /// middle of a sentence stays inline, which is what a reader means when they
+    /// write "the identity $$e^{i\pi} = -1$$ shows" — one flowing sentence, not
+    /// a paragraph interrupted by a centred slab.
+    private struct MathFence {
+        let close: String
+        /// Whatever followed the opening delimiter on the same line.
+        let remainder: String
+
+        init?(line: String) {
+            if line.hasPrefix("$$") {
+                close = "$$"
+            } else if line.hasPrefix("\\[") {
+                close = "\\]"
+            } else {
+                return nil
+            }
+            remainder = String(line.dropFirst(2))
+        }
+
+        /// The body when the block opens and closes on one line — `$$x = 1$$`.
+        var singleLineBody: String? {
+            guard let range = remainder.range(of: close) else { return nil }
+            return String(remainder[remainder.startIndex..<range.lowerBound])
+                .trimmingCharacters(in: .whitespaces)
+        }
+
+        /// The part of a body line that precedes the closing delimiter, or nil
+        /// when this line does not close the block.
+        func textBeforeClose(in line: String) -> String? {
+            guard let range = line.range(of: close) else { return nil }
+            return String(line[line.startIndex..<range.lowerBound])
         }
     }
 
