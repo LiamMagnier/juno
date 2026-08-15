@@ -269,8 +269,11 @@ export function CompareView() {
           </p>
           {/* The same heading metrics AppPageHeader gives every other app page.
               This view owns its own fixed-height shell so it cannot use the
-              component, but it must not disagree with it about type. */}
-          <h1 className="mt-1 text-balance text-[clamp(1.65rem,1.4rem+0.8vw,2.1rem)] font-semibold leading-tight tracking-[-0.025em]">
+              component, but it must not disagree with it about type — which it
+              quietly did, at -0.025em against the header's -0.02em. Naming the
+              `page-title` rung is what makes "the same metrics" true rather than
+              merely intended: two copies of a clamp can drift, one token cannot. */}
+          <h1 className="mt-1 text-balance text-page-title">
             Compare
           </h1>
         </div>

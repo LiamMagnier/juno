@@ -85,13 +85,14 @@ export function AppPageHeader({
 
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          {/* -0.02em, matching `display`. The hand-rolled -0.025em was TIGHTER
-              than the largest rung on the scale, so the app-page heading tracked
-              harder than the display type it sits below in the hierarchy. The
-              clamp itself still wants to become a `page-title` rung in
-              tailwind.config.ts — a size used on every app page belongs in the
-              scale — but that file is outside this pass. */}
-          <h1 className="flex items-center gap-2.5 text-balance text-[clamp(1.65rem,1.4rem+0.8vw,2.1rem)] font-semibold leading-tight tracking-[-0.02em]">
+          {/* The `page-title` rung the comment here used to ask for now exists, so
+              this site names it instead of hand-writing its clamp: same size, and
+              the -0.02em it already carried is what the token sets, matching
+              `display`. Weight and tracking come from the token now — leaving
+              `leading-tight`/`tracking-*`/`font-semibold` beside it would be worse
+              than redundant, since Tailwind emits those groups AFTER font-size and
+              they would silently keep overriding the rung this is adopting. */}
+          <h1 className="flex items-center gap-2.5 text-balance text-page-title">
             {Icon && (
               // `0.78em`, not a px size: the mark is part of the heading and has
               // to track it through the display scale's responsive steps.
