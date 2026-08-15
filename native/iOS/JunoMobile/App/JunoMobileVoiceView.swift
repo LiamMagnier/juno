@@ -279,11 +279,22 @@ struct JunoMobileVoiceDock: View {
         case .reconnecting: "voice.status.reconnecting"
         case .error: "voice.status.unavailable"
         case .ended: "voice.status.session-ended"
-        case .live:
-            controller.assistantSpeaking
-                ? "voice.status.speaking"
-                : (controller.muted ? "voice.status.muted" : "voice.status.listening")
+        case .live: liveStatusTitle
         }
+    }
+
+    /// The three states a live call is actually in, where
+    /// ``JunoRealtimeVoiceController/Phase/live`` is one.
+    ///
+    /// `interrupting` earns its own line: it is the round trip between the
+    /// interrupt going out and the relay confirming it dropped the turn, and the
+    /// speakers are already silent for it. Left saying "Juno is speaking" it
+    /// reads as an interruption that was ignored, which is what someone
+    /// concludes when they tap the button and the words do not change.
+    private var liveStatusTitle: LocalizedStringKey {
+        if controller.sessionPhase == .interrupting { return "voice.status.interrupting" }
+        if controller.assistantSpeaking { return "voice.status.speaking" }
+        return controller.muted ? "voice.status.muted" : "voice.status.listening"
     }
 
     /// Relay list prices, not billing — hence the tilde. The relay owns the
@@ -386,9 +397,18 @@ struct JunoMobileVoiceDock: View {
             // permanently disabled glyph sitting through every pause is chrome
             // that means nothing.
             if controller.assistantSpeaking, session.isLive {
+                // The label names the barge-in mode, because this control is the
+                // one place the fact is about. Under `.automatic` the tap is a
+                // shortcut for something a reader can also just do by talking;
+                // under `.manualOnly` — which is what a phone reports, since the
+                // voice-processing unit is only asked for on the Mac — it is the
+                // only way, and saying so stops "talking over Juno does nothing"
+                // reading as a bug.
                 circleButton(
                     systemImage: "stop.fill",
-                    label: "voice.interrupt",
+                    label: controller.bargeIn == .automatic
+                        ? "voice.interrupt.or-talk"
+                        : "voice.interrupt",
                     identifier: "juno.mobile.voice-interrupt",
                     tone: .prominent
                 ) {

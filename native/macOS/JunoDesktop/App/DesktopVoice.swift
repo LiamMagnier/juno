@@ -474,7 +474,7 @@ struct DesktopVoiceDock: View {
                 .junoFont(size: 14, relativeTo: .body, weight: .semibold)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .help(failureMessage ?? statusTitle)
+                .help(failureMessage ?? statusHelp)
             if let costLabel {
                 Text(costLabel)
                     .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
@@ -503,10 +503,38 @@ struct DesktopVoiceDock: View {
         case .reconnecting: "Reconnecting…"
         case .error: "Voice unavailable"
         case .ended: "Session ended"
-        case .live:
-            controller.assistantSpeaking
-                ? "Juno is speaking"
-                : (controller.muted ? "Microphone off" : "Listening")
+        case .live: liveStatusTitle
+        }
+    }
+
+    /// The three states a live call is actually in, which ``JunoRealtimeVoiceController/Phase``
+    /// collapses into one.
+    ///
+    /// `interrupting` earns its own line: it is the round trip between the
+    /// interrupt going out and the relay confirming it dropped the turn, and for
+    /// that stretch the speakers are already silent. Left saying "Juno is
+    /// speaking" it reads as an interruption that was ignored — which is exactly
+    /// what a reader concludes when they press the button and nothing changes.
+    private var liveStatusTitle: String {
+        if controller.sessionPhase == .interrupting { return "Interrupting…" }
+        if controller.assistantSpeaking { return "Juno is speaking" }
+        return controller.muted ? "Microphone off" : "Listening"
+    }
+
+    /// The tooltip on the status, which is where the barge-in *mode* is stated.
+    ///
+    /// It belongs in a tooltip rather than in the label because the label is
+    /// 120pt wide and fixed — a status that grew to explain itself would push
+    /// every control in the dock sideways mid-sentence. Whether talking over
+    /// Juno interrupts it is a fact about this Mac's audio hardware, not a
+    /// preference, so it is worth saying somewhere: without echo cancellation
+    /// the microphone hears the speakers, and a session that acted on that
+    /// would interrupt itself on its own first syllable.
+    private var statusHelp: String {
+        guard controller.phase == .live else { return statusTitle }
+        return switch controller.bargeIn {
+        case .automatic: "\(statusTitle) — talk over Juno to interrupt it"
+        case .manualOnly: "\(statusTitle) — use Interrupt to cut Juno off"
         }
     }
 
@@ -650,7 +678,13 @@ struct DesktopVoiceDock: View {
             // Barge-in, offered only while there is something to interrupt. A
             // permanently disabled square is chrome that means nothing.
             if controller.assistantSpeaking, controller.phase == .live {
-                control("stop.fill", label: "Interrupt Juno", tone: .prominent) {
+                // The label carries the barge-in mode because this is the one
+                // control the fact is about: under `.automatic` the button is a
+                // shortcut for something the reader can also just do, and under
+                // `.manualOnly` it is the only way. Naming which is which here
+                // is what stops "talking over Juno does nothing" reading as a
+                // bug rather than as this Mac's audio hardware.
+                control("stop.fill", label: interruptLabel, tone: .prominent) {
                     controller.interrupt()
                 }
                 .accessibilityIdentifier("juno.desktop.voice-interrupt")
@@ -671,6 +705,12 @@ struct DesktopVoiceDock: View {
             .disabled(controller.phase != .live)
             .accessibilityIdentifier("juno.desktop.voice-mute")
         }
+    }
+
+    private var interruptLabel: String {
+        controller.bargeIn == .automatic
+            ? "Interrupt Juno — or just talk over it"
+            : "Interrupt Juno"
     }
 
     /// Restart is offered from a finished or failed session — except after a

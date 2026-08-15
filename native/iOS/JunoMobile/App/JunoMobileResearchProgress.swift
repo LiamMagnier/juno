@@ -15,14 +15,60 @@ struct JunoMobileResearchProgress: View {
     let degradedWarning: String?
     let onDisable: () -> Void
 
+    /// The server's own `activity` stream, read through the same lens a local
+    /// run is read through.
+    ///
+    /// A projection and not a second research engine: deep research runs
+    /// server-side, and re-deriving phase, queries and sources here would give
+    /// the phone a different account of the run from the one the report was
+    /// written against. See ``DeepResearchActivityProjection``.
+    private var progress: ServerResearchProgress {
+        DeepResearchActivityProjection.progress(from: activity)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if enabled { header }
+            runRow
             searchBlock
             if let degradedWarning { warningRow(degradedWarning) }
         }
         .padding(.horizontal, 14)
         .accessibilityIdentifier("juno.mobile.research-progress")
+    }
+
+    /// What stage the run is at, and how much it has covered.
+    ///
+    /// The block below already shows the *current* query and, unfolded, the
+    /// sources — so this line carries only what that block cannot: the phase, and
+    /// the totals. Without them a long run reads as one query repeating, because
+    /// the block only ever shows the latest.
+    ///
+    /// The phase never runs ahead of the events: a run that has searched and not
+    /// yet visited anything says "Searching", not "Reading". A label that guesses
+    /// forward is how a stuck run looks healthy.
+    @ViewBuilder
+    private var runRow: some View {
+        let run = progress
+        // Absent, not zero. Before the first search there is genuinely nothing
+        // to report, and "Planning · 0 sources" states a fact nobody has.
+        if let counts = run.countsSummary {
+            HStack(spacing: 6) {
+                // Not `binoculars`: the header above already carries that glyph
+                // for "research is on", and repeating it here would make two
+                // rows that look like the same statement twice.
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.caption2)
+                Text("\(run.phase.displayName) · \(counts)")
+                    .font(.caption2)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .foregroundStyle(Color.junoMutedForeground)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.updatesFrequently)
+            .accessibilityIdentifier("juno.mobile.research-run")
+        }
     }
 
     /// The searches, in AIcss's Web Search block — the same block the Mac and the

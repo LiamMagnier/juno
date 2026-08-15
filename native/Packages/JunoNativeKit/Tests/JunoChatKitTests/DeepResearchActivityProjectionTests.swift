@@ -125,6 +125,58 @@ final class DeepResearchActivityProjectionTests: XCTestCase {
         XCTAssertNil(report.roundsRun)
     }
 
+    /// Absent, not zero. A run that has only just started genuinely has no
+    /// counts, and "0 searches · 0 sources" over a working run is a fact nobody
+    /// has — the surfaces omit the line instead.
+    func testARunWithNothingToCountReportsNoCountsRatherThanZero() {
+        XCTAssertNil(DeepResearchActivityProjection.progress(from: []).countsSummary)
+        XCTAssertNil(
+            DeepResearchActivityProjection.progress(from: [
+                activity(.context, "Planning"),
+            ]).countsSummary
+        )
+    }
+
+    /// One line, singular where it should be singular. Shared by the Mac and the
+    /// phone so the two clients cannot describe one run with different numbers.
+    func testTheCountsSummaryPluralizesAndCountsDistinctSources() {
+        let one = DeepResearchActivityProjection.progress(from: [
+            activity(.search, "Searching the web", detail: "refunds"),
+            activity(.visit, "Reading", url: "https://example.com/a"),
+        ])
+        XCTAssertEqual(one.countsSummary, "1 search · 1 source")
+
+        let many = DeepResearchActivityProjection.progress(from: [
+            activity(.search, "Searching the web", detail: "refunds"),
+            activity(.search, "Searching the web", detail: "returns"),
+            activity(.visit, "Reading", url: "https://example.com/a"),
+            activity(.visit, "Reading", url: "https://example.com/b"),
+            // The same source twice is one source: the server re-sends an entry
+            // when it gains a detail, and counting both would inflate the number
+            // a reader is being shown as evidence.
+            activity(.visit, "Reading", url: "https://example.com/b"),
+        ])
+        XCTAssertEqual(many.countsSummary, "2 searches · 2 sources")
+    }
+
+    /// A run that searched and read but never reported a query still has sources
+    /// worth counting — the provider-tool path.
+    func testSourcesAreCountedWithoutAQueryToNameThem() {
+        let progress = DeepResearchActivityProjection.progress(from: [
+            activity(.visit, "Reading", url: "https://example.com/a"),
+        ])
+        XCTAssertEqual(progress.countsSummary, "1 source")
+    }
+
+    /// The words a reader sees, kept in one place so "Writing" cannot become
+    /// "Synthesizing" on one platform and not the other.
+    func testPhaseNamesAreWrittenForSomeoneWaitingNotForSomeoneDebugging() {
+        XCTAssertEqual(DeepResearchPhase.searching.displayName, "Searching")
+        XCTAssertEqual(DeepResearchPhase.gapAnalysis.displayName, "Checking gaps")
+        XCTAssertEqual(DeepResearchPhase.synthesizing.displayName, "Writing")
+        XCTAssertEqual(DeepResearchPhase.completed.displayName, "Done")
+    }
+
     private func activity(
         _ kind: NativeChatActivity.Kind,
         _ title: String,
