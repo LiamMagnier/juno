@@ -116,7 +116,11 @@ public enum NativeArtifactSandbox {
         }
     }
 
-    fileprivate static var previewUnavailableDocument: String {
+    /// Shown when the network-deny rules could not be compiled, in place of the
+    /// artifact. Internal rather than file-private because ``ArtifactCanvasView``
+    /// fails closed through the same document: two "preview unavailable" screens
+    /// would drift, and only one of them would keep the JavaScript disabled.
+    static var previewUnavailableDocument: String {
         """
         <!doctype html><html><head>\(securityHead(
             allowsJavaScript: false,
@@ -364,8 +368,14 @@ private struct NativeArtifactWebPreview {
 /// immutable rule list into every artifact WebView before its first document
 /// load. If WebKit cannot compile the list, the artifact never loads; the
 /// WebView receives a non-executable local error document instead.
+///
+/// Internal, not file-private, so ``ArtifactCanvasView`` shares this exact cache.
+/// A second compiler would produce a second `WKContentRuleList` under a second
+/// identifier — the same rules, compiled twice, with two chances for one of them
+/// to be edited and the other forgotten. Sharing means the canvas cannot be less
+/// isolated than the inline preview.
 @MainActor
-private final class NativeArtifactContentRules {
+final class NativeArtifactContentRules {
     static let shared = NativeArtifactContentRules()
 
     private let identifier = "com.juno.artifact-preview.network-isolation.v1"
