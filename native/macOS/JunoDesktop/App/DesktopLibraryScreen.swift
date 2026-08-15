@@ -3,7 +3,9 @@ import Foundation
 import JunoChatKit
 import JunoCore
 import JunoDesignSystem
+import JunoStorage
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Library: every file this account has already shared with Juno.
 ///
@@ -38,8 +40,20 @@ import SwiftUI
 /// name, type, size and date and nothing else: no bytes, no signed URL, no
 /// mutation. Every one of those controls would be a control that does nothing,
 /// so they are reported as gaps instead of drawn.
+///
+/// **The second half of the page is local.** Everything above describes files the
+/// *account* holds, which is a list this Mac can only read. `Add Document…` is the
+/// other direction: a file on this disk read through
+/// ``DocumentIngestionPipeline`` into chunks and put in the account's retrieval
+/// index, so the search field at the top of this window finds passages inside a
+/// PDF and not only file names. The two live on one page because both answer
+/// "what has Juno got of mine", and splitting them would make the reader learn
+/// which of two screens holds a given document.
 struct DesktopLibraryScreen: View {
     @Bindable var model: NativeLibraryModel
+    /// This Mac's local document index, or nil where the shell could not build
+    /// one. See ``JunoDesktopConfiguration/documentIndexModel``.
+    var documentIndex: NativeDocumentIndexModel?
     /// Everything the image editor needs. All optional, and the Edit action is
     /// absent rather than disabled when any of it is missing — a menu item that
     /// cannot work is worse than one that is not there.
@@ -51,6 +65,13 @@ struct DesktopLibraryScreen: View {
 
     @State private var editing: NativeLibraryItem?
     @State private var previews = NativeFilePreviewLoader()
+    /// Whether the system open panel for `Add Document…` is up.
+    @State private var choosingDocument = false
+    /// A failure of the *panel*, not of the pipeline. Kept apart from
+    /// `documentIndex.lastErrorDescription` because "you cancelled out of an open
+    /// panel that errored" and "this PDF has no text in it" want different
+    /// sentences, and folding them together would make one of the two wrong.
+    @State private var documentPanelFailure: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How the files are drawn. Mirrors the web's `LibraryView`, including the
@@ -131,18 +152,43 @@ struct DesktopLibraryScreen: View {
                 VStack(spacing: 0) {
                     header
                     Divider()
+                    documentIndexPanel
                     content
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { refreshFailure }
-            .searchable(text: $searchText, placement: .toolbar, prompt: "Search files")
+            .searchable(text: $searchText, placement: .toolbar, prompt: "Search files and documents")
             .toolbar { libraryToolbar }
             .sheet(item: $editing) { editSheet($0) }
+            .fileImporter(
+                isPresented: $choosingDocument,
+                allowedContentTypes: NativeDocumentIndexModel.readableContentTypes,
+                // Several at once, because "index my contracts" is the request
+                // this exists for and one-at-a-time would be six open panels.
+                // They are read in sequence below, not concurrently: the pipeline
+                // reports one file at a time and a parallel import would make the
+                // progress line name whichever finished last.
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case let .success(urls):
+                    documentPanelFailure = nil
+                    Task { await ingest(urls) }
+                case let .failure(error):
+                    documentPanelFailure = error.localizedDescription
+                }
+            }
             .task { await model.refresh() }
             // A file that scrolls out of the filter, or a reload that removes it,
             // must not leave a selection nobody can see or act on.
             .onChange(of: model.filter) { _, _ in pruneSelection() }
-            .onChange(of: searchText) { _, _ in pruneSelection() }
+            .onChange(of: searchText) { _, _ in
+                pruneSelection()
+                // One search field, two corpora. The field already narrowed the
+                // account's files by name; this is what makes the same keystrokes
+                // look *inside* the documents indexed on this Mac.
+                documentIndex?.setQuery(searchText)
+            }
             .onChange(of: model.items) { _, _ in pruneSelection() }
     }
 
@@ -210,6 +256,219 @@ struct DesktopLibraryScreen: View {
 
     private var totalSizeLabel: String {
         Self.sizeLabel(model.items.reduce(0) { $0 + $1.size })
+    }
+
+    // MARK: - Local document index
+
+    /// Everything the local index has to say, or nothing at all.
+    ///
+    /// Drawn between the header and the files rather than under them, because
+    /// while a search is running these passages are the *answer* and the file grid
+    /// is context. It collapses to nothing when the index is empty and idle, so a
+    /// reader who never indexes a document never sees a strip of chrome for a
+    /// feature they are not using.
+    @ViewBuilder
+    private var documentIndexPanel: some View {
+        if let index = documentIndex, index.isReady, indexPanelHasContent(index) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                indexSummary(index)
+                if let failure = documentPanelFailure ?? index.lastErrorDescription {
+                    indexFailure(failure, index: index)
+                }
+                indexResults(index)
+            }
+            .padding(JunoSpace.regular)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .junoCard()
+            // The page's own measure and gutters, in the order the header and the
+            // grid apply them, so this card lines up with the file tiles under it
+            // instead of running wider than the page it sits on.
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.top, JunoSpace.regular)
+            .frame(maxWidth: Self.contentWidth)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Documents indexed on this Mac")
+            .accessibilityIdentifier("juno.desktop.library-document-index")
+        }
+    }
+
+    /// A panel with nothing in it is a panel that should not be drawn. Note that
+    /// "a query is running" counts: the reader typed, and silence is a worse
+    /// answer than "searching".
+    private func indexPanelHasContent(_ index: NativeDocumentIndexModel) -> Bool {
+        !index.documents.isEmpty
+            || index.isIngesting
+            || index.lastErrorDescription != nil
+            || documentPanelFailure != nil
+    }
+
+    private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: "text.magnifyingglass")
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
+            Text(indexSummaryLine(index))
+                .junoRowLabel()
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if index.isIngesting {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+            Spacer(minLength: JunoSpace.snug)
+            if !index.documents.isEmpty {
+                indexDocumentsMenu(index)
+            }
+        }
+        // Said here rather than nowhere: `DocumentRetrievalIndex` keeps chunks in
+        // memory and this screen adds no persistence, so quitting really does
+        // empty it. A reader who expected these to survive a relaunch would
+        // otherwise conclude the feature is broken.
+        .help("Indexed documents stay on this Mac, in memory only, and are cleared when you quit Juno or sign out.")
+    }
+
+    /// "2 documents · 143 passages", "Reading Contract.pdf…", or the OCR note.
+    ///
+    /// Counts come from the index itself, never from a guess, and the OCR clause
+    /// is present only when some document really was transcribed — a blanket "may
+    /// contain OCR errors" on documents that carried embedded text would be a
+    /// warning about a thing that did not happen.
+    private func indexSummaryLine(_ index: NativeDocumentIndexModel) -> String {
+        if let name = index.ingestingFileName { return "Reading \(name)…" }
+        guard !index.documents.isEmpty else {
+            return "No documents indexed on this Mac."
+        }
+        let documents = index.documents.count
+        var line = "\(documents) \(documents == 1 ? "document" : "documents")"
+        line += " · \(index.chunkCount) searchable \(index.chunkCount == 1 ? "passage" : "passages")"
+        if index.documents.contains(where: \.usedOpticalCharacterRecognition) {
+            line += " · some text was read by OCR"
+        }
+        return line
+    }
+
+    private func indexDocumentsMenu(_ index: NativeDocumentIndexModel) -> some View {
+        Menu("Manage") {
+            ForEach(index.documents) { document in
+                Button("Remove \(document.sourceName)") {
+                    Task { await index.remove(document) }
+                }
+                .help(indexDocumentDetail(document))
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Remove a document from this Mac's search index")
+        .accessibilityIdentifier("juno.desktop.library-document-index-manage")
+    }
+
+    /// One document's facts, and only the ones that are known: a CSV has no page
+    /// count and prints none, rather than "0 pages".
+    private func indexDocumentDetail(_ document: NativeIndexedDocument) -> String {
+        var parts = [document.format.rawValue.uppercased()]
+        if let pageCount = document.pageCount {
+            parts.append("\(pageCount) \(pageCount == 1 ? "page" : "pages")")
+        }
+        parts.append("\(document.chunkCount) \(document.chunkCount == 1 ? "passage" : "passages")")
+        if document.usedOpticalCharacterRecognition {
+            parts.append("read by OCR")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.junoCaution)
+                .accessibilityHidden(true)
+            Text(message)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Dismiss") {
+                documentPanelFailure = nil
+                index.clearError()
+            }
+            .buttonStyle(.borderless)
+        }
+        .accessibilityIdentifier("juno.desktop.library-document-index-error")
+    }
+
+    /// The passages the query matched, most relevant first.
+    ///
+    /// Three states, and they are three because collapsing any two of them says
+    /// something untrue. Nothing is drawn when no question was asked; "searching"
+    /// while the ranker is running; and "nothing in these documents mentions …"
+    /// only once a search has actually returned empty — which is a fact about the
+    /// corpus, not about a search that has not finished.
+    @ViewBuilder
+    private func indexResults(_ index: NativeDocumentIndexModel) -> some View {
+        if !query.isEmpty, !index.documents.isEmpty {
+            Divider()
+            if index.isSearching, index.passages.isEmpty {
+                Text("Searching your documents…")
+                    .junoCaption()
+                    .junoSecondaryInk()
+            } else if index.passages.isEmpty {
+                Text("No indexed document mentions “\(query)”.")
+                    .junoCaption()
+                    .junoSecondaryInk()
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                        ForEach(index.passages) { passage in
+                            passageRow(passage)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                // Capped so a hit list can never push the file grid off the page:
+                // the files are still the subject of this screen.
+                .frame(maxHeight: 240)
+                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("juno.desktop.library-document-passages")
+            }
+        }
+    }
+
+    /// One hit: where it came from, then what it says.
+    ///
+    /// The locator leads because it is the part a reader checks before trusting
+    /// the quote, and it is built by the retrieval layer out of only the
+    /// positional facts the extractor actually observed — a passage from a CSV
+    /// names its rows and claims no page.
+    private func passageRow(_ passage: NativeDocumentPassage) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            Text(passage.locator)
+                .junoCaption()
+                .junoSecondaryInk()
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(passage.text)
+                .junoRowLabel()
+                .lineLimit(4)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, JunoSpace.hairline)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(passage.locator). \(passage.text)")
+    }
+
+    /// Reads the chosen files one after another, so the progress line always
+    /// names the file actually being read.
+    ///
+    /// No re-running of the query afterwards: the model re-ranks whatever query it
+    /// is holding as part of storing a document, so a file indexed while a search
+    /// was already typed answers that search immediately.
+    private func ingest(_ urls: [URL]) async {
+        guard let documentIndex else { return }
+        for url in urls {
+            await documentIndex.ingest(contentsOf: url)
+        }
     }
 
     // MARK: - Content
@@ -558,6 +817,27 @@ struct DesktopLibraryScreen: View {
             .help("Show files as a grid of previews or as a sortable list")
             .accessibilityLabel("File view")
             .accessibilityIdentifier("juno.desktop.library-view")
+
+            // Disabled rather than absent, unlike the context-menu actions below,
+            // and for this file's stated reason: a `ToolbarItem` that comes and
+            // goes rebuilds the AppKit toolbar under a live window. It is disabled
+            // only while a read is in flight or where the shell built no index —
+            // both real states, and the help text says which.
+            Button {
+                documentPanelFailure = nil
+                choosingDocument = true
+            } label: {
+                Label("Add Document", systemImage: "doc.badge.plus")
+            }
+            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
+            .help(
+                documentIndex?.isReady == true
+                    ? "Read a PDF, Word file, spreadsheet or text file into this Mac's search index (⇧⌘I)"
+                    : "Sign in to index a document on this Mac"
+            )
+            .accessibilityLabel("Add document to search index")
+            .accessibilityIdentifier("juno.desktop.library-add-document")
 
             Button(action: refresh) {
                 Label("Refresh", systemImage: "arrow.clockwise")

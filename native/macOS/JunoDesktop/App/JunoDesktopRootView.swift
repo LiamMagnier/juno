@@ -180,6 +180,7 @@ struct JunoDesktopRootView: View {
         configuration.searchModel?.start(for: accountID)
         configuration.privateChatModel?.start(for: accountID)
         configuration.libraryModel?.start(for: accountID)
+        configuration.documentIndexModel?.start(for: accountID)
         Task {
             await configuration.conversationModel?.start(for: accountID)
             await configuration.projectModel?.start(for: accountID)
@@ -310,6 +311,10 @@ struct JunoDesktopRootView: View {
         // silently switched off.
         configuration.workHostModel?.detach()
         configuration.libraryModel?.stop()
+        // Not merely "forget the list": the plaintext of every indexed document
+        // is in that index, so `stop()` wipes the account's partition. Signing
+        // out has to leave nothing behind for the next person at this Mac.
+        configuration.documentIndexModel?.stop()
     }
 }
 

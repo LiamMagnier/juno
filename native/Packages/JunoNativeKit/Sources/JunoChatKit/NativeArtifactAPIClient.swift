@@ -57,6 +57,41 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     /// ``NativeArtifactPreview``. Ask this *before* ``supportsRenderedPreview``:
     /// it is the branch that decides which renderer the body ever reaches.
     public var isDesignDocument: Bool { self == .design }
+
+    /// Whether ``ArtifactCanvasView`` is worth offering for this kind — that is,
+    /// whether the sandbox will actually *run* the document, and therefore
+    /// whether the canvas's Console pane can ever have anything in it.
+    ///
+    /// Deliberately narrower than ``ArtifactCanvasDocument/availability(kind:runtime:)``,
+    /// which answers "can the canvas draw this" for a canvas the reader has
+    /// already opened. This answers the earlier question a surface has to ask:
+    /// should a third view be offered at all. The two disagree in exactly two
+    /// places, and both disagreements are the point.
+    ///
+    /// * **Markdown is excluded** although ``supportsRenderedPreview`` is true for
+    ///   it, so the canvas would call it renderable. What the sandbox does with
+    ///   markdown is `escapedSourceDocument` — a monospaced dump inside a web
+    ///   view — while both clients already render markdown as prose through
+    ///   `JunoMarkdownText`. A "Canvas" that is strictly worse than the Preview
+    ///   beside it is a control whose only effect is to make the document harder
+    ///   to read, and its console would stay empty forever because nothing
+    ///   executes inside a `<pre>`.
+    /// * **React is included** although `supportsRenderedPreview` is false. It is
+    ///   the kind the canvas exists for: no JavaScript runtime bundle ships in
+    ///   this repository, so the canvas names the missing fact out loud —
+    ///   ``ArtifactCanvasPreviewAvailability/runtimeNotInstalled(language:)`` —
+    ///   instead of leaving the reader with an unexplained wall of JSX, and it is
+    ///   the kind that starts rendering the day a bundle is added.
+    ///
+    /// Code, Mermaid and Design are excluded because nothing runs for any of
+    /// them: a Console pane that can never receive a line is a promise the
+    /// surface cannot keep.
+    public var supportsLiveCanvas: Bool {
+        switch self {
+        case .html, .svg, .react: true
+        case .code, .markdown, .mermaid, .design: false
+        }
+    }
 }
 
 public struct NativeArtifactVersion: Identifiable, Equatable, Sendable {

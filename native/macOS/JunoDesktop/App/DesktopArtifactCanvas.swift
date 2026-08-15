@@ -53,6 +53,101 @@ struct DesktopChatArtifact: Identifiable, Equatable {
     }
 }
 
+// MARK: - Which view of an artifact
+
+/// The three ways a Mac surface can show one artifact.
+///
+/// A type of its own rather than `NativeArtifactDisplayMode` plus a Bool, and the
+/// reason is written on the artifacts screen's own view switch: the control has
+/// to name the view the reader is *in*. A two-way Preview/Source picker sitting
+/// above a live canvas would have one of its halves lit while showing neither of
+/// them — the exact defect that switch already documents for design documents.
+///
+/// Both desktop artifact surfaces share this enum because they are two windows
+/// onto the same document, and a canvas reachable from the chat dock but not from
+/// the library (or the reverse) is the divergence `DesktopDesignSurface` was
+/// created to end.
+enum DesktopArtifactViewMode: String, CaseIterable, Identifiable, Hashable {
+    /// The artifact as itself: rendered HTML, a graphic, prose.
+    case preview
+    /// Its source, and on the library screen its editable source.
+    case source
+    /// ``ArtifactCanvasView``: code beside the running document, with the page's
+    /// console and its uncaught errors captured out of the sandbox.
+    case canvas
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .preview: "Preview"
+        case .source: "Source"
+        case .canvas: "Canvas"
+        }
+    }
+
+    /// What ``NativeArtifactPreview`` should be asked for when this mode reaches
+    /// it. `.canvas` never does — the canvas is a different view entirely — but
+    /// callers that must hand a display mode to a shared component (the detached
+    /// window, a thumbnail) need one answer rather than a crash, and Preview is
+    /// the honest one: the canvas opens on the running document too.
+    var displayMode: NativeArtifactDisplayMode {
+        self == .source ? .source : .preview
+    }
+
+    /// The modes worth offering for `kind`, in the order they are shown.
+    ///
+    /// Never returns a single option. A one-segment switcher is a label wearing a
+    /// control's clothes, so a caller that gets one element back draws the label
+    /// instead — which is what both surfaces already do for a kind with no
+    /// renderer.
+    static func available(for kind: NativeArtifactKind) -> [DesktopArtifactViewMode] {
+        var modes: [DesktopArtifactViewMode] = []
+        if kind.supportsRenderedPreview { modes.append(.preview) }
+        modes.append(.source)
+        if kind.supportsLiveCanvas { modes.append(.canvas) }
+        return modes
+    }
+}
+
+/// Hosts one ``ArtifactCanvasModel`` for the artifact it was given.
+///
+/// **The model is `@State`, and the caller must key this view on the artifact.**
+/// The model carries the console transcript, the error count and the bridge's
+/// connection state *of the document that is loaded*. Reused across two
+/// artifacts it would show the first one's uncaught exception under the second
+/// one's code — a red badge on a document that never failed, and no way for the
+/// reader to tell which file it came from. `ArtifactCanvasModel.documentWillLoad`
+/// clears the transcript on reload for the same reason within one document;
+/// `.id(_:)` at the call site is how that guarantee extends across documents.
+///
+/// No ``ArtifactCanvasRuntime`` is passed because none ships: the canvas reports
+/// `runtimeNotInstalled` for a React artifact and shows its source with that
+/// sentence attached. Passing an empty runtime here to make the Preview tab look
+/// populated would replace a stated fact with a blank white pane.
+struct DesktopArtifactLiveCanvas: View {
+    private let content: String
+    @State private var model: ArtifactCanvasModel
+
+    /// - Parameter layout: the docked chat column passes `.tabbed` because a
+    ///   split at 380pt leaves neither pane readable; a full-window artifact page
+    ///   passes `.sideBySide`, which is what the layout is for. The reader can
+    ///   change it either way — this only chooses what they open on.
+    init(
+        kind: NativeArtifactKind,
+        content: String,
+        layout: ArtifactCanvasLayout = .sideBySide
+    ) {
+        self.content = content
+        _model = State(initialValue: ArtifactCanvasModel(kind: kind, layout: layout))
+    }
+
+    var body: some View {
+        ArtifactCanvasView(content: content, model: model)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 // MARK: - Naming
 
 /// How the chat surface names an artifact: in the transcript's inline card, in
@@ -419,7 +514,7 @@ struct DesktopArtifactCanvas: View {
     let artifact: DesktopChatArtifact
     let close: () -> Void
 
-    @State private var mode = NativeArtifactDisplayMode.preview
+    @State private var mode = DesktopArtifactViewMode.preview
     @State private var pendingDownload: DesktopChatArtifactDownload?
     @State private var downloadError: String?
 
@@ -442,6 +537,10 @@ struct DesktopArtifactCanvas: View {
         // by keying the whole panel on the artifact; one column reused for both
         // has to say so.
         .onChange(of: artifact.id) { _, _ in
+            // `.preview` is the opening view for every kind, including the ones
+            // that have no rendered preview: `viewBar` and `canvasBody` both fall
+            // through to source for those, so this cannot leave the switch
+            // pointing at a segment that is not on screen.
             mode = .preview
             downloadError = nil
         }
@@ -576,6 +675,26 @@ struct DesktopArtifactCanvas: View {
 
     // MARK: View switcher
 
+    /// The views this artifact actually has. See ``DesktopArtifactViewMode``.
+    private var availableModes: [DesktopArtifactViewMode] {
+        DesktopArtifactViewMode.available(for: artifact.kind)
+    }
+
+    /// What is on screen, as opposed to what was last chosen.
+    ///
+    /// The two differ for one frame every time the reader opens a different kind
+    /// of artifact in the same column — a React component after a page has no
+    /// Preview — and clamping here rather than writing `mode` back is what keeps
+    /// the switcher from ever drawing with no segment lit. Writing state during a
+    /// body evaluation is the alternative, and SwiftUI is entitled to loop on it.
+    private var resolvedMode: DesktopArtifactViewMode {
+        availableModes.contains(mode) ? mode : (availableModes.first ?? .source)
+    }
+
+    private var modeSelection: Binding<DesktopArtifactViewMode> {
+        Binding(get: { resolvedMode }, set: { mode = $0 })
+    }
+
     private var viewBar: some View {
         HStack(spacing: JunoSpace.snug) {
             if artifact.kind.isDesignDocument {
@@ -587,21 +706,19 @@ struct DesktopArtifactCanvas: View {
                     .foregroundStyle(Color.junoMutedForeground)
                     .padding(.horizontal, 10)
                     .frame(height: 28)
-            } else if artifact.kind.supportsRenderedPreview {
+            } else if availableModes.count > 1 {
                 DesktopSegmented(
-                    options: [
-                        .init(NativeArtifactDisplayMode.preview, "Preview"),
-                        .init(NativeArtifactDisplayMode.source, "Source"),
-                    ],
-                    selection: $mode,
+                    options: availableModes.map { .init($0, $0.title) },
+                    selection: modeSelection,
                     accessibilityLabel: "Artifact view"
                 )
                 .accessibilityIdentifier("juno.desktop.chat.artifact-view-mode")
             } else {
-                // Nothing to switch between: Juno has no renderer for this kind,
-                // so the source *is* the view. The row still says which one is
-                // showing rather than going bare, as the web's tab row does.
-                Text("Source")
+                // Nothing to switch between: Juno has no renderer for this kind
+                // and nothing to run, so the source *is* the view. The row still
+                // says which one is showing rather than going bare, as the web's
+                // tab row does.
+                Text(resolvedMode.title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.junoMutedForeground)
                     .padding(.horizontal, 10)
@@ -635,7 +752,21 @@ struct DesktopArtifactCanvas: View {
             // edits here and dropped them would be the worse divergence.
             DesktopDesignSurface(content: artifact.reference.content, readOnly: true)
                 .id(artifact.id)
-        } else if mode == .preview, artifact.kind == .markdown {
+        } else if resolvedMode == .canvas {
+            // `.tabbed`, because this column is 380pt by default and a side by
+            // side split of it leaves two panes too narrow to read either. The
+            // canvas's own layout control is still there for someone who has
+            // widened the dock.
+            //
+            // Keyed on the artifact for the reason ``DesktopArtifactLiveCanvas``
+            // gives: the console transcript belongs to one document.
+            DesktopArtifactLiveCanvas(
+                kind: artifact.kind,
+                content: artifact.reference.content,
+                layout: .tabbed
+            )
+            .id(artifact.id)
+        } else if resolvedMode == .preview, artifact.kind == .markdown {
             // Markdown is prose, and prose is what `NativeArtifactPreview` gets
             // wrong: its markdown branch is `AttributedString(markdown:)`, which
             // flattens headings, lists, tables and fences into one run of body
@@ -653,7 +784,7 @@ struct DesktopArtifactCanvas: View {
             NativeArtifactPreview(
                 kind: artifact.kind,
                 content: artifact.reference.content,
-                mode: mode
+                mode: resolvedMode.displayMode
             )
         }
     }

@@ -54,6 +54,7 @@ struct DesktopDestinationView: View {
             if let model = configuration.libraryModel {
                 DesktopLibraryScreen(
                     model: model,
+                    documentIndex: configuration.documentIndexModel,
                     accountID: session.profile.id,
                     attachmentClient: configuration.requestSender.map {
                         NativeAttachmentAPIClient(sender: $0)
