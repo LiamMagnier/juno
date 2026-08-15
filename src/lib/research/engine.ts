@@ -26,6 +26,10 @@ import {
   CORPUS_PREAMBLE_CHARS,
   EXPANSION_OUTPUT_TOKENS,
   EXPANSION_PROMPT_CHARS,
+  JUDGE_OUTPUT_TOKENS,
+  JUDGE_PASSAGE_CHARS,
+  JUDGE_PROMPT_OVERHEAD_CHARS,
+  MAX_JUDGE_CALLS,
   modelCallEstimateMicroUsd,
   PAGE_FETCH_FEE_MICRO_USD,
   PLANNER_OUTPUT_TOKENS,
@@ -415,6 +419,19 @@ export interface ResearchDeps {
 export interface ResearchValidationResult {
   report: string;
   repaired: boolean;
+  /**
+   * What the validator's own model calls cost, micro-USD.
+   *
+   * The citation audit is one utility-model call per undecided claim, and this
+   * contract had no cost channel at all — so the engine could not bill what it
+   * was never told, and a run's reported cost under-stated it by the whole
+   * stage. Optional because a validator may be purely deterministic (no model,
+   * nothing to bill) and because the contract predates this; omitted is read as
+   * zero, never as "unknown, so skip the check" — the reservation below is made
+   * before the call either way, so a validator that under-reports cannot cross
+   * the ceiling by more than its own reservation.
+   */
+  costMicroUsd?: number;
   /** A compact summary suitable for a user receipt and the event log. */
   summary: {
     claims: number;
@@ -485,6 +502,38 @@ export const EXPANSION_ESTIMATE_MICRO_USD = modelCallEstimateMicroUsd(
   EXPANSION_PROMPT_CHARS + SYSTEM_PROMPT_CHARS,
   EXPANSION_OUTPUT_TOKENS
 );
+
+/**
+ * The citation audit: `MAX_JUDGE_CALLS` judge calls at their own caps.
+ *
+ * PER-AUDIT, not per-claim, and the choice is forced rather than stylistic.
+ * The stage's cost does scale with the number of claims — which is what makes
+ * it worth reserving for at all — but the claim count is NOT its upper bound:
+ * `recordCitationAudit` walks a claim's ranked candidate passages until one
+ * comes back supported, so a single stubborn claim can spend several judge
+ * calls. The only true bound is the audit-wide `MAX_JUDGE_CALLS` cap, so that
+ * is what the reservation is built from. Reserving claims × one call would have
+ * UNDER-reserved exactly the reports that cost the most, and under-reserving is
+ * the one direction a pre-spend check may never be wrong in.
+ *
+ * It is also the only figure available in time. The claim count comes out of
+ * `extractClaims`, which runs inside the audit — the engine would have to do
+ * the extraction itself, before the stage, to price per claim, and then the
+ * reservation and the bill would be counting claims with two different copies
+ * of that parser.
+ *
+ * The price of that choice is stated: a two-claim report reserves the same as a
+ * forty-claim one. It is a single check once per run, at a stage that only ever
+ * happens after synthesis has already been paid for, so what it can cost is a
+ * slice of one run's remaining headroom — the same trade PLAN takes, and the
+ * opposite of the SEARCH over-estimate that was throttling every wave.
+ */
+export const CITATION_AUDIT_ESTIMATE_MICRO_USD =
+  MAX_JUDGE_CALLS *
+  modelCallEstimateMicroUsd(
+    JUDGE_PASSAGE_CHARS + JUDGE_PROMPT_OVERHEAD_CHARS + SYSTEM_PROMPT_CHARS,
+    JUDGE_OUTPUT_TOKENS
+  );
 
 /**
  * What the writer will be handed, so the reservation matches this run's corpus.
@@ -1890,6 +1939,24 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let auditDegraded = false;
     let validation: ResearchValidationResult | null = null;
     if (deps.validateReport && report.trim()) {
+      /*
+       * The audit is a model stage, so it is gated like one. It used to be the
+       * last un-gated cost path in a run: the judge's spend never reached the
+       * ledger, so `affordable` could not see it and a run could cross its
+       * ceiling by an entire stage — after synthesis, the most expensive call
+       * it makes, had already been paid for.
+       *
+       * A stop here is honest rather than destructive: the draft is already
+       * durable (synthesis wrote it into the row on the way in), so the run
+       * ends `partially_completed` holding a readable report whose citations
+       * nobody checked. The alternative — audit anyway and bill past the
+       * ceiling — is the behaviour the column exists to prevent, and silently
+       * skipping the audit while reporting `completed` would tell the reader
+       * every citation had been verified when none had.
+       */
+      if (!(await affordable(run, CITATION_AUDIT_ESTIMATE_MICRO_USD))) {
+        return stopForBudget(run, CITATION_AUDIT_ESTIMATE_MICRO_USD);
+      }
       await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
       try {
         validation = await deps.validateReport({
@@ -1903,6 +1970,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         });
         if (validation) {
           report = validation.report;
+          // Same path every other stage bills through — `bill` → `addSpend`,
+          // one writer. `citation_audit` is not in VENDOR_BILLED_STEPS because
+          // the tokens are a model's, not a vendor's, which is the same reason
+          // `plan` and `synthesis` are not.
+          await bill(run, validation.costMicroUsd ?? 0, "citation_audit");
           await append(run.id, run.userId, [
             {
               kind: "citation_audit_completed",
@@ -1925,6 +1997,16 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           ]);
         }
       } catch (error) {
+        /*
+         * A validator that throws mid-audit loses whatever it had already spent
+         * on the judge: the cost rides on the RESULT, and a rejected promise
+         * carries no result to carry it. Accepted rather than papered over,
+         * because the alternative is a second cost channel (a callback in the
+         * deps contract) feeding the same ledger from two directions, which is
+         * the shape that lets a stage get billed twice. The exposure is bounded
+         * by the reservation already taken above: the ceiling was checked for
+         * the whole stage before any of it ran.
+         */
         auditDegraded = true;
         await append(run.id, run.userId, [
           {

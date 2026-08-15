@@ -25,6 +25,11 @@ import {
   type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
 import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
+// The same pricing helper `utilityCompletion` in src/lib/research/tools.ts bills
+// through, deliberately: a second way of turning usage into money is how an
+// estimate and a bill drift apart, and this number is about to be compared
+// against a reservation by the research engine.
+import { estimateGenerationCostUsd } from "@/lib/pricing";
 
 /*
  * Incremental memory architecture
@@ -182,6 +187,29 @@ export async function runUtilityPrompt<T>(opts: {
   /** Set with `deniedByPolicy`, so a caller can say WHICH rule refused. */
   deniedReason?: BackgroundDenialReason;
   mode?: BackgroundProviderMode;
+  /**
+   * What the provider walk really spent, micro-USD, across EVERY attempt.
+   *
+   * Additive and optional, because almost every caller of this function is an
+   * account-level utility — titles, moderation, memory extraction, follow-ups,
+   * translations — that runs outside any per-job ledger and correctly ignores
+   * it. The one caller that cannot ignore it is the research citation judge:
+   * it runs inside a budgeted run whose ceiling is enforced BEFORE each stage,
+   * and a stage that never says what it cost is a stage the ceiling cannot see.
+   * The run's reported cost under-stated the audit by the whole of it.
+   *
+   * Computed here rather than by that caller because this is the only place
+   * that knows which model actually answered. The walk falls through providers
+   * until one replies, so pricing "the utility model" from outside would be
+   * pricing a call that may never have been made — and two cost calculations
+   * that can disagree is the exact bug this exists to close.
+   *
+   * Absent (not zero) when `llm` is injected: the caller supplied its own model
+   * layer, so this function neither chose nor billed anything and has no
+   * honest number to report. Zero means a call was genuinely free or never
+   * happened — a policy denial, say.
+   */
+  costMicroUsd?: number;
 }> {
   if (opts.llm) {
     const text = await opts.llm(opts);
@@ -214,15 +242,22 @@ export async function runUtilityPrompt<T>(opts: {
       deniedByPolicy: true,
       deniedReason: decision.deniedReason,
       mode: decision.mode,
+      // Refused before any model was reached, so the walk really did cost
+      // nothing. Stated rather than omitted: absent means "unknown".
+      costMicroUsd: 0,
     };
   }
 
   const started = Date.now();
+  /** Micro-USD spent so far by this walk. See `costMicroUsd` on the result. */
+  let spentMicroUsd = 0;
 
   const attempt = async (model: ModelInfo): Promise<{ result: T | null; transient: boolean }> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ATTEMPT_TIMEOUT_MS);
     let out = "";
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
     try {
       for await (const ev of streamChat({
         model,
@@ -232,6 +267,13 @@ export async function runUtilityPrompt<T>(opts: {
         signal: ctrl.signal,
       })) {
         if (ev.type === "text") out += ev.text;
+        // The provider's own counts, which beat the character floor below.
+        // Read whether or not the reply ends up being parseable: the tokens
+        // were burned either way.
+        else if (ev.type === "usage") {
+          inputTokens = ev.input ?? inputTokens;
+          outputTokens = ev.output ?? outputTokens;
+        }
       }
     } catch (e) {
       const msg = ctrl.signal.aborted ? `timed out after ${ATTEMPT_TIMEOUT_MS}ms` : e instanceof Error ? e.message : String(e);
@@ -240,6 +282,23 @@ export async function runUtilityPrompt<T>(opts: {
       return { result: null, transient: ctrl.signal.aborted || isTransientProviderError(msg) };
     } finally {
       clearTimeout(timer);
+      /*
+       * Bill the attempt in `finally`, so a timeout, an abort and an unusable
+       * reply are all counted. Charging only the attempt that SUCCEEDED was the
+       * tempting shape and it under-reports exactly the runs that hurt: a walk
+       * that burns two overloaded providers before the third answers spent
+       * three calls' worth of tokens, and the provider charged for all three.
+       * Same reasoning, and the same helper, as `utilityCompletion` in
+       * src/lib/research/tools.ts.
+       */
+      spentMicroUsd += Math.round(
+        estimateGenerationCostUsd(model, {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          promptChars: opts.system.length + opts.userMsg.length,
+          completionChars: out.length,
+        }).costUsd * 1_000_000
+      );
     }
     const parsed = opts.parse(out);
     if (parsed === null) console.error(`[${opts.label}] ${model.id} unusable output (${out.length} chars)`);
@@ -257,11 +316,13 @@ export async function runUtilityPrompt<T>(opts: {
   const retryable: ModelInfo[] = [];
   let sawTransient = false;
   for (const model of decision.candidates) {
-    if (Date.now() - started > TOTAL_DEADLINE_MS) return { result: null, transient: true };
+    if (Date.now() - started > TOTAL_DEADLINE_MS) {
+      return { result: null, transient: true, costMicroUsd: spentMicroUsd };
+    }
     const { result, transient } = await attempt(model);
     if (result !== null) {
       record(model);
-      return { result, transient: false };
+      return { result, transient: false, costMicroUsd: spentMicroUsd };
     }
     if (transient) {
       retryable.push(model);
@@ -271,15 +332,18 @@ export async function runUtilityPrompt<T>(opts: {
   if (retryable.length > 0 && Date.now() - started < TOTAL_DEADLINE_MS) {
     await new Promise((r) => setTimeout(r, 2500));
     for (const model of retryable) {
-      if (Date.now() - started > TOTAL_DEADLINE_MS) return { result: null, transient: true };
+      if (Date.now() - started > TOTAL_DEADLINE_MS) {
+        return { result: null, transient: true, costMicroUsd: spentMicroUsd };
+      }
       const { result } = await attempt(model);
       if (result !== null) {
         record(model);
-        return { result, transient: false };
+        return { result, transient: false, costMicroUsd: spentMicroUsd };
       }
     }
   }
-  return { result: null, transient: sawTransient };
+  // Every candidate failed, and every one of them still cost something.
+  return { result: null, transient: sawTransient, costMicroUsd: spentMicroUsd };
 }
 
 // ---------------------------------------------------------------------------

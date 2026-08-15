@@ -495,6 +495,12 @@ export function researchEngine(): ResearchEngine {
       return {
         report: audit.report,
         repaired: audit.repaired,
+        // What the judge calls really cost, straight through to the engine's
+        // ledger. `recordCitationAudit` returns null only on paths that stop
+        // before any judge call is made (no claims, or a run/message the caller
+        // does not own), so a null here is genuinely a free audit rather than a
+        // spend being dropped.
+        costMicroUsd: audit.costMicroUsd,
         summary: {
           claims: audit.claims,
           supported: audit.supported,

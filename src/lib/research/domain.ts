@@ -883,6 +883,43 @@ export const CORPUS_PREAMBLE_CHARS = 4_000;
  */
 export const CORPUS_PER_SOURCE_CHARS = 700;
 
+/*
+ * The citation audit, which is a MODEL stage and was being priced as free.
+ *
+ * `recordCitationAudit` runs one judge call per undecided claim/passage pair,
+ * and it was the last un-gated cost path in a run: `runUtilityPrompt` never
+ * told anyone what it spent, so the judge's tokens reached neither the run's
+ * odometer nor `affordable()`. On a report with forty claims that is not a
+ * rounding error — it is an entire stage the ceiling cannot see, spent after
+ * the most expensive call in the run has already been paid for.
+ *
+ * The caps live here, beside the planner's and the writer's, for the reason the
+ * section header gives: claims.ts is `server-only` and the engine cannot import
+ * it, so a number raised there and not here would be a ceiling that silently
+ * stopped holding. claims.ts imports these rather than keeping its own copies.
+ */
+/** How much of a passage `createCitationJudge` shows the judge. */
+export const JUDGE_PASSAGE_CHARS = 1_600;
+/** The judge's reply cap — it answers with one small JSON object. */
+export const JUDGE_OUTPUT_TOKENS = 200;
+/**
+ * Judge calls one audit will make, over all claims together.
+ *
+ * Past this the remaining claims are recorded `unverified` and reported as
+ * unchecked. It is a per-AUDIT cap, not a per-claim one, and that is what makes
+ * the whole stage priceable in advance: see `CITATION_AUDIT_ESTIMATE_MICRO_USD`.
+ */
+export const MAX_JUDGE_CALLS = 24;
+/**
+ * Everything the judge prompt carries besides the passage itself: the claim
+ * (bounded at 600 characters by `MAX_CLAIM_CHARS` in claim-analysis.ts), the
+ * source title TWICE — once on the `SOURCE:` line, once as the untrusted
+ * envelope's `source=` label, 500 each as stored — the published-on date, the
+ * envelope markers and the fixed labels. That worst case is ~1,710; 2,000 is it
+ * rounded up, because a pre-spend bound may only be wrong in one direction.
+ */
+export const JUDGE_PROMPT_OVERHEAD_CHARS = 2_000;
+
 /**
  * What one model call may cost, priced at the reference ceiling.
  *

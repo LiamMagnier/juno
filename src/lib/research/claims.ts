@@ -3,6 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { loadBackgroundProviderPolicy, runUtilityPrompt } from "@/lib/memory";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { BackgroundProviderPolicy } from "@/lib/background-provider-policy";
+// The judge's caps are cost facts, so they live in domain.ts with the planner's
+// and the writer's: the engine has to reserve for this stage before it runs and
+// cannot import this module (`server-only`). See the cost section of domain.ts.
+import {
+  JUDGE_OUTPUT_TOKENS,
+  JUDGE_PASSAGE_CHARS,
+  MAX_JUDGE_CALLS,
+} from "@/lib/research/domain";
 import {
   auditEvidence,
   detectSyndication,
@@ -54,14 +62,15 @@ const MAX_CLAIMS = 40;
 const MAX_PASSAGES_PER_SOURCE = 24;
 /** Sources whose bodies are split into passages. */
 const MAX_SOURCES = 250;
-/**
- * Utility-model calls per report. Past this the remaining claims are recorded
- * `unverified` and reported as unchecked — an honest gap the UI shows, rather
- * than an unbounded bill or a claim quietly promoted to supported.
+/*
+ * `MAX_JUDGE_CALLS` (utility-model calls per report — past it the remaining
+ * claims are recorded `unverified` and reported as unchecked, rather than
+ * running up an unbounded bill or quietly promoting a claim to supported) and
+ * `JUDGE_PASSAGE_CHARS` (how much of a passage the judge is shown) are imported
+ * from domain.ts above. They used to be local constants, which meant the engine
+ * had no way to price this stage without copying them — and a copied cap is a
+ * reservation that stops matching the bill the first time one side moves.
  */
-const MAX_JUDGE_CALLS = 24;
-/** How much of a passage the judge is shown. */
-const JUDGE_PASSAGE_CHARS = 1_600;
 
 export type { CitationJudge, ClaimStatus, LinkVerdict, SupportLabel };
 
@@ -120,9 +129,21 @@ function parseJudgeVerdict(text: string): JudgeVerdict | null {
 export function createCitationJudge(opts: {
   policy: BackgroundProviderPolicy;
   conversationProvider?: string | null;
+  /**
+   * Called with what each judge call really cost, micro-USD.
+   *
+   * Out of band rather than on the verdict, and that is deliberate. A verdict is
+   * `JudgeVerdict | null`, and NULL IS THE EXPENSIVE CASE: a model that answered
+   * unparseably, or a walk that burned three providers and gave up, spent real
+   * tokens and has no verdict to hang them on. Widening `CitationJudge`'s return
+   * type would also have made every injected judge — the benchmark fixtures in
+   * tests/research-citations.test.ts, a caller with its own model — invent a
+   * cost it does not have, which is worse than not reporting one.
+   */
+  onSpend?: (microUsd: number) => void;
 }): CitationJudge {
   return async ({ claim, passage, sourceTitle, publishedAt }) => {
-    const { result } = await runUtilityPrompt<JudgeVerdict>({
+    const { result, costMicroUsd } = await runUtilityPrompt<JudgeVerdict>({
       system: JUDGE_SYSTEM,
       // The passage is fetched web text. It goes to the model inside the
       // untrusted envelope for the same reason the research corpus does: a page
@@ -136,13 +157,18 @@ export function createCitationJudge(opts: {
         "",
         "Return the JSON.",
       ].join("\n"),
-      maxTokens: 200,
+      maxTokens: JUDGE_OUTPUT_TOKENS,
       label: "research/citation",
       parse: parseJudgeVerdict,
       policy: opts.policy,
       conversationProvider: opts.conversationProvider,
       purpose: "citation_validation",
     });
+    // Reported whatever the verdict was, including a null one: the walk billed
+    // for the attempts either way. `undefined` only when runUtilityPrompt could
+    // not price the call at all — an injected model layer, which this judge
+    // never uses — and is passed on as nothing rather than as a zero.
+    if (costMicroUsd !== undefined) opts.onSpend?.(costMicroUsd);
     return result;
   };
 }
@@ -189,6 +215,16 @@ export interface CitationAuditResult extends CitationAuditSummary {
   report: string;
   repaired: boolean;
   revision: number;
+  /**
+   * What the judge calls cost, micro-USD — the whole stage, all claims.
+   *
+   * Zero when nothing was spent: no judge call was needed, the policy allowed
+   * no model, or the caller injected its own judge (whose spend is its own
+   * ledger's business, not this function's to guess at). A durable run bills
+   * this to its own ledger; the chat route, which audits outside any run
+   * budget, is free to ignore it and does.
+   */
+  costMicroUsd: number;
 }
 
 interface StoredSource {
@@ -277,11 +313,24 @@ export async function recordCitationAudit(opts: {
   const stored = await storeCorpus({ userId: opts.userId, runId: run.id, sources: opts.sources });
   const duplicates = await markSyndication({ userId: opts.userId, stored, sources: opts.sources });
 
+  /*
+   * What this audit has spent on the model, micro-USD.
+   *
+   * An injected judge contributes nothing to it on purpose: it is the caller's
+   * own model layer and its tokens are billed wherever that caller bills. The
+   * alternative — making every injected judge report a cost — would have forced
+   * the test fixtures to fabricate money, and a fabricated cost is worse than a
+   * missing one when the number's whole job is to be compared with a ceiling.
+   */
+  let judgeMicroUsd = 0;
   const judge =
     opts.judge ??
     createCitationJudge({
       policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
       conversationProvider: opts.conversationProvider,
+      onSpend: (microUsd) => {
+        judgeMicroUsd += microUsd;
+      },
     });
 
   const summary: CitationAuditSummary = {
@@ -453,6 +502,11 @@ export async function recordCitationAudit(opts: {
         // would make a fully-read corpus indistinguishable from an old one.
         truncatedSources: stored.filter((s) => s.truncated).map((s) => s.id),
         judgeCalls,
+        // Beside `judgeCalls` because the two answer different questions: one
+        // says how much checking was done, the other what the checking cost.
+        // The engine bills from the returned value, not from this — the event
+        // is the receipt, not the ledger.
+        judgeMicroUsd,
         draftRevision,
         revision,
         repaired: repaired.repaired,
@@ -484,7 +538,13 @@ export async function recordCitationAudit(opts: {
   }
   await appendResearchEvents({ userId: opts.userId, runId: run.id, events });
 
-  return { ...summary, report: repaired.report, repaired: repaired.repaired, revision };
+  return {
+    ...summary,
+    report: repaired.report,
+    repaired: repaired.repaired,
+    revision,
+    costMicroUsd: judgeMicroUsd,
+  };
 }
 
 function summaryCounts(s: CitationAuditSummary) {

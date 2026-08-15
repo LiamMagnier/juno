@@ -12,7 +12,11 @@ import {
   CORPUS_PREAMBLE_CHARS,
   EXPANSION_OUTPUT_TOKENS,
   EXPANSION_PROMPT_CHARS,
+  JUDGE_OUTPUT_TOKENS,
+  JUDGE_PASSAGE_CHARS,
+  JUDGE_PROMPT_OVERHEAD_CHARS,
   MAX_FOLLOW_UP_ROUNDS,
+  MAX_JUDGE_CALLS,
   nextPipelineState,
   PAGE_FETCH_FEE_MICRO_USD,
   parsePlan,
@@ -30,6 +34,7 @@ import {
   type ResearchState,
 } from "@/lib/research/domain";
 import {
+  CITATION_AUDIT_ESTIMATE_MICRO_USD,
   createResearchEngine,
   EXPANSION_ESTIMATE_MICRO_USD,
   pageSkipMessage,
@@ -1171,6 +1176,27 @@ test("every stage reserves at least what it bills and no more than the stated ma
         SYNTHESIS_OUTPUT_TOKENS
       ),
     },
+    {
+      /*
+       * The citation audit, which was billed at nothing and reserved at nothing
+       * until the judge was given a cost channel — a whole model stage, run
+       * after the dearest call in the run had already been paid for, that
+       * `affordable` could not see.
+       *
+       * The worst case is the audit-wide call cap times one judge call at its
+       * own caps, because MAX_JUDGE_CALLS — not the claim count — is what
+       * actually bounds the stage: a claim whose first candidate passage comes
+       * back unsupported spends another call on the next one. Multiplied out
+       * here for the same reason the estimate multiplies it, and derived from
+       * the rate constants rather than from `modelCallEstimateMicroUsd`, so a
+       * change inside that helper still cannot move both sides at once.
+       */
+      stage: `citation audit (${MAX_JUDGE_CALLS} judge calls)`,
+      estimate: CITATION_AUDIT_ESTIMATE_MICRO_USD,
+      ceiling:
+        MAX_JUDGE_CALLS *
+        worstCase(JUDGE_PASSAGE_CHARS + JUDGE_PROMPT_OVERHEAD_CHARS + SYSTEM_PROMPT_CHARS, JUDGE_OUTPUT_TOKENS),
+    },
   ];
   for (const { stage, estimate, ceiling } of stages) {
     assert.ok(
@@ -1191,6 +1217,124 @@ test("every stage reserves at least what it bills and no more than the stated ma
       synthesisEstimateMicroUsd(corpus(3, SNAPSHOT_CHARS), false),
     "a thirty-source report costs more to write than a three-source one, and the reservation has to know that before it commits"
   );
+});
+
+/*
+ * The other half of the reservation above: the stage has to actually BILL, or
+ * the estimate is guarding nothing.
+ *
+ * The citation audit ran one utility-model call per claim and reported no cost
+ * at all — `runUtilityPrompt` did not return one, the judge dropped it, and the
+ * `validateReport` contract had nowhere to put it. So the run's own odometer
+ * under-stated what the audit spent by the whole of it, and the number
+ * `affordable` reads before every later step was wrong by the same amount.
+ */
+test("the citation audit's model spend lands on the run's ledger", async () => {
+  const { store, events } = memoryStore();
+  const base = deps(store);
+  const AUDIT_COST = 40_000;
+  const engine = createResearchEngine({
+    ...base,
+    async validateReport({ report }) {
+      return {
+        report,
+        repaired: false,
+        costMicroUsd: AUDIT_COST,
+        summary: {
+          claims: 3,
+          supported: 3,
+          partiallySupported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          unverified: 0,
+          duplicateSources: 0,
+        },
+      };
+    },
+  });
+  const run = await started(engine);
+  // Stop on the doorstep of the audit, so the delta below is the audit's own
+  // spend rather than the whole run's.
+  await engine.drive({ runId: run.id, userId: run.userId, until: "validating_citations" });
+  const before = (await store.loadRun(run.id, run.userId))!.costMicroUsd;
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const after = (await store.loadRun(run.id, run.userId))!;
+
+  assert.equal(after.state, "completed");
+  assert.equal(
+    after.costMicroUsd - before,
+    BigInt(AUDIT_COST),
+    "the judge's tokens have to move the run's odometer; a stage that bills nothing is a stage the ceiling cannot see"
+  );
+  assert.ok(
+    events.some(
+      (event) =>
+        event.runId === run.id &&
+        event.kind === "spend_recorded" &&
+        (event.payload as { step?: string }).step === "citation_audit" &&
+        (event.payload as { microUsd?: number }).microUsd === AUDIT_COST
+    ),
+    "the transcript has to name what the audit cost, like every other stage does"
+  );
+});
+
+/*
+ * And the ceiling has to bind at the audit, two-sided, from the exported
+ * constant rather than a literal.
+ *
+ * Pinned by driving to the doorstep and then setting the ceiling exactly one
+ * micro-USD either side of the reservation, because the spend a run has reached
+ * by that point is the sum of every earlier stage and hard-coding it would make
+ * this test a hostage of all of them.
+ */
+test("a ceiling with no room for the audit stops the run instead of auditing on credit", async () => {
+  const auditWithCeiling = async (headroom: number) => {
+    const { store, runs } = memoryStore();
+    const base = deps(store);
+    let audits = 0;
+    const engine = createResearchEngine({
+      ...base,
+      async validateReport({ report }) {
+        audits += 1;
+        return {
+          report,
+          repaired: false,
+          costMicroUsd: 1_000,
+          summary: {
+            claims: 1,
+            supported: 1,
+            partiallySupported: 0,
+            unsupported: 0,
+            contradicted: 0,
+            unverified: 0,
+            duplicateSources: 0,
+          },
+        };
+      },
+    });
+    const run = await started(engine);
+    await engine.drive({ runId: run.id, userId: run.userId, until: "validating_citations" });
+    const atGate = (await store.loadRun(run.id, run.userId))!;
+    // The ceiling is set here rather than at start(): what the run has spent by
+    // the time it reaches the audit is every earlier stage added up, and the
+    // property being pinned is about the audit's own reservation.
+    runs.get(run.id)!.budgetMicroUsd = atGate.costMicroUsd + BigInt(headroom);
+    await engine.drive({ runId: run.id, userId: run.userId });
+    return { audits, final: (await store.loadRun(run.id, run.userId))! };
+  };
+
+  const short = await auditWithCeiling(CITATION_AUDIT_ESTIMATE_MICRO_USD - 1);
+  assert.equal(short.audits, 0, "a run that cannot pay for the audit must not make the calls anyway");
+  assert.equal(short.final.state, "partially_completed");
+  assert.equal(
+    short.final.report,
+    "# Report\n\nA finding [1].",
+    "the draft synthesis already paid for stays readable; only the checking is missing"
+  );
+
+  const exact = await auditWithCeiling(CITATION_AUDIT_ESTIMATE_MICRO_USD);
+  assert.equal(exact.audits, 1, "a ceiling holding exactly the reservation has to buy the audit, not refuse it");
+  assert.equal(exact.final.state, "completed");
 });
 
 test("a budget too small to gather anything fails rather than pretending to have results", async () => {
