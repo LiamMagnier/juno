@@ -11,6 +11,24 @@ import { extendTailwindMerge } from "tailwind-merge";
  * for the life of the codebase. Registering the keys in the font-size group is
  * what makes the type scale usable at all — see the hand-rolled workarounds this
  * replaces in card.tsx and label.tsx.
+ *
+ * The list must be the WHOLE of tailwind.config's fontSize, not the rungs that
+ * happened to be in play when it was written. `ui` and `micro` were left out and
+ * are the two most-used rungs in the product (~384 sites), so the hole covered
+ * more call sites than the fix did: 27 cn() sites were silently dropping one of
+ * them. A partial list is worse than no list, because the rungs that DO work
+ * make the mechanism look sound.
+ *
+ * `micro` is registered in both groups on purpose — `text-micro` (10.5px type)
+ * and `rounded-micro` (2px corner) are unrelated tokens that share a name.
+ *
+ * And the failure is not only a lost size — it runs both ways. Because the token
+ * is TAKEN FOR a colour, it also evicts the real colour beside it, whichever way
+ * round they are written: at work-decisions.tsx:402
+ * `cn("...text-foreground", answerable ? ... : "text-ui")` emitted `text-ui`
+ * alone, dropping `text-foreground` too. That one happens to re-inherit the same
+ * colour from an ancestor, so only the size was visibly wrong — but it is the
+ * same eviction, one `text-muted-foreground` ancestor away from showing.
  */
 /*
  * The radius ladder has exactly the same problem, and it is worse because it
@@ -31,17 +49,43 @@ import { extendTailwindMerge } from "tailwind-merge";
  *
  * Registering the keys is what makes the ladder authoritative: last one wins,
  * which is what every author already assumed.
+ *
+ * `inherit` is on the list for the same completeness reason as `ui`/`micro`
+ * above: it is a real borderRadius key and `rounded-inherit` is a real class
+ * (composer.tsx's drag scrim), so leaving it out would make a cn() that pairs it
+ * with any other radius emit-order dependent. Nothing was broken by its absence
+ * today — that scrim's className is a plain literal, not a cn() — so this is
+ * insurance, not a repair.
+ *
+ * What this group does NOT cover is the per-corner classes. tailwind-merge keeps
+ * `rounded-t` / `rounded-b` / `rounded-tl` / … in their own class groups, and
+ * none of them is extended here, so `rounded-b-inherit` (composer-shell.tsx) and
+ * `rounded-b-card` (message-item.tsx) are unregistered for every ladder key —
+ * adding `inherit` below does not reach them. Both are single radii in their
+ * cn(), so nothing collides today; extend the matching `rounded-b` group at the
+ * point a second one shows up rather than mirroring the whole ladder twelve ways
+ * on spec.
  */
 const merge = extendTailwindMerge({
   extend: {
     classGroups: {
-      "font-size": [{ text: ["hero", "display", "page-title", "title", "heading", "body", "body-lg", "label", "caption"] }],
+      // Mirrors tailwind.config.ts `fontSize` exactly — keep the two in step.
+      "font-size": [
+        {
+          text: [
+            "hero", "display", "page-title", "title", "heading",
+            "body-lg", "body", "ui", "label", "caption", "micro",
+          ],
+        },
+      ],
+      // Mirrors tailwind.config.ts `borderRadius` (minus Tailwind's own
+      // sm/md/lg, which stock tailwind-merge already knows).
       rounded: [
         {
           rounded: [
             "micro", "xs", "control", "field", "menu", "card", "popover",
             "surface", "composer", "composer-control", "composer-action",
-            "panel", "logo",
+            "panel", "logo", "inherit",
           ],
         },
       ],

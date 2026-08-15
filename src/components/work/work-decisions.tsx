@@ -398,9 +398,14 @@ function ApprovalCard({
         </span>
       </div>
 
+      {/* No `leading-relaxed`. A rung carries its own leading, and a size that
+          lands AFTER a `leading-*` in the same cn() now evicts it — so the class
+          was already dead on the `answerable` branch (text-body ate it) and live
+          on the other, which is a 1.6/1.625 split nobody chose. Both branches
+          now take the rung's own value: body 1.6, ui 1.5. */}
       <p
         className={cn(
-          "mt-2 leading-relaxed text-foreground",
+          "mt-2 text-foreground",
           answerable ? "text-body font-medium" : "text-ui"
         )}
       >
