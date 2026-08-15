@@ -4560,6 +4560,23 @@
         }
       }
     },
+    "message.edit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit message"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier le message"
+          }
+        }
+      }
+    },
     "message.good" : {
       "extractionState" : "manual",
       "localizations" : {
