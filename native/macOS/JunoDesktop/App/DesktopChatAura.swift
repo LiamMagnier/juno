@@ -193,8 +193,8 @@ struct DesktopDraftGreeting: View {
     /// evaluation, which the entrance animation below would have made obvious:
     /// the sentence would change words mid-rise.
     @State private var phrase: String
-    @State private var phraseRisen = false
-    @State private var nameRisen = false
+    @State private var phraseRisen = true
+    @State private var nameRisen = true
 
     init(profileName: String?, aura: DesktopChatAuraState, viewport: CGFloat?) {
         self.profileName = profileName
