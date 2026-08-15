@@ -6,12 +6,15 @@ import {
   CLIENT_RUN_ORIGINS,
   SESSION_LIST_DEFAULT_LIMIT,
   SESSION_LIST_MAX_LIMIT,
+  SESSION_RUN_LIST_DEFAULT_LIMIT,
+  SESSION_RUN_LIST_MAX_LIMIT,
   answerSchema,
   approvalDecisionSchema,
   classifyApprovalDecision,
   createSessionSchema,
   effectiveHostState,
   parseSessionListQuery,
+  parseSessionRunListQuery,
   patchSessionSchema,
   refusalForSelection,
   runControlSchema,
@@ -195,6 +198,32 @@ test("an unreadable filter is refused by name rather than dropped", () => {
   assert.equal(good.ok && good.query.needsAttention, true);
   assert.equal(good.ok && good.query.pinned, false);
   assert.equal(good.ok && good.query.projectId, "p_1");
+});
+
+// ---------------------------------------------------------------------------
+// Attempt history
+// ---------------------------------------------------------------------------
+
+test("the attempt history limit is clamped the same way, and never refuses", () => {
+  const runQuery = (search: string) => parseSessionRunListQuery(new URLSearchParams(search));
+
+  assert.equal(runQuery("").limit, SESSION_RUN_LIST_DEFAULT_LIMIT);
+  assert.equal(runQuery("limit=100000").limit, SESSION_RUN_LIST_MAX_LIMIT);
+  assert.equal(runQuery("limit=0").limit, 1);
+  assert.equal(runQuery("limit=-5").limit, 1);
+  assert.equal(runQuery("limit=7.9").limit, 7);
+  assert.equal(runQuery("limit=abc").limit, SESSION_RUN_LIST_DEFAULT_LIMIT);
+
+  // The attempts panel asks for ten and must get ten. A default below what the
+  // only caller sends would truncate every request without saying so, and this
+  // is the assertion that catches somebody tuning the default down to five.
+  assert.equal(runQuery("limit=10").limit, 10);
+  assert.equal(SESSION_RUN_LIST_DEFAULT_LIMIT >= 10, true);
+
+  // Unknown parameters are ignored rather than refused: there is nothing here a
+  // client can get wrong, which is why this parser returns a query rather than
+  // the `{ ok }` union its siblings return.
+  assert.equal(runQuery("before=nonsense&limit=3").limit, 3);
 });
 
 // ---------------------------------------------------------------------------
