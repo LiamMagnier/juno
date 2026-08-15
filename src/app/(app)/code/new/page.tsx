@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowUp, Loader2, Mic } from "lucide-react";
@@ -53,10 +54,26 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/80 px-3 py-1 font-mono text-micro uppercase tracking-wider text-muted-foreground shadow-xs">
+      {/*
+        THE PILL IS NOW THE WAY BACK, and that is the whole navigational change
+        this screen needed. Until `/code` existed there was nowhere for it to
+        go, so the composer was a screen you could only leave through the
+        sidebar — which is why the sidebar had to make `/code/new` the landing
+        route for the entire mode. A run list you cannot get to from the screen
+        that fills it is a run list most people never see.
+
+        A real <Link>, so it is middle-clickable, cmd-clickable and announced as
+        a link — the same argument AppPageHeader makes about its own back
+        control, which six pages had got wrong with a router.push onClick.
+      */}
+      <Link
+        href="/code"
+        className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/80 px-3 py-1 font-mono text-micro uppercase tracking-wider text-muted-foreground shadow-xs transition-colors duration-fast ease-out-soft hover:border-foreground/25 hover:text-foreground"
+      >
         <JunoMark className="size-3.5" />
         <span>Juno Code</span>
-      </div>
+        <span className="sr-only">— see all runs</span>
+      </Link>
       {/* `text-display`, the same rung the session view's own hero uses. The
           old `text-3xl sm:text-4xl` pair is not on the product type scale, and
           it put the two Code screens' headings at two different sizes one
@@ -70,6 +87,56 @@ function CodeGreeting() {
         pull request. Pick where it runs below, then say what to change.
       </p>
     </div>
+  );
+}
+
+/**
+ * WHAT WILL STOP TO ASK YOU, STATED — AND WHY IT IS A FACT AND NOT A PICKER.
+ *
+ * Every comparable product puts a three-tier permission selector beside the
+ * composer, and the instinct to add one here is right about the goal and wrong
+ * about the mechanism. `POST /api/code/tasks` carries no permission field. A
+ * selector on this screen would change nothing about the run — which is exactly
+ * what the model picker and the thinking slider did before they were removed
+ * from this file, for reasons the comment above `model` still spells out. A
+ * control that lies about its own effect is worse than no control, and shipping
+ * a second one here would undo a fix this screen already made.
+ *
+ * So the gate is REPORTED instead, and the two answers are genuinely different:
+ *
+ *   Device — the Mac decides, and its default is `askBeforeChanges`. Risky
+ *            steps raise an approval you answer here or in the run list.
+ *   Cloud  — the runner auto-approves every step and logs an audit trail
+ *            (`requestApproval` in scripts/cloud-code-runner.mjs returns
+ *            "allow"). Nothing will stop to ask you; the pull request at the
+ *            end is the review.
+ *
+ * That second sentence is the one worth the pixels. A reader who believes a
+ * cloud run will pause before something destructive is a reader who has been
+ * misled by the absence of a statement, and no competitor's permission picker
+ * tells them either.
+ *
+ * The words are the Mac app's own (`PermissionModeLabel` in
+ * JunoCodeUI/Views/Composer.swift). ONE vocabulary across the web and the
+ * native client, because two names for one concept is the single most-cited
+ * confusion in this whole product category.
+ */
+function PermissionFact({ target }: { target: Target }) {
+  const cloud = target === "cloud";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex min-w-0 cursor-help items-center gap-1">
+          <CodeIcons.permission className="size-3 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">{cloud ? "Full access" : "Ask before changes"}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">
+        {cloud
+          ? "A cloud run approves its own steps on a throwaway machine and records what it did. Nothing will pause to ask you — the pull request is the review."
+          : "Your Mac pauses and asks before anything risky. Answer from the run list without opening the session."}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -205,7 +272,25 @@ export default function NewCodeSessionPage() {
   React.useEffect(() => {
     autoresize();
   }, [prompt, autoresize]);
+  /*
+   * Mount: take the seed the empty run list may have sent, then focus.
+   *
+   * Read from `window.location` rather than through `useSearchParams`, and that
+   * is not laziness — this is a one-shot prefill of a field the user is about to
+   * edit, so it wants a value ONCE at mount, not a subscription that re-runs on
+   * every navigation. It also keeps the whole screen off the Suspense boundary
+   * `useSearchParams` drags in.
+   *
+   * The seed only ever lands in an EMPTY field. A draft already in progress
+   * beats anything a URL has to say about what the user meant to type.
+   */
   React.useEffect(() => {
+    try {
+      const seed = new URLSearchParams(window.location.search).get("seed");
+      if (seed?.trim()) setPrompt((current) => (current.trim() ? current : seed));
+    } catch {
+      /* a malformed query is not worth a broken composer */
+    }
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
@@ -748,6 +833,8 @@ export default function NewCodeSessionPage() {
                             </span>
                           </>
                         )}
+                        <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                        <PermissionFact target={target} />
                       </>
                     }
                   />
