@@ -43,7 +43,7 @@ export default function WorkSkillsPage() {
   return (
     <WorkPageFrame
       title="Skills"
-      description="Reusable instructions with a name. Type a slash and its name in a task, or let Juno reach for one itself — which it only ever does for a skill you have said you trust."
+      description="Reusable instructions with a name and a line saying what they are for. Type a slash and the name in a task, or let Juno reach for one itself — which it only ever does for a skill you have said you trust. Most of these are best made by saving a task that went well rather than written from scratch."
       action={
         <Button asChild size="sm" className="gap-1.5">
           <Link href="/work/skills/new">
@@ -63,13 +63,25 @@ export default function WorkSkillsPage() {
         <EmptyState
           icon={Sparkles}
           title="No skills yet"
-          description="Write down the way you want something done once — how your invoices are filed, what a weekly summary has to contain — and hand it to Juno by name instead of describing it again each time."
+          description="The easiest way to get one is to not write it. Run a task the ordinary way, and when it finishes well, press “Save this as a skill” on it — Juno drafts the instructions from the steps it actually took and you edit them before anything is saved."
           action={
-            <Button asChild size="sm" className="gap-1.5">
-              <Link href="/work/skills/new">
-                <Plus className="size-3.5" aria-hidden="true" /> New skill
-              </Link>
-            </Button>
+            <>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/work">Go and run something</Link>
+              </Button>
+              {/*
+                Authoring is still here and still second. A blank textarea asking
+                somebody to write instructions for a job they have not done yet
+                is the hardest moment to write them, and leading with it is why
+                skill libraries stay empty — but it is the right door for
+                somebody bringing instructions they already have.
+              */}
+              <Button asChild size="sm" className="gap-1.5">
+                <Link href="/work/skills/new">
+                  <Plus className="size-3.5" aria-hidden="true" /> Write one
+                </Link>
+              </Button>
+            </>
           }
         />
       ) : (

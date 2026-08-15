@@ -40,11 +40,23 @@ import { cn } from "@/lib/utils";
  * the technique, so this reads the same way on purpose.
  */
 
+/**
+ * `owns` is every path prefix a destination is responsible for, and it exists
+ * because one of them is responsible for two.
+ *
+ * "Hosts" is gone as a destination. It named a piece of Juno's plumbing — a
+ * host is a machine that claims runs — to an audience who owns a laptop, and it
+ * sat beside three tabs named after things the user made. What that page is FOR
+ * is deciding what Juno is allowed to do and on which machine, which is one
+ * subject with one name: Permissions. The Macs are a section of it now, and
+ * `/work/hosts/[id]` is still where a single machine is configured, so the tab
+ * has to light for both prefixes.
+ */
 const DESTINATIONS = [
-  { href: "/work", label: "Tasks" },
-  { href: "/work/schedules", label: "Schedules" },
-  { href: "/work/skills", label: "Skills" },
-  { href: "/work/hosts", label: "Hosts" },
+  { href: "/work", label: "Tasks", owns: ["/work"] },
+  { href: "/work/schedules", label: "Recurring", owns: ["/work/schedules"] },
+  { href: "/work/skills", label: "Skills", owns: ["/work/skills"] },
+  { href: "/work/permissions", label: "Permissions", owns: ["/work/permissions", "/work/hosts"] },
 ] as const;
 
 /**
@@ -57,8 +69,8 @@ const DESTINATIONS = [
  * and forgotten here lights itself *and* Tasks, on every page it owns, and
  * nothing fails.
  */
-const SIBLING_PREFIXES = DESTINATIONS.filter((destination) => destination.href !== "/work").map(
-  (destination) => destination.href
+const SIBLING_PREFIXES = DESTINATIONS.filter((destination) => destination.href !== "/work").flatMap(
+  (destination) => destination.owns
 );
 
 export function WorkNav({ className }: { className?: string }) {
@@ -71,7 +83,7 @@ export function WorkNav({ className }: { className?: string }) {
     DESTINATIONS.find((destination) =>
       destination.href === "/work"
         ? pathname === "/work" || !SIBLING_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-        : pathname.startsWith(destination.href)
+        : destination.owns.some((prefix) => pathname.startsWith(prefix))
     )?.href ?? null;
 
   const links = React.useRef<Partial<Record<string, HTMLAnchorElement | null>>>({});

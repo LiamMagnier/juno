@@ -45,13 +45,13 @@ import {
   type WorkComposerMode,
 } from "@/components/work/work-conversation";
 import {
-  WorkApprovalPrompt,
-  WorkApprovals,
   WorkQuestionCard,
   deriveApprovals,
   deriveOpenQuestions,
   type WorkApprovalCard,
 } from "@/components/work/work-decisions";
+import { ApprovalPrompt, ApprovalQueue } from "@/components/work/approvals/approval-queue";
+import { CaptureSkillButton, canCaptureSkill } from "@/components/work/skills/capture-skill";
 import {
   WorkActivity,
   WorkCurrentAction,
@@ -193,6 +193,8 @@ export default function WorkThreadPage() {
   const [answering, setAnswering] = React.useState(false);
   const [busyApprovalId, setBusyApprovalId] = React.useState<string | null>(null);
   const [busyControl, setBusyControl] = React.useState(false);
+  /** True while `decideAll` is walking a batch. Disables every card at once. */
+  const [batching, setBatching] = React.useState(false);
   /**
    * Bumped to force the event stream to reconnect.
    *
@@ -404,14 +406,35 @@ export default function WorkThreadPage() {
     [id]
   );
 
+  /**
+   * Answers one approval.
+   *
+   * `reason` is what makes "Change it" possible. The decision endpoint takes a
+   * free-text reason alongside a refusal and the executor puts it in front of
+   * the model, so amending a proposed action is a refusal plus an instruction —
+   * which is the only shape it CAN take, because `actionDigest` is computed over
+   * the action and its detail and the server refuses a decision whose digest
+   * does not match. That check is the reason the gate can be trusted at all; a
+   * client that edited the arguments and submitted the old digest would be
+   * defeating it. See the note in `approval-card.tsx`.
+   */
   const decide = React.useCallback(
-    async (approval: WorkApprovalCard, decision: WorkApprovalDecisionInput) => {
+    async (
+      approval: WorkApprovalCard,
+      decision: WorkApprovalDecisionInput,
+      reason?: string
+    ): Promise<boolean> => {
       // Guaranteed non-null by the card, which removes its own buttons when the
       // request arrived without a digest. Re-checked because the alternative is
       // a 400 the user reads as a bug.
-      if (approval.actionDigest === null) return;
+      if (approval.actionDigest === null) return false;
       setBusyApprovalId(approval.id);
-      const result = await decideWorkApproval(approval.id, approval.actionDigest, decision);
+      const result = await decideWorkApproval(
+        approval.id,
+        approval.actionDigest,
+        decision,
+        reason
+      );
       setBusyApprovalId(null);
       if (result.kind === "ok") {
         // Nothing is patched into local state. The server appends an
@@ -420,15 +443,51 @@ export default function WorkThreadPage() {
         // two sources for the same fact, and the optimistic one would win on
         // screen even when the server had refused.
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-        return;
+        return true;
       }
       toast.error(
         result.kind === "blocked"
           ? result.explanation
           : "Couldn’t record your decision, so Juno has not acted on it. Try again."
       );
+      return false;
     },
     []
+  );
+
+  /**
+   * Answers several approvals with one press.
+   *
+   * SEQUENTIAL, AND IT STOPS AT THE FIRST REFUSAL. Each decision is a POST the
+   * executor may act on the moment it lands, so firing six in parallel at a run
+   * that resolves them in order produces interleaved side effects nobody asked
+   * for. And a refusal means the policy narrowed or the run moved on — carrying
+   * on through the rest would turn one stale card into five failed requests and
+   * a stack of toasts that say nothing about which of them actually happened.
+   *
+   * The queue decides WHICH approvals may be here; this only walks the list it
+   * is handed. Keeping the risk rule in one place (`mayBatchApprove`) is what
+   * stops a second caller from batching a permanent delete.
+   */
+  const decideAll = React.useCallback(
+    async (batch: readonly WorkApprovalCard[]) => {
+      setBatching(true);
+      let done = 0;
+      for (const approval of batch) {
+        const ok = await decide(approval, "allowed");
+        if (!ok) break;
+        done += 1;
+      }
+      setBatching(false);
+      if (done === batch.length) {
+        toast.success(done === 1 ? "Allowed." : `Allowed all ${done}.`);
+      } else if (done > 0) {
+        toast.warning(
+          `Allowed ${done} of ${batch.length}. The rest were left alone — answer them one at a time.`
+        );
+      }
+    },
+    [decide]
   );
 
   const control = React.useCallback(
@@ -740,6 +799,24 @@ export default function WorkThreadPage() {
         <WorkProgressChecklist steps={plan} />
 
         {/*
+         * "That worked — do it again next month."
+         *
+         * Placed directly under the finished checklist, and only there, because
+         * this is the one moment the offer makes sense: the steps that would
+         * become the skill are on the screen, and the reader has just decided
+         * the run was good. Skills could previously only be written from a blank
+         * textarea, in advance, for a job nobody had done yet — which is the
+         * hardest moment to write them and the reason skill libraries stay
+         * empty. `canCaptureSkill` keeps it off failed runs and off anything too
+         * small to generalise.
+         */}
+        {canCaptureSkill(session.status, plan) && (
+          <div className="mt-3">
+            <CaptureSkillButton session={session} plan={plan} performed={performed} />
+          </div>
+        )}
+
+        {/*
          * The feed, subordinate to the plan rather than beside it.
          *
          * It opens by default only when there is no plan to be subordinate to.
@@ -769,7 +846,13 @@ export default function WorkThreadPage() {
             title="Approvals"
             meta={String(decidedApprovals.length)}
           >
-            <WorkApprovals approvals={decidedApprovals} busyId={busyApprovalId} onDecide={decide} />
+            <ApprovalQueue
+              approvals={decidedApprovals}
+              busyId={busyApprovalId}
+              batching={batching}
+              onDecide={decide}
+              onDecideAll={decideAll}
+            />
           </RailDisclosure>
         )}
       </RailSection>
@@ -911,12 +994,27 @@ export default function WorkThreadPage() {
                   <Play className="size-3.5" aria-hidden="true" /> Resume
                 </Button>
               )}
+              {/*
+                THE TWO SPEEDS, AND THEY ARE GENUINELY DIFFERENT THINGS.
+                Pause parks the run at the next point it can stop cleanly and
+                keeps the checkpoint, so Resume picks up where it left off. Stop
+                ends the attempt: `isResumableTerminalReason` returns false for a
+                cancel, so the checkpoint is dropped and anything after it starts
+                from the goal again.
+
+                The `title` on each is not decoration. "Pause" and "Stop" are
+                near-synonyms in ordinary speech, and the difference between them
+                here is whether an hour of work survives — which is exactly the
+                kind of thing a reader should not have to discover by pressing
+                one.
+              */}
               {run !== null && !isTerminalStatus(run.status) && run.status !== "paused" && (
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={busyControl}
                   onClick={() => void control("pause")}
+                  title="Stops at the next clean point and keeps its progress. You can resume it."
                   className="h-8 gap-1.5"
                 >
                   <Pause className="size-3.5" aria-hidden="true" /> Pause
@@ -928,6 +1026,7 @@ export default function WorkThreadPage() {
                   size="sm"
                   disabled={busyControl}
                   onClick={() => void control("cancel")}
+                  title="Ends this attempt now. Its progress is not kept, and running it again starts from the goal."
                   className="h-8 gap-1.5"
                 >
                   <Square className="size-3.5" aria-hidden="true" /> Stop
@@ -990,7 +1089,7 @@ export default function WorkThreadPage() {
                 itself carries on regardless of this page.
               </WorkStateNote>
             )}
-            <WorkApprovalPrompt count={openApprovals.length} />
+            <ApprovalPrompt count={openApprovals.length} />
             {/*
              * The two ways down the page, on the screen where both are furthest
              * away.
@@ -1100,10 +1199,12 @@ export default function WorkThreadPage() {
                   <NeedsYouHeading count={openApprovals.length}>
                     {openApprovals.length === 1 ? "Approval needed" : "Approvals needed"}
                   </NeedsYouHeading>
-                  <WorkApprovals
+                  <ApprovalQueue
                     approvals={openApprovals}
                     busyId={busyApprovalId}
+                    batching={batching}
                     onDecide={decide}
+                    onDecideAll={decideAll}
                   />
                 </div>
               )}

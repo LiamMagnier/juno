@@ -1,144 +1,145 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCheck } from "lucide-react";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useApp } from "@/components/app/app-provider";
-import { JunoMark } from "@/components/brand/logo";
 import { WorkComposer } from "@/components/work/work-composer";
 import { WorkNav } from "@/components/work/work-nav";
-import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { WorkCrossfade } from "@/components/work/motion/work-crossfade";
-import { WorkSection, WorkSessionRow } from "@/components/work/work-session-row";
+import { WorkSection } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { InboxRow } from "@/components/work/inbox/inbox-row";
+import { TriageBar, type TriageCounts } from "@/components/work/inbox/triage-bar";
+import { useUnreadLedger } from "@/components/work/inbox/use-unread";
 import {
-  WORK_GROUP_KEYS,
-  groupWorkSessions,
-  type WorkGroupKey,
-} from "@/components/work/shell/work-groups";
+  TRIAGE_CAPTION,
+  WORK_TRIAGE_STATES,
+  isWorkTriageState,
+  matchesTriage,
+  scheduleFor,
+  type WorkTriageState,
+} from "@/components/work/inbox/triage";
 import { fetchWorkOutputCounts } from "@/components/work/shell/work-outputs";
 import {
   WORK_POLL_MS,
   WORK_SYNC_EVENT,
   fetchWorkHosts,
+  fetchWorkSchedules,
   fetchWorkSessions,
 } from "@/components/work/work-transport";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
-import { staggerDelay } from "@/lib/motion";
+import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkHost, ClientWorkSession } from "@/lib/work/serializers";
-import { cn } from "@/lib/utils";
 
 /**
- * Juno Work's home: give it a task, then see what it is doing about the ones you
- * already gave it.
+ * Juno Work's home: an inbox of delegated work.
  *
- * Three independent loads rather than one combined endpoint, because they fail
+ * WHAT CHANGED AND WHY. This page used to be a composer over four
+ * always-expanded groups — Needs you / Under way / Parked / Finished — and the
+ * argument for that shape was that "a workspace does not make you pick a slice
+ * to see what you have". That argument is correct for a history and wrong for
+ * this, because finished agent work is not something you read, it is something
+ * you TRIAGE. Four open sections rank nothing, and the one that grows without
+ * bound pushed the two that need a human below the fold on any account older
+ * than a week. The old page answered that with a fold on Finished, which is a
+ * symptom being managed rather than a shape being fixed.
+ *
+ * So: one list, a state selector with counts on it, and a sentence on every row
+ * saying what that row is waiting for. The counts are what recover the thing
+ * the grouping was protecting — you can still see the whole shape of the
+ * account without operating anything — and the per-row sentence is what the
+ * grouping could never give, because a group heading describes a pile and a
+ * person triages one task at a time.
+ *
+ * FOUR INDEPENDENT LOADS, not one combined endpoint, because they fail
  * differently and the page has something honest to say in each case: with no
- * session list there is nothing to show below the composer, with no host list
- * the composer cannot promise that anything will pick a task up, and with no
- * deliverable list a finished row simply does not mention its files. Folding
- * them together would make one failure hide the other two.
+ * session list there is nothing to show, with no host list the composer cannot
+ * promise anything will pick a task up, with no deliverable list a finished row
+ * simply does not mention its files, and with no schedule list a recurring task
+ * renders as an ordinary one. Folding them together would make one failure hide
+ * the other three.
  *
- * The host list is loaded and never displayed. It exists so the composer can run
- * `selectTarget` before the button is pressed; the page itself has no "where
- * work can run" board, because a person on a website cannot see, reach or wake
- * the machines such a board would list, and the one fact they need from it —
- * that a task cannot start, and why — reaches them as a sentence under the
- * composer instead.
- *
- * THE LIST IS GROUPED, NOT FILTERED. It used to be one "Recent tasks" section
- * with a segmented All / In progress / Done control over it, which made the
- * reader operate a control to answer the question they arrived with and showed
- * them one slice at a time. The four groups in `work-groups.ts` answer it
- * outright — what needs me, what is running, what is parked, what is done — and
- * the control is gone rather than kept beside them, because a filter over a
- * grouping is two answers to one question that can disagree.
- *
- * Polled on the same trio the Code sidebar uses — interval, visibility, sync
- * event — because a queued task becomes a running task without anybody
- * clicking, and a page that only loads on mount freezes on whatever it saw
- * first.
- *
- * WHICH IS ALSO WHY THE ENTRANCES ARE COMPUTED HERE. Polling means this list
- * re-renders twice a minute whether or not anything changed, and a page that
- * replayed its entrance on every response would twitch at the reader for the
- * whole time they had it open. Only the list knows which rows are genuinely new,
- * so only the list can say which ones have earned an entrance; `useWorkArrivals`
- * turns each set of ids into "this one is new, and it is the nth new one",
- * and hands every other row a `null` that the row reads as "do not move".
+ * THE STATE LIVES IN THE URL. `?show=needs_you` is what makes "3 need you" in
+ * the sidebar, a notification, and a link in an email all able to land the
+ * reader on the same filtered view — which is the cross-surface pending queue
+ * this product was missing. It also means Back works, which a `useState` filter
+ * never does.
  */
 
-/**
- * The four groups, in the order they are rendered.
- *
- * `explain` is off for the finished group alone. For the other three the status
- * word is not the whole story — a task waiting on an approval and one waiting on
- * an answer are both "stopped", a running task that has recorded nothing for
- * twenty minutes and one mid-sentence are both "Running" — and the sentence
- * `statusActivity` produces is the difference. A finished task's pill has
- * already said everything a row can honestly say about it, and a fourth block of
- * prose under the longest section on the page would only make it harder to scan.
- */
-const SECTIONS: readonly {
-  key: WorkGroupKey;
-  title: string;
-  hint?: string;
-  explain: boolean;
-  /** Amber ink on the heading. See `WorkSection` — exactly one section gets it. */
-  attention?: boolean;
-}[] = [
-  {
-    key: "attention",
-    title: "Needs you",
-    hint: "These have stopped and cannot move until you decide something.",
-    explain: true,
-    attention: true,
-  },
-  {
-    key: "running",
-    title: "Under way",
-    hint: "Juno is working on these. Nothing here is waiting on you.",
-    explain: true,
-  },
-  {
-    key: "parked",
-    title: "Parked",
-    hint: "A draft was never started, and a paused task is holding where you left it. Neither moves until you say so.",
-    explain: true,
-  },
-  { key: "finished", title: "Finished", explain: false },
-];
-
-/**
- * How many finished tasks are shown before the section folds.
- *
- * Finished is the group that grows without bound — everything ends up here — and
- * it is also the group nobody came to the page to read. Eight is enough to cover
- * "what did I run this morning" and few enough that the sections above it are
- * still on screen. The rest are one press away rather than gone: the list route
- * is clamped at forty, so "show all" is a bounded promise.
- */
-const FINISHED_PREVIEW = 8;
+/** How many rows are rendered before the list offers to show the rest. */
+const PAGE_SIZE = 25;
 
 export default function WorkHomePage() {
+  return (
+    // `WorkInbox` reads `useSearchParams`, which opts the route out of static
+    // prerendering unless it sits under a boundary. A real skeleton rather than
+    // `null`, so the shell does not flash empty on the way in.
+    <React.Suspense fallback={<InboxSkeleton />}>
+      <WorkInbox />
+    </React.Suspense>
+  );
+}
+
+function InboxSkeleton() {
+  return (
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
+        <div className="mb-7 flex justify-center">
+          <WorkNav />
+        </div>
+        <WorkRowSkeletons count={4} />
+      </div>
+    </div>
+  );
+}
+
+function WorkInbox() {
   const { user } = useApp();
+  const router = useRouter();
+  const params = useSearchParams();
+
   const [sessions, setSessions] = React.useState<ClientWorkSession[] | null>(null);
   const [sessionsFailed, setSessionsFailed] = React.useState(false);
   const [loadedAt, setLoadedAt] = React.useState<string | null>(null);
   const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
   const [hostsFailed, setHostsFailed] = React.useState(false);
   const [outputs, setOutputs] = React.useState<ReadonlyMap<string, number> | null>(null);
-  const [showAllFinished, setShowAllFinished] = React.useState(false);
+  const [schedules, setSchedules] = React.useState<readonly ClientWorkSchedule[]>([]);
+  const [shown, setShown] = React.useState(PAGE_SIZE);
+  const [seed, setSeed] = React.useState<{ text: string; nonce: number } | null>(null);
+
+  const unread = useUnreadLedger();
+
+  const requested = params.get("show");
+  const state: WorkTriageState =
+    requested !== null && isWorkTriageState(requested) ? requested : "needs_you";
+
+  /**
+   * Changing the filter is a navigation, not a state update.
+   *
+   * `replace`, not `push`: a reader who tries four pills and then presses Back
+   * expects to leave Work, not to walk back through four filters they were only
+   * glancing at. `scroll: false` because the list is below the fold on a short
+   * window and re-anchoring to the top on every pill press loses their place.
+   */
+  const selectState = React.useCallback(
+    (next: WorkTriageState) => {
+      setShown(PAGE_SIZE);
+      router.replace(next === "needs_you" ? "/work" : `/work?show=${next}`, { scroll: false });
+    },
+    [router]
+  );
 
   const loadSessions = React.useCallback(async () => {
     const result = await fetchWorkSessions();
     if (result.kind === "ok") {
       setSessions(result.value);
       setSessionsFailed(false);
-      // Stamped from the response rather than kept as a Date, so the footer can
-      // hand it to `workTimeAgo` like every other time on this page.
       setLoadedAt(new Date().toISOString());
       return;
     }
@@ -155,33 +156,36 @@ export default function WorkHomePage() {
     }
     // What we last knew is left standing rather than blanked. A dropped request
     // says nothing about what could run a task, and replacing a real answer with
-    // "unavailable" would state something the failure did not establish. The
-    // failure itself is carried separately, in `hostsFailed`, which is what lets
-    // the composer hold back rather than guess.
+    // "unavailable" would state something the failure did not establish.
     setHostsFailed(true);
   }, []);
 
-  /**
-   * Deliverable counts, kept on the same clock as everything else.
-   *
-   * A failure is silent and leaves the last counts standing, which is the whole
-   * reason `fetchWorkOutputCounts` answers null rather than an empty map: this
-   * read decorates rows, it does not constitute them, and a dropped request must
-   * not take a "3 files" label off a task that has three files. There is no
-   * `outputsFailed` beside `hostsFailed` for the same reason — nothing on the
-   * page is withheld or promised on the strength of it, so there is nothing to
-   * tell the reader.
-   */
   const loadOutputs = React.useCallback(async () => {
     const counts = await fetchWorkOutputCounts();
     if (counts !== null) setOutputs(counts);
+  }, []);
+
+  /**
+   * The schedules, loaded here purely so a recurring task can say so in the
+   * list.
+   *
+   * A failure is silent and leaves the last set standing, for the same reason
+   * the deliverable counts do: this read decorates rows, it does not constitute
+   * them, and a dropped request must not turn a recurring task into a one-shot
+   * on screen. There is no `schedulesFailed` beside `hostsFailed` because
+   * nothing on the page is withheld or promised on the strength of it.
+   */
+  const loadSchedules = React.useCallback(async () => {
+    const result = await fetchWorkSchedules();
+    if (result.kind === "ok") setSchedules(result.value);
   }, []);
 
   const reload = React.useCallback(() => {
     void loadSessions();
     void loadHosts();
     void loadOutputs();
-  }, [loadSessions, loadHosts, loadOutputs]);
+    void loadSchedules();
+  }, [loadSessions, loadHosts, loadOutputs, loadSchedules]);
 
   React.useEffect(() => {
     reload();
@@ -203,8 +207,7 @@ export default function WorkHomePage() {
    *
    * Archiving is the case that matters: the list route filters `archived: false`
    * by default, so a task put away here must leave the list rather than sit in
-   * it with a changed flag until the next poll. Everything else is patched in
-   * place, which is what keeps a rename from making the row jump.
+   * it with a changed flag until the next poll.
    */
   const replaceSession = React.useCallback((saved: ClientWorkSession) => {
     setSessions((current) =>
@@ -216,104 +219,93 @@ export default function WorkHomePage() {
     );
   }, []);
 
-  const groups = React.useMemo(() => groupWorkSessions(sessions ?? []), [sessions]);
-
-  /*
-   * What each section actually renders, which is the groups themselves except
-   * for the fold on Finished.
-   *
-   * Computed before the arrival trackers below and not inside them, because the
-   * trackers must key off the rows that will exist rather than the rows that
-   * could: pressing "Show all" genuinely mounts sixteen more rows, and those
-   * rows genuinely have arrived.
-   */
-  const rows: Record<WorkGroupKey, ClientWorkSession[]> = React.useMemo(
-    () => ({
-      ...groups,
-      finished: showAllFinished ? groups.finished : groups.finished.slice(0, FINISHED_PREVIEW),
-    }),
-    [groups, showAllFinished]
+  const live = React.useMemo(
+    () => (sessions ?? []).filter((session) => !session.archived),
+    [sessions]
   );
 
   /*
-   * One arrival tracker per section, not one for the page.
-   *
-   * A task that stops for an answer moves from "Under way" to "Needs you". That
-   * is a real arrival in the section it lands in — it also genuinely remounts,
-   * since the two sections are different parents — and a single page-wide
-   * tracker would have called it an old row and let it appear with no entrance
-   * at all, in the one section on the page that exists to be noticed.
-   *
-   * Written out four times rather than mapped, because these are hooks: a call
-   * per group inside a loop over `SECTIONS` would tie React's hook order to the
-   * contents of an array, and the day a fifth group is added conditionally that
-   * becomes a crash rather than a mistake. Passed a fresh array each render on
-   * purpose — the hook keys off the ids themselves, so memoising here would only
-   * be guarding a comparison it already does.
+   * Each session's triage context, computed once per poll rather than once per
+   * pill per row. The counts below ask six questions of every row, and looking a
+   * schedule up by session id inside that loop is a linear scan per question.
    */
-  const arrivals: Record<WorkGroupKey, WorkArrivals> = {
-    attention: useWorkArrivals(rows.attention.map((session) => session.id)),
-    running: useWorkArrivals(rows.running.map((session) => session.id)),
-    parked: useWorkArrivals(rows.parked.map((session) => session.id)),
-    finished: useWorkArrivals(rows.finished.map((session) => session.id)),
-  };
+  const context = React.useMemo(() => {
+    const map = new Map<string, { scheduled: boolean; unread: boolean }>();
+    for (const session of live) {
+      map.set(session.id, {
+        scheduled: scheduleFor(session, schedules) !== null,
+        unread: unread.isUnread(session),
+      });
+    }
+    return map;
+  }, [live, schedules, unread]);
 
-  // The account has nothing at all — not an empty filter, because there is no
-  // filter any more, and not a failed load, which says so for itself below.
-  const nothingYet = sessions !== null && WORK_GROUP_KEYS.every((key) => groups[key].length === 0);
+  const counts = React.useMemo<TriageCounts>(() => {
+    // Written out rather than built with `Object.fromEntries`, which types as
+    // `{[k: string]: number}` and would need a cast through `unknown` to become
+    // the record — a cast that would then survive a seventh state being added
+    // and silently hand the bar an object missing a key.
+    const tally: TriageCounts = {
+      needs_you: 0,
+      in_progress: 0,
+      scheduled: 0,
+      unread: 0,
+      done: 0,
+      all: 0,
+    };
+    for (const session of live) {
+      const ctx = context.get(session.id) ?? { scheduled: false, unread: false };
+      for (const key of WORK_TRIAGE_STATES) {
+        if (matchesTriage(session, key, ctx)) tally[key] += 1;
+      }
+    }
+    return tally;
+  }, [live, context]);
 
+  const matching = React.useMemo(
+    () =>
+      live.filter((session) =>
+        matchesTriage(session, state, context.get(session.id) ?? { scheduled: false, unread: false })
+      ),
+    [live, state, context]
+  );
+
+  const rows = matching.slice(0, shown);
+  const arrivals = useWorkArrivals(rows.map((session) => session.id));
+
+  // The account has nothing at all — not an empty filter, which says so for
+  // itself below, and not a failed load, which says so louder.
+  const nothingYet = sessions !== null && live.length === 0 && !sessionsFailed;
   const firstName = user.name?.split(" ")[0];
 
   return (
     <div className="app-page-scroll">
       <div className="app-page-content max-w-3xl">
-        {/* Schedules and skills live under /work and are reachable from here
-            rather than from the app sidebar: the sidebar is the switch between
-            products, and three Work-internal destinations in it would make Work
-            look like three of them. */}
+        {/* Schedules, skills and permissions live under /work and are reached
+            from here rather than from the app sidebar: the sidebar is the switch
+            between products, and four Work-internal destinations in it would
+            make Work look like four of them. */}
         <div className="mb-7 flex justify-center">
           <WorkNav />
         </div>
+
         <div className="flex flex-col items-center text-center">
-          {/* `font-mono text-label`, the register WorkSection already set for
-              Work's section labels. This page was running three treatments for the
-              same semantic role: a sans eyebrow here, a second one on "Tasks that
-              work well", and the mono label on every section heading between them. */}
           <p className="mb-3 font-mono text-label text-muted-foreground [animation-fill-mode:backwards] motion-safe:animate-fade-in">
             Juno Work
           </p>
-          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
-            <div className="flex items-center justify-end pr-[0.38em]">
-              <JunoMark
-                className={cn(
-                  // Kept at ~0.75× the greeting's cap height, which is what the
-                  // old 1.2/1.5rem pair was against the old 1.65/2rem type. The
-                  // heading is on `display` now, so the mark moves with it —
-                  // otherwise it reads as a bullet beside the words rather than
-                  // as part of the line.
-                  "block size-6 shrink-0 sm:size-9",
-                  "[animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                )}
-              />
-            </div>
-            {/* `text-display` carries its own clamp, -0.02em and weight 500;
-                the hand-rolled pair of sizes here and the task page's own bespoke
-                clamp were two ladders for two titles one click apart. */}
-            <h1 className="text-center font-serif text-display font-normal">
-              <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-                What needs doing{firstName ? "," : "?"}
-              </span>
-              {firstName ? (
-                <>
-                  {" "}
-                  <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-                    {firstName}?
-                  </span>
-                </>
-              ) : null}
-            </h1>
-            <div aria-hidden="true" />
-          </div>
+          <h1 className="text-center font-serif text-display font-normal">
+            <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+              What needs doing{firstName ? "," : "?"}
+            </span>
+            {firstName ? (
+              <>
+                {" "}
+                <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+                  {firstName}?
+                </span>
+              </>
+            ) : null}
+          </h1>
         </div>
 
         <div className="mt-6 sm:mt-7">
@@ -321,10 +313,11 @@ export default function WorkHomePage() {
             hosts={hosts}
             hostsFailed={hostsFailed}
             onRetryHosts={() => void loadHosts()}
+            seed={seed}
           />
         </div>
 
-        {sessionsFailed ? (
+        {sessionsFailed && sessions !== null && sessions.length === 0 ? (
           <WorkSection title="Your tasks">
             <WorkLoadError onRetry={() => void loadSessions()}>
               Couldn’t load your tasks. This list is empty because the request failed, not because
@@ -332,10 +325,6 @@ export default function WorkHomePage() {
             </WorkLoadError>
           </WorkSection>
         ) : (
-          // The skeleton fades out over whatever the load turned out to be —
-          // the groups, or the invitation. Both are the answer to the same
-          // question, and only one of them being allowed to resolve gently
-          // would make the other feel like an error.
           <WorkCrossfade
             pending={sessions === null}
             placeholder={
@@ -345,69 +334,102 @@ export default function WorkHomePage() {
             }
           >
             {nothingYet ? (
-              <FirstRun />
+              <FirstRun onTry={(text) => setSeed({ text, nonce: Date.now() })} />
             ) : (
-              <>
-                {SECTIONS.map((section) => {
-                  const group = rows[section.key];
-                  // An empty group is absent rather than shown empty. "Nothing
-                  // is running" is worth saying on a page whose only other
-                  // content is a list you asked to be filtered; on a page that
-                  // shows every group at once it is four headings of noise
-                  // around the one thing the reader has.
-                  if (group.length === 0) return null;
-                  return (
-                    <WorkSection
-                      key={section.key}
-                      title={section.title}
-                      hint={section.hint}
-                      tone={section.attention ? "attention" : "neutral"}
-                      /* The count of the whole GROUP, not of the rows rendered.
-                         The two differ only on Finished, where the fold shows
-                         eight of twenty-four — and a heading reading "Finished
-                         8" over a button offering "Show all 24" would be two
-                         counts of one list that disagree. The group's own size
-                         is the honest number in both places. */
-                      meta={String(groups[section.key].length)}
-                      action={
-                        section.key === "finished" &&
-                        !showAllFinished &&
-                        groups.finished.length > FINISHED_PREVIEW ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAllFinished(true)}
-                            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
-                          >
-                            <ChevronDown className="size-3" aria-hidden="true" />
-                            Show all {groups.finished.length}
-                          </Button>
-                        ) : undefined
-                      }
+              <WorkSection
+                title="Your tasks"
+                meta={String(counts.all)}
+                action={
+                  counts.unread > 0 ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => unread.markAllSeen(live)}
+                      className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
                     >
-                      <div className="space-y-2.5">
-                        {group.map((session) => (
-                          <WorkSessionRow
-                            key={session.id}
-                            session={session}
-                            explain={section.explain}
-                            outputCount={outputs?.get(session.id)}
-                            enterRank={arrivals[section.key].rankFor(session.id)}
-                            onChanged={replaceSession}
-                          />
-                        ))}
-                      </div>
-                    </WorkSection>
-                  );
-                })}
+                      <CheckCheck className="size-3" aria-hidden="true" />
+                      Mark all read
+                    </Button>
+                  ) : undefined
+                }
+              >
+                <TriageBar value={state} counts={counts} onChange={selectState} />
+                {/*
+                  The caption is per-state and never omitted, because an empty
+                  filtered list is otherwise ambiguous between "nothing matches"
+                  and "that failed to load".
+                */}
+                <p className="mt-2.5 text-ui leading-relaxed text-muted-foreground">
+                  {TRIAGE_CAPTION[state]}
+                </p>
 
                 {/*
-                  When the list is from, and the way to make it newer.
-                  A footer rather than a control in a section header, because it
-                  belongs to all four sections and any header it sat in would
-                  move about as groups emptied and filled. It also answers the
-                  question a polled page owes its reader — how old is this — which
-                  a bare Refresh button next to a heading never did.
+                  A stale list under a failed refresh, said out loud. The rows
+                  below are real and were true a moment ago; blanking them would
+                  destroy information the failure did not disprove, and showing
+                  them silently would let the reader act on a list that has
+                  stopped updating.
+                */}
+                {sessionsFailed && (
+                  <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground" role="status">
+                    This list stopped refreshing. What you can see was true as of{" "}
+                    {loadedAt === null ? "the last successful load" : workTimeAgo(loadedAt)}.
+                  </p>
+                )}
+
+                <div className="mt-4 space-y-2.5">
+                  {rows.map((session) => (
+                    <InboxRow
+                      key={session.id}
+                      session={session}
+                      outputCount={outputs?.get(session.id)}
+                      schedule={scheduleFor(session, schedules)}
+                      unread={context.get(session.id)?.unread ?? false}
+                      enterRank={arrivals.rankFor(session.id)}
+                      onChanged={replaceSession}
+                      onOpen={(opened) => unread.markSeen(opened.id, opened.lastActivityAt)}
+                    />
+                  ))}
+                </div>
+
+                {rows.length === 0 && (
+                  <EmptyState
+                    size="panel"
+                    className="mt-4"
+                    icon={AppIcons.work}
+                    title={EMPTY_TITLE[state]}
+                    description={EMPTY_BODY[state]}
+                    action={
+                      state === "needs_you" ? undefined : (
+                        <Button variant="outline" size="sm" onClick={() => selectState("all")}>
+                          Show everything
+                        </Button>
+                      )
+                    }
+                  />
+                )}
+
+                {matching.length > rows.length && (
+                  <div className="mt-3 flex justify-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShown((current) => current + PAGE_SIZE)}
+                      className="gap-1.5 font-mono text-micro text-muted-foreground"
+                    >
+                      Show {Math.min(PAGE_SIZE, matching.length - rows.length)} more of{" "}
+                      {matching.length}
+                    </Button>
+                  </div>
+                )}
+
+                {/*
+                  When the list is from, and how to make it newer. A footer
+                  rather than a control in the section header, because it belongs
+                  to every state and any header it sat in would move about as the
+                  filter changed. It also answers the question a polled page owes
+                  its reader — how old is this — which a bare Refresh button
+                  never did.
                 */}
                 {loadedAt !== null && (
                   <div className="mt-5 flex items-center justify-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
@@ -423,7 +445,7 @@ export default function WorkHomePage() {
                     </Button>
                   </div>
                 )}
-              </>
+              </WorkSection>
             )}
           </WorkCrossfade>
         )}
@@ -433,20 +455,48 @@ export default function WorkHomePage() {
 }
 
 /**
- * What somebody sees before they have ever run anything.
+ * What each state says when it has nothing in it.
  *
- * Two jobs, and the order matters: say what Work is FOR, then show what a task
- * looks like. The old card did only the first, in one dense sentence carrying
- * three examples, a promise about planning and a promise about approvals — which
- * is a paragraph a person skims rather than reads, on the one screen where they
- * have nothing else to go on.
+ * `needs_you` empty is GOOD NEWS and is the only one phrased as such. Every
+ * other empty state here is a neutral fact about a filter; that one is the
+ * answer to the question the reader opened the page with, and giving it the
+ * same flat "nothing matches" as the others wastes the one moment this surface
+ * gets to say the work is under control.
+ */
+const EMPTY_TITLE: Record<WorkTriageState, string> = {
+  needs_you: "Nothing is waiting on you",
+  in_progress: "Nothing is running",
+  scheduled: "Nothing recurring yet",
+  unread: "You are up to date",
+  done: "Nothing finished yet",
+  all: "No tasks yet",
+};
+
+const EMPTY_BODY: Record<WorkTriageState, string> = {
+  needs_you: "Every task is either working, finished, or parked where you left it.",
+  in_progress: "Nothing is being worked on right now.",
+  scheduled: "A schedule turns a task into a standing one — same task, new run, history kept.",
+  unread: "Nothing has moved since you last looked at it.",
+  done: "Tasks land here when they stop, whether or not they succeeded.",
+  all: "Describe something above and Juno will carry it out.",
+};
+
+/**
+ * What somebody sees before they have ever run anything.
  *
  * The examples are the substance. Nobody's first difficulty with Work is
  * believing it can do things; it is knowing how much to ask for in one go, and
  * three short errands with visible finish lines answer that faster than any
- * description of the system. They are deliberately not buttons: the composer
- * owns its own text and there is no honest way to put words in it from here, and
- * a chip that looks pressable and is not is worse than a line of prose.
+ * description of the system.
+ *
+ * THEY ARE BUTTONS NOW. They were deliberately inert prose, on the ground that
+ * "the composer owns its own text and there is no honest way to put words in it
+ * from here" — which was true of the composer as it was, and was a component
+ * boundary being paid for by the reader. The composer takes a `seed` now, so
+ * pressing one writes it into the field and leaves the cursor there. It does
+ * NOT start the task: the reader has to read what they are about to ask for and
+ * press the button themselves, which is the difference between a suggestion and
+ * an accident.
  */
 const FIRST_RUN_EXAMPLES = [
   "Tidy my Downloads folder into folders by month.",
@@ -454,48 +504,32 @@ const FIRST_RUN_EXAMPLES = [
   "Summarise this week’s support email in one page.",
 ];
 
-function FirstRun() {
+function FirstRun({ onTry }: { onTry: (text: string) => void }) {
   return (
     <WorkSection title="Getting started">
-      {/*
-       * `EmptyState`, not a hand-rolled block.
-       *
-       * This is the first thing a new account sees under the composer, and it
-       * was the one empty state in Work that had not adopted the primitive: a
-       * `border-t` rule and centred prose, against a dashed `rounded-card` plate
-       * on the schedules, skills and Macs pages one click away. The dash is the
-       * whole point of that plate — it reads as a space waiting to be filled
-       * rather than as a finished thing — which is exactly what this screen is.
-       *
-       * The examples ride in `action` because they ARE the action, in the only
-       * form this screen can honestly offer one. They are deliberately not
-       * buttons: the composer owns its own text and there is no honest way to
-       * put words in it from here, and a chip that looks pressable and is not is
-       * worse than a line of prose.
-       */}
       <EmptyState
         icon={AppIcons.work}
         title="Give Juno an errand with a finish line"
         description="It plans the work, shows you every step as it goes, and asks first before anything it cannot undo."
         action={
           <div className="w-full">
-            <p className="font-mono text-label text-muted-foreground">Tasks that work well</p>
-            <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-ui leading-relaxed text-muted-foreground">
-              {FIRST_RUN_EXAMPLES.map((example, index) => (
-                <li
+            <p className="font-mono text-label text-muted-foreground">Try one of these</p>
+            <div className="mx-auto mt-2.5 flex max-w-md flex-col gap-1.5">
+              {FIRST_RUN_EXAMPLES.map((example) => (
+                <Button
                   key={example}
-                  className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                  // The same cascade the rows use, on the same step, so the one
-                  // screen with no rows on it still moves the way the list does.
-                  // Through `staggerDelay` rather than a hand-copied 26: the step
-                  // was written out here by hand and had already drifted from the
-                  // rung every other Work list runs on.
-                  style={staggerDelay(index, "tight", 60)}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onTry(example)}
+                  // Left-aligned and full width: these are sentences, not
+                  // labels, and centring a paragraph inside a button makes the
+                  // three of them impossible to scan as a list.
+                  className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-ui font-normal leading-relaxed text-muted-foreground"
                 >
-                  “{example}”
-                </li>
+                  {example}
+                </Button>
               ))}
-            </ul>
+            </div>
           </div>
         }
       />

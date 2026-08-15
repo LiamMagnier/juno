@@ -242,11 +242,32 @@ export function WorkComposer({
   hosts,
   hostsFailed,
   onRetryHosts,
+  seed = null,
 }: {
   /** Null while the host list is still loading. */
   hosts: ClientWorkHost[] | null;
   hostsFailed: boolean;
   onRetryHosts: () => void;
+  /**
+   * Text to write into the field on the caller's behalf, once per `nonce`.
+   *
+   * This exists so the empty state's suggestions can be real controls. They used
+   * to be inert prose, and the note explaining why said "the composer owns its
+   * own text and there is no honest way to put words in it from here" — which
+   * was true, and was a component boundary the reader was paying for: they read
+   * three examples of what to ask for and then had to retype one.
+   *
+   * The `nonce` is what makes it a one-shot rather than a controlled value.
+   * Without it, seeding the same string twice — press a suggestion, edit it,
+   * press the same suggestion again — would either do nothing or fight the
+   * user's typing on every render. With it the effect fires exactly when the
+   * caller says something new happened.
+   *
+   * It writes and focuses. It deliberately does NOT submit: the reader has to
+   * see what they are about to ask for and press the button themselves, which
+   * is the difference between a suggestion and an accident.
+   */
+  seed?: { text: string; nonce: number } | null;
 }) {
   const router = useRouter();
   const { features, composerPrefs, setComposerPrefs } = useApp();
@@ -434,6 +455,29 @@ export function WorkComposer({
   React.useEffect(() => {
     autoresize();
   }, [goal, autoresize]);
+
+  /*
+   * A suggestion pressed elsewhere on the page, written into the field.
+   *
+   * Keyed on the nonce alone, deliberately: the text is read out of the ref-free
+   * prop inside the effect, so pressing the same suggestion twice still fires
+   * (two nonces) and a re-render that changes nothing else does not (same
+   * nonce). Focus goes to the end of what was written rather than the start,
+   * because the reader's next move is almost always to add a detail to it.
+   */
+  const seedNonce = seed?.nonce ?? null;
+  React.useEffect(() => {
+    if (seedNonce === null || seed === null) return;
+    setGoal(seed.text);
+    const element = textareaRef.current;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(seed.text.length, seed.text.length);
+    // `seed` is intentionally absent from the deps: only a new nonce is a new
+    // instruction, and including the object would re-seed on every parent
+    // render that happened to rebuild it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedNonce]);
 
   /**
    * The skill the goal currently names, matched against the account's library.

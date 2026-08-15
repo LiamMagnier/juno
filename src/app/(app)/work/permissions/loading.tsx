@@ -2,7 +2,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 
 /**
- * Two host rows, the count the page's own fallback draws.
+ * The permissions page's shape, held open while it loads.
+ *
+ * Two Mac rows, the count the page's own in-flight fallback draws. The sections
+ * above them — the always-asks floor and the three approval modes — are static
+ * text rendered from domain constants, so they need no placeholder: they are on
+ * screen the instant the component is.
  *
  * The rows come from `WorkRowSkeletons`, which is also what the page's own
  * in-flight fallback draws. The two used to be written out separately and had
@@ -16,11 +21,11 @@ import { WorkRowSkeletons } from "@/components/work/shell/work-states";
  * so nothing jumps when the data lands. The rows come up on the shared stagger
  * (see STAGGER in src/lib/motion.ts) rather than repainting as one flat block.
  */
-export default function WorkHostsLoading() {
+export default function WorkPermissionsLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading your Macs">
+    <div className="app-page-scroll" role="status" aria-label="Loading your permissions">
       <div className="app-page-content max-w-3xl">
         {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
             heading, its lede and the rule that closes the block. Anything looser here

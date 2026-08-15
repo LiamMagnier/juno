@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /work/hosts when the segment throws.
+ * /work/permissions when the segment throws.
  *
  * Next requires an error boundary to be a client component taking { error,
  * reset }. `error.message` is deliberately NOT rendered: it can carry a query,
@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 
-export default function WorkHostsError({
+export default function WorkPermissionsError({
   error,
   reset,
 }: {
@@ -26,7 +26,7 @@ export default function WorkHostsError({
   reset: () => void;
 }) {
   React.useEffect(() => {
-    console.error("[route] /work/hosts failed to render", error);
+    console.error("[route] /work/permissions failed to render", error);
   }, [error]);
 
   return (
@@ -35,8 +35,8 @@ export default function WorkHostsError({
         <EmptyState
           tone="error"
           icon={StatusIcons.error}
-          title="Couldn’t load your Macs"
-          description="The fleet list didn’t come back. Nothing has been revoked — every Mac keeps whatever permissions it had."
+          title="Couldn’t load your permissions"
+          description="This page didn’t come back. Nothing has changed — every task and every Mac keeps exactly the permissions it had, and Juno still stops for everything it always stops for."
           action={
             <>
               <Button size="sm" onClick={reset} className="gap-1.5">

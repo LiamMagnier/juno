@@ -28,6 +28,7 @@ import {
   type WorkTriggerDraft,
 } from "@/components/work/work-transport";
 import { TriggerListEditor, newTrigger } from "@/components/work/work-triggers";
+import { ScheduleArmingCard } from "@/components/work/schedules/arming-card";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 
 /*
@@ -492,6 +493,24 @@ export function WorkScheduleEditor({
           that finishes while a retry is still in flight does not write twice.
         </p>
       </section>
+
+      {/*
+        The read-back, immediately above the button that arms it. Built from the
+        draft rather than written by hand, so it cannot describe a schedule other
+        than the one about to be saved. See `arming-card.tsx` for why it is a
+        permanent summary rather than a confirmation dialog.
+      */}
+      <ScheduleArmingCard
+        triggers={draft.triggers}
+        target={draft.target}
+        hostId={draft.hostId}
+        hosts={hosts}
+        timezone={draft.timezone}
+        instructions={draft.instructions}
+        unattendedPolicy={draft.unattendedPolicy}
+        hostOfflinePolicy={draft.hostOfflinePolicy}
+        enabled={draft.enabled}
+      />
 
       {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}
 
