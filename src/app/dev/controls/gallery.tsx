@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, PenTool, Plus, Trash2 } from "lucide-react";
+import { Search, PenTool, Plus, Trash2, LayoutGrid, List as ListIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ export function ControlsGallery() {
   const [dark, setDark] = React.useState(false);
   const [filter, setFilter] = React.useState<"ALL" | "HTML" | "MARKDOWN">("ALL");
   const [chip, setChip] = React.useState("a");
+  const [view, setView] = React.useState<"list" | "grid">("list");
 
   // The gallery drives the theme itself so both halves can be checked without
   // leaving the page — the app's own toggle lives behind auth.
@@ -112,6 +113,44 @@ export function ControlsGallery() {
           </div>
         </Section>
 
+        <Section
+          title="The /library toolbar"
+          note="Two segmented controls in one bar — the type filter carries live counts, the view toggle is icon+label. They have to read as one set, which is the whole reason the filter is no longer a row of pills."
+        >
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+            <SegmentedControl<"ALL" | "HTML" | "MARKDOWN">
+              value={filter}
+              onChange={setFilter}
+              ariaLabel="Filter files"
+              className="h-9 w-fit max-w-full shrink-0"
+              options={[
+                { value: "ALL", label: "All", count: 12 },
+                { value: "HTML", label: "Images", count: 5 },
+                { value: "MARKDOWN", label: "Files", count: 7 },
+              ]}
+            />
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
+              <div className="relative min-w-0 flex-1 sm:max-w-[16rem]">
+                <Search
+                  aria-hidden
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input placeholder="Search files" aria-label="Search files" className="h-9 pl-9" />
+              </div>
+              <SegmentedControl<"list" | "grid">
+                value={view}
+                onChange={setView}
+                ariaLabel="File view"
+                className="h-9 shrink-0"
+                options={[
+                  { value: "list", label: "List", icon: <ListIcon className="size-3.5" /> },
+                  { value: "grid", label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
+                ]}
+              />
+            </div>
+          </div>
+        </Section>
+
         <Section title="Button · variants" note="All at size=sm, the size a toolbar uses.">
           <Button size="sm">Default</Button>
           <Button size="sm" variant="secondary">Secondary</Button>
@@ -133,7 +172,7 @@ export function ControlsGallery() {
 
         <Section
           title="SegmentedControl"
-          note="The house idiom for a one-of-N filter or mode switch. Two, three and four segments."
+          note="The house idiom for a one-of-N filter or mode switch. Two, three and four segments. A tally goes in `count`, not concatenated into the label — that is what keeps it mono and tabular."
         >
           <SegmentedControl
             value={filter}
@@ -142,7 +181,7 @@ export function ControlsGallery() {
             className="w-fit"
             options={[
               { value: "ALL", label: "All apps" },
-              { value: "HTML", label: "Connected · 3" },
+              { value: "HTML", label: "Connected", count: 3 },
             ]}
           />
           <SegmentedControl

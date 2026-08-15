@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
-import { useRadioGroup } from "@/components/settings/use-radio-group";
 import {
   Dialog,
   DialogContent,
@@ -129,8 +128,14 @@ function SelectCheck({
         onClick();
       }}
       aria-label={label}
+      // No focus override, for the reason button.tsx states at the top of its own
+      // variants: the global `:focus-visible` rule (globals.css) is authoritative,
+      // and a `ring-offset-background` halo paints the PAGE colour into the gap —
+      // so this checkbox wore a page-coloured ring while standing on a bg-card row
+      // or a grid tile, over the top of the neutral outline the browser was already
+      // drawing. Two focus marks, one of them belonging to no surface present.
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-xs border transition-[border-color,background-color,color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 coarse:size-7",
+        "flex size-5 shrink-0 items-center justify-center rounded-xs border transition-[border-color,background-color,color,transform] duration-fast ease-out-soft active:scale-90 coarse:size-7",
         checked
           ? "border-foreground bg-foreground text-background"
           : "border-border/80 bg-background text-transparent hover:border-foreground/50",
@@ -150,7 +155,9 @@ function ItemPreview({ item }: { item: LibItem }) {
   const preview = (
     <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
   );
-  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  // Same as SelectCheck above: the global outline, not a second ring. Nothing
+  // clips this thumbnail, so `outline-offset` has real surface to sit on.
+  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-control";
   return item.deletedAt ? (
     <div className={className} aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
@@ -395,7 +402,12 @@ function GridItemPreview({ item }: { item: LibItem }) {
   return item.deletedAt ? (
     <div className="group/preview block size-full" aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
-    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+    // The one ring that stays, and the only one on this page with a reason: this
+    // link FILLS a tile that clips at rounded-card, so an outline drawn 2px
+    // outside it is cut away entirely and focus would be invisible. Inset ring,
+    // radius matched to the clip — the shape artifacts and projects use for a
+    // link that covers a card.
+    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
       {preview}
     </a>
   );
@@ -471,7 +483,7 @@ function LibraryGridItem({
               target="_blank"
               rel="noopener noreferrer"
               title={item.fileName}
-              className="block truncate text-sm font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="block truncate text-sm font-medium underline-offset-4 hover:underline"
             >
               {item.fileName}
             </a>
@@ -488,14 +500,25 @@ function LibraryGridItem({
           )}
         </div>
         {item.conversationId && (
-          <Link
-            href={`/chat/${item.conversationId}`}
-            aria-label={`Open source chat for ${item.fileName}`}
-            title="Open source chat"
-            className="group/source flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-10"
+          // The same icon button the list view's row actions are, rather than a
+          // hand-built restatement of it. It had Button's exact geometry
+          // (size-8 / rounded-control / coarse:size-10) with a different hover
+          // fill (bg-muted, not bg-accent), a ring of its own and no press dip —
+          // so the two halves of ONE page disagreed about what an icon button is.
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            asChild
+            className="group/source shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <MessageCircle className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/source:-translate-y-0.5 motion-reduce:transition-none" />
-          </Link>
+            <Link
+              href={`/chat/${item.conversationId}`}
+              aria-label={`Open source chat for ${item.fileName}`}
+              title="Open source chat"
+            >
+              <MessageCircle className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/source:-translate-y-0.5 motion-reduce:transition-none" />
+            </Link>
+          </Button>
         )}
       </div>
     </article>
@@ -621,16 +644,6 @@ export default function LibraryPage() {
   const allSelected = filtered.length > 0 && filtered.every((item) => selected.has(item.id));
   const someSelected = !allSelected && filtered.some((item) => selected.has(item.id));
   const totalSize = libraryItems.reduce((sum, item) => sum + item.size, 0);
-
-  // The file-type filter declares `role="radiogroup"`, which is a promise that
-  // the group is one tab stop and the arrows move between the options. It was
-  // making that promise and keeping none of it. This is the same hook the
-  // settings radiogroups use, so the pattern is identical across the product.
-  const filterOptionProps = useRadioGroup(
-    TABS,
-    TABS.findIndex((filter) => filter.key === tab),
-    (filter) => setTab(filter.key)
-  );
 
   const toggleSelect = (id: string) =>
     setSelected((previous) => {
@@ -807,38 +820,27 @@ export default function LibraryPage() {
         {!error && (
           <div className="sticky top-0 z-20 -mx-1 border-b border-border/55 bg-background/90 px-1 py-3 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {/* A chip row rather than a SegmentedControl, and the counts are the
-                  reason. Each pill carries a live count that moves while files load,
-                  and SegmentedOption.label is typed `string` — the count would
-                  flatten into untabulated sans inside a thumb that re-measures on
-                  every change. So this is the shared chip primitive instead of the
-                  hand-rolled pill that was here, whose selected state was the
-                  inverted `bg-foreground text-background` fill removed from the view
-                  toggle further along this same bar. */}
-              <div role="radiogroup" aria-label="Filter files" className="flex flex-wrap items-center gap-1.5">
-                {TABS.map((filter, index) => {
-                  const active = tab === filter.key;
-                  return (
-                    <Pressable
-                      key={filter.key}
-                      {...filterOptionProps(index)}
-                      kind="chip"
-                      size="lg"
-                      selected={active}
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setTab(filter.key)}
-                    >
-                      {filter.label}
-                      {/* opacity-70 rather than a colour ternary: the selected chip
-                          sets text-primary-ink, and an explicit colour would fight it. */}
-                      <span className="font-mono text-micro tabular-nums opacity-70">
-                        {countFor(libraryItems, filter.key)}
-                      </span>
-                    </Pressable>
-                  );
-                })}
-              </div>
+              {/* The shared control, not a second system for the same job. This was
+                  a row of pills — and it sat in this bar a few inches from the view
+                  toggle, which is a SegmentedControl, so one mutually exclusive pick
+                  was drawn two ways within a single sticky header. Artifacts made
+                  exactly this move for exactly this reason.
+                  The counts were the stated blocker and are no longer one: they ride
+                  the segment's own `count` slot in the same mono tabular face the
+                  pills used. (Roadmap's eleven categories stay chips — a wrapping row
+                  is the right shape at that count. It was never the right shape at
+                  three.) */}
+              <SegmentedControl<LibraryFilter>
+                value={tab}
+                onChange={setTab}
+                ariaLabel="Filter files"
+                className="h-9 w-fit max-w-full shrink-0"
+                options={TABS.map((filter) => ({
+                  value: filter.key,
+                  label: filter.label,
+                  count: countFor(libraryItems, filter.key),
+                }))}
+              />
 
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
                 {/* The last hand-rolled text field in the product: a <div> shell
@@ -1091,7 +1093,7 @@ export default function LibraryPage() {
                             href={item.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
                             title={item.fileName}
                           >
                             {item.fileName}

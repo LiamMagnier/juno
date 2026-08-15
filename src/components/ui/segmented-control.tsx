@@ -35,6 +35,16 @@ export type SegmentedOption<T extends string> = {
   label: string;
   /** Rendered before the label (or alone, when `labelHidden`). */
   icon?: React.ReactNode;
+  /**
+   * A live tally shown after the label — "All 12", "Images 5".
+   *
+   * Here because its absence was the stated reason a filter went and drew its
+   * own pills instead: `label` is a `string`, so a count concatenated into it
+   * flattens into untabulated sans. It gets the mono tabular face those pills
+   * used, and the equal-width grid below means a digit arriving or leaving
+   * moves no segment and sends the thumb nowhere.
+   */
+  count?: number;
   /** Disables just this segment (still announced, not selectable). */
   disabled?: boolean;
 };
@@ -457,6 +467,14 @@ export function SegmentedControl<T extends string>({
             >
               {opt.label}
             </span>
+          )}
+          {/* The tally, in the same register a `Badge` count wears: mono, 10.5px,
+              tabular so the segment does not twitch as the number changes width.
+              `opacity-70` rather than a colour, because the segment above already
+              decides the ink for both of its states and a second colour here
+              would have to be wrong in one of them. */}
+          {!labelHidden && opt.count !== undefined && (
+            <span className="font-mono text-micro tabular-nums opacity-70">{opt.count}</span>
           )}
         </button>
       ))}
