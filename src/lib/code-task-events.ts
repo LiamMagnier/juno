@@ -4,7 +4,34 @@ import { prismaUnguarded } from "@/lib/db";
 // This module is deliberately database-only. The long-lived task workers use
 // it outside a Next request, so it must not pull in `next/server`, navigation,
 // sessions, or the React server condition.
-const CONTROL_KINDS = ["approval_response", "cancel_request"];
+/*
+ * Kinds delivered to the executing host as CONTROL rather than transcript: the
+ * events POST hands these back in its response so the host can act on them
+ * mid-run, instead of them merely being logged.
+ *
+ * The three rollback verbs join the list because that response is the ONLY
+ * channel a running host reads — there is no inbound socket, and
+ * `CodeSessionCommand` (which does have one) belongs to the separate
+ * CodeRemoteSession subsystem and cannot address a CodeTask at all: its
+ * `remoteSessionId` FK is required and points at a table the task workbench
+ * never writes. Two earlier attempts stalled on exactly that, having looked at
+ * the command table rather than at how `cancel_request` — already shipped, and
+ * already consumed by the cloud runner's control loop — actually reaches a host.
+ *
+ * A host that does not recognise a kind here must ignore it and keep advancing
+ * its control cursor, which is what every deployed host already does (see
+ * scripts/cloud-code-runner.mjs). So adding kinds is backwards-compatible by
+ * construction: an older host swallows the verb, sends no `rollback_result`,
+ * and the web — which only ever shows a rollback as done on that result —
+ * shows nothing.
+ */
+const CONTROL_KINDS = [
+  "approval_response",
+  "cancel_request",
+  "accept_change",
+  "reject_change",
+  "undo_change",
+];
 
 export type TaskEventInput = {
   kind: string;

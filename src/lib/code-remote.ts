@@ -34,7 +34,57 @@ export const EVENT_KINDS = [
   // Subagent lifecycle snapshots ({ agent: SubagentPublicState }) from
   // multi-agent runs — the web UI renders live agent cards from these.
   "agent",
+  /*
+   * ONE-CLICK ROLLBACK — four kinds, and the first of them is why the other
+   * three are safe to offer.
+   *
+   * `rollback_ready` ({ paths?: string[] }) is a HOST CAPABILITY ANNOUNCEMENT,
+   * posted once by a host that can actually act on the three verbs below. It
+   * exists because presence is not capability — the same distinction
+   * `CodeDevice.servesQueuedTasks` was added for, and for the same reason: a
+   * host being online said nothing about whether it would honour the work sent
+   * to it, and reading one as the other put controls in front of people that
+   * nothing was ever going to execute. Every host in the field today announces
+   * nothing, so the web shows no rollback controls at all, which is the correct
+   * behaviour for a host that cannot honour them.
+   *
+   * `accept_change` / `reject_change` / `undo_change` are the CONTROL verbs
+   * (web → host; see CONTROL_KINDS in code-task-events.ts) and they are named
+   * after what runner/agent-core's CheckpointStore can genuinely do, not after
+   * a review workflow it cannot:
+   *   accept_change { requestId, path }  → keepFile:    pin one file so no
+   *                                        later undo reverts it.
+   *   reject_change { requestId, path }  → revertFile:  put ONE file back to
+   *                                        the state it had before the agent
+   *                                        first wrote it.
+   *   undo_change   { requestId }        → undoLastTurn: rewind every file the
+   *                                        last file-changing turn touched.
+   * There is deliberately no "reject everything since turn N": the checkpoint
+   * index truncates on rewind, so only the last turn is soundly poppable.
+   *
+   * `rollback_result` ({ requestId, verb, status, paths?, message? }) closes
+   * the loop. `status` is "applied" | "unsupported" | "failed" — "unsupported"
+   * being the honest answer for a file with no snapshot behind it (anything
+   * bash wrote is outside the snapshot net). The web must not show a rollback
+   * as done until this arrives: the control channel is fire-and-forget, so an
+   * enqueued verb is a request, never an outcome.
+   */
+  "rollback_ready",
+  "accept_change",
+  "reject_change",
+  "undo_change",
+  "rollback_result",
 ] as const;
+
+/** The rollback verbs a client may ask for, and the only values the rollback
+ *  route accepts. Kept beside EVENT_KINDS because they are a SUBSET of it —
+ *  every verb is also an event kind, since enqueuing one IS appending it. */
+export const ROLLBACK_VERBS = ["accept_change", "reject_change", "undo_change"] as const;
+export type RollbackVerb = (typeof ROLLBACK_VERBS)[number];
+
+/** Verbs that name one file and are meaningless without it. `undo_change` acts
+ *  on a whole turn and takes none. */
+export const ROLLBACK_VERBS_NEEDING_PATH: readonly RollbackVerb[] = ["accept_change", "reject_change"];
 
 export async function requireUser(): Promise<
   { user: SessionUser; error: null } | { user: null; error: NextResponse }

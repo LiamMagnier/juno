@@ -415,11 +415,51 @@ test("React emits the same styles as an object literal", () => {
   assert.match(react, /backgroundBlendMode: "overlay, normal, normal"/);
 });
 
+/** The `RoundedRectangle(…)` a generated SwiftUI line is built around, verbatim. */
+const swiftShapeOf = (line: string): string | null =>
+  line.match(/RoundedRectangle\(cornerRadius: [\d.]+, style: \.\w+\)/)?.[0] ?? null;
+
+/**
+ * The glass rim is stroked around the *same* rounded silhouette the layer is
+ * clipped to. That relationship is the invariant — a rim on a shape the clip does
+ * not use paints a border that floats off the edge of the panel — so it is
+ * asserted as a relationship: read the clip's shape out of the emitted file and
+ * demand the rim repeat it character for character, whatever it happens to be.
+ *
+ * This was previously pinned as a literal `style: .continuous`, which made it a
+ * second, stale copy of the exporter's corner-style *choice* rather than a
+ * statement about the rim. When `.circular` became the correct style for an
+ * unsmoothed document — a change that does not touch the rim at all — this test
+ * failed, and the export fix was reverted rather than the test. A test that a
+ * correct change breaks is pinning the wrong thing. Loosening the shape to `.*`
+ * would have been the opposite mistake: it would still pass with the rim stroked
+ * around a shape unrelated to the clip, which is the bug worth catching.
+ */
+function assertRimMatchesClip(content: string): void {
+  const lines = content.split("\n");
+  const rim = lines.findIndex((line) => /\.overlay\(RoundedRectangle\(.*\)\.strokeBorder\(LinearGradient/.test(line));
+  assert.notEqual(rim, -1, "the glass rim is stroked, not dropped");
+  // The clip belonging to the rim's own layer, not some ancestor's: modifiers are
+  // emitted per layer in a fixed order with the clip immediately above the effect
+  // stack, so the nearest `.clipShape` above the rim is that layer's.
+  let clip = -1;
+  for (let i = rim - 1; i >= 0; i -= 1) {
+    if (lines[i].includes(".clipShape(")) {
+      clip = i;
+      break;
+    }
+  }
+  assert.notEqual(clip, -1, "a rounded layer is clipped to its silhouette");
+  const shape = swiftShapeOf(lines[clip]);
+  assert.ok(shape, `the clip is a RoundedRectangle: ${lines[clip]}`);
+  assert.equal(swiftShapeOf(lines[rim]), shape, "the rim is stroked around the same silhouette the layer is clipped to");
+}
+
 test("SwiftUI degrades honestly: a material, a rim, and named gaps", () => {
   const swift = exportSwiftUI(run(signInDocument(), [setEffects(["button"], [GLASS, RIM, DROP, GRAIN, TEXTURE])]).document, PAGE_ID);
   assert.match(swift.content, /\.background\(\.thinMaterial\)/);
   assert.match(swift.content, /\.overlay\(Color\(\.sRGB[^)]*\)\.opacity\(0\.14\)\)/, "the tint is a real overlay");
-  assert.match(swift.content, /\.overlay\(RoundedRectangle\(cornerRadius: [\d.]+, style: \.continuous\)\.strokeBorder\(LinearGradient/);
+  assertRimMatchesClip(swift.content);
   assert.match(swift.content, /\.shadow\(color: Color\(\.sRGB/);
   // An inner shadow has no view modifier, so it is a comment in the file *and*
   // an entry in `unsupported` — never a silent omission.

@@ -1349,9 +1349,6 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
   const mappings: CodeSymbolMapping[] = [];
   const unsupported: string[] = [];
-  /** Layers whose document corner is a circular arc, collected so the corner
-   *  style substitution can be stated once at the end instead of once per card. */
-  const circularCorners = new Set<string>();
   const taken = new Set<string>(["View", "Text", "Image", "Color"]);
   const lines: string[] = [];
   const file = `${(doc.name.replace(/[^A-Za-z0-9]+/g, "") || "Design")}.swift`;
@@ -1492,34 +1489,49 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
      * `APPLE_CONTINUOUS_SMOOTHING` — and `.circular` is the arc. Two positions,
      * no dial, so a smoothing anywhere between them lands on the nearer one.
      *
-     * It was emitted unconditionally, which meant an unsmoothed design — every
-     * design, until the field existed — was told its circular corners were
-     * squircles by an export that had no way to know otherwise. Now the note
-     * below states the substitution: `.continuous` stays the emitted style,
-     * because it is what hand-written SwiftUI uses and what the generated file's
-     * consumers already read, but a design whose corners are genuinely circular
-     * is no longer allowed to find that out by eye.
+     * `.continuous` used to be emitted unconditionally, which meant an unsmoothed
+     * design — every design, until the field existed — was handed a file that drew
+     * squircles where the artboard drew arcs, with only an `unsupported` line at
+     * the end telling the reader to go and fix every one of them by hand. That was
+     * the wrong repair: SwiftUI has the exact corner the document asked for, so the
+     * fix is to emit it, not to file a chore. The chore note is gone with it,
+     * because a caveat that describes a substitution the exporter no longer makes
+     * is a second lie on top of the first.
      *
-     * Counted rather than filed per layer: a card-heavy screen is thirty rounded
-     * layers and thirty copies of one sentence is a caveat list nobody finishes
-     * reading, which is the same as not having filed it.
+     * The midpoint (not `smoothing > 0`) picks the side: this is a nearest-of-two
+     * snap, and a corner at 0.1 is visibly nearer the arc than the squircle, so
+     * rounding it up to `.continuous` would overshoot the artboard by half the
+     * scale. Whichever pole it snaps to, anything that is not already sitting on
+     * that pole files a note naming the smoothing it actually asked for — the
+     * `.circular` side of that is new, and without it a 20%-smoothed corner would
+     * flatten to an arc as silently as it used to inflate to a squircle.
      */
     const smoothing = resolved.cornerSmoothing ?? 0;
+    const cornerStyle = smoothing < APPLE_CONTINUOUS_SMOOTHING / 2 ? ".circular" : ".continuous";
     if (radius > 0) {
-      if (smoothing < APPLE_CONTINUOUS_SMOOTHING / 2) circularCorners.add(resolved.name);
-      else if (Math.abs(smoothing - APPLE_CONTINUOUS_SMOOTHING) > 0.15) {
+      if (cornerStyle === ".circular" && smoothing > 0) {
+        unsupported.push(
+          `${resolved.name}: corner smoothing ${Math.round(smoothing * 100)}% exported as .circular — SwiftUI's corner styles are not parameterised (its only smoothed corner is about ${Math.round(APPLE_CONTINUOUS_SMOOTHING * 100)}%)`
+        );
+      } else if (cornerStyle === ".continuous" && Math.abs(smoothing - APPLE_CONTINUOUS_SMOOTHING) > 0.15) {
         unsupported.push(
           `${resolved.name}: corner smoothing ${Math.round(smoothing * 100)}% exported as .continuous — SwiftUI's corner styles are not parameterised (its curve is about ${Math.round(APPLE_CONTINUOUS_SMOOTHING * 100)}%)`
         );
       }
-      out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous))`);
+      out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: ${cornerStyle}))`);
     }
 
     // Effects come after the clip so a shadow is cast by the rounded silhouette
     // rather than by the square frame behind it — and they are emitted in list
     // order, because SwiftUI modifiers compose in the order they are written and
     // that is the same claim the model's ordering makes.
-    const swiftShape = radius > 0 ? `RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous)` : "Rectangle()";
+    //
+    // Same radius *and* same style as the clip above, from the same two variables:
+    // the rim is stroked around the silhouette the layer is clipped to, and a rim
+    // built from its own literal drifts from the clip the moment either changes —
+    // which is exactly what a hard-coded `.continuous` here did once the clip
+    // learned to say `.circular`.
+    const swiftShape = radius > 0 ? `RoundedRectangle(cornerRadius: ${round(radius)}, style: ${cornerStyle})` : "Rectangle()";
     for (const effect of effects) {
       switch (effect.type) {
         case "layer-blur":
@@ -1626,11 +1638,6 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   }
   if (Object.values(doc.nodes).some((n) => "layout" in n && n.layout)) {
     unsupported.push("Auto layout is emitted as absolute offsets; the handoff bundle records the original stacks.");
-  }
-  if (circularCorners.size > 0) {
-    unsupported.push(
-      `${circularCorners.size} layer(s) draw a circular corner on the canvas and are emitted with style: .continuous, Apple's squircle — change those to style: .circular to match the artboard exactly (${[...circularCorners].slice(0, 6).join(", ")}${circularCorners.size > 6 ? ", …" : ""}).`
-    );
   }
 
   return { format: "swiftui", fileName: file, mimeType: "text/plain", content: lines.join("\n"), mappings, unsupported };

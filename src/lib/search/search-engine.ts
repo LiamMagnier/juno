@@ -1,6 +1,14 @@
 import "server-only";
 import { isDisallowedHost } from "./url-safety";
 import { fuseRankedLists, type EngineSpec, type SearchResult } from "./fusion";
+import {
+  extractPdfText,
+  looksLikePdf,
+  MAX_PDF_BYTES,
+  readBodyBounded,
+  responseIsPdf,
+  type PdfFailureReason,
+} from "./pdf-text";
 
 /*
  * `SearchResult`, `EngineSpec`, the RRF constant and the merge itself used to be
@@ -35,13 +43,27 @@ export interface ExtractResult {
  * `extractUrlContent` returned a bare null for all of these, which meant the
  * research engine's READ loop could only `continue` — and a PDF, exactly the
  * primary-source class the planner is prompted to go looking for, vanished from
- * a run with nothing anywhere saying it had been seen and skipped.
+ * a run with nothing anywhere saying it had been seen and skipped. PDFs are now
+ * read rather than skipped, but the ones that still cannot be (protected,
+ * damaged, enormous) travel out by the same route for the same reason.
  */
 export type ExtractFailure =
   | { reason: "blocked_host" }
   | { reason: "http_error"; httpStatus: number }
   | { reason: "unsupported_content_type"; contentType: string }
   | { reason: "empty_document" }
+  /*
+   * A PDF that was fetched and recognised but still yielded nothing. Separate
+   * from `unsupported_content_type` because that reason now means what it says —
+   * no parser exists for this type at all — and folding "this build cannot read
+   * PDFs" together with "this particular PDF is password-protected" would make
+   * the reason code useless the moment either answer changed.
+   *
+   * `no_text_layer` is deliberately absent: a scanned PDF parses perfectly and
+   * simply has no text, which is `empty_document`, the same answer a JS-rendered
+   * HTML page gets and the same sentence the timeline already prints for it.
+   */
+  | { reason: "pdf_unreadable"; detail: Exclude<PdfFailureReason, "no_text_layer"> }
   | { reason: "fetch_failed"; detail: string };
 
 export type ExtractOutcome = { ok: true; page: ExtractResult } | { ok: false; failure: ExtractFailure };
@@ -211,11 +233,60 @@ export function htmlToCleanText(
 const EXTRACT_CHARS = 16_000;
 
 /**
+ * The PDF half of `extractUrlDocument`, kept separate only for length.
+ *
+ * Every exit is a typed outcome. This runs inside the research engine's READ
+ * stage, where one thrown exception ends the round rather than one source, and a
+ * PDF is an arbitrary binary chosen by a page we do not control — so the parser
+ * is treated as something that will fail, not something that might.
+ */
+async function extractPdfDocumentFrom(res: Response, url: string, signal?: AbortSignal): Promise<ExtractOutcome> {
+  const bytes = await readBodyBounded(res, MAX_PDF_BYTES);
+  if (!bytes) return { ok: false, failure: { reason: "pdf_unreadable", detail: "too_large" } };
+  // Checked here as well as inside the parser so a mislabelled HTML error page —
+  // a login wall served as application/pdf, which is common behind paywalls —
+  // never pays for the pdf.js import at all.
+  if (!looksLikePdf(bytes)) return { ok: false, failure: { reason: "pdf_unreadable", detail: "not_a_pdf" } };
+
+  const parsed = await extractPdfText(bytes, { maxChars: EXTRACT_CHARS, signal });
+  if (!parsed.ok) {
+    // A scan is a valid document that simply holds no text, which is exactly
+    // what `empty_document` already means for a JS-rendered HTML page — same
+    // situation, same reason code, and a sentence the timeline already prints.
+    if (parsed.reason === "no_text_layer") return { ok: false, failure: { reason: "empty_document" } };
+    return { ok: false, failure: { reason: "pdf_unreadable", detail: parsed.reason } };
+  }
+
+  // The same floor the HTML path applies: a document that yielded a line or two
+  // is a cover page, and storing it as a source makes a run look better read
+  // than it is.
+  if (parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document" } };
+
+  return {
+    ok: true,
+    page: {
+      title: parsed.title ?? url,
+      text: parsed.text,
+      author: parsed.author,
+      publishedAt: parsed.publishedAt,
+      // A PDF link annotation has a target but no anchor text, so `text` is left
+      // empty rather than filled with the URL again — the hop stage ranks on the
+      // href, and a fabricated label would read as the document's own words.
+      links: parsed.links.map((href) => ({ href, text: "" })),
+    },
+  };
+}
+
+/**
  * Universal page extractor with SSRF protection and clean markdown synthesis.
  *
  * Returns the REASON on failure rather than a bare null, so a caller can tell a
- * user "that was a PDF and this build cannot read one" instead of quietly
- * producing a report that looks like it considered a document it never opened.
+ * user "that file was password-protected" instead of quietly producing a report
+ * that looks like it considered a document it never opened.
+ *
+ * The `Accept` header still asks for HTML first because that is what the vast
+ * majority of results are; it ends in a wildcard at q=0.7, so a server with a
+ * PDF still offers it and no header change was needed to start reading them.
  */
 export async function extractUrlDocument(url: string, signal?: AbortSignal): Promise<ExtractOutcome> {
   if (!url || isDisallowedHost(url)) return { ok: false, failure: { reason: "blocked_host" } };
@@ -234,10 +305,16 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
 
     if (!res.ok) return { ok: false, failure: { reason: "http_error", httpStatus: res.status } };
     const contentType = res.headers.get("content-type") ?? "";
+    const baseType = contentType.split(";")[0].trim().toLowerCase();
+
+    // The response URL, not the requested one — redirects are followed, and it is
+    // the landing address whose extension means anything.
+    if (responseIsPdf(baseType, res.url || url)) return await extractPdfDocumentFrom(res, url, signal);
+
     if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
-      // PDFs land here. Extracting their text needs a parser this repo does not
-      // carry, so the honest move is to name what was skipped and move on.
-      return { ok: false, failure: { reason: "unsupported_content_type", contentType: contentType.split(";")[0].trim() } };
+      // Everything this build genuinely has no parser for — images, archives,
+      // office documents. Naming the type is what lets the timeline say which.
+      return { ok: false, failure: { reason: "unsupported_content_type", contentType: baseType } };
     }
 
     const html = await res.text();

@@ -18,7 +18,7 @@ import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-sessi
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { useCodeSession, isLiveId } from "@/hooks/use-code-session";
+import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
@@ -591,6 +591,34 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     return { reason: sendBlockedReason, onRecheck: recoverable ? refreshPresence : undefined };
   }, [isCloud, presence.state, refreshPresence, resolving, sendBlockedReason]);
 
+  /*
+   * Keep/revert/undo, offered ONLY once the executing host has said it can act
+   * on them.
+   *
+   * `announced` is the whole gate, and nothing here may widen it — not the run
+   * being live, not the Mac being online. The control channel is
+   * fire-and-forget (a control event handed to the host on its next events
+   * POST), so a host that has never heard of these verbs swallows them and
+   * answers nothing; without the announcement there is no way to tell that
+   * apart from a host that is about to act. Every host in the field today
+   * announces nothing, so this is null and no rollback control is drawn — which
+   * is the correct behaviour, not a degraded one.
+   */
+  const rollbackControls = React.useMemo(
+    () =>
+      session.rollbackSupport.announced
+        ? {
+            paths: session.rollbackSupport.paths,
+            requests: session.rollbacks,
+            onRequest: (verb: CodeRollbackVerb, path?: string | null) => {
+              void session.requestRollback(verb, path ?? null);
+            },
+          }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session.rollbackSupport, session.rollbacks, session.requestRollback],
+  );
+
   // Queue copy, and the same sentence the live region reads out.
   const queuedNote =
     session.status !== "queued"
@@ -615,6 +643,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           }}
           queuedNote={queuedNote}
           blocked={blockedNote}
+          rollback={rollbackControls}
         />
       }
       voicePanel={

@@ -510,8 +510,49 @@ test("SwiftUI names the corner substitutions it makes instead of taking them sil
     swift.unsupported.some((line) => /Card/.test(line) && /one radius/.test(line) && /16\/16\/0\/0/.test(line)),
     "a per-corner tuple collapsed to one radius is a loss worth stating"
   );
-  // `.continuous` is Apple's squircle and the document's corners are arcs.
-  assert.ok(swift.unsupported.some((line) => /circular corner/.test(line) && /\.continuous/.test(line)));
+  // The fixture's corners are arcs and SwiftUI can draw an arc, so there is no
+  // corner-style substitution to name here. This used to assert the opposite —
+  // that the export filed a "your circular corners came out as .continuous, go
+  // and change them" chore — which was only ever true because the exporter was
+  // hard-coding the wrong style. Emitting the right one retires the chore.
+  assert.ok(
+    !swift.unsupported.some((line) => /corner smoothing/.test(line)),
+    "an unsmoothed document has nothing to apologise for about its corner style"
+  );
+});
+
+/**
+ * SwiftUI's corner styles are a two-position switch, not a dial: `.circular` is
+ * the arc, `.continuous` is Apple's fixed squircle. Both positions have to be
+ * reachable from the document's `cornerSmoothing`, and the regression this pins
+ * is the one that shipped: the exporter emitting one of them as a constant, so
+ * that every design got squircles and an unsmoothed one was told so only in a
+ * footnote. Asserted in both directions precisely because a constant passes a
+ * one-directional test.
+ */
+test("SwiftUI's corner style follows the document's smoothing in both directions", () => {
+  const styleOfCardClip = (smoothing: number): string => {
+    const doc = run(signInDocument(), [{ op: "updateNode", nodeId: "card", patch: { cornerSmoothing: smoothing } }]).document;
+    const clip = exportSwiftUI(doc, PAGE_ID)
+      .content.split("\n")
+      .find((line) => line.includes(".clipShape(RoundedRectangle(cornerRadius: 16"));
+    assert.ok(clip, `the card is clipped to its 16pt silhouette at smoothing ${smoothing}`);
+    return clip.match(/style: (\.\w+)\)/)?.[1] ?? "";
+  };
+
+  assert.equal(styleOfCardClip(0), ".circular", "an unsmoothed corner is an arc, and SwiftUI has arcs");
+  assert.equal(styleOfCardClip(1), ".continuous", "a smoothed corner is the squircle");
+  // The switch flips at the midpoint rather than at zero: `.continuous` is about
+  // `APPLE_CONTINUOUS_SMOOTHING` (0.6) on this scale, so a corner at 0.2 is nearer
+  // the arc and snapping it up to the squircle would overshoot the artboard by
+  // more than leaving it flat does. Whichever side it lands on, a corner that is
+  // not sitting on that pole says which smoothing it actually wanted.
+  assert.equal(styleOfCardClip(0.2), ".circular");
+  const nudged = run(signInDocument(), [{ op: "updateNode", nodeId: "card", patch: { cornerSmoothing: 0.2 } }]).document;
+  assert.ok(
+    exportSwiftUI(nudged, PAGE_ID).unsupported.some((line) => /Card/.test(line) && /20%/.test(line) && /\.circular/.test(line)),
+    "a partly smoothed corner flattened to an arc is a substitution, and substitutions are named"
+  );
 });
 
 test("PDF admits it drew the corners square", () => {

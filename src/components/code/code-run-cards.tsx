@@ -7,10 +7,16 @@ import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
-import { CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-import type { CodeAgentState, CodeFileChangeEvent, CodePendingApproval } from "@/hooks/use-code-session";
+import type {
+  CodeAgentState,
+  CodeFileChangeEvent,
+  CodePendingApproval,
+  CodeRollbackRequest,
+  CodeRollbackVerb,
+} from "@/hooks/use-code-session";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
 /*
@@ -73,6 +79,76 @@ export interface CodeFileChange {
    * neither expands nor shows a diff pane. See `ChangedFilesCard`.
    */
   patch: string | null;
+}
+
+/**
+ * The rollback affordances for one live run, or null when there are none.
+ *
+ * NULL IS THE NORMAL CASE AND MUST STAY THE DEFAULT. These controls are drawn
+ * only when the executing host has announced (`rollback_ready`) that it can act
+ * on them — see `CodeRollbackSupport` in use-code-session.ts. Deriving them from
+ * anything else the reader can see, such as the run being live or the device
+ * being online, would put a Revert button beside every file for hosts that
+ * silently swallow the verb, and a button that reports nothing back is a button
+ * that lies.
+ */
+export interface CodeRollbackControls {
+  /** Paths the host holds an undo for; null when it announced without naming
+   *  any, in which case every changed file is offered and the ones it cannot
+   *  honour answer `unsupported` rather than appearing to work. */
+  paths: readonly string[] | null;
+  requests: readonly CodeRollbackRequest[];
+  onRequest: (verb: CodeRollbackVerb, path?: string | null) => void;
+}
+
+/** The newest request touching one file, or the newest whole-turn undo when
+ *  `path` is null. Newest rather than first: asking again after a failure is a
+ *  normal thing to do, and the row must report the latest attempt. */
+function newestRollback(
+  requests: readonly CodeRollbackRequest[],
+  path: string | null,
+): CodeRollbackRequest | null {
+  for (let i = requests.length - 1; i >= 0; i -= 1) {
+    const entry = requests[i];
+    if (path === null ? entry.verb === "undo_change" : entry.path === path) return entry;
+  }
+  return null;
+}
+
+/**
+ * What a settled (or in-flight) rollback says on the row.
+ *
+ * `unsupported` gets its own sentence rather than being reported as a failure,
+ * because the two send the reader somewhere different: "no undo exists for this
+ * file" means it was written by a shell command, which no retry will fix, while
+ * a failure is worth trying again. `unanswered` claims NOTHING about the
+ * workspace — this client stopped waiting, which is not evidence that the host
+ * did nothing.
+ */
+function rollbackLabel(entry: CodeRollbackRequest): { text: string; tone: string } {
+  const muted = "text-muted-foreground";
+  switch (entry.status) {
+    case "pending":
+      return {
+        text:
+          entry.verb === "reject_change" ? "Reverting…" : entry.verb === "accept_change" ? "Keeping…" : "Undoing…",
+        tone: muted,
+      };
+    case "applied":
+      return {
+        text: entry.verb === "reject_change" ? "Reverted" : entry.verb === "accept_change" ? "Kept" : "Undone",
+        tone: "text-success",
+      };
+    case "unsupported":
+      return {
+        text: entry.verb === "undo_change" ? "Nothing to undo" : "No undo for this file",
+        tone: muted,
+      };
+    case "failed":
+      return { text: "Couldn’t roll back", tone: "text-destructive" };
+    case "unanswered":
+      return { text: "No answer from your host", tone: "text-destructive" };
+  }
 }
 
 /**
@@ -163,6 +239,8 @@ export interface CodeRunStackProps {
    * flicker, not an explanation.
    */
   blocked: { reason: string; onRecheck?: () => Promise<void> | void } | null;
+  /** Keep/revert/undo, or null when no host has said it can honour them. */
+  rollback: CodeRollbackControls | null;
 }
 
 export function CodeRunStack({
@@ -173,6 +251,7 @@ export function CodeRunStack({
   onRespond,
   queuedNote,
   blocked,
+  rollback,
 }: CodeRunStackProps) {
   return (
     <MotionConfig reducedMotion="user">
@@ -194,7 +273,7 @@ export function CodeRunStack({
           : (queuedNote ?? "")}
       </p>
 
-      {files.length > 0 && <ChangedFilesCard files={files} />}
+      {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} />}
       {agents.length > 0 && <AgentsCard agents={agents} />}
       {blocked && <BlockedNote reason={blocked.reason} onRecheck={blocked.onRecheck} />}
       {queuedNote && (
@@ -505,7 +584,13 @@ function FileDiffPanel({ path, patch }: { path: string; patch: string }) {
  * the summary — a count alone made you open the list to learn whether the run
  * had written three lines or three hundred.
  */
-function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
+function ChangedFilesCard({
+  files,
+  rollback,
+}: {
+  files: CodeFileChange[];
+  rollback: CodeRollbackControls | null;
+}) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
   const churn = React.useMemo(() => totalChurn(files), [files]);
@@ -521,6 +606,21 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
   const [openDiffs, setOpenDiffs] = React.useState<ReadonlySet<string>>(() => new Set<string>());
   // Whether this run transported hunks at all — see the mixed-case note above.
   const anyPatch = React.useMemo(() => files.some((file) => file.patch), [files]);
+  /*
+   * Which paths get a control, as a set the row lookup can afford.
+   *
+   * Null from the host means "I did not enumerate" and is widened to every
+   * changed file — NOT narrowed to none, which would hide the feature from a
+   * host that supports it perfectly well and simply did not send a list. The
+   * cost of widening is bounded and visible: a file the host turns out to hold
+   * no snapshot for comes back `unsupported`, which the row states plainly.
+   */
+  const rollbackable = React.useMemo(
+    () => (rollback?.paths ? new Set(rollback.paths) : null),
+    [rollback?.paths],
+  );
+  const undoState = rollback ? newestRollback(rollback.requests, null) : null;
+  const undoing = undoState?.status === "pending";
 
   const toggleDirectory = (key: string) =>
     setCollapsed((current) => {
@@ -543,37 +643,73 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
       // inside this rounded-field (10px) shell: outer = inner + padding.
       className={cn(RUN_CARD, "p-0.5 motion-safe:animate-rise-in")}
     >
-      <Pressable
-        kind="row"
-        size="sm"
-        aria-expanded={open}
-        // The list is always in the document (it collapses rather than
-        // unmounting), so this can point at it unconditionally.
-        aria-controls={listId}
-        onClick={() => setOpen((v) => !v)}
-        // ~30px otherwise, on the only disclosure above a composer whose every
-        // other control carries `coarse:h-11`.
-        className="coarse:min-h-11"
-      >
-        <ChevronRight
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-            open && "rotate-90",
-          )}
-          aria-hidden="true"
-        />
-        <span className="font-mono text-label text-muted-foreground">
-          {files.length === 1 ? "1 file changed" : `${files.length} files changed`}
-        </span>
-        {churn && (
-          // tabular-nums: these two figures tick up in place while a run
-          // streams, and proportional digits make the header twitch sideways.
-          <span className="ml-auto shrink-0 font-mono text-caption tabular-nums">
-            <span className="text-success">+{churn.added}</span>{" "}
-            <span className="text-destructive">−{churn.removed}</span>
+      {/* THE UNDO SITS BESIDE THE DISCLOSURE, NOT INSIDE IT. The header is
+          itself a button, and nesting a second one inside it is invalid HTML
+          that browsers resolve by hoisting the inner control out of the outer —
+          so the first press of "Undo last turn" would also have toggled the
+          list open. A flex row with two siblings is the whole fix. */}
+      <div className="flex items-center gap-1">
+        <Pressable
+          kind="row"
+          size="sm"
+          aria-expanded={open}
+          // The list is always in the document (it collapses rather than
+          // unmounting), so this can point at it unconditionally.
+          aria-controls={listId}
+          onClick={() => setOpen((v) => !v)}
+          // ~30px otherwise, on the only disclosure above a composer whose every
+          // other control carries `coarse:h-11`.
+          className="min-w-0 flex-1 coarse:min-h-11"
+        >
+          <ChevronRight
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+              open && "rotate-90",
+            )}
+            aria-hidden="true"
+          />
+          <span className="font-mono text-label text-muted-foreground">
+            {files.length === 1 ? "1 file changed" : `${files.length} files changed`}
           </span>
+          {churn && (
+            // tabular-nums: these two figures tick up in place while a run
+            // streams, and proportional digits make the header twitch sideways.
+            <span className="ml-auto shrink-0 font-mono text-caption tabular-nums">
+              <span className="text-success">+{churn.added}</span>{" "}
+              <span className="text-destructive">−{churn.removed}</span>
+            </span>
+          )}
+        </Pressable>
+        {rollback && (
+          // "Last turn", not "everything": the checkpoint index truncates on
+          // rewind, so only the most recent file-changing turn can be popped
+          // soundly. Naming it "Undo" flat would promise a depth the store does
+          // not have.
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => rollback.onRequest("undo_change")}
+            disabled={undoing}
+            className="shrink-0 gap-1.5 coarse:h-11"
+          >
+            <ActionIcons.restore
+              className={cn("size-3.5", undoing && "motion-safe:animate-spin")}
+              aria-hidden="true"
+            />
+            {undoing ? "Undoing…" : "Undo last turn"}
+          </Button>
         )}
-      </Pressable>
+      </div>
+      {undoState && undoState.status !== "pending" && (
+        // The turn-level outcome, in the header rather than on a row: no single
+        // file owns it, and a rewind that found nothing to undo has to say so
+        // somewhere or the button reads as inert.
+        <p role="status" className={cn("px-2 pb-1 text-caption", rollbackLabel(undoState).tone)}>
+          {rollbackLabel(undoState).text}
+          {undoState.message ? ` — ${undoState.message}` : ""}
+        </p>
+      )}
       {/*
         The same grid/`grid-template-rows` collapse the attachment tray uses. As
         `{open && <ul>}` the list snapped in instantly while its own chevron
@@ -701,35 +837,89 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
               const rowTabIndex = open ? 0 : -1;
               const diffId = `${listId}-diff-${node.key}`;
 
+              /*
+               * Keep / Revert for one file, or the outcome of the last ask.
+               *
+               * Offered only for a path the host will act on, and it REPLACES
+               * itself with the result the moment one is asked for: leaving the
+               * buttons live under a "Reverted" tag invites a second press that
+               * the store answers `unknown` to, because the first revert takes
+               * the path out of the checkpoint index. The controls return only
+               * if the agent writes the file again, which snapshots it afresh —
+               * which is exactly right.
+               */
+              const fileRollback =
+                leaf && rollback && (!rollbackable || rollbackable.has(leaf.path))
+                  ? (newestRollback(rollback.requests, leaf.path) ?? "offer")
+                  : null;
+              const actions =
+                !leaf || !rollback || !fileRollback ? null : fileRollback === "offer" ? (
+                  <span className="flex shrink-0 items-center gap-0.5">
+                    <RowAction
+                      icon={StatusIcons.success}
+                      label={`Keep changes to ${leaf.path}`}
+                      tabIndex={rowTabIndex}
+                      onClick={() => rollback.onRequest("accept_change", leaf.path)}
+                    />
+                    <RowAction
+                      icon={ActionIcons.restore}
+                      label={`Revert ${leaf.path}`}
+                      tabIndex={rowTabIndex}
+                      onClick={() => rollback.onRequest("reject_change", leaf.path)}
+                    />
+                  </span>
+                ) : (
+                  <span
+                    className={cn("shrink-0 text-caption", rollbackLabel(fileRollback).tone)}
+                    title={fileRollback.message ?? undefined}
+                  >
+                    {rollbackLabel(fileRollback).text}
+                  </span>
+                );
+
+              const rowControl = directory ? (
+                <button
+                  type="button"
+                  aria-expanded={!shut}
+                  tabIndex={rowTabIndex}
+                  onClick={() => toggleDirectory(node.key)}
+                  className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                  style={indent}
+                >
+                  {row}
+                </button>
+              ) : leaf && patch ? (
+                <button
+                  type="button"
+                  aria-expanded={diffOpen}
+                  aria-controls={diffOpen ? diffId : undefined}
+                  tabIndex={rowTabIndex}
+                  onClick={() => toggleDiff(leaf.path)}
+                  className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                  style={indent}
+                >
+                  {row}
+                </button>
+              ) : (
+                <span className={shared} style={indent}>
+                  {row}
+                </span>
+              );
+
               return (
                 <li key={node.key}>
-                  {directory ? (
-                    <button
-                      type="button"
-                      aria-expanded={!shut}
-                      tabIndex={rowTabIndex}
-                      onClick={() => toggleDirectory(node.key)}
-                      className={cn(shared, "rounded-xs hover:bg-accent/60")}
-                      style={indent}
-                    >
-                      {row}
-                    </button>
-                  ) : leaf && patch ? (
-                    <button
-                      type="button"
-                      aria-expanded={diffOpen}
-                      aria-controls={diffOpen ? diffId : undefined}
-                      tabIndex={rowTabIndex}
-                      onClick={() => toggleDiff(leaf.path)}
-                      className={cn(shared, "rounded-xs hover:bg-accent/60")}
-                      style={indent}
-                    >
-                      {row}
-                    </button>
-                  ) : (
-                    <span className={shared} style={indent}>
-                      {row}
+                  {/* Siblings, never nesting — same reason as the header. The
+                      row is already a button for the diff disclosure, and a
+                      Revert inside it would be hoisted out by the parser, so
+                      pressing Revert would open the diff too. `min-w-0` is what
+                      lets the path keep truncating once it shares the line. */}
+                  {actions ? (
+                    <span className="flex items-center gap-1 pr-1">
+                      <span className="min-w-0 flex-1">{rowControl}</span>
+                      {actions}
                     </span>
+                  ) : (
+                    rowControl
                   )}
                   {/* Unmounted while shut rather than height-collapsed, unlike
                       the file list above it: that list animates because it is
@@ -746,9 +936,66 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
               );
             })}
           </ul>
+          {rollback && (
+            /*
+             * THE LIMIT, STATED WHERE THE BUTTONS ARE.
+             *
+             * runner/agent-core/src/checkpoints.ts snapshots a file only when a
+             * WRITE TOOL is about to mutate it; anything a shell command wrote,
+             * moved or deleted never entered the store. A rollback therefore
+             * cannot undo it, and the row for such a file answers "no undo for
+             * this file" — which reads as a glitch unless the reason is on
+             * screen. Inside the disclosure rather than in the header because it
+             * explains the rows, and a permanent caveat above a collapsed card
+             * is noise on every run nobody opens.
+             */
+            <p className="px-2 pb-2 pt-1 text-caption leading-relaxed text-muted-foreground">
+              Undo covers files Juno Code edited directly. Anything a shell command wrote or deleted
+              is outside it and has to be put back by hand.
+            </p>
+          )}
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * One icon-sized control on a file row.
+ *
+ * Icon-only because the row is already four columns of `text-caption` inside a
+ * card that sits on top of the composer; "Keep"/"Revert" as words pushed the
+ * path — the only thing that identifies the row — into truncation on a
+ * half-width window. The accessible name is the full sentence WITH the path in
+ * it, so a screen-reader user is never asked to press "Revert" without being
+ * told revert what; `title` carries the same words for a pointer.
+ *
+ * `tabIndex` is threaded from the caller rather than defaulted, because these
+ * live inside a list that stays in the document while collapsed — a focusable
+ * control under an `aria-hidden` subtree is a Tab stop nothing will name.
+ */
+function RowAction({
+  icon: Icon,
+  label,
+  tabIndex,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  label: string;
+  tabIndex: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      tabIndex={tabIndex}
+      onClick={onClick}
+      className="rounded-xs p-1 text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent/60 hover:text-foreground motion-reduce:transition-none coarse:p-2"
+    >
+      <Icon className="size-3.5" aria-hidden={true} />
+    </button>
   );
 }
 

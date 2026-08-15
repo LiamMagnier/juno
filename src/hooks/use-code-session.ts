@@ -65,6 +65,61 @@ export interface CodeFileChangeEvent {
   patch: string | null;
 }
 
+/** The three things a host can be asked to do to what a run wrote. Mirrors
+ *  `ROLLBACK_VERBS` in src/lib/code-remote.ts, spelled here so this client
+ *  module stays free of server imports. */
+export type CodeRollbackVerb = "accept_change" | "reject_change" | "undo_change";
+
+/**
+ * Whether the host running this task can act on the rollback verbs at all.
+ *
+ * `announced` starts FALSE and only a `rollback_ready` event from the host sets
+ * it. That is the whole design: the control channel is fire-and-forget, so
+ * without an announcement the web has no way to distinguish "the host will do
+ * this" from "the host has never heard of this verb and silently swallowed it".
+ * Rendering rollback controls off anything else — the task being live, the
+ * device being online — would put buttons in front of every reader that most
+ * hosts will never honour. Same lesson as `CodeDevice.servesQueuedTasks`:
+ * presence is not capability.
+ */
+export interface CodeRollbackSupport {
+  announced: boolean;
+  /**
+   * The workspace-relative paths the host says it holds an undo for, or null
+   * when it announced without naming any.
+   *
+   * Null is NOT "all files": anything a run's bash wrote is outside the
+   * checkpoint net and cannot be rolled back, and the host is the only party
+   * that knows which files those were. A host that names paths gets controls on
+   * exactly those; a host that names none gets them on every changed file, and
+   * the ones it cannot honour come back `unsupported` rather than silently
+   * appearing to work.
+   */
+  paths: readonly string[] | null;
+}
+
+/** One rollback the reader asked for, from the ask to the host's answer. */
+export interface CodeRollbackRequest {
+  requestId: string;
+  verb: CodeRollbackVerb;
+  /** Null for `undo_change`, which acts on a whole turn. */
+  path: string | null;
+  /**
+   * "pending" until the host answers.
+   *
+   * "unsupported" is the host saying it holds no snapshot for that file — the
+   * honest outcome for anything bash wrote — and is deliberately NOT folded
+   * into "failed": one means there was never an undo to give, the other means
+   * an undo was attempted and broke. "unanswered" is this client giving up
+   * waiting; nothing is known about the workspace in that state, which is why
+   * the copy for it must not claim either way.
+   */
+  status: "pending" | "applied" | "unsupported" | "failed" | "unanswered";
+  /** Paths the host reported it actually touched. Null until it answers. */
+  paths: readonly string[] | null;
+  message: string | null;
+}
+
 export interface CodePendingApproval {
   requestId: string;
   summary: string;
@@ -137,6 +192,18 @@ const liveId = (taskId: string) => `${LIVE_ID_PREFIX}${taskId}`;
  *  anything else keyed by message id) must not be offered or POSTed for it. */
 export const isLiveId = (id: string) => id.startsWith(LIVE_ID_PREFIX);
 
+/**
+ * How long a rollback may sit unanswered before the reader is told nobody
+ * answered.
+ *
+ * Generous on purpose. The host only sees a control event when it next posts
+ * events, and a host mid-tool-call — a build, a test run — can legitimately go
+ * quiet for a while. A short timeout here would report "no answer" over a
+ * revert that was about to happen, which is the one wrong thing this state
+ * exists to avoid saying.
+ */
+const ROLLBACK_ANSWER_TIMEOUT_MS = 90_000;
+
 const str = (payload: RemoteEvent["payload"], key: string): string | null => {
   const value = payload?.[key];
   return typeof value === "string" ? value : null;
@@ -148,6 +215,13 @@ const num = (payload: RemoteEvent["payload"], key: string): number | null => {
 const bool = (payload: RemoteEvent["payload"], key: string): boolean | null => {
   const value = payload?.[key];
   return typeof value === "boolean" ? value : null;
+};
+/** A string array from a payload, or null. Anything non-string in the array is
+ *  dropped rather than rendered as `undefined` beside real paths. */
+const strList = (payload: RemoteEvent["payload"], key: string): string[] | null => {
+  const value = payload?.[key];
+  if (!Array.isArray(value)) return null;
+  return value.filter((entry): entry is string => typeof entry === "string");
 };
 
 /** Minimal SSE reader for the task event stream (data: JSON frames only). */
@@ -203,6 +277,21 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
    * exactly the moment somebody wants to read them.
    */
   const [fileChanges, setFileChanges] = React.useState<CodeFileChangeEvent[]>([]);
+  /*
+   * Rollback lives with the TASK, not with the session, unlike `fileChanges`.
+   *
+   * A checkpoint store belongs to the host process that is holding the
+   * workspace open; when the task ends, that process exits and every undo it
+   * was offering goes with it. Carrying the announcement across tasks the way
+   * `fileChanges` is carried would leave revert buttons on screen that resolve
+   * to nothing, which is precisely the dead control this whole announcement
+   * mechanism exists to prevent. Both reset in `resume`/`send`.
+   */
+  const [rollbackSupport, setRollbackSupport] = React.useState<CodeRollbackSupport>({
+    announced: false,
+    paths: null,
+  });
+  const [rollbacks, setRollbacks] = React.useState<CodeRollbackRequest[]>([]);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const lastSeqRef = React.useRef(0);
@@ -217,6 +306,17 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   } | null>(null);
   const statusRef = React.useRef(status);
   statusRef.current = status;
+  /** Answer deadlines, by requestId, so a request that outlives the component
+   *  (navigate away mid-revert) does not leave a timer setting state on an
+   *  unmounted tree. Cleared together in `resetRollback` and on unmount. */
+  const rollbackTimers = React.useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const resetRollback = React.useCallback(() => {
+    for (const timer of rollbackTimers.current.values()) clearTimeout(timer);
+    rollbackTimers.current.clear();
+    setRollbackSupport({ announced: false, paths: null });
+    setRollbacks([]);
+  }, []);
 
   React.useEffect(() => {
     setMessages(opts.initialMessages);
@@ -225,6 +325,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setActiveTask(null);
     setAgents([]);
     setFileChanges([]);
+    setRollbackSupport({ announced: false, paths: null });
+    setRollbacks([]);
     lastSeqRef.current = 0;
     liveRef.current = null;
     // Session-identity reset, keyed only on conversationId — opts.initialMessages
@@ -379,6 +481,70 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             }
             break;
           }
+          case "rollback_ready": {
+            // The host declaring it can act on the rollback verbs. Until this
+            // lands the controls do not exist — see `CodeRollbackSupport`.
+            setRollbackSupport({ announced: true, paths: strList(event.payload, "paths") });
+            break;
+          }
+          case "accept_change":
+          case "reject_change":
+          case "undo_change": {
+            // Echoed back from our own POST (the route appends the verb to this
+            // same stream). Logged as an ASK, in the past tense of requesting
+            // rather than of doing: the host has not answered yet, and the two
+            // must not read alike in a transcript someone reads later.
+            const path = str(event.payload, "path");
+            live.activity.push({
+              id: `evt-${event.seq}`,
+              kind: "tool",
+              title:
+                event.kind === "undo_change"
+                  ? "Asked to undo the last turn"
+                  : event.kind === "reject_change"
+                    ? "Asked to revert a file"
+                    : "Asked to keep a file",
+              detail: path ?? undefined,
+              createdAt: event.createdAt,
+            });
+            break;
+          }
+          case "rollback_result": {
+            const requestId = str(event.payload, "requestId");
+            if (!requestId) break;
+            const raw = str(event.payload, "status");
+            const status =
+              raw === "applied" || raw === "unsupported" || raw === "failed" ? raw : "failed";
+            const paths = strList(event.payload, "paths");
+            const message = str(event.payload, "message");
+            setRollbacks((prev) =>
+              prev.map((entry) =>
+                // Only a request still waiting is updated. A late duplicate
+                // must not reopen one this client already gave up on and
+                // reported as unanswered — the reader has moved on, and a row
+                // that flips from "no answer" to "done" minutes later is worse
+                // than one that stays honest about what was known at the time.
+                entry.requestId === requestId && entry.status === "pending"
+                  ? { ...entry, status, paths, message }
+                  : entry,
+              ),
+            );
+            live.activity.push({
+              id: `evt-${event.seq}`,
+              kind: status === "applied" ? "done" : "warning",
+              title:
+                status === "applied"
+                  ? paths && paths.length > 0
+                    ? `Rolled back ${paths.length === 1 ? paths[0] : `${paths.length} files`}`
+                    : "Rolled back"
+                  : status === "unsupported"
+                    ? "Nothing to roll back"
+                    : "Rollback failed",
+              detail: message ?? undefined,
+              createdAt: event.createdAt,
+            });
+            break;
+          }
           default:
             break; // status/user/done/cancel_request carry no transcript content here
         }
@@ -436,6 +602,14 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       setPendingApproval(null);
       setActiveTask(null);
       setStatus("idle");
+      // The host holding the checkpoints has exited, so nothing can answer any
+      // more and nothing new can be asked. Anything still pending is closed as
+      // unanswered rather than left spinning, and the announcement is withdrawn
+      // so no control outlives the process that could honour it.
+      setRollbacks((prev) =>
+        prev.map((entry) => (entry.status === "pending" ? { ...entry, status: "unanswered" as const } : entry)),
+      );
+      setRollbackSupport({ announced: false, paths: null });
       if (failed && errorText) toast.error(errorText);
       opts.onActivity?.();
       notifyCodeSync(); // terminal: the sidebar's status dot is now stale
@@ -568,6 +742,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         lastSeqRef.current = 0;
         liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
         setAgents([]);
+        resetRollback();
         setActiveTask(task);
         setStatus("queued");
         opts.onActivity?.();
@@ -582,7 +757,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         return { accepted: false };
       }
     },
-    [opts, streamTask]
+    [opts, resetRollback, streamTask]
   );
 
   /** Re-attach to a task that was already running when the page loaded. */
@@ -592,11 +767,12 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       lastSeqRef.current = 0;
       liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
       setAgents([]);
+      resetRollback();
       setActiveTask(task);
       setStatus(task.status === "queued" ? "queued" : task.status === "awaiting_approval" ? "awaiting_approval" : "running");
       void streamTask(task.id);
     },
-    [streamTask]
+    [resetRollback, streamTask]
   );
 
   const cancel = React.useCallback(async () => {
@@ -635,6 +811,65 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     [activeTask, responding]
   );
 
+  /**
+   * Ask the host to keep, revert, or undo — and report only what it confirms.
+   *
+   * The POST enqueues a control event; it does NOT perform the rollback, and
+   * this deliberately never sets a status better than "pending" off a 2xx. The
+   * one thing that can move a request to "applied" is a `rollback_result` from
+   * the host itself, folded in by `applyEvents`. An earlier shape optimistically
+   * marked the file reverted on the POST's success and had to be undone: the
+   * route's own answer is `{ status: "requested" }` precisely because the
+   * machine holding the workspace has not been asked yet.
+   */
+  const requestRollback = React.useCallback(
+    async (verb: CodeRollbackVerb, path: string | null = null) => {
+      const task = activeTask;
+      if (!task) return;
+      const requestId = tempId();
+      setRollbacks((prev) => [
+        ...prev,
+        { requestId, verb, path, status: "pending", paths: null, message: null },
+      ]);
+      try {
+        const res = await fetch(`/api/code/tasks/${task.id}/rollback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ verb, requestId, ...(path ? { path } : {}) }),
+        });
+        if (!res.ok) {
+          // 409 is the run having finished between the render and the click —
+          // a race worth its own sentence, because "try again" is wrong advice
+          // for it and right for everything else here.
+          const message =
+            res.status === 409
+              ? "This run has finished, so nothing can be rolled back now."
+              : "Could not reach your host. Nothing was changed.";
+          throw new Error(message);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not send the request.";
+        setRollbacks((prev) =>
+          prev.map((entry) => (entry.requestId === requestId ? { ...entry, status: "failed", message } : entry)),
+        );
+        toast.error(message);
+        return;
+      }
+      const timer = setTimeout(() => {
+        rollbackTimers.current.delete(requestId);
+        setRollbacks((prev) =>
+          prev.map((entry) =>
+            entry.requestId === requestId && entry.status === "pending"
+              ? { ...entry, status: "unanswered" }
+              : entry,
+          ),
+        );
+      }, ROLLBACK_ANSWER_TIMEOUT_MS);
+      rollbackTimers.current.set(requestId, timer);
+    },
+    [activeTask],
+  );
+
   const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
     // A live bubble is a client-side id with no row behind it — POSTing would
     // 404. The view hides feedback for these, so reaching here means a race
@@ -665,7 +900,14 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       .catch(rollback);
   }, []);
 
-  React.useEffect(() => () => abortRef.current?.abort(), []);
+  React.useEffect(() => {
+    const timers = rollbackTimers.current;
+    return () => {
+      abortRef.current?.abort();
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   return {
     messages,
@@ -674,12 +916,15 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     pendingApproval,
     agents,
     fileChanges,
+    rollbackSupport,
+    rollbacks,
     responding,
     isBusy: status !== "idle",
     send,
     resume,
     cancel,
     respond,
+    requestRollback,
     setFeedback,
   };
 }

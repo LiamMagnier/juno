@@ -98,6 +98,14 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
         case error
         case done
         case agent
+        /// The host declaring it can act on the three rollback verbs below.
+        /// Carried so the log decodes without dropping it, not to be shown —
+        /// see `decodeEvent`.
+        case rollbackReady = "rollback_ready"
+        case acceptChange = "accept_change"
+        case rejectChange = "reject_change"
+        case undoChange = "undo_change"
+        case rollbackResult = "rollback_result"
     }
 
     public let seq: Int
@@ -734,6 +742,55 @@ public struct NativeCodeTaskClient: Sendable {
                 : String(localized: "code.event.denied")
         case .cancelRequest:
             title = String(localized: "code.event.cancel-requested")
+        /*
+         * ROLLBACK, READ THE SAME WAY IT IS READ IN THE BROWSER.
+         *
+         * An older build of this app decodes none of these: `Kind(rawValue:)`
+         * returns nil for a kind it has never heard of and `decodeEvent` drops
+         * the row, which is exactly the tolerance the new kinds rely on. Adding
+         * them here is what turns that silence into a readable line.
+         *
+         * `defaultValue:` rather than the bare `String(localized:)` the cases
+         * above use, because the string catalogue these keys belong in
+         * (native/iOS/JunoMobile/Resources/Localizable.xcstrings) is not this
+         * package's to edit. Without a default, a missing entry renders the KEY
+         * — "code.event.rollback-applied" — into the reader's log. The keys stay
+         * conventional so the catalogue entries drop in later with no code
+         * change; only the fallback lives here.
+         */
+        case .rollbackReady:
+            // Capability, not transcript. It says what the host CAN do, which
+            // is a fact about the connection rather than something that
+            // happened to the reader's files; a log line for it would be a
+            // sentence that never means anything to anyone reading back.
+            return nil
+        case .acceptChange:
+            title = String(localized: "code.event.keep-requested", defaultValue: "Keep requested")
+            detail = payload["path"]?.stringValue
+        case .rejectChange:
+            title = String(localized: "code.event.revert-requested", defaultValue: "Revert requested")
+            detail = payload["path"]?.stringValue
+        case .undoChange:
+            title = String(localized: "code.event.undo-requested", defaultValue: "Undo requested")
+        case .rollbackResult:
+            // Three outcomes, never folded into two. "Nothing to roll back" is
+            // the host saying it holds no snapshot — anything a shell command
+            // wrote is outside the checkpoint net — and reporting that as a
+            // failure would send the reader looking for a fault there is not.
+            switch payload["status"]?.stringValue {
+            case "applied":
+                title = String(localized: "code.event.rollback-applied", defaultValue: "Rolled back")
+            case "unsupported":
+                title = String(
+                    localized: "code.event.rollback-unsupported",
+                    defaultValue: "Nothing to roll back"
+                )
+            default:
+                title = String(localized: "code.event.rollback-failed", defaultValue: "Rollback failed")
+            }
+            detail =
+                payload["message"]?.stringValue
+                ?? payload["paths"]?.arrayValue?.compactMap { $0.stringValue }.joined(separator: ", ")
         case .error:
             guard let message = payload["message"]?.stringValue else { return nil }
             title = message
@@ -1077,6 +1134,16 @@ enum NativeCodeJSON: Decodable, Sendable {
 
     var objectValue: [String: NativeCodeJSON]? {
         if case .object(let value) = self { return value }
+        return nil
+    }
+
+    /// The `.array` case was decodable from the start and had no accessor, so
+    /// every payload list on this wire was unreachable. `rollback_result.paths`
+    /// is the first one that matters — without this it would have had to be
+    /// reported as a bare count, which tells the reader a rollback touched four
+    /// files and not which four.
+    var arrayValue: [NativeCodeJSON]? {
+        if case .array(let value) = self { return value }
         return nil
     }
 }

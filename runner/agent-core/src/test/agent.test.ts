@@ -113,6 +113,56 @@ test('agent loop executes tools, gates approvals, checkpoints, and undoes', asyn
   delete process.env.JUNO_HOME;
 });
 
+test('per-file rollback names files the way a caller does, and refuses the rest', async () => {
+  process.env.JUNO_HOME = tmpdir();
+  const cwd = tmpdir();
+  fs.writeFileSync(path.join(cwd, 'kept.txt'), 'before');
+  fs.writeFileSync(path.join(cwd, 'reverted.txt'), 'before');
+
+  const provider = mockProvider([
+    [
+      { type: 'tool_call', id: 'w1', name: 'write_file', input: { path: 'kept.txt', content: 'after' } },
+      { type: 'tool_call', id: 'w2', name: 'write_file', input: { path: 'reverted.txt', content: 'after' } },
+      { type: 'done', stopReason: 'tool_use', usage: { inputTokens: 1, outputTokens: 1 } },
+    ],
+    [
+      { type: 'text_delta', text: 'Both written.' },
+      { type: 'done', stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 1 } },
+    ],
+  ]);
+
+  const session = AgentSession.create({
+    provider,
+    cwd,
+    mode: 'auto-edit',
+    callbacks: { onEvent: () => {}, requestApproval: async (): Promise<ApprovalDecision> => 'allow' },
+  });
+  await session.prompt('write both files');
+
+  // Relative is how every surface names a file — the changed-files list, the
+  // `file_change` event, the diff header — so a rollback that only accepted
+  // absolute paths would have answered `unknown` for every real request.
+  assert.deepEqual(session.rollbackablePaths().sort(), ['kept.txt', 'reverted.txt']);
+  assert.equal(session.revertFile('reverted.txt'), 'restored');
+  assert.equal(fs.readFileSync(path.join(cwd, 'reverted.txt'), 'utf8'), 'before');
+  assert.equal(fs.readFileSync(path.join(cwd, 'kept.txt'), 'utf8'), 'after');
+
+  // A path outside the workspace has no snapshot, because snapshots are only
+  // taken after the tool call's own containment assertion passes. So the guard
+  // here is a FACT about the index rather than a second string comparison — and
+  // the file is not touched, whatever it is.
+  const outside = path.join(tmpdir(), 'not-ours.txt');
+  fs.writeFileSync(outside, 'untouched');
+  assert.equal(session.revertFile(outside), 'unknown');
+  assert.equal(fs.readFileSync(outside, 'utf8'), 'untouched');
+
+  // Keeping the survivor exempts it from the whole-turn undo that follows.
+  assert.equal(session.keepFile('kept.txt'), true);
+  session.undoLastTurn();
+  assert.equal(fs.readFileSync(path.join(cwd, 'kept.txt'), 'utf8'), 'after');
+  delete process.env.JUNO_HOME;
+});
+
 test('plan mode denies mutating tools and tells the model why', async () => {
   process.env.JUNO_HOME = tmpdir();
   const cwd = tmpdir();

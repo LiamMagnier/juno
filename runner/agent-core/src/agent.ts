@@ -15,7 +15,7 @@ import { assertContainedPath } from './tools/fs.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import type { ContainerSandboxConfig } from './tools/container-sandbox.js';
 import { PermissionEngine, classifyRisk } from './permissions.js';
-import { CheckpointStore } from './checkpoints.js';
+import { CheckpointStore, type FileRollback } from './checkpoints.js';
 import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
 import type { UsageReporter } from './usage.js';
@@ -431,6 +431,75 @@ export class AgentSession {
   /** Rewind the workspace to its state before the given turn. */
   rewindToTurn(turnIndex: number): string[] {
     return this.checkpoints.restoreToBefore(turnIndex);
+  }
+
+  /**
+   * The one key a checkpoint is stored under, for a path named any of the ways
+   * a caller might name it. Null when the path is outside the workspace.
+   *
+   * `path.resolve(this.cwd, p)` was the obvious implementation and it was
+   * wrong: the snapshot writer keys entries by `assertContainedPath`'s CANONICAL
+   * path, which realpaths the workspace root, so on any machine whose workspace
+   * sits under a symlink the two spellings never met. macOS makes that the
+   * default rather than the exception — a run in `/var/folders/…` snapshots
+   * `/private/var/folders/…` — so every revert on a temp-dir workspace (which
+   * is exactly what the cloud runner clones into) answered `unknown` for files
+   * it was holding a perfectly good snapshot of.
+   *
+   * Sharing the writer's own function is what makes the keys agree by
+   * construction rather than by two implementations staying in step. Its throw
+   * on an escaping path is a bonus, not the guard: see `revertFile`.
+   */
+  private checkpointKey(filePath: string): string | null {
+    try {
+      return assertContainedPath({ cwd: this.cwd }, filePath);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Undo what this session did to ONE file, named the way a caller names files:
+   * relative to the workspace, or absolute.
+   *
+   * WHAT ACTUALLY PROTECTS THE DISK IS THE INDEX, not the path check. A path is
+   * only ever reverted if the store took a snapshot of it, and snapshots are
+   * taken exclusively in `executeToolCall`, after that call's own containment
+   * assertion passed. So an uncontained path has no snapshot and comes back
+   * `unknown` even if the containment check above were removed entirely — no
+   * write, no delete, no lie.
+   *
+   * `unknown` is also the honest answer for a file bash wrote: bash mutations
+   * are outside the snapshot net (see CheckpointStore), so this cannot undo
+   * them and must not say it did. Callers have to pass that third outcome
+   * through to the reader rather than folding it into a failure — "there is no
+   * undo for this file" and "the undo failed" send someone to different places.
+   */
+  revertFile(filePath: string): FileRollback {
+    const key = this.checkpointKey(filePath);
+    return key === null ? 'unknown' : this.checkpoints.revertFile(key);
+  }
+
+  /** Pin one file's changes so no later undo/rewind reverts it. False when the
+   *  store never snapshotted the path — nothing to keep, and saying otherwise
+   *  would promise protection from a rewind that was never going to touch it. */
+  keepFile(filePath: string): boolean {
+    const key = this.checkpointKey(filePath);
+    return key === null ? false : this.checkpoints.keepFile(key);
+  }
+
+  /**
+   * Workspace-relative paths that still have an undo behind them. What a
+   * surface may offer a revert control for, and nothing else.
+   *
+   * Relative to the REALPATHED root for the same reason `checkpointKey` exists:
+   * the stored keys are canonical, so relativising them against the raw `cwd`
+   * emitted a ladder of `../../..` instead of `src/foo.ts` on every symlinked
+   * workspace — paths no surface could match against its own file list.
+   */
+  rollbackablePaths(): string[] {
+    const root = fs.realpathSync(this.cwd);
+    return this.checkpoints.snapshottedPaths().map((abs) => path.relative(root, abs));
   }
 
   diffSinceTurn(turnIndex = 0): string {

@@ -10,6 +10,24 @@ interface CheckpointIndexEntry {
 }
 
 /**
+ * What a single-file rollback actually did to the working tree.
+ *
+ * Three outcomes, not a boolean, because "the file is gone now" and "the file
+ * holds its old bytes now" are different things to report and the caller has to
+ * be able to say which happened. `deleted` is the `null`-snapshot case — the
+ * file did not exist before the turn that created it, so undoing that turn
+ * means REMOVING it. Writing an empty file instead (the obvious shortcut when
+ * `null` is read as "empty content") leaves a zero-byte stub behind that the
+ * build then trips over, and the reader is told the change was undone.
+ *
+ * `unknown` means no snapshot was ever taken for this path: either nothing
+ * wrote it, or it was written by bash, which is outside the snapshot net (see
+ * the class docstring). Callers MUST surface that as "cannot undo this" rather
+ * than as success — the whole point of the third outcome.
+ */
+export type FileRollback = 'restored' | 'deleted' | 'unknown';
+
+/**
  * Per-turn file snapshots. Before the agent mutates a file through write/edit
  * tools, the original content is saved; this powers undo-last-turn, rewind to
  * any earlier turn, and diff-since-turn. Bash-driven mutations are outside the
@@ -94,6 +112,101 @@ export class CheckpointStore {
     this.index = this.index.filter((e) => e.turnIndex < turnIndex);
     this.save();
     return restored;
+  }
+
+  /**
+   * Every path this store could still roll back, cheapest possible answer to
+   * "which of the files on screen have an undo behind them".
+   *
+   * A caller that instead asked `changedPaths(lastTurn)` would get the paths of
+   * ONE turn and quietly offer nothing for a file written two turns ago, which
+   * is the bug this exists to prevent: the rollback surface has to agree with
+   * what `revertFile` will accept, and that is the union across turns.
+   */
+  snapshottedPaths(): string[] {
+    const seen = new Set<string>();
+    for (const entry of this.index) {
+      for (const abs of Object.keys(entry.files)) seen.add(abs);
+    }
+    return [...seen];
+  }
+
+  /**
+   * Restore ONE file to the state it had before the earliest turn that touched
+   * it, leaving every other file this session wrote exactly as it is.
+   *
+   * The EARLIEST snapshot, not the latest, and that choice is the whole
+   * semantics: a file written in turn 1 and rewritten in turn 3 has two
+   * snapshots, and reverting to the turn-3 one would hand back the turn-1
+   * agent's output as though it were the reader's own file. "Undo what the
+   * agent did to this file" can only mean the state before the agent first
+   * touched it — the same rule `restoreToBefore` already applies per path.
+   *
+   * Feasible at all only because the index is a per-file map rather than a
+   * per-turn blob: the entry that holds the whole turn also holds each path's
+   * own snapshot, so one path can be lifted out of it without disturbing the
+   * others.
+   */
+  revertFile(absPath: string): FileRollback {
+    const snapshot = this.earliestSnapshot(absPath);
+    if (snapshot === undefined) return 'unknown';
+    let outcome: FileRollback;
+    if (snapshot === null) {
+      if (fs.existsSync(absPath)) fs.rmSync(absPath);
+      outcome = 'deleted';
+    } else {
+      fs.mkdirSync(path.dirname(absPath), { recursive: true });
+      fs.copyFileSync(path.join(this.dir, snapshot), absPath);
+      outcome = 'restored';
+    }
+    // The file now holds its pre-agent bytes, so it has nothing left to undo.
+    // Leaving the snapshots in place would be harmless on disk (a later
+    // `restoreToBefore` would copy identical bytes over identical bytes) and
+    // wrong on screen: `snapshottedPaths` would keep offering an undo for a
+    // file already undone, and pressing it a second time would report success
+    // for a no-op.
+    this.forget(absPath);
+    return outcome;
+  }
+
+  /**
+   * Keep this file's changes for good: drop its snapshots so no later rollback
+   * — including a whole-turn `restoreToBefore` — will touch it.
+   *
+   * The counterpart to `revertFile`, and it is a real state change rather than
+   * a UI flag, which is why it lives here. "Undo the turn but keep this one
+   * file" has no other implementation: the turn rewind walks the index, so the
+   * only way to exempt a path from it is to take the path out of the index.
+   * Returns false when there was nothing to keep, so a caller never reports
+   * having pinned a file the store never held.
+   */
+  keepFile(absPath: string): boolean {
+    if (this.earliestSnapshot(absPath) === undefined) return false;
+    this.forget(absPath);
+    return true;
+  }
+
+  /** The snapshot name recorded by the earliest turn that touched `absPath`
+   *  (`null` = did not exist), or `undefined` when no turn ever touched it.
+   *  Three-valued on purpose: `null` is a real recorded state, not an absence. */
+  private earliestSnapshot(absPath: string): string | null | undefined {
+    let best: { turnIndex: number; snapshot: string | null } | undefined;
+    for (const entry of this.index) {
+      if (!(absPath in entry.files)) continue;
+      if (!best || entry.turnIndex < best.turnIndex) {
+        best = { turnIndex: entry.turnIndex, snapshot: entry.files[absPath] };
+      }
+    }
+    return best ? best.snapshot : undefined;
+  }
+
+  /** Remove a path from every turn's map and persist. The snapshot FILES are
+   *  deliberately left on disk: they are small, they are cleaned up with the
+   *  session directory, and unlinking them here would make a half-failed
+   *  rollback unrecoverable rather than merely repeatable. */
+  private forget(absPath: string): void {
+    for (const entry of this.index) delete entry.files[absPath];
+    this.save();
   }
 
   /** Unified diff of everything changed since (and including) `turnIndex`. */

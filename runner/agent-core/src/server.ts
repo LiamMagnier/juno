@@ -188,6 +188,48 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
           case 'undo':
             send({ type: 'undo_result', restored: session?.undoLastTurn() ?? [] });
             break;
+          /*
+           * PER-FILE ROLLBACK, and why it is two verbs rather than a flag on
+           * `undo`.
+           *
+           * `undo` pops the last turn wholesale; these two act on one path and
+           * leave every other file alone, which is a different question with a
+           * different failure mode. Folding them into `undo` with an optional
+           * `path` would have meant a host that sent a path an OLD server did
+           * not read got a WHOLE-TURN rewind instead of a one-file one — the
+           * worst possible mistranslation, since it silently reverts work the
+           * reader asked to keep. A verb an old server does not know falls
+           * through to `protocol_error` and changes nothing.
+           *
+           * `outcome` is echoed verbatim rather than reduced to ok/failed: the
+           * caller has to be able to tell "put back", "removed because it did
+           * not exist before" and "no snapshot, so nothing was done" apart, and
+           * only the last of those means the reader must not be shown success.
+           */
+          case 'revert_file': {
+            const file = String(msg.path ?? '');
+            send({
+              type: 'revert_result',
+              path: file,
+              outcome: file && session ? session.revertFile(file) : 'unknown',
+            });
+            break;
+          }
+          case 'keep_file': {
+            const file = String(msg.path ?? '');
+            send({
+              type: 'keep_result',
+              path: file,
+              kept: Boolean(file && session?.keepFile(file)),
+            });
+            break;
+          }
+          /** What a surface may offer a revert control for — nothing else has
+           *  an undo behind it, and offering one anyway is how a button that
+           *  reports success on a file it cannot touch gets shipped. */
+          case 'rollbackable':
+            send({ type: 'rollbackable', paths: session?.rollbackablePaths() ?? [] });
+            break;
           case 'diff':
             send({ type: 'diff', patch: session?.diffSinceTurn(Number(msg.sinceTurn ?? 0)) ?? '' });
             break;

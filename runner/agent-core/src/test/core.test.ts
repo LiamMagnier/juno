@@ -189,6 +189,104 @@ test('checkpoints: snapshot, diff, rollback across turns', () => {
   assert.equal(fs.readFileSync(file, 'utf8'), 'v0');
 });
 
+test('checkpoints: revertFile takes back one file and leaves its neighbours', () => {
+  const cwd = tmpdir();
+  const sessionDir = tmpdir();
+  const cp = new CheckpointStore(sessionDir);
+  const edited = path.join(cwd, 'edited.txt');
+  const untouched = path.join(cwd, 'untouched.txt');
+
+  fs.writeFileSync(edited, 'original');
+  fs.writeFileSync(untouched, 'also original');
+  cp.snapshot(0, edited);
+  fs.writeFileSync(edited, 'turn 0 output');
+  cp.snapshot(0, untouched);
+  fs.writeFileSync(untouched, 'turn 0 output too');
+
+  // A SECOND snapshot of the same file, one turn later. The earliest one has to
+  // win: restoring the turn-1 snapshot would hand back turn 0's output as
+  // though it were the reader's file.
+  cp.snapshot(1, edited);
+  fs.writeFileSync(edited, 'turn 1 output');
+
+  assert.equal(cp.revertFile(edited), 'restored');
+  assert.equal(fs.readFileSync(edited, 'utf8'), 'original');
+  assert.equal(fs.readFileSync(untouched, 'utf8'), 'turn 0 output too');
+
+  // Reverted once is reverted for good: the path leaves the index, so it is no
+  // longer offered and a second press cannot report success for a no-op.
+  assert.ok(!cp.snapshottedPaths().includes(edited));
+  assert.equal(cp.revertFile(edited), 'unknown');
+});
+
+test('checkpoints: reverting a file the turn CREATED deletes it', () => {
+  const cwd = tmpdir();
+  const cp = new CheckpointStore(tmpdir());
+  const created = path.join(cwd, 'nested', 'created.txt');
+
+  fs.mkdirSync(path.dirname(created), { recursive: true });
+  cp.snapshot(0, created); // null snapshot — the file does not exist yet
+  fs.writeFileSync(created, 'brand new');
+
+  assert.equal(cp.revertFile(created), 'deleted');
+  // Not a zero-byte stub. Writing empty content for a null snapshot is the
+  // shortcut this asserts against: the build would then trip over a file the
+  // reader was told had been undone.
+  assert.ok(!fs.existsSync(created));
+});
+
+test('checkpoints: a file nothing snapshotted cannot be reverted or kept', () => {
+  const cwd = tmpdir();
+  const cp = new CheckpointStore(tmpdir());
+  const byBash = path.join(cwd, 'written-by-bash.txt');
+  fs.writeFileSync(byBash, 'bash wrote this');
+
+  // Bash mutations are outside the snapshot net, so this is the shape every
+  // bash-written file arrives in. `unknown` — and the file is left ALONE.
+  assert.equal(cp.revertFile(byBash), 'unknown');
+  assert.equal(fs.readFileSync(byBash, 'utf8'), 'bash wrote this');
+  assert.equal(cp.keepFile(byBash), false);
+});
+
+test('checkpoints: keepFile exempts one file from a whole-turn rewind', () => {
+  const cwd = tmpdir();
+  const cp = new CheckpointStore(tmpdir());
+  const pinned = path.join(cwd, 'pinned.txt');
+  const other = path.join(cwd, 'other.txt');
+
+  fs.writeFileSync(pinned, 'before');
+  fs.writeFileSync(other, 'before');
+  cp.snapshot(0, pinned);
+  cp.snapshot(0, other);
+  fs.writeFileSync(pinned, 'after');
+  fs.writeFileSync(other, 'after');
+
+  assert.equal(cp.keepFile(pinned), true);
+  cp.restoreToBefore(0);
+  assert.equal(fs.readFileSync(pinned, 'utf8'), 'after', 'kept file survives the rewind');
+  assert.equal(fs.readFileSync(other, 'utf8'), 'before');
+});
+
+test('checkpoints: the rollbackable set survives a reopen of the store', () => {
+  const cwd = tmpdir();
+  const sessionDir = tmpdir();
+  const file = path.join(cwd, 'a.txt');
+  fs.writeFileSync(file, 'v0');
+
+  const first = new CheckpointStore(sessionDir);
+  first.snapshot(0, file);
+  fs.writeFileSync(file, 'v1');
+  first.keepFile(file);
+
+  // A host that restarts mid-session rebuilds the store from index.json. If
+  // `keepFile` only mutated memory, the reopened store would offer — and
+  // perform — a revert the reader had already declined.
+  const reopened = new CheckpointStore(sessionDir);
+  assert.deepEqual(reopened.snapshottedPaths(), []);
+  assert.equal(reopened.revertFile(file), 'unknown');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'v1');
+});
+
 test('session store: create, persist, list, resume', () => {
   process.env.JUNO_HOME = tmpdir();
   const store = SessionStore.create({ cwd: '/tmp', provider: 'anthropic', model: 'm', mode: 'ask' });

@@ -15,7 +15,7 @@ export { BackendUsageReporter, type UsageReporter, type BackendUsageConfig } fro
 export * from './tools/types.js';
 export { defaultTools } from './tools/registry.js';
 export { PermissionEngine, classifyRisk, classifySensitiveCommand, loadProjectRules } from './permissions.js';
-export { CheckpointStore } from './checkpoints.js';
+export { CheckpointStore, type FileRollback } from './checkpoints.js';
 export { SessionStore, junoHome, sessionsDir } from './session.js';
 export { AgentSession, type AgentCallbacks, type AgentOptions } from './agent.js';
 export { runAgentLoop, type AgentLoopOptions, type AgentLoopResult } from './loop.js';
