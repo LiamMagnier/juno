@@ -282,6 +282,24 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     /// US dollars, estimated by the server from the exact streamed usage
     /// (cache buckets included). Never computed here.
     public let costUsd: Double?
+    /// Prompt-cache tokens the provider reported for this turn: a read is a hit
+    /// on an existing prefix (~0.1x input), a write is the creation of one.
+    ///
+    /// LIVE-ONLY, and `nil` is not zero. The server carries these on the `done`
+    /// frame from the in-flight accumulator; `Message` has no column for either,
+    /// so the same message re-read after a sync comes back without them. A
+    /// reader that showed absent as 0 would report every reloaded turn as a
+    /// total cache miss, which is the opposite of what happened.
+    public let cacheReadTokens: Int?
+    public let cacheWriteTokens: Int?
+
+    /// The share of this turn's input that was served from cache, or nil when
+    /// the split is unknown. Guards the divide: a turn with no prompt tokens
+    /// has no ratio rather than a 0 that reads as a miss.
+    public var cacheHitRate: Double? {
+        guard let cacheReadTokens, let promptTokens, promptTokens > 0 else { return nil }
+        return min(1, Double(cacheReadTokens) / Double(promptTokens))
+    }
 
     public init(
         id: String,
@@ -293,7 +311,9 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         finishReason: NativeChatFinishReason,
         promptTokens: Int? = nil,
         completionTokens: Int? = nil,
-        costUsd: Double? = nil
+        costUsd: Double? = nil,
+        cacheReadTokens: Int? = nil,
+        cacheWriteTokens: Int? = nil
     ) {
         self.id = id
         self.content = content
@@ -305,6 +325,8 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.costUsd = costUsd
+        self.cacheReadTokens = cacheReadTokens
+        self.cacheWriteTokens = cacheWriteTokens
     }
 }
 
@@ -1147,7 +1169,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 finishReason: reason,
                 promptTokens: message.promptTokens,
                 completionTokens: message.completionTokens,
-                costUsd: message.costUsd
+                costUsd: message.costUsd,
+                cacheReadTokens: message.cacheReadTokens,
+                cacheWriteTokens: message.cacheWriteTokens
             ))
         case "error":
             guard let message = envelope.messageText ?? envelope.error,
@@ -1569,6 +1593,10 @@ private struct EventEnvelopeWire: Decodable {
         let promptTokens: Int?
         let completionTokens: Int?
         let costUsd: Double?
+        /// Only the live `done` frame carries these; a persisted row has no
+        /// column for them, so they stay optional rather than defaulting to 0.
+        let cacheReadTokens: Int?
+        let cacheWriteTokens: Int?
     }
     let type: String
     let conversationId: String?

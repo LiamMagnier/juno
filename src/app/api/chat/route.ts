@@ -226,6 +226,25 @@ function privateAssistantMessage(
     promptTokens: usage.totalInput || undefined,
     completionTokens: usage.output || undefined,
     costUsd: usage.cost || undefined,
+    ...cacheTokenFields(acc),
+  };
+}
+
+/**
+ * The prompt-cache split for the `done` frame.
+ *
+ * Lives only on the live frame because `Message` has no column for either
+ * counter — `recordSpend` is where they are durably kept. Absent when the
+ * provider reported nothing, so a client can tell "no cache" apart from
+ * "this build/provider does not report it"; emitting 0 would assert a miss.
+ */
+function cacheTokenFields(acc: GenerationAccumulator): {
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+} {
+  return {
+    cacheReadTokens: acc.tokens.cacheReadTokens,
+    cacheWriteTokens: acc.tokens.cacheWriteTokens,
   };
 }
 
@@ -2220,7 +2239,7 @@ async function handleChat(req: Request) {
           type: "done",
           // The visible cost covers the WHOLE research run: planning (billed
           // inside runDeepResearch) + this synthesis. Zero for normal chat.
-          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined },
+          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined, ...cacheTokenFields(acc) },
           artifacts,
           memoryUpdated,
           quota: consumed.quota,
@@ -2331,7 +2350,7 @@ async function handleChat(req: Request) {
             }
             send({
               type: "done",
-              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
+              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined, ...cacheTokenFields(acc) },
               artifacts,
               memoryUpdated: false,
               quota: consumed.quota,

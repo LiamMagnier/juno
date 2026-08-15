@@ -84,6 +84,20 @@ export interface ClientMessage {
   completionTokens?: number | null;
   /** Estimated USD cost of this generation (approximate, shown as "~$…"). */
   costUsd?: number | null;
+  /**
+   * Prompt-cache buckets for this generation, as the provider reported them.
+   *
+   * LIVE-ONLY. These ride the `done` frame, where the accumulator still holds
+   * them; `Message` has no column for either, so a message read back from the
+   * database carries `promptTokens`/`completionTokens`/`costUsd` but NOT this
+   * split. A client must therefore treat absent as "unknown", never as zero —
+   * a reloaded transcript would otherwise claim every turn was a cache miss.
+   *
+   * `cacheReadTokens` is a hit (billed ~0.1x input); `cacheWriteTokens` is the
+   * creation of a new prefix (Anthropic only, billed 1.25x/2x by TTL).
+   */
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
 }
 
 export interface ClientSource {

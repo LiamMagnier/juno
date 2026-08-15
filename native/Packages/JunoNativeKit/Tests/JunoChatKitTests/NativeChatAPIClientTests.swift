@@ -96,6 +96,67 @@ final class NativeChatAPIClientTests: XCTestCase {
         XCTAssertEqual(object["reasoningEffort"] as? String, "high")
     }
 
+    /// The prompt-cache split rides the live `done` frame — the server reads it
+    /// off the in-flight accumulator, because `Message` has no column for it.
+    func testDoneFrameCarriesThePromptCacheSplit() async throws {
+        let body = """
+        data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Hi","reasoning":null,"model":"anthropic:claude-opus-5","createdAt":"2026-07-22T00:02:00.000Z","sources":[],"promptTokens":12000,"completionTokens":300,"costUsd":0.0182,"cacheReadTokens":9600,"cacheWriteTokens":1400},"finishReason":"stop"}
+
+        """
+        let streamer = ChatQueueStreamer(responses: [streamResponse(body)])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        let stream = try await client.generationEvents(
+            NativeChatGenerationRequest(
+                conversationID: "conv_12345678",
+                modelID: "anthropic:claude-opus-5",
+                reasoningEffort: .high,
+                generationID: "juno-native-generation-1"
+            ),
+            for: accountID
+        )
+        var events: [NativeChatServerEvent] = []
+        for try await event in stream { events.append(event) }
+
+        guard case .completed(let completed) = events.last else {
+            return XCTFail("Expected the authoritative done frame")
+        }
+        XCTAssertEqual(completed.promptTokens, 12_000)
+        XCTAssertEqual(completed.cacheReadTokens, 9_600)
+        XCTAssertEqual(completed.cacheWriteTokens, 1_400)
+        XCTAssertEqual(try XCTUnwrap(completed.cacheHitRate), 0.8, accuracy: 1e-9)
+    }
+
+    /// A persisted message re-read after a sync has no cache columns. Absent has
+    /// to stay absent: rendering it as 0 would report a cache miss that never
+    /// happened, and every older server sends exactly this shape.
+    func testADoneFrameWithoutCacheFieldsLeavesThemUnknown() async throws {
+        let body = """
+        data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Hi","reasoning":null,"model":"openai:gpt-5","createdAt":"2026-07-22T00:02:00.000Z","sources":[],"promptTokens":900,"completionTokens":100},"finishReason":"stop"}
+
+        """
+        let streamer = ChatQueueStreamer(responses: [streamResponse(body)])
+        let client = NativeChatAPIClient(sender: ChatQueueSender(), streamer: streamer)
+        let stream = try await client.generationEvents(
+            NativeChatGenerationRequest(
+                conversationID: "conv_12345678",
+                modelID: "openai:gpt-5",
+                reasoningEffort: .high,
+                generationID: "juno-native-generation-1"
+            ),
+            for: accountID
+        )
+        var events: [NativeChatServerEvent] = []
+        for try await event in stream { events.append(event) }
+
+        guard case .completed(let completed) = events.last else {
+            return XCTFail("Expected the authoritative done frame")
+        }
+        XCTAssertEqual(completed.promptTokens, 900)
+        XCTAssertNil(completed.cacheReadTokens)
+        XCTAssertNil(completed.cacheWriteTokens)
+        XCTAssertNil(completed.cacheHitRate)
+    }
+
     func testStreamWithoutTerminalFrameRequiresSyncRecoveryInsteadOfRepost() async throws {
         let streamer = ChatQueueStreamer(responses: [streamResponse(
             "data: {\"type\":\"delta\",\"text\":\"Partial\"}\n\n"
