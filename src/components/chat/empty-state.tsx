@@ -67,13 +67,13 @@ export function EmptyGreeting() {
             // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
             // where it was and grows only the hit area around it, so nothing
             // moves and the button becomes tappable.
-            "grid size-6 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in sm:size-7",
+            "grid size-7 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in sm:size-8",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "block h-[1.2rem] w-[1.2rem] sm:h-[1.5rem] sm:w-[1.5rem]",
+              "block h-[1.4rem] w-[1.4rem] sm:h-[1.75rem] sm:w-[1.75rem]",
               "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
               !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
@@ -81,7 +81,7 @@ export function EmptyGreeting() {
         </button>
       </div>
       <h1
-        className="empty-greeting text-center font-serif text-[1.65rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2rem]"
+        className="empty-greeting text-center font-serif text-[1.95rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2.45rem]"
         suppressHydrationWarning
       >
         {/* The greeting and the name rise as two beats rather than one block.

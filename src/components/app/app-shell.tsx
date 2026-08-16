@@ -271,7 +271,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         id="juno-main"
         tabIndex={-1}
-        className="app-main-canvas flex min-w-0 flex-1 flex-col"
+        className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
         style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >
         {/* Mobile navigation stays out of a full-width toolbar. Each action is a

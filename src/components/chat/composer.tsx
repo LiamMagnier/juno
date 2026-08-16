@@ -2483,13 +2483,9 @@ export function Composer({
         </div>
       </div>
       </div>
-      {/* Full-opacity token: /45 computed to ~2:1, and this is the line that
-          tells people the model can be wrong — the one disclaimer that has to
-          be readable. text-micro is the legibility floor the 10px it replaces
-          sat just under. */}
-      {!hideDisclaimer && (
+      {!hideDisclaimer && privateMode && (
         <p className="mt-2 text-center text-micro text-muted-foreground">
-          {privateMode ? "Incognito chats are not saved or added to memory." : "Juno can be wrong — worth a second look on anything that matters."}
+          Incognito chats are not saved or added to memory.
         </p>
       )}
     </div>

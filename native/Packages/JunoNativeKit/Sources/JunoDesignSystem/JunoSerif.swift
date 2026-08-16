@@ -83,15 +83,15 @@ public enum JunoSerif {
     }
 
     /// The home greeting — the largest expressive type in the product.
-    /// Mirrors the web's `text-[1.7rem]` / `sm:text-[2.35rem]` pair.
+    /// Mirrors the web's `text-[1.95rem]` / `sm:text-[2.45rem]` pair.
     public static func greeting(compact: Bool = false) -> Font {
-        font(size: compact ? 27 : 38, relativeTo: .largeTitle)
+        font(size: compact ? 30 : 42, relativeTo: .largeTitle)
     }
 
     /// The greeting's trailing first name: medium italic, as on the web
     /// (`font-medium italic text-primary`). Colour is applied by the caller.
     public static func greetingName(compact: Bool = false) -> Font {
-        font(size: compact ? 27 : 38, relativeTo: .largeTitle, face: .mediumItalic)
+        font(size: compact ? 30 : 42, relativeTo: .largeTitle, face: .mediumItalic)
     }
 
     /// A page heading: a project's name, an editorial section title.

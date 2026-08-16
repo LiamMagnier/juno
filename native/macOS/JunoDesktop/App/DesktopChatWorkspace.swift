@@ -932,9 +932,6 @@ struct DesktopConversationView: View {
             composer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            DesktopChatDisclaimer()
-        }
         // The field behind the whole column — the conversation and the composer
         // both — scoped to it, so the sidebar is never washed by it.
         .junoVoiceField(voiceColumn)
@@ -970,10 +967,7 @@ struct DesktopConversationView: View {
             openArtifact: open(artifact:)
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                composer
-                DesktopChatDisclaimer()
-            }
+            composer
             // The docked bloom — a third of the light, short enough to pool
             // around the capsule instead of washing up the transcript. Suppressed
             // during a call: the voice field below already lights this column,

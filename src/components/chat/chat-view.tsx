@@ -1992,13 +1992,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 {composer}
               </div>
-              <p className="shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground">
-                {forkedFrom
-                  ? "This branch isn't saved — it continues from the fork point with full context."
-                  : privateMode
-                    ? "Incognito chats are not saved or added to memory."
-                    : "Juno can be wrong — worth a second look on anything that matters."}
-              </p>
+              {(forkedFrom || privateMode) && (
+                <p className="shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground">
+                  {forkedFrom
+                    ? "This branch isn't saved — it continues from the fork point with full context."
+                    : "Incognito chats are not saved or added to memory."}
+                </p>
+              )}
             </div>
           ) : (
             // Empty / greeting view. overflow-x-clip so the composer aura, which
@@ -2089,16 +2089,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   </div>
                 </div>
               </div>
-
-              {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
-              <p
-                className={cn(
-                  "shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground transition-opacity duration-slow ease-out-soft",
-                  privateMode ? "pointer-events-none opacity-0" : "opacity-100"
-                )}
-              >
-                Juno can be wrong — worth a second look on anything that matters.
-              </p>
             </div>
           )}
         </div>

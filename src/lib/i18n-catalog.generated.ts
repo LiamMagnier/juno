@@ -16838,10 +16838,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Checking citations…"
   },
   {
-    "id": "fedbf8833875004d",
-    "source": "Juno can be wrong — worth a second look on anything that matters."
-  },
-  {
     "id": "feeb112480fc7896",
     "source": "DeepSeek V4 Pro"
   },
