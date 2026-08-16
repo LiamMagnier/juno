@@ -7746,6 +7746,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "clientRequestId and clientMessageId must be provided together"
   },
   {
+    "id": "7602c69b7b58183f",
+    "source": "Work on anything..."
+  },
+  {
     "id": "760547f8e8d88834",
     "source": "Add a file, an app or a skill to this task"
   },
@@ -12134,10 +12138,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "One prompt ·"
   },
   {
-    "id": "b99393fe85e02884",
-    "source": "Describe the task — what you want done, and what “done” looks like"
-  },
-  {
     "id": "b994278263e7906e",
     "source": "replies"
   },
@@ -15320,6 +15320,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7ae715d21b12b54",
     "source": "signin"
+  },
+  {
+    "id": "e7b1ec5407e2b582",
+    "source": "Choose project"
   },
   {
     "id": "e7b89d41bbc32cf6",

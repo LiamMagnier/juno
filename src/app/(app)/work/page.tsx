@@ -88,7 +88,7 @@ export default function WorkHomePage() {
 function InboxSkeleton() {
   return (
     <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
         <div className="mb-7 flex justify-center">
           <WorkNav />
         </div>
@@ -280,7 +280,7 @@ function WorkInbox() {
 
   return (
     <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
         {/* Schedules, skills and permissions live under /work and are reached
             from here rather than from the app sidebar: the sidebar is the switch
             between products, and four Work-internal destinations in it would

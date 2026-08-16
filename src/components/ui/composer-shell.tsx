@@ -112,9 +112,9 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
          * it belongs in the radius ladder as its own rung, not as a utility that
          * quietly overrides the semantic one from a breakpoint up.
          */
-        "composer-surface relative flex w-full flex-col rounded-composer border border-border/80 bg-card",
+        "composer-surface relative flex w-full flex-col rounded-composer border border-border/80 bg-card/95 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)]",
         "transition-[border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none",
-        "focus-within:border-foreground/25",
+        "focus-within:border-foreground/25 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:focus-within:shadow-[0_6px_28px_rgba(0,0,0,0.4)]",
         className
       )}
       {...props}
@@ -129,49 +129,19 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
       <div ref={fieldTierRef} className="relative flex w-full min-w-0 flex-col">
         {above}
         {field}
-        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">{controls}</div>
+        <div className="flex flex-nowrap items-center justify-between gap-1.5 px-3 pb-2.5 pt-0.5 sm:px-3.5 sm:pb-3">{controls}</div>
       </div>
 
       {/*
        * The hairline belongs to the strip, not to the shell. Hanging it off the
        * shell's bottom edge would leave a rule under the control row on every
        * one-tier surface — a composer that looks cut off mid-component.
-       *
-       * Quieter than the inline row on three axes at once, because one is not
-       * enough to read as a different tier: recessed fill, caption-sized muted
-       * type, and less vertical room. Children inherit the size and colour, so
-       * a plain <span> lands in the right register and only real controls
-       * (Pressable, Button) climb back out of it.
-       *
-       * `rounded-b-inherit` rather than repeating the shell's radius: the shell
-       * cannot carry `overflow-hidden` (the palette above the field is a child
-       * and would be clipped), so the fill has to trace the corners itself —
-       * and inheriting means it still traces them when a host overrides the
-       * shell radius through `className`, which the Work thread composer does.
        */}
       {utility ? (
         <div
           role="group"
           aria-label={utilityLabel}
-          /*
-           * The recessed fill is `bg-background`, not `bg-muted`, and the
-           * direction is the reason. A recess has to be DARKER than the surface
-           * it is cut into, in both themes. On paper --muted (95%) does darken
-           * the card (99%) and the /25 read as intended; on dark --muted is 9.5%
-           * against a 6.5% card, so the strip came out LIGHTER than the composer
-           * body and the quieter tier was the brighter one. --background is
-           * below the card in both ramps — 97 vs 99 on paper, 0 vs 6.5 on black
-           * — so it recesses either way.
-           *
-           * The alpha is gone, and light is why. --card and --background are two
-           * points apart on paper, so ANY discount below 1 spends the whole
-           * budget: at /40 the strip composited to 98.2% against a 99% card — a
-           * 0.8-point step, i.e. a tier that is not drawn. At full strength the
-           * step is the same 2 points that separates a `field-well` from the
-           * card it sits in, which is the relationship this strip is: a tray cut
-           * into the composer, fenced by its own hairline and the shell's border.
-           */
-          className="flex min-w-0 flex-nowrap items-center gap-1 rounded-b-inherit border-t border-border/60 bg-background px-2 py-1.5 text-caption text-muted-foreground sm:px-2.5"
+          className="flex min-w-0 flex-nowrap items-center justify-between gap-2 rounded-b-inherit border-t border-border/50 bg-muted/15 px-3.5 py-2 text-caption text-muted-foreground sm:px-4"
         >
           {utility}
         </div>

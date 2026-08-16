@@ -164,7 +164,7 @@ export function ProjectChip({
             aria-hidden="true"
           />
           <span className={cn("truncate", !selected && "text-muted-foreground")}>
-            {selected?.name ?? "Project"}
+            {selected?.name ?? "Choose project"}
           </span>
           <ChevronDown
             className="size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"

@@ -1005,30 +1005,19 @@ export function WorkComposer({
                 onKeyDown={onKeyDown}
                 rows={1}
                 disabled={submitting}
-                placeholder="Describe the task — what you want done, and what “done” looks like"
+                placeholder="Work on anything..."
                 aria-label="Describe the task for Juno to carry out"
-                // `text-body` and 4px-grid padding. The field carried three
-                // arbitrary values — text-[1rem], sm:px-[18px], sm:pt-[17px] —
-                // and that 17/18px half-step matched nothing else in the shell,
-                // whose controls row sits on px-2/2.5 and its chip strip on px-3/3.5.
-                className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4 sm:pt-4"
+                className="max-h-[220px] min-h-[72px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/60 disabled:opacity-70 sm:px-4.5 sm:pt-4.5"
               />
             }
             /*
              * ── The inline row: what you do to THIS message ────────────────
              * Attach, name a skill, pick the model, set the thinking depth,
-             * dictate, start. Every one of them is spent on the sentence in
-             * the field. The same row, in the same order, at the same sizes as
-             * the chat and Code composers.
+             * dictate, start.
              */
             controls={
               <>
-                <div className="flex min-w-0 flex-1 items-center gap-1">
-                  {/* `ComposerAddMenu` rather than a third hand-rolled [+]. It
-                      holds the two things that are spent on this message — the
-                      documents and the skill — now that the apps it used to
-                      carry are on the strip below, where standing scope
-                      belongs. */}
+                <div className="flex min-w-0 items-center gap-1">
                   <ComposerAddMenu
                     disabled={submitting}
                     attach={
@@ -1047,35 +1036,15 @@ export function WorkComposer({
                       onInvoke: invokeSkill,
                     }}
                   />
+                </div>
 
-                  {/* One divider class, one height, one breakpoint — the form
-                      chat settled on after shipping two of each, which showed
-                      two different separators at once between 380 and 420px.
-                      Gated on `canAttach` still: the menu can render for
-                      skills alone, but a hairline with nothing on its left is
-                      worse than no hairline. */}
-                  {canAttach && (
-                    <span
-                      className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                      aria-hidden="true"
-                    />
-                  )}
-
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
                   <div
                     className={cn(
-                      "min-w-0 flex-1 sm:flex-none",
+                      "min-w-0",
                       submitting && "pointer-events-none opacity-60"
                     )}
                   >
-                    {/* Only the models the Work runner can actually drive.
-                        Plan-locked ones stay, wearing their lock — see the
-                        prop's own note.
-
-                        `showReasoning` is on now that the executor carries an
-                        effort, so the picker's own slider and the button
-                        beside it are the same control seen twice rather than
-                        two ideas — which is the arrangement chat has always
-                        had. */}
                     <ModelSelector
                       value={model}
                       onChange={changeModel}
@@ -1085,13 +1054,6 @@ export function WorkComposer({
                     />
                   </div>
 
-                  {/* Thinking effort, presented exactly as chat and /code/new
-                      present it: a fixed-width button naming the current tier,
-                      opening onto the same slider. Same component, same
-                      widths, same wording — a reader who has set this once
-                      anywhere in the product has set it everywhere, and a
-                      third arrangement of the same choice would be a second
-                      thing to learn for no new fact. */}
                   <WorkEffortChip
                     auto={isAutoModelId(model)}
                     options={effortOptions}
@@ -1099,9 +1061,7 @@ export function WorkComposer({
                     onChange={setReasoningEffort}
                     disabled={submitting}
                   />
-                </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-1">
                   {/* Dictate. Sits immediately left of the primary action, the
                       same place it occupies in the chat and Code composers — a
                       control that means the same thing in three surfaces

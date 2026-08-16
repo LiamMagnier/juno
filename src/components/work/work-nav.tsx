@@ -237,7 +237,7 @@ export function WorkPageFrame({
   const destination = back ?? { href: "/work", label: "Back to Work" };
   return (
     <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
         <AppPageHeader
           eyebrow={<WorkNav />}
           heading={title}

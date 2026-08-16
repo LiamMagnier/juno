@@ -1521,13 +1521,13 @@ export function Composer({
              * the dark treatment carries an INSET top highlight, which is the only
              * depth cue that survives on #000, and it was being suppressed too.
              */
-            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card",
+            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)]",
             "transition-[opacity,transform,border-color,box-shadow,height] duration-base ease-out-strong motion-reduce:transition-none",
             dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
             privateMode
               ? "border-dashed border-foreground/25"
-              : "border-border/80 focus-within:border-foreground/25",
+              : "border-border/80 focus-within:border-foreground/25 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:focus-within:shadow-[0_6px_28px_rgba(0,0,0,0.4)]",
             dragging && "border-primary/55 ring-2 ring-primary/20"
           )}
         >
@@ -1900,9 +1900,9 @@ export function Composer({
           />
         )}
 
-        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
-          {/* Left: + menu and model selector */}
-          <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div className="flex flex-nowrap items-center justify-between gap-1.5 px-3 pb-2.5 pt-0.5 sm:px-3.5 sm:pb-3">
+          {/* Left: + menu */}
+          <div className="flex min-w-0 items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2172,14 +2172,10 @@ export function Composer({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+          </div>
 
-            {/* One divider height, one breakpoint. The row shipped two of each —
-                h-5/min-[420px] here and at the mic, h-4/min-[380px] around the
-                effort control — so between 380px and 420px the short rules were
-                visible and the tall ones were not, and the toolbar showed two
-                different separators depending on how wide the window was. */}
-            <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
-
+          {/* Right: model + thinking effort + dictation mic + primary action (voice ⇄ send ⇄ stop). */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <div
               // The dim rides a transition so locking for a generation reads as
               // the row stepping back rather than blinking — this wrapper covers
@@ -2195,7 +2191,6 @@ export function Composer({
 
             {isAuto && (
               <>
-                <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
                 {/* Auto occupies the same slot, footprint and typeface as the real
                     effort control below, so as an inert <span> it read as a button
                     that did nothing — and, being a slotted span, Radix could not
@@ -2213,9 +2208,6 @@ export function Composer({
                       size="sm"
                       aria-disabled
                       aria-label="Thinking effort: Auto — chosen automatically with the model"
-                      // text-label → text-ui is the ladder spelling of the old
-                      // 12→13px step (tracking-tight overrides label's eyebrow
-                      // letter-spacing — this is a control value, not a caption).
                       className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-ui"
                     >
                       <span className="min-w-0 truncate">Auto</span>
@@ -2246,7 +2238,6 @@ export function Composer({
                 <>
                   {/* Thinking effort — a slider, so the depth ladder reads as one
                       continuous scale rather than an opaque list of words. */}
-                  <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
                   <Tooltip>
                     <Popover>
                       <PopoverTrigger asChild>
@@ -2258,26 +2249,6 @@ export function Composer({
                             disabled={controlsLocked}
                             aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
                             className={cn(
-                              // rounded-composer-control + coarse:h-11, matching the
-                              // + and mic buttons either side of it: `size="sm"`
-                              // stops at coarse:h-10, so this was the one 40px
-                              // control in a 44px touch row, and `rounded-control`
-                              // made it the one 10px corner between two 11s.
-                              // `.composer-chip` — the same material the model
-                              // trigger beside it now carries. These two are a
-                              // pair (which model, how hard it thinks) and were
-                              // drifting apart: this one had an open state and no
-                              // hover fill, that one had a hover fill and a press
-                              // scale, and neither had a focus ring. One class
-                              // owns all four states for both.
-                              // No `focus-visible:ring-offset-*` here either —
-                              // Button deliberately ships no focus override so
-                              // the global :focus-visible rule stays
-                              // authoritative (button.tsx:7).
-                              // text-label → text-ui is the ladder spelling of
-                              // the old 12→13px step (tracking-tight overrides
-                              // label's eyebrow letter-spacing — this is a
-                              // control value, not a caption).
                               "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
                               atTopTier ? "text-primary" : "text-foreground"
                             )}
@@ -2307,11 +2278,6 @@ export function Composer({
                 </>
               );
             })()}
-
-          </div>
-
-          {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
             {speechSupported && (
               <Tooltip>
                 <TooltipTrigger asChild>
