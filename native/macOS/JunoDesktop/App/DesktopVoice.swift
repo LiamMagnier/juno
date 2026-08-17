@@ -735,11 +735,7 @@ struct DesktopVoiceDock: View {
             Section("Voice model") {
                 ForEach(JunoVoiceProvider.allCases) { provider in
                     Button {
-                        if controller.phase == .live {
-                            controller.switchProvider(provider)
-                        } else {
-                            Task { await controller.start(provider: provider) }
-                        }
+                        controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
                             Label(provider.displayName, systemImage: "checkmark")
@@ -747,7 +743,7 @@ struct DesktopVoiceDock: View {
                             Text(provider.displayName)
                         }
                     }
-                    .disabled(controller.phase == .live && provider == controller.provider)
+                    .disabled(provider == controller.provider)
                 }
             }
             // Only Gemini and Qwen accept a screen; OpenAI does not. Gated on

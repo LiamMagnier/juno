@@ -694,10 +694,9 @@ public final class JunoRealtimeVoiceController {
         advance(.interruptRequested)
     }
 
-    /// Switches provider on the live socket rather than reconnecting — the relay
-    /// keeps the conversation, so the audio path never has to come down.
+    /// Switches provider on the live socket when live, or restarts connection when connecting.
     public func switchProvider(_ newProvider: JunoVoiceProvider) {
-        guard newProvider != provider, phase == .live else { return }
+        guard newProvider != provider else { return }
         provider = newProvider
         // Everything derived from capabilities is invalid until the new
         // `session.ready` says otherwise. Leaving the recognizer running would
@@ -719,7 +718,14 @@ public final class JunoRealtimeVoiceController {
         // it sitting in `responding` for a turn that was just dropped.
         resetVoiceActivity()
         advance(.assistantTurnEnded)
-        send(.sessionSwitch(provider: newProvider))
+        if phase == .live {
+            send(.sessionSwitch(provider: newProvider))
+        } else {
+            Task {
+                end()
+                await start(provider: newProvider)
+            }
+        }
     }
 
     #if os(iOS)

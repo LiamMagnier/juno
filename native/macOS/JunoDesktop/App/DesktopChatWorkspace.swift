@@ -1079,12 +1079,14 @@ struct DesktopConversationView: View {
             voiceUnavailable = "Voice is unavailable for this account."
             return
         }
+        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
                     accountID: session.profile.id
-                )
+                ),
+                provider: initialProvider
             ),
             modelID: modelID,
             conversationID: model.selectedConversationID,
@@ -1095,7 +1097,7 @@ struct DesktopConversationView: View {
         // in the chat column now, so it can appear a second time over the same
         // session — and `start()` is legal from `ended`, which would make that
         // second appearance silently redial.
-        Task { await started.controller.start() }
+        Task { await started.controller.start(provider: initialProvider) }
     }
 
     private var composer: some View {

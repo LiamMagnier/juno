@@ -708,11 +708,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setProvider(next);
       setCapabilities(null);
       capsRef.current = null;
-      statusRef.current = "connecting";
-      setStatus("connecting");
-      send({ type: "session.switch", provider: next });
+      if (statusRef.current === "live") {
+        statusRef.current = "connecting";
+        setStatus("connecting");
+        send({ type: "session.switch", provider: next });
+      } else {
+        void start(next);
+      }
     },
-    [flushPlayback, provider, sealTranscript, stopScreenShare]
+    [flushPlayback, provider, sealTranscript, stopScreenShare, start]
   );
 
   const interrupt = React.useCallback(() => {

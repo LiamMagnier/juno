@@ -548,12 +548,14 @@ struct DesktopProjectsScreen: View {
             voiceUnavailable = "Voice is unavailable for this account."
             return
         }
+        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
                     accountID: session.profile.id
-                )
+                ),
+                provider: initialProvider
             ),
             modelID: modelID,
             conversationID: nil,
@@ -562,7 +564,7 @@ struct DesktopProjectsScreen: View {
         voiceSession = started
         // Dialled here rather than from the dock — see the same note in
         // ``DesktopConversationView/startVoice(modelID:)``.
-        Task { await started.controller.start() }
+        Task { await started.controller.start(provider: initialProvider) }
     }
 
     /// The live call, as this project's chat column needs it.

@@ -569,11 +569,7 @@ struct JunoMobileVoiceDock: View {
             Section("voice.provider") {
                 ForEach(JunoVoiceProvider.allCases) { provider in
                     Button {
-                        if session.isLive {
-                            controller.switchProvider(provider)
-                        } else {
-                            Task { await controller.start(provider: provider) }
-                        }
+                        controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
                             Label(provider.displayName, systemImage: "checkmark")
@@ -581,7 +577,7 @@ struct JunoMobileVoiceDock: View {
                             Text(provider.displayName)
                         }
                     }
-                    .disabled(session.isLive && provider == controller.provider)
+                    .disabled(provider == controller.provider)
                 }
             }
         } label: {

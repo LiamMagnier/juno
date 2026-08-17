@@ -162,8 +162,8 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               {VOICE_PROVIDERS.map((provider) => (
                 <DropdownMenuItem
                   key={provider}
-                  disabled={voice.availability?.[provider] === false || (voice.status === "live" && provider === voice.provider)}
-                  onSelect={() => (voice.status === "live" ? voice.switchProvider(provider) : void voice.start(provider))}
+                  disabled={voice.availability?.[provider] === false || provider === voice.provider}
+                  onSelect={() => (voice.status === "live" || voice.status === "connecting" || voice.status === "reconnecting" ? voice.switchProvider(provider) : void voice.start(provider))}
                   className="rounded-control text-xs font-medium"
                 >
                   <span className="flex-1">{VOICE_PROVIDER_LABELS[provider]}</span>

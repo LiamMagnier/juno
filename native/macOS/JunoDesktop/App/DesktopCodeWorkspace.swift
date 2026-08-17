@@ -893,19 +893,21 @@ struct DesktopCodeWorkspace: View {
             return
         }
 
+        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
                     accountID: session.profile.id
-                )
+                ),
+                provider: initialProvider
             ),
             modelID: modelID,
             conversationID: nil,
             projectID: projectID
         )
         voiceSession = started
-        Task { await started.controller.start() }
+        Task { await started.controller.start(provider: initialProvider) }
     }
 
     @ViewBuilder
