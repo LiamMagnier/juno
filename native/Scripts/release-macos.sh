@@ -256,7 +256,9 @@ rm -rf "$BUILD_DIR/test" "$BUILD_DIR/pkg"
 xattr -cr native/Packages "$BUILD_DIR" 2>/dev/null || true
 swift test -j 4 --package-path native/Packages/JunoNativeKit --filter JunoVoiceKitTests --scratch-path "$BUILD_DIR/pkg" >/dev/null
 if [ -f runner/agent-core/package-lock.json ]; then
-  npm ci --prefix runner/agent-core >/dev/null
+  if [ ! -d runner/agent-core/node_modules ]; then
+    npm ci --prefix runner/agent-core >/dev/null
+  fi
   npm run build --prefix runner/agent-core >/dev/null
   npm test --prefix runner/agent-core >/dev/null
 fi
