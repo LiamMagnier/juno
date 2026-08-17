@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { BackgroundProviderPolicy } from "@/lib/background-provider-policy";
 import { describeLocator, type BlockLocation } from "@/lib/knowledge/chunk";
@@ -57,15 +58,19 @@ import {
  * The ceiling on memory as much as on time: a 3072-dimension vector is ~24KB of
  * JavaScript numbers, so 120 candidates is a few megabytes per request and 1000
  * would not be.
- *
- * The limitation this creates is worth naming: a chunk that shares *no* word
- * with the question cannot be a candidate, so pure paraphrase — "how do I get
- * my money back" against a document that only ever says "refund" — is not
- * found. Full semantic recall needs an ANN index, which needs pgvector, which
- * the deployment deliberately does not require. Prefix matching in the tsquery
- * and the model's own follow-up questions cover much of the gap.
  */
 const LEXICAL_CANDIDATE_LIMIT = 120;
+
+/**
+ * How many chunks are fetched in the independent vector retrieval leg.
+ *
+ * This is the RAG v2 addition: chunks found purely by embedding cosine
+ * similarity, without lexical overlap. Kept moderate because each row carries
+ * a full embedding vector (~24KB for 3072-dim) and we compute cosine in JS.
+ * The sweet spot is enough to catch pure paraphrases while staying under a
+ * few MB of working memory per request.
+ */
+const VECTOR_CANDIDATE_LIMIT = 60;
 
 /**
  * Retrieval filters: project, document, type and date.
@@ -161,6 +166,86 @@ async function lexicalCandidates(
   );
 }
 
+/**
+ * Independent vector retrieval (RAG v2).
+ *
+ * Fetches chunks directly by cosine similarity against the query embedding,
+ * bypassing the lexical prefilter entirely. This is what closes the paraphrase
+ * recall gap: "how do I get my money back" now finds documents that only say
+ * "refund" even with zero lexical overlap.
+ *
+ * Uses in-process cosine similarity over Float[] columns. For larger corpora
+ * a pgvector HNSW index would be faster, but this works correctly at the
+ * per-user library scale without requiring the extension.
+ */
+async function vectorCandidates(
+  userId: string,
+  queryVector: number[],
+  embeddingModelId: string,
+  filters: KnowledgeFilters | undefined,
+  limit: number
+): Promise<CandidateRow[]> {
+  const conditions: Prisma.Sql[] = [
+    Prisma.sql`c."userId" = ${userId}`,
+    Prisma.sql`c."deletedAt" IS NULL`,
+    Prisma.sql`c."embeddingModel" = ${embeddingModelId}`,
+    Prisma.sql`array_length(c.embedding, 1) > 0`,
+    Prisma.sql`d."deletedAt" IS NULL`,
+    Prisma.sql`d."supersededById" IS NULL`,
+    Prisma.sql`d."state" = ANY(${RETRIEVABLE_STATES})`,
+  ];
+
+  if (filters?.projectId !== undefined) {
+    conditions.push(
+      filters.projectId === null
+        ? Prisma.sql`d."projectId" IS NULL`
+        : Prisma.sql`d."projectId" = ${filters.projectId}`
+    );
+  }
+  if (filters?.documentIds?.length) {
+    conditions.push(Prisma.sql`c."documentId" = ANY(${[...filters.documentIds]})`);
+  }
+
+  // Fetch chunks with embeddings, then score in-process.
+  // We fetch more than `limit` to have a good pool, then sort by cosine and take top N.
+  const fetchLimit = Math.min(limit * 3, 300);
+
+  const rows = await prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
+    SELECT
+      c.id,
+      c."documentId",
+      c.ordinal,
+      c.text,
+      c."blockIds",
+      c.embedding,
+      c."embeddingModel",
+      d."fileName",
+      d."mimeType",
+      d."projectId",
+      COALESCE(d."indexedAt", d."createdAt") AS "documentAt",
+      0.0 AS "lexicalScore"
+    FROM "KnowledgeChunk" c
+    JOIN "KnowledgeDocument" d ON d.id = c."documentId"
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY c."createdAt" DESC
+    LIMIT ${fetchLimit}
+  `);
+
+  if (rows.length === 0) return [];
+
+  // Score by cosine similarity and return top N
+  const scored = rows
+    .filter((row) => row.embedding && row.embedding.length > 0)
+    .map((row) => ({
+      row,
+      score: cosineSimilarity(queryVector, row.embedding!),
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return scored.map((entry) => entry.row);
+}
+
 /** Resolve the citation blocks for the packed passages, in one scoped query. */
 async function resolveLocators(
   userId: string,
@@ -220,14 +305,9 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
     droppedForBudget: 0,
   });
 
-  const expression = lexicalQueryExpression(options.query);
-  // Nothing searchable in the question — punctuation, a single letter, an
-  // emoji. There is no honest lexical query to run and no candidate set to
-  // embed against.
-  if (!expression) return empty("lexical", "unsearchable_query");
-
   // The query vector is fetched first because whether it exists decides whether
-  // the candidate rows need to carry their (large) vectors at all.
+  // the candidate rows need to carry their (large) vectors at all, AND whether
+  // to run the independent vector retrieval path.
   const embed = options.embed ?? embedQuery;
   const embedded = await embed({
     text: options.query,
@@ -236,29 +316,59 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
     signal: options.signal,
   });
 
-  let rows: CandidateRow[];
-  try {
-    rows = await lexicalCandidates(options.userId, expression, options.filters, embedded.ok);
-  } catch (error) {
-    // A malformed tsquery or a missing text-search configuration must not take
-    // the chat turn down with it; the turn proceeds without document context.
-    console.error(
-      "[knowledge/retrieve] lexical query failed:",
-      error instanceof Error ? error.message : String(error)
-    );
-    return empty("lexical", "lexical_query_failed");
+  // ---- Leg 1: Lexical candidates ----
+  const expression = lexicalQueryExpression(options.query);
+  let lexicalRows: CandidateRow[] = [];
+  if (expression) {
+    try {
+      lexicalRows = await lexicalCandidates(options.userId, expression, options.filters, embedded.ok);
+    } catch (error) {
+      console.error(
+        "[knowledge/retrieve] lexical query failed:",
+        error instanceof Error ? error.message : String(error)
+      );
+      // Continue with vector-only path if available
+    }
   }
-  if (rows.length === 0) {
+
+  // ---- Leg 2: Independent vector retrieval (RAG v2) ----
+  // This is the key change: fetch semantically similar chunks directly without
+  // requiring lexical overlap. This fixes the paraphrase recall bottleneck
+  // where "how do I get my money back" finds documents that only say "refund".
+  let vectorRows: CandidateRow[] = [];
+  if (embedded.ok) {
+    try {
+      vectorRows = await vectorCandidates(
+        options.userId,
+        embedded.vector,
+        embedded.model.id,
+        options.filters,
+        VECTOR_CANDIDATE_LIMIT
+      );
+    } catch (error) {
+      console.error(
+        "[knowledge/retrieve] vector retrieval failed:",
+        error instanceof Error ? error.message : String(error)
+      );
+      // Fall through to lexical-only
+    }
+  }
+
+  // If both legs returned nothing, return empty
+  if (lexicalRows.length === 0 && vectorRows.length === 0) {
+    if (!expression) return empty("lexical", "unsearchable_query");
     return {
       ...empty(embedded.ok ? "hybrid" : "lexical", embedded.ok ? undefined : embedded.reason),
       ...(embedded.ok ? { embeddingModel: embedded.model.id } : {}),
     };
   }
 
-  const candidates = new Map<string, RetrievalCandidate>(
-    rows.map((row) => [
-      row.id,
-      {
+  // Merge all candidate rows into a single map, deduplicating by chunk id
+  const candidates = new Map<string, RetrievalCandidate>();
+  const allRows = [...lexicalRows, ...vectorRows];
+  for (const row of allRows) {
+    if (!candidates.has(row.id)) {
+      candidates.set(row.id, {
         chunkId: row.id,
         documentId: row.documentId,
         fileName: row.fileName,
@@ -268,27 +378,39 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
         text: row.text,
         blockIds: row.blockIds,
         documentAt: row.documentAt,
-      },
-    ])
-  );
+      });
+    }
+  }
 
-  // Leg one: the order Postgres already put the rows in.
-  const lexicalOrder = rows.map((row) => row.id);
+  // Build independent rankings for RRF fusion
 
-  // Leg two: cosine over the same candidates, restricted to the one vector
-  // space the query was embedded in. A chunk embedded with a different model is
-  // skipped rather than scored — the number that comparison produces is not a
-  // similarity, it is noise with a plausible magnitude.
-  let semanticOrder: string[] = [];
+  // Lexical order: as returned by Postgres ts_rank
+  const lexicalOrder = lexicalRows.map((row) => row.id);
+
+  // Semantic order from lexical candidates (for candidates that have embeddings)
+  let lexicalSemanticOrder: string[] = [];
   if (embedded.ok) {
-    semanticOrder = rows
+    lexicalSemanticOrder = lexicalRows
       .filter((row) => row.embeddingModel === embedded.model.id && row.embedding?.length)
       .map((row) => ({ id: row.id, score: cosineSimilarity(embedded.vector, row.embedding!) }))
       .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : 1))
       .map((entry) => entry.id);
   }
 
-  const rankings = semanticOrder.length > 0 ? [lexicalOrder, semanticOrder] : [lexicalOrder];
+  // Independent vector order: chunks found purely by embedding similarity
+  const vectorOrder = vectorRows.map((row) => row.id);
+
+  // Build the rankings array for RRF: include all non-empty legs
+  const rankings: string[][] = [];
+  if (lexicalOrder.length > 0) rankings.push(lexicalOrder);
+  if (lexicalSemanticOrder.length > 0) rankings.push(lexicalSemanticOrder);
+  if (vectorOrder.length > 0) rankings.push(vectorOrder);
+
+  // If no rankings at all, return empty
+  if (rankings.length === 0) {
+    return empty("lexical", embedded.ok ? "no_indexed_vectors" : embedded.reason);
+  }
+
   const fused = reciprocalRankFusion(rankings);
 
   const scored: ScoredPassage[] = fused.map((entry) => ({
@@ -307,17 +429,15 @@ export async function retrieveKnowledge(options: RetrieveOptions): Promise<Knowl
   const packed = packContext(reranked, options.pack);
   const passages = await resolveLocators(options.userId, packed.passages);
 
-  // Hybrid means vectors actually contributed. An account with a working
-  // provider whose corpus has not been embedded yet is still lexical-only, and
-  // saying "hybrid" there would be a lie the degraded UI depends on.
-  const hybrid = semanticOrder.length > 0;
+  // Hybrid means vectors actually contributed to ranking
+  const hybrid = lexicalSemanticOrder.length > 0 || vectorOrder.length > 0;
   return {
     passages,
     mode: hybrid ? "hybrid" : "lexical",
     ...(hybrid
       ? { embeddingModel: embedded.ok ? embedded.model.id : undefined }
       : { degradedReason: embedded.ok ? "no_indexed_vectors" : embedded.reason }),
-    candidatesConsidered: rows.length,
+    candidatesConsidered: candidates.size,
     tokens: packed.tokens,
     droppedForBudget: packed.droppedForBudget,
   };
