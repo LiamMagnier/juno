@@ -21,6 +21,7 @@
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
+    "test:e2e": "playwright test",
     "native:test": "bash scripts/native-test.sh",
     "native:contract:check": "node scripts/check-native-swift-contract.mjs",
     "native:design:check": "node scripts/check-native-design.mjs",
@@ -125,6 +126,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/imapflow": "^1.0.23",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

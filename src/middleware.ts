@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp } from "@/lib/csp";
+import { evaluateCsrf } from "@/lib/csrf";
 import { REQUEST_ID_HEADER, RESPONSE_REQUEST_ID_HEADER } from "@/lib/request-id";
 
 /**
@@ -17,40 +18,7 @@ import { REQUEST_ID_HEADER, RESPONSE_REQUEST_ID_HEADER } from "@/lib/request-id"
  * and /api/stripe/webhook (authenticated by Stripe signature verification).
  */
 
-const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-const EXEMPT_PREFIXES = [
-  "/api/auth/",
-  "/api/stripe/webhook",
-  // The browser posts CSP violation reports itself, with `Origin: null` (not a
-  // missing Origin), which the check below would reject as cross-origin. The
-  // route carries no authority and reads no session, so there is nothing to
-  // forge.
-  "/api/csp-report",
-];
-
-// Custom routes under /api/auth/ that are NOT next-auth handlers (no built-in
-// CSRF protection of their own) — the origin check still applies to these.
-const EXEMPT_EXCEPTIONS = ["/api/auth/register"];
-
-function allowedHosts(req: NextRequest): Set<string> {
-  const hosts = new Set<string>();
-  const requestHost = req.headers.get("host");
-  if (requestHost) hosts.add(requestHost.toLowerCase());
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (appUrl) {
-    try {
-      hosts.add(new URL(appUrl).host.toLowerCase());
-    } catch {
-      // Malformed env value — fall through to the other allowed hosts.
-    }
-  }
-  if (process.env.NODE_ENV !== "production") {
-    hosts.add("localhost:3000");
-    hosts.add("127.0.0.1:3000");
-  }
-  return hosts;
-}
 
 /**
  * One id per request, readable by every log line and echoed to the client.
@@ -121,28 +89,27 @@ export function middleware(req: NextRequest) {
     return withRequestContext(req, true);
   }
 
-  if (!MUTATING_METHODS.has(req.method)) return withRequestContext(req, false);
+  const authHeader = req.headers.get("authorization");
+  const hasSessionCookie =
+    req.cookies.has("authjs.session-token") ||
+    req.cookies.has("__Secure-authjs.session-token") ||
+    req.cookies.has("next-auth.session-token") ||
+    req.cookies.has("__Secure-next-auth.session-token");
 
-  if (
-    EXEMPT_PREFIXES.some((p) => pathname.startsWith(p)) &&
-    !EXEMPT_EXCEPTIONS.some((p) => pathname.startsWith(p))
-  ) {
-    return withRequestContext(req, false);
-  }
+  const csrfResult = evaluateCsrf({
+    method: req.method,
+    pathname,
+    host: req.headers.get("host"),
+    origin: req.headers.get("origin"),
+    secFetchSite: req.headers.get("sec-fetch-site"),
+    hasSessionCookie,
+    hasBearerToken: Boolean(authHeader?.startsWith("Bearer ")),
+    appUrl: process.env.NEXT_PUBLIC_APP_URL,
+    isDev: process.env.NODE_ENV !== "production",
+  });
 
-  const origin = req.headers.get("origin");
-  if (!origin) return withRequestContext(req, false);
-
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host.toLowerCase();
-  } catch {
-    // "null" (sandboxed iframe) or malformed — treat as cross-origin.
-    originHost = "";
-  }
-
-  if (!originHost || !allowedHosts(req).has(originHost)) {
-    return NextResponse.json({ error: "Cross-origin request rejected." }, { status: 403 });
+  if (!csrfResult.allowed) {
+    return NextResponse.json({ error: csrfResult.reason || "Cross-origin request rejected." }, { status: csrfResult.status });
   }
 
   return withRequestContext(req, false);

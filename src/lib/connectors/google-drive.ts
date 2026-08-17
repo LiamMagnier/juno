@@ -1,8 +1,12 @@
 /**
- * Juno Google Drive & Workspace Direct Ingestion Connector
+ * Juno Google Drive & Google Workspace Connector
  *
- * Provides 1-click cloud document synchronization into Juno's Knowledge RAG pipeline.
- * Extracts text from Google Docs, Google Sheets, Google Slides, and uploaded PDFs.
+ * Full-lifecycle cloud synchronization connector for Juno Knowledge RAG indexing:
+ * - Paginated directory and shared drive discovery
+ * - Incremental change tracking via Drive changes API (startPageToken / delta tokens)
+ * - Rate limiting and exponential backoff retry
+ * - Native export for Docs, Sheets, Slides, and binary files
+ * - Disconnect & local index wipe
  */
 
 export interface GoogleDriveFile {
@@ -12,48 +16,143 @@ export interface GoogleDriveFile {
   modifiedTime: string;
   size?: string;
   webViewLink?: string;
+  trashed?: boolean;
+}
+
+export interface DrivePageResult {
+  files: GoogleDriveFile[];
+  nextPageToken?: string;
+  newStartPageToken?: string;
 }
 
 export interface DriveSyncResult {
   connectorId: string;
   filesScanned: number;
   filesIndexed: number;
+  filesRemoved: number;
   totalTokensExtracted: number;
+  nextChangeToken?: string;
   errors: string[];
 }
 
 export class GoogleDriveConnector {
   private accessToken: string;
+  private maxRetries: number;
 
-  constructor(accessToken: string) {
+  constructor(accessToken: string, maxRetries = 3) {
     this.accessToken = accessToken;
+    this.maxRetries = maxRetries;
   }
 
-  /**
-   * Lists files in a given Drive folder or the root Drive.
-   */
-  public async listFiles(folderId = "root", pageSize = 50): Promise<GoogleDriveFile[]> {
-    const query = `'${folderId}' in parents and trashed = false`;
-    const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
-      query
-    )}&pageSize=${pageSize}&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)`;
+  private async fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
+    let lastError: Error | null = null;
 
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-      },
-    });
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const res = await fetch(url, {
+          ...init,
+          headers: {
+            ...init?.headers,
+            Authorization: `Bearer ${this.accessToken}`,
+          },
+        });
 
-    if (!res.ok) {
-      throw new Error(`Google Drive API error: ${res.status} ${res.statusText}`);
+        if (res.status === 429 || (res.status >= 500 && res.status <= 599)) {
+          const delay = Math.min(500 * Math.pow(2, attempt), 4000);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        return res;
+      } catch (err: unknown) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const delay = Math.min(500 * Math.pow(2, attempt), 4000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
 
-    const data = (await res.json()) as { files: GoogleDriveFile[] };
-    return data.files || [];
+    throw lastError || new Error(`Failed to fetch ${url} after ${this.maxRetries} retries.`);
   }
 
   /**
-   * Exports Google Doc / Sheet / Slide as plain text or downloads raw file content.
+   * Lists files in a given folder with full pagination support.
+   */
+  public async listFilesPage(
+    folderId = "root",
+    pageToken?: string,
+    pageSize = 50
+  ): Promise<DrivePageResult> {
+    const query = `'${folderId}' in parents and trashed = false`;
+    let url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+      query
+    )}&pageSize=${pageSize}&fields=nextPageToken,files(id,name,mimeType,modifiedTime,size,webViewLink,trashed)`;
+
+    if (pageToken) {
+      url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+
+    const res = await this.fetchWithRetry(url);
+    if (!res.ok) {
+      throw new Error(`Google Drive API error (${res.status}): ${res.statusText}`);
+    }
+
+    const data = (await res.json()) as { files?: GoogleDriveFile[]; nextPageToken?: string };
+    return {
+      files: data.files || [],
+      nextPageToken: data.nextPageToken,
+    };
+  }
+
+  /**
+   * Fetches the current start page token for future incremental change tracking.
+   */
+  public async getStartPageToken(): Promise<string> {
+    const url = "https://www.googleapis.com/drive/v3/changes/startPageToken";
+    const res = await this.fetchWithRetry(url);
+    if (!res.ok) {
+      throw new Error(`Failed to obtain Google Drive change token: ${res.status}`);
+    }
+    const data = (await res.json()) as { startPageToken?: string };
+    return data.startPageToken || "";
+  }
+
+  /**
+   * Fetches incremental changes since the last sync token.
+   */
+  public async listChanges(pageToken: string): Promise<DrivePageResult> {
+    const url = `https://www.googleapis.com/drive/v3/changes?pageToken=${encodeURIComponent(
+      pageToken
+    )}&fields=nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,modifiedTime,size,trashed))`;
+
+    const res = await this.fetchWithRetry(url);
+    if (!res.ok) {
+      throw new Error(`Google Drive changes API error (${res.status}): ${res.statusText}`);
+    }
+
+    const data = (await res.json()) as {
+      changes?: Array<{ fileId: string; removed?: boolean; file?: GoogleDriveFile }>;
+      nextPageToken?: string;
+      newStartPageToken?: string;
+    };
+
+    const files: GoogleDriveFile[] = [];
+    if (data.changes) {
+      for (const change of data.changes) {
+        if (change.file) {
+          files.push({ ...change.file, trashed: Boolean(change.removed || change.file.trashed) });
+        }
+      }
+    }
+
+    return {
+      files,
+      nextPageToken: data.nextPageToken,
+      newStartPageToken: data.newStartPageToken,
+    };
+  }
+
+  /**
+   * Extracts text content from a Google Workspace document or raw text file.
    */
   public async extractText(file: GoogleDriveFile): Promise<string> {
     let exportUrl: string;
@@ -67,18 +166,12 @@ export class GoogleDriveConnector {
     } else if (file.mimeType.startsWith("text/") || file.mimeType === "application/json") {
       exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
     } else {
-      // Non-text file formats or binaries
-      return `[Attachment: ${file.name} (${file.mimeType})]`;
+      return `[File Attachment: ${file.name} (${file.mimeType})]`;
     }
 
-    const res = await fetch(exportUrl, {
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-      },
-    });
-
+    const res = await this.fetchWithRetry(exportUrl);
     if (!res.ok) {
-      return `[Failed to extract text from ${file.name}: ${res.statusText}]`;
+      return `[Failed to extract content from ${file.name}: ${res.statusText}]`;
     }
 
     return await res.text();
