@@ -251,6 +251,7 @@ printf '  bundle       %s\n' "$EXPECTED_BUNDLE_ID"
 printf '  contract     %s\n' "$SOURCE_CONTRACT"
 
 step "Tests"
+rm -rf "$BUILD_DIR/test" "$BUILD_DIR/pkg"
 xattr -cr native/Packages "$BUILD_DIR" 2>/dev/null || true
 swift test --package-path native/Packages/JunoNativeKit --filter JunoVoiceKitTests --scratch-path "$BUILD_DIR/pkg" >/dev/null
 if [ -f runner/agent-core/package-lock.json ]; then
