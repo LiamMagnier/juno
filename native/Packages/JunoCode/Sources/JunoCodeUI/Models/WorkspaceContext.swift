@@ -235,7 +235,7 @@ public final class WorkspaceContext: Sendable {
             """
 
         let previewInstruction = behavior == .code
-            ? "When building or changing a local website, use open_preview to open Juno's Preview and start the discovered development server, then use preview_browser with snapshot, click, type, select, scroll, wait, and assert_text as needed to exercise the rendered flow. Use inspect_preview after meaningful UI changes for visible text, runtime/console diagnostics, and (when the model can see images) an optional screenshot. Wait for the Preview to become ready before inspecting it, and take a fresh snapshot after navigation because element refs are ephemeral. These tools only act on the active Juno preview for this session; they cannot browse arbitrary URLs."
+            ? "When previewing or running a local website, NEVER run background commands (ending in '&') or launch development servers (e.g. `npm run dev &`, `vite &`, `next dev &`, `python -m http.server &`, `npx serve &`) via run_command. Always use open_preview to open Juno's Preview and start the managed development or static server, then use preview_browser with snapshot, click, type, select, scroll, wait, and assert_text as needed to exercise the rendered flow. Use inspect_preview after meaningful UI changes for visible text, runtime/console diagnostics, and (when the model can see images) an optional screenshot. Wait for the Preview to become ready before inspecting it, and take a fresh snapshot after navigation because element refs are ephemeral. These tools only act on the active Juno preview for this session; they cannot browse arbitrary URLs."
             : ""
 
         return """

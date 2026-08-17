@@ -76,6 +76,7 @@ public enum DevServerEvent: Equatable, Sendable {
 public final class DevServerService: @unchecked Sendable {
     private let lock = NSLock()
     private var run: DevServerRun?
+    private var staticServer: StaticPreviewServer?
     private let classifier = CommandClassifier()
     private let redactor = SecretRedactor()
     /// A descendant can inherit one of the output pipes after the leader exits.
@@ -128,17 +129,18 @@ public final class DevServerService: @unchecked Sendable {
         stop()
     }
 
-    /// True while a child process is alive.
+    /// True while a child process or native static server is alive.
     public var isRunning: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return run?.isProcessRunning ?? false
+        return staticServer != nil || (run?.isProcessRunning ?? false)
     }
 
     /// The command of the server currently running, or nil.
     public var runningCommand: String? {
         lock.lock()
         defer { lock.unlock() }
+        if staticServer != nil { return "Static Preview" }
         return run?.isProcessRunning == true ? run?.command : nil
     }
 
@@ -155,6 +157,36 @@ public final class DevServerService: @unchecked Sendable {
         stopAndWait()
 
         let commandLine = command.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if commandLine == DevServerCommand.staticPreviewCommandLine || commandLine.hasPrefix("juno:static") {
+            return AsyncStream(bufferingPolicy: .bufferingNewest(4_096)) { continuation in
+                do {
+                    let server = try StaticPreviewServer(staticRootURL: workspaceRoot)
+                    self.lock.lock()
+                    self.staticServer = server
+                    self.lock.unlock()
+
+                    continuation.yield(.state(.starting))
+                    let logLine = DevServerLogLine(
+                        id: 1,
+                        channel: .stdout,
+                        text: "Juno Static Preview serving \(workspaceRoot.path) at \(server.url.absoluteString)"
+                    )
+                    continuation.yield(.line(logLine))
+                    continuation.yield(.state(.running(server.url)))
+
+                    continuation.onTermination = { [weak self] _ in
+                        self?.stopStaticServer()
+                    }
+                } catch {
+                    continuation.yield(
+                        .state(.failed(reason: "Could not start Juno static preview server: \(error.localizedDescription)"))
+                    )
+                    continuation.finish()
+                }
+            }
+        }
+
         let redactor = self.redactor
         let classifier = self.classifier
 
@@ -368,10 +400,20 @@ public final class DevServerService: @unchecked Sendable {
     /// makes at least three processes, and killing only the shell leaves the node
     /// server holding the port.
     public func stop() {
+        stopStaticServer()
         _ = requestStop()
     }
 
+    private func stopStaticServer() {
+        lock.lock()
+        let server = staticServer
+        staticServer = nil
+        lock.unlock()
+        server?.stop()
+    }
+
     private func stopAndWait() {
+        stopStaticServer()
         guard let current = requestStop() else { return }
         _ = current.waitForCleanup(timeout: Self.cleanupWaitTimeout)
         if !current.waitForCleanup(timeout: 0) {
@@ -455,7 +497,7 @@ public final class DevServerService: @unchecked Sendable {
             $0.contains("command not found") || $0.contains("not recognized")
         }) {
             parts.append(
-                "Juno runs commands with a scrubbed PATH (/usr/bin, /bin, /usr/sbin, /sbin, /usr/local/bin, /opt/homebrew/bin). A toolchain installed by nvm, asdf or mise is not on it."
+                "Juno runs commands with a scrubbed PATH (\(ToolchainEnvironment.defaultBasePATH) and standard user toolchain shims). A toolchain installed by nvm, asdf or mise is searched automatically."
             )
         }
         return parts.joined(separator: "\n\n")

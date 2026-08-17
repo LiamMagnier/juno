@@ -181,7 +181,7 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     /// child processes.
     static func minimalEnvironment(workspaceRoot: String) -> [String: String] {
         var environment: [String: String] = [
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin",
+            "PATH": ToolchainEnvironment.resolvedPATH(),
             "HOME": NSHomeDirectory(),
             "TMPDIR": NSTemporaryDirectory(),
             "LANG": "en_US.UTF-8",

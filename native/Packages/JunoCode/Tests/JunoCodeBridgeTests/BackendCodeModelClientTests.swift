@@ -593,8 +593,24 @@ final class BackendCodeModelClientTests: XCTestCase {
         }
         let toolCalls = try XCTUnwrap(toolCallMsg?["tool_calls"]?.arrayValue)
         XCTAssertEqual(toolCalls.count, 1)
-        // Extra content must NOT be present when serializing for Mistral/Codestral/OpenAI!
+        // Extra content must NOT be present when serializing for Mistral/Codestral/OpenAI/Anthropic!
         XCTAssertNil(toolCalls[0]["extra_content"])
+
+        // Also test OpenAI serialization
+        let openaiRequest = makeRequest(
+            messages: request.messages,
+            modelID: "openai:gpt-4o"
+        )
+        let (_, openaiError) = await collect(client, openaiRequest)
+        XCTAssertNil(openaiError)
+        let openaiBody = try XCTUnwrap(streamer.lastRequest?.body)
+        let openaiJson = try JSONDecoder().decode(JSONValue.self, from: openaiBody)
+        let openaiMessages = try XCTUnwrap(openaiJson["messages"]?.arrayValue)
+        let openaiToolMsg = openaiMessages.first { msg in
+            msg["role"]?.stringValue == "assistant" && msg["tool_calls"] != nil
+        }
+        let openaiToolCalls = try XCTUnwrap(openaiToolMsg?["tool_calls"]?.arrayValue)
+        XCTAssertNil(openaiToolCalls[0]["extra_content"])
     }
 
     func testCrossProviderToolCallWithExtraRetainsGoogleThoughtSignatureForGemini() async throws {

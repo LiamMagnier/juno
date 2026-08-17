@@ -41,10 +41,16 @@ import SwiftUI
 public enum CodeRunState: String, CaseIterable, Sendable {
     /// Created, nothing in flight.
     case ready
+    /// Generating plan before execution.
+    case planning
     /// Accepted by the cloud, not started.
     case queued
     /// Working.
     case running
+    /// Waiting for provider inference or catalog failover.
+    case waitingForProvider
+    /// Running in degraded mode.
+    case degraded
     /// Blocked on a person. The only state that is *asking* for something.
     case needsApproval
     /// Asked to stop, not stopped yet.
@@ -63,8 +69,11 @@ public enum CodeRunState: String, CaseIterable, Sendable {
     public var label: String {
         switch self {
         case .ready: "Ready"
+        case .planning: "Planning"
         case .queued: "Queued"
         case .running: "Running"
+        case .waitingForProvider: "Waiting for model"
+        case .degraded: "Degraded"
         case .needsApproval: "Needs approval"
         case .stopping: "Stopping"
         case .finished: "Completed"
@@ -80,8 +89,11 @@ public enum CodeRunState: String, CaseIterable, Sendable {
     public var meaning: String {
         switch self {
         case .ready: "Created and waiting for your first instruction."
+        case .planning: "Juno is synthesizing an implementation plan."
         case .queued: "Accepted, waiting for a machine to pick it up."
         case .running: "Juno is working on it now."
+        case .waitingForProvider: "Waiting for model inference response or failover."
+        case .degraded: "Running with fallback model or clamped capabilities."
         case .needsApproval: "Juno stopped to ask you something."
         case .stopping: "Stopping — finishing the step it is on."
         case .finished: "Finished on its own terms."
@@ -95,8 +107,11 @@ public enum CodeRunState: String, CaseIterable, Sendable {
     public var symbol: String {
         switch self {
         case .ready: "circle"
+        case .planning: "brain.head.profile"
         case .queued: "circle.dotted"
         case .running: "circle.inset.filled"
+        case .waitingForProvider: "hourglass.circle"
+        case .degraded: "exclamationmark.triangle"
         case .needsApproval: "exclamationmark.circle.fill"
         case .stopping: "stop.circle"
         case .finished: "checkmark.circle.fill"
@@ -116,24 +131,24 @@ public enum CodeRunState: String, CaseIterable, Sendable {
         switch self {
         case .needsApproval: .permission
         case .failed: .error
-        case .ready, .queued, .running, .stopping, .finished, .stopped, .hostOffline: nil
+        case .ready, .planning, .queued, .running, .waitingForProvider, .degraded, .stopping, .finished, .stopped, .hostOffline: nil
         }
     }
 
     /// Hue only where the state asks something of the reader.
     public var tint: Color {
         switch self {
-        case .needsApproval, .hostOffline: Color.junoCaution
+        case .needsApproval, .hostOffline, .degraded: Color.junoCaution
         case .failed: Color.junoDanger
         case .finished: Color.junoSuccess
-        case .ready, .queued, .running, .stopping, .stopped: Color.junoMutedForeground
+        case .ready, .planning, .queued, .running, .waitingForProvider, .stopping, .stopped: Color.junoMutedForeground
         }
     }
 
     /// Whether the run is still going to change on its own.
     public var isActive: Bool {
         switch self {
-        case .queued, .running, .needsApproval, .stopping: true
+        case .planning, .queued, .running, .waitingForProvider, .degraded, .needsApproval, .stopping: true
         case .ready, .finished, .failed, .stopped, .hostOffline: false
         }
     }
@@ -173,8 +188,11 @@ public struct CodeRunStatus: Sendable, Equatable {
         }
         switch status {
         case .idle: self.init(CodeRunState.ready)
+        case .planning: self.init(CodeRunState.planning)
         case .running: self.init(CodeRunState.running)
         case .waitingForApproval: self.init(CodeRunState.needsApproval)
+        case .waitingForProvider: self.init(CodeRunState.waitingForProvider)
+        case .degraded: self.init(CodeRunState.degraded)
         case .stopping: self.init(CodeRunState.stopping)
         case .completed: self.init(CodeRunState.finished)
         case .failed: self.init(CodeRunState.failed)

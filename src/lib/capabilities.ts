@@ -71,9 +71,9 @@ export const CANONICAL_CAPABILITY_REGISTRY: Record<string, CapabilityEntry> = {
   },
   enterprise_sso_saml: {
     id: "enterprise_sso_saml",
-    name: "Enterprise SAML 2.0 Single Sign-On",
-    summary: "SAML 2.0 XML assertion validation for Okta, Entra ID, and Ping Identity.",
-    status: "beta",
+    name: "Enterprise SAML 2.0 Single Sign-On (Experimental)",
+    summary: "SAML 2.0 XML assertion integration (experimental; disabled in production pending audited XMLDSig integration. Enterprise customers must use OIDC SSO).",
+    status: "experimental",
     platforms: ["web", "macos"],
     requiredPlan: "enterprise",
   },

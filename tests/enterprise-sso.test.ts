@@ -146,3 +146,66 @@ test("EnterpriseSsoService prevents token replay attacks via jti tracking", asyn
     /token replay detected/
   );
 });
+
+test("EnterpriseSsoService fails closed on unverified/tampered SAML assertions and attacks", async () => {
+  const sso = new EnterpriseSsoService();
+
+  sso.registerConfig({
+    providerId: "okta-saml",
+    domain: "acme.org",
+    protocol: "saml",
+    issuerUrl: "https://idp.acme.org",
+    ssoUrl: "https://idp.acme.org/sso",
+    allowAutoProvisioning: true,
+    defaultRole: "VIEWER",
+  });
+
+  const fixtures = [
+    {
+      name: "unsigned assertion",
+      xml: `<saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"><saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"><saml2:Issuer>https://idp.acme.org</saml2:Issuer><saml2:Subject><saml2:NameID>admin@acme.org</saml2:NameID></saml2:Subject></saml2:Assertion></saml2p:Response>`,
+    },
+    {
+      name: "forged signature",
+      xml: `<saml2p:Response><ds:Signature><ds:SignatureValue>forged_signature_bytes</ds:SignatureValue></ds:Signature><saml2:Assertion><saml2:Issuer>https://idp.acme.org</saml2:Issuer></saml2:Assertion></saml2p:Response>`,
+    },
+    {
+      name: "wrong issuer",
+      xml: `<saml2p:Response><saml2:Assertion><saml2:Issuer>https://evil-attacker.org</saml2:Issuer></saml2:Assertion></saml2p:Response>`,
+    },
+    {
+      name: "expired assertion",
+      xml: `<saml2p:Response><saml2:Assertion><saml2:Conditions NotBefore="2020-01-01T00:00:00Z" NotOnOrAfter="2020-01-01T01:00:00Z"/></saml2:Assertion></saml2p:Response>`,
+    },
+    {
+      name: "future assertion",
+      xml: `<saml2p:Response><saml2:Assertion><saml2:Conditions NotBefore="2099-01-01T00:00:00Z" NotOnOrAfter="2099-01-01T01:00:00Z"/></saml2:Assertion></saml2p:Response>`,
+    },
+    {
+      name: "wrong InResponseTo",
+      xml: `<saml2p:Response InResponseTo="req-999"><saml2:Assertion/></saml2p:Response>`,
+    },
+    {
+      name: "XML signature wrapping (XSW) attack fixture",
+      xml: `<saml2p:Response><saml2:Assertion ID="real_assertion"><ds:Signature/><saml2:Subject><saml2:NameID>user@acme.org</saml2:NameID></saml2:Subject></saml2:Assertion><saml2:Assertion ID="evil_assertion"><saml2:Subject><saml2:NameID>admin@acme.org</saml2:NameID></saml2:Subject></saml2:Assertion></saml2p:Response>`,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    await assert.rejects(
+      async () => {
+        await sso.verifySamlAssertion(fixture.xml, "acme.org");
+      },
+      /SAML 2.0 authentication for domain 'acme.org' is disabled in production pending audited XMLDSig integration/
+    );
+  }
+
+  // Unregistered domain fails
+  await assert.rejects(
+    async () => {
+      await sso.verifySamlAssertion("<xml/>", "unknown-domain.com");
+    },
+    /No active SAML SSO configuration found/
+  );
+});
+

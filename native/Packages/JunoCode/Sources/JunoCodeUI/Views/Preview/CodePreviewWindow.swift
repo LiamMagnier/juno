@@ -157,21 +157,20 @@ enum CodePreviewProjectDiscovery {
         if packageRoots.isEmpty {
             let indexHTML = repositoryRoot.appendingPathComponent("index.html")
             let publicIndexHTML = repositoryRoot.appendingPathComponent("public").appendingPathComponent("index.html")
-            let srcIndexHTML = repositoryRoot.appendingPathComponent("src").appendingPathComponent("index.html")
-            if FileManager.default.fileExists(atPath: indexHTML.path)
-                || FileManager.default.fileExists(atPath: publicIndexHTML.path)
-                || FileManager.default.fileExists(atPath: srcIndexHTML.path)
-            {
+            let isPublic = !FileManager.default.fileExists(atPath: indexHTML.path)
+                && FileManager.default.fileExists(atPath: publicIndexHTML.path)
+            if FileManager.default.fileExists(atPath: indexHTML.path) || isPublic {
+                let staticRoot = isPublic ? repositoryRoot.appendingPathComponent("public", isDirectory: true) : repositoryRoot
                 let staticCmd = DevServerCommand(
                     name: "Static Preview",
-                    commandLine: "/usr/bin/python3 -m http.server 0",
-                    script: "Serve static HTML/CSS/JS files from workspace root",
+                    commandLine: DevServerCommand.staticPreviewCommandLine,
+                    script: isPublic ? "Serve static HTML/CSS/JS files from public/" : "Serve static HTML/CSS/JS files from workspace root",
                     startsAServer: true
                 )
                 let discovered = CodePreviewDiscoveredCommand(
                     command: staticCmd,
-                    workspaceRoot: repositoryRoot,
-                    workspaceDisplayName: repositoryRoot.lastPathComponent.isEmpty ? "Workspace" : repositoryRoot.lastPathComponent
+                    workspaceRoot: staticRoot,
+                    workspaceDisplayName: isPublic ? "\(repositoryRoot.lastPathComponent)/public" : (repositoryRoot.lastPathComponent.isEmpty ? "Workspace" : repositoryRoot.lastPathComponent)
                 )
                 return CodePreviewCommandSet(commands: [discovered], unavailableReason: nil)
             }
@@ -736,16 +735,22 @@ final class CodePreviewModel {
         return try await model.performBrowserAction(action)
     }
 
-    private func awaitReadySurface(timeoutSeconds: Double = 6.0) async throws -> (WKWebView, URL) {
+    private func awaitReadySurface(timeoutSeconds: Double = 8.0) async throws -> (WKWebView, URL) {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
+            let currentAddress = serverState.url ?? address
             if let webView = activeWebView,
-               let address,
+               let targetURL = currentAddress,
                serverState.isLive,
-               serverState.url == address,
-               CodePreviewInspectionPolicy.canInspectOrigin(address)
+               CodePreviewInspectionPolicy.canInspectOrigin(targetURL)
             {
-                return (webView, address)
+                if loadState == .loaded {
+                    if let readyState = try? await webView.evaluateJavaScript("document.readyState") as? String,
+                       ["complete", "interactive"].contains(readyState)
+                    {
+                        return (webView, targetURL)
+                    }
+                }
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -755,7 +760,7 @@ final class CodePreviewModel {
     private func performBrowserAction(
         _ action: CodePreviewBrowserAction
     ) async throws -> CodePreviewBrowserSnapshot {
-        let (webView, address) = try await awaitReadySurface(timeoutSeconds: 6.0)
+        let (webView, address) = try await awaitReadySurface(timeoutSeconds: 8.0)
 
         switch action {
         case let .snapshot(includeScreenshot, maxText):
@@ -821,24 +826,37 @@ final class CodePreviewModel {
     }
 
     private func browserSurface() throws -> (WKWebView, URL) {
+        if case let .failed(reason) = serverState {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "the development server failed: \(reason)"
+            )
+        }
+        if serverState == .starting {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "the development server is still starting. Please wait a moment and try again."
+            )
+        }
+        guard serverState.isLive else {
+            throw CodePreviewBrowserError.noActivePreview
+        }
         guard let webView = activeWebView else {
             throw CodePreviewBrowserError.previewNotReady(
-                detail: "the WebKit page is still attaching"
+                detail: "the WebKit preview pane is still attaching"
             )
         }
-        guard let address else {
+        guard let address = serverState.url ?? address else {
             throw CodePreviewBrowserError.previewNotReady(
                 detail: "no local server address has been opened"
-            )
-        }
-        guard serverState.isLive, serverState.url == address else {
-            throw CodePreviewBrowserError.previewNotReady(
-                detail: "Juno did not start the server currently shown in the Preview"
             )
         }
         guard CodePreviewInspectionPolicy.canInspectOrigin(address) else {
             throw CodePreviewBrowserError.previewNotReady(
                 detail: "only a loopback development server can be controlled by the agent"
+            )
+        }
+        if loadState == .loading {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "the local preview page is still loading in WebKit"
             )
         }
         return (webView, address)
@@ -1084,7 +1102,7 @@ final class CodePreviewModel {
     private func inspect(includeScreenshot: Bool, maxText: Int) async throws -> CodePreviewInspection {
         let (webView, address): (WKWebView, URL)
         do {
-            (webView, address) = try await awaitReadySurface(timeoutSeconds: 6.0)
+            (webView, address) = try await awaitReadySurface(timeoutSeconds: 8.0)
         } catch let err as CodePreviewBrowserError {
             switch err {
             case let .previewNotReady(detail):
@@ -1991,8 +2009,24 @@ public struct CodePreviewDock: View {
             VStack(spacing: JunoSpace.snug) {
                 if model.serverState == .starting {
                     ProgressView()
-                    Text("Starting the local preview…")
+                    Text(
+                        model.selectedCommand?.command.isStaticPreview == true
+                            ? "Starting static preview server…"
+                            : "Starting development server…"
+                    )
+                    .junoRowLabel()
+                } else if case .failed(let reason) = model.serverState {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(Color.junoDanger)
+                    Text("Preview server failed")
                         .junoRowLabel()
+                    Text(reason)
+                        .junoCodeSmall()
+                        .foregroundStyle(Color.junoDanger)
+                        .lineLimit(6)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 340)
                 } else {
                     Image(systemName: "macwindow")
                         .font(.title2)
@@ -2003,25 +2037,15 @@ public struct CodePreviewDock: View {
                             : "Preview is unavailable"
                     )
                     .junoRowLabel()
-                }
-
-                Text(
-                    model.serverState == .stopped
-                        ? "Juno will start the workspace's development server and open the address it prints."
-                        : model.startUnavailableReason
-                            ?? "Check the server log for the command's output."
-                )
-                .junoCaption()
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
-
-                if case .failed(let reason) = model.serverState {
-                    Text(reason)
-                        .junoCodeSmall()
-                        .foregroundStyle(Color.junoDanger)
-                        .lineLimit(4)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 340)
+                    Text(
+                        model.serverState == .stopped
+                            ? "Juno will start the workspace server and open the preview."
+                            : model.startUnavailableReason
+                                ?? "Check the server log for the command's output."
+                    )
+                    .junoCaption()
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
                 }
             }
             .padding(JunoSpace.region)
@@ -2080,18 +2104,22 @@ public struct CodePreviewDock: View {
     private var statusState: (label: String, tint: Color, busy: Bool) {
         switch model.serverState {
         case .starting:
-            return ("Starting", Color.junoCaution, true)
+            return (
+                model.selectedCommand?.command.isStaticPreview == true ? "Starting static server…" : "Starting dev server…",
+                Color.junoCaution,
+                true
+            )
         case .running:
             switch model.loadState {
             case .idle:
                 return ("Server running", Color.junoCaution, false)
             case .loading:
-                return ("Loading", Color.junoCaution, true)
+                return ("Loading page…", Color.junoCaution, true)
             case .loaded:
-                return ("Running", Color.junoSuccess, false)
+                return ("Ready", Color.junoSuccess, false)
             case .failed:
                 return (
-                    model.isAwaitingServer ? "Waiting for server" : "Page unavailable",
+                    model.isAwaitingServer ? "Waiting for server…" : "Page unavailable",
                     Color.junoCaution,
                     model.isAwaitingServer
                 )

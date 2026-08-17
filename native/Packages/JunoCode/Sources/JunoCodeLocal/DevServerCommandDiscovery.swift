@@ -3,6 +3,8 @@ import Foundation
 /// One command the reader can actually start, taken from the workspace rather
 /// than invented.
 public struct DevServerCommand: Identifiable, Hashable, Sendable {
+    public static let staticPreviewCommandLine = "juno:static"
+
     /// The script's name in `package.json` — `dev`, `start`, `storybook`.
     public let name: String
     /// What Juno will run, spelled for this workspace's package manager.
@@ -15,6 +17,10 @@ public struct DevServerCommand: Identifiable, Hashable, Sendable {
     public let startsAServer: Bool
 
     public var id: String { commandLine }
+
+    public var isStaticPreview: Bool {
+        commandLine == Self.staticPreviewCommandLine || commandLine.hasPrefix("juno:static")
+    }
 
     public init(name: String, commandLine: String, script: String, startsAServer: Bool) {
         self.name = name
@@ -70,15 +76,13 @@ public enum DevServerCommandDiscovery {
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
             let indexHTML = workspaceRoot.appendingPathComponent("index.html")
             let publicIndexHTML = workspaceRoot.appendingPathComponent("public").appendingPathComponent("index.html")
-            let srcIndexHTML = workspaceRoot.appendingPathComponent("src").appendingPathComponent("index.html")
-            if FileManager.default.fileExists(atPath: indexHTML.path)
-                || FileManager.default.fileExists(atPath: publicIndexHTML.path)
-                || FileManager.default.fileExists(atPath: srcIndexHTML.path)
-            {
+            let isPublic = !FileManager.default.fileExists(atPath: indexHTML.path)
+                && FileManager.default.fileExists(atPath: publicIndexHTML.path)
+            if FileManager.default.fileExists(atPath: indexHTML.path) || isPublic {
                 let staticCmd = DevServerCommand(
                     name: "Static Preview",
-                    commandLine: "/usr/bin/python3 -m http.server 0",
-                    script: "Serve static HTML/CSS/JS files from workspace root",
+                    commandLine: DevServerCommand.staticPreviewCommandLine,
+                    script: isPublic ? "Serve static HTML/CSS/JS files from public/" : "Serve static HTML/CSS/JS files from workspace root",
                     startsAServer: true
                 )
                 return DevServerCommandSet(

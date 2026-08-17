@@ -207,7 +207,7 @@ final class DevServerServiceTests: XCTestCase {
 
         XCTAssertEqual(
             environment["PATH"],
-            "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin"
+            ToolchainEnvironment.resolvedPATH()
         )
         XCTAssertEqual(environment["PWD"], workspaceURL.path)
         XCTAssertEqual(environment["BROWSER"], "none")
@@ -232,5 +232,52 @@ final class DevServerServiceTests: XCTestCase {
         XCTAssertTrue(reason.contains("Exited with code 127 without serving an address."))
         XCTAssertTrue(reason.contains("zsh: vite: command not found"))
         XCTAssertTrue(reason.contains("scrubbed PATH"))
+    }
+
+    func testDevServerServiceRunsNativeStaticPreviewServer() async throws {
+        let indexFile = workspaceURL.appendingPathComponent("index.html")
+        try "<!doctype html><html><body><h1>Static Test</h1></body></html>".write(to: indexFile, atomically: true, encoding: .utf8)
+
+        let service = DevServerService()
+        defer { service.stop() }
+
+        let stream = service.start(
+            command: DevServerCommand.staticPreviewCommandLine,
+            workspaceRoot: workspaceURL
+        )
+
+        var runningURL: URL?
+        var receivedLog = false
+
+        for await event in stream {
+            switch event {
+            case .state(let state):
+                if case .running(let url) = state {
+                    runningURL = url
+                    break
+                }
+            case .line(let line):
+                if line.text.contains("Juno Static Preview") {
+                    receivedLog = true
+                }
+            }
+            if runningURL != nil {
+                break
+            }
+        }
+
+        let url = try XCTUnwrap(runningURL)
+        XCTAssertTrue(receivedLog)
+        XCTAssertTrue(service.isRunning)
+        XCTAssertEqual(service.runningCommand, "Static Preview")
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let http = try XCTUnwrap(response as? HTTPURLResponse)
+        XCTAssertEqual(http.statusCode, 200)
+        let html = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(html.contains("Static Test"))
+
+        service.stop()
+        XCTAssertFalse(service.isRunning)
     }
 }

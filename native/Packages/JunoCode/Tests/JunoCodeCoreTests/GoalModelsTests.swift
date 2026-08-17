@@ -216,4 +216,84 @@ final class GoalModelsTests: XCTestCase {
         let data = try JSONEncoder().encode(event)
         XCTAssertEqual(try JSONDecoder().decode(SessionEvent.self, from: data), event)
     }
+
+    func testGoalStepTransitionMatrixAndInvalidTransitions() throws {
+        var step = GoalStep(id: "s1", title: "Step 1", status: .pending, createdAt: start)
+
+        // 1. Pending transitions
+        XCTAssertTrue(step.status.canTransition(to: .inProgress))
+        XCTAssertTrue(step.status.canTransition(to: .blocked))
+        XCTAssertFalse(step.status.canTransition(to: .completed)) // Direct on step is false; handled by higher-level goal normalization
+
+        // Direct step.transition to .completed throws
+        XCTAssertThrowsError(try step.transition(to: .completed, at: start)) { error in
+            XCTAssertEqual(
+                error as? GoalStateError,
+                .invalidStepTransition(stepID: "s1", from: .pending, to: .completed)
+            )
+        }
+
+        // Transition pending -> inProgress
+        try step.transition(to: .inProgress, at: start.addingTimeInterval(1))
+        XCTAssertEqual(step.status, .inProgress)
+
+        // 2. InProgress transitions
+        XCTAssertTrue(step.status.canTransition(to: .completed))
+        XCTAssertTrue(step.status.canTransition(to: .blocked))
+        XCTAssertTrue(step.status.canTransition(to: .pending))
+
+        // Transition inProgress -> completed
+        try step.transition(to: .completed, at: start.addingTimeInterval(2))
+        XCTAssertEqual(step.status, .completed)
+        XCTAssertNotNil(step.completedAt)
+
+        // 3. Completed transitions: only reopen (inProgress) is allowed
+        XCTAssertTrue(step.status.canTransition(to: .inProgress))
+        XCTAssertFalse(step.status.canTransition(to: .pending))
+        XCTAssertFalse(step.status.canTransition(to: .blocked))
+
+        XCTAssertThrowsError(try step.transition(to: .pending, at: start.addingTimeInterval(3))) { error in
+            XCTAssertEqual(
+                error as? GoalStateError,
+                .invalidStepTransition(stepID: "s1", from: .completed, to: .pending)
+            )
+        }
+        XCTAssertThrowsError(try step.transition(to: .blocked, at: start.addingTimeInterval(3))) { error in
+            XCTAssertEqual(
+                error as? GoalStateError,
+                .invalidStepTransition(stepID: "s1", from: .completed, to: .blocked)
+            )
+        }
+
+        // Reopen completed -> inProgress
+        try step.transition(to: .inProgress, at: start.addingTimeInterval(4))
+        XCTAssertEqual(step.status, .inProgress)
+        XCTAssertNil(step.completedAt)
+
+        // Transition inProgress -> blocked
+        try step.transition(to: .blocked, at: start.addingTimeInterval(5))
+        XCTAssertEqual(step.status, .blocked)
+
+        // 4. Blocked transitions: cannot jump directly to completed
+        XCTAssertTrue(step.status.canTransition(to: .inProgress))
+        XCTAssertTrue(step.status.canTransition(to: .pending))
+        XCTAssertFalse(step.status.canTransition(to: .completed))
+
+        XCTAssertThrowsError(try step.transition(to: .completed, at: start.addingTimeInterval(6))) { error in
+            XCTAssertEqual(
+                error as? GoalStateError,
+                .invalidStepTransition(stepID: "s1", from: .blocked, to: .completed)
+            )
+        }
+
+        // Higher-level goal normalization verifies pending -> completed succeeds
+        var goal = SessionGoal(
+            objective: "Normalize pending",
+            steps: [GoalStep(id: "s1", title: "Step 1", status: .pending, createdAt: start)],
+            createdAt: start
+        )
+        try goal.apply(.setStepStatus(id: "s1", status: .completed), at: start.addingTimeInterval(7))
+        XCTAssertEqual(goal.steps[0].status, .completed)
+        XCTAssertNotNil(goal.steps[0].completedAt)
+    }
 }

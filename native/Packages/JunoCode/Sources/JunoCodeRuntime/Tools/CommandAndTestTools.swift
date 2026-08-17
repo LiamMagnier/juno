@@ -22,8 +22,13 @@ public struct RunCommandTool: CodeTool {
 
     public let name = "run_command"
     public let description = """
-        Run a shell command in the workspace root. Output is streamed and \
-        bounded; long commands are cut at the timeout.
+        Run a finite shell command in the workspace root. Output is streamed and \
+        bounded; commands that exceed the timeout are terminated.
+
+        Do NOT run background commands (ending with &) or start long-running \
+        development/preview servers (such as `npm run dev`, `vite`, `next dev`, \
+        `python -m http.server`, `npx serve`) via run_command. For local website \
+        previews, use the open_preview tool instead.
 
         Files this command changes are NOT checkpointed: only the structured \
         file tools (create_file, write_file, apply_patch, delete_file, \
@@ -59,6 +64,9 @@ public struct RunCommandTool: CodeTool {
 
     public func precheck(input: JSONValue) -> ToolError? {
         guard let command = input["command"]?.stringValue else { return nil }
+        if let previewError = checkForUnmanagedPreviewServer(command) {
+            return previewError
+        }
         if case let .forbidden(reason) = classifier.classify(command) {
             return .denied(reason: reason)
         }
@@ -68,6 +76,9 @@ public struct RunCommandTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         guard let command = input["command"]?.stringValue else {
             throw ToolError.invalidInput(message: "Missing 'command'.")
+        }
+        if let previewError = checkForUnmanagedPreviewServer(command) {
+            throw previewError
         }
         if case let .forbidden(reason) = classifier.classify(command) {
             throw ToolError.denied(reason: reason)
@@ -153,6 +164,28 @@ public struct RunCommandTool: CodeTool {
                 )
             )
         }
+    }
+
+    private func checkForUnmanagedPreviewServer(_ command: String) -> ToolError? {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix("&") || trimmed.contains(" & ") || trimmed.contains("& ") {
+            return .denied(
+                reason: "Background execution ('&') is not permitted in run_command. Long-running development servers must be launched through the open_preview tool."
+            )
+        }
+        let lower = trimmed.lowercased()
+        if lower.contains("http.server") || lower.contains("simplehttpserver")
+            || lower.hasPrefix("npx serve") || lower.hasPrefix("npx -y serve") || lower.contains(" -y serve")
+            || lower.hasPrefix("serve ") || lower == "serve"
+            || lower.hasPrefix("http-server") || lower.hasPrefix("live-server")
+            || lower == "npm run dev" || lower == "pnpm run dev" || lower == "yarn dev" || lower == "bun run dev"
+            || lower.hasPrefix("vite") || lower.hasPrefix("next dev") || lower.hasPrefix("astro dev")
+        {
+            return .denied(
+                reason: "Long-running development servers must not be run through run_command. Use the open_preview tool to start and manage the workspace Preview server."
+            )
+        }
+        return nil
     }
 }
 

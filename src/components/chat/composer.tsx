@@ -696,15 +696,17 @@ export function Composer({
     [connectors, connectorsEnabled, onEnableConnectors, onToggleConnector, privateMode]
   );
 
-  const submit = async () => {
-    if (!canSend) return;
+  const submit = async (overrideText?: string) => {
+    const draft = overrideText !== undefined ? overrideText : text;
+    const trimmedDraft = draft.trim();
+    if (!trimmedDraft && sendAttachments.length === 0 && clarificationAnswers.length === 0) return;
+    if (controlsLocked) return;
     try {
       // Direction into the live run, not a message into the thread. First,
       // because every path below this builds an outgoing chat turn.
       if (steerMode && steering) {
-        const value = text.trim();
-        if (!value) return;
-        const accepted = await steering.onSteer(value);
+        if (!trimmedDraft) return;
+        const accepted = await steering.onSteer(trimmedDraft);
         if (accepted) {
           setText("");
           setDraftExpanded(false);
@@ -724,8 +726,8 @@ export function Composer({
       // Keep the user's raw words: when a clarification intercepts this send,
       // cancel must restore the pre-serialization draft (the quote chip is
       // still attached, so restoring the serialized block would double-wrap).
-      interceptedDraftRef.current = text.trim();
-      const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
+      interceptedDraftRef.current = trimmedDraft;
+      const outgoing = quote ? serializeQuote(quote, trimmedDraft) : trimmedDraft;
       const connectorsForSend = await resolveSendConnectors(outgoing);
       const result = await onSend(outgoing, sendAttachments, {
         ...outgoingOptions,
@@ -1154,7 +1156,7 @@ export function Composer({
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      void submit();
+      void submit(e.currentTarget.value);
     }
   };
 
@@ -1886,6 +1888,8 @@ export function Composer({
         {!showCollapsedDraft && (
           <textarea
             ref={textareaRef}
+            id="juno-composer-textarea"
+            aria-label={steerMode && steering ? steering.placeholder : placeholder || "Ask Juno"}
             value={text}
             onChange={(e) => setDraftText(e.target.value)}
             onKeyDown={onKeyDown}

@@ -179,15 +179,15 @@ struct SidebarView: View {
     @ViewBuilder
     private func statusIndicator(_ session: CodeSession) -> some View {
         switch session.status {
-        case .running, .stopping:
+        case .running, .stopping, .planning, .waitingForProvider:
             ProgressView()
                 .controlSize(.small)
                 .tint(JunoCodeTheme.accent)
-                .accessibilityLabel("Running")
-        case .waitingForApproval:
-            Image(systemName: "hand.raised.fill")
+                .accessibilityLabel(session.status == .planning ? "Planning" : (session.status == .waitingForProvider ? "Waiting for model" : "Running"))
+        case .waitingForApproval, .degraded:
+            Image(systemName: session.status == .degraded ? "exclamationmark.triangle.fill" : "hand.raised.fill")
                 .foregroundStyle(JunoCodeTheme.caution)
-                .accessibilityLabel("Waiting for approval")
+                .accessibilityLabel(session.status == .degraded ? "Degraded" : "Waiting for approval")
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(JunoCodeTheme.failure)

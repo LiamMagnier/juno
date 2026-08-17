@@ -24,8 +24,13 @@ final class DevServerCommandDiscoveryTests: XCTestCase {
     }
 
     private func writeFile(_ name: String, contents: String = "") throws {
+        let fileURL = workspaceURL.appendingPathComponent(name)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try contents.write(
-            to: workspaceURL.appendingPathComponent(name),
+            to: fileURL,
             atomically: true,
             encoding: .utf8
         )
@@ -106,5 +111,33 @@ final class DevServerCommandDiscoveryTests: XCTestCase {
         XCTAssertTrue(result.commands.isEmpty)
         XCTAssertEqual(result.packageManager, "npm")
         XCTAssertEqual(result.unavailableReason, "package.json defines no scripts.")
+    }
+
+    func testStaticPreviewDiscoveryForRootIndexHTML() async throws {
+        try writeFile("index.html", contents: "<html><body>Hello</body></html>")
+
+        let result = await DevServerCommandDiscovery.scan(workspaceRoot: workspaceURL)
+
+        XCTAssertEqual(result.commands.count, 1)
+        let cmd = try XCTUnwrap(result.commands.first)
+        XCTAssertEqual(cmd.name, "Static Preview")
+        XCTAssertEqual(cmd.commandLine, DevServerCommand.staticPreviewCommandLine)
+        XCTAssertTrue(cmd.isStaticPreview)
+        XCTAssertTrue(cmd.startsAServer)
+        XCTAssertNil(result.unavailableReason)
+    }
+
+    func testStaticPreviewDiscoveryForPublicIndexHTML() async throws {
+        try writeFile("public/index.html", contents: "<html><body>Public</body></html>")
+
+        let result = await DevServerCommandDiscovery.scan(workspaceRoot: workspaceURL)
+
+        XCTAssertEqual(result.commands.count, 1)
+        let cmd = try XCTUnwrap(result.commands.first)
+        XCTAssertEqual(cmd.name, "Static Preview")
+        XCTAssertEqual(cmd.commandLine, DevServerCommand.staticPreviewCommandLine)
+        XCTAssertTrue(cmd.isStaticPreview)
+        XCTAssertTrue(cmd.startsAServer)
+        XCTAssertNil(result.unavailableReason)
     }
 }

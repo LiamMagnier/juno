@@ -8,6 +8,13 @@ import { composer } from "./helpers";
 // failure, never a silent spinner.
 
 test.describe("Chat workspace", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("juno:onboarded:v1", "1");
+    });
+    await page.goto("/chat");
+  });
+
   test("reaches a usable composer", async ({ page }) => {
     await expect(composer(page)).toBeVisible({ timeout: 15_000 });
   });
@@ -17,8 +24,11 @@ test.describe("Chat workspace", () => {
     const input = composer(page);
     await expect(input).toBeVisible({ timeout: 15_000 });
     const prompt = "Say hello in one short sentence.";
+    await input.click();
     await input.fill(prompt);
-    await input.press("Enter");
+    const sendButton = page.locator('.composer-primary-action');
+    await expect(sendButton).toBeEnabled({ timeout: 5_000 });
+    await sendButton.click();
 
     // The user's prompt lands in the transcript immediately after send.
     await expect(page.locator("main")).toContainText(prompt, { timeout: 15_000 });
@@ -38,9 +48,13 @@ test.describe("Chat workspace", () => {
     const input = composer(page);
     await expect(input).toBeVisible({ timeout: 15_000 });
     const prompt = `Reload persistence probe ${Date.now()}`;
+    await input.click();
     await input.fill(prompt);
-    await input.press("Enter");
+    const sendButton = page.locator('.composer-primary-action');
+    await expect(sendButton).toBeEnabled({ timeout: 5_000 });
+    await sendButton.click();
     await expect(page.locator("main")).toContainText(prompt, { timeout: 30_000 });
+    await expect(page).toHaveURL(/\/chat\/[a-z0-9]+/i, { timeout: 30_000 });
     await page.reload();
     await expect(page.locator("main")).toContainText(prompt, { timeout: 30_000 });
   });

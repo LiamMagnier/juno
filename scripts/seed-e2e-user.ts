@@ -29,6 +29,18 @@ async function main() {
   });
   console.log(`E2E user ready: ${user.email} (${user.id})`);
 
+  // Ensure active PRO subscription so E2E tests have full message and feature budget
+  await prisma.subscription.upsert({
+    where: { userId: user.id },
+    update: { plan: "PRO", status: "ACTIVE" },
+    create: { userId: user.id, plan: "PRO", status: "ACTIVE" },
+  });
+
+  // Reset usage counters
+  await prisma.usage.deleteMany({
+    where: { userId: user.id },
+  });
+
   // Clear the credentials sign-in rate-limit bucket for this account so the
   // Playwright setup step can authenticate immediately after seeding, no
   // matter how many failed/throttled attempts a previous run made.

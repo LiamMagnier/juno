@@ -616,7 +616,7 @@ public struct DelegateTaskTool: CodeTool {
         case .failed: .failed
         case .cancelled, .stopping: .cancelled
         case .waitingForApproval: .waitingForApproval
-        case .idle, .running: .interrupted
+        case .idle, .planning, .running, .waitingForProvider, .degraded: .interrupted
         }
     }
 

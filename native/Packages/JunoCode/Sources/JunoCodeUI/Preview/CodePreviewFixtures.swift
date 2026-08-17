@@ -27,6 +27,12 @@ public enum CodePreviewScenario: String, CaseIterable, Sendable {
     case error
     /// A dropped runtime connection that is retrying.
     case disconnected
+    /// A session synthesizing an architecture plan.
+    case planning
+    /// A session waiting on provider inference response.
+    case waitingForProvider
+    /// A session running with degraded/fallback catalog model.
+    case degraded
     /// A brand-new session with nothing in the transcript.
     case empty
 
@@ -221,6 +227,18 @@ enum CodePreviewData {
             workspace: 0, status: .failed,
             branch: "main",
             errorSummary: "The agent stopped: workspace write denied", minutesAgo: 2_900
+        ),
+        .planning: Placement(
+            title: "Synthesize architecture plan",
+            workspace: 0, status: .planning, minutesAgo: 2
+        ),
+        .waitingForProvider: Placement(
+            title: "Awaiting model response",
+            workspace: 1, status: .waitingForProvider, minutesAgo: 5
+        ),
+        .degraded: Placement(
+            title: "Fallback catalog execution",
+            workspace: 0, status: .degraded, minutesAgo: 10
         ),
         .empty: Placement(
             title: "Draft the release checklist",
@@ -636,6 +654,19 @@ enum CodePreviewData {
             )
             fixture.transientError = "Reconnecting to the agent runtime — attempt 2 of 5."
             fixture.runStartedAt = minutes(3)
+
+        case .planning:
+            builder.user("Design a migration plan for the authorization service.")
+            builder.reasoning("Synthesizing multi-phase implementation plan and dependency graph.")
+
+        case .waitingForProvider:
+            builder.user("Evaluate benchmark matrix for low-latency models.")
+            builder.reasoning("Contacting inference provider gateway...")
+
+        case .degraded:
+            builder.user("Run full code review with fallback model.")
+            builder.reasoning("Primary provider exhausted quota; routing through catalog fallback.")
+            builder.assistant("Operating with degraded catalog fallback model.")
         }
 
         fixture.events = builder.events

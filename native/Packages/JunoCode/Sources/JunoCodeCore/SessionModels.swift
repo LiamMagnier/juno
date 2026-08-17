@@ -10,8 +10,11 @@ public enum SessionLocation: String, Codable, CaseIterable, Sendable {
 
 public enum SessionStatus: String, Codable, CaseIterable, Sendable {
     case idle
+    case planning
     case running
     case waitingForApproval
+    case waitingForProvider
+    case degraded
     case stopping
     case completed
     case failed
@@ -20,13 +23,13 @@ public enum SessionStatus: String, Codable, CaseIterable, Sendable {
     public var isTerminal: Bool {
         switch self {
         case .completed, .failed, .cancelled: return true
-        case .idle, .running, .waitingForApproval, .stopping: return false
+        case .idle, .planning, .running, .waitingForApproval, .waitingForProvider, .degraded, .stopping: return false
         }
     }
 
     public var isActive: Bool {
         switch self {
-        case .running, .waitingForApproval, .stopping: return true
+        case .planning, .running, .waitingForApproval, .waitingForProvider, .degraded, .stopping: return true
         case .idle, .completed, .failed, .cancelled: return false
         }
     }
@@ -223,9 +226,29 @@ public enum GoalStepStatus: String, Codable, CaseIterable, Sendable {
     case blocked
 
     public func canTransition(to next: GoalStepStatus) -> Bool {
-        // Any step status transition is valid: an agent completing a pending step
-        // directly must not fail due to omitting the intermediate inProgress state.
-        return true
+        switch (self, next) {
+        case (.pending, .pending),
+             (.pending, .inProgress),
+             (.pending, .blocked):
+            return true
+        case (.inProgress, .inProgress),
+             (.inProgress, .completed),
+             (.inProgress, .blocked),
+             (.inProgress, .pending):
+            return true
+        case (.blocked, .blocked),
+             (.blocked, .inProgress),
+             (.blocked, .pending):
+            return true
+        case (.completed, .completed),
+             (.completed, .inProgress):
+            return true
+        case (.pending, .completed),
+             (.completed, .pending),
+             (.completed, .blocked),
+             (.blocked, .completed):
+            return false
+        }
     }
 }
 
@@ -478,7 +501,14 @@ public struct SessionGoal: Hashable, Codable, Sendable, Identifiable {
             guard let index = steps.firstIndex(where: { $0.id == id }) else {
                 throw GoalStateError.stepNotFound(id)
             }
-            try steps[index].transition(to: status, at: timestamp)
+            // Higher-level normalization: When an agent directly requests completion of a pending step,
+            // normalize the transition atomically: pending -> inProgress -> completed.
+            if steps[index].status == .pending && status == .completed {
+                try steps[index].transition(to: .inProgress, at: timestamp)
+                try steps[index].transition(to: .completed, at: timestamp)
+            } else {
+                try steps[index].transition(to: status, at: timestamp)
+            }
 
         case let .addVerificationEvidence(summary, source):
             let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)

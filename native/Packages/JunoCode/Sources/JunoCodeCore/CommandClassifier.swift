@@ -126,6 +126,11 @@ public struct CommandClassifier: Sendable {
         if forbiddenPrograms.contains(program) {
             return .forbidden(reason: "'\(program)' is never run by the agent.")
         }
+        if isLongRunningPreviewServer(program: program, arguments: arguments) {
+            return .forbidden(
+                reason: "'\(program)' is a preview server. Use open_preview to start and manage local preview servers."
+            )
+        }
         let verdict: CommandVerdict
         switch program {
         case "rm", "rmdir", "unlink":
@@ -680,6 +685,27 @@ public struct CommandClassifier: Sendable {
     private static let riskyEnvironmentPrefixes: [String] = [
         "DYLD_", "LD_", "GIT_CONFIG_", "GIT_SSH", "GIT_EXTERNAL_",
     ]
+
+    private static func isLongRunningPreviewServer(program: String, arguments: [String]) -> Bool {
+        if program == "http-server" || program == "live-server" || program == "serve" {
+            return true
+        }
+        if ["python", "python2", "python3", "pypy", "pypy3"].contains(program) {
+            if let mIndex = arguments.firstIndex(of: "-m"), mIndex + 1 < arguments.count {
+                let module = arguments[mIndex + 1]
+                if module == "http.server" || module == "SimpleHTTPServer" {
+                    return true
+                }
+            }
+        }
+        if program == "npx" {
+            let nonFlags = arguments.filter { !$0.hasPrefix("-") }
+            if let first = nonFlags.first, ["serve", "http-server", "live-server"].contains(first) {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 // MARK: - Tokenizer

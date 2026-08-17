@@ -152,77 +152,26 @@ export class EnterpriseSsoService {
   }
 
   /**
-   * Verifies a SAML 2.0 Response XML assertion.
+   * SAML 2.0 Response XML assertion verification.
+   *
+   * SECURITY NOTICE: SAML 2.0 XML assertion validation is currently disabled in production
+   * pending audited XMLDSig integration to prevent XML signature wrapping (XSW) and parsing
+   * vulnerabilities. Enterprise environments must use OIDC SSO (OpenID Connect with JWKS).
    */
   public async verifySamlAssertion(
-    samlResponseXml: string,
+    _samlResponseXml: string,
     domain: string,
-    options: { expectedInResponseTo?: string } = {}
+    _options: { expectedInResponseTo?: string } = {}
   ): Promise<EnterpriseUserClaims> {
     const config = this.getConfigForDomain(domain);
     if (!config || config.protocol !== "saml") {
       throw new Error(`No active SAML SSO configuration found for domain '${domain}'`);
     }
 
-    if (!samlResponseXml || typeof samlResponseXml !== "string") {
-      throw new Error("Missing or invalid SAML response XML.");
-    }
-
-    // Basic structure checks for SAML response
-    if (!samlResponseXml.includes("Response") || !samlResponseXml.includes("Assertion")) {
-      throw new Error("Malformed SAML response structure.");
-    }
-
-    // Extract issuer
-    const issuerMatch = /<saml2?:Issuer[^>]*>([^<]+)<\/saml2?:Issuer>/.exec(samlResponseXml);
-    const assertionIssuer = issuerMatch ? issuerMatch[1].trim() : "";
-    if (assertionIssuer !== config.issuerUrl) {
-      throw new Error(`SAML Issuer mismatch. Expected '${config.issuerUrl}', got '${assertionIssuer}'`);
-    }
-
-    // Temporal validity checks
-    const conditionsMatch = /<saml2?:Conditions[^>]*NotBefore="([^"]+)"[^>]*NotOnOrAfter="([^"]+)"/.exec(samlResponseXml);
-    if (conditionsMatch) {
-      const notBefore = new Date(conditionsMatch[1]).getTime();
-      const notOnOrAfter = new Date(conditionsMatch[2]).getTime();
-      const now = Date.now();
-      if (now < notBefore - 60_000 || now >= notOnOrAfter + 60_000) {
-        throw new Error("SAML assertion has expired or is not yet valid.");
-      }
-    }
-
-    // InResponseTo check if supplied
-    if (options.expectedInResponseTo) {
-      const inResponseToMatch = /InResponseTo="([^"]+)"/.exec(samlResponseXml);
-      if (!inResponseToMatch || inResponseToMatch[1] !== options.expectedInResponseTo) {
-        throw new Error("SAML InResponseTo request ID mismatch.");
-      }
-    }
-
-    // Extract email claim from NameID or AttributeStatement
-    let email = "";
-    const nameIdMatch = /<saml2?:NameID[^>]*>([^<]+)<\/saml2?:NameID>/.exec(samlResponseXml);
-    if (nameIdMatch && nameIdMatch[1].includes("@")) {
-      email = nameIdMatch[1].trim();
-    }
-
-    if (!email) {
-      const emailAttrMatch = /<saml2?:Attribute[^>]*Name="(?:email|emailaddress|mail)"[^>]*>[\s\S]*?<saml2?:AttributeValue[^>]*>([^<]+)<\/saml2?:AttributeValue>/i.exec(samlResponseXml);
-      if (emailAttrMatch) {
-        email = emailAttrMatch[1].trim();
-      }
-    }
-
-    if (!email) {
-      throw new Error("SAML assertion missing email / NameID claim.");
-    }
-
-    return {
-      email: email.toLowerCase(),
-      name: email.split("@")[0],
-      sub: email,
-      issuer: config.issuerUrl,
-    };
+    // Fail closed: Do not allow unverified or regex-parsed SAML assertions into session context.
+    throw new Error(
+      `SAML 2.0 authentication for domain '${domain}' is disabled in production pending audited XMLDSig integration. Please configure OpenID Connect (OIDC) SSO.`
+    );
   }
 }
 

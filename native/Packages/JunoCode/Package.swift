@@ -92,7 +92,10 @@ let package = Package(
         ),
         .testTarget(
             name: "JunoCodeRuntimeTests",
-            dependencies: ["JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal"]
+            dependencies: [
+                "JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal",
+                .product(name: "JunoCore", package: "JunoNativeKit"),
+            ]
         ),
         .testTarget(
             name: "JunoCodeUITests",

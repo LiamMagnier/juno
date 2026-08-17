@@ -11,5 +11,6 @@ setup("authenticate the E2E account", async ({ page }) => {
   await page.fill('input[type="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
   await expect(page).toHaveURL(/\/chat/, { timeout: 30_000 });
+  await page.evaluate(() => localStorage.setItem("juno:onboarded:v1", "1"));
   await page.context().storageState({ path: "e2e/.auth/e2e-user.json" });
 });

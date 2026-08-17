@@ -343,7 +343,7 @@ final class GoalModeRuntimeTests: XCTestCase {
         XCTAssertEqual(goal.steps[0].status, .inProgress)
         XCTAssertNil(goal.steps[0].completedAt)
 
-        // Mark blocked then completed
+        // Mark blocked
         goal = try await store.updateGoal(
             sessionID: session.id,
             mutation: .setStepStatus(id: step2ID, status: .blocked),
@@ -351,10 +351,28 @@ final class GoalModeRuntimeTests: XCTestCase {
         )
         XCTAssertEqual(goal.steps[1].status, .blocked)
 
+        // Blocked cannot jump directly to completed
+        do {
+            _ = try await store.updateGoal(
+                sessionID: session.id,
+                mutation: .setStepStatus(id: step2ID, status: .completed),
+                at: now.addingTimeInterval(4)
+            )
+            XCTFail("Blocked step should not transition directly to completed")
+        } catch {
+            // Expected invalid transition error
+        }
+
+        // Unblock to inProgress then complete
+        goal = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: step2ID, status: .inProgress),
+            at: now.addingTimeInterval(5)
+        )
         goal = try await store.updateGoal(
             sessionID: session.id,
             mutation: .setStepStatus(id: step2ID, status: .completed),
-            at: now.addingTimeInterval(4)
+            at: now.addingTimeInterval(6)
         )
         XCTAssertEqual(goal.steps[1].status, .completed)
     }
