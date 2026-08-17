@@ -105,8 +105,12 @@ export class GeminiLiveSession implements VoiceProviderSession {
   }
 
   sendAudio(pcm16k: Buffer): void {
+    const base64 = pcm16k.toString("base64");
     this.send({
-      realtimeInput: { audio: { data: pcm16k.toString("base64"), mimeType: "audio/pcm;rate=16000" } },
+      realtimeInput: {
+        mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: base64 }],
+        audio: { data: base64, mimeType: "audio/pcm;rate=16000" },
+      },
     });
     this.events?.onUsage({ audioInSec: pcm16k.length / 2 / 16000 });
   }
@@ -116,7 +120,13 @@ export class GeminiLiveSession implements VoiceProviderSession {
   }
 
   sendVideoFrame(jpeg: Buffer): void {
-    this.send({ realtimeInput: { video: { data: jpeg.toString("base64"), mimeType: "image/jpeg" } } });
+    const base64 = jpeg.toString("base64");
+    this.send({
+      realtimeInput: {
+        mediaChunks: [{ mimeType: "image/jpeg", data: base64 }],
+        video: { data: base64, mimeType: "image/jpeg" },
+      },
+    });
   }
 
   interrupt(): void {

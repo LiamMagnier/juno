@@ -695,6 +695,21 @@ struct DesktopVoiceDock: View {
                 // wraps `assistantSpeaking` changes in `withAnimation`.
                 .transition(.junoOverlay)
             }
+            if controller.capabilities?.screenInput == true, controller.phase == .live {
+                control(
+                    controller.screenSharing ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle",
+                    label: controller.screenSharing ? "Stop sharing screen" : "Share screen",
+                    tone: controller.screenSharing ? .prominent : .quiet
+                ) {
+                    if controller.screenSharing {
+                        controller.stopScreenShare()
+                    } else {
+                        controller.startScreenShare()
+                    }
+                }
+                .disabled(controller.phase != .live)
+                .accessibilityIdentifier("juno.desktop.voice-share-screen-dock")
+            }
             control(
                 controller.muted ? "mic.slash.fill" : "mic.fill",
                 label: controller.muted ? "Turn microphone on" : "Turn microphone off",

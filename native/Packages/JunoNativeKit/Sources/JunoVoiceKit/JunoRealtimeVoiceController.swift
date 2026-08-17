@@ -181,77 +181,54 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     /// The level is measured even while muted — the meter is what tells someone
     /// their microphone is muted rather than broken.
     func processMic(_ buffer: AVAudioPCMBuffer) {
-        if let channel = buffer.floatChannelData?.pointee, buffer.frameLength > 0 {
-            var sum: Float = 0
-            for index in 0..<Int(buffer.frameLength) {
-                let sample = channel[index]
-                sum += sample * sample
-            }
-            micLevel = Double((sum / Float(buffer.frameLength)).squareRoot())
+        let frames = Int(buffer.frameLength)
+        guard frames > 0, let floatData = buffer.floatChannelData else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let ch0 = floatData[0]
+        let ch1 = channelCount > 1 ? floatData[1] : nil
+
+        var sum: Float = 0
+        for index in 0..<frames {
+            let sample = ch1 != nil ? (ch0[index] + ch1![index]) * 0.5 : ch0[index]
+            sum += sample * sample
         }
-        // Metering continues above this line and the send stops below it. The
-        // level is what tells someone their microphone is muted rather than
-        // broken, and it is what the aura is drawn from — a field that froze
-        // whenever Juno spoke would report the session as dead.
+        micLevel = Double((sum / Float(frames)).squareRoot())
+
+        // Metering continues above this line and the send stops below it.
         guard !muted, !assistantSpeaking else { return }
         speechRequest?.append(buffer)
 
-        // One acquisition for the three values the conversion needs: taking the
-        // lock per field would let a teardown land between them and hand this
-        // block a converter that no longer matches the format it is writing to.
         lock.lock()
-        let converter = storedConverter
-        let captureFormat = storedCaptureFormat
         let socket = storedSocket
         lock.unlock()
-        guard let converter, let captureFormat, let socket else { return }
+        guard let socket else { return }
 
-        // A tap buffer can arrive describing a format with a zero sample rate —
-        // that is what an input device reports as it is being pulled out from
-        // under a live session (AirPods disconnecting, a USB interface unplugged).
-        // Dividing by it gives `+inf`, and `AVAudioFrameCount(_:)` traps on
-        // inf/NaN rather than saturating: "Double value cannot be converted to
-        // UInt32". On the realtime audio thread that is an immediate crash, and
-        // the setup path already guards the same way at `configureAudio`. One
-        // dropped buffer during a route change is not audible; the trap is.
-        guard buffer.format.sampleRate > 0, buffer.frameLength > 0 else { return }
-        let ratio = captureFormat.sampleRate / buffer.format.sampleRate
-        // The +16 is slack: the resampler can emit a frame or two more than the
-        // ratio predicts, and an exactly-sized buffer turns that into an error
-        // return and a silent gap in the uplink.
-        //
-        // Clamped as well as guarded: `ratio` is finite here, but a pathological
-        // format pair could still scale a 2048-frame buffer past `UInt32.max`,
-        // and the conversion below cannot want more than a second of audio.
-        let projected = (Double(buffer.frameLength) * ratio).rounded(.up)
-        let ceiling = Double(captureFormat.sampleRate)
-        let capacity = AVAudioFrameCount(min(max(projected, 1), ceiling)) + 16
-        guard let out = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: capacity) else {
-            return
-        }
-        // The input buffer and the once-only flag travel into the block together,
-        // in one box, because `AVAudioConverterInputBlock` is typed `@Sendable`
-        // and neither a captured `var` nor a bare `AVAudioPCMBuffer` may cross
-        // that boundary. See ``ConversionInput`` for why the box is safe.
-        let input = ConversionInput(buffer: buffer)
-        var conversionError: NSError?
-        let status = converter.convert(to: out, error: &conversionError) { _, inputStatus in
-            // `.noDataNow` after the single input buffer, never `.endOfStream`:
-            // end-of-stream retires the converter, and the next tap callback
-            // would find it permanently drained.
-            if input.consumed {
-                inputStatus.pointee = .noDataNow
-                return nil
+        let inRate = buffer.format.sampleRate
+        guard inRate > 0 else { return }
+        let targetRate = 16000.0
+        let ratio = inRate / targetRate
+        let outFrames = max(1, Int(Double(frames) / ratio))
+        var pcmData = Data(count: outFrames * MemoryLayout<Int16>.size)
+        pcmData.withUnsafeMutableBytes { raw in
+            let dest = raw.bindMemory(to: Int16.self)
+            for k in 0..<outFrames {
+                let start = Int(Double(k) * ratio)
+                let end = min(frames, Int(Double(k + 1) * ratio))
+                var acc: Float = 0
+                if end > start {
+                    for j in start..<end {
+                        let sample = ch1 != nil ? (ch0[j] + ch1![j]) * 0.5 : ch0[j]
+                        acc += sample
+                    }
+                    acc /= Float(end - start)
+                } else if start < frames {
+                    acc = ch1 != nil ? (ch0[start] + ch1![start]) * 0.5 : ch0[start]
+                }
+                let clamped = max(-1.0, min(1.0, acc))
+                dest[k] = Int16(clamped * 32767.0).littleEndian
             }
-            input.consumed = true
-            inputStatus.pointee = .haveData
-            return input.buffer
         }
-        guard status != .error, conversionError == nil, out.frameLength > 0,
-            let samples = out.int16ChannelData
-        else { return }
-        let data = Data(bytes: samples[0], count: Int(out.frameLength) * MemoryLayout<Int16>.size)
-        socket.send(.data(data)) { _ in }
+        socket.send(.data(pcmData)) { _ in }
     }
 }
 
@@ -1195,11 +1172,13 @@ public final class JunoRealtimeVoiceController {
     }
 
     private func runScreenShare(epoch: Int) async {
+        #if os(macOS)
+        if !CGPreflightScreenCaptureAccess() {
+            _ = CGRequestScreenCaptureAccess()
+        }
+        #endif
         let content: SCShareableContent
         do {
-            // Also the permission gate. The first call prompts; a Mac that has
-            // refused throws here rather than handing back an empty display list,
-            // which is the only reason this failure can be named accurately.
             content = try await SCShareableContent.excludingDesktopWindows(
                 false,
                 onScreenWindowsOnly: true

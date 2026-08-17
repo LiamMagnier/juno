@@ -68,30 +68,32 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       )}
 
       {/* Floating Dynamic Voice Pill */}
-      <div className="flex max-w-full items-center gap-1.5 rounded-full border border-border/80 bg-popover/90 p-1.5 shadow-xl backdrop-blur-xl transition-all duration-base">
-        {/* Live Orb & Status Info */}
+      <div className="flex max-w-full items-center gap-2 rounded-full border border-border/80 bg-background/95 p-1.5 shadow-xl backdrop-blur-xl transition-all duration-base">
+        {/* Status & Audio Equalizer Indicator */}
         <div className="flex min-w-0 items-center gap-2.5 pl-3 pr-2">
-          <div className="relative flex size-3 items-center justify-center">
-            <span
-              className={cn(
-                "absolute size-full rounded-full opacity-75 transition-colors duration-fast",
-                voice.status === "live" && !voice.muted
-                  ? "bg-primary animate-ping"
-                  : voice.status === "error"
-                    ? "bg-amber-500/50"
-                    : "bg-muted-foreground/30"
-              )}
-            />
-            <span
-              className={cn(
-                "relative size-2 rounded-full transition-colors duration-fast",
-                voice.status === "live" && !voice.muted
-                  ? "bg-primary shadow-xs shadow-primary"
-                  : voice.status === "error"
-                    ? "bg-amber-500"
-                    : "bg-muted-foreground"
-              )}
-            />
+          {/* Subtle Dynamic Equalizer or Status Glyph */}
+          <div className="flex h-4 items-center gap-0.5" aria-hidden="true">
+            {voice.status === "live" && !voice.muted ? (
+              voice.assistantSpeaking ? (
+                <>
+                  <span className="h-3.5 w-0.5 animate-pulse rounded-full bg-primary" />
+                  <span className="h-4 w-0.5 animate-pulse rounded-full bg-primary [animation-delay:150ms]" />
+                  <span className="h-2.5 w-0.5 animate-pulse rounded-full bg-primary [animation-delay:300ms]" />
+                </>
+              ) : (
+                <>
+                  <span className="h-2 w-0.5 rounded-full bg-muted-foreground/60 transition-all" />
+                  <span className="h-3 w-0.5 rounded-full bg-foreground transition-all" />
+                  <span className="h-1.5 w-0.5 rounded-full bg-muted-foreground/60 transition-all" />
+                </>
+              )
+            ) : voice.status === "connecting" || voice.status === "reconnecting" ? (
+              <ActionIcons.refresh className="size-3.5 animate-spin text-muted-foreground" />
+            ) : voice.status === "error" ? (
+              <span className="size-2 rounded-full bg-amber-500" />
+            ) : (
+              <span className="size-2 rounded-full bg-muted-foreground/40" />
+            )}
           </div>
 
           <div className="flex flex-col justify-center">
@@ -127,6 +129,28 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 >
                   <Square className="size-3 fill-current" />
                   <span className="hidden sm:inline">Interrupt</span>
+                </button>
+              )}
+
+              {/* Direct Screen Share Button when supported */}
+              {voice.capabilities?.screenInput && voice.status === "live" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (voice.screenSharing) voice.stopScreenShare();
+                    else void voice.startScreenShare();
+                  }}
+                  aria-label={voice.screenSharing ? "Stop sharing screen" : "Share screen"}
+                  aria-pressed={voice.screenSharing}
+                  className={cn(
+                    "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-all active:scale-95",
+                    voice.screenSharing
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "bg-secondary text-foreground hover:bg-accent"
+                  )}
+                >
+                  {voice.screenSharing ? <MonitorX className="size-3.5" /> : <MonitorUp className="size-3.5" />}
+                  <span className="hidden md:inline">{voice.screenSharing ? "Sharing" : "Share"}</span>
                 </button>
               )}
 
