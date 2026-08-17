@@ -1,65 +1,55 @@
-# Security policy
+# Security Policy
 
-Juno is a hosted, paid AI chat product handling user conversations, uploaded
-files, connected third-party accounts and payment metadata. Security reports are
-welcome and will be taken seriously.
+Juno is a hosted, paid AI platform handling user conversations, uploaded
+files, connected cloud workspaces, software engineering repositories, and payment metadata. Security reports are
+welcome and will be prioritized.
 
-## Reporting a vulnerability
+## Reporting a Vulnerability
 
 **Email `security@liams.dev`** with:
 
-- what you found and where (a URL, a route, a file path);
-- how to reproduce it, ideally with the smallest possible steps;
-- what an attacker could do with it.
+- What you found and where (a URL, a route, a file path);
+- How to reproduce it, ideally with the smallest possible steps;
+- What an attacker could do with it.
 
-Please do **not** open a public GitHub issue for a security problem.
+Please do **not** open a public GitHub issue for a security vulnerability.
 
-You should get an acknowledgement within **72 hours**. Juno is maintained by one
-person, so a fix may take longer than that — you will get an honest timeline
-rather than silence.
+You will receive an acknowledgement within **24–48 hours**.
 
 ## Scope
 
-In scope: the hosted app at the production origin, this repository's source, the
-`/api/v1` contract, the voice relay (`relay/`), the Cloud Code runner
-(`.github/workflows/code-runner.yml` + `runner/agent-core/`), and the macOS/iOS
-clients under `native/`.
+In scope:
+- Hosted web application (`src/app/`, `src/components/`, `src/middleware.ts`)
+- The `/api/v1` native API contract
+- The Voice and Multimodal WebSocket relay (`relay/`)
+- Agent and tool execution runtime (`src/lib/agent/`, `src/lib/work/`, `src/lib/trust-boundary.ts`)
+- Native macOS and iOS applications (`native/Packages/`, `native/macOS/`, `native/iOS/`)
 
-Out of scope: the upstream model providers, Stripe, Supabase, Composio and the
-other third parties Juno depends on — report those to the vendor. Also out of
-scope: findings that require a compromised device or a rooted/jailbroken client,
-volumetric denial of service, and reports produced solely by an automated
-scanner with no demonstrated impact.
+Out of scope:
+- Upstream model provider outages or platform issues (OpenAI, Anthropic, Google, etc.)
+- Findings requiring physical access to a rooted or jailbroken client device
+- Volumetric denial of service (DDoS)
 
-## Please do not
+## Enforced Security Controls
 
-- Access, modify or delete data belonging to an account that is not yours. If a
-  proof of concept needs a second account, create one.
-- Run automated scanners against the production origin.
-- Perform denial-of-service testing.
-- Exfiltrate data. Demonstrate access, then stop.
+1. **Content Security Policy (CSP)**:
+   Strict per-request nonce-based CSP with `strict-dynamic`, disallowing `unsafe-eval` in production.
+2. **Deterministic Agent / Tool Trust Boundary**:
+   Strict input provenance tracking (`user`, `system`, `external_website`, `mcp_tool_response`, `uploaded_document`, etc.). External untrusted inputs are DATA, never INSTRUCTIONS, and cannot execute destructive tools without explicit user approval.
+3. **Action-Bound Approval Receipts**:
+   Cryptographic SHA-256 digests over tool, args, session, and user. Any mutation of arguments invalidates prior approvals.
+4. **CSRF & Origin Validation**:
+   Cookie-authenticated browser mutations strictly require matching `Origin` or `Sec-Fetch-Site: same-origin`. Missing or cross-origin headers fail closed. Bearer-authenticated API/Native clients operate under the bearer authentication contract.
+5. **Immediate Native Credential Revocation**:
+   Device session revocation immediately fails closed on subsequent bearer authentication and token rotation with zero grace period.
+6. **Cryptographic Enterprise SSO**:
+   OIDC ID Token verification via JWKS signature validation, audience verification, expiration checking, and replay defense.
+7. **Enterprise Data Loss Prevention (DLP)**:
+   Deterministic secret scanning and policy enforcement (allow/warn/block modes) with audit event logging before payload dispatch.
 
-Testing that stays inside your own account, on your own data, is fine.
+## Handling of User Data
 
-## Known and accepted
-
-These are documented rather than hidden. They are real, they are on the backlog,
-and a report about them will be acknowledged but is not new information:
-
-- **No Content-Security-Policy.** Next.js inline scripts need per-request
-  nonces; a nonce-based CSP is planned work. See `review/02-SECURITY.md` §7.1.
-- **Tool and web-search output is not isolated from instruction.** MCP tool
-  results and fetched pages re-enter the model's context without a trust
-  boundary. See `review/02-SECURITY.md` §4.1.
-- **CSRF passes when a request carries no `Origin` header** — deliberate, so
-  native clients and server-to-server callers work. See `src/middleware.ts`.
-- **Native access tokens have no revocation list.** Revoking a device kills the
-  refresh family; an already-issued access token stays valid for up to its
-  10-minute TTL.
-
-## Handling of user data
-
-Message content, reasoning traces, connector tokens and OAuth tokens are
+Message content, reasoning traces, connector tokens, and OAuth credentials are
 AES-256-GCM encrypted at rest. Conversation search is title-only as a direct
 consequence. Full account deletion (`DELETE /api/account`) cascades across
-PostgreSQL and object storage; see `docs/JUNO.md` §15.3.
+database records and object storage.

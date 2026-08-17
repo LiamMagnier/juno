@@ -2214,6 +2214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "After a delay"
   },
   {
+    "id": "21112354929172ac",
+    "source": "Listening... Speak naturally or interrupt anytime."
+  },
+  {
     "id": "212a77f64e92b41c",
     "source": "The passage attributes this to someone; the claim presents it as established."
   },
@@ -3198,6 +3202,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "et édité par"
   },
   {
+    "id": "2fe13d93a1f4b267",
+    "source": "End call"
+  },
+  {
     "id": "2fe70464aadf5873",
     "source": "Transition"
   },
@@ -3688,6 +3696,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "37b322c559d476e5",
     "source": "supported"
+  },
+  {
+    "id": "37c08ac1e02f263c",
+    "source": "Session ended."
   },
   {
     "id": "37ca715f53b6bb83",
@@ -4438,10 +4450,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno could not complete this request."
   },
   {
-    "id": "4359809f24dba80a",
-    "source": "Cross-origin request rejected."
-  },
-  {
     "id": "437aea62a5bd6ad4",
     "source": "Contents"
   },
@@ -4852,6 +4860,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49c266baaaa70981",
     "source": "Search"
+  },
+  {
+    "id": "49c4605816cfbf30",
+    "source": "Listening"
   },
   {
     "id": "49d1cb503605616c",
@@ -6376,6 +6388,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6176f6b264ea190b",
     "source": ". Vous pouvez exercer vos droits (accès, rectification, effacement, portabilité) directement depuis votre compte ou en contactant l'éditeur à l'adresse indiquée ci-dessus."
+  },
+  {
+    "id": "618d11f54ea4dd34",
+    "source": "Juno is speaking..."
   },
   {
     "id": "618dc58379dda348",
@@ -11154,6 +11170,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Link"
   },
   {
+    "id": "a6a937c6a7800a3f",
+    "source": "Network dropped. Reconnecting..."
+  },
+  {
     "id": "a6af1a26264783a5",
     "source": "Working out where sources disagree"
   },
@@ -11216,6 +11236,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7ebb9583dc8c204",
     "source": "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review."
+  },
+  {
+    "id": "a7ee8300ef5170e7",
+    "source": "End Call"
   },
   {
     "id": "a80fe6a2b077b907",
@@ -14190,6 +14214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "What this Mac may do"
   },
   {
+    "id": "d3eb6645fb039f7e",
+    "source": "Speaking (Click Interrupt to stop)"
+  },
+  {
     "id": "d3ef06f6eb7d0453",
     "source": "No AI model is available for your plan."
   },
@@ -14240,6 +14268,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d4ed480ea8dd22f7",
     "source": "Manage all connections"
+  },
+  {
+    "id": "d4f0aa9015f62573",
+    "source": "Connecting to live voice relay..."
   },
   {
     "id": "d4fb1b323f045871",
@@ -14890,6 +14922,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Save changes"
   },
   {
+    "id": "dd0cd0174f3949d1",
+    "source": "Juno Live Multimodal Session"
+  },
+  {
     "id": "dd0eb4b2f924e190",
     "source": "Library storage limit reached."
   },
@@ -15448,6 +15484,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e4e77efdc37460b2",
     "source": "Voice mode can receive images, but not document attachments yet."
+  },
+  {
+    "id": "e503367c41c06b12",
+    "source": "Close session"
   },
   {
     "id": "e5176a8cacaaa852",
