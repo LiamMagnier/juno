@@ -3,7 +3,9 @@ import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { streamGeminiSearch } from "@/lib/gemini-search";
-import { openMcpToolset, type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
+import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
+import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
+import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
 import type { ModelInfo } from "@/lib/models";
@@ -53,6 +55,8 @@ export async function* streamChat(opts: {
   webSearch?: boolean;
   /** Linked tool connectors (GitHub/Figma…) to expose to the model. */
   connectors?: ActiveConnector[];
+  /** Optional allowed tool IDs to restrict tool access (e.g. for Assistants). */
+  allowedTools?: string[];
   /** Per-request dynamic context (date, etc.) appended AFTER each provider's
    *  stable cached prefix — never into the system prompt itself. */
   dynamicContext?: string;
@@ -97,25 +101,25 @@ export async function* streamChat(opts: {
     yield* streamGeminiSearch(model, system, history, maxTokens, signal, dynamicContext);
     return;
   }
-  // Every provider now runs the tool loop here. Anthropic used to be handed the
-  // connectors as native `mcp_servers` and call them itself — see the note at
-  // the top of mcp.ts for why that route had to go.
+  // Open the Unified Agent Toolset (Python, Browser, Computer + active MCP connectors)
   let toolset: McpToolset | undefined;
-  if (active.length) {
-    if (!opts.audit) {
-      // A caller that hands over connectors without an audit identity is a bug,
-      // and the safe way to fail is with no tools rather than with untraceable
-      // ones — the answer still streams, it just cannot reach the user's
-      // accounts. Loud, because it is silent from the user's side.
-      console.error("[llm] connectors supplied without an audit context — tools disabled", {
-        connectors: active.map((c) => c.id),
+  if (opts.audit) {
+    try {
+      const agentContext: AgentExecutionContext = {
+        userId: opts.audit.userId,
+        sessionId: opts.audit.sessionId || `session-${Date.now()}`,
+        conversationId: opts.audit.conversationId || undefined,
+        mode: (opts.audit.surface as AgentMode) || "chat",
+        environment: "server_sandbox",
+        projectId: opts.audit.projectId || undefined,
+        abortSignal: signal,
+      };
+      toolset = await openUnifiedAgentToolset(active, agentContext, {
+        allowedToolIds: opts.allowedTools,
       });
-    } else {
-      try {
-        toolset = await openMcpToolset(active, opts.audit);
-      } catch {
-        toolset = undefined;
-      }
+    } catch (err) {
+      console.error("[llm] error opening unified agent toolset:", err);
+      toolset = undefined;
     }
   }
   try {

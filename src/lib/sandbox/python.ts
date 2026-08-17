@@ -100,16 +100,55 @@ _juno_user_globals = {
 
 `;
 
+export function getScrubbedSandboxEnv(customEnv?: Record<string, string>): Record<string, string> {
+  const allowed = ["PATH", "LANG", "LC_ALL", "TMPDIR", "PYTHONPATH", "HOME", "USER"];
+  const clean: Record<string, string> = {
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONUNBUFFERED: "1",
+    MPLBACKEND: "Agg",
+  };
+  for (const key of allowed) {
+    if (process.env[key]) {
+      clean[key] = process.env[key]!;
+    }
+  }
+  if (customEnv) {
+    for (const [k, v] of Object.entries(customEnv)) {
+      const upper = k.toUpperCase();
+      if (
+        !upper.includes("SECRET") &&
+        !upper.includes("KEY") &&
+        !upper.includes("TOKEN") &&
+        !upper.includes("DATABASE") &&
+        !upper.includes("PASSWORD") &&
+        !upper.includes("AUTH")
+      ) {
+        clean[k] = v;
+      }
+    }
+  }
+  return clean;
+}
+
+export interface PythonExecutionOptions {
+  code: string;
+  sessionId?: string;
+  timeoutMs?: number;
+  workingDirectory?: string;
+  env?: Record<string, string>;
+  inputFiles?: Array<{ name: string; content: Buffer | string }>;
+}
+
 /**
- * Execute Python code in an isolated temporary session workspace
+ * Execute Python code in an isolated session workspace
  */
 export async function executePythonSandbox(
   options: PythonExecutionOptions
 ): Promise<PythonExecutionResult> {
   const startTime = Date.now();
   const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const sessionId = crypto.randomUUID();
-  const tempDir = options.workingDirectory ?? path.join(os.tmpdir(), `juno-py-${sessionId}`);
+  const sessionId = options.sessionId || crypto.randomUUID();
+  const tempDir = options.workingDirectory ?? path.join(os.tmpdir(), "juno-python-workspaces", sessionId);
 
   await fs.mkdir(tempDir, { recursive: true });
 
@@ -141,21 +180,16 @@ print(json.dumps({
 print("__JUNO_DATA_END__")
 `;
 
-    const scriptPath = path.join(tempDir, `run_${sessionId}.py`);
+    const scriptPath = path.join(tempDir, `run_${Date.now()}.py`);
     await fs.writeFile(scriptPath, runnerScript, "utf8");
 
-    // Execute with python3
+    // Execute with python3 in scrubbed environment
     const pythonBin = process.env.PYTHON_PATH || "python3";
     
     return await new Promise<PythonExecutionResult>((resolve) => {
       const child = spawn(pythonBin, [scriptPath], {
         cwd: tempDir,
-        env: {
-          ...process.env,
-          ...options.env,
-          PYTHONDONTWRITEBYTECODE: "1",
-          PYTHONUNBUFFERED: "1",
-        },
+        env: getScrubbedSandboxEnv(options.env) as NodeJS.ProcessEnv,
         timeout,
       });
 
@@ -189,7 +223,7 @@ print("__JUNO_DATA_END__")
         }
       }, timeout);
 
-      child.on("error", (err) => {
+      child.on("error", (err: Error) => {
         clearTimeout(timer);
         const durationMs = Date.now() - startTime;
         resolve({
@@ -202,7 +236,7 @@ print("__JUNO_DATA_END__")
         });
       });
 
-      child.on("close", async (exitCode) => {
+      child.on("close", async (exitCode: number | null) => {
         clearTimeout(timer);
         const durationMs = Date.now() - startTime;
         const rawStdout = Buffer.concat(stdoutChunks).toString("utf8");
@@ -333,6 +367,7 @@ export const pythonTool: ToolDefinition<{ code: string; reason?: string }, Pytho
 
     const result = await executePythonSandbox({
       code: params.code,
+      sessionId: context.conversationId || context.sessionId,
       workingDirectory: context.workingDirectory,
       env: context.env,
     });
@@ -370,13 +405,14 @@ export const pythonTool: ToolDefinition<{ code: string; reason?: string }, Pytho
     // Convert generated files
     if (result.generatedFiles) {
       for (const file of result.generatedFiles) {
+        const sessionScope = context.conversationId || context.sessionId || "default";
         artifacts.push({
           id: `file-${Date.now()}-${file.name}`,
           type: "file",
           title: file.name,
           mimeType: file.mimeType,
           sizeBytes: file.sizeBytes,
-          downloadUrl: `/api/files/sandbox/${file.name}`,
+          downloadUrl: `/api/files/sandbox/${sessionScope}/${file.name}`,
         });
       }
     }

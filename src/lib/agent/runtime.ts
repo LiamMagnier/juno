@@ -181,6 +181,101 @@ export class UnifiedAgentRegistry {
   }
 }
 
+import { openMcpToolset, type ActiveConnector, type McpToolset, type McpFunctionTool, type McpToolsetContext, type ToolExecution } from "@/lib/mcp";
+
+/**
+ * Open a unified toolset containing both Native Unified Agent Tools (Python, Browser, Computer)
+ * and active user MCP connectors.
+ */
+export async function openUnifiedAgentToolset(
+  activeConnectors: ActiveConnector[] = [],
+  context: AgentExecutionContext,
+  options?: {
+    allowedToolIds?: string[];
+  }
+): Promise<McpToolset> {
+  const mcpContext: McpToolsetContext = {
+    userId: context.userId,
+    conversationId: context.conversationId,
+    surface: context.mode || "chat",
+    sessionId: context.sessionId,
+    projectId: context.projectId,
+  };
+
+  const baseMcpToolset = activeConnectors.length > 0
+    ? await openMcpToolset(activeConnectors, mcpContext)
+    : {
+        tools: [],
+        labelFor: (n: string) => n,
+        accessFor: () => "unknown" as const,
+        execute: async (n: string) => ({ text: `Unknown tool: ${n}`, body: `Unknown tool: ${n}`, ok: false }),
+        close: async () => {},
+      };
+
+  // Register registry tools (python, browser, computer, etc.)
+  const registryTools = defaultAgentRegistry.listTools().filter((t) => {
+    if (options?.allowedToolIds && options.allowedToolIds.length > 0) {
+      return options.allowedToolIds.includes(t.id);
+    }
+    return true;
+  });
+
+  const functionTools: McpFunctionTool[] = [...baseMcpToolset.tools];
+  const registryMap = new Map<string, ToolDefinition<unknown, unknown>>();
+
+  for (const t of registryTools) {
+    registryMap.set(t.id, t);
+    functionTools.push({
+      type: "function",
+      function: {
+        name: t.id,
+        description: t.description,
+        parameters: t.parameters as Record<string, unknown>,
+      },
+    });
+  }
+
+  return {
+    tools: functionTools,
+    labelFor: (toolName: string) => {
+      const reg = registryMap.get(toolName);
+      if (reg) return reg.name;
+      return baseMcpToolset.labelFor(toolName);
+    },
+    accessFor: (toolName: string) => {
+      const reg = registryMap.get(toolName);
+      if (reg) {
+        if (reg.riskClass === "read_only") return "read";
+        // "destructive_or_sensitive" and "external_write" both map to "write"
+        // since ToolAccess only has "read" | "write" | "unknown"
+        return "write";
+      }
+      return baseMcpToolset.accessFor(toolName);
+    },
+    execute: async (toolName: string, args: Record<string, unknown>, signal?: AbortSignal, callId?: string): Promise<ToolExecution> => {
+      const reg = registryMap.get(toolName);
+      if (reg) {
+        const result = await defaultAgentRegistry.executeToolCall(toolName, args, {
+          ...context,
+          abortSignal: signal || context.abortSignal,
+        });
+
+        const body = result.stdout || result.summary || JSON.stringify(result.data || {});
+        return {
+          text: body,
+          body,
+          ok: result.success,
+          ...(result.durationMs != null ? { durationMs: result.durationMs } : {}),
+        };
+      }
+      return baseMcpToolset.execute(toolName, args, signal, callId);
+    },
+    close: async () => {
+      await baseMcpToolset.close();
+    },
+  };
+}
+
 /** Global singleton instance of the agent registry */
 export const defaultAgentRegistry = new UnifiedAgentRegistry();
 
@@ -249,3 +344,5 @@ export function detectAutomaticEscalation(prompt: string): {
     reason: "Standard conversation prompt.",
   };
 }
+
+

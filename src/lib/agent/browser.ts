@@ -9,6 +9,8 @@ import crypto from "node:crypto";
 import type { ToolDefinition, AgentExecutionContext, ToolExecutionResult } from "@/lib/agent/types";
 import { isDisallowedHost } from "@/lib/search/url-safety";
 
+import { wrapUntrusted } from "@/lib/untrusted-content";
+
 export interface BrowserActionParams {
   action: "navigate" | "read" | "click" | "type" | "scroll" | "screenshot" | "extract";
   url?: string;
@@ -37,6 +39,7 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
   title: string;
   content: string;
   links: Array<{ text: string; href: string }>;
+  elements: Array<{ selector: string; role: string; text: string; interactive: boolean }>;
 }> {
   if (isDisallowedHost(targetUrl)) {
     throw new Error(`Unsafe or disallowed URL: ${targetUrl}`);
@@ -60,6 +63,17 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
   // Extract title
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
   const title = titleMatch ? titleMatch[1].trim() : targetUrl;
+
+  // Extract interactive elements (buttons, links, inputs)
+  const elements: Array<{ selector: string; role: string; text: string; interactive: boolean }> = [];
+  const btnRegex = /<button\b[^>]*>(.*?)<\/button>/gi;
+  let btnMatch;
+  while ((btnMatch = btnRegex.exec(html)) !== null && elements.length < 20) {
+    const btnText = btnMatch[1].replace(/<[^>]+>/g, "").trim();
+    if (btnText) {
+      elements.push({ selector: `button:has-text("${btnText.slice(0, 30)}")`, role: "button", text: btnText.slice(0, 50), interactive: true });
+    }
+  }
 
   // Clean HTML to text
   const text = html
@@ -86,6 +100,9 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
     const linkText = match[2].replace(/<[^>]+>/g, "").trim();
     if (href.startsWith("http") && linkText.length > 2) {
       links.push({ text: linkText, href });
+      if (elements.length < 50) {
+        elements.push({ selector: `a[href="${href}"]`, role: "link", text: linkText.slice(0, 50), interactive: true });
+      }
     }
   }
 
@@ -93,6 +110,7 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
     title,
     content: text.slice(0, 15000), // Bounded slice
     links,
+    elements,
   };
 }
 
@@ -156,12 +174,14 @@ export const browserTool: ToolDefinition<BrowserActionParams, BrowserActionResul
 
     try {
       const pageData = await extractSemanticPageContent(targetUrl);
+      const defendedContent = wrapUntrusted(targetUrl, pageData.content);
       
       const result: BrowserActionResult = {
         action: params.action,
         url: targetUrl,
         title: pageData.title,
-        content: pageData.content,
+        content: defendedContent,
+        elements: pageData.elements,
         status: "success",
         message: `Successfully loaded ${pageData.title}`,
       };
@@ -183,7 +203,7 @@ export const browserTool: ToolDefinition<BrowserActionParams, BrowserActionResul
         success: true,
         data: result,
         summary: `Loaded ${pageData.title} (${pageData.content.length} chars).`,
-        stdout: pageData.content.slice(0, 1000),
+        stdout: defendedContent.slice(0, 1000),
       };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);

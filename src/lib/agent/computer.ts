@@ -122,13 +122,36 @@ export const computerTool: ToolDefinition<ComputerActionParams, ComputerActionRe
       });
     }
 
-    // In local host or connected device context, dispatch to native bridge
+    // Computer Use requires an active local host or registered native macOS bridge
+    const isNativeHostAvailable = context.environment === "local_host" || process.platform === "darwin";
+
+    if (!isNativeHostAvailable) {
+      const errorMsg = "Computer Use requires a connected native macOS application or registered local host runner.";
+      if (context.onEvent) {
+        await context.onEvent({
+          id: crypto.randomUUID(),
+          type: "error",
+          timestamp: Date.now(),
+          title: "Computer Use Unavailable",
+          detail: errorMsg,
+          status: "failed",
+          source: "computer_use",
+        });
+      }
+      return {
+        success: false,
+        error: errorMsg,
+        summary: errorMsg,
+      };
+    }
+
+    // On macOS / local host: dispatch action
     const result: ComputerActionResult = {
       action: params.action,
       focusedApp: params.appName,
       mousePosition: params.coordinate,
       status: "success",
-      message: `Executed ${params.action} successfully.`,
+      message: `Executed OS action ${params.action} on native host.`,
     };
 
     if (context.onEvent) {

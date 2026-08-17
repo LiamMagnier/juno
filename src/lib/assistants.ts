@@ -67,7 +67,7 @@ export async function listUserAssistants(userId: string): Promise<JunoAssistantC
     const contract = (latestVersion?.contract as Record<string, unknown>) || {};
     const requestedTools = Array.isArray(latestVersion?.requestedTools)
       ? (latestVersion.requestedTools as string[])
-      : [];
+      : (Array.isArray(contract.allowedTools) ? (contract.allowedTools as string[]) : []);
 
     return {
       id: s.id,
@@ -78,9 +78,9 @@ export async function listUserAssistants(userId: string): Promise<JunoAssistantC
       avatarIcon: (contract.icon as string) || "bot",
       systemPrompt: latestVersion?.instructions || "",
       starterPrompts: (contract.starterPrompts as string[]) || [],
-      attachedDocumentIds: [],
-      attachedProjectIds: s.projectId ? [s.projectId] : [],
-      enabledConnectors: [],
+      attachedDocumentIds: Array.isArray(contract.attachedDocumentIds) ? (contract.attachedDocumentIds as string[]) : [],
+      attachedProjectIds: s.projectId ? [s.projectId] : (Array.isArray(contract.attachedProjectIds) ? (contract.attachedProjectIds as string[]) : []),
+      enabledConnectors: Array.isArray(contract.enabledConnectors) ? (contract.enabledConnectors as string[]) : [],
       allowedTools: requestedTools,
       preferredModelId: (contract.preferredModelId as string) || undefined,
       reasoningEffort: (contract.reasoningEffort as ReasoningEffort) || undefined,
@@ -117,7 +117,7 @@ export async function getAssistantById(id: string, userId: string): Promise<Juno
   const contract = (latestVersion?.contract as Record<string, unknown>) || {};
   const requestedTools = Array.isArray(latestVersion?.requestedTools)
     ? (latestVersion.requestedTools as string[])
-    : [];
+    : (Array.isArray(contract.allowedTools) ? (contract.allowedTools as string[]) : []);
 
   return {
     id: skill.id,
@@ -128,9 +128,9 @@ export async function getAssistantById(id: string, userId: string): Promise<Juno
     avatarIcon: (contract.icon as string) || "bot",
     systemPrompt: latestVersion?.instructions || "",
     starterPrompts: (contract.starterPrompts as string[]) || [],
-    attachedDocumentIds: [],
-    attachedProjectIds: skill.projectId ? [skill.projectId] : [],
-    enabledConnectors: [],
+    attachedDocumentIds: Array.isArray(contract.attachedDocumentIds) ? (contract.attachedDocumentIds as string[]) : [],
+    attachedProjectIds: skill.projectId ? [skill.projectId] : (Array.isArray(contract.attachedProjectIds) ? (contract.attachedProjectIds as string[]) : []),
+    enabledConnectors: Array.isArray(contract.enabledConnectors) ? (contract.enabledConnectors as string[]) : [],
     allowedTools: requestedTools,
     preferredModelId: (contract.preferredModelId as string) || undefined,
     reasoningEffort: (contract.reasoningEffort as ReasoningEffort) || undefined,
@@ -150,6 +150,10 @@ export async function createAssistant(input: CreateAssistantInput, userId: strin
   const contract = {
     icon: input.avatarIcon || "bot",
     starterPrompts: input.starterPrompts || [],
+    attachedDocumentIds: input.attachedDocumentIds || [],
+    attachedProjectIds: input.attachedProjectIds || [],
+    enabledConnectors: input.enabledConnectors || [],
+    allowedTools: input.allowedTools || [],
     preferredModelId: input.preferredModelId,
     reasoningEffort: input.reasoningEffort,
     isPinned: false,
@@ -227,6 +231,10 @@ export async function updateAssistant(
     ...currentContract,
     icon: input.avatarIcon ?? currentContract.icon,
     starterPrompts: input.starterPrompts ?? currentContract.starterPrompts,
+    attachedDocumentIds: input.attachedDocumentIds ?? currentContract.attachedDocumentIds ?? [],
+    attachedProjectIds: input.attachedProjectIds ?? currentContract.attachedProjectIds ?? [],
+    enabledConnectors: input.enabledConnectors ?? currentContract.enabledConnectors ?? [],
+    allowedTools: input.allowedTools ?? currentContract.allowedTools ?? [],
     preferredModelId: input.preferredModelId ?? currentContract.preferredModelId,
     reasoningEffort: input.reasoningEffort ?? currentContract.reasoningEffort,
     isPinned: input.isPinned ?? currentContract.isPinned,
