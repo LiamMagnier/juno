@@ -166,6 +166,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Adds:"
   },
   {
+    "id": "01734f4123dcfb81",
+    "source": "in_progress"
+  },
+  {
     "id": "0174c1a2d95d3830",
     "source": "JWT attacks · Web Security Academy"
   },
@@ -398,6 +402,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Step Lab"
   },
   {
+    "id": "05454a608b20f585",
+    "source": "Try adjusting your search query."
+  },
+  {
     "id": "0559aadba9e29b9a",
     "source": "OWNER"
   },
@@ -548,6 +556,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0759635d4e5cc1a6",
     "source": "Stiffness"
+  },
+  {
+    "id": "07709bdae3671f4f",
+    "source": "Navigate, read, query, and interact with web pages. Extracts clean semantic content, articles, tables, documentation, and handles links."
   },
   {
     "id": "0777720ef0c5e4d7",
@@ -730,6 +742,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Labelling claims that need caution"
   },
   {
+    "id": "0a211ff0b0d5dcd9",
+    "source": "Add Prompt"
+  },
+  {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
   },
@@ -814,6 +830,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Layers"
   },
   {
+    "id": "0bce1a892decbfde",
+    "source": "Start chat"
+  },
+  {
     "id": "0c0070929512c260",
     "source": "This changes something that can be put back — a label, a folder, a draft."
   },
@@ -884,6 +904,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0d415e5e1c5ed0db",
     "source": "Turn on the full app directory"
+  },
+  {
+    "id": "0d4fc4a78d3706ed",
+    "source": "table"
   },
   {
     "id": "0d50f4690b889038",
@@ -1054,6 +1078,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Preparing video"
   },
   {
+    "id": "0fd1b6bf0a54a546",
+    "source": "The computer action to perform."
+  },
+  {
     "id": "0fdd36b0e9718826",
     "source": "Loading design…"
   },
@@ -1080,6 +1108,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "103f4798bcb0256f",
     "source": "Loading your permissions"
+  },
+  {
+    "id": "10417f494eb69480",
+    "source": "Missing required fields: name and systemPrompt"
   },
   {
     "id": "104ab9213e28e4ff",
@@ -1128,6 +1160,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1111f38cbdd214f5",
     "source": "How it ran"
+  },
+  {
+    "id": "11281750ed633137",
+    "source": "Python Execution"
   },
   {
     "id": "112a72be9486fba1",
@@ -1242,6 +1278,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "connected"
   },
   {
+    "id": "12adff8169f026c0",
+    "source": "Custom assistant"
+  },
+  {
     "id": "12cbbeb03613d7a3",
     "source": "The summary didn’t come back. Nothing has been forgotten — memory is unchanged and still in use in your chats."
   },
@@ -1316,6 +1356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "140bedbf9c3f6d56",
     "source": "none"
+  },
+  {
+    "id": "140d38dc88766f6c",
+    "source": "rows ×"
   },
   {
     "id": "141395eb35564fe5",
@@ -1424,6 +1468,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "158727c99e454a7a",
     "source": "View pull request"
+  },
+  {
+    "id": "1589ad26de9b170e",
+    "source": "e.g. Analyze this CSV dataset for correlations..."
   },
   {
     "id": "158d4adc5c8966dc",
@@ -1592,6 +1640,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "18885f27b5af9012",
     "source": "Python"
+  },
+  {
+    "id": "188b543bc5f171b8",
+    "source": "No generated artifacts in this session."
   },
   {
     "id": "189a3bafd629dd95",
@@ -1790,6 +1842,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Untitled project"
   },
   {
+    "id": "1b67e81f90c79eca",
+    "source": "Cockpit"
+  },
+  {
     "id": "1b8ca2977380b08c",
     "source": "Selected area"
   },
@@ -1832,6 +1888,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1bff0171b36ed931",
     "source": "The entity index limit must be between 1 and 500."
+  },
+  {
+    "id": "1c00f68d34ca3c88",
+    "source": "Special key or keyboard shortcut (e.g. 'Return', 'Cmd+C')."
   },
   {
     "id": "1c07427e6dcfbce1",
@@ -2048,6 +2108,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1f63bf47bd52c80a",
     "source": "People with the link see the conversation up to now — new messages stay private."
+  },
+  {
+    "id": "1f6bc891a82ceef8",
+    "source": "Control the desktop GUI: take screenshots, move/click the mouse, type text, send key shortcuts, and focus applications."
   },
   {
     "id": "1f71af1ee6b4e788",
@@ -2666,6 +2730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skip"
   },
   {
+    "id": "28d47e4b444dc381",
+    "source": "CSS selector or semantic identifier of an element to interact with."
+  },
+  {
     "id": "28e70663be7527fe",
     "source": "Generate edit"
   },
@@ -3242,6 +3310,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ask a question in the composer above to start a conversation."
   },
   {
+    "id": "318565636fc17701",
+    "source": "records)"
+  },
+  {
     "id": "318fb174f5eb09a3",
     "source": "Time of day"
   },
@@ -3344,6 +3416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "330509caa0f2887d",
     "source": "Invalid request"
+  },
+  {
+    "id": "330f3577307ecc09",
+    "source": "Create custom assistants tailored to your specific workflows, datasets, and tasks."
   },
   {
     "id": "331551b0de4157c9",
@@ -3568,6 +3644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3703b3cd1ce0ff1d",
     "source": "Allowed. Juno will not ask again before this action on this connector."
+  },
+  {
+    "id": "3715a2235b81408b",
+    "source": "Search assistants..."
   },
   {
     "id": "372e824bd71acab1",
@@ -3826,6 +3906,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Code mode & native apps"
   },
   {
+    "id": "3ac575dcce244f93",
+    "source": "Download image"
+  },
+  {
     "id": "3ac8bbca9a74cfbd",
     "source": "Billing"
   },
@@ -3968,6 +4052,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3d434e99c204071a",
     "source": "The version declares an unusually broad domain surface."
+  },
+  {
+    "id": "3d43f9c13eac63aa",
+    "source": "Purpose of browsing this page."
   },
   {
     "id": "3d6df245178e6076",
@@ -4390,6 +4478,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Deleting…"
   },
   {
+    "id": "44253ca9e35663d8",
+    "source": "Python interpreter & data analysis sandbox active."
+  },
+  {
     "id": "44359e21492d7881",
     "source": "and the"
   },
@@ -4702,6 +4794,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "One workspace, properly equipped."
   },
   {
+    "id": "492e76bd8c936d30",
+    "source": "The web URL to navigate to or read."
+  },
+  {
     "id": "49347b8b28cbe244",
     "source": "Your signed-in browser"
   },
@@ -4724,6 +4820,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49774d1b090e3fe6",
     "source": "task_limit"
+  },
+  {
+    "id": "4977a7e5bb3675c4",
+    "source": "Running..."
   },
   {
     "id": "4977ccf40af4a648",
@@ -5078,6 +5178,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "When you answer an approval with “and stop asking”, that covers that one action for the rest of that task only, and lapses when the task ends. Nothing you allow on one task carries over to another. See the decisions a task made under"
   },
   {
+    "id": "4df8a59547ee7fb6",
+    "source": "X or Y pixel coordinate"
+  },
+  {
     "id": "4e0cec750048925e",
     "source": "Nothing has been changed by the attempt, and it is still running to whatever clock it was set to."
   },
@@ -5272,6 +5376,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "514971900a6a82fa",
     "source": "No base URL for provider."
+  },
+  {
+    "id": "515205221528cb1f",
+    "source": "KB)"
   },
   {
     "id": "5167e9677e1fbc50",
@@ -5834,6 +5942,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Prepended to every chat here — Juno reads this before your first message, alongside the referenced files."
   },
   {
+    "id": "5b6ee86485899b1d",
+    "source": "No active background actions."
+  },
+  {
     "id": "5b720147b6918dfc",
     "source": "retired"
   },
@@ -6254,6 +6366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Bring Juno up to date"
   },
   {
+    "id": "616f6f51e3ca1371",
+    "source": "Text to type via keyboard."
+  },
+  {
     "id": "617579d5e7578130",
     "source": "Runs in"
   },
@@ -6300,6 +6416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6205b4d88e13750e",
     "source": "Project instructions"
+  },
+  {
+    "id": "6213baea4bbb8283",
+    "source": "Create your first assistant"
   },
   {
     "id": "621675ea7b659562",
@@ -6626,6 +6746,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skills"
   },
   {
+    "id": "66dcc8877e4bcaf7",
+    "source": "Application name to bring to foreground."
+  },
+  {
     "id": "66dfeeedabf1f022",
     "source": "https://"
   },
@@ -6640,6 +6764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "66f4804ee23ddc09",
     "source": "Archive"
+  },
+  {
+    "id": "66f62d1807d3821a",
+    "source": "research"
   },
   {
     "id": "66fa41f5bd6fa382",
@@ -6814,6 +6942,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn't load that version."
   },
   {
+    "id": "6928f651fe190070",
+    "source": "Assistant not found"
+  },
+  {
     "id": "692ff6f0ac24b7a0",
     "source": "Invalid receipt lookup."
   },
@@ -6912,6 +7044,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6a5b604d1e7816b0",
     "source": "Applies to the whole image."
+  },
+  {
+    "id": "6a7717319303c812",
+    "source": "The browser action to perform."
   },
   {
     "id": "6a822da0d9dba422",
@@ -7172,6 +7308,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6e40618bbeaed740",
     "source": "Silent-video generation, two generations back."
+  },
+  {
+    "id": "6e41c41a23b9887a",
+    "source": "cols)"
   },
   {
     "id": "6e56137e21d3222a",
@@ -7550,6 +7690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Memory updated."
   },
   {
+    "id": "72e46581ae1a30a0",
+    "source": "The complete Python code to execute. Can use pandas, numpy, matplotlib.pyplot, scipy, openpyxl, sqlite3, json, math, etc."
+  },
+  {
     "id": "72e971f06472669c",
     "source": "Enter your email and we’ll send you a secure reset link."
   },
@@ -7566,6 +7710,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "4. Plans et tarifs"
   },
   {
+    "id": "7349f6c19ea0fa04",
+    "source": "e.g. Python Data Analyst"
+  },
+  {
     "id": "73562ef0b3bc9a95",
     "source": ", dont le siège est situé"
   },
@@ -7576,6 +7724,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7364b67e2daa4208",
     "source": "A folder changes"
+  },
+  {
+    "id": "73684d30095870fe",
+    "source": "No matching rows"
   },
   {
     "id": "7377ca4b5e6eeb96",
@@ -7666,6 +7818,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Needs you"
   },
   {
+    "id": "74bd4b5297a587fa",
+    "source": "Instructions (System Prompt) *"
+  },
+  {
     "id": "74c54a8de1a7575d",
     "source": "The request didn't come back. Nothing is shown rather than a guess at what's there."
   },
@@ -7712,6 +7868,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7550821503a79223",
     "source": "The voice transcript could not be saved."
+  },
+  {
+    "id": "7560597ea4fb585d",
+    "source": "Assistant Name *"
   },
   {
     "id": "7566340b6fe12bd0",
@@ -8530,6 +8690,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Tighten a test gap"
   },
   {
+    "id": "82aac81d5cad6db7",
+    "source": "No matching assistants"
+  },
+  {
+    "id": "82ad06fbbdc98243",
+    "source": "Starter Prompts"
+  },
+  {
     "id": "82c268188cd66576",
     "source": "Glass"
   },
@@ -8652,6 +8820,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8453e9e99229730e",
     "source": "Legacy alias routing to V4 Flash."
+  },
+  {
+    "id": "8483339396cbbb57",
+    "source": "searching"
   },
   {
     "id": "848dad9ba0a4bacc",
@@ -8806,12 +8978,24 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This"
   },
   {
+    "id": "86ecfb2dbb2dfb9a",
+    "source": "Approval broker unavailable for mutating action"
+  },
+  {
     "id": "86eff0228fe66ead",
     "source": "Loading Mac"
   },
   {
     "id": "8702b1d433cf3689",
     "source": "Billing is not configured."
+  },
+  {
+    "id": "8703a41f83c59f53",
+    "source": "[x, y] screen coordinates for mouse actions."
+  },
+  {
+    "id": "870c9e41ea6e1f50",
+    "source": "@python"
   },
   {
     "id": "875d89e3209d7445",
@@ -9030,6 +9214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This account has been suspended for violating Juno&rsquo;s"
   },
   {
+    "id": "8b86bae693aabaf5",
+    "source": "Provide exact behavioral guidelines, persona, output styles, and domain constraints..."
+  },
+  {
     "id": "8b9431b08229c9c6",
     "source": "Fast, very cheap default — near-Pro reasoning at a third of the cost."
   },
@@ -9072,6 +9260,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8c2ef559f91d5f39",
     "source": "Run not found"
+  },
+  {
+    "id": "8c421ca279d9e25b",
+    "source": "Not found or only the owner can delete the project"
   },
   {
     "id": "8c4b4eb91f682bc9",
@@ -9374,6 +9566,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "modify"
   },
   {
+    "id": "913101023d6a8330",
+    "source": "Assistants"
+  },
+  {
     "id": "9143c13d4dc5f748",
     "source": "Result types to include; defaults to all four."
   },
@@ -9534,6 +9730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "process-timeline"
   },
   {
+    "id": "938f7097771c4eec",
+    "source": "Save Assistant"
+  },
+  {
     "id": "93a26b1eaff99b3a",
     "source": "Send message"
   },
@@ -9572,6 +9772,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "94601469e0f04412",
     "source": "Share Screen"
+  },
+  {
+    "id": "94614074d41d7954",
+    "source": "Assistant not found or update failed"
   },
   {
     "id": "94678998ca73cdfc",
@@ -9942,6 +10146,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Approval needed"
   },
   {
+    "id": "99292220d1e5a904",
+    "source": "User-facing reason for performing this OS action."
+  },
+  {
     "id": "993b2dfa9bd2be17",
     "source": "These exact words go over. Juno&rsquo;s side of this call does not."
   },
@@ -10282,6 +10490,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Check"
   },
   {
+    "id": "9d656a2f297b11a5",
+    "source": "What does this assistant do?"
+  },
+  {
     "id": "9d6a9acb6241fc44",
     "source": "Add a file"
   },
@@ -10318,6 +10530,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search projects"
   },
   {
+    "id": "9e231eb9fc557c29",
+    "source": "Auto (Intelligent Routing)"
+  },
+  {
     "id": "9e244510fd75bb98",
     "source": "5. Durées de conservation"
   },
@@ -10346,6 +10562,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create your account"
   },
   {
+    "id": "9e7d85a50dc37f9f",
+    "source": "ms)"
+  },
+  {
     "id": "9e7edf9717eb87c1",
     "source": "You see what every answer costs."
   },
@@ -10360,6 +10580,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9ea1fed5d2c1a18d",
     "source": "Copy source"
+  },
+  {
+    "id": "9ec4dba88d52bd0a",
+    "source": "python_execution"
   },
   {
     "id": "9ecce0b1bba753b0",
@@ -10710,6 +10934,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Source unavailable"
   },
   {
+    "id": "a4023b89022f326c",
+    "source": "Download CSV"
+  },
+  {
+    "id": "a40c1603685aa65a",
+    "source": "Preferred Model"
+  },
+  {
     "id": "a40d45a85ffded6c",
     "source": "Start free — upgrade any time. Changes apply instantly."
   },
@@ -10870,6 +11102,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Or type your own answer…"
   },
   {
+    "id": "a62d66048d21541b",
+    "source": "Browser Navigation Failed"
+  },
+  {
     "id": "a631e1b12e91deee",
     "source": "Files in the folders you have shared"
   },
@@ -10884,6 +11120,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a638d0727fc47ae7",
     "source": "Design tokens (JSON)"
+  },
+  {
+    "id": "a647c2983423f7fa",
+    "source": "Text to type into an input field."
   },
   {
     "id": "a650c298cf449957",
@@ -11222,6 +11462,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Message UID (from search_messages)."
   },
   {
+    "id": "aba0efca782606de",
+    "source": "Executing Python"
+  },
+  {
     "id": "abac10b3e738ff5f",
     "source": "Pick a project"
   },
@@ -11304,6 +11548,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "acd26424f8e31aae",
     "source": "Start time, ISO 8601."
+  },
+  {
+    "id": "ace1de46bb1a3b26",
+    "source": "Edit Assistant"
   },
   {
     "id": "ace664fcf9d759f8",
@@ -11858,6 +12106,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fix Bug"
   },
   {
+    "id": "b4cc4b07c300103a",
+    "source": "In Progress"
+  },
+  {
     "id": "b4d879ff56f2c045",
     "source": "Claude Fable"
   },
@@ -12270,6 +12522,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Listening…"
   },
   {
+    "id": "bbd13486e3ff6aef",
+    "source": "browsing"
+  },
+  {
     "id": "bbd996a157fca8b5",
     "source": "Adjust what runs, on which model, and when."
   },
@@ -12280,6 +12536,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bbedbdbdb01c4206",
     "source": "Juno is waiting for you to allow or refuse one action. Nothing else happens until you decide."
+  },
+  {
+    "id": "bbedc70e985fe0b6",
+    "source": "Sharing"
   },
   {
     "id": "bc05fe58e90941c3",
@@ -12434,6 +12694,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Used as the poster image or a static visual."
   },
   {
+    "id": "beeb7fd0a49e59e7",
+    "source": "Invalid action"
+  },
+  {
     "id": "bef32d2c315a2895",
     "source": "native"
   },
@@ -12496,6 +12760,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bfa4c0f795f8538f",
     "source": "Qualified"
+  },
+  {
+    "id": "bfd3d7bf58e83578",
+    "source": "@assistants"
   },
   {
     "id": "bfd402b2f6f38125",
@@ -12656,6 +12924,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c25252077c37884b",
     "source": "Juno only remembers approval for actions it can undo. Allow this once, or deny it."
+  },
+  {
+    "id": "c2536b20340195d5",
+    "source": "Python Data Analysis"
   },
   {
     "id": "c26b3ed4ce70e202",
@@ -13286,6 +13558,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Europe/Paris"
   },
   {
+    "id": "cc57fc1903e444cf",
+    "source": "chart"
+  },
+  {
     "id": "cc7a45e8556287a6",
     "source": "Données de facturation"
   },
@@ -13554,6 +13830,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Drawing inline visual..."
   },
   {
+    "id": "cf87593344c3fe37",
+    "source": "Artifacts ("
+  },
+  {
     "id": "cf8d3c2d8e84bb31",
     "source": "New project…"
   },
@@ -13616,6 +13896,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d02bd7d7c1008440",
     "source": "Needs an answer"
+  },
+  {
+    "id": "d03b8781b4b1cb65",
+    "source": "DataFrame"
   },
   {
     "id": "d04fc7d7e19702f8",
@@ -13768,6 +14052,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d1fc8381e22ddd72",
     "source": "&rdquo;"
+  },
+  {
+    "id": "d20244fd6a19e839",
+    "source": "New assistant"
   },
   {
     "id": "d20626c3e87fb552",
@@ -14158,6 +14446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Any of my Macs"
   },
   {
+    "id": "d7c3b40d496abac5",
+    "source": "Juno Assistants"
+  },
+  {
     "id": "d7cbbb688b2e506c",
     "source": "selected"
   },
@@ -14350,6 +14642,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Upload limit reached. Try again later."
   },
   {
+    "id": "da0a55787f44bb23",
+    "source": "Not found or insufficient permissions"
+  },
+  {
     "id": "da1357f535bcbfbb",
     "source": "&rdquo; ·"
   },
@@ -14540,6 +14836,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dc937b59892604f5",
     "source": "None"
+  },
+  {
+    "id": "dc940a38e3e5eca5",
+    "source": "Short Description"
   },
   {
     "id": "dc94eb66542cb221",
@@ -14750,6 +15050,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The flag list didn’t come back. No strike, ban or dismissal has been applied by the attempt."
   },
   {
+    "id": "df56268122147e24",
+    "source": "emailOrUserId is required"
+  },
+  {
     "id": "df61aaa010047da8",
     "source": "No usable sources came back for this plan."
   },
@@ -14760,6 +15064,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dfb167939789bfc4",
     "source": "Unknown locale"
+  },
+  {
+    "id": "dfc1acca7d38ce07",
+    "source": "Notification not found or already read"
   },
   {
     "id": "dfca811acf71f3e9",
@@ -15180,6 +15488,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e5c1b08c3503fb58",
     "source": "Nothing changed after your last instruction. Switch to Everything to see earlier turns."
+  },
+  {
+    "id": "e5c5535ef111b9d6",
+    "source": "Specialized AI assistants with dedicated knowledge, custom instructions, and configured tools."
   },
   {
     "id": "e5c690f21870541e",
@@ -15606,6 +15918,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "View v"
   },
   {
+    "id": "ebd02891353af1a1",
+    "source": "Configure custom instructions, preferred model, and capabilities."
+  },
+  {
     "id": "ebd57ec9a765e7a9",
     "source": "Started again."
   },
@@ -15692,6 +16008,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ec963ffc911b8401",
     "source": "Checking…"
+  },
+  {
+    "id": "ec9c8be4d7dede5d",
+    "source": "Filter..."
   },
   {
     "id": "ec9e9a909b70ba26",
@@ -15790,6 +16110,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "MiniMax Highspeed"
   },
   {
+    "id": "ee30bf8fbf8a94d5",
+    "source": "Computer Use Unavailable"
+  },
+  {
     "id": "ee34454b07d34ad2",
     "source": "Grok Multi-Agent"
   },
@@ -15822,12 +16146,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not remove file."
   },
   {
+    "id": "ee9926e97aa9890c",
+    "source": "Generated Chart"
+  },
+  {
     "id": "eea72e3f88e91b79",
     "source": "The schedule stops and its run history is removed. The results chat is kept. This can’t be undone."
   },
   {
     "id": "eeb088fdeabf77d2",
     "source": "Nothing shared yet"
+  },
+  {
+    "id": "eecda5430af0d543",
+    "source": "Execute Python code in a secure sandbox for data analysis, calculations, data transformations, charts (matplotlib), spreadsheets (pandas/openpyxl), and statistics."
   },
   {
     "id": "eedb53728588cfa9",
@@ -15860,6 +16192,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ef79493f660c335e",
     "source": "Nothing in this document animates yet."
+  },
+  {
+    "id": "ef8e4285827f32b5",
+    "source": "Brief rationale of what is being computed or analyzed."
   },
   {
     "id": "ef98b35ae322faa5",
@@ -15938,6 +16274,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Go to what needs you"
   },
   {
+    "id": "f09d54d31f995b06",
+    "source": "Create Juno Assistant"
+  },
+  {
     "id": "f0a3bbeb4790d91e",
     "source": "dispatch_failed"
   },
@@ -15972,6 +16312,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f10ef39e449aace6",
     "source": "[adresse e-mail de contact]"
+  },
+  {
+    "id": "f127614a89eb6845",
+    "source": "No assistants created yet"
   },
   {
     "id": "f14c1bb84b25f044",
@@ -16812,6 +17156,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fe258712a5204dd3",
     "source": "Preview unavailable for"
+  },
+  {
+    "id": "fe314b3e1d77dc67",
+    "source": "New Assistant"
   },
   {
     "id": "fe469a98cfab4714",
