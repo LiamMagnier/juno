@@ -274,6 +274,7 @@ GENERATED_SHA="$(sed -n 's/^JUNO_GIT_SHA = //p' "$GENERATED_METADATA" | head -1)
 [ -z "$(git status --porcelain --untracked-files=all)" ] || die "The source tree changed while preparing the archive. Refusing to publish mixed provenance."
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -destination 'generic/platform=macOS' \
+  -derivedDataPath "$BUILD_DIR/archive-dd" \
   -archivePath "$BUILD_DIR/archive.xcarchive" \
   ENABLE_HARDENED_RUNTIME=YES \
   DEVELOPMENT_TEAM="$CONFIGURED_TEAM" \
