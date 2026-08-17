@@ -710,9 +710,10 @@ export function AppSidebar({
                   <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
+              <RailIcon href="/assistants" active={pathname === "/assistants"} label="Assistants"><SidebarMotionIcon kind="assistants" /></RailIcon>
+              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><SidebarMotionIcon kind="projects" /></RailIcon>
               <RailIcon href="/library" active={pathname === "/library"} label="Library"><SidebarMotionIcon kind="library" /></RailIcon>
               <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><SidebarMotionIcon kind="artifacts" /></RailIcon>
-              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><SidebarMotionIcon kind="projects" /></RailIcon>
               <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><SidebarMotionIcon kind="tasks" /></RailIcon>
               <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><SidebarMotionIcon kind="connections" /></RailIcon>
             </>
@@ -863,10 +864,11 @@ export function AppSidebar({
               }
               label="New chat"
             />
+            <NavRow href="/assistants" active={pathname === "/assistants"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="assistants" />} label="Assistants" />
+            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="projects" />} label="Projects" />
             <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="library" />} label="Library" />
             <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="artifacts" />} label="Artifacts" />
             <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Connections" />
-            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="projects" />} label="Projects" />
             <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Tasks" />
           </>
         )}

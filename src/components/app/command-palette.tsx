@@ -964,6 +964,14 @@ function CommandMenu() {
         keywords: "schedule recurring automation cron reminder",
         run: () => go("/tasks"),
       },
+      {
+        id: "new-assistant",
+        group: "Quick actions",
+        label: "New assistant",
+        icon: AppIcons.assistants,
+        keywords: "create custom assistant bot gem gpt instructions",
+        run: () => go("/assistants"),
+      },
     ].filter((c) => matches(c.label, c.keywords));
 
     const chats = conversations.filter((c) => c.kind !== "code");
@@ -998,6 +1006,7 @@ function CommandMenu() {
     }
 
     const actions: PaletteItem[] = [
+      { id: "assistants", group: "Actions", label: "Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
       { id: "projects", group: "Actions", label: "Projects", icon: AppIcons.projects, keywords: "workspaces group", run: () => go("/projects") },
       { id: "work", group: "Actions", label: "Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
       { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions new task composer prompt start juno code", run: () => go("/code/new") },

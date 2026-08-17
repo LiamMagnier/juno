@@ -434,3 +434,35 @@ export const AUTO_MODEL_INFO: ModelInfo = {
   family: "auto",
   legacy: false,
 };
+
+/**
+ * Resolve an ordered chain of fallback models for resilience against provider downtime or rate limits.
+ */
+export function resolveModelFallbackChain(primaryModel: ModelInfo, plan: Plan): ModelInfo[] {
+  const chain: ModelInfo[] = [primaryModel];
+  const primaryProvider = primaryModel.provider;
+  const primaryIntel = getModelMetrics(primaryModel).intelligence;
+
+  // Find candidate models from other providers that match modality and capabilities
+  const alternates = MODEL_LIST.filter(
+    (m) =>
+      m.id !== primaryModel.id &&
+      m.provider !== primaryProvider &&
+      isEligibleChatModel(m, plan, primaryModel.vision, primaryModel.webSearch) &&
+      getModelMetrics(m).intelligence >= primaryIntel - 1
+  ).sort((a, b) => {
+    const intelDiff = Math.abs(getModelMetrics(a).intelligence - primaryIntel) - Math.abs(getModelMetrics(b).intelligence - primaryIntel);
+    if (intelDiff !== 0) return intelDiff;
+    return averageRequestCostMicroUsd(a) - averageRequestCostMicroUsd(b);
+  });
+
+  for (const alt of alternates) {
+    if (!chain.some((c) => c.provider === alt.provider)) {
+      chain.push(alt);
+      if (chain.length >= 3) break;
+    }
+  }
+
+  return chain;
+}
+

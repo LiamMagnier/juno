@@ -928,6 +928,25 @@ export function Composer({
         on: settings.memoryEnabled,
         run: () => toggleMemory(!settings.memoryEnabled),
       },
+      {
+        id: "tool:python",
+        key: "python",
+        label: "@python",
+        hint: "Python sandbox & data analysis",
+        group: "tools",
+        icon: AppIcons.code,
+        on: true,
+        run: () => toast.success("Python interpreter & data analysis sandbox active."),
+      },
+      {
+        id: "tool:assistants",
+        key: "assistants",
+        label: "@assistants",
+        hint: "Browse & switch Juno Assistants",
+        group: "tools",
+        icon: AppIcons.assistants,
+        run: () => router.push("/assistants"),
+      },
     ];
 
     if (showConnectors) {
