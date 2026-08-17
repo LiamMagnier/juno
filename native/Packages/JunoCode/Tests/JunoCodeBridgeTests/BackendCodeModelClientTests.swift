@@ -398,16 +398,16 @@ final class BackendCodeModelClientTests: XCTestCase {
     }
 
     func testNon2xxThrowsWithServerMessage() async {
-        let body = #"{"error":"Rate limit exceeded. Try again shortly."}"#
+        let body = #"{"error":"Internal inference engine error."}"#
         let streamer = FakeByteStreamer(
-            canned: .init(statusCode: 429, contentType: "application/json", body: Data(body.utf8))
+            canned: .init(statusCode: 500, contentType: "application/json", body: Data(body.utf8))
         )
         let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
         let (_, error) = await collect(client, makeRequest())
         guard case let AgentModelClientError.transport(message)? = error as? AgentModelClientError else {
             return XCTFail("expected transport error")
         }
-        XCTAssertEqual(message, "Rate limit exceeded. Try again shortly.")
+        XCTAssertEqual(message, "Internal inference engine error.")
     }
 
     func testUnsupportedModelFailsClosed() async {
@@ -553,4 +553,114 @@ final class BackendCodeModelClientTests: XCTestCase {
             return XCTFail("expected tool-use completion")
         }
     }
+
+    func testCrossProviderToolCallWithExtraStripsGoogleThoughtSignatureForCodestralAndOpenAI() async throws {
+        let sse = """
+        data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+
+        data: [DONE]
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+
+        let extraContent: JSONValue = [
+            "google": [
+                "thought_signature": "opaque_gemini_signature_123"
+            ]
+        ]
+        let request = makeRequest(
+            messages: [
+                .user("Perform design"),
+                .toolCallWithExtra(
+                    id: "call_abc",
+                    name: "read_file",
+                    input: ["path": "index.html"],
+                    extraContent: extraContent
+                ),
+                .toolResult(id: "call_abc", content: "<html></html>", isError: false),
+            ],
+            modelID: "mistral:codestral-latest"
+        )
+
+        let (_, error) = await collect(client, request)
+        XCTAssertNil(error)
+        let body = try XCTUnwrap(streamer.lastRequest?.body)
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        let messages = try XCTUnwrap(json["messages"]?.arrayValue)
+        let toolCallMsg = messages.first { msg in
+            msg["role"]?.stringValue == "assistant" && msg["tool_calls"] != nil
+        }
+        let toolCalls = try XCTUnwrap(toolCallMsg?["tool_calls"]?.arrayValue)
+        XCTAssertEqual(toolCalls.count, 1)
+        // Extra content must NOT be present when serializing for Mistral/Codestral/OpenAI!
+        XCTAssertNil(toolCalls[0]["extra_content"])
+    }
+
+    func testCrossProviderToolCallWithExtraRetainsGoogleThoughtSignatureForGemini() async throws {
+        let sse = """
+        data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2}}
+
+        data: [DONE]
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+
+        let extraContent: JSONValue = [
+            "google": [
+                "thought_signature": "opaque_gemini_signature_123"
+            ]
+        ]
+        let request = makeRequest(
+            messages: [
+                .user("Perform design"),
+                .toolCallWithExtra(
+                    id: "call_abc",
+                    name: "read_file",
+                    input: ["path": "index.html"],
+                    extraContent: extraContent
+                ),
+                .toolResult(id: "call_abc", content: "<html></html>", isError: false),
+            ],
+            modelID: "google:gemini-3.7-flash"
+        )
+
+        let (_, error) = await collect(client, request)
+        XCTAssertNil(error)
+        let body = try XCTUnwrap(streamer.lastRequest?.body)
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        let messages = try XCTUnwrap(json["messages"]?.arrayValue)
+        let toolCallMsg = messages.first { msg in
+            msg["role"]?.stringValue == "assistant" && msg["tool_calls"] != nil
+        }
+        let toolCalls = try XCTUnwrap(toolCallMsg?["tool_calls"]?.arrayValue)
+        XCTAssertEqual(toolCalls.count, 1)
+        // Extra content must be retained when serializing for Gemini!
+        XCTAssertNotNil(toolCalls[0]["extra_content"])
+        XCTAssertEqual(
+            toolCalls[0]["extra_content"]?["google"]?["thought_signature"]?.stringValue,
+            "opaque_gemini_signature_123"
+        )
+    }
+
+    func testQuotaExhaustedErrorClassification() async throws {
+        let errorBody = """
+        {"error":{"message":"You exceeded your current quota, please check your plan and billing details."}}
+        """
+        let streamer = FakeByteStreamer(canned: .init(
+            statusCode: 429,
+            contentType: "application/json",
+            body: Data(errorBody.utf8)
+        ))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        let (_, error) = await collect(client, makeRequest(modelID: "google:gemini-3.7-flash"))
+        guard let clientError = error as? AgentModelClientError else {
+            return XCTFail("Expected AgentModelClientError, got \(String(describing: error))")
+        }
+        guard case .quotaExhausted = clientError else {
+            return XCTFail("Expected quotaExhausted error, got \(clientError)")
+        }
+    }
 }
+

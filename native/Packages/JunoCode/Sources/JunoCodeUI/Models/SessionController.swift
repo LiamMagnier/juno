@@ -660,13 +660,13 @@ public final class SessionController {
                             executionRootPath: context.access.rootURL.path,
                             gitBranch: nil,
                             permissionMode: .workspaceWrite,
-                            finalize: {}
+                            finalize: { nil }
                         )
                     }
                 },
                 controls: live.subagentControls,
-                fallbackResolver: fallbackResolver
-            )
+                fallbackResolver: live.fallbackResolver
+            ))
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
             // with a different label. A repository map benefits from several
@@ -688,7 +688,7 @@ public final class SessionController {
                     modelID: contract.modelID,
                     reasoningEffort: contract.reasoningEffort,
                     parentSystemPrompt: systemPrompt,
-                    fallbackResolver: fallbackResolver
+                    fallbackResolver: live.fallbackResolver
                 )
             )
         }

@@ -94,30 +94,12 @@ final class GoalModelsTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? GoalStateError, .completionRequiresAllSteps)
         }
-        XCTAssertThrowsError(
-            try goal.apply(
-                .setStepStatus(id: "step-1", status: .completed),
-                at: start.addingTimeInterval(2)
-            )
-        ) { error in
-            XCTAssertEqual(
-                error as? GoalStateError,
-                .invalidStepTransition(
-                    stepID: "step-1",
-                    from: .pending,
-                    to: .completed
-                )
-            )
-        }
-
-        try goal.apply(
-            .setStepStatus(id: "step-1", status: .inProgress),
-            at: start.addingTimeInterval(3)
-        )
+        // Direct transition from pending to completed is now supported
         try goal.apply(
             .setStepStatus(id: "step-1", status: .completed),
-            at: start.addingTimeInterval(4)
+            at: start.addingTimeInterval(2)
         )
+        XCTAssertEqual(goal.steps[0].status, .completed)
         try goal.apply(
             .setStepStatus(id: "step-2", status: .inProgress),
             at: start.addingTimeInterval(5)

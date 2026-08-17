@@ -304,10 +304,10 @@ public struct BackendCodeModelClient: AgentModelClient {
                         let lowerMessage = message.lowercased()
                         if response.statusCode == 401 || response.statusCode == 403 {
                             throw AgentModelClientError.unauthorized
-                        } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
-                            throw AgentModelClientError.rateLimited
                         } else if response.statusCode == 402 || lowerMessage.contains("quota") || lowerMessage.contains("exceeded your current quota") {
                             throw AgentModelClientError.quotaExhausted(message: message)
+                        } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
+                            throw AgentModelClientError.rateLimited
                         }
                         throw AgentModelClientError.transport(message: message)
                     }
