@@ -133,7 +133,7 @@ async function attachmentToJpegBase64(attachment: ClientAttachment): Promise<str
  */
 export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {}) {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
-  const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "openai");
+  const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "gemini");
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);

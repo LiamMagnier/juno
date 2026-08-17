@@ -36,14 +36,14 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
     /// Resolves the corresponding voice provider from any model identifier.
     public static func from(modelID: String) -> JunoVoiceProvider {
         let lower = modelID.lowercased()
-        if lower.contains("gemini") || lower.contains("google") {
-            return .gemini
+        if lower.contains("openai") || lower.contains("gpt") {
+            return .openai
         } else if lower.contains("qwen") || lower.contains("dashscope") || lower.contains("alibaba") {
             return .qwen
         } else if lower.contains("minimax") {
             return .minimax
         } else {
-            return .openai
+            return .gemini
         }
     }
 }

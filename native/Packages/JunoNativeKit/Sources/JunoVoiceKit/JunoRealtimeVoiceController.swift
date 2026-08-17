@@ -498,7 +498,7 @@ public final class JunoRealtimeVoiceController {
     public init(
         authorization: any JunoVoiceRelayAuthorizing,
         relayURL: URL? = nil,
-        provider: JunoVoiceProvider = .openai
+        provider: JunoVoiceProvider = .gemini
     ) {
         self.authorization = authorization
         self.fallbackRelayURL = relayURL
