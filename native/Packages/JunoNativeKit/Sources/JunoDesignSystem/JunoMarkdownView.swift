@@ -164,6 +164,30 @@ private struct JunoMarkdownBlockView: View {
 /// See ``AttributedString/junoInline(_:)`` for the two decisions that matter:
 /// why maths is extracted before Markdown parsing, and why its runs carry a
 /// presentation *intent* instead of a font.
+/// Fluid streaming cursor matching the web design system.
+public struct JunoStreamingCursor: View {
+    @State private var isPulsing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init() {}
+
+    public var body: some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Color.primary.opacity(isPulsing ? 0.9 : 0.35))
+            .frame(width: 5, height: 16)
+            .shadow(color: Color.junoAccent.opacity(isPulsing ? 0.4 : 0.0), radius: 3, x: 0, y: 0)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(
+                    .easeInOut(duration: 0.55)
+                    .repeatForever(autoreverses: true)
+                ) {
+                    isPulsing = true
+                }
+            }
+    }
+}
+
 struct JunoInlineText: View {
     private let attributed: AttributedString
     private let caret: Bool
@@ -173,24 +197,18 @@ struct JunoInlineText: View {
         self.caret = caret
     }
 
-    /// AIcss's caret as a glyph rather than a `Rectangle`, because it has to be
-    /// part of the text run: only then does it sit on the baseline, follow the
-    /// last word as the line rewraps, and scale with Dynamic Type. A shape in an
-    /// `HStack` beside the paragraph would pin itself to the block's trailing
-    /// edge and drift away from the words on every wrap.
-    ///
-    /// Solid, never blinking — which is AIcss's rule and is only visible here in
-    /// the state that rule is about: text is arriving, so a second moving thing
-    /// would compete with the text itself for the reader's eye.
     var body: some View {
-        Group {
-            if caret {
-                Text(attributed) + Text(verbatim: "\u{2588}").foregroundColor(.primary)
-            } else {
+        if caret {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(attributed)
+                JunoStreamingCursor()
+                    .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 3 }
             }
+            .tint(Color.junoAccent)
+        } else {
+            Text(attributed)
+                .tint(Color.junoAccent)
         }
-        .tint(Color.junoAccent)
     }
 }
 

@@ -102,12 +102,7 @@ struct DesktopChatWorkspace: View {
     /// opens the index; only a concrete project row writes this value.
     @State private var requestedProjectID: String?
     @State private var sharing = false
-    /// Whether the session-cost receipt is open.
-    ///
-    /// Kept here rather than inside the badge so the disclosure survives the
-    /// toolbar being rebuilt mid-stream — a receipt that snapped shut every time
-    /// a token arrived would be unreadable while it was actually changing.
-    @State private var costBadgeExpanded = false
+
     /// One line under the toolbar after a Share, so the copy is acknowledged.
     @State private var shareNotice: String?
 
@@ -351,24 +346,7 @@ struct DesktopChatWorkspace: View {
             .accessibilityIdentifier("Search")
         }
 
-        // The session receipt. Unlike its neighbours this one IS conditional,
-        // which the comment at the top of this builder warns against — but the
-        // rebuild it warns about is driven by items appearing and disappearing
-        // during ordinary use, and this appears exactly once per conversation
-        // (on the first answer) and never flickers back. An always-present
-        // badge would have to render "$0.00" above a conversation that has not
-        // been billed for anything, which states something false.
-        if !model.selectedSessionCost.costMetrics.isEmpty {
-            ToolbarSpacer(.fixed, placement: .primaryAction)
 
-            ToolbarItem(placement: .primaryAction) {
-                JunoCostMetricsBadge(
-                    metrics: model.selectedSessionCost.costMetrics,
-                    isExpanded: $costBadgeExpanded
-                )
-                .accessibilityIdentifier("Session cost")
-            }
-        }
 
         // Only for a conversation that exists. A draft has nothing to publish,
         // and an item that is present but inert is worse than one that is absent.

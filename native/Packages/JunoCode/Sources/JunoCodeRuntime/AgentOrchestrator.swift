@@ -57,6 +57,7 @@ public actor AgentOrchestrator {
     private let store: CodeSessionStore
     private let configuration: Configuration
     private let modelID: String
+    private var activeModelID: String
     private let reasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
 
@@ -90,8 +91,22 @@ public actor AgentOrchestrator {
         self.store = store
         self.configuration = configuration
         self.modelID = modelID
+        self.activeModelID = modelID
         self.reasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
+    }
+
+    private func computeFallbackModel(for current: String) -> String {
+        let lowered = current.lowercased()
+        if lowered.contains("gemini") || lowered.contains("google") {
+            return "anthropic:claude-sonnet-5"
+        } else if lowered.contains("claude") || lowered.contains("anthropic") {
+            return "openai:gpt-5.4-mini"
+        } else if lowered.contains("gpt") || lowered.contains("openai") {
+            return "qwen:qwen3.8-max"
+        } else {
+            return "anthropic:claude-sonnet-5"
+        }
     }
 
     public var isRunning: Bool { runTask != nil }
@@ -264,7 +279,6 @@ public actor AgentOrchestrator {
         var filesChanged = Set<String>()
         var lastAssistantText = ""
         var testsPassed: Bool?
-        var modelRetriesLeft = 1
 
         await lifecycleHooks?.sessionStarted(sessionID: sessionID)
 
@@ -298,21 +312,6 @@ public actor AgentOrchestrator {
 
             await compactConversationIfNeeded()
 
-            let request = ModelTurnRequest(
-                sessionID: sessionID,
-                systemPrompt: configuration.systemPrompt,
-                messages: conversation,
-                tools: registry.allTools.map {
-                    ModelToolDescriptor(
-                        name: $0.name,
-                        description: $0.description,
-                        inputSchema: $0.inputSchema
-                    )
-                },
-                modelID: modelID,
-                reasoningEffort: reasoningEffort
-            )
-
             var turnText = ""
             var turnReasoningSummary = ""
             var toolCalls: [(id: String, name: String, input: JSONValue, extraContent: JSONValue?)] = []
@@ -320,84 +319,139 @@ public actor AgentOrchestrator {
             lastLiveTextEmit = .distantPast
             emitLiveText("", force: true)
 
-            do {
-                for try await event in model.streamTurn(request) {
-                    if Task.isCancelled { break }
-                    switch event {
-                    case let .textDelta(delta):
-                        turnText += delta
-                        emitLiveText(turnText)
-                    case let .reasoningSummary(summary):
-                        // Providers stream reasoning summaries as token-sized
-                        // deltas. Keep those private to the active turn and
-                        // persist one bounded, readable summary instead of one
-                        // transcript event per delta.
-                        turnReasoningSummary += summary
-                        if turnText.isEmpty {
-                            emitLiveText(turnReasoningSummary)
+            var modelRetriesLeft = 1
+            var fallbackAttempted = false
+
+            while true {
+                let request = ModelTurnRequest(
+                    sessionID: sessionID,
+                    systemPrompt: configuration.systemPrompt,
+                    messages: conversation,
+                    tools: registry.allTools.map {
+                        ModelToolDescriptor(
+                            name: $0.name,
+                            description: $0.description,
+                            inputSchema: $0.inputSchema
+                        )
+                    },
+                    modelID: activeModelID,
+                    reasoningEffort: reasoningEffort
+                )
+                turnText = ""
+                turnReasoningSummary = ""
+                toolCalls.removeAll()
+                stopReason = nil
+
+                do {
+                    for try await event in model.streamTurn(request) {
+                        if Task.isCancelled { break }
+                        switch event {
+                        case let .textDelta(delta):
+                            turnText += delta
+                            emitLiveText(turnText)
+                        case let .reasoningSummary(summary):
+                            // Providers stream reasoning summaries as token-sized
+                            // deltas. Keep those private to the active turn and
+                            // persist one bounded, readable summary instead of one
+                            // transcript event per delta.
+                            turnReasoningSummary += summary
+                            if turnText.isEmpty {
+                                emitLiveText(turnReasoningSummary)
+                            }
+                        case let .toolCallRequested(id, name, input):
+                            toolCalls.append((id, name, input, nil))
+                        case let .toolCallRequestedWithExtra(id, name, input, extra):
+                            toolCalls.append((id, name, input, extra))
+                        case let .usage(inputTokens, outputTokens):
+                            // Replaced, not accumulated: `inputTokens` is the whole
+                            // billed prompt for this turn, so the newest report *is*
+                            // the current context size. Summing them would count the
+                            // conversation once per turn and race past the window.
+                            if let inputTokens {
+                                contextTokens = inputTokens
+                            }
+                            if let outputTokens {
+                                lastOutputTokens = outputTokens
+                            }
+                            usageObserver?(contextTokens, lastOutputTokens)
+                        case let .turnCompleted(reason):
+                            stopReason = reason
                         }
-                    case let .toolCallRequested(id, name, input):
-                        toolCalls.append((id, name, input, nil))
-                    case let .toolCallRequestedWithExtra(id, name, input, extra):
-                        toolCalls.append((id, name, input, extra))
-                    case let .usage(inputTokens, outputTokens):
-                        // Replaced, not accumulated: `inputTokens` is the whole
-                        // billed prompt for this turn, so the newest report *is*
-                        // the current context size. Summing them would count the
-                        // conversation once per turn and race past the window.
-                        if let inputTokens {
-                            contextTokens = inputTokens
-                        }
-                        if let outputTokens {
-                            lastOutputTokens = outputTokens
-                        }
-                        usageObserver?(contextTokens, lastOutputTokens)
-                    case let .turnCompleted(reason):
-                        stopReason = reason
                     }
-                }
-            } catch {
-                if Task.isCancelled {
-                    continue
-                }
-                if modelRetriesLeft > 0 {
-                    modelRetriesLeft -= 1
+                    break
+                } catch {
+                    if Task.isCancelled {
+                        break
+                    }
+                    let errorDesc = shortDescription(error)
+
+                    // Check if error is high demand, overload, 503, 504, or timeout
+                    let isOverload = errorDesc.localizedCaseInsensitiveContains("high demand")
+                        || errorDesc.localizedCaseInsensitiveContains("timed out")
+                        || errorDesc.localizedCaseInsensitiveContains("timeout")
+                        || errorDesc.localizedCaseInsensitiveContains("overloaded")
+                        || errorDesc.localizedCaseInsensitiveContains("rate limit")
+                        || errorDesc.localizedCaseInsensitiveContains("503")
+                        || errorDesc.localizedCaseInsensitiveContains("504")
+
+                    if isOverload && !fallbackAttempted {
+                        let fallback = computeFallbackModel(for: activeModelID)
+                        if fallback != activeModelID {
+                            fallbackAttempted = true
+                            modelRetriesLeft = 1
+                            _ = try? await store.appendEvent(
+                                sessionID: sessionID,
+                                payload: .errorOccurred(
+                                    ErrorEvent(
+                                        message: "Model '\(activeModelID)' encountered high demand or timeout. Automatically switching to fallback '\(fallback)' to continue...",
+                                        isRecoverable: true
+                                    )
+                                )
+                            )
+                            activeModelID = fallback
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            continue
+                        }
+                    }
+
+                    if modelRetriesLeft > 0 {
+                        modelRetriesLeft -= 1
+                        _ = try? await store.appendEvent(
+                            sessionID: sessionID,
+                            payload: .errorOccurred(
+                                ErrorEvent(
+                                    message: "Model turn failed, retrying: \(errorDesc)",
+                                    isRecoverable: true
+                                )
+                            )
+                        )
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        continue
+                    }
                     _ = try? await store.appendEvent(
                         sessionID: sessionID,
                         payload: .errorOccurred(
                             ErrorEvent(
-                                message: "Model turn failed, retrying: \(shortDescription(error))",
-                                isRecoverable: true
+                                message: "Model turn failed: \(shortDescription(error))",
+                                isRecoverable: false
                             )
                         )
                     )
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    continue
-                }
-                _ = try? await store.appendEvent(
-                    sessionID: sessionID,
-                    payload: .errorOccurred(
-                        ErrorEvent(
-                            message: "Model turn failed: \(shortDescription(error))",
-                            isRecoverable: false
-                        )
+                    await finish(
+                        status: .failed,
+                        summary: "The model transport failed.",
+                        filesChanged: filesChanged.count,
+                        testsPassed: testsPassed,
+                        startedAt: startedAt
                     )
-                )
-                await finish(
-                    status: .failed,
-                    summary: "The model transport failed.",
-                    filesChanged: filesChanged.count,
-                    testsPassed: testsPassed,
-                    startedAt: startedAt
-                )
-                return
+                    return
+                }
             }
 
             // A cancelled consumer ends the stream without an error; route
             // through the top-of-loop cancellation branch instead of
             // mistaking it for a completed turn.
             if Task.isCancelled { continue }
-            modelRetriesLeft = 1
             // Images are intentionally one-turn context. Once a successful
             // model turn has consumed them, retain only the redacted tool
             // result so subsequent turns do not resend screenshots.
