@@ -176,14 +176,16 @@ public struct JunoStreamingCursor: View {
             .fill(Color.primary.opacity(isPulsing ? 0.9 : 0.35))
             .frame(width: 5, height: 16)
             .shadow(color: Color.junoAccent.opacity(isPulsing ? 0.4 : 0.0), radius: 3, x: 0, y: 0)
+            .animation(
+                JunoMotion.reduced(
+                    JunoMotion.standard.repeatForever(autoreverses: true),
+                    when: reduceMotion,
+                    tier: .ambient
+                ),
+                value: isPulsing
+            )
             .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(
-                    .easeInOut(duration: 0.55)
-                    .repeatForever(autoreverses: true)
-                ) {
-                    isPulsing = true
-                }
+                isPulsing = true
             }
     }
 }
