@@ -31,7 +31,8 @@ REPO="LiamMagnier/juno"
 SCHEME="JunoDesktop"
 PROJECT="native/macOS/JunoDesktop/JunoDesktop.xcodeproj"
 NOTARY_PROFILE="${JUNO_NOTARY_PROFILE:-juno-notary}"
-BUILD_DIR="${JUNO_RELEASE_DIR:-/private/tmp/juno-release}"
+BUILD_DIR="${JUNO_RELEASE_DIR:-/private/tmp/juno-release-$$}"
+mkdir -p "$BUILD_DIR"
 EXPECTED_BUNDLE_ID="com.liammagnier.JunoDesktop"
 
 die() { printf '\n  ✗ %s\n\n' "$1" >&2; exit 1; }
