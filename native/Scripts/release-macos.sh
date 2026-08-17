@@ -259,7 +259,7 @@ if [ -f runner/agent-core/package-lock.json ]; then
   npm test --prefix runner/agent-core >/dev/null
 fi
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
-  -destination 'platform=macOS' -derivedDataPath "$BUILD_DIR/test" \
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath "$BUILD_DIR/test" \
   CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null
 
 # ── Build ──────────────────────────────────────────────────────────────────
