@@ -181,7 +181,7 @@ export class UnifiedAgentRegistry {
   }
 }
 
-import { openMcpToolset, type ActiveConnector, type McpToolset, type McpFunctionTool, type McpToolsetContext, type ToolExecution } from "@/lib/mcp";
+import type { ActiveConnector, McpToolset, McpFunctionTool, McpToolsetContext, ToolExecution } from "@/lib/mcp";
 
 /**
  * Open a unified toolset containing both Native Unified Agent Tools (Python, Browser, Computer)
@@ -202,6 +202,7 @@ export async function openUnifiedAgentToolset(
     projectId: context.projectId,
   };
 
+  const { openMcpToolset } = await import("@/lib/mcp");
   const baseMcpToolset = activeConnectors.length > 0
     ? await openMcpToolset(activeConnectors, mcpContext)
     : {

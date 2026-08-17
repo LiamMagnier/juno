@@ -207,7 +207,7 @@ public struct NativeProjectAPIClient: Sendable {
         guard !value.isEmpty, value.utf8.count <= 200,
             value.utf8.allSatisfy({ byte in
                 switch byte {
-                case 45, 46, 48...57, 58, 65...90, 95, 97...122: true
+                case 45, 46, 47, 48...57, 58, 64, 65...90, 95, 97...122: true
                 default: false
                 }
             })

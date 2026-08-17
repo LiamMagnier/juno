@@ -711,14 +711,22 @@ export function parseModelRef(id: string): { provider: Provider; providerModel: 
   if (id.includes(":")) {
     const idx = id.indexOf(":");
     const provider = id.slice(0, idx);
-    const providerModel = id.slice(idx + 1);
+    let providerModel = id.slice(idx + 1);
+    if (provider === "google" && providerModel.toLowerCase().startsWith("models/")) {
+      providerModel = providerModel.slice(7);
+    }
     if (!isProvider(provider) || !providerModel) return null;
     return { provider, providerModel };
   }
   const alias = LEGACY_ALIAS[id];
   if (alias) {
     const idx = alias.indexOf(":");
-    return { provider: alias.slice(0, idx) as Provider, providerModel: alias.slice(idx + 1) };
+    const provider = alias.slice(0, idx) as Provider;
+    let providerModel = alias.slice(idx + 1);
+    if (provider === "google" && providerModel.toLowerCase().startsWith("models/")) {
+      providerModel = providerModel.slice(7);
+    }
+    return { provider, providerModel };
   }
   return null;
 }

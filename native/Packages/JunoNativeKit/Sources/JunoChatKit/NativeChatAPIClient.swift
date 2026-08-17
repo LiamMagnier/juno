@@ -1326,7 +1326,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     private func requireIdentifier(_ value: String) throws {
         guard validText(value, maximum: 256), value.utf8.allSatisfy({ byte in
             switch byte {
-            case 48...57, 65...90, 97...122, 45, 46, 58, 95: true
+            case 45, 46, 47, 48...57, 58, 64, 65...90, 95, 97...122: true
             default: false
             }
         }) else { throw NativeChatAPIError.invalidIdentifier(value) }

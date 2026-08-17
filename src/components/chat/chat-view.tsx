@@ -1686,7 +1686,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             className={cn(
               "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
               privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
-              (openArtifact || thoughtOpenId) && "hidden lg:flex"
+              (openArtifact || thoughtOpenId) && "hidden"
             )}
           >
             {/* Share — saved, non-private chats with at least one message. */}

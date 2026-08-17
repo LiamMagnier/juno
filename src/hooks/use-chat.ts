@@ -85,9 +85,10 @@ const RECOVERY_WINDOW_MS = 3_600_000 + 60_000;
 
 // Reopening a conversation after leaving mid-generation: the server keeps writing
 // (detached from the browser stream). We reattach by polling until the assistant
-// row lands. 45m covers long reasoning (Kimi/Claude) after tab close / navigation.
-const RESUME_MAX_AGE_MS = 45 * 60_000;
-const RESUME_POLL_WINDOW_MS = 45 * 60_000;
+// row lands. A 5m max age and 90s poll window prevents users from getting stuck
+// in an endless "working in the background" loop when a server restart or crash occurred.
+const RESUME_MAX_AGE_MS = 5 * 60_000;
+const RESUME_POLL_WINDOW_MS = 90_000;
 
 /** Backoff between recovery polls — first hit is immediate-ish. */
 function recoveryDelayMs(attempt: number): number {
@@ -336,6 +337,26 @@ export function useChat(opts: UseChatOptions) {
       const age = Date.now() - new Date(ageSource).getTime();
       if (!(age >= 0 && age < RESUME_MAX_AGE_MS)) {
         if (pending) clearPendingGeneration(convoId);
+        if (trailingUser) {
+          const stalePlaceholderId = tempId();
+          const staleError: ChatMessage = {
+            id: stalePlaceholderId,
+            role: "ASSISTANT",
+            content: "The previous generation was interrupted. Click Try again to resume.",
+            createdAt: new Date().toISOString(),
+            attachments: [],
+            activity: [],
+            streaming: false,
+            error: true,
+            finishReason: "network_error",
+            errorMessage: "The previous generation was interrupted. Click Try again to resume.",
+          };
+          setMessages((prev) => {
+            const tail = prev[prev.length - 1];
+            if (tail?.id === trailingUser.id) return [...prev, staleError];
+            return prev;
+          });
+        }
         return;
       }
     }

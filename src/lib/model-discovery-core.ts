@@ -245,8 +245,9 @@ export function versionScore(bare: string): number {
 }
 
 export function toModelInfo(provider: Provider, rawId: string, fam?: Family): ModelInfo {
-  const id = `${provider}:${rawId}`;
-  const known = MODELS[id];
+  const bareId = stripPrefix(rawId);
+  const id = `${provider}:${bareId}`;
+  const known = MODELS[id] ?? MODELS[`${provider}:${rawId}`];
   // The provider is still serving this id on its live API, so it is current
   // unless a curated entry says otherwise. Leaving these unset made every
   // consumer that reads `status !== "current"` treat a brand-new model as
@@ -255,15 +256,15 @@ export function toModelInfo(provider: Provider, rawId: string, fam?: Family): Mo
   return {
     id,
     provider,
-    providerModel: rawId,
+    providerModel: bareId,
     name: prettifyModelName(rawId), // real model name with version (e.g. "GLM 5.2")
     // The product line, so `latestPerFamily` can see that this discovered model
     // and the curated entry it supersedes are the same thing. Curated wins:
     // discovery's rule is a guess about a model nobody has verified yet.
     family: known?.family ?? fam?.family,
-    minPlan: fam?.minPlan ?? known?.minPlan ?? guessPlan(rawId),
-    vision: fam?.vision ?? known?.vision ?? guessVision(rawId),
-    reasoning: known?.reasoning ?? guessReasoning(rawId),
+    minPlan: fam?.minPlan ?? known?.minPlan ?? guessPlan(bareId),
+    vision: fam?.vision ?? known?.vision ?? guessVision(bareId),
+    reasoning: known?.reasoning ?? guessReasoning(bareId),
     // Curated wins, then the heuristic — the same precedence every other
     // capability here follows.
     agenticTools: known?.agenticTools ?? guessAgenticTools(rawId),
