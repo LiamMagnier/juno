@@ -148,6 +148,7 @@ public enum AgentModelClientError: Error, Equatable, Sendable {
     case transport(message: String)
     case unauthorized
     case rateLimited
+    case quotaExhausted(message: String)
     case invalidResponse(message: String)
 }
 

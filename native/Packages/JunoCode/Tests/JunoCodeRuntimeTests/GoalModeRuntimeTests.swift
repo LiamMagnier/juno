@@ -308,4 +308,55 @@ final class GoalModeRuntimeTests: XCTestCase {
         XCTAssertFalse(persistedText.contains(screenshotBytes.base64EncodedString()))
         XCTAssertFalse(persistedText.contains("toolResultWithImages"))
     }
+
+    func testDirectPendingToCompletedTransitionAndReopen() async throws {
+        let directory = try temporaryStoreURL()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = CodeSessionStore(directoryURL: directory)
+        let session = try await createSession(in: store)
+        let now = Date()
+
+        var goal = try await store.createGoal(
+            sessionID: session.id,
+            objective: "Direct completion normalization",
+            steps: ["Step 1", "Step 2"],
+            at: now
+        )
+        let step1ID = goal.steps[0].id
+        let step2ID = goal.steps[1].id
+
+        // Direct transition from pending to completed must succeed
+        goal = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: step1ID, status: .completed),
+            at: now.addingTimeInterval(1)
+        )
+        XCTAssertEqual(goal.steps[0].status, .completed)
+        XCTAssertNotNil(goal.steps[0].completedAt)
+
+        // Reopen step 1 back to inProgress
+        goal = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: step1ID, status: .inProgress),
+            at: now.addingTimeInterval(2)
+        )
+        XCTAssertEqual(goal.steps[0].status, .inProgress)
+        XCTAssertNil(goal.steps[0].completedAt)
+
+        // Mark blocked then completed
+        goal = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: step2ID, status: .blocked),
+            at: now.addingTimeInterval(3)
+        )
+        XCTAssertEqual(goal.steps[1].status, .blocked)
+
+        goal = try await store.updateGoal(
+            sessionID: session.id,
+            mutation: .setStepStatus(id: step2ID, status: .completed),
+            at: now.addingTimeInterval(4)
+        )
+        XCTAssertEqual(goal.steps[1].status, .completed)
+    }
 }
+

@@ -174,7 +174,7 @@ function record(provider: Provider, next: ProviderHealth): void {
       kind: "provider_unhealthy",
       key: provider,
       severity: isFunding ? "warn" : "critical",
-      mail: !isFunding,
+      mail: false,
       title: isFunding
         ? `${PROVIDERS[provider].label} has no credit left`
         : `${PROVIDERS[provider].label} cannot serve requests`,
@@ -187,16 +187,11 @@ function record(provider: Provider, next: ProviderHealth): void {
       },
     });
   } else {
-    // Recovery is only news if the outage was. Pairing a "recovered" mail with a
-    // "down" that was deliberately silent would reintroduce the noise from the
-    // other side — and topping an account up is not something to be congratulated
-    // on by email.
-    const wasFunding = previous?.failure === "billing";
     alertOperator({
       kind: "provider_recovered",
       key: provider,
       severity: "warn",
-      mail: !wasFunding,
+      mail: false,
       title: `${PROVIDERS[provider].label} is serving requests again`,
       detail: { provider },
     });

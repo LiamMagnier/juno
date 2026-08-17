@@ -828,16 +828,8 @@ export function MessageItem({
             recoveryNote={message.errorMessage ?? undefined}
           />
         ) : message.error && !hasPartialWithError ? (
-          // `rounded-field` is the inline-note rung; `rounded-lg` is 16px, the
-          // SURFACE rung, which made this two-line notice rounder than the
-          // finish-note box directly below it. And the dark tint is separated
-          // out: destructive at 5% over a #000 ground computes to ~2.5%
-          // lightness, so on dark the error block had no fill at all — it was a
-          // red border around the page. 5% is still right against 97% paper.
-          // `text-ui` is shared with the finish-note box for the same sibling
-          // reason: one slot, one register (they sat at 14 and 12 before).
           <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-ui text-destructive dark:bg-destructive/[0.14]">
-            <p>{message.content}</p>
+            <p>{message.content || message.errorMessage || "Something didn't go well."}</p>
             {onRegenerate && isLast && !busy && (
               <Button
                 variant="outline"

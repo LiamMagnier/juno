@@ -1,6 +1,18 @@
 import Foundation
 import JunoCodeCore
 
+/// Resolves a fallback model when the primary model is unavailable.
+///
+/// The production implementation queries the real model catalog for an
+/// available alternative with tool-calling support. This replaces the
+/// previous hardcoded map (Gemini→Claude, Claude→OpenAI, OpenAI→Qwen)
+/// which fails when the target model does not exist or is not available.
+public protocol ModelFallbackResolver: Sendable {
+    /// Returns an available model ID to use as fallback for `currentModelID`,
+    /// or nil when no suitable alternative exists.
+    func resolveFallback(for currentModelID: String) async -> String?
+}
+
 public enum OrchestratorError: Error, Equatable, Sendable {
     case sessionAlreadyRunning
     case sessionTerminated
@@ -60,6 +72,7 @@ public actor AgentOrchestrator {
     private var activeModelID: String
     private let reasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
+    private let fallbackResolver: (any ModelFallbackResolver)?
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -82,7 +95,8 @@ public actor AgentOrchestrator {
         configuration: Configuration,
         modelID: String,
         reasoningEffort: ReasoningEffort?,
-        lifecycleHooks: (any AgentLifecycleHooks)? = nil
+        lifecycleHooks: (any AgentLifecycleHooks)? = nil,
+        fallbackResolver: (any ModelFallbackResolver)? = nil
     ) {
         self.sessionID = sessionID
         self.model = model
@@ -94,19 +108,11 @@ public actor AgentOrchestrator {
         self.activeModelID = modelID
         self.reasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
+        self.fallbackResolver = fallbackResolver
     }
 
-    private func computeFallbackModel(for current: String) -> String {
-        let lowered = current.lowercased()
-        if lowered.contains("gemini") || lowered.contains("google") {
-            return "anthropic:claude-sonnet-5"
-        } else if lowered.contains("claude") || lowered.contains("anthropic") {
-            return "openai:gpt-5.4-mini"
-        } else if lowered.contains("gpt") || lowered.contains("openai") {
-            return "qwen:qwen3.8-max"
-        } else {
-            return "anthropic:claude-sonnet-5"
-        }
+    private func computeFallbackModel(for current: String) async -> String? {
+        await fallbackResolver?.resolveFallback(for: current)
     }
 
     public var isRunning: Bool { runTask != nil }
@@ -385,25 +391,57 @@ public actor AgentOrchestrator {
                     }
                     let errorDesc = shortDescription(error)
 
-                    // Check if error is high demand, overload, 503, 504, or timeout
-                    let isOverload = errorDesc.localizedCaseInsensitiveContains("high demand")
-                        || errorDesc.localizedCaseInsensitiveContains("timed out")
-                        || errorDesc.localizedCaseInsensitiveContains("timeout")
-                        || errorDesc.localizedCaseInsensitiveContains("overloaded")
-                        || errorDesc.localizedCaseInsensitiveContains("rate limit")
-                        || errorDesc.localizedCaseInsensitiveContains("503")
-                        || errorDesc.localizedCaseInsensitiveContains("504")
+                    // Typed error classification — prefer structured errors over string matching.
+                    let isOverload: Bool
+                    let isQuotaExhausted: Bool
+                    if let clientError = error as? AgentModelClientError {
+                        switch clientError {
+                        case .rateLimited:
+                            isOverload = true
+                            isQuotaExhausted = false
+                        case .quotaExhausted:
+                            isOverload = true
+                            isQuotaExhausted = true
+                        case let .transport(message):
+                            let m = message.lowercased()
+                            isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
+                            isOverload = isQuotaExhausted
+                                || m.contains("503")
+                                || m.contains("504")
+                                || m.contains("overloaded")
+                                || m.contains("high demand")
+                                || m.contains("timed out")
+                                || m.contains("timeout")
+                                || m.contains("rate limit")
+                        case .unauthorized, .invalidResponse:
+                            isOverload = false
+                            isQuotaExhausted = false
+                        }
+                    } else {
+                        let m = errorDesc.lowercased()
+                        isQuotaExhausted = m.contains("quota") || m.contains("exceeded your current quota")
+                        isOverload = isQuotaExhausted
+                            || m.contains("503")
+                            || m.contains("504")
+                            || m.contains("overloaded")
+                            || m.contains("high demand")
+                            || m.contains("timed out")
+                            || m.contains("timeout")
+                            || m.contains("rate limit")
+                    }
 
                     if isOverload && !fallbackAttempted {
-                        let fallback = computeFallbackModel(for: activeModelID)
-                        if fallback != activeModelID {
+                        if let fallback = await computeFallbackModel(for: activeModelID),
+                           fallback != activeModelID
+                        {
                             fallbackAttempted = true
                             modelRetriesLeft = 1
+                            let reason = isQuotaExhausted ? "quota is exhausted" : "is temporarily unavailable"
                             _ = try? await store.appendEvent(
                                 sessionID: sessionID,
                                 payload: .errorOccurred(
                                     ErrorEvent(
-                                        message: "Model '\(activeModelID)' encountered high demand or timeout. Automatically switching to fallback '\(fallback)' to continue...",
+                                        message: "Model '\(activeModelID)' \(reason). Switching to '\(fallback)' to continue.",
                                         isRecoverable: true
                                     )
                                 )
@@ -412,6 +450,11 @@ public actor AgentOrchestrator {
                             try? await Task.sleep(nanoseconds: 500_000_000)
                             continue
                         }
+                    }
+
+                    // On quota exhaustion without fallback, do not do a pointless retry on the exact same model!
+                    if isQuotaExhausted {
+                        modelRetriesLeft = 0
                     }
 
                     if modelRetriesLeft > 0 {

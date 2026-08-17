@@ -1594,10 +1594,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Use the browser profile on this Mac, with the sessions already signed in to it. Anything you are logged in to, a task can reach."
   },
   {
-    "id": "17c2449c645884bd",
-    "source": "The connection dropped before the response finished. Please try again."
-  },
-  {
     "id": "17dc61eeed25f5a0",
     "source": "Where this run was started from"
   },
@@ -2628,6 +2624,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "27ab0062ef43bf40",
     "source": "Sort by:"
+  },
+  {
+    "id": "27b0f1d879d68e88",
+    "source": "Could not update project pin."
   },
   {
     "id": "27b3d5975940c42d",
@@ -6158,10 +6158,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Photos"
   },
   {
-    "id": "5e39fb68aeccf8c0",
-    "source": "Still generating in the background — you can leave and come back."
-  },
-  {
     "id": "5e3bad4387f34a47",
     "source": "out / MTok"
   },
@@ -6304,10 +6300,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "60647476605fc4d0",
     "source": "Share chat"
-  },
-  {
-    "id": "606b8e7e07f393c1",
-    "source": "Answer ready — Juno finished in the background."
   },
   {
     "id": "607609952085030e",
@@ -6736,6 +6728,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "667c7736c7b239b5",
     "source": "The model stopped responding. Nothing more arrived, so the answer was cut short — try again, or pick another model."
+  },
+  {
+    "id": "6682df9e77204fa6",
+    "source": "Something didn't go well."
   },
   {
     "id": "668a5136b396c0dc",
@@ -7404,6 +7400,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6f38236b0918c7b0",
     "source": "Message cannot be empty."
+  },
+  {
+    "id": "6f427c2e37b21ee5",
+    "source": "Checking for response..."
   },
   {
     "id": "6f4b602bb52984dc",
@@ -13790,6 +13790,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Run detail"
   },
   {
+    "id": "cee04dc0fe336715",
+    "source": "Something didn't go well while generating the response."
+  },
+  {
     "id": "cee720864b83cffa",
     "source": "github_unauthorized"
   },
@@ -16366,10 +16370,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "I trust this"
   },
   {
-    "id": "f14eefa1d272f77f",
-    "source": "Juno is still working in the background. The answer will appear here when it's ready."
-  },
-  {
     "id": "f15973078814588d",
     "source": "Pick a model"
   },
@@ -16428,6 +16428,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f240081b57e1934e",
     "source": "Web search unavailable"
+  },
+  {
+    "id": "f24088ce2a333125",
+    "source": "Something didn't go well while receiving the response. Click Try again to retry."
   },
   {
     "id": "f243cc31cb576293",

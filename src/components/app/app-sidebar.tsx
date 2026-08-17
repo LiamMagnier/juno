@@ -346,6 +346,7 @@ export function AppSidebar({
     }
     toast.success(next ? "Project pinned!" : "Project unpinned.");
     window.dispatchEvent(new CustomEvent("starred:sync"));
+    window.dispatchEvent(new CustomEvent("projects:sync"));
   };
 
   const renameProject = async () => {

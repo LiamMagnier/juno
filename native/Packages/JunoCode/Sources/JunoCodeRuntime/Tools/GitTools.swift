@@ -19,6 +19,9 @@ public struct GitStatusTool: CodeTool {
     public func summary(input: JSONValue) -> String { "Git status" }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        guard await git.isRepository() else {
+            return ToolResult(content: "This workspace is not a Git repository. Git operations are unavailable.")
+        }
         let status = try await git.status()
         var lines: [String] = []
         if let branch = status.branch {
@@ -71,6 +74,9 @@ public struct GitDiffTool: CodeTool {
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        guard await git.isRepository() else {
+            return ToolResult(content: "This workspace is not a Git repository. No Git diff available.")
+        }
         var path: WorkspacePath?
         if let raw = input["path"]?.stringValue, !raw.isEmpty {
             guard let parsed = try? WorkspacePath(raw) else {
@@ -105,6 +111,9 @@ public struct GitLogTool: CodeTool {
     public func summary(input: JSONValue) -> String { "Git log" }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        guard await git.isRepository() else {
+            return ToolResult(content: "This workspace is not a Git repository. No Git history available.")
+        }
         let limit = min(max(input["limit"]?.intValue ?? 20, 1), 100)
         let commits = try await git.log(limit: limit)
         guard !commits.isEmpty else {
@@ -145,6 +154,9 @@ public struct GitCommitTool: CodeTool {
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        guard await git.isRepository() else {
+            throw ToolError.executionFailed(message: "This workspace is not a Git repository. Initialize Git first to create commits.")
+        }
         guard let message = input["message"]?.stringValue,
               !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {

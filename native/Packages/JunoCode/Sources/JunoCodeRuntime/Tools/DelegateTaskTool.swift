@@ -33,6 +33,7 @@ public struct DelegateTaskTool: CodeTool {
     /// Supplied by a host that can create a real isolated checkout. Without it
     /// delegation remains read-only, even if the model asks for writes.
     private let executionFactory: SubagentExecutionFactory?
+    private let fallbackResolver: (any ModelFallbackResolver)?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -62,7 +63,8 @@ public struct DelegateTaskTool: CodeTool {
         reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String,
         executionFactory: SubagentExecutionFactory? = nil,
-        controls: SubagentControlRegistry? = nil
+        controls: SubagentControlRegistry? = nil,
+        fallbackResolver: (any ModelFallbackResolver)? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -74,6 +76,7 @@ public struct DelegateTaskTool: CodeTool {
         self.parentSystemPrompt = parentSystemPrompt
         self.executionFactory = executionFactory
         self.controls = controls
+        self.fallbackResolver = fallbackResolver
     }
 
     public let name = "delegate_task"
@@ -440,7 +443,8 @@ public struct DelegateTaskTool: CodeTool {
                 """
             ),
             modelID: childModelID,
-            reasoningEffort: childReasoningEffort
+            reasoningEffort: childReasoningEffort,
+            fallbackResolver: fallbackResolver
         )
         await controls?.register(
             childSessionID: child.id,

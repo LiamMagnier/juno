@@ -540,7 +540,13 @@ public final class WorkbenchModel {
                     .first(where: { $0.modelID == modelID })?
                     .catalog?
                     .contextWindowTokens
-            }
+            },
+            // Failover must come from the real model catalog, never a
+            // hardcoded provider map: the resolver snapshots the models that
+            // are actually available to this account, prefers a tool-capable
+            // model from another provider, and refuses to invent an id the
+            // catalog does not know.
+            fallbackResolver: CatalogFallbackResolver(availableModels: availableModels)
         )
         controllers[sessionID] = controller
         await controller.attach()

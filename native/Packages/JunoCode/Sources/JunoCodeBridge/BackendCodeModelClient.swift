@@ -300,9 +300,16 @@ public struct BackendCodeModelClient: AgentModelClient {
                         try await streamer.stream(bearer, for: accountID)
                     }
                     guard (200...299).contains(response.statusCode) else {
-                        throw AgentModelClientError.transport(
-                            message: try await Self.errorMessage(from: response)
-                        )
+                        let message = try await Self.errorMessage(from: response)
+                        let lowerMessage = message.lowercased()
+                        if response.statusCode == 401 || response.statusCode == 403 {
+                            throw AgentModelClientError.unauthorized
+                        } else if response.statusCode == 429 || lowerMessage.contains("rate limit") {
+                            throw AgentModelClientError.rateLimited
+                        } else if response.statusCode == 402 || lowerMessage.contains("quota") || lowerMessage.contains("exceeded your current quota") {
+                            throw AgentModelClientError.quotaExhausted(message: message)
+                        }
+                        throw AgentModelClientError.transport(message: message)
                     }
                     guard response.headers["content-type"]?.lowercased()
                         .hasPrefix("text/event-stream") == true
@@ -651,20 +658,24 @@ enum OpenAIChatRequestBuilder {
                     ]),
                 ]))
             case let .toolCallWithExtra(id, name, input, extraContent):
+                var toolCallDict: [String: JSONValue] = [
+                    "id": .string(id),
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(name),
+                        "arguments": .string(jsonString(input)),
+                    ]),
+                ]
+                // Only pass extra_content to Google/Gemini endpoints when the payload is specifically
+                // google-namespaced (e.g. google.thought_signature). Non-Google providers (Codestral,
+                // Mistral, DeepSeek, OpenAI, etc.) strictly reject extra_content with extra_forbidden.
+                if providerID == "google", let obj = extraContent.objectValue, obj["google"] != nil {
+                    toolCallDict["extra_content"] = extraContent
+                }
                 messages.append(.object([
                     "role": .string("assistant"),
                     "content": .null,
-                    "tool_calls": .array([
-                        .object([
-                            "id": .string(id),
-                            "type": .string("function"),
-                            "function": .object([
-                                "name": .string(name),
-                                "arguments": .string(jsonString(input)),
-                            ]),
-                            "extra_content": extraContent,
-                        ]),
-                    ]),
+                    "tool_calls": .array([.object(toolCallDict)]),
                 ]))
             case let .toolResult(id, content, _):
                 messages.append(.object([

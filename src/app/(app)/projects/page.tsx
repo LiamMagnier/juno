@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
-import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
+import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -26,6 +26,7 @@ interface ProjectItem {
   conversationCount: number;
   fileCount: number;
   coverUrl?: string | null;
+  starred?: boolean;
 }
 
 export default function ProjectsPage() {
@@ -42,7 +43,6 @@ export default function ProjectsPage() {
 
   // Actions dialog states
   const [editingProject, setEditingProject] = React.useState<ProjectItem | null>(null);
-  const [starred, setStarred] = React.useState<string[]>([]);
   const [renameName, setRenameName] = React.useState("");
   const [renaming, setRenaming] = React.useState(false);
 
@@ -64,15 +64,40 @@ export default function ProjectsPage() {
     load();
   }, [load]);
 
-  // Hydrate after mount: localStorage doesn't exist during SSR, so reading it in
-  // the initial state would break hydration. Also re-read on projects:sync so a
-  // star toggled in the sidebar or on a detail page shows up here.
   React.useEffect(() => {
-    const sync = () => setStarred(readStarredProjects());
-    sync();
-    window.addEventListener("projects:sync", sync);
-    return () => window.removeEventListener("projects:sync", sync);
-  }, []);
+    const handleSync = () => {
+      load();
+    };
+    window.addEventListener("projects:sync", handleSync);
+    window.addEventListener("starred:sync", handleSync);
+    return () => {
+      window.removeEventListener("projects:sync", handleSync);
+      window.removeEventListener("starred:sync", handleSync);
+    };
+  }, [load]);
+
+  const toggleStar = async (project: ProjectItem) => {
+    const next = !project.starred;
+    setItems((cur) =>
+      cur ? cur.map((p) => (p.id === project.id ? { ...p, starred: next } : p)) : null
+    );
+    try {
+      const r = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starred: next }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success(next ? "Project pinned!" : "Project unpinned.");
+      window.dispatchEvent(new CustomEvent("starred:sync"));
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+    } catch {
+      setItems((cur) =>
+        cur ? cur.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)) : null
+      );
+      toast.error("Could not update project pin.");
+    }
+  };
 
   const create = async () => {
     setCreating(true);
@@ -123,8 +148,8 @@ export default function ProjectsPage() {
       if (!r.ok) throw new Error();
       setItems((cur) => (cur ? cur.filter((p) => p.id !== deletingProject.id) : null));
       toast.success("Project deleted.");
-      // A deleted project must not linger as a ghost star in the sidebar.
-      setStarred(removeStarredProject(deletingProject.id));
+      removeStarredProject(deletingProject.id);
+      window.dispatchEvent(new CustomEvent("starred:sync"));
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setDeletingProject(null);
     } catch {
@@ -340,8 +365,8 @@ export default function ProjectsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onSelect={() => setStarred(toggleStarredProject(p.id))}>
-                              {starred.includes(p.id) ? (
+                            <DropdownMenuItem onSelect={() => toggleStar(p)}>
+                              {p.starred ? (
                                 <>
                                   <PinOff className="size-4 mr-2" />
                                   <span>Unpin</span>

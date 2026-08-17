@@ -1,7 +1,13 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Authentication E2E Flow", () => {
-  test("Navigates to sign-in page and validates form structure", async ({ page }) => {
+// The sign-in surface is tested ANONYMOUS: `test.use` overrides the shared
+// storage state for this file, because an already-signed-in visitor is
+// redirected away from /sign-in.
+
+test.use({ storageState: { cookies: [], origins: [] } });
+
+test.describe("Authentication surfaces", () => {
+  test("sign-in page validates its form structure", async ({ page }) => {
     await page.goto("/sign-in");
     await expect(page).toHaveTitle(/Juno|Sign In/i);
     await expect(page.locator('input[type="email"]')).toBeVisible();
@@ -9,16 +15,15 @@ test.describe("Authentication E2E Flow", () => {
     await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
-  test("Shows error on invalid credentials submission", async ({ page }) => {
+  test("rejects invalid credentials with the real product message", async ({ page }) => {
     await page.goto("/sign-in");
     await page.fill('input[type="email"]', "nonexistent@user.com");
     await page.fill('input[type="password"]', "WrongPassword123!");
     await page.click('button[type="submit"]');
-    // Expect error alert or message
-    await expect(page.locator("text=/Invalid|error|Credentials/i")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("text=Invalid email or password.")).toBeVisible({ timeout: 10_000 });
   });
 
-  test("Forgot password page is accessible", async ({ page }) => {
+  test("forgot-password page is accessible", async ({ page }) => {
     await page.goto("/forgot-password");
     await expect(page.locator('input[type="email"]')).toBeVisible();
     await expect(page.locator('button[type="submit"]')).toBeVisible();

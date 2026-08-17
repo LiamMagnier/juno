@@ -106,3 +106,8 @@ prisma/dev.db-journal
 
 # Local .env snapshots taken before editing — never commit these.
 .env.backup-*
+
+# Playwright artifacts and authenticated-session state — regenerated per run.
+test-results/
+playwright-report/
+e2e/.auth/

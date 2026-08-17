@@ -154,11 +154,31 @@ enum CodePreviewProjectDiscovery {
             .resolvingSymlinksInPath()
             .standardizedFileURL
         let packageRoots = packageRoots(in: repositoryRoot)
-        guard !packageRoots.isEmpty else {
+        if packageRoots.isEmpty {
+            let indexHTML = repositoryRoot.appendingPathComponent("index.html")
+            let publicIndexHTML = repositoryRoot.appendingPathComponent("public").appendingPathComponent("index.html")
+            let srcIndexHTML = repositoryRoot.appendingPathComponent("src").appendingPathComponent("index.html")
+            if FileManager.default.fileExists(atPath: indexHTML.path)
+                || FileManager.default.fileExists(atPath: publicIndexHTML.path)
+                || FileManager.default.fileExists(atPath: srcIndexHTML.path)
+            {
+                let staticCmd = DevServerCommand(
+                    name: "Static Preview",
+                    commandLine: "/usr/bin/python3 -m http.server 0",
+                    script: "Serve static HTML/CSS/JS files from workspace root",
+                    startsAServer: true
+                )
+                let discovered = CodePreviewDiscoveredCommand(
+                    command: staticCmd,
+                    workspaceRoot: repositoryRoot,
+                    workspaceDisplayName: repositoryRoot.lastPathComponent.isEmpty ? "Workspace" : repositoryRoot.lastPathComponent
+                )
+                return CodePreviewCommandSet(commands: [discovered], unavailableReason: nil)
+            }
             return CodePreviewCommandSet(
                 commands: [],
                 unavailableReason:
-                    "No package.json was found in \(repositoryRoot.lastPathComponent) or its nested packages. Start your server yourself and type its address above."
+                    "No package.json or index.html was found in \(repositoryRoot.lastPathComponent) or its nested packages. Start your server yourself and type its address above."
             )
         }
 
@@ -716,10 +736,26 @@ final class CodePreviewModel {
         return try await model.performBrowserAction(action)
     }
 
+    private func awaitReadySurface(timeoutSeconds: Double = 6.0) async throws -> (WKWebView, URL) {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let webView = activeWebView,
+               let address,
+               serverState.isLive,
+               serverState.url == address,
+               CodePreviewInspectionPolicy.canInspectOrigin(address)
+            {
+                return (webView, address)
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return try browserSurface()
+    }
+
     private func performBrowserAction(
         _ action: CodePreviewBrowserAction
     ) async throws -> CodePreviewBrowserSnapshot {
-        let (webView, address) = try browserSurface()
+        let (webView, address) = try await awaitReadySurface(timeoutSeconds: 6.0)
 
         switch action {
         case let .snapshot(includeScreenshot, maxText):
@@ -1046,25 +1082,16 @@ final class CodePreviewModel {
     }
 
     private func inspect(includeScreenshot: Bool, maxText: Int) async throws -> CodePreviewInspection {
-        guard let webView = activeWebView else {
-            throw CodePreviewInspectionError.previewNotReady(
-                detail: "the WebKit page is still attaching"
-            )
-        }
-        guard let address else {
-            throw CodePreviewInspectionError.previewNotReady(
-                detail: "no local server address has been opened"
-            )
-        }
-        guard serverState.isLive, serverState.url == address else {
-            throw CodePreviewInspectionError.previewNotReady(
-                detail: "Juno did not start the server currently shown in the Preview"
-            )
-        }
-        guard CodePreviewInspectionPolicy.canInspectOrigin(address) else {
-            throw CodePreviewInspectionError.previewNotReady(
-                detail: "only a loopback development server can be inspected by the agent"
-            )
+        let (webView, address): (WKWebView, URL)
+        do {
+            (webView, address) = try await awaitReadySurface(timeoutSeconds: 6.0)
+        } catch let err as CodePreviewBrowserError {
+            switch err {
+            case let .previewNotReady(detail):
+                throw CodePreviewInspectionError.previewNotReady(detail: detail)
+            default:
+                throw CodePreviewInspectionError.noActivePreview
+            }
         }
 
         let boundedText = min(max(maxText, 200), 12_000)

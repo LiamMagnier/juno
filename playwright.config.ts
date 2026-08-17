@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
+
+const storageState = path.join(process.cwd(), "e2e", ".auth", "e2e-user.json");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -13,25 +16,49 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
+    // Signs in once through the real credential UI and saves the session for
+    // every browser project below. auth.spec.ts opts back out to anonymous via
+    // `test.use` so the sign-in surfaces are tested unauthenticated.
     {
-      name: "chromium",
+      name: "setup",
+      testMatch: /setup\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], storageState },
+      dependencies: ["setup"],
+      testIgnore: /auth\.spec\.ts/,
+    },
+    {
       name: "firefox",
-      use: { ...devices["Desktop Firefox"] },
+      use: { ...devices["Desktop Firefox"], storageState },
+      dependencies: ["setup"],
+      testIgnore: /auth\.spec\.ts/,
     },
     {
       name: "webkit",
-      use: { ...devices["Desktop Safari"] },
+      use: { ...devices["Desktop Safari"], storageState },
+      dependencies: ["setup"],
+      testIgnore: /auth\.spec\.ts/,
     },
     {
       name: "Mobile Safari",
-      use: { ...devices["iPhone 14"] },
+      use: { ...devices["iPhone 14"], storageState },
+      dependencies: ["setup"],
+      testIgnore: /auth\.spec\.ts/,
     },
     {
       name: "iPad Safari",
-      use: { ...devices["iPad Pro 11"] },
+      use: { ...devices["iPad Pro 11"], storageState },
+      dependencies: ["setup"],
+      testIgnore: /auth\.spec\.ts/,
+    },
+    // The anonymous sign-in surface, once per browser, without storage state.
+    {
+      name: "anon-auth",
+      testMatch: /auth\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
 });

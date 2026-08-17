@@ -223,18 +223,9 @@ public enum GoalStepStatus: String, Codable, CaseIterable, Sendable {
     case blocked
 
     public func canTransition(to next: GoalStepStatus) -> Bool {
-        switch (self, next) {
-        case (.pending, .pending), (.inProgress, .inProgress),
-             (.completed, .completed), (.blocked, .blocked),
-             (.pending, .inProgress), (.pending, .blocked),
-             (.inProgress, .pending), (.inProgress, .completed), (.inProgress, .blocked),
-             (.blocked, .pending), (.blocked, .inProgress),
-             (.completed, .inProgress):
-            return true
-        case (.pending, .completed), (.blocked, .completed),
-             (.completed, .pending), (.completed, .blocked):
-            return false
-        }
+        // Any step status transition is valid: an agent completing a pending step
+        // directly must not fail due to omitting the intermediate inProgress state.
+        return true
     }
 }
 

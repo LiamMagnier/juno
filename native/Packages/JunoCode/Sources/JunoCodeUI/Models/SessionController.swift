@@ -261,6 +261,10 @@ public final class SessionController {
         /// manifest provides one. The runtime uses it to compact before a
         /// provider rejects an oversized long-running session.
         let modelContextWindowTokens: (String) -> Int?
+        /// Resolves an alternative model when the primary is rate-limited or
+        /// unavailable. Nil falls back to no-op (the session fails rather than
+        /// silently switching to a model the user did not choose).
+        let fallbackResolver: (any ModelFallbackResolver)?
     }
 
     /// The part of the configuration an orchestrator cannot be changed on: its
@@ -472,7 +476,8 @@ public final class SessionController {
         modelClient: any AgentModelClient,
         modelSupportsVision: @escaping (String) -> Bool = { _ in false },
         modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true },
-        modelContextWindowTokens: @escaping (String) -> Int? = { _ in nil }
+        modelContextWindowTokens: @escaping (String) -> Int? = { _ in nil },
+        fallbackResolver: (any ModelFallbackResolver)? = nil
     ) {
         self.sessionID = session.id
         self.session = session
@@ -492,7 +497,8 @@ public final class SessionController {
             modelClient: modelClient,
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter,
-            modelContextWindowTokens: modelContextWindowTokens
+            modelContextWindowTokens: modelContextWindowTokens,
+            fallbackResolver: fallbackResolver
         )
         self.hookPolicy = context?.hookPolicyStore.load(
             permissionMode: context == nil
@@ -603,21 +609,23 @@ public final class SessionController {
             tools.append(
             DelegateTaskTool(
                 model: live.modelClient,
-                    // Sub-agents are inspectable and read-only, and have no
-                    // reader gesture with which to activate screen capture.
-                    registry: ToolRegistry(
-                        tools: context.registry
-                            .inspectionOnly()
-                            .allTools
-                            .filter { !$0.name.hasPrefix("computer_") }
-                    ),
-                    store: live.store,
-                    workspaceID: workspaceID,
-                    workspaceName: workspaceSurface.displayName,
-                    modelID: contract.modelID,
-                    reasoningEffort: contract.reasoningEffort,
-                    parentSystemPrompt: systemPrompt,
-                    executionFactory: { request in
+                // Sub-agents are inspectable and read-only, and have no
+                // reader gesture with which to activate screen capture.
+                registry: ToolRegistry(
+                    tools: context.registry
+                        .inspectionOnly()
+                        .allTools
+                        .filter { !$0.name.hasPrefix("computer_") }
+                ),
+                store: live.store,
+                workspaceID: workspaceID,
+                workspaceName: workspaceSurface.displayName,
+                modelID: contract.modelID,
+                reasoningEffort: contract.reasoningEffort,
+                parentSystemPrompt: systemPrompt,
+                executionFactory: { request in
+                    let isGit = await context.git.isRepository()
+                    if isGit {
                         let worktree = try await context.worktrees.create(
                             branch: request.branch
                         )
@@ -640,9 +648,24 @@ public final class SessionController {
                                 )
                             }
                         )
-                    },
-                    controls: live.subagentControls
-                )
+                    } else {
+                        let childRegistry = ToolRegistry(
+                            tools: context.registry.allTools.filter {
+                                !$0.name.hasPrefix("computer_")
+                            }
+                        )
+                        return SubagentExecutionEnvironment(
+                            registry: childRegistry,
+                            workspaceName: context.record.descriptor.displayName,
+                            executionRootPath: context.access.rootURL.path,
+                            gitBranch: nil,
+                            permissionMode: .workspaceWrite,
+                            finalize: {}
+                        )
+                    }
+                },
+                controls: live.subagentControls,
+                fallbackResolver: fallbackResolver
             )
         } else if contract.behavior == .survey {
             // Survey is read-only by construction, but it is not merely Ask
@@ -664,7 +687,8 @@ public final class SessionController {
                     workspaceName: workspaceSurface.displayName,
                     modelID: contract.modelID,
                     reasoningEffort: contract.reasoningEffort,
-                    parentSystemPrompt: systemPrompt
+                    parentSystemPrompt: systemPrompt,
+                    fallbackResolver: fallbackResolver
                 )
             )
         }
@@ -699,7 +723,8 @@ public final class SessionController {
             ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
-            lifecycleHooks: lifecycleHooks
+            lifecycleHooks: lifecycleHooks,
+            fallbackResolver: live.fallbackResolver
         )
     }
 
@@ -755,7 +780,8 @@ public final class SessionController {
                 systemPrompt: systemPrompt
             ),
             modelID: contract.modelID,
-            reasoningEffort: contract.reasoningEffort
+            reasoningEffort: contract.reasoningEffort,
+            fallbackResolver: live.fallbackResolver
         )
     }
 

@@ -1,19 +1,28 @@
 import { test, expect } from "@playwright/test";
 
-test.describe("Projects & Artifacts E2E Flow", () => {
-  test("Navigation includes Projects, Work, and Library", async ({ page }) => {
-    await page.goto("/");
-    // Look for navigation elements
-    const nav = page.locator("nav, aside, [role='navigation']");
-    await expect(nav).toBeVisible({ timeout: 10000 });
+// Authenticated through the shared storage state; asserts real routes and
+// headings rather than "a nav exists somewhere".
+
+test.describe("Projects, Work and Library", () => {
+  test("signed-in navigation reaches Projects, Work and Library routes", async ({ page }) => {
+    for (const [path, heading] of [
+      ["/projects", /projects/i],
+      ["/work", /What needs doing/i],
+      ["/library", /files/i],
+    ] as const) {
+      await page.goto(path);
+      await expect(page).toHaveURL(new RegExp(path));
+      await expect(page.locator("h1").first()).toContainText(heading, {
+        timeout: 15_000,
+      });
+    }
   });
 
-  test("Settings modal opens and exposes preferences", async ({ page }) => {
-    await page.goto("/");
-    const settingsTrigger = page.locator("button[aria-label*='Settings'], button:has-text('Settings'), [data-testid='settings-button']").first();
-    if (await settingsTrigger.isVisible()) {
-      await settingsTrigger.click();
-      await expect(page.locator("[role='dialog'], [data-testid='settings-modal']")).toBeVisible();
-    }
+  test("settings page exposes preferences", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page).toHaveURL(/\/settings/);
+    await expect(page.locator("h1").first()).toContainText(/Settings/i, {
+      timeout: 15_000,
+    });
   });
 });

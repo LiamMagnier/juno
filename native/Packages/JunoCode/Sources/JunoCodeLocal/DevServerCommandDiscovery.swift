@@ -68,11 +68,30 @@ public enum DevServerCommandDiscovery {
     public static func scan(workspaceRoot: URL) async -> DevServerCommandSet {
         let manifestURL = workspaceRoot.appendingPathComponent("package.json")
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
+            let indexHTML = workspaceRoot.appendingPathComponent("index.html")
+            let publicIndexHTML = workspaceRoot.appendingPathComponent("public").appendingPathComponent("index.html")
+            let srcIndexHTML = workspaceRoot.appendingPathComponent("src").appendingPathComponent("index.html")
+            if FileManager.default.fileExists(atPath: indexHTML.path)
+                || FileManager.default.fileExists(atPath: publicIndexHTML.path)
+                || FileManager.default.fileExists(atPath: srcIndexHTML.path)
+            {
+                let staticCmd = DevServerCommand(
+                    name: "Static Preview",
+                    commandLine: "/usr/bin/python3 -m http.server 0",
+                    script: "Serve static HTML/CSS/JS files from workspace root",
+                    startsAServer: true
+                )
+                return DevServerCommandSet(
+                    commands: [staticCmd],
+                    packageManager: nil,
+                    unavailableReason: nil
+                )
+            }
             return DevServerCommandSet(
                 commands: [],
                 packageManager: nil,
                 unavailableReason:
-                    "No package.json in \(workspaceRoot.lastPathComponent), so Juno cannot tell how this project starts. Start your server yourself and type its address above."
+                    "No package.json or index.html in \(workspaceRoot.lastPathComponent), so Juno cannot tell how this project starts. Start your server yourself and type its address above."
             )
         }
         guard let data = try? Data(contentsOf: manifestURL),

@@ -181,6 +181,7 @@ export default function ProjectDetailPage() {
     setData((cur) => (cur ? { ...cur, project: { ...cur.project, starred: next } } : cur));
     toast.success(next ? "Project starred!" : "Project unstarred.");
     window.dispatchEvent(new CustomEvent("starred:sync"));
+    window.dispatchEvent(new CustomEvent("projects:sync"));
   };
 
   /**
