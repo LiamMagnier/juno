@@ -1017,7 +1017,7 @@ export function WorkComposer({
              */
             controls={
               <>
-                <div className="flex min-w-0 items-center gap-1">
+                <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-visible">
                   <ComposerAddMenu
                     disabled={submitting}
                     attach={
@@ -1036,12 +1036,10 @@ export function WorkComposer({
                       onInvoke: invokeSkill,
                     }}
                   />
-                </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-1.5">
                   <div
                     className={cn(
-                      "min-w-0",
+                      "min-w-0 shrink-0",
                       submitting && "pointer-events-none opacity-60"
                     )}
                   >
@@ -1061,6 +1059,9 @@ export function WorkComposer({
                     onChange={setReasoningEffort}
                     disabled={submitting}
                   />
+                </div>
+
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
 
                   {/* Dictate. Sits immediately left of the primary action, the
                       same place it occupies in the chat and Code composers — a

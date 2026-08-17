@@ -18,7 +18,6 @@ import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
-import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { ResearchRunPanel } from "@/components/chat/research-run-panel";
@@ -1203,12 +1202,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // visit — before they have sent anything — is simply untrue.
   const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
-  // Model-parameters live beside the incognito ghost (top-right) so the composer
-  // stays uncluttered. Only meaningful for chat models.
   const resolvedModelInfo = resolveModel(model);
-  const paramsIsChat = (resolvedModelInfo?.modality ?? "chat") === "chat";
-  const paramsCanWebSearch =
-    PLANS[quota.plan].webSearch && paramsIsChat && (resolvedModelInfo?.webSearch ?? false);
 
   // Composer aura. Two inputs travel down as custom properties on the host:
   // the lab colour (inert until :focus-within reads it) and how hard the model
@@ -1691,7 +1685,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           <div
             className={cn(
               "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
-              privateMode ? "pointer-events-none opacity-0" : "opacity-100",
+              privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
               (openArtifact || thoughtOpenId) && "hidden lg:flex"
             )}
           >
@@ -1712,17 +1706,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <TooltipContent>Share chat</TooltipContent>
               </Tooltip>
             )}
-            {paramsIsChat && (
-              <ModelParamsPanel
-                model={resolvedModelInfo}
-                reasoningEffort={reasoningEffort}
-                canvasEnabled={canvasEnabled}
-                webSearchEnabled={webSearchEnabled}
-                canWebSearch={paramsCanWebSearch}
-                privateMode={privateMode}
-                disabled={chat.isBusy}
-              />
-            )}
             <PrivateChatToggle
               active={privateMode}
               disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
@@ -1742,7 +1725,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           <div
             className={cn(
               "hidden items-center gap-1.5 md:flex",
-              !topActionsSlot && "absolute right-3 top-2.5 z-20"
+              !topActionsSlot && "absolute right-3 top-2.5 z-20",
+              privateMode && "pointer-events-none"
             )}
           >
             {actionsContent}
@@ -1860,8 +1844,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
         <div
           className={cn(
-            "grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
-            privateMode ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            "relative z-30 grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+            privateMode ? "grid-rows-[1fr] opacity-100 pointer-events-auto" : "grid-rows-[0fr] opacity-0 pointer-events-none"
           )}
         >
           <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
@@ -1884,8 +1868,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               )}
               <button
                 type="button"
-                onClick={exitPrivateMode}
-                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-white/10 hover:text-foreground active:scale-95 transition-all duration-fast z-30 pointer-events-auto"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  exitPrivateMode();
+                }}
+                className="relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground active:scale-95 transition-all duration-fast pointer-events-auto"
                 aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
               >
                 <ActionIcons.dismiss className="size-4" />

@@ -324,7 +324,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <div
               id="juno-top-actions-slot"
-              className="pointer-events-auto absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
+              className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
             />
           </div>
         )}

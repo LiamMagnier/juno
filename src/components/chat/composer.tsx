@@ -2172,16 +2172,11 @@ export function Composer({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
 
-          {/* Right: model + thinking effort + dictation mic + primary action (voice ⇄ send ⇄ stop). */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* Model selector on the LEFT */}
             <div
-              // The dim rides a transition so locking for a generation reads as
-              // the row stepping back rather than blinking — this wrapper covers
-              // the widest control in the strip, so its snap was the visible one.
               className={cn(
-                "min-w-0 flex-1 transition-opacity duration-base ease-out-soft motion-reduce:transition-none sm:flex-none",
+                "min-w-0 shrink-0 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
                 controlsLocked && "pointer-events-none opacity-60"
               )}
               aria-disabled={controlsLocked}
@@ -2189,95 +2184,75 @@ export function Composer({
               <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
             </div>
 
+            {/* Thinking / Reasoning selector on the LEFT */}
             {isAuto && (
-              <>
-                {/* Auto occupies the same slot, footprint and typeface as the real
-                    effort control below, so as an inert <span> it read as a button
-                    that did nothing — and, being a slotted span, Radix could not
-                    give it a tabIndex, so the tooltip explaining what Auto means
-                    was mouse-only and the aria-label sat on a role-less element.
-                    A real button carries both. `aria-disabled` rather than
-                    `disabled`: `disabled` would take it back out of the tab order
-                    and `disabled:pointer-events-none` would kill the hover too,
-                    which is the defect again with extra steps. */}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-disabled
-                      aria-label="Thinking effort: Auto — chosen automatically with the model"
-                      className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-ui"
-                    >
-                      <span className="min-w-0 truncate">Auto</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
-                </Tooltip>
-              </>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-disabled
+                    aria-label="Thinking effort: Auto — chosen automatically with the model"
+                    className="composer-chip h-8 shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2.5 font-mono text-ui tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11"
+                  >
+                    <span className="min-w-0 truncate">Auto</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+              </Tooltip>
             )}
 
             {!isAuto && effortOptions.length > 0 && (() => {
-              // Clamp before matching. A sticky effort the model does not offer
-              // (the pref is one global value, models are per-conversation) used
-              // to fall through to effortOptions[0] — the LOWEST tier — while the
-              // request itself went out clamped to the highest tier at or below
-              // it. So a leftover "Max" on a model that stops at Extra high read
-              // as "Instant" here and ran as Extra high. Same clamp as the wire.
               const clampedEffort = resolved ? clampReasoningEffort(resolved, reasoningEffort) : reasoningEffort;
               const currentEffort = effortOptions.find((e) => e.value === clampedEffort) ?? effortOptions[0];
-              // Keep the mobile label short enough to fit in a fixed footprint.
-              // The full wording remains in the accessible label and returns on
-              // wider screens. Crucially, neither footprint changes by tier, so
-              // Medium -> Extra high -> Max cannot reflow the toolbar.
               const compactEffortLabel = currentEffort.label === "Extra high" ? "X-high" : currentEffort.label;
               const atTopTier =
                 effortOptions.length > 1 && currentEffort.value === effortOptions[effortOptions.length - 1].value;
               return (
-                <>
-                  {/* Thinking effort — a slider, so the depth ladder reads as one
-                      continuous scale rather than an opaque list of words. */}
-                  <Tooltip>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={controlsLocked}
-                            aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
-                            className={cn(
-                              "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
-                              atTopTier ? "text-primary" : "text-foreground"
-                            )}
-                          >
-                            <span className="min-w-0 flex-1 truncate text-center">
-                              {compactEffortLabel}
-                            </span>
-                            <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
-                          </Button>
-                        </TooltipTrigger>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={10} className="w-[300px] origin-popper p-4 rounded-2xl border border-border/80 bg-popover/95 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95">
-                        <ReasoningSlider
-                          options={effortOptions}
-                          value={reasoningEffort}
-                          onChange={onReasoningChange}
+                <Tooltip>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           disabled={controlsLocked}
-                          fastMode={fastMode}
-                          onFastModeChange={canFastMode && onToggleFastMode ? onToggleFastMode : undefined}
-                          proMode={proMode}
-                          onProModeChange={canProMode && onToggleProMode ? toggleProMode : undefined}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <TooltipContent>Thinking effort</TooltipContent>
-                  </Tooltip>
-                </>
+                          aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
+                          className={cn(
+                            "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11",
+                            atTopTier ? "text-primary" : "text-foreground"
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate text-center">
+                            {compactEffortLabel}
+                          </span>
+                          <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                        </Button>
+                      </TooltipTrigger>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" sideOffset={10} className="w-[300px] origin-popper p-4 rounded-2xl border border-border/80 bg-popover/98 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/98">
+                      <ReasoningSlider
+                        options={effortOptions}
+                        value={reasoningEffort}
+                        onChange={onReasoningChange}
+                        disabled={controlsLocked}
+                        fastMode={fastMode}
+                        onFastModeChange={canFastMode && onToggleFastMode ? onToggleFastMode : undefined}
+                        proMode={proMode}
+                        onProModeChange={canProMode && onToggleProMode ? toggleProMode : undefined}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <TooltipContent>Thinking effort</TooltipContent>
+                </Tooltip>
               );
             })()}
+          </div>
+
+          {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             {speechSupported && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2308,11 +2283,6 @@ export function Composer({
                 <Button
                   type="button"
                   size="icon"
-                  // `primaryFace` is the single source of truth for what this
-                  // button is. It used to be re-derived inline three times —
-                  // click, disabled and label each testing `isBusy` again —
-                  // which is why steering could not be added without them
-                  // disagreeing: the face says Send while `isBusy` says Stop.
                   onClick={
                     primaryFace === "stop"
                       ? onStop
@@ -2339,25 +2309,10 @@ export function Composer({
                           : "Send message"
                   }
                   className={cn(
-                    // One footprint for every face. The busy state used to widen
-                    // to 44px and re-radius, which shoved the mic sideways at the
-                    // exact moment the pointer was travelling toward Stop; the
-                    // ring now carries "this is Stop" and the glyphs cross-fade
-                    // in place below. `opacity` rides the transition list so the
-                    // disabled → enabled flip fades instead of snapping, and
-                    // nothing in the list touches layout.
                     "composer-primary-action size-9 rounded-composer-action coarse:size-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
                     primaryFace === "stop" && "ring-2 ring-primary/15"
                   )}
                 >
-                  {/*
-                   * All four glyphs stay mounted in one grid cell and trade
-                   * opacity on duration-exit — a conditional render can only
-                   * fade IN, so send → stop used to pop. The retiring glyph
-                   * shrinks as it goes (motion-safe; Tier B collapses the
-                   * scale and keeps the fade). aria-hidden: the button's
-                   * aria-label is the accessible state, not the artwork.
-                   */}
                   <span aria-hidden="true" className="grid place-items-center">
                     <Loader2
                       className={cn(
@@ -2365,11 +2320,6 @@ export function Composer({
                         primaryFace === "checking" ? "scale-100 animate-spin opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
                       )}
                     />
-                    {/* The hover keyframes (composer-send / composer-stop,
-                        globals.css) ride only the ACTIVE face: composer-send
-                        animates opacity with fill-mode both, so on a retired
-                        glyph it would hold the hidden arrow at full opacity
-                        over the stop square for as long as the hover lasts. */}
                     <Square
                       className={cn(
                         "col-start-1 row-start-1 size-3.5 fill-current transition-[opacity,transform] duration-exit ease-out-soft",
@@ -2397,8 +2347,6 @@ export function Composer({
                   </span>
                 </Button>
               </TooltipTrigger>
-              {/* The tooltip tracks the face — it used to say "Send" while the
-                  button was Stop for the whole generation. */}
               <TooltipContent>
                 {primaryFace === "stop"
                   ? steerMode
