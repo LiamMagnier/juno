@@ -59,6 +59,7 @@
 
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
@@ -98,11 +99,15 @@ import {
   triggerSupport,
   type CalendarTriggerEvent,
   type EmailTriggerEvent,
+  type TopicTriggerEvent,
+  type ConnectorTriggerEvent,
+  type FolderTriggerEvent,
   type TriggerConfig,
   type TriggerCursor,
   type TriggerEvent,
   type TriggerState,
 } from "@/lib/work/triggers";
+import { webSearch } from "@/lib/web-search";
 import { effectiveHostState } from "@/app/api/work/protocol";
 
 /**
@@ -534,6 +539,144 @@ async function readSource(
     events.sort((left, right) => left.startsAt.getTime() - right.startsAt.getTime());
 
     return { events, cursorSource: null, cursorPosition: null, establishing: false };
+  }
+
+  if (parsed.kind === "topic_monitor") {
+    const terms = parsed.config.terms;
+    if (!terms || !terms.length) {
+      return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
+    }
+    const query = terms.join(" ");
+    let results: Array<{ title: string; snippet: string; url: string }> = [];
+    try {
+      results = await webSearch(query, 10);
+    } catch {
+      results = [];
+    }
+
+    if (!results || !results.length) {
+      return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
+    }
+
+    const matchedTerms = terms.filter((term) =>
+      results.some((r) =>
+        r.title.toLowerCase().includes(term.toLowerCase()) ||
+        r.snippet.toLowerCase().includes(term.toLowerCase())
+      )
+    );
+
+    const source = `topic:${createHash("sha256").update(query).digest("hex").slice(0, 16)}`;
+    const mark = cursor[source];
+    const establishing = mark === undefined || mark === null;
+    const newestHash = createHash("sha256").update(results.map((r) => r.url + r.title).join("|")).digest("hex").slice(0, 24);
+
+    if (establishing) {
+      return {
+        events: [],
+        cursorSource: source,
+        cursorPosition: newestHash,
+        establishing: true,
+      };
+    }
+
+    if (mark === newestHash) {
+      return { events: [], cursorSource: source, cursorPosition: newestHash, establishing: false };
+    }
+
+    const event: TopicTriggerEvent = {
+      kind: "topic_monitor",
+      eventKey: `${source}:${newestHash}`,
+      occurredAt: now,
+      matchedTerms,
+      sourceCount: results.length,
+    };
+
+    return {
+      events: [event],
+      cursorSource: source,
+      cursorPosition: newestHash,
+      establishing: false,
+    };
+  }
+
+  if (parsed.kind === "connector_event") {
+    const connectorName = parsed.config.connector;
+    const eventName = parsed.config.events[0] ?? "event";
+    const source = `connector:${connectorName}:${eventName}`;
+    const mark = cursor[source];
+    const establishing = mark === undefined || mark === null;
+
+    const active = await getActiveConnectors(userId);
+    const conn = active.find((c) => c.id === connectorName || c.label.toLowerCase() === connectorName.toLowerCase());
+    if (!conn) {
+      return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
+    }
+
+    const events: ConnectorTriggerEvent[] = [];
+    const eventKey = `${source}:${now.toISOString().slice(0, 13)}`;
+
+    if (!establishing && mark !== eventKey) {
+      events.push({
+        kind: "connector_event",
+        eventKey,
+        occurredAt: now,
+        connector: connectorName,
+        event: eventName,
+        attributes: parsed.config.attributes ?? {},
+      });
+    }
+
+    return {
+      events,
+      cursorSource: source,
+      cursorPosition: eventKey,
+      establishing,
+    };
+  }
+
+  if (parsed.kind === "folder_change") {
+    const grant = await prisma.workFileGrant.findFirst({
+      where: { id: parsed.config.grantId, userId },
+      include: { host: true },
+    });
+    if (!grant || !grant.hostId) {
+      return { events: [], cursorSource: null, cursorPosition: null, establishing: false };
+    }
+
+    const source = `folder:${grant.id}`;
+    const mark = cursor[source];
+    const establishing = mark === undefined || mark === null;
+    const grantTime = grant.lastUsedAt ?? grant.createdAt;
+    const currentPosition = grantTime.toISOString();
+
+    if (establishing) {
+      return {
+        events: [],
+        cursorSource: source,
+        cursorPosition: currentPosition,
+        establishing: true,
+      };
+    }
+
+    if (mark === currentPosition) {
+      return { events: [], cursorSource: source, cursorPosition: currentPosition, establishing: false };
+    }
+
+    const event: FolderTriggerEvent = {
+      kind: "folder_change",
+      eventKey: `${source}:${grantTime.getTime()}`,
+      occurredAt: grantTime,
+      grantId: grant.id,
+      hostId: grant.hostId,
+      changedNames: [grant.displayName],
+    };
+
+    return {
+      events: [event],
+      cursorSource: source,
+      cursorPosition: currentPosition,
+      establishing: false,
+    };
   }
 
   throw new SourceUnavailable(`Juno has no source to watch for a ${parsed.kind} trigger.`);

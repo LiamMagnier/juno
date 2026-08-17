@@ -220,6 +220,35 @@ async function deliver(
     return { delivered: false, reason: "Another worker is already sending this one." };
   }
 
+  // Persist durable in-app notification
+  try {
+    const notifType = status === "waiting_approval" ? "work_approval"
+      : status === "waiting_input" ? "work_approval"
+      : status === "completed" ? "work_completed"
+      : "work_failed";
+    await prismaUnguarded.notification.create({
+      data: {
+        userId: run.userId,
+        type: notifType,
+        title: message.subject,
+        body: message.summary,
+        priority: decision.urgency === "blocking" ? "urgent" : "normal",
+        sourceType: "work_session",
+        sourceId: run.sessionId,
+        actionable: status === "waiting_approval" || status === "waiting_input",
+        actionData: {
+          runId: run.id,
+          sessionId: run.sessionId,
+          taskUrl: taskUrl(run.sessionId),
+          question: occasion.question ?? null,
+          approvalSummary: occasion.approvalSummary ?? null,
+        },
+      },
+    });
+  } catch (notifErr) {
+    console.warn("[work-notify] could not write in-app notification", notifErr);
+  }
+
   const template = workNotificationEmail({
     message,
     urgency: decision.urgency,

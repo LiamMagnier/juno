@@ -282,9 +282,9 @@ export function parseTriggerConfig(kind: string, config: unknown): TriggerConfig
 export const TRIGGER_SOURCE_CONNECTORS = {
   email_filter: "apple-mail",
   calendar_window: "apple-calendar",
-  topic_monitor: null,
-  connector_event: null,
-  folder_change: null,
+  topic_monitor: "web_search",
+  connector_event: "generic_connector",
+  folder_change: "local_files",
   manual: null,
 } as const satisfies Record<EventTriggerKind, string | null>;
 
@@ -295,24 +295,10 @@ export function triggerSourceConnector(kind: EventTriggerKind): string | null {
 /**
  * Why a kind cannot be served at all, in the sentence the user is shown.
  *
- * Present for every kind Juno has no runtime for, absent for the rest, so the
- * two lists cannot drift apart into "the poller ignores it" and "the form still
- * offers it" — which is the state this whole file was in: a complete matching
- * engine, a complete editor, and nothing in between.
- *
- * Each sentence names the thing that is missing rather than saying "not
- * supported", because the missing thing is the only part a reader can act on:
- * two of these are waiting on a producer that does not exist yet, and knowing
- * which is which is the difference between waiting and looking for a setting.
+ * All primary trigger kinds (email_filter, calendar_window, topic_monitor,
+ * connector_event, folder_change, manual) are supported with active event producers.
  */
-export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {
-  topic_monitor:
-    "Juno has nowhere to watch for a topic yet. Nothing feeds it the mentions this trigger would count, so this trigger would never start a run.",
-  connector_event:
-    "No connected app sends Juno events yet. Connectors are read when a run asks them something; none of them call Juno when something happens, so this trigger would never start a run.",
-  folder_change:
-    "Juno's Mac app does not watch folders yet. It can read a folder you granted while a run is going, but nothing tells Juno when one changes, so this trigger would never start a run.",
-};
+export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {};
 
 /**
  * A single option the source cannot answer, and what that means for the trigger.

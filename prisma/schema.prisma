@@ -120,6 +120,8 @@ model User {
   workAuditEvents             WorkAuditEvent[]
   importRuns                  ImportRun[]
   importObjects               ImportObject[]
+  notifications               Notification[]
+  projectMemberships          ProjectMember[]
 
   @@index([image])
 }
@@ -516,9 +518,50 @@ model Project {
   knowledgeDocuments KnowledgeDocument[]
   memories           MemoryEntry[]
   workspace          ProjectWorkspace?
+  members            ProjectMember[]
 
   @@index([userId, updatedAt])
   @@unique([userId, importSourceId])
+}
+
+/// A collaborator membership on a Project with explicit role permissions.
+/// Personal memories of individual members are strictly kept separate from
+/// shared project memory context.
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      String   @default("VIEWER") // OWNER | EDITOR | VIEWER
+  invitedAt DateTime @default(now())
+  joinedAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId, role])
+  @@index([projectId, role])
+}
+
+/// Durable, cross-platform user notification for Work, Code, Research, spend and system events.
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String    // work_completed | work_failed | work_approval | code_completed | code_approval | research_completed | trigger_fired | spend_warning | connector_expired
+  title      String
+  body       String    @db.Text
+  priority   String    @default("normal") // urgent | high | normal | low
+  sourceType String?   // work_run | work_session | code_task | research_run | connector | spend
+  sourceId   String?
+  actionable Boolean   @default(false)
+  actionData Json      @default("{}")
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, type, createdAt])
 }
 
 /// The custom-assistant configuration for one project: which tools it may reach

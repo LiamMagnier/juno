@@ -313,6 +313,8 @@ export function detectAutomaticEscalation(prompt: string): {
   // Deep Research signals
   if (
     p.includes("deep research") ||
+    p.includes("comprehensive research") ||
+    p.includes("research on") ||
     p.includes("comprehensive report") ||
     p.includes("literature review") ||
     p.includes("compare all options") ||

@@ -1050,13 +1050,20 @@ export async function getMemoryProfile(
     budgetTokens?: number;
     /** Provider of this turn's model, for `same_provider` policies. */
     conversationProvider?: string | null;
+    /** When true, strictly restricts retrieval to this project's memories, excluding personal global memory. */
+    isolateProjectMemory?: boolean;
     /** Test seam: the query-embedding call. */
     embed?: typeof embedQuery;
   } = {}
 ): Promise<MemoryProfile> {
   const projectId = opts.projectId ?? null;
+  const isolate = opts.isolateProjectMemory ?? (projectId !== null);
   const now = new Date();
-  const summary = await getMemorySummary(userId);
+  const summary = isolate ? null : await getMemorySummary(userId);
+
+  const scopeCondition = isolate && projectId
+    ? { projectId }
+    : { OR: projectId ? [{ projectId: null }, { projectId }] : [{ projectId: null }] };
 
   const rows = await prisma.memoryEntry.findMany({
     where: {
@@ -1068,7 +1075,7 @@ export async function getMemoryProfile(
         // Scope is enforced in the query as well as in the ranking: a fact
         // belonging to another project must never even be loaded into this
         // request, let alone ranked and dropped.
-        { OR: projectId ? [{ projectId: null }, { projectId }] : [{ projectId: null }] },
+        scopeCondition,
       ],
     },
     orderBy: { createdAt: "desc" },

@@ -92,6 +92,13 @@ export function isDisallowedHost(urlStr: string): boolean {
 }
 
 /**
+ * Validates whether a URL is safe for browser or search tools to fetch.
+ */
+export function isUrlSafeForToolAccess(urlString: string): boolean {
+  return !isDisallowedHost(urlString);
+}
+
+/**
  * The dedupe key for a result.
  *
  * Two engines almost never return the same URL byte-for-byte — one keeps the

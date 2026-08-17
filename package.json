@@ -58,6 +58,8 @@
     "production:smoke": "node scripts/production-smoke.mjs",
     "backup:production": "node scripts/backup-production.mjs",
     "backup:verify": "node scripts/verify-backup.mjs",
+    "backup:drill": "node scripts/restore-drill.mjs",
+    "eval:juno": "NODE_OPTIONS=--conditions=react-server npx tsx scripts/eval-juno.ts",
     "backup:restore": "node scripts/restore-production.mjs",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
     "radar:models": "tsx scripts/model-radar.ts",

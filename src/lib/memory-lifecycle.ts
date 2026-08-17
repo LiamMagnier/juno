@@ -649,11 +649,18 @@ export interface RetrievalResult {
 }
 
 /**
- * Everything a project-scoped memory must never do is enforced here: an entry
- * carrying a projectId is invisible outside that project. Global entries are
- * visible everywhere, including inside projects.
+ * Strict boundary enforcement for shared projects:
+ * When isolateProjectMemory is true, personal global memories (projectId === null)
+ * are excluded to prevent privacy leakage to project collaborators.
  */
-export function inScope(entry: { projectId: string | null }, projectId: string | null): boolean {
+export function inScope(
+  entry: { projectId: string | null },
+  projectId: string | null,
+  isolateProjectMemory: boolean = false
+): boolean {
+  if (isolateProjectMemory && projectId !== null) {
+    return entry.projectId === projectId;
+  }
   return entry.projectId === null || entry.projectId === projectId;
 }
 
@@ -673,6 +680,8 @@ export function selectMemoriesForContext(
     query?: string;
     /** The conversation's project, or null for an unscoped chat. */
     projectId?: string | null;
+    /** When true or when in project scope, personal memories are excluded. */
+    isolateProjectMemory?: boolean;
     now?: Date;
     budgetTokens?: number;
     /** Hard cap on entries regardless of budget, so a prompt stays readable. */
@@ -713,7 +722,7 @@ export function selectMemoriesForContext(
       excluded.expired++;
       continue;
     }
-    if (!inScope(entry, projectId)) {
+    if (!inScope(entry, projectId, opts.isolateProjectMemory)) {
       excluded.outOfScope++;
       continue;
     }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
+import { checkProjectAccess } from "@/lib/project-collaboration";
 
 export const runtime = "nodejs";
 
@@ -11,8 +12,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const project = await prisma.project.findFirst({
-    where: { id, userId: user.id },
+  const { allowed } = await checkProjectAccess(user.id, id, "VIEWER");
+  if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const project = await prisma.project.findUnique({
+    where: { id },
     include: {
       conversations: {
         orderBy: { lastMessageAt: "desc" },
@@ -95,8 +99,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.project.findFirst({ where: { id, userId: user.id }, select: { id: true } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { allowed } = await checkProjectAccess(user.id, id, "EDITOR");
+  if (!allowed) return NextResponse.json({ error: "Not found or insufficient permissions" }, { status: 404 });
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -105,7 +109,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     ...parsed.data,
     ...(parsed.data.name != null ? { nameSource: "manual" } : {}),
   };
-  await prisma.project.update({ where: { id, userId: user.id }, data });
+  await prisma.project.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
 
@@ -114,10 +118,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await prisma.project.findFirst({ where: { id, userId: user.id }, select: { id: true } });
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { allowed } = await checkProjectAccess(user.id, id, "OWNER");
+  if (!allowed) return NextResponse.json({ error: "Not found or only the owner can delete the project" }, { status: 403 });
 
   // Conversations are kept (projectId set null); project files cascade-delete.
-  await prisma.project.delete({ where: { id, userId: user.id } });
+  await prisma.project.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
