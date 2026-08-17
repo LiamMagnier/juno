@@ -77,8 +77,16 @@ public final class NativeAuthModel {
 
     private func performRestore() async {
         guard let runtime else { return }
-        phase = .restoring
         lastErrorDescription = nil
+
+        // Optimistic fast path: if we have a locally cached session, immediately
+        // open into .signedIn(cached) so the workspace renders instantly (0ms lag).
+        if let cached = await runtime.cachedSession() {
+            phase = .signedIn(cached)
+        } else {
+            phase = .restoring
+        }
+
         do {
             switch try await runtime.restore() {
             case .verified(let session):
@@ -96,9 +104,14 @@ public final class NativeAuthModel {
                 phase = .signedOut
             }
         } catch {
-            connectivity = .confirmed
-            phase = .signedOut
-            lastErrorDescription = error.localizedDescription
+            if case .signedIn = phase {
+                connectivity = .unreachable(error.localizedDescription)
+                lastErrorDescription = error.localizedDescription
+            } else {
+                connectivity = .confirmed
+                phase = .signedOut
+                lastErrorDescription = error.localizedDescription
+            }
         }
     }
 

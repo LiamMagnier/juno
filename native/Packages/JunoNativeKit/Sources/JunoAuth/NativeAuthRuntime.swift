@@ -164,6 +164,17 @@ public actor NativeAuthRuntime {
         }
     }
 
+    /// Returns the cached session immediately without network access, allowing
+    /// the app to render instantly on launch.
+    public func cachedSession() async -> NativeAuthenticatedSession? {
+        if let active = try? await tokenStore.loadActive() {
+            if let cached = await sessionCache.load(for: active.accountID), cached.deviceID == active.deviceID {
+                return cached
+            }
+        }
+        return await sessionCache.loadLast()
+    }
+
     /// Restores the stored session, distinguishing "this account is no longer
     /// valid" from "Juno could not be reached".
     ///
@@ -201,7 +212,18 @@ public actor NativeAuthRuntime {
             )
             let session: NativeAuthenticatedSession
             do {
-                session = try await apiClient.session(accessToken: accessToken)
+                session = try await withThrowingTaskGroup(of: NativeAuthenticatedSession.self) { group in
+                    group.addTask {
+                        try await self.apiClient.session(accessToken: accessToken)
+                    }
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(4))
+                        throw URLError(.timedOut)
+                    }
+                    let res = try await group.next()!
+                    group.cancelAll()
+                    return res
+                }
             } catch let rejection as NativeAuthAPIError
                 where rejection.invalidatesLocalCredentials
             {
