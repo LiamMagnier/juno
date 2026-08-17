@@ -28,13 +28,25 @@ const headers = {
   ...(cookie ? { Cookie: cookie } : {}),
 };
 
+/** Cookie-authenticated mutations require a same-origin Origin (see src/lib/csrf.ts). */
+function headersForRequest(init = {}) {
+  const merged = { ...headers, ...(init.headers ?? {}) };
+  const method = (init.method ?? "GET").toUpperCase();
+  const isMutation = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  if (cookie && isMutation && !merged.Origin) {
+    merged.Origin = baseUrl;
+    merged["Sec-Fetch-Site"] ??= "same-origin";
+  }
+  return merged;
+}
+
 async function request(path, init = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`${baseUrl}${path}`, {
       ...init,
-      headers: { ...headers, ...(init.headers ?? {}) },
+      headers: headersForRequest(init),
       signal: controller.signal,
     });
   } finally {
