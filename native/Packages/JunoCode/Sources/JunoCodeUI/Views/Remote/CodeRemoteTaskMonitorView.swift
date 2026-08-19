@@ -541,6 +541,8 @@ private extension NativeCodeEvent.Kind {
         case .error: "exclamationmark.triangle"
         case .done: "checkmark.circle"
         case .agent: "person.2"
+        case .preview: "display"
+        case .testRun: "checklist.checked"
         // The rollback verbs. `rollbackReady` is a host capability
         // advertisement that `decodeEvent` deliberately keeps so the log
         // decodes without dropping it, and which the monitor does not render;
@@ -560,11 +562,13 @@ private extension NativeCodeEvent.Kind {
         switch self {
         case .error: Color.junoDanger
         case .approvalRequest, .approvalResponse: Color.junoCaution
+        case .preview: Color.junoAccent
+        case .testRun: Color.junoSuccess
         default: .junoMutedForeground
         }
     }
 
     var isTechnical: Bool {
-        self == .tool || self == .fileChange || self == .error
+        self == .tool || self == .fileChange || self == .error || self == .testRun || self == .preview
     }
 }

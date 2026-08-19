@@ -106,15 +106,149 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
         case rejectChange = "reject_change"
         case undoChange = "undo_change"
         case rollbackResult = "rollback_result"
+        case preview
+        case testRun = "test_run"
+    }
+
+    public struct TestSummary: Equatable, Sendable {
+        public let framework: String?
+        public let suite: String?
+        public let testsRun: Int?
+        public let passed: Int?
+        public let failed: Int?
+        public let skipped: Int?
+        public let durationSeconds: Double?
+        public let failureDetail: String?
+        public let location: String?
+
+        public init(
+            framework: String? = nil,
+            suite: String? = nil,
+            testsRun: Int? = nil,
+            passed: Int? = nil,
+            failed: Int? = nil,
+            skipped: Int? = nil,
+            durationSeconds: Double? = nil,
+            failureDetail: String? = nil,
+            location: String? = nil
+        ) {
+            self.framework = framework
+            self.suite = suite
+            self.testsRun = testsRun
+            self.passed = passed
+            self.failed = failed
+            self.skipped = skipped
+            self.durationSeconds = durationSeconds
+            self.failureDetail = failureDetail
+            self.location = location
+        }
+    }
+
+    public struct AgentInfo: Equatable, Sendable {
+        public let agentID: String
+        public let parentID: String?
+        public let role: String
+        public let title: String?
+        public let model: String?
+        public let status: String
+        public let summary: String?
+
+        public init(
+            agentID: String,
+            parentID: String? = nil,
+            role: String,
+            title: String? = nil,
+            model: String? = nil,
+            status: String,
+            summary: String? = nil
+        ) {
+            self.agentID = agentID
+            self.parentID = parentID
+            self.role = role
+            self.title = title
+            self.model = model
+            self.status = status
+            self.summary = summary
+        }
+    }
+
+    public struct FileChangeInfo: Equatable, Sendable {
+        public let path: String
+        public let changeKind: String
+        public let linesAdded: Int
+        public let linesRemoved: Int
+        public let diff: String?
+
+        public init(
+            path: String,
+            changeKind: String = "edit",
+            linesAdded: Int = 0,
+            linesRemoved: Int = 0,
+            diff: String? = nil
+        ) {
+            self.path = path
+            self.changeKind = changeKind
+            self.linesAdded = linesAdded
+            self.linesRemoved = linesRemoved
+            self.diff = diff
+        }
+    }
+
+    public struct PreviewInfo: Equatable, Sendable {
+        public let url: String?
+        public let screenshotURL: String?
+        public let status: String
+        public let diagnostic: String?
+
+        public init(
+            url: String? = nil,
+            screenshotURL: String? = nil,
+            status: String = "ready",
+            diagnostic: String? = nil
+        ) {
+            self.url = url
+            self.screenshotURL = screenshotURL
+            self.status = status
+            self.diagnostic = diagnostic
+        }
     }
 
     public let seq: Int
     public let kind: Kind
     public let title: String
     public let detail: String?
+    public let exitCode: Int?
+    public let testSummary: TestSummary?
+    public let agentInfo: AgentInfo?
+    public let fileChangeInfo: FileChangeInfo?
+    public let previewInfo: PreviewInfo?
     public let createdAt: Date
 
     public var id: Int { seq }
+
+    public init(
+        seq: Int,
+        kind: Kind,
+        title: String,
+        detail: String? = nil,
+        exitCode: Int? = nil,
+        testSummary: TestSummary? = nil,
+        agentInfo: AgentInfo? = nil,
+        fileChangeInfo: FileChangeInfo? = nil,
+        previewInfo: PreviewInfo? = nil,
+        createdAt: Date
+    ) {
+        self.seq = seq
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.exitCode = exitCode
+        self.testSummary = testSummary
+        self.agentInfo = agentInfo
+        self.fileChangeInfo = fileChangeInfo
+        self.previewInfo = previewInfo
+        self.createdAt = createdAt
+    }
 }
 
 /// An action the agent will not take without a yes.
@@ -806,9 +940,84 @@ public struct NativeCodeTaskClient: Sendable {
             let status = agent["status"]?.stringValue ?? ""
             title = "\(role)\(agentTitle.map { " · \($0)" } ?? "") — \(status)"
             detail = agent["summary"]?.stringValue
+        case .preview:
+            title = String(localized: "code.event.preview", defaultValue: "Preview updated")
+            detail = payload["url"]?.stringValue ?? payload["diagnostic"]?.stringValue
+        case .testRun:
+            let pass = payload["passed"]?.boolValue ?? true
+            let tests = payload["testsRun"]?.intValue ?? payload["tests"]?.intValue
+            title = pass
+                ? String(localized: "code.event.tests-passed", defaultValue: "Tests passed\(tests.map { " (\($0))" } ?? "")")
+                : String(localized: "code.event.tests-failed", defaultValue: "Tests failed")
+            detail = payload["failureDetail"]?.stringValue ?? payload["suite"]?.stringValue
         }
+
+        let exitCode = payload["exitCode"]?.intValue ?? payload["exit_code"]?.intValue
+
+        var testSummary: NativeCodeEvent.TestSummary? = nil
+        if kind == .testRun || payload["testSummary"] != nil || payload["test_run"] != nil {
+            let testObj = payload["testSummary"]?.objectValue ?? payload["test_run"]?.objectValue ?? payload
+            testSummary = NativeCodeEvent.TestSummary(
+                framework: testObj["framework"]?.stringValue,
+                suite: testObj["suite"]?.stringValue,
+                testsRun: testObj["testsRun"]?.intValue ?? testObj["tests"]?.intValue,
+                passed: testObj["passed"]?.intValue ?? (testObj["passed"]?.boolValue == true ? (testObj["testsRun"]?.intValue ?? 1) : 0),
+                failed: testObj["failed"]?.intValue ?? (testObj["passed"]?.boolValue == false ? 1 : 0),
+                skipped: testObj["skipped"]?.intValue,
+                durationSeconds: testObj["durationSeconds"]?.doubleValue ?? testObj["duration"]?.doubleValue,
+                failureDetail: testObj["failureDetail"]?.stringValue ?? testObj["failure"]?.stringValue,
+                location: testObj["location"]?.stringValue
+            )
+        }
+
+        var agentInfo: NativeCodeEvent.AgentInfo? = nil
+        if let agent = payload["agent"]?.objectValue {
+            agentInfo = NativeCodeEvent.AgentInfo(
+                agentID: agent["id"]?.stringValue ?? agent["agentId"]?.stringValue ?? "agent-\(wire.seq)",
+                parentID: agent["parentId"]?.stringValue,
+                role: agent["role"]?.stringValue ?? "agent",
+                title: agent["title"]?.stringValue,
+                model: agent["model"]?.stringValue,
+                status: agent["status"]?.stringValue ?? "running",
+                summary: agent["summary"]?.stringValue
+            )
+        }
+
+        var fileChangeInfo: NativeCodeEvent.FileChangeInfo? = nil
+        if kind == .fileChange || payload["path"] != nil {
+            if let path = payload["path"]?.stringValue {
+                fileChangeInfo = NativeCodeEvent.FileChangeInfo(
+                    path: path,
+                    changeKind: payload["changeKind"]?.stringValue ?? "edit",
+                    linesAdded: payload["added"]?.intValue ?? 0,
+                    linesRemoved: payload["removed"]?.intValue ?? 0,
+                    diff: payload["diff"]?.stringValue
+                )
+            }
+        }
+
+        var previewInfo: NativeCodeEvent.PreviewInfo? = nil
+        if kind == .preview || payload["preview"] != nil || payload["screenshotUrl"] != nil {
+            let prevObj = payload["preview"]?.objectValue ?? payload
+            previewInfo = NativeCodeEvent.PreviewInfo(
+                url: prevObj["url"]?.stringValue,
+                screenshotURL: prevObj["screenshotUrl"]?.stringValue ?? prevObj["screenshotURL"]?.stringValue,
+                status: prevObj["status"]?.stringValue ?? "ready",
+                diagnostic: prevObj["diagnostic"]?.stringValue
+            )
+        }
+
         return NativeCodeEvent(
-            seq: wire.seq, kind: kind, title: title, detail: detail, createdAt: createdAt
+            seq: wire.seq,
+            kind: kind,
+            title: title,
+            detail: detail,
+            exitCode: exitCode,
+            testSummary: testSummary,
+            agentInfo: agentInfo,
+            fileChangeInfo: fileChangeInfo,
+            previewInfo: previewInfo,
+            createdAt: createdAt
         )
     }
 
@@ -1124,6 +1333,11 @@ enum NativeCodeJSON: Decodable, Sendable {
 
     var intValue: Int? {
         if case .number(let value) = self, value.isFinite { return Int(value) }
+        return nil
+    }
+
+    var doubleValue: Double? {
+        if case .number(let value) = self, value.isFinite { return value }
         return nil
     }
 
