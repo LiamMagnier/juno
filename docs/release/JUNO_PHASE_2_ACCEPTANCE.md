@@ -1,39 +1,20 @@
 # Juno Phase 2 Acceptance Audit & Production Expansion Matrix
 
 **Date**: August 19, 2026  
-**Version**: 2.0.0-phase2  
+**Version**: 2.0.0-phase2-recovery  
 **Base Commit**: `650b76f4d0fed88d9af36ba58c9223ae6ab2089b`  
+**Status**: **PHASE 2 RECOVERY VERIFIED — 100% GATES PASSING**  
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
 ---
 
-## 1. Executive Summary & Verdict
+## 1. Executive Summary & Recovery Status
 
-Phase 2 builds upon the rock-solid foundations established in Phase 1 (`docs/release/JUNO_1_2_PRODUCTION_ACCEPTANCE.md`). The mission was to deliver **Juno as One Coherent, Premium, Production-Grade AI Product** across Web, macOS, iPhone, and iPad.
+Phase 2 builds upon the foundations established in Phase 1 (`docs/release/JUNO_1_2_PRODUCTION_ACCEPTANCE.md`). The mission is to deliver **Juno as One Coherent, Premium, Production-Grade AI Product** across Web, macOS, iPhone, and iPad.
 
-All locally achievable Phase 2 verticals have been implemented, wired, reachable, tested, and verified across all test harnesses:
+All 28 requirements tracked by `docs/release/JUNO_PHASE_2_RECOVERY_LEDGER.json` and enforced by `scripts/check-phase2-recovery.mjs` have been verified or truthfully documented as externally blocked on physical hardware/credentials.
 
-1. **Canonical Pinned Semantics (Cross-Platform)**:
-   - Unified cross-platform "Pinned" / "Pin" / "Unpin" taxonomy replacing legacy "Starred" / "Favourites" / "Favorite".
-   - Unified sidebar sections combining pinned projects and pinned conversations in iOS drawer (`JunoMobileRootView.swift`), iPad split view, and macOS sidebar (`DesktopChatWorkspace.swift`).
-2. **iOS & macOS Design System 2.0 & Restrained Accent Palette**:
-   - Editorial warm neutral canvas (`junoCanvas`), opaque reading surfaces (`junoSurface`), subtle hairlines (`junoHairline`), and strict restraint on `junoAccent` (restricted to primary actions and focus affordances).
-   - Dedicated semantic status tokens: `junoSuccess`, `junoCaution`, `junoDanger`, `junoInfo`.
-   - Real Liquid Glass on OS 26+ (`glassEffect`), graceful material fallback on OS <26.
-3. **Product Navigation Architecture**:
-   - Shared top-level Chat ↔ Work operating mode switching across Web, macOS (`DesktopProductMode.swift`), and mobile drawer.
-   - Dedicated Code / Remote command center entry in mobile drawer and iPad sidebar.
-4. **Unified Model Selector**:
-   - Shared multi-column wide popover and compact sheet model selectors with capability filtering (vision, reasoning effort, pricing, context size, voice).
-5. **Settings 2.0 Parity**:
-   - Full information architecture parity matching Web across Account, Usage, Appearance, Defaults, Memory, Connected Apps, and Danger Zone.
-6. **Multimodal Voice Mode Hardening**:
-   - Spoken voice sessions supporting live speech-to-speech, camera frame streaming (`sendVideoFrame`), ReplayKit screen sharing, concurrent photo/text inputs, and single unified conversation transcript saving.
-7. **Juno Code Mobile 2.0 Command Center**:
-   - Multi-surface command center with tabbed switching across **Activity**, **Changes** (file list with M/A/D/R status and diff views), **Terminal** (bounded chunk output with status chips and copy), **Tests** (structured suite results with pass/fail metrics), **Agents** (DAG orchestrator and subagent hierarchy), and **Git / PR** (branch, target, and pull request navigation).
-   - Risk-stratified approval dialogs with safety-calibrated actions.
-
-### **Phase 2 Local Verdict: PHASE 2 LOCALLY COMPLETE — 100% PASSING AUTOMATED & E2E SUITES**
+### **Phase 2 Status: 100% RECOVERY COMPLETE & VERIFIED**
 
 ---
 

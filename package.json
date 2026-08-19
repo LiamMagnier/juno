@@ -21,6 +21,7 @@
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
+    "phase2:recovery:check": "node scripts/check-phase2-recovery.mjs",
     "test:e2e": "playwright test",
     "native:test": "bash scripts/native-test.sh",
     "native:contract:check": "node scripts/check-native-swift-contract.mjs",
