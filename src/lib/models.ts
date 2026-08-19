@@ -585,6 +585,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   // Listed by ListModels but 404s on every call: "no longer available to new users".
   "google:gemini-2.5-flash": "google:gemini-3.5-flash",
+  "google:gemini-3.7-flash": "google:gemini-3.5-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
   // Meta — the Llama ids are still retired (the Meta Model API does not serve

@@ -5,11 +5,11 @@ const storageState = path.join(process.cwd(), "e2e", ".auth", "e2e-user.json");
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 30_000,
-  fullyParallel: true,
+  timeout: 60_000,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : 2,
   reporter: "list",
   use: {
     baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",

@@ -374,6 +374,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         // Remember the id; we switch to /chat/[id] once the reply completes.
         createdIdRef.current = id;
         setActiveConversationId(id);
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", `/chat/${id}`);
+        }
         const convo: ClientConversation = {
           id,
           title,
@@ -403,13 +406,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       if (meta?.projectId && meta.projectName) {
         window.dispatchEvent(new CustomEvent("projects:sync"));
       }
-      // First reply of a brand-new chat finished and is persisted — move to the
-      // real route so the URL/router are in sync and the conversation is linkable.
+      // First reply of a brand-new chat finished and is persisted — sync the
+      // address bar without a destructive Next.js App Router remount.
       if (privateMode) return;
       if (conversationId === null && createdIdRef.current) {
         const id = createdIdRef.current;
         createdIdRef.current = null;
-        router.replace(`/chat/${id}`);
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", `/chat/${id}`);
+        }
       }
     },
     onArtifactsUpdated: () => {},
@@ -427,16 +432,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   // A FAILED first generation still leaves a real conversation behind: the
   // server creates it before streaming, onMeta puts it in the sidebar, and the
-  // messages are persisted. But the URL sync lives only in onDone, which an
-  // error never reaches — so the address bar stayed on /chat, and a refresh
-  // lost a thread the user could see listed beside them.
+  // messages are persisted. Sync the URL seamlessly without unmounting the SPA.
   React.useEffect(() => {
     if (privateMode || chat.status !== "error" || conversationId !== null) return;
     const id = createdIdRef.current;
     if (!id) return;
     createdIdRef.current = null;
-    router.replace(`/chat/${id}`);
-  }, [chat.status, privateMode, conversationId, router]);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", `/chat/${id}`);
+    }
+  }, [chat.status, privateMode, conversationId]);
 
   const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
 
@@ -1500,7 +1505,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           if (!detached) {
             createdIdRef.current = data.conversationId;
             setActiveConversationId(data.conversationId);
-            router.replace(`/chat/${data.conversationId}`);
+            if (typeof window !== "undefined") {
+              window.history.replaceState(null, "", `/chat/${data.conversationId}`);
+            }
           }
         } else {
           updateConversation(currentConversationId, { lastMessageAt: now });
@@ -1514,7 +1521,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         setVoiceSaving(false);
       }
     })();
-  }, [activeProjectId, chat, currentConversationId, enabledConnectors, model, privateMode, realtimeVoice, router, setActiveConversationId, updateConversation, upsertConversation]);
+  }, [activeProjectId, chat, currentConversationId, enabledConnectors, model, privateMode, realtimeVoice, setActiveConversationId, updateConversation, upsertConversation]);
 
   const discardFailedVoiceSave = React.useCallback(() => {
     if (voiceSavingRef.current) return;

@@ -111,6 +111,16 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
     }
 
     public struct TestSummary: Equatable, Sendable {
+        public enum Status: String, Sendable {
+            case unknown
+            case running
+            case passed
+            case failed
+            case skipped
+            case cancelled
+        }
+
+        public let status: Status
         public let framework: String?
         public let suite: String?
         public let testsRun: Int?
@@ -122,6 +132,7 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
         public let location: String?
 
         public init(
+            status: Status = .unknown,
             framework: String? = nil,
             suite: String? = nil,
             testsRun: Int? = nil,
@@ -132,6 +143,7 @@ public struct NativeCodeEvent: Identifiable, Equatable, Sendable {
             failureDetail: String? = nil,
             location: String? = nil
         ) {
+            self.status = status
             self.framework = framework
             self.suite = suite
             self.testsRun = testsRun
@@ -944,11 +956,21 @@ public struct NativeCodeTaskClient: Sendable {
             title = String(localized: "code.event.preview", defaultValue: "Preview updated")
             detail = payload["url"]?.stringValue ?? payload["diagnostic"]?.stringValue
         case .testRun:
-            let pass = payload["passed"]?.boolValue ?? true
+            let statusStr = payload["status"]?.stringValue
+            let passedBool = payload["passed"]?.boolValue
+            let failedCount = payload["failed"]?.intValue ?? 0
             let tests = payload["testsRun"]?.intValue ?? payload["tests"]?.intValue
-            title = pass
-                ? String(localized: "code.event.tests-passed", defaultValue: "Tests passed\(tests.map { " (\($0))" } ?? "")")
-                : String(localized: "code.event.tests-failed", defaultValue: "Tests failed")
+            if passedBool == true || statusStr == "passed" {
+                title = String(localized: "code.event.tests-passed", defaultValue: "Tests passed\(tests.map { " (\($0))" } ?? "")")
+            } else if passedBool == false || statusStr == "failed" || failedCount > 0 {
+                title = String(localized: "code.event.tests-failed", defaultValue: "Tests failed")
+            } else if statusStr == "running" {
+                title = String(localized: "code.event.tests-running", defaultValue: "Running tests…")
+            } else if statusStr == "skipped" {
+                title = String(localized: "code.event.tests-skipped", defaultValue: "Tests skipped")
+            } else {
+                title = String(localized: "code.event.tests-unknown", defaultValue: "Test run recorded")
+            }
             detail = payload["failureDetail"]?.stringValue ?? payload["suite"]?.stringValue
         }
 
@@ -957,12 +979,28 @@ public struct NativeCodeTaskClient: Sendable {
         var testSummary: NativeCodeEvent.TestSummary? = nil
         if kind == .testRun || payload["testSummary"] != nil || payload["test_run"] != nil {
             let testObj = payload["testSummary"]?.objectValue ?? payload["test_run"]?.objectValue ?? payload
+            let statusRaw = testObj["status"]?.stringValue ?? payload["status"]?.stringValue
+            let passedVal = testObj["passed"]?.intValue ?? (testObj["passed"]?.boolValue == true ? 1 : nil)
+            let failedVal = testObj["failed"]?.intValue ?? (testObj["passed"]?.boolValue == false ? 1 : nil)
+            let status: NativeCodeEvent.TestSummary.Status
+            if let statusRaw, let mapped = NativeCodeEvent.TestSummary.Status(rawValue: statusRaw.lowercased()) {
+                status = mapped
+            } else if (failedVal ?? 0) > 0 || testObj["passed"]?.boolValue == false {
+                status = .failed
+            } else if testObj["passed"]?.boolValue == true || (passedVal ?? 0) > 0 {
+                status = .passed
+            } else if statusRaw == "running" {
+                status = .running
+            } else {
+                status = .unknown
+            }
             testSummary = NativeCodeEvent.TestSummary(
+                status: status,
                 framework: testObj["framework"]?.stringValue,
                 suite: testObj["suite"]?.stringValue,
                 testsRun: testObj["testsRun"]?.intValue ?? testObj["tests"]?.intValue,
-                passed: testObj["passed"]?.intValue ?? (testObj["passed"]?.boolValue == true ? (testObj["testsRun"]?.intValue ?? 1) : 0),
-                failed: testObj["failed"]?.intValue ?? (testObj["passed"]?.boolValue == false ? 1 : 0),
+                passed: passedVal,
+                failed: failedVal,
                 skipped: testObj["skipped"]?.intValue,
                 durationSeconds: testObj["durationSeconds"]?.doubleValue ?? testObj["duration"]?.doubleValue,
                 failureDetail: testObj["failureDetail"]?.stringValue ?? testObj["failure"]?.stringValue,

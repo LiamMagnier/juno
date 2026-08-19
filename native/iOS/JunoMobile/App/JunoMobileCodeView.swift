@@ -1122,21 +1122,25 @@ private struct JunoMobileCodeSessionView: View {
                                 Text("\(totalRun > 0 ? totalRun : testSummaries.count)")
                                     .junoFont(size: 18, relativeTo: .title3, weight: .bold)
                             }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Passed")
-                                    .junoFont(size: 11, relativeTo: .caption2)
-                                    .junoMetaInk()
-                                Text("\(totalPassed)")
-                                    .junoFont(size: 18, relativeTo: .title3, weight: .bold)
-                                    .foregroundStyle(Color.junoSuccess)
+                            if totalPassed > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Passed")
+                                        .junoFont(size: 11, relativeTo: .caption2)
+                                        .junoMetaInk()
+                                    Text("\(totalPassed)")
+                                        .junoFont(size: 18, relativeTo: .title3, weight: .bold)
+                                        .foregroundStyle(Color.junoSuccess)
+                                }
                             }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Failed")
-                                    .junoFont(size: 11, relativeTo: .caption2)
-                                    .junoMetaInk()
-                                Text("\(totalFailed)")
-                                    .junoFont(size: 18, relativeTo: .title3, weight: .bold)
-                                    .foregroundStyle(totalFailed > 0 ? Color.junoDanger : Color.junoMutedForeground)
+                            if totalFailed > 0 {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Failed")
+                                        .junoFont(size: 11, relativeTo: .caption2)
+                                        .junoMetaInk()
+                                    Text("\(totalFailed)")
+                                        .junoFont(size: 18, relativeTo: .title3, weight: .bold)
+                                        .foregroundStyle(Color.junoDanger)
+                                }
                             }
                             if totalSkipped > 0 {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -1155,13 +1159,39 @@ private struct JunoMobileCodeSessionView: View {
                         JunoCard(padding: 12) {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: (summary.failed ?? 0) > 0 ? "xmark.circle.fill" : "checkmark.circle.fill")
-                                        .junoFont(size: 13, relativeTo: .caption)
-                                        .foregroundStyle((summary.failed ?? 0) > 0 ? Color.junoDanger : Color.junoSuccess)
+                                    switch summary.status {
+                                    case .passed:
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .foregroundStyle(Color.junoSuccess)
+                                    case .failed:
+                                        Image(systemName: "xmark.circle.fill")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .foregroundStyle(Color.junoDanger)
+                                    case .running:
+                                        Image(systemName: "clock.arrow.circlepath")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .foregroundStyle(Color.junoAccent)
+                                    case .skipped:
+                                        Image(systemName: "minus.circle.fill")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .junoSecondaryInk()
+                                    case .cancelled:
+                                        Image(systemName: "slash.circle.fill")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .junoSecondaryInk()
+                                    case .unknown:
+                                        Image(systemName: "questionmark.circle")
+                                            .junoFont(size: 13, relativeTo: .caption)
+                                            .junoMetaInk()
+                                    }
                                     Text(summary.suite ?? summary.framework ?? "Test Suite")
                                         .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
                                         .lineLimit(1)
                                     Spacer(minLength: 4)
+                                    if summary.status == .unknown {
+                                        JunoStatusPill(text: "UNKNOWN", tint: Color.junoMutedForeground)
+                                    }
                                     if let duration = summary.durationSeconds {
                                         Text(String(format: "%.2fs", duration))
                                             .junoFont(size: 11, relativeTo: .caption2)
@@ -1196,7 +1226,7 @@ private struct JunoMobileCodeSessionView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(previewEvents.enumerated()), id: \.offset) { _, info in
                         JunoCard(padding: 14) {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 10) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "safari")
                                         .junoFont(size: 14, relativeTo: .subheadline)
@@ -1216,14 +1246,40 @@ private struct JunoMobileCodeSessionView: View {
                                         .junoSecondaryInk()
                                 }
                                 if let screenshot = info.screenshotURL, let url = URL(string: screenshot) {
+                                    AsyncImage(url: url) { phase in
+                                        switch phase {
+                                        case .success(let image):
+                                            image
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fit)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                        .stroke(Color.junoCardBorder, lineWidth: 1)
+                                                )
+                                        case .failure:
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "exclamationmark.triangle")
+                                                Text("Could not load preview screenshot")
+                                            }
+                                            .junoFont(size: 12, relativeTo: .caption)
+                                            .junoMetaInk()
+                                            .padding(12)
+                                        case .empty:
+                                            ProgressView()
+                                                .frame(maxWidth: .infinity, minHeight: 120)
+                                        @unknown default:
+                                            EmptyView()
+                                        }
+                                    }
                                     Link(destination: url) {
                                         HStack(spacing: 6) {
-                                            Image(systemName: "photo")
-                                            Text("View Screenshot")
+                                            Image(systemName: "arrow.up.right.square")
+                                            Text("Open Full Visual Evidence")
                                         }
                                         .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                                         .foregroundStyle(Color.junoAccent)
-                                        .frame(minHeight: 44)
+                                        .frame(minHeight: 36)
                                     }
                                 }
                             }
@@ -1238,29 +1294,15 @@ private struct JunoMobileCodeSessionView: View {
         let agents = model.events.compactMap { $0.agentInfo }
         return Group {
             if agents.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    JunoCard(padding: 14) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "cpu")
-                                    .junoFont(size: 14, relativeTo: .subheadline)
-                                    .foregroundStyle(Color.junoAccent)
-                                Text("Primary Host Runner")
-                                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                                Spacer(minLength: 4)
-                                JunoStatusPill(
-                                    text: junoCodeStatusText(model.openTask?.status ?? .done),
-                                    tint: junoCodeStatusTint(model.openTask?.status ?? .done)
-                                )
-                            }
-                            Text("Direct execution on \(model.openTask?.whereItRuns ?? "configured runner").")
-                                .junoCaption()
-                        }
-                    }
+                ContentUnavailableView {
+                    Label("No Delegated Agents", systemImage: "person.2.slash")
+                } description: {
+                    Text("This run executed directly on the primary host runner without subagent delegations.")
                 }
+                .padding(.vertical, 24)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("\(agents.count) Active Agent\(agents.count == 1 ? "" : "s")")
+                    Text("\(agents.count) Delegated Agent\(agents.count == 1 ? "" : "s")")
                         .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
                         .junoSecondaryInk()
                     ForEach(Array(agents.enumerated()), id: \.offset) { _, agent in
