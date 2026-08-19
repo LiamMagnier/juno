@@ -289,7 +289,7 @@ struct JunoMobileSearchView: View {
                                         recentRow(
                                             title: project.name,
                                             date: project.updatedAt,
-                                            glyph: project.starred ? "star.fill" : "folder",
+                                            glyph: project.starred ? "pin.fill" : "folder",
                                             action: { openProject?(project.id) }
                                         )
                                     }

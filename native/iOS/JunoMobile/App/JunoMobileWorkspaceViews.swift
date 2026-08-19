@@ -868,15 +868,15 @@ private struct JunoMobileProjectDetail: View {
                         )
                     }
                 } label: {
-                    Image(systemName: project.starred ? "star.fill" : "star")
+                    Image(systemName: project.starred ? "pin.fill" : "pin")
                         .junoFont(size: 15, relativeTo: .subheadline)
-                        // Coral only when it is *on*: a starred project is an
+                        // Coral only when it is *on*: a pinned project is an
                         // active state, which is what the accent is for.
                         .foregroundStyle(project.starred ? Color.junoAccent : Color.primary)
                 }
                 .disabled(project.isPending || model.isMutating)
-                .accessibilityLabel(project.starred ? "Unstar project" : "Star project")
-                .accessibilityIdentifier("juno.mobile.project-star")
+                .accessibilityLabel(project.starred ? "Unpin project" : "Pin project")
+                .accessibilityIdentifier("juno.mobile.project-pin")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
