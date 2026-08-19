@@ -526,6 +526,7 @@ struct JunoMobileRootView: View {
             JunoMobileSidebarDrawer(
                 selection: $selection,
                 conversationModel: conversationModel,
+                projectModel: projectModel,
                 workModel: workModel,
                 codeModel: codeModel,
                 session: session,
@@ -533,6 +534,7 @@ struct JunoMobileRootView: View {
                 canCreateChat: conversationModel != nil,
                 openDestination: openSidebarDestination,
                 openConversation: openSidebarConversation,
+                openProject: openSidebarProject,
                 openRecent: openRecent,
                 newChat: startNewChat
             )
@@ -619,15 +621,23 @@ struct JunoMobileRootView: View {
         JunoMobileSidebarDrawer(
             selection: $selection,
             conversationModel: conversationModel,
+            projectModel: projectModel,
             workModel: workModel,
             codeModel: codeModel,
             session: session,
             avatarData: avatarModel?.imageData,
             openDestination: openSidebarDestination,
             openConversation: openSidebarConversation,
+            openProject: openSidebarProject,
             openRecent: openRecent,
             newChat: startNewChat
         )
+    }
+
+    private func openSidebarProject(_ id: String) {
+        projectModel?.selectedProjectID = id
+        selection = .projects
+        setSidebar(false)
     }
 
     private func openSidebarDestination(_ destination: JunoMobileSection) {
@@ -1018,6 +1028,7 @@ struct JunoMobileRootView: View {
 private struct JunoMobileSidebarDrawer: View {
     @Binding var selection: JunoMobileSection
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let workModel: NativeWorkModel?
     let codeModel: NativeCodeModel?
     let session: NativeAuthenticatedSession
@@ -1027,14 +1038,24 @@ private struct JunoMobileSidebarDrawer: View {
     var canCreateChat: Bool = true
     let openDestination: (JunoMobileSection) -> Void
     let openConversation: (String) -> Void
+    var openProject: (String) -> Void = { _ in }
     let openRecent: (JunoRecentItem) -> Void
     let newChat: () -> Void
 
     @State private var renameTarget: NativeConversation?
     @State private var renameValue = ""
     @State private var deleteTarget: NativeConversation?
+    @State private var renameProjectTarget: NativeProject?
+    @State private var renameProjectValue = ""
+    @State private var deleteProjectTarget: NativeProject?
 
-    private var pinned: [NativeConversation] {
+    private var pinnedProjects: [NativeProject] {
+        (projectModel?.projects ?? [])
+            .filter(\.starred)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var pinnedChats: [NativeConversation] {
         (conversationModel?.conversations ?? [])
             .filter { $0.pinned && !$0.isArchived }
     }
@@ -1096,9 +1117,10 @@ private struct JunoMobileSidebarDrawer: View {
                         )
                     }
 
-                    if !pinned.isEmpty {
+                    if !pinnedProjects.isEmpty || !pinnedChats.isEmpty {
                         sectionLabel("sidebar.pinned")
-                        ForEach(pinned) { conversationRow($0, pinned: true) }
+                        ForEach(pinnedProjects) { projectRow($0) }
+                        ForEach(pinnedChats) { conversationRow($0, pinned: true) }
                     }
 
                     if !recents.isEmpty {
@@ -1143,6 +1165,35 @@ private struct JunoMobileSidebarDrawer: View {
             Button("Cancel", role: .cancel) { deleteTarget = nil }
         } message: {
             Text("chat.delete.warning")
+        }
+        .alert("Rename project", isPresented: Binding(
+            get: { renameProjectTarget != nil },
+            set: { if !$0 { renameProjectTarget = nil } }
+        )) {
+            TextField("Name", text: $renameProjectValue)
+            Button("Cancel", role: .cancel) { renameProjectTarget = nil }
+            Button("Save") {
+                guard let target = renameProjectTarget else { return }
+                renameProjectTarget = nil
+                Task { await projectModel?.updateProject(id: target.id, name: renameProjectValue) }
+            }
+        }
+        .confirmationDialog(
+            deleteProjectTarget.map { "Delete “\($0.name)”?" } ?? "",
+            isPresented: Binding(
+                get: { deleteProjectTarget != nil },
+                set: { if !$0 { deleteProjectTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let target = deleteProjectTarget else { return }
+                deleteProjectTarget = nil
+                Task { await projectModel?.deleteProject(id: target.id) }
+            }
+            Button("Cancel", role: .cancel) { deleteProjectTarget = nil }
+        } message: {
+            Text("Conversations are kept and unlinked; project files are removed.")
         }
     }
 
@@ -1192,6 +1243,59 @@ private struct JunoMobileSidebarDrawer: View {
         // during *any* mutation anywhere, so using it here would randomly make
         // the long press do nothing while an unrelated change was in flight.
         .disabled(conversation.isPending)
+    }
+
+    private func projectRow(_ project: NativeProject) -> some View {
+        Button {
+            openProject(project.id)
+        } label: {
+            HStack(spacing: 7) {
+                JunoIconView(.projects, size: 14)
+                    .foregroundStyle(Color.junoAccent)
+                Text(project.name)
+                    .junoFont(size: 16, relativeTo: .body)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                if project.isPending {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .junoFont(size: 11, relativeTo: .caption2)
+                        .junoSecondaryInk()
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(JunoSidebarPressStyle())
+        .contextMenu {
+            Button {
+                renameProjectValue = project.name
+                renameProjectTarget = project
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            Button {
+                Task {
+                    await projectModel?.updateProject(
+                        id: project.id, starred: !project.starred
+                    )
+                }
+            } label: {
+                Label(
+                    project.starred ? "Unpin" : "Pin",
+                    systemImage: project.starred ? "pin.slash" : "pin"
+                )
+            }
+            Divider()
+            Button(role: .destructive) {
+                deleteProjectTarget = project
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .disabled(project.isPending)
     }
 
     // Compact brand header — Juno wordmark left, circular glass Search right.

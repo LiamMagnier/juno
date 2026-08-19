@@ -35,12 +35,12 @@
     }
   },
   "targets": {
-    "total": 546,
+    "total": 550,
     "modules": {
       "JunoNativeKit (shared)": 43,
       "JunoCode (shared)": 117,
       "JunoDesktop (macOS)": 250,
-      "JunoMobile (iOS)": 136
+      "JunoMobile (iOS)": 140
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Components/CodeSurfaceState.swift": 1,
@@ -100,7 +100,7 @@
       "native/iOS/JunoMobile/App/JunoMobileModelSelector.swift": 4,
       "native/iOS/JunoMobile/App/JunoMobilePhotosPanel.swift": 1,
       "native/iOS/JunoMobile/App/JunoMobileResearchProgress.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileRootView.swift": 12,
+      "native/iOS/JunoMobile/App/JunoMobileRootView.swift": 16,
       "native/iOS/JunoMobile/App/JunoMobileSearchView.swift": 3,
       "native/iOS/JunoMobile/App/JunoMobileSettingsView.swift": 10,
       "native/iOS/JunoMobile/App/JunoMobileTasksView.swift": 5,

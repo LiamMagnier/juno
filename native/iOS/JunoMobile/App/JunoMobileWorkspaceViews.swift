@@ -28,7 +28,7 @@ struct JunoMobileProjectsView: View {
     @State private var renameValue = ""
     @State private var deleteTarget: NativeProject?
 
-    private var favourites: [NativeProject] { model.projects.filter(\.starred) }
+    private var pinned: [NativeProject] { model.projects.filter(\.starred) }
     private var others: [NativeProject] { model.projects.filter { !$0.starred } }
 
     var body: some View {
@@ -139,12 +139,12 @@ struct JunoMobileProjectsView: View {
                 if model.projects.isEmpty {
                     empty
                 } else {
-                    if !favourites.isEmpty {
-                        JunoGroupLabel(text: "Favourites")
-                        ForEach(favourites) { card($0) }
+                    if !pinned.isEmpty {
+                        JunoGroupLabel(text: "Pinned")
+                        ForEach(pinned) { card($0) }
                     }
                     if !others.isEmpty {
-                        if !favourites.isEmpty { JunoGroupLabel(text: "All projects") }
+                        if !pinned.isEmpty { JunoGroupLabel(text: "All projects") }
                         ForEach(others) { card($0) }
                     }
                 }
@@ -186,10 +186,10 @@ struct JunoMobileProjectsView: View {
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                             if project.starred {
-                                Image(systemName: "star.fill")
+                                Image(systemName: "pin.fill")
                                     .font(.caption2)
                                     .foregroundStyle(Color.junoAccent)
-                                    .accessibilityLabel("Favourite")
+                                    .accessibilityLabel("Pinned")
                             }
                             if project.isPending {
                                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -237,8 +237,8 @@ struct JunoMobileProjectsView: View {
             Task { await model.updateProject(id: project.id, starred: !project.starred) }
         } label: {
             Label(
-                project.starred ? "Remove favourite" : "Favourite",
-                systemImage: project.starred ? "star.slash" : "star"
+                project.starred ? "Unpin" : "Pin",
+                systemImage: project.starred ? "pin.slash" : "pin"
             )
         }
         Button {
@@ -668,7 +668,7 @@ private struct JunoMobileProjectDetail: View {
             ScrollView(.horizontal) {
                 HStack(spacing: JunoSpace.tight) {
                     if project.starred {
-                        JunoMobileMetaChip(title: "Favourite", systemImage: "star.fill")
+                        JunoMobileMetaChip(title: "Pinned", systemImage: "pin.fill")
                     }
                     JunoMobileMetaChip(
                         title: count(model.selectedConversations.count, "conversation"),

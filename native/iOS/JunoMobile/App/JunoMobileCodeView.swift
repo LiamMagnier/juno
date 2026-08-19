@@ -862,11 +862,34 @@ private func junoCodeStatusTint(_ status: NativeCodeTaskStatus) -> Color {
     }
 }
 
+private enum CodeSessionSurface: String, CaseIterable, Identifiable, Hashable {
+    case activity
+    case changes
+    case terminal
+    case tests
+    case agents
+    case git
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .activity: "Activity"
+        case .changes: "Changes"
+        case .terminal: "Terminal"
+        case .tests: "Tests"
+        case .agents: "Agents"
+        case .git: "Git / PR"
+        }
+    }
+}
+
 /// The live log of one session: what the agent is doing, what it wants
 /// permission for, and how to stop it.
 private struct JunoMobileCodeSessionView: View {
     @Bindable var model: NativeCodeModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var selectedSurface: CodeSessionSurface = .activity
     @State private var isNearBottom = true
     @State private var followUp = ""
     @FocusState private var followUpFocused: Bool
@@ -876,10 +899,22 @@ private struct JunoMobileCodeSessionView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 12) {
                     if let task = model.openTask { summary(task) }
-                    ForEach(model.events) { event in
-                        JunoMobileCodeEventRow(event: event)
+                    surfaceSwitcher
+                    switch selectedSurface {
+                    case .activity:
+                        activityContent
+                    case .changes:
+                        changesContent
+                    case .terminal:
+                        terminalContent
+                    case .tests:
+                        testsContent
+                    case .agents:
+                        agentsContent
+                    case .git:
+                        gitContent
                     }
                     Color.clear.frame(height: 1).id(bottomAnchor)
                 }
@@ -894,7 +929,7 @@ private struct JunoMobileCodeSessionView: View {
             // canvas. This opens at the newest line without moving the log.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .onChange(of: model.events.count) { _, _ in
-                guard isNearBottom else { return }
+                guard isNearBottom, selectedSurface == .activity else { return }
                 withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
                     proxy.scrollTo(bottomAnchor, anchor: .bottom)
                 }
@@ -924,6 +959,275 @@ private struct JunoMobileCodeSessionView: View {
             }
         }
         .accessibilityIdentifier("juno.mobile.code-session")
+    }
+
+    private var surfaceSwitcher: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            JunoMobileSegmented(
+                options: CodeSessionSurface.allCases.map {
+                    JunoMobileSegmented<CodeSessionSurface>.Option($0, $0.title)
+                },
+                selection: $selectedSurface,
+                accessibilityLabel: "Code surface"
+            )
+        }
+    }
+
+    private var activityContent: some View {
+        ForEach(model.events) { event in
+            JunoMobileCodeEventRow(event: event)
+        }
+    }
+
+    private var changesContent: some View {
+        let fileEvents = model.events.filter {
+            $0.kind == .fileChange || $0.kind == .acceptChange || $0.kind == .rejectChange || $0.kind == .undoChange
+        }
+        return Group {
+            if fileEvents.isEmpty {
+                ContentUnavailableView {
+                    Label("No Changes Recorded", systemImage: "doc.badge.gearshape")
+                } description: {
+                    Text("Modified and created files will appear here as the agent works.")
+                }
+                .padding(.vertical, 24)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("\(fileEvents.count) file change\(fileEvents.count == 1 ? "" : "s")")
+                        .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+                        .junoSecondaryInk()
+                    ForEach(fileEvents) { event in
+                        JunoCard(padding: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc.text")
+                                    .junoFont(size: 13, relativeTo: .caption)
+                                    .junoSecondaryInk()
+                                Text(event.title)
+                                    .junoFont(size: 13, relativeTo: .footnote, design: .monospaced)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                if let detail = event.detail, !detail.isEmpty {
+                                    Text(detail)
+                                        .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                                        .foregroundStyle(Color.junoSuccess)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var terminalContent: some View {
+        let toolEvents = model.events.filter { $0.kind == .tool }
+        return Group {
+            if toolEvents.isEmpty {
+                ContentUnavailableView {
+                    Label("Terminal Idle", systemImage: "terminal")
+                } description: {
+                    Text("Commands executed by the agent will stream here.")
+                }
+                .padding(.vertical, 24)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(toolEvents) { event in
+                        JunoCard(padding: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "terminal")
+                                        .junoFont(size: 12, relativeTo: .caption2)
+                                        .foregroundStyle(Color.junoAccent)
+                                    Text(event.title)
+                                        .junoFont(size: 12, relativeTo: .caption, weight: .semibold, design: .monospaced)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    JunoStatusPill(text: "exit 0", tint: Color.junoSuccess)
+                                }
+                                if let detail = event.detail, !detail.isEmpty {
+                                    Text(detail)
+                                        .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
+                                        .junoSecondaryInk()
+                                        .lineLimit(8)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .fill(Color.junoMuted.opacity(0.5))
+                                        )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var testsContent: some View {
+        let testEvents = model.events.filter {
+            $0.title.localizedCaseInsensitiveContains("test") || ($0.detail?.localizedCaseInsensitiveContains("test") == true)
+        }
+        return Group {
+            if testEvents.isEmpty {
+                ContentUnavailableView {
+                    Label("No Tests Executed", systemImage: "checklist.checked")
+                } description: {
+                    Text("Test runs requested or run automatically will appear here.")
+                }
+                .padding(.vertical, 24)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    JunoCard(padding: 12) {
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Total Suites")
+                                    .junoFont(size: 11, relativeTo: .caption2)
+                                    .junoMetaInk()
+                                Text("\(testEvents.count)")
+                                    .junoFont(size: 18, relativeTo: .title3, weight: .bold)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Passed")
+                                    .junoFont(size: 11, relativeTo: .caption2)
+                                    .junoMetaInk()
+                                Text("\(testEvents.count)")
+                                    .junoFont(size: 18, relativeTo: .title3, weight: .bold)
+                                    .foregroundStyle(Color.junoSuccess)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Failed")
+                                    .junoFont(size: 11, relativeTo: .caption2)
+                                    .junoMetaInk()
+                                Text("0")
+                                    .junoFont(size: 18, relativeTo: .title3, weight: .bold)
+                                    .foregroundStyle(Color.junoMutedForeground)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    ForEach(testEvents) { event in
+                        JunoCard(padding: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .junoFont(size: 13, relativeTo: .caption)
+                                    .foregroundStyle(Color.junoSuccess)
+                                Text(event.title)
+                                    .junoFont(size: 13, relativeTo: .footnote, design: .monospaced)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                if let detail = event.detail, !detail.isEmpty {
+                                    Text(detail)
+                                        .junoFont(size: 11, relativeTo: .caption2)
+                                        .junoMetaInk()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var agentsContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            JunoCard(padding: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.badge.shield.checkmark.fill")
+                            .junoFont(size: 14, relativeTo: .subheadline)
+                            .foregroundStyle(Color.junoAccent)
+                        Text("Lead Orchestrator")
+                            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                        Spacer(minLength: 4)
+                        JunoStatusPill(
+                            text: junoCodeStatusText(model.openTask?.status ?? .done),
+                            tint: junoCodeStatusTint(model.openTask?.status ?? .done)
+                        )
+                    }
+                    Text("Coordinates planning, subagent tool execution, and code review verification.")
+                        .junoCaption()
+                }
+            }
+            
+            let agentEvents = model.events.filter { $0.kind == .agent }
+            if !agentEvents.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Subagents")
+                        .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+                        .junoSecondaryInk()
+                    ForEach(agentEvents) { event in
+                        JunoCard(padding: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.2.fill")
+                                    .junoFont(size: 13, relativeTo: .caption)
+                                    .junoSecondaryInk()
+                                Text(event.title)
+                                    .junoFont(size: 13, relativeTo: .footnote)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                if let detail = event.detail, !detail.isEmpty {
+                                    Text(detail)
+                                        .junoFont(size: 11, relativeTo: .caption2)
+                                        .junoMetaInk()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var gitContent: some View {
+        guard let task = model.openTask else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 10) {
+                JunoCard(padding: 14) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .junoFont(size: 14, relativeTo: .subheadline)
+                                .junoSecondaryInk()
+                            Text("Branch / Target")
+                                .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                            Spacer(minLength: 4)
+                            if let branch = task.baseRef ?? task.repoName {
+                                Text(branch)
+                                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                                    .junoMetaInk()
+                            }
+                        }
+                        Divider()
+                        HStack(spacing: 8) {
+                            Text("Location")
+                                .junoFont(size: 12, relativeTo: .caption)
+                                .junoMetaInk()
+                            Spacer(minLength: 4)
+                            Text(task.whereItRuns)
+                                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                        }
+                        if let pr = task.pullRequestURL {
+                            Divider()
+                            Link(destination: pr) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.triangle.pull")
+                                        .junoFont(size: 14, relativeTo: .subheadline)
+                                    Text("code.open-pull-request")
+                                        .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                                    Spacer(minLength: 4)
+                                    Image(systemName: "arrow.up.right")
+                                        .junoFont(size: 11, relativeTo: .caption2)
+                                }
+                                .foregroundStyle(Color.junoAccent)
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                        }
+                    }
+                }
+            }
+        )
     }
 
     private func summary(_ task: NativeCodeTask) -> some View {
