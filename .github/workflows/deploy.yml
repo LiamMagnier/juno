@@ -145,6 +145,18 @@ jobs:
           fi
           echo "No route under src/app/api/work references a host-only Work serialiser."
 
+      - name: Phase 2 Verifier Gate
+        run: npm run phase2:verify
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Upload Phase 2 Verification Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-verification-report
+          path: artifacts/phase2-verification/
+
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.
   # Replaying the migrations into a throwaway Postgres and diffing the result

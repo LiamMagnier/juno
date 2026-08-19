@@ -10,6 +10,9 @@ const LEDGER_PATH = path.join(ROOT, "docs", "release", "JUNO_PHASE_2_RECOVERY_LE
 const ARTIFACTS_DIR = path.join(ROOT, "artifacts", "phase2-verification");
 
 function getCommitSHA() {
+  if (process.env.GITHUB_SHA && process.env.GITHUB_SHA.trim().length > 0) {
+    return process.env.GITHUB_SHA.trim();
+  }
   try {
     return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
   } catch {
@@ -58,28 +61,39 @@ if (!Array.isArray(requirements) || requirements.length === 0) {
 const outDir = path.join(ARTIFACTS_DIR, commitSHA);
 ensureDir(outDir);
 
-// 1. Mechanically check file existence of all referenced files
-console.log("[phase2-verifier] Step 1: Validating file existence for all referenced paths...");
-let missingFiles = [];
+// 1. Mechanically check file existence and types of all referenced implementationFiles
+console.log("[phase2-verifier] Step 1: Validating implementation files for all requirements...");
+let fileErrors = [];
 for (const req of requirements) {
-  if (Array.isArray(req.files)) {
-    for (const f of req.files) {
+  if (req.state === "VERIFIED") {
+    if (!Array.isArray(req.implementationFiles) || req.implementationFiles.length === 0) {
+      fileErrors.push({ reqId: req.id, error: "Missing or empty implementationFiles for VERIFIED requirement" });
+      continue;
+    }
+  }
+  if (Array.isArray(req.implementationFiles)) {
+    for (const f of req.implementationFiles) {
       const fullPath = path.isAbsolute(f) ? f : path.join(ROOT, f);
       if (!fs.existsSync(fullPath)) {
-        missingFiles.push({ reqId: req.id, file: f });
+        fileErrors.push({ reqId: req.id, error: `Referenced implementation file does not exist: ${f}` });
+      } else {
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          fileErrors.push({ reqId: req.id, error: `Referenced path is a directory, expected file: ${f}` });
+        }
       }
     }
   }
 }
 
-if (missingFiles.length > 0) {
-  console.error(`[phase2-verifier] ERROR: Found ${missingFiles.length} missing referenced file(s):`);
-  for (const m of missingFiles) {
-    console.error(`  ✖ [${m.reqId}] Missing: ${m.file}`);
+if (fileErrors.length > 0) {
+  console.error(`[phase2-verifier] ERROR: Found ${fileErrors.length} implementation file violation(s):`);
+  for (const e of fileErrors) {
+    console.error(`  ✖ [${e.reqId}] ${e.error}`);
   }
   process.exit(1);
 }
-console.log("  ✔ All referenced implementation files exist.\n");
+console.log(`  ✔ Validated all implementation files across ${requirements.length} requirements.\n`);
 
 // 2. Run verification test suites
 console.log("[phase2-verifier] Step 2: Executing mechanical verification suites...");

@@ -69,6 +69,18 @@ for (const req of requirements) {
     if (!req.visualEvidence || !req.performanceEvidence || !req.accessibilityEvidence) {
       violations.push(`Requirement '${req.id}' is marked VERIFIED but lacks named visual, performance, or accessibility evidence.`);
     }
+    if (!Array.isArray(req.implementationFiles) || req.implementationFiles.length === 0) {
+      violations.push(`Requirement '${req.id}' is marked VERIFIED but lacks implementationFiles.`);
+    } else {
+      for (const file of req.implementationFiles) {
+        const fullPath = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
+        if (!fs.existsSync(fullPath)) {
+          violations.push(`Requirement '${req.id}' references missing implementation file: ${file}`);
+        } else if (fs.statSync(fullPath).isDirectory()) {
+          violations.push(`Requirement '${req.id}' references a directory instead of a file: ${file}`);
+        }
+      }
+    }
   } else {
     // For locally achievable P0 / P1 items, any incomplete state (NOT_STARTED, IN_PROGRESS, IMPLEMENTED_UNVERIFIED, FAILED) is a gate failure
     if (req.priority === "P0" || req.priority === "P1") {

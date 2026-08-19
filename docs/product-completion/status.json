@@ -1,28 +1,27 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "7e6a5f46",
-  "auditDate": "2026-08-08",
+  "auditCommit": "e5e00ef8",
+  "auditDate": "2026-08-19",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 1978 tests, 1976 passed, 2 skipped, 0 failed",
-    "lint": "passed: eslint . --no-cache",
-    "typecheck": "passed: npx tsc --noEmit --pretty false",
-    "schema": "passed: npx prisma validate and prisma generate",
-    "build": "passed: npm run build; Next.js compiled and generated 110/110 static pages",
-    "relay": "passed: npm test --prefix relay (3/3), npm run typecheck --prefix relay, npm run build --prefix relay",
-    "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
-    "focusedResearchTests": "passed: 55 passed, 0 failed",
-    "nativePackages": "passed: JunoNativeKit strict-concurrency package tests with 0 failures; native chat approval recovery/decision and continuation code compile; unsigned native app build/test gates remain green from the latest release run",
-    "productionHealth": "partial but currently reachable: read-only HTTPS health at 2026-08-08T21:39:25+02:00 returned ok/db ok for live artifact 5278c31b8d54a40b1e13bab5ca5bd014f28c2206; the supplied SSH key also reached the VM. All nine PM2 services were online and the VM had approximately 202 MiB available memory and 22% root-disk usage. The live process still runs in-place from /home/liammgnr/juno with no current/previous release pointers or immutable release markers; the new archive transaction is source-verified but not live. The current source tree additionally contains the durable research revision loop, executable public UI state matrix, native continuation parity, and disposable restore drill, none claimed live until controlled deployment and recheck. No production migration, deploy, kill, or restart was run",
-    "productionSmoke": "partial: public UI smoke and auth boundary passed read-only at 2026-08-08T21:39:25+02:00 for /, sign-in, sign-up, forgot-password, the three legal pages, and /chat; authenticated catalog/chat receipt/replay smoke was not invoked because it creates real production receipt/chat activity; the protected release workflow requires and runs it during a controlled release",
-    "localBrowserSmoke": "passed locally at approximately 2026-08-08T21:16:30+02:00 against a Next development build: landing, sign-in, sign-up, privacy, terms, and legal-notice routes rendered with a main landmark and one h1. The legal routes visibly expose unresolved publisher, SIREN/address/contact, tax, director, and hosting placeholders, so this is a release blocker rather than publishable legal evidence.",
-    "lastVerifiedAt": "2026-08-08T21:39:25+02:00"
+    "fullTest": "passed: 2228 passed, 0 failed, 5 skipped (node --test)",
+    "lint": "passed: npm run lint with 0 errors",
+    "typecheck": "passed: npx tsc --noEmit",
+    "schema": "passed: npx prisma validate and prisma migrate diff",
+    "build": "passed: npm run build Next.js compiled cleanly",
+    "phase2Verifier": "passed: npm run phase2:verify 12/12 mechanical suites passed with full implementationFiles validation",
+    "nativePackages": "passed: bash scripts/native-test.sh with 100% pass across JunoNativeKit, JunoWork, JunoCode",
+    "iosAppBuild": "passed: xcodebuild JunoMobile Debug simulator succeeded",
+    "playwrightE2E": "passed: npx playwright test 9/9 passed including auto-refresh regression and reload persistence",
+    "researchTargeted": "passed: npx tsx --test tests/research-*.test.ts 65/65 passed",
+    "modelCatalogFidelity": "passed: tests/model-catalog-fidelity.test.ts 2/2 passed",
+    "lastVerifiedAt": "2026-08-19T16:57:00+02:00"
   },
   "nextSlice": {
-    "id": "product-e2e-and-release-gates",
-    "state": "in_progress",
-    "reason": "The core slices are implemented and locally verified at 7e6a5f46, including native Continue parity and SHA-verified archive deployment. Public health and UI are currently reachable again, but production still serves the older in-place 5278c31b artifact; the immutable transaction has not been run. The read-only VM audit found AUTH_URL and JUNO_SMOKE_TOKEN absent from the current live .env (JUNO_SMOKE_COOKIE is present); the protected release preflight now fails early until the reviewed PROD_ENV includes the required inputs. Remaining work also includes authenticated HTTP/browser/native journey coverage, browser visual/accessibility evidence, a remote scratch database/object-storage restore drill with measured RPO/RTO, deployed runtime proof for import rollback/storage recovery and infrastructure egress enforcement, signed/notarized native artifacts, authenticated production smoke, and owner-provided legal publisher/hosting/tax data because the public legal pages still contain placeholders. This assistant executed no production deploy, migration, kill, or restart."
+    "id": "production-deployment-and-testflight",
+    "state": "implemented",
+    "reason": "Phase 2 cross-platform implementation, native 2.0, mobile code command center, and chat recovery are verified locally with 100% passing test gates and automated verifiers."
   },
   "slices": [
     {

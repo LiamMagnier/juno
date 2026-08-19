@@ -1255,7 +1255,7 @@ private struct JunoMobileCodeSessionView: View {
                                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                                        .stroke(Color.junoCardBorder, lineWidth: 1)
+                                                        .stroke(Color.junoBorder, lineWidth: 1)
                                                 )
                                         case .failure:
                                             HStack(spacing: 6) {

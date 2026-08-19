@@ -1,0 +1,4 @@
+Generated /var/folders/11/qq3n7sp117g0l6_j9xxdg2ch0000gn/T/juno-contract-drift-Y8T1vB/JunoNativeContract.swift from OpenAPI SHA-256 80615a95bc0693a7dd92bc83af17959aef9872277d18028db3d2916118b5b211
+Native Swift contract matches the canonical OpenAPI digest.
+Wrote /var/folders/11/qq3n7sp117g0l6_j9xxdg2ch0000gn/T/juno-work-drift-0yyPKO/JunoWorkContract.swift (work contract v3, 25 vocabularies, digest aafb373886ed…)
+Swift Work contract matches contracts/work/juno-work-v1.json.

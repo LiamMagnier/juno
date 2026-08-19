@@ -183,7 +183,8 @@
       "implementationFiles": [
         "native/iOS/JunoMobile/App/JunoMobileCodeView.swift",
         "native/Packages/JunoCode/Sources/JunoCodeCore/PermissionModel.swift",
-        "src/lib/approvals.ts"
+        "src/lib/action-approval.ts",
+        "src/lib/action-approval-store.ts"
       ],
       "runtimeEntryPoint": "JunoMobileCodeApprovalView",
       "tests": [
@@ -210,7 +211,8 @@
         "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift",
         "native/iOS/JunoMobile/App/JunoMobileSearchView.swift",
         "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift",
-        "src/lib/projects.ts"
+        "src/lib/starred-projects.ts",
+        "src/lib/project-collaboration.ts"
       ],
       "runtimeEntryPoint": "JunoMobileSidebarDrawer.pinnedSection",
       "tests": [
@@ -232,7 +234,7 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "native/Packages/JunoNativeKit/Sources/JunoCore/Design/JunoDesignTokens.swift",
+        "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
         "native/iOS/JunoMobile/App/JunoMobileChrome.swift",
         "native/iOS/JunoMobile/App/JunoMobileRootView.swift"
       ],
@@ -257,7 +259,7 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "native/iOS/JunoMobile/App/JunoMobileModelSelector.swift",
-        "native/macOS/JunoDesktop/App/JunoModelSelector.swift",
+        "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoModelSelector.swift",
         "src/lib/models.ts"
       ],
       "runtimeEntryPoint": "JunoMobileModelSelectorSheet",
@@ -306,7 +308,8 @@
       "implementationFiles": [
         "native/iOS/JunoMobile/App/JunoMobileVoiceView.swift",
         "native/iOS/JunoMobile/App/JunoMobileVoiceCamera.swift",
-        "relay/src/voice-relay.ts"
+        "relay/src/server.ts",
+        "relay/src/session.ts"
       ],
       "runtimeEntryPoint": "JunoMobileVoiceView",
       "tests": [
@@ -366,8 +369,9 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/components/artifacts/ArtifactViewer.tsx",
-        "src/lib/artifacts.ts",
+        "src/lib/artifacts-store.ts",
+        "src/lib/artifact-edit.ts",
+        "src/components/share/shared-artifact-viewer.tsx",
         "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift"
       ],
       "runtimeEntryPoint": "ArtifactViewer",
@@ -390,7 +394,7 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "src/app/(app)/projects/[id]/page.tsx",
-        "src/lib/projects.ts",
+        "src/lib/starred-projects.ts",
         "native/iOS/JunoMobile/App/JunoMobileWorkspaceViews.swift"
       ],
       "runtimeEntryPoint": "ProjectWorkspaceView",
@@ -413,7 +417,8 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "src/lib/auto-model.ts",
-        "src/lib/model-router.ts",
+        "src/lib/model-selection.ts",
+        "src/lib/model-capability.ts",
         "src/lib/models.ts"
       ],
       "runtimeEntryPoint": "resolveAutoModel",
@@ -437,7 +442,7 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "src/lib/provider-health.ts",
-        "src/lib/model-router.ts"
+        "src/lib/model-selection.ts"
       ],
       "runtimeEntryPoint": "checkProviderHealth",
       "tests": [
@@ -458,8 +463,8 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/research-service.ts",
-        "src/lib/research-worker.ts",
+        "src/lib/deep-research.ts",
+        "src/lib/research/run.ts",
         "scripts/research-worker.ts"
       ],
       "runtimeEntryPoint": "startResearchRun",
@@ -481,8 +486,8 @@
       "priority": "P1",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/research-service.ts",
-        "src/lib/citation-validator.ts"
+        "src/lib/research/claims.ts",
+        "src/lib/research/engine.ts"
       ],
       "runtimeEntryPoint": "validateClaimSourceGraph",
       "tests": [
@@ -501,7 +506,9 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/work-service.ts",
+        "src/lib/work/store.ts",
+        "src/lib/work/domain.ts",
+        "src/lib/work/schedule.ts",
         "scripts/work-runner.ts",
         "scripts/work-scheduler.ts"
       ],
@@ -526,7 +533,7 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/scheduled-task-runner.ts",
+        "src/lib/work/schedule.ts",
         "scripts/scheduled-task-runner.ts",
         "scripts/work-trigger-poller.ts"
       ],
@@ -548,7 +555,7 @@
       "state": "VERIFIED",
       "implementationFiles": [
         "src/lib/memory-lifecycle.ts",
-        "src/lib/memory-retrieval.ts",
+        "src/lib/memory.ts",
         "src/lib/memory-categories.ts",
         "scripts/test-memory.ts"
       ],
@@ -570,8 +577,8 @@
       "priority": "P0",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/mcp-client.ts",
-        "src/lib/approvals.ts",
+        "src/lib/mcp.ts",
+        "src/lib/action-approval.ts",
         "native/Packages/JunoCode/Sources/JunoCodeLocal/Extensibility/SkillActivation.swift"
       ],
       "runtimeEntryPoint": "invokeMCPTool",
@@ -592,8 +599,9 @@
       "priority": "P1",
       "state": "VERIFIED",
       "implementationFiles": [
-        "src/lib/saml.ts",
+        "src/lib/auth/enterprise-sso.ts",
         "src/lib/crypto.ts",
+        "src/lib/message-crypto.ts",
         "src/lib/auth.ts"
       ],
       "runtimeEntryPoint": "validateEnterpriseAuth",

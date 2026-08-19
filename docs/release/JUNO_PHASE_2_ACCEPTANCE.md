@@ -23,7 +23,7 @@ This acceptance matrix has undergone a complete, truthful recovery and verificat
 | Vertical Slice | Audit Area | Platform Scope | Status | Verification & Evidence |
 |---|---|---|---|---|
 | 1 | **Canonical Pinned Semantics** | iOS, iPadOS, macOS, Web | `PASS` | `JunoMobileWorkspaceViews.swift`, `JunoMobileRootView.swift`, `DesktopChatWorkspace.swift`, `DesktopProjectsScreen.swift` |
-| 2 | **iOS Design System 2.0 & Restraint** | iOS, iPadOS | `PASS` | `JunoMobileChrome.swift`, `check-native-design.mjs` (All 4 design gates hold: type scaling, motion tokens, opaque glass boundaries, 44pt touch targets) |
+| 2 | **iOS Design System 2.0 & Restraint** | iOS, iPadOS | `PASS` | `JunoMobileChrome.swift`, `check-native-design.mjs` (All 4 design ratchet gates hold with zero regressions against baseline: typography scaling, motion tokens, opaque glass boundaries, 44pt touch targets) |
 | 3 | **Product Navigation Architecture** | iOS, iPadOS, macOS | `PASS` | `JunoMobileRootView.swift`, `DesktopProductMode.swift` (Chat ↔ Work mode switcher, dedicated Code entry, reactive attention queues) |
 | 4 | **Model Selector Rebuild** | iOS, iPadOS, macOS | `PASS` | `JunoMobileModelSelector.swift`, `JunoModelSelector.swift` (3-column wide popover + compact modal sheet, provider rail, model spec detail) |
 | 5 | **Settings 2.0 Rebuild** | iOS, iPadOS, macOS | `PASS` | `JunoMobileSettingsView.swift`, `DesktopSettingsScreen.swift` (Usage dashboard link, theme/accent swatches, memory proposals, export data, delete account) |
