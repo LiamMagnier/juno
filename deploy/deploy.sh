@@ -223,8 +223,10 @@ reload_release() {
   # a one-service ecosystem so a stale slot cannot prevent a new relay from
   # being created.
   pm2 startOrReload "$config_file" --update-env || true
-  pm2 save
   verify_pm2_ecosystem "$config_file"
+  # Persist any services repaired by verify_pm2_ecosystem so they survive a
+  # reboot and future PM2 reconciliations.
+  pm2 save
 }
 
 verify_pm2_ecosystem() {

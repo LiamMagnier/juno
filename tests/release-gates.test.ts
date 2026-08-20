@@ -257,6 +257,10 @@ test("production activation repairs a stale PM2 slot with a one-service ecosyste
   assert.match(PM2_SERVICE_STARTER, /apps: \[app\]/);
   assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["start", tempConfig, "--update-env"\]/);
   assert.match(PM2_SERVICE_STARTER, /mkdtempSync/);
+  const verificationIndex = DEPLOY_SCRIPT.indexOf('verify_pm2_ecosystem "$config_file"');
+  const saveIndex = DEPLOY_SCRIPT.indexOf("pm2 save", verificationIndex);
+  assert.ok(verificationIndex >= 0, "PM2 services must be verified");
+  assert.ok(saveIndex > verificationIndex, "repaired PM2 services must be saved after verification");
 });
 
 test("external release failures use the same verified rollback transaction", () => {
