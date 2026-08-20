@@ -53,7 +53,10 @@ const configuredRelayUrl =
 const authSecret = env.AUTH_SECRET || "";
 const timeoutMs = Number(env.VOICE_RELAY_TIMEOUT_MS || 10_000);
 const requireAuth = env.VOICE_RELAY_REQUIRE_AUTH === "1";
-const requireProvider = env.VOICE_RELAY_REQUIRE_PROVIDER === "1";
+// A relay process with zero providers is alive but cannot provide Voice. Release
+// verification therefore requires at least one real provider by default. Local
+// diagnostic callers can explicitly opt out with VOICE_RELAY_REQUIRE_PROVIDER=0.
+const requireProvider = env.VOICE_RELAY_REQUIRE_PROVIDER !== "0";
 
 function normalizeHttpUrl(raw) {
   let value = String(raw || "").trim().replace(/\/+$/, "");
@@ -120,14 +123,11 @@ async function verifyWebSocketHandshake(secret) {
       else resolve(true);
     };
     const timer = setTimeout(() => {
-      try {
-        ws.close();
-      } catch {}
+      try { ws.close(); } catch {}
       finish(new Error(`WebSocket handshake timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
     const ws = new WebSocket(url);
-
     ws.on("open", () => ws.send(JSON.stringify({ type: "ping" })));
     ws.on("message", (raw) => {
       try {
@@ -138,9 +138,7 @@ async function verifyWebSocketHandshake(secret) {
           ws.close(1000, "verified");
         }
       } catch (error) {
-        try {
-          ws.close();
-        } catch {}
+        try { ws.close(); } catch {}
         finish(error instanceof Error ? error : new Error(String(error)));
       }
     });
