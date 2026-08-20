@@ -1,22 +1,22 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "4ebda7809b1957f3cfa3deb29f5e7bf2a90c7b6d",
+  "auditCommit": "e252e4b5bcebf0ad73b7bdd7269743b28dae49ed",
   "auditDate": "2026-08-21",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 2236 passed, 0 failed, 5 skipped (node --test)",
+    "fullTest": "passed: 2250 passed, 0 failed, 6 skipped (node --test)",
     "lint": "passed: npm run lint with 0 errors",
     "typecheck": "passed: npx tsc --noEmit (0 errors)",
     "schema": "passed: npx prisma validate and prisma migrate diff",
     "build": "passed: npm run build Next.js compiled cleanly",
-    "phase2Verifier": "passed: all 20 local mechanical gates passed (npm run phase2:verify)",
-    "nativePackages": "passed: 173 + 21 + 86 + 43 Swift package tests passed (npm run native:test)",
-    "iosAppBuild": "passed: JunoMobile and JunoDesktop build and typecheck cleanly",
-    "playwrightE2E": "passed locally: strict authenticated chromium chat gate 5/5 with deterministic non-production smoke provider",
+    "phase2Verifier": "passed: all 21 local mechanical suites passed (npm run phase2:verify); exact-SHA CI and production evidence remain external",
+    "nativePackages": "passed: JunoNativeKit, JunoWork, and JunoCode package suites all passed (npm run native:test)",
+    "iosAppBuild": "passed: JunoMobile iOS Simulator and JunoDesktop macOS builds both succeeded with signing disabled",
+    "playwrightE2E": "passed locally: authenticated Chromium chat gate and the 7-test deterministic non-production journey",
     "researchTargeted": "passed: targeted research regression suites pass cleanly",
     "modelCatalogFidelity": "passed locally: catalog fidelity, reasoning caps, and Gemini 3.7 Flash adapter validated",
-    "lastVerifiedAt": "2026-08-21T00:34:15+02:00"
+    "lastVerifiedAt": "2026-08-21T01:15:34+02:00"
   },
   "nextSlice": {
     "id": "production-deployment-and-testflight",
