@@ -184,6 +184,14 @@ jobs:
       - name: Generate the i18n catalog
         run: npm run i18n:extract
 
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Prepare the verification database
         run: |
           npx prisma migrate deploy

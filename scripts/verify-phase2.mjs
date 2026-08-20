@@ -146,6 +146,24 @@ console.log(`  ✔ Validated all implementation files across ${requirements.leng
 const outDir = path.join(ARTIFACTS_DIR, commitSHA);
 ensureDir(outDir);
 
+// Preflight runner/agent-core dependencies if missing
+if (fs.existsSync(path.join(ROOT, "runner", "agent-core", "package.json"))) {
+  if (!fs.existsSync(path.join(ROOT, "runner", "agent-core", "node_modules"))) {
+    try {
+      execSync("npm ci --prefix runner/agent-core", { cwd: ROOT, stdio: "inherit" });
+    } catch {
+      /* Handled by GATE_RUNNER_BUILD */
+    }
+  }
+  if (!fs.existsSync(path.join(ROOT, "runner", "agent-core", "dist", "work", "index.js"))) {
+    try {
+      execSync("npm run build --prefix runner/agent-core", { cwd: ROOT, stdio: "inherit" });
+    } catch {
+      /* Handled by GATE_RUNNER_BUILD */
+    }
+  }
+}
+
 // 2. Run verification test suites
 console.log("[phase2-verifier] Step 2: Executing mechanical verification suites...");
 
