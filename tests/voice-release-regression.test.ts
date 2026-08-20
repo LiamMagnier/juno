@@ -1,0 +1,46 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const relayVerifier = readFileSync(new URL("../scripts/verify-voice-relay.mjs", import.meta.url), "utf8");
+const tokenRoute = readFileSync(new URL("../src/app/api/voice/relay-token/route.ts", import.meta.url), "utf8");
+const productionSmoke = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
+
+test("voice relay verifier resolves ws from the standalone relay package", () => {
+  assert.match(relayVerifier, /createRequire\(new URL\(["']\.\.\/relay\/package\.json["']/);
+  assert.match(relayVerifier, /relayRequire\(["']ws["']\)/);
+  assert.doesNotMatch(relayVerifier, /import\s+\{\s*WebSocket\s*\}\s+from\s+["']ws["']/);
+});
+
+test("voice relay verifier loads the immutable release env before checking auth", () => {
+  assert.match(relayVerifier, /loadEnv\(path\.join\(ROOT, ["']\.env["']\)\)/);
+  assert.match(relayVerifier, /const env = \{ \.\.\.fileEnv, \.\.\.process\.env \}/);
+  assert.match(relayVerifier, /AUTH_SECRET/);
+  assert.match(relayVerifier, /verifyWebSocketHandshake/);
+});
+
+test("owner voice access bypasses plan and spend gates without bypassing authentication", () => {
+  const userLookup = tokenRoute.indexOf("const user = await getCurrentUser()");
+  const ownerLookup = tokenRoute.indexOf("const owner = isOwnerEmail(user.email)");
+  const planGate = tokenRoute.indexOf("if (!owner && !PLANS[plan].voice)");
+  const rateGate = tokenRoute.indexOf("if (!owner) {");
+  assert.ok(userLookup >= 0, "voice route must still require an authenticated user");
+  assert.ok(ownerLookup > userLookup, "owner detection must happen only after authentication");
+  assert.ok(planGate > ownerLookup, "owner-aware plan gate is missing");
+  assert.ok(rateGate > planGate, "owner-aware rate/budget gate is missing");
+});
+
+test("voice token route derives the canonical same-origin relay when explicit env is absent", () => {
+  assert.match(tokenRoute, /NEXT_PUBLIC_VOICE_RELAY_URL/);
+  assert.match(tokenRoute, /VOICE_RELAY_URL/);
+  assert.match(tokenRoute, /NEXT_PUBLIC_APP_URL/);
+  assert.match(tokenRoute, /url\.pathname = ["']\/voice-relay["']/);
+  assert.match(tokenRoute, /https:["']\) url\.protocol = ["']wss:/);
+});
+
+test("production chat smoke does not confuse a non-voice smoke plan with dead relay infrastructure", () => {
+  assert.match(productionSmoke, /JUNO_SMOKE_REQUIRE_VOICE_TOKEN/);
+  assert.match(productionSmoke, /voiceTokenResponse\.status === 403/);
+  assert.match(productionSmoke, /smoke account is not Voice-enabled/);
+  assert.match(productionSmoke, /voice relay-token returned a non-WebSocket URL/);
+});
