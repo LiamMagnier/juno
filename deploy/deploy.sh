@@ -26,6 +26,7 @@ BUILD_ARTIFACT_SHA256="${JUNO_BUILD_ARTIFACT_SHA256:-}"
 BUILD_ROOT="${JUNO_BUILD_ROOT:-}"
 INITIAL_RELEASE_TARGET="${JUNO_INITIAL_RELEASE_TARGET:-$APP_HOME}"
 PERSISTENT_DATA_ROOT="${JUNO_PERSISTENT_DATA_ROOT:-$APP_HOME}"
+PM2_SERVICE_STARTER="${JUNO_PM2_SERVICE_STARTER:-$SCRIPT_DIR/../scripts/reconcile-pm2-service.mjs}"
 
 STAGING_DIR=''
 RELEASE_DIR=''
@@ -216,7 +217,12 @@ reload_release() {
   [[ -f "$config_file" ]] || return 1
 
   export GIT_SHA="$release_sha_value"
-  pm2 start "$config_file" --update-env || pm2 reload "$config_file" --update-env || true
+  # `pm2 start`/`pm2 reload` can throw when an older dump contains a process
+  # id whose process object has disappeared.  Keep the bulk reconciliation
+  # best-effort; verify_pm2_ecosystem repairs each missing service below from
+  # a one-service ecosystem so a stale slot cannot prevent a new relay from
+  # being created.
+  pm2 startOrReload "$config_file" --update-env || true
   pm2 save
   verify_pm2_ecosystem "$config_file"
 }
@@ -224,10 +230,11 @@ reload_release() {
 verify_pm2_ecosystem() {
   local config_file="${1:-}"
   local expected='["juno-backend","juno-scheduler","juno-work","juno-work-scheduler","juno-research","juno-work-triggers","juno-import-recovery","juno-code-sweeper","juno-voice-relay"]'
-  PM2_CONFIG="$config_file" EXPECTED_PM2="$expected" node -e '
-    const { execSync } = require("child_process");
+  PM2_CONFIG="$config_file" EXPECTED_PM2="$expected" PM2_SERVICE_STARTER="$PM2_SERVICE_STARTER" node -e '
+    const { execFileSync, execSync } = require("child_process");
     const expected = JSON.parse(process.env.EXPECTED_PM2);
     const configFile = process.env.PM2_CONFIG || "";
+    const serviceStarter = process.env.PM2_SERVICE_STARTER || "";
 
     for (let attempt = 1; attempt <= 6; attempt++) {
       let rows = [];
@@ -244,14 +251,20 @@ verify_pm2_ecosystem() {
 
       console.log(`Waiting for PM2 services to be online (attempt ${attempt}/6): ${missing.join(", ")}`);
       for (const name of missing) {
-        if (configFile) {
+        let started = false;
+        if (configFile && serviceStarter) {
           try {
-            execSync(`pm2 start "${configFile}" --only "${name}" --update-env`, { stdio: "ignore" });
+            execFileSync("node", [serviceStarter, "--config", configFile, "--service", name], {
+              stdio: "inherit",
+            });
+            started = true;
           } catch {}
         }
-        try {
-          execSync(`pm2 restart "${name}" --update-env`, { stdio: "ignore" });
-        } catch {}
+        if (!started) {
+          try {
+            execFileSync("pm2", ["restart", name, "--update-env"], { stdio: "ignore" });
+          } catch {}
+        }
       }
       try {
         execSync("sleep 2");

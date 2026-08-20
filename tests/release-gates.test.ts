@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const DEPLOY_WORKFLOW = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const PRODUCTION_SMOKE = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
 const DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy.sh", import.meta.url), "utf8");
+const PM2_SERVICE_STARTER = readFileSync(new URL("../scripts/reconcile-pm2-service.mjs", import.meta.url), "utf8");
 
 function sectionAfter(source: string, marker: string, nextMarker: string): string {
   const start = source.indexOf(marker);
@@ -246,6 +247,16 @@ test("production activation verifies every PM2 service, including workers and th
   assert.match(DEPLOY_JOB, /pm2 jlist/);
   assert.match(DEPLOY_SCRIPT, /pm2_env\?\.status === "online"/);
   assert.match(DEPLOY_JOB, /pm2_env\?\.status === "online"/);
+});
+
+test("production activation repairs a stale PM2 slot with a one-service ecosystem", () => {
+  assert.match(DEPLOY_SCRIPT, /pm2 startOrReload "\$config_file" --update-env/);
+  assert.match(DEPLOY_SCRIPT, /PM2_SERVICE_STARTER/);
+  assert.match(DEPLOY_SCRIPT, /reconcile-pm2-service\.mjs/);
+  assert.match(DEPLOY_SCRIPT, /execFileSync\("node", \[serviceStarter, "--config", configFile, "--service", name\]/);
+  assert.match(PM2_SERVICE_STARTER, /apps: \[app\]/);
+  assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["start", tempConfig, "--update-env"\]/);
+  assert.match(PM2_SERVICE_STARTER, /mkdtempSync/);
 });
 
 test("external release failures use the same verified rollback transaction", () => {
