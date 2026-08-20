@@ -18,6 +18,7 @@ export interface ProviderCapabilities {
 export interface VoiceHistoryEntry {
   role: "user" | "assistant";
   text: string;
+  context?: string;
 }
 
 export const VOICE_HISTORY_MAX_TURNS = 20;
@@ -27,7 +28,14 @@ export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
 export type VoiceClientMessage =
   | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
   | { type: "session.switch"; provider: VoiceProviderId }
-  | { type: "input.text"; text: string; turnId?: string; displayText?: string }
+  | {
+      type: "input.text";
+      text: string;
+      turnId?: string;
+      displayText?: string;
+      context?: string;
+      attachmentIds?: string[];
+    }
   | { type: "control.interrupt" }
   | { type: "video.frame"; jpegBase64: string }
   | { type: "ping" };

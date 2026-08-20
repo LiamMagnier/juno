@@ -193,6 +193,22 @@ final class JunoVoiceTranscriptRecordTests: XCTestCase {
         XCTAssertEqual(record.lines[0].attachmentIDs, ["att_1"])
     }
 
+    func testLaterFramesForTheSameLineDoNotClearItsDocumentContext() {
+        var record = JunoVoiceTranscriptRecord()
+        record.upsert(
+            role: .user,
+            text: "summarize this",
+            final: false,
+            attachmentIDs: ["att_1"],
+            context: "## Attached documents\nbrief.pdf · page 2"
+        )
+        record.upsert(role: .user, text: "summarize this now", final: true)
+
+        XCTAssertEqual(record.lines.count, 1)
+        XCTAssertEqual(record.lines[0].context, "## Attached documents\nbrief.pdf · page 2")
+        XCTAssertEqual(record.lines[0].attachmentIDs, ["att_1"])
+    }
+
     /// A spoken line has no images, and must not inherit the previous turn's.
     func testAnOrdinarySpokenLineCarriesNoImages() {
         var record = JunoVoiceTranscriptRecord()

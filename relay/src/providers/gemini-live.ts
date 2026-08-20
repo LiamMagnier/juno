@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
 import { requiredEnv } from "./types.js";
+import { providerText } from "../voice-context.js";
 
 const LIVE_URL =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
@@ -97,7 +98,7 @@ export class GeminiLiveSession implements VoiceProviderSession {
         clientContent: {
           turns: seed.transcript
             .filter((t) => t.text.trim())
-            .map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: t.text }] })),
+            .map((t) => ({ role: t.role === "assistant" ? "model" : "user", parts: [{ text: providerText(t.text, t.context) }] })),
           turnComplete: false,
         },
       });

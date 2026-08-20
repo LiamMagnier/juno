@@ -39,6 +39,8 @@ export interface ProviderCapabilities {
 export interface VoiceHistoryEntry {
   role: "user" | "assistant";
   text: string;
+  /** Bounded, untrusted document context for a composed user turn. */
+  context?: string;
 }
 
 export const VOICE_HISTORY_MAX_TURNS = 20;
@@ -50,7 +52,16 @@ export type ClientMessage =
   | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
   | { type: "session.switch"; provider: VoiceProviderId }
   /** Final user utterance from on-device speech recognition (MiniMax mode). */
-  | { type: "input.text"; text: string; turnId?: string; displayText?: string }
+  | {
+      type: "input.text";
+      text: string;
+      turnId?: string;
+      displayText?: string;
+      /** Context returned by the authenticated attachment route, never bytes. */
+      context?: string;
+      /** Exact uploaded ids retained for the transcript save boundary. */
+      attachmentIds?: string[];
+    }
   /** Explicit barge-in: stop the model speaking now. */
   | { type: "control.interrupt" }
   /** One JPEG screen/camera frame, base64 (no data: prefix). Send <= 1 fps. */

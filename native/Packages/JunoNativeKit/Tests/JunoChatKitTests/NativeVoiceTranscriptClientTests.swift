@@ -85,39 +85,38 @@ final class NativeVoiceTranscriptClientTests: XCTestCase {
 
     // MARK: The 409
 
-    /// The route claims an image only while it is unattached and rolls the whole
-    /// transaction back otherwise. Letting that 409 through would lose a spoken
-    /// conversation the relay no longer holds, over a duplicated picture — so
-    /// the words are saved without the images, and the caller is told.
-    func testAConflictSavesTheConversationWithoutItsImagesAndSaysSo() async throws {
+    /// The route claims an attachment only while it is unattached and rolls the
+    /// whole transaction back otherwise. A retry without the attachment would
+    /// silently change what the model saw, so the conflict remains visible.
+    func testAConflictIsReportedWithoutRetryingAndNeverDropsItsAttachments() async {
         let sender = VoiceQueueSender(responses: [
-            response(#"{"error":"A voice image was already used."}"#, statusCode: 409),
-            response(#"{"conversationId":"conv_1","messages":[{"id":"m1"}]}"#),
+            response(#"{"error":"A voice attachment was already used."}"#, statusCode: 409),
         ])
 
-        let saved = try await NativeVoiceTranscriptClient(sender: sender).save(
-            sessionID: UUID(),
-            conversationID: nil,
-            modelID: "openai:gpt-5",
-            projectID: nil,
-            connectors: [],
-            turns: [.init(role: .user, content: "what is this", attachmentIDs: ["att_1"])],
-            for: accountID
-        )
-
-        XCTAssertEqual(saved.conversationID, "conv_1")
-        XCTAssertTrue(saved.attachmentsDropped)
-
+        do {
+            _ = try await NativeVoiceTranscriptClient(sender: sender).save(
+                sessionID: UUID(),
+                conversationID: nil,
+                modelID: "openai:gpt-5",
+                projectID: nil,
+                connectors: [],
+                turns: [.init(role: .user, content: "what is this", attachmentIDs: ["att_1"])],
+                for: accountID
+            )
+            XCTFail("a conflicting attachment must not be silently dropped")
+        } catch let error as NativeVoiceTranscriptError {
+            XCTAssertEqual(
+                error,
+                .attachmentsUnavailable(message: "A voice attachment was already used.")
+            )
+        } catch {
+            XCTFail("unexpected error (error)")
+        }
         let requests = await sender.requests
-        XCTAssertEqual(requests.count, 2)
-        // The retry has to be the same save, or the idempotency key stops being
-        // one and the reader gets the conversation twice.
-        let first = try object(requests[0])
-        let second = try object(requests[1])
-        XCTAssertEqual(first["sessionId"] as? String, second["sessionId"] as? String)
-        let retried = try XCTUnwrap(second["turns"] as? [[String: Any]])
-        XCTAssertNil(retried[0]["attachmentIds"])
-        XCTAssertEqual(retried[0]["content"] as? String, "what is this")
+        XCTAssertEqual(requests.count, 1)
+        let sent = try? object(requests[0])
+        let turns = sent?["turns"] as? [[String: Any]]
+        XCTAssertEqual(turns?.first?["attachmentIds"] as? [String], ["att_1"])
     }
 
     /// With no images there is nothing to remove, so there is no smaller save to
@@ -165,6 +164,53 @@ final class NativeVoiceTranscriptClientTests: XCTestCase {
             for: accountID
         )
         XCTAssertFalse(saved.attachmentsDropped)
+    }
+
+    // MARK: Durable Voice document context
+
+    func testDocumentContextUsesTheAuthenticatedRouteAndPreservesStates() async throws {
+        let sender = VoiceQueueSender(responses: [
+            response(#"{"context":"Attached files still being indexed: brief.pdf (queued): wait.","attachments":[{"id":"att_1","fileName":"brief.pdf","kind":"FILE","availability":"pending","parserState":"queued"},{"id":"att_2","fileName":"photo.png","kind":"IMAGE","availability":"ready","parserState":"ready"}],"truncated":false}"#)
+        ])
+
+        let result = try await NativeVoiceAttachmentContextClient(sender: sender).fetch(
+            attachmentIDs: ["att_1", "att_2"],
+            query: "What matters?",
+            provider: "gemini",
+            for: accountID
+        )
+
+        XCTAssertEqual(result.attachments.map(\.id), ["att_1", "att_2"])
+        XCTAssertTrue(result.hasPendingAttachments)
+        XCTAssertFalse(result.hasUnavailableAttachments)
+        XCTAssertTrue(result.context.contains("brief.pdf"))
+
+        let requests = await sender.requests
+        XCTAssertEqual(requests.count, 1)
+        let body = try object(requests[0])
+        XCTAssertEqual(body["attachmentIds"] as? [String], ["att_1", "att_2"])
+        XCTAssertEqual(body["query"] as? String, "What matters?")
+        XCTAssertEqual(body["provider"] as? String, "gemini")
+        XCTAssertEqual(requests[0].path, "/api/voice/context")
+    }
+
+    func testDocumentContextRejectsAnEmptyQuestionBeforeTheNetwork() async {
+        let sender = VoiceQueueSender()
+        do {
+            _ = try await NativeVoiceAttachmentContextClient(sender: sender).fetch(
+                attachmentIDs: ["att_1"],
+                query: "   ",
+                provider: nil,
+                for: accountID
+            )
+            XCTFail("empty context queries must fail locally")
+        } catch let error as NativeVoiceAttachmentContextError {
+            XCTAssertEqual(error, .invalidRequest)
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        let requests = await sender.requests
+        XCTAssertTrue(requests.isEmpty)
     }
 
     // MARK: Helpers

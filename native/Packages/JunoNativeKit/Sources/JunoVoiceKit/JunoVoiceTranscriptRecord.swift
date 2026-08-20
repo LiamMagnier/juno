@@ -37,8 +37,8 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
         public let role: JunoVoiceTranscriptRole
         public var text: String
         public var final: Bool
-        /// Uploaded `Attachment` ids for the images the reader showed the model
-        /// on this turn.
+        /// Uploaded `Attachment` ids for the images/documents the reader showed
+        /// the model on this turn.
         ///
         /// The line is where they have to live, because the line is the only
         /// thing that survives the call: the record is what gets posted to
@@ -46,19 +46,25 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
         /// is an image absent from the saved conversation while the words that
         /// answered it are still there.
         public var attachmentIDs: [String]
+        /// Bounded durable document context used to reseed a reconnect. It is
+        /// kept separate from `text` so the visible transcript never displays
+        /// parser output as if the reader had spoken it.
+        public var context: String?
 
         public init(
             id: UUID = UUID(),
             role: JunoVoiceTranscriptRole,
             text: String,
             final: Bool,
-            attachmentIDs: [String] = []
+            attachmentIDs: [String] = [],
+            context: String? = nil
         ) {
             self.id = id
             self.role = role
             self.text = text
             self.final = final
             self.attachmentIDs = attachmentIDs
+            self.context = context
         }
     }
 
@@ -95,19 +101,27 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
         role: JunoVoiceTranscriptRole,
         text: String,
         final: Bool,
-        attachmentIDs: [String] = []
+        attachmentIDs: [String] = [],
+        context: String? = nil
     ) {
         if let index = lines.lastIndex(where: { $0.role == role && !$0.final }) {
             lines[index].text = text
             lines[index].final = final
             if !attachmentIDs.isEmpty { lines[index].attachmentIDs = attachmentIDs }
+            if let context, !context.isEmpty { lines[index].context = context }
             trim()
             return
         }
 
         if role == .user, let at = answerStart, at <= lines.endIndex {
             lines.insert(
-                Line(role: role, text: text, final: final, attachmentIDs: attachmentIDs), at: at
+                Line(
+                    role: role,
+                    text: text,
+                    final: final,
+                    attachmentIDs: attachmentIDs,
+                    context: context
+                ), at: at
             )
             // Consumed. The next answer records its own start, and a second
             // question in the same turn belongs after this one, not on top of it.
@@ -122,7 +136,15 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
                 // late question still lands above it.
                 answerStart = lines.endIndex
             }
-            lines.append(Line(role: role, text: text, final: final, attachmentIDs: attachmentIDs))
+            lines.append(
+                Line(
+                    role: role,
+                    text: text,
+                    final: final,
+                    attachmentIDs: attachmentIDs,
+                    context: context
+                )
+            )
         }
         trim()
     }

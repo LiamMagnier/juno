@@ -444,7 +444,9 @@ public final class JunoRealtimeVoiceController {
     /// Attachment ids for composed turns the relay has not echoed back yet, in
     /// send order. An array rather than a dictionary so the oldest is the one
     /// dropped when the bound is reached.
-    private var pendingTurnAttachments: [(turnID: String, attachmentIDs: [String])] = []
+    private var pendingTurnAttachments: [
+        (turnID: String, attachmentIDs: [String], context: String?)
+    ] = []
     #if os(macOS)
     private var screenShareTask: Task<Void, Never>?
     /// Bumped by every start and every stop. A capture loop that is already
@@ -796,7 +798,7 @@ public final class JunoRealtimeVoiceController {
         let spoken = record.lines.compactMap { line -> JunoVoiceHistoryEntry? in
             let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard line.final, !text.isEmpty else { return nil }
-            return JunoVoiceHistoryEntry(role: line.role, text: text)
+            return JunoVoiceHistoryEntry(role: line.role, text: text, context: line.context)
         }
         return JunoVoiceHistoryEntry.bounded(seededHistory + spoken)
     }
@@ -959,11 +961,13 @@ public final class JunoRealtimeVoiceController {
         final: Bool,
         turnID: String? = nil
     ) {
+        let metadata = role == .user ? takeTurnMetadata(for: turnID) : nil
         record.upsert(
             role: role,
             text: text,
             final: final,
-            attachmentIDs: role == .user ? takeTurnAttachments(for: turnID) : []
+            attachmentIDs: metadata?.attachmentIDs ?? [],
+            context: metadata?.context
         )
     }
 
@@ -1045,7 +1049,12 @@ public final class JunoRealtimeVoiceController {
     /// - Returns: false when nothing was sent, so a caller can fall back to the
     ///   normal chat path instead of quietly losing the message.
     @discardableResult
-    public func sendTurn(text: String, images: [JunoVoiceTurnImage]) async -> Bool {
+    public func sendTurn(
+        text: String,
+        images: [JunoVoiceTurnImage],
+        context: String? = nil,
+        documentAttachmentIDs: [String] = []
+    ) async -> Bool {
         guard phase == .live, let socket else { return false }
         let requested = Array(images.prefix(Self.maxTurnImages))
         guard requested.isEmpty || capabilities?.videoInput == true else { return false }
@@ -1073,20 +1082,50 @@ public final class JunoRealtimeVoiceController {
             }
         }
 
-        guard !trimmed.isEmpty || !frames.isEmpty else { return false }
+        let boundedContext: String?
+        if let context {
+            let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+            let bounded = String(
+                trimmedContext.prefix(JunoVoiceHistoryEntry.maximumContextCharacters)
+            )
+            boundedContext = bounded.isEmpty ? nil : bounded
+        } else {
+            boundedContext = nil
+        }
+        let documentIDs = Array(
+            documentAttachmentIDs
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                .prefix(Self.maxTurnImages - min(Self.maxTurnImages, frames.count))
+        )
+        guard !trimmed.isEmpty || !frames.isEmpty || boundedContext != nil else { return false }
+        guard !documentIDs.isEmpty || boundedContext == nil || !trimmed.isEmpty || !frames.isEmpty else {
+            return false
+        }
+        let sharedCount = max(frames.count + documentIDs.count, 1)
         let displayText = trimmed.isEmpty
-            ? (frames.count == 1 ? "Shared an image" : "Shared \(frames.count) images")
+            ? (sharedCount == 1 ? "Shared an attachment" : "Shared \(sharedCount) attachments")
             : trimmed
         let message = trimmed.isEmpty
-            ? "Please look at the image context I just shared and respond naturally."
+            ? "Please use the attachment context I just shared and respond naturally."
             : trimmed
         let turnID = UUID().uuidString
         // Only what actually went up. An id kept for a frame the ceiling
         // dropped would put a picture in the saved conversation that the model
         // was never shown, which reads back as the model ignoring it.
-        rememberTurnAttachments(frames.compactMap(\.attachmentID), for: turnID)
+        let attachmentIDs = Array(
+            frames.compactMap(\.attachmentID) + documentIDs
+        ).prefix(Self.maxTurnImages)
+        rememberTurnAttachments(Array(attachmentIDs), context: boundedContext, for: turnID)
         for frame in frames { send(.videoFrame(jpegBase64: frame.base64)) }
-        send(.inputText(message, turnId: turnID, displayText: displayText))
+        send(
+            .inputText(
+                message,
+                turnId: turnID,
+                displayText: displayText,
+                context: boundedContext,
+                attachmentIDs: Array(attachmentIDs)
+            )
+        )
         return true
     }
 
@@ -1118,9 +1157,15 @@ public final class JunoRealtimeVoiceController {
     /// of the call holding ids no line will ever claim.
     private static let pendingTurnAttachmentLimit = 8
 
-    private func rememberTurnAttachments(_ attachmentIDs: [String], for turnID: String) {
-        guard !attachmentIDs.isEmpty else { return }
-        pendingTurnAttachments.append((turnID: turnID, attachmentIDs: attachmentIDs))
+    private func rememberTurnAttachments(
+        _ attachmentIDs: [String],
+        context: String?,
+        for turnID: String
+    ) {
+        guard !attachmentIDs.isEmpty || context != nil else { return }
+        pendingTurnAttachments.append(
+            (turnID: turnID, attachmentIDs: attachmentIDs, context: context)
+        )
         if pendingTurnAttachments.count > Self.pendingTurnAttachmentLimit {
             pendingTurnAttachments.removeFirst(
                 pendingTurnAttachments.count - Self.pendingTurnAttachmentLimit
@@ -1128,12 +1173,15 @@ public final class JunoRealtimeVoiceController {
         }
     }
 
-    /// Claims the images sent under this turn id, once.
-    private func takeTurnAttachments(for turnID: String?) -> [String] {
+    /// Claims the exact files and context sent under this turn id, once.
+    private func takeTurnMetadata(
+        for turnID: String?
+    ) -> (attachmentIDs: [String], context: String?)? {
         guard let turnID,
             let index = pendingTurnAttachments.firstIndex(where: { $0.turnID == turnID })
-        else { return [] }
-        return pendingTurnAttachments.remove(at: index).attachmentIDs
+        else { return nil }
+        let metadata = pendingTurnAttachments.remove(at: index)
+        return (attachmentIDs: metadata.attachmentIDs, context: metadata.context)
     }
 
     // MARK: Screen share

@@ -105,12 +105,18 @@ export async function POST(req: Request) {
       const requestedAttachmentIds = [...new Set(input.turns.flatMap((turn) => turn.attachmentIds))];
       const availableAttachments = requestedAttachmentIds.length
         ? await tx.attachment.findMany({
-            where: { id: { in: requestedAttachmentIds }, userId: user.id, kind: "IMAGE", messageId: null, deletedAt: null },
+            where: {
+              id: { in: requestedAttachmentIds },
+              userId: user.id,
+              kind: { in: ["IMAGE", "FILE"] },
+              messageId: null,
+              deletedAt: null,
+            },
             select: { id: true },
           })
         : [];
       if (availableAttachments.length !== requestedAttachmentIds.length) {
-        throw new AttachmentConflictError("One or more voice images are unavailable.");
+        throw new AttachmentConflictError("One or more voice attachments are unavailable.");
       }
 
       const messageIds: string[] = [];
@@ -135,10 +141,16 @@ export async function POST(req: Request) {
         if (turn.role === "USER" && turn.attachmentIds.length > 0) {
           const ids = [...new Set(turn.attachmentIds)];
           const updated = await tx.attachment.updateMany({
-            where: { id: { in: ids }, userId: user.id, kind: "IMAGE", messageId: null, deletedAt: null },
+            where: {
+              id: { in: ids },
+              userId: user.id,
+              kind: { in: ["IMAGE", "FILE"] },
+              messageId: null,
+              deletedAt: null,
+            },
             data: { messageId: message.id, conversationId: conversation.id },
           });
-          if (updated.count !== ids.length) throw new AttachmentConflictError("A voice image was already used.");
+          if (updated.count !== ids.length) throw new AttachmentConflictError("A voice attachment was already used.");
         }
       }
 

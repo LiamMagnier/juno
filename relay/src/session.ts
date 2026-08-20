@@ -12,8 +12,10 @@ import { mintRelayCallbackToken } from "./auth.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 import { effectiveRelaySessionLimitSec } from "./session-limit.js";
+import { providerText, VOICE_CONTEXT_MAX_CHARS } from "./voice-context.js";
 
 const VOICE_INSTRUCTIONS = `You are Juno, a warm, quick-witted voice assistant. You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
+const VOICE_INPUT_MAX_CHARS = 4_000;
 
 /** One connected client = one RelaySession. Owns at most one provider session
  *  and the running transcript, which survives provider switches. */
@@ -100,14 +102,17 @@ export class RelaySession {
         await this.startProvider(msg.provider);
         return;
       case "input.text": {
-        const text = String(msg.text ?? "").trim().slice(0, 4000);
+        const text = String(msg.text ?? "").trim().slice(0, VOICE_INPUT_MAX_CHARS);
         if (!text) return;
-        const displayText = String(msg.displayText ?? text).trim().slice(0, 4000) || text;
+        const displayText = String(msg.displayText ?? text).trim().slice(0, VOICE_INPUT_MAX_CHARS) || text;
+        const context = typeof msg.context === "string"
+          ? msg.context.replace(/\u0000/g, "").trim().slice(0, VOICE_CONTEXT_MAX_CHARS)
+          : "";
         // Typed turns are first-class voice turns: keep them in provider-switch
         // history and echo them to the client transcript immediately.
-        this.transcript.push({ role: "user", text, final: true });
+        this.transcript.push({ role: "user", text, context: context || undefined, final: true });
         this.send({ type: "transcript", role: "user", text: displayText, final: true, turnId: msg.turnId });
-        this.provider?.sendText(text);
+        this.provider?.sendText(providerText(text, context));
         return;
       }
       case "control.interrupt":
@@ -393,8 +398,11 @@ function sanitizeHistory(value: unknown): TranscriptEntry[] {
     if (!turn || (turn.role !== "user" && turn.role !== "assistant") || typeof turn.text !== "string") continue;
     const text = turn.text.trim().slice(0, Math.min(VOICE_HISTORY_MAX_TURN_CHARS, remaining));
     if (!text) continue;
-    result.unshift({ role: turn.role, text, final: true });
-    remaining -= text.length;
+    const context = typeof turn.context === "string"
+      ? turn.context.replace(/\u0000/g, "").trim().slice(0, Math.min(VOICE_CONTEXT_MAX_CHARS, remaining - text.length))
+      : "";
+    result.unshift({ role: turn.role, text, context: context || undefined, final: true });
+    remaining -= text.length + context.length;
   }
 
   return result;

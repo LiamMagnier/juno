@@ -26,6 +26,11 @@ final class JunoMobileVoiceSession: Identifiable {
     /// every read — see the note there.
     let startedAt = Date()
     let controller: JunoRealtimeVoiceController
+    let accountID: AccountID
+    /// Authenticated durable document retrieval for files shared during Voice.
+    /// Nil only in the unauthenticated preview shell, where the file action is
+    /// not offered.
+    let attachmentContextClient: NativeVoiceAttachmentContextClient?
     /// Files the spoken turns into a chat. Nil where nothing can be saved — an
     /// unconfigured shell — in which case the dock says so on the way out rather
     /// than dropping the conversation in silence.
@@ -36,10 +41,14 @@ final class JunoMobileVoiceSession: Identifiable {
 
     init(
         controller: JunoRealtimeVoiceController,
+        accountID: AccountID,
+        attachmentContextClient: NativeVoiceAttachmentContextClient?,
         saveTranscript: ((JunoMobileVoiceTranscript) async -> String?)?,
         close: @escaping () -> Void
     ) {
         self.controller = controller
+        self.accountID = accountID
+        self.attachmentContextClient = attachmentContextClient
         self.saveTranscript = saveTranscript
         self.close = close
     }
@@ -702,7 +711,8 @@ struct JunoMobileVoiceDock: View {
             guard line.final, !text.isEmpty else { return nil }
             return NativeVoiceTranscriptClient.Turn(
                 role: line.role == .assistant ? .assistant : .user,
-                content: text
+                content: text,
+                attachmentIDs: line.attachmentIDs
             )
         }
     }

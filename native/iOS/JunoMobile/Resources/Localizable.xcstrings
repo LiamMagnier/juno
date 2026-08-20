@@ -2621,13 +2621,64 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voice mode accepts up to 4 images in one turn."
+            "value" : "Voice mode accepts up to 4 attachments in one turn."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le mode vocal accepte jusqu’à 4 images par message."
+            "value" : "Le mode vocal accepte jusqu’à 4 pièces jointes par message."
+          }
+        }
+      }
+    },
+    "composer.voice.attachments-pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wait for the attachment upload to finish before sending."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attendez la fin de l’envoi de la pièce jointe avant d’envoyer."
+          }
+        }
+      }
+    },
+    "composer.voice.context-pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This attachment is still being indexed. Juno will say when its contents are unavailable."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette pièce jointe est encore indexée. Juno indiquera si son contenu n’est pas disponible."
+          }
+        }
+      }
+    },
+    "composer.voice.context-unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno could not read this attachment, so it will not guess its contents."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno n’a pas pu lire cette pièce jointe et n’en inventera pas le contenu."
           }
         }
       }

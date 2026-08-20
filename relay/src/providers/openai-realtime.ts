@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { resamplePcm16 } from "../audio.js";
 import type { VoiceProviderId } from "../protocol.js";
 import type { ProviderEvents, TokenUsage, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import { providerText } from "../voice-context.js";
 
 /**
  * Adapter for the OpenAI Realtime event vocabulary, used by TWO providers:
@@ -135,7 +136,7 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
           content: [
             {
               type: turn.role === "user" ? "input_text" : this.dialect.assistantHistoryContentType,
-              text: turn.text,
+              text: providerText(turn.text, turn.context),
             },
           ],
         },

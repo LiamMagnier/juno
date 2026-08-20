@@ -117,13 +117,15 @@ struct JunoMobileComposer: View {
     /// What the composer becomes while a call is running, and the web's list
     /// exactly (`composer.tsx`, `voiceActive`): connectors and tools hidden, the
     /// library closed, dictation gone — it would fight the call for the
-    /// microphone — and attachments narrowed to images.
+    /// microphone — while the ordinary attachment uploader remains available
+    /// for images and durable documents.
     private var voiceActive: Bool { voiceSession != nil }
 
-    /// Past four images a turn, providers start answering about the first one
-    /// and ignoring the rest. The relay enforces the same ceiling; this is here
-    /// so the reader is told before they compose a fifth.
-    private static let maximumVoiceImages = 4
+    /// Past four attachments a turn, providers start answering about the first
+    /// one and ignoring the rest. The relay and transcript route enforce the
+    /// same ceiling; this is here so the reader is told before they compose a
+    /// fifth.
+    private static let maximumVoiceAttachments = 4
 
     /// Whether the model on the other end of the call can see at all.
     ///
@@ -136,7 +138,7 @@ struct JunoMobileComposer: View {
     }
 
     private var canAttachInVoice: Bool {
-        voiceCanSeeImages && attachments.count < Self.maximumVoiceImages
+        attachments.count < Self.maximumVoiceAttachments
     }
 
     // MARK: Long drafts
@@ -662,7 +664,7 @@ struct JunoMobileComposer: View {
         )
     }
 
-    /// The `+`, during a call: **images only**.
+    /// The `+`, during a call: images and durable documents.
     ///
     /// A separate menu rather than the full one with rows switched off, which is
     /// what the web does too. Everything the normal menu offers below "Add" —
@@ -670,8 +672,6 @@ struct JunoMobileComposer: View {
     /// composes, and a spoken turn does not go through that route at all. A menu
     /// of controls that quietly apply to nothing is worse than a short menu.
     ///
-    /// Files stays visible and disabled rather than being removed, because
-    /// "where did attaching a PDF go" is a question worth answering in place.
     private var voiceAddMenu: some View {
         Menu {
             Section("attachments.add") {
@@ -680,19 +680,21 @@ struct JunoMobileComposer: View {
                 } label: {
                     Label("attachments.camera", systemImage: "camera")
                 }
-                .disabled(!canAttachInVoice)
+                .disabled(!canAttachInVoice || !voiceCanSeeImages)
 
                 Button {
                     open(.photos)
                 } label: {
                     JunoIconLabel("attachments.photos", icon: .photos)
                 }
-                .disabled(!canAttachInVoice)
+                .disabled(!canAttachInVoice || !voiceCanSeeImages)
 
-                Button {} label: {
-                    JunoIconLabel("composer.voice.files-chat-only", icon: .files)
+                Button {
+                    open(.files)
+                } label: {
+                    JunoIconLabel("attachments.files", icon: .files)
                 }
-                .disabled(true)
+                .disabled(!canAttachInVoice)
             }
             if !voiceCanSeeImages {
                 Section {
@@ -1050,8 +1052,12 @@ struct JunoMobileComposer: View {
             return
         }
         let staged = attachments
-        guard staged.count <= Self.maximumVoiceImages else {
+        guard staged.count <= Self.maximumVoiceAttachments else {
             voiceTurnError = String(localized: "composer.voice.image-limit")
+            return
+        }
+        guard staged.allSatisfy({ $0.uploadedID != nil }) else {
+            voiceTurnError = String(localized: "composer.voice.attachments-pending")
             return
         }
         // `previewData` is the payload the upload model already holds for an
@@ -1070,20 +1076,47 @@ struct JunoMobileComposer: View {
                 JunoVoiceTurnImage(jpeg: $0, attachmentID: attachment.uploadedID)
             }
         }
-        guard images.count == staged.count else {
-            voiceTurnError = String(localized: "composer.voice.images-only")
-            return
-        }
         guard images.isEmpty || voiceCanSeeImages else {
             voiceTurnError = String(localized: "composer.voice.no-vision")
             return
         }
+        let documentIDs = staged
+            .filter { $0.previewData == nil }
+            .compactMap { $0.uploadedID }
 
         sendSwell.fire()
         let text = prompt
         isSendingVoiceTurn = true
         Task {
-            let accepted = await session.controller.sendTurn(text: text, images: images)
+            let context: NativeVoiceAttachmentContext?
+            if documentIDs.isEmpty {
+                context = nil
+            } else if let client = session.attachmentContextClient {
+                do {
+                    context = try await client.fetch(
+                        attachmentIDs: documentIDs,
+                        query: text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? "Summarize the attached document and tell me what matters."
+                            : text,
+                        provider: session.controller.provider.rawValue,
+                        for: session.accountID
+                    )
+                } catch {
+                    isSendingVoiceTurn = false
+                    voiceTurnError = error.localizedDescription
+                    return
+                }
+            } else {
+                isSendingVoiceTurn = false
+                voiceTurnError = String(localized: "composer.voice.context-unavailable")
+                return
+            }
+            let accepted = await session.controller.sendTurn(
+                text: text,
+                images: images,
+                context: context?.context,
+                documentAttachmentIDs: documentIDs
+            )
             isSendingVoiceTurn = false
             guard accepted else {
                 voiceTurnError = images.isEmpty
@@ -1094,6 +1127,11 @@ struct JunoMobileComposer: View {
             prompt = ""
             draftExpanded = false
             attachmentModel?.clear()
+            if context?.hasPendingAttachments == true {
+                voiceTurnError = String(localized: "composer.voice.context-pending")
+            } else if context?.hasUnavailableAttachments == true {
+                voiceTurnError = String(localized: "composer.voice.context-unavailable")
+            }
         }
     }
 }

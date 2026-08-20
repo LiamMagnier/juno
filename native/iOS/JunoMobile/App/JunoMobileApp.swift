@@ -41,6 +41,7 @@ struct JunoMobileApp: App {
     private let requestSender: (any NativeAuthenticatedRequestSending)?
     private let accountDataClient: NativeAccountDataClient?
     private let voiceTranscriptClient: NativeVoiceTranscriptClient?
+    private let voiceAttachmentContextClient: NativeVoiceAttachmentContextClient?
     private let messageActionsClient: NativeMessageActionsClient?
     /// Suggests what to ask next, under a finished reply.
     private let followUpClient: NativeFollowUpClient?
@@ -67,6 +68,7 @@ struct JunoMobileApp: App {
         requestSender = configuration.requestSender
         accountDataClient = configuration.accountDataClient
         voiceTranscriptClient = configuration.voiceTranscriptClient
+        voiceAttachmentContextClient = configuration.voiceAttachmentContextClient
         messageActionsClient = configuration.messageActionsClient
         followUpClient = configuration.followUpClient
         pullsClient = configuration.pullsClient
@@ -150,6 +152,7 @@ struct JunoMobileApp: App {
             requestSender: requestSender,
             accountDataClient: accountDataClient,
             voiceTranscriptClient: voiceTranscriptClient,
+            voiceAttachmentContextClient: voiceAttachmentContextClient,
             messageActionsClient: messageActionsClient,
             followUpClient: followUpClient,
             pullsClient: pullsClient,
@@ -299,6 +302,7 @@ struct JunoMobileApp: App {
                 requestSender: runtime,
                 accountDataClient: NativeAccountDataClient(sender: runtime),
                 voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
+                voiceAttachmentContextClient: NativeVoiceAttachmentContextClient(sender: runtime),
                 messageActionsClient: NativeMessageActionsClient(sender: runtime),
                 followUpClient: NativeFollowUpClient(sender: runtime),
                 pullsClient: NativeGitHubPullsClient(sender: runtime),
@@ -329,6 +333,7 @@ struct JunoMobileApp: App {
                 requestSender: nil,
                 accountDataClient: nil,
                 voiceTranscriptClient: nil,
+                voiceAttachmentContextClient: nil,
                 messageActionsClient: nil,
                 followUpClient: nil,
                 pullsClient: nil,
@@ -382,6 +387,7 @@ private struct JunoMobileConfiguration {
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?
     let voiceTranscriptClient: NativeVoiceTranscriptClient?
+    let voiceAttachmentContextClient: NativeVoiceAttachmentContextClient?
     let messageActionsClient: NativeMessageActionsClient?
     let followUpClient: NativeFollowUpClient?
     let pullsClient: NativeGitHubPullsClient?

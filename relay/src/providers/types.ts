@@ -4,6 +4,8 @@ export interface TranscriptEntry {
   role: "user" | "assistant";
   text: string;
   final: boolean;
+  /** Bounded document context supplied with a composed user turn. */
+  context?: string;
 }
 
 export interface VoiceSessionSeed {

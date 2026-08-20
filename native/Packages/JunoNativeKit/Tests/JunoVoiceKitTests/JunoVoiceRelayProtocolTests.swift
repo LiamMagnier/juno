@@ -111,6 +111,20 @@ final class JunoVoiceRelayProtocolTests: XCTestCase {
         XCTAssertEqual(composed["displayText"] as? String, "Shared an image")
     }
 
+    func testComposedDocumentContextAndExactAttachmentIDsUseTheExtendedWireShape() throws {
+        let composed = try object(
+            .inputText(
+                "summarize this",
+                turnId: "turn-2",
+                displayText: "Shared an attachment",
+                context: "## Attached documents\nbrief.pdf is still indexing.",
+                attachmentIDs: ["att_1", "att_2"]
+            )
+        )
+        XCTAssertEqual(composed["context"] as? String, "## Attached documents\nbrief.pdf is still indexing.")
+        XCTAssertEqual(composed["attachmentIds"] as? [String], ["att_1", "att_2"])
+    }
+
     /// The relay repeats `turnId` back on its echo of a composed turn, and that
     /// echo is the only thing tying the images a reader attached to the line
     /// they land on — the frames themselves are anonymous bytes. Dropping it in
@@ -164,6 +178,26 @@ final class JunoVoiceRelayProtocolTests: XCTestCase {
         XCTAssertEqual(history.map { $0["role"] as? String }, ["user", "assistant"])
         XCTAssertEqual(history.first?["text"] as? String, "Which of the two?")
         XCTAssertEqual(Set(try XCTUnwrap(history.first).keys), ["role", "text"])
+    }
+
+    func testHistoryCarriesBoundedDocumentContextForReconnects() throws {
+        let seeded = try object(
+            .sessionStart(
+                provider: .openai,
+                history: [
+                    JunoVoiceHistoryEntry(
+                        role: .user,
+                        text: "What does the document say?",
+                        context: "## Attached documents\nbrief.pdf · page 2\nThe total is 42."
+                    )
+                ]
+            )
+        )
+        let history = try XCTUnwrap(seeded["history"] as? [[String: Any]])
+        XCTAssertEqual(
+            history.first?["context"] as? String,
+            "## Attached documents\nbrief.pdf · page 2\nThe total is 42."
+        )
     }
 
     /// The web sends the last twenty turns, and so does this. Oldest go first:

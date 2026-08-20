@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
 import { requiredEnv } from "./types.js";
+import { providerText } from "../voice-context.js";
 
 /**
  * MiniMax has NO public speech-to-speech API (verified 2026-07): its 2024
@@ -41,7 +42,7 @@ export class MinimaxComposedSession implements VoiceProviderSession {
       { role: "system" as const, content: seed.instructions },
       ...seed.transcript
         .filter((t) => t.text.trim())
-        .map((t) => ({ role: t.role, content: t.text }) as const),
+        .map((t) => ({ role: t.role, content: providerText(t.text, t.context) }) as const),
     ];
     await this.openTts(this.generation);
   }

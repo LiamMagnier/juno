@@ -163,10 +163,15 @@ public enum JunoVoiceTurnPhase: String, Codable, Sendable {
 public struct JunoVoiceHistoryEntry: Codable, Equatable, Sendable {
     public var role: JunoVoiceTranscriptRole
     public var text: String
+    /// Bounded document context for a composed user turn. This is reference
+    /// material for provider reseeding, never a replacement for the visible
+    /// transcript text.
+    public var context: String?
 
-    public init(role: JunoVoiceTranscriptRole, text: String) {
+    public init(role: JunoVoiceTranscriptRole, text: String, context: String? = nil) {
         self.role = role
         self.text = text
+        self.context = context
     }
 
     /// The relay's `sanitizeHistory` bounds, restated. Three numbers rather than
@@ -174,6 +179,7 @@ public struct JunoVoiceHistoryEntry: Codable, Equatable, Sendable {
     /// one enormous pasted document.
     public static let maximumTurns = 20
     public static let maximumTurnCharacters = 2_000
+    public static let maximumContextCharacters = 8_000
     public static let maximumTotalCharacters = 12_000
 
     /// Trims a chat to what may travel on `session.start`.
@@ -197,8 +203,15 @@ public struct JunoVoiceHistoryEntry: Codable, Equatable, Sendable {
                 to: min(maximumTurnCharacters, remaining)
             )
             guard !text.isEmpty else { continue }
-            result.insert(JunoVoiceHistoryEntry(role: entry.role, text: text), at: 0)
-            remaining -= text.utf16.count
+            let contextBudget = max(0, min(maximumContextCharacters, remaining - text.utf16.count))
+            let context = entry.context.map {
+                truncated($0.trimmingCharacters(in: .whitespacesAndNewlines), to: contextBudget)
+            }.flatMap { $0.isEmpty ? nil : $0 }
+            result.insert(
+                JunoVoiceHistoryEntry(role: entry.role, text: text, context: context),
+                at: 0
+            )
+            remaining -= text.utf16.count + (context?.utf16.count ?? 0)
         }
 
         return result
@@ -316,7 +329,13 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
     /// of twice; `displayText` is what the reader sees when what was actually
     /// sent to the model is the stand-in prompt for shared images rather than
     /// anything they wrote.
-    case inputText(_ text: String, turnId: String? = nil, displayText: String? = nil)
+    case inputText(
+        _ text: String,
+        turnId: String? = nil,
+        displayText: String? = nil,
+        context: String? = nil,
+        attachmentIDs: [String] = []
+    )
     case controlInterrupt
     /// One JPEG screen or camera frame, base64 with no `data:` prefix.
     ///
@@ -328,7 +347,7 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
     case ping
 
     private enum CodingKeys: String, CodingKey {
-        case type, provider, history, text, turnId, displayText, jpegBase64
+        case type, provider, history, text, turnId, displayText, context, attachmentIds, jpegBase64
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -344,7 +363,7 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
         case .sessionSwitch(let provider):
             try container.encode("session.switch", forKey: .type)
             try container.encode(provider, forKey: .provider)
-        case .inputText(let text, let turnId, let displayText):
+        case .inputText(let text, let turnId, let displayText, let context, let attachmentIDs):
             try container.encode("input.text", forKey: .type)
             try container.encode(text, forKey: .text)
             // Encoded only when present: the relay reads `turnId` as "this turn
@@ -352,6 +371,16 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
             // the recognizer path depends on.
             try container.encodeIfPresent(turnId, forKey: .turnId)
             try container.encodeIfPresent(displayText, forKey: .displayText)
+            try container.encodeIfPresent(context, forKey: .context)
+            let boundedIDs = Array(
+                attachmentIDs
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .prefix(4)
+            )
+            try container.encodeIfPresent(
+                boundedIDs.isEmpty ? nil : boundedIDs,
+                forKey: .attachmentIds
+            )
         case .controlInterrupt:
             try container.encode("control.interrupt", forKey: .type)
         case .videoFrame(let jpegBase64):

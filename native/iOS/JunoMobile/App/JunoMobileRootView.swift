@@ -61,6 +61,8 @@ struct JunoMobileRootView: View {
     var accountDataClient: NativeAccountDataClient?
     /// Files a finished voice call into chat history. See ``saveVoiceTranscript``.
     var voiceTranscriptClient: NativeVoiceTranscriptClient?
+    /// Resolves durable document context for composed Voice turns.
+    var voiceAttachmentContextClient: NativeVoiceAttachmentContextClient? = nil
     /// Backs the transcript's action row — rate, branch, read aloud.
     var messageActionsClient: NativeMessageActionsClient?
     var followUpClient: NativeFollowUpClient?
@@ -451,6 +453,8 @@ struct JunoMobileRootView: View {
                     accountID: session.profile.id
                 )
             ),
+            accountID: session.profile.id,
+            attachmentContextClient: voiceAttachmentContextClient,
             saveTranscript: voiceSaveAction,
             close: { voiceSession = nil }
         )
