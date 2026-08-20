@@ -7,8 +7,9 @@ import { E2E_EMAIL, E2E_PASSWORD } from "./helpers";
 // instead of one per test per browser.
 setup("authenticate the E2E account", async ({ page }) => {
   await page.goto("/sign-in");
-  await page.fill('input[type="email"]', E2E_EMAIL);
-  await page.fill('input[type="password"]', E2E_PASSWORD);
+  await page.waitForSelector('input[name="email"]:not([disabled])');
+  await page.fill('input[name="email"]', E2E_EMAIL);
+  await page.fill('input[name="password"]', E2E_PASSWORD);
   await page.click('button[type="submit"]');
   await expect(page).toHaveURL(/\/chat/, { timeout: 30_000 });
   await page.evaluate(() => localStorage.setItem("juno:onboarded:v1", "1"));

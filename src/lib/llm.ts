@@ -1,8 +1,8 @@
 import "server-only";
 import { streamAnthropic } from "@/lib/anthropic";
+import { streamGemini } from "@/lib/gemini";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamOpenAIResponses } from "@/lib/openai-responses";
-import { streamGeminiSearch } from "@/lib/gemini-search";
 import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
@@ -96,11 +96,6 @@ export async function* streamChat(opts: {
   const maxTokens = clampMaxTokens(model.provider, opts.maxTokens + thinkingAllowance);
   const active = opts.connectors ?? [];
 
-  // Native web search uses each provider's own tool/grounding (no third party).
-  if (webSearch && model.provider === "google") {
-    yield* streamGeminiSearch(model, system, history, maxTokens, signal, dynamicContext);
-    return;
-  }
   // Open the Unified Agent Toolset (Python, Browser, Computer + active MCP connectors)
   let toolset: McpToolset | undefined;
   if (opts.audit) {
@@ -127,6 +122,13 @@ export async function* streamChat(opts: {
       yield* streamAnthropic(
         model, system, history, maxTokens, signal, reasoningEffort, webSearch,
         toolset, dynamicContext, fastMode
+      );
+      return;
+    }
+    if (model.provider === "google") {
+      yield* streamGemini(
+        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+        toolset, dynamicContext
       );
       return;
     }

@@ -58,8 +58,6 @@ const providers: NextAuthConfig["providers"] = [
 
       const ip = request?.headers ? ipFromHeaders(new Headers(request.headers)) : "unknown";
       const checks = [rateLimit({ key: `signin:email:${email}`, limit: SIGNIN_MAX_PER_EMAIL, windowSec: SIGNIN_WINDOW_SEC })];
-      // Skip the IP bucket when no proxy header exists (plain local dev) —
-      // otherwise every client would share one "unknown" bucket.
       if (ip !== "unknown") {
         checks.push(rateLimit({ key: `signin:ip:${ip}`, limit: SIGNIN_MAX_PER_IP, windowSec: SIGNIN_WINDOW_SEC }));
       }
@@ -70,8 +68,6 @@ const providers: NextAuthConfig["providers"] = [
       if (!user?.hashedPassword) return null;
       const { ok, needsUpgrade } = await verifyPassword(parsed.data.password, user.hashedPassword);
       if (!ok) return null;
-      // Suspended accounts cannot sign in. Returning null gives the same generic
-      // failure as a bad password (no account-status oracle).
       if (user.bannedAt) return null;
       // Migrate a legacy (pre-72-byte-safe) hash to the current scheme now that
       // we hold the plaintext. Best-effort: a failure here must not block login.

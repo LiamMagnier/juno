@@ -5,6 +5,10 @@ import process from "node:process";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 
+try {
+  process.loadEnvFile();
+} catch {}
+
 const ROOT = process.cwd();
 const LEDGER_PATH = process.env.PHASE2_LEDGER_PATH
   ? path.resolve(process.env.PHASE2_LEDGER_PATH)
@@ -163,6 +167,10 @@ if (fs.existsSync(path.join(ROOT, "runner", "agent-core", "package.json"))) {
     }
   }
 }
+
+try {
+  execSync("NODE_OPTIONS=--conditions=react-server npx tsx scripts/seed-e2e-user.ts", { cwd: ROOT, stdio: "ignore" });
+} catch {}
 
 // 2. Run verification test suites
 console.log("[phase2-verifier] Step 2: Executing mechanical verification suites...");

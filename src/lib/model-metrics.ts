@@ -653,6 +653,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Pro line: UNVERIFIED — this key's free tier is quota 0 on gemini-*-pro
       // (429 "limit: 0"), so no completion was ever obtainable. Left as-is.
       if (id.includes("pro")) return caps(LMH, false);
+      if (/3\.7-flash/.test(id)) return caps(["minimal", "low", "medium", "high", "xhigh", "max"], true);
       // gemini-3.1-flash-lite: off-switch PROVEN on both transports (native
       // thinkingLevel=minimal/thinkingBudget=0 -> thoughtsTokenCount absent(=0);
       // compat effort=none -> full answer under a 64-token cap).

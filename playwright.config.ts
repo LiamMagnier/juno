@@ -67,6 +67,9 @@ export default defineConfig({
     port: 3000,
     reuseExistingServer: true,
     timeout: 120_000,
-    env: useDeterministicSmokeProvider ? { JUNO_E2E_SMOKE_PROVIDER: "1" } : undefined,
+    env: {
+      ...process.env,
+      ...(useDeterministicSmokeProvider ? { JUNO_E2E_SMOKE_PROVIDER: "1" } : {}),
+    },
   },
 });

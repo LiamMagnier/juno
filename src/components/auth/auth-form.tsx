@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
@@ -25,7 +25,6 @@ function GoogleIcon() {
 }
 
 export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; googleEnabled: boolean }) {
-  const router = useRouter();
   const params = useSearchParams();
   const requestedCallback = params.get("callbackUrl");
   const callbackUrl = React.useMemo(() => {
@@ -45,15 +44,20 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const effectiveName = (formData.get("name") as string) || name;
+    const effectiveEmail = ((formData.get("email") as string) || email).trim();
+    const effectivePassword = (formData.get("password") as string) || password;
+
     setLoading(true);
     try {
       if (mode === "signup") {
         const res = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password }),
+          body: JSON.stringify({ name: effectiveName, email: effectiveEmail, password: effectivePassword }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -61,12 +65,11 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         }
       }
 
-      const result = await signIn("credentials", { email, password, redirect: false });
+      const result = await signIn("credentials", { email: effectiveEmail, password: effectivePassword, redirect: false });
       if (result?.error) {
         throw new Error(mode === "signup" ? "Account created, but sign-in failed. Try signing in." : "Invalid email or password.");
       }
-      router.push(callbackUrl);
-      router.refresh();
+      window.location.href = callbackUrl;
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -121,13 +124,14 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         {mode === "signup" && (
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" autoComplete="name" />
+            <Input id="name" name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" autoComplete="name" />
           </div>
         )}
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
             id="email"
+            name="email"
             type="email"
             required
             value={email}
@@ -150,6 +154,7 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
           </div>
           <Input
             id="password"
+            name="password"
             type="password"
             required
             minLength={8}

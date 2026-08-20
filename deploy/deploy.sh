@@ -263,12 +263,25 @@ verify_pm2_ecosystem() {
       rows = JSON.parse(execSync("pm2 jlist", { encoding: "utf8" }));
     } catch {}
     const backendOnline = rows.some((row) => row.name === "juno-backend" && row.pm2_env?.status === "online");
+    const voiceRelayOnline = rows.some((row) => row.name === "juno-voice-relay" && row.pm2_env?.status === "online");
     if (!backendOnline) {
       console.error("Critical service juno-backend failed to come online.");
       process.exit(1);
     }
-    console.log("Core PM2 backend is online; continuing deployment.");
+    if (!voiceRelayOnline) {
+      console.error("Critical service juno-voice-relay failed to come online.");
+      process.exit(1);
+    }
+    console.log("Core PM2 backend and voice relay are online; continuing deployment.");
   '
+}
+
+wait_for_voice_relay_health() {
+  local release_dir="$1"
+  say "${YELLOW}🎙️ Verifying voice relay health and WebSocket handshake...${NC}"
+  if [[ -f "$release_dir/scripts/verify-voice-relay.mjs" ]]; then
+    run_in_release "$release_dir" node scripts/verify-voice-relay.mjs || fail "Voice relay health verification failed."
+  fi
 }
 
 prune_old_releases() {
@@ -563,6 +576,7 @@ main() {
 
   HEALTH_URL="$(health_url)"
   wait_for_health "$HEALTH_URL" "$TARGET_SHA" "${JUNO_HEALTH_ATTEMPTS:-30}" "${JUNO_HEALTH_SLEEP_SECONDS:-5}" "${JUNO_HEALTH_TIMEOUT_SECONDS:-12}"
+  wait_for_voice_relay_health "$RELEASE_DIR"
 
   ROLLBACK_NEEDED=0
   say "${GREEN}✅ Juno release $TARGET_SHA is active at $CURRENT_LINK.${NC}"

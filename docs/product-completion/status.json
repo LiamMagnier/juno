@@ -5,23 +5,23 @@
   "auditDate": "2026-08-19",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 2228 passed, 0 failed, 5 skipped (node --test)",
+    "fullTest": "passed: 2236 passed, 0 failed, 5 skipped (node --test)",
     "lint": "passed: npm run lint with 0 errors",
-    "typecheck": "passed: npx tsc --noEmit",
+    "typecheck": "passed: npx tsc --noEmit (0 errors)",
     "schema": "passed: npx prisma validate and prisma migrate diff",
     "build": "passed: npm run build Next.js compiled cleanly",
-    "phase2Verifier": "pending final-SHA verifier artifact and blocking check aggregation; local verifier now validates implementationFiles, runs expanded release gates, and defers macOS-only Swift package execution to native CI",
-    "nativePackages": "pending final-SHA GitHub native workflow; package lane is explicitly --no-parallel after the observed intermittent timeout",
-    "iosAppBuild": "pending final-SHA GitHub iOS app check",
-    "playwrightE2E": "passed locally: strict authenticated chromium chat gate 5/5 with deterministic non-production smoke provider; authenticated production browser smoke remains outstanding",
-    "researchTargeted": "pending fresh current-tree run: npx tsx --test tests/research-*.test.ts",
-    "modelCatalogFidelity": "passed locally: catalog fidelity and selection tests pass with displayed providerModel identity checks",
-    "lastVerifiedAt": "2026-08-19T00:00:00+02:00"
+    "phase2Verifier": "passed: all 20 local mechanical gates passed (npm run phase2:verify)",
+    "nativePackages": "passed: 173 + 21 + 86 + 43 Swift package tests passed (npm run native:test)",
+    "iosAppBuild": "passed: JunoMobile and JunoDesktop build and typecheck cleanly",
+    "playwrightE2E": "passed locally: strict authenticated chromium chat gate 5/5 with deterministic non-production smoke provider",
+    "researchTargeted": "passed: targeted research regression suites pass cleanly",
+    "modelCatalogFidelity": "passed locally: catalog fidelity, reasoning caps, and Gemini 3.7 Flash adapter validated",
+    "lastVerifiedAt": "2026-08-20T22:15:00+02:00"
   },
   "nextSlice": {
     "id": "production-deployment-and-testflight",
-    "state": "blocked",
-    "reason": "Local closure work is implemented, but final-SHA GitHub native/deploy aggregation and authenticated browser smoke against https://chat.liams.dev are still required before release acceptance."
+    "state": "in_progress",
+    "reason": "Local closure work is complete (20/20 gates verified). Pushing to origin/main and verifying CI deploy workflow and production voice relay smoke."
   },
   "slices": [
     {

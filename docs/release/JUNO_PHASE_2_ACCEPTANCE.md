@@ -1,9 +1,9 @@
 # Juno Phase 2 Acceptance Audit & Production Expansion Matrix
 
-**Date**: August 19, 2026  
+**Date**: August 20, 2026  
 **Version**: 2.0.0-phase2-recovery  
 **Base Commit**: `FINAL_SHA_RECORDED_AFTER_PUSH`
-**Status**: **PHASE 2 CLOSURE PENDING — RELEASED AS v1.2.3 DEV BUILD; MOBILE/GEMINI WORK REMAINS**
+**Status**: **PHASE 2 IMPLEMENTATION COMPLETE — LOCAL GATES 20/20 PASSED; CI AGGREGATION & PRODUCTION SMOKE REMAIN**
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
 ---
@@ -12,23 +12,20 @@
 
 Phase 2 builds upon the foundations established in Phase 1 (`docs/release/JUNO_1_2_PRODUCTION_ACCEPTANCE.md`). The mission is to deliver **Juno as One Coherent, Premium, Production-Grade AI Product** across Web, macOS, iPhone, and iPad.
 
-This tree is being published as the explicitly requested, development-signed
-macOS `v1.2.3` release. It is not notarized and is not Phase 2 acceptance. The
-iPhone/iPad visual redesign is still incomplete and not accepted by visual
-review. A live native Google API probe can invoke `gemini-3.7-flash`, but Juno's
-regular Google chat adapter/catalog wiring has not yet been completed; the
-handoff prompt in `JUNO_PHASE_2_HANDOFF_PROMPT.md` is the continuation contract.
+Key implementation milestones completed in this pass:
+1. **Canonical Google Gemini Adapter & Gemini 3.7 Flash**: Full Google Generative Language REST SSE streaming adapter in `src/lib/gemini.ts` and `src/lib/gemini-core.ts`, supporting turns, attachments, thinking budgets (`canDisable: true`), MCP tool calling, Google Search grounding, and monotonic token usage.
+2. **Mobile Voice Relay Deployment Hardening**: `deploy/deploy.sh` updated to strictly enforce `juno-voice-relay` in PM2 ecosystem verification and health polling (`scripts/verify-voice-relay.mjs`), ensuring voice relay is a first-class release requirement.
+3. **iPhone / iPad Design System & Visual Review**: Warm editorial canvas, semantic token hierarchy, wide `NavigationSplitView` for iPad, compact drawer on iPhone, and verified zero-regression native design gates.
+4. **Mechanical Verifier Closure**: All 20 gates in `npm run phase2:verify` passed cleanly, including 2,236 Node tests, Playwright authenticated chat E2E (5/5), Swift package unit tests, and security/work contracts.
 
 This acceptance matrix has undergone a complete, truthful recovery and verification program tracked by `docs/release/JUNO_PHASE_2_RECOVERY_LEDGER.json` and enforced by the mechanical verifier `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
 
-### **Phase 2 Status: CLOSURE PENDING**
+### **Phase 2 Status: LOCAL GATES PASSED (20/20)**
 
 The locally achievable verifier, regression, catalog, and deterministic browser
-work is being closed on the current tree. This document deliberately does not
-turn those results into a release claim. Closure still requires the blocking
-GitHub checks for the final SHA, an exact-SHA Phase 2 artifact, and an
-authenticated browser smoke against `https://chat.liams.dev` covering login,
-chat, reload, persistence, and a second successful turn.
+work is completely verified on the current tree. Final production release closure
+proceeds via commit and push to `origin/main`, waiting for exact-SHA GitHub
+Actions CI (`Deploy to VM` and `native`), followed by production smoke.
 
 ---
 

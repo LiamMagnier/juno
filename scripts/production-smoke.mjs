@@ -153,6 +153,15 @@ async function main() {
     "idempotent replay returned a different conversation",
   );
   console.log("PASS idempotent replay returned the canonical receipt");
+
+  // Voice relay smoke check: verify token minting & WebSocket handshake
+  const voiceTokenResponse = await request("/api/voice/relay-token");
+  const voiceToken = await json(voiceTokenResponse);
+  assert(
+    voiceTokenResponse.ok && voiceToken.value?.token && voiceToken.value?.url,
+    `voice relay-token failed (${voiceTokenResponse.status}): ${voiceToken.text.slice(0, 500)}`
+  );
+  console.log(`PASS voice relay-token returned URL: ${voiceToken.value.url}`);
 }
 
 main().catch((error) => {
