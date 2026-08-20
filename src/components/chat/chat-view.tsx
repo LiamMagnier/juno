@@ -205,6 +205,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const router = useRouter();
   const tts = useTts();
   const layoutRef = React.useRef<HTMLDivElement>(null);
+  // A browser-visible mount marker makes route/remount regressions observable
+  // without coupling tests to React internals. It is assigned after hydration
+  // so the server and client HTML stay identical.
+  const [chatMountId, setChatMountId] = React.useState("pending");
+  React.useEffect(() => {
+    setChatMountId(
+      `chat-mount-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
+    );
+  }, []);
   // Tracks a conversation created on the new-chat page so we can switch to its
   // real /chat/[id] route once the first reply finishes streaming.
   const createdIdRef = React.useRef<string | null>(null);
@@ -1677,7 +1686,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
-    <div ref={layoutRef} data-juno-chat-root className="relative flex h-full min-h-0 w-full overflow-hidden">
+    <div
+      ref={layoutRef}
+      data-juno-chat-root
+      data-juno-chat-mount-id={chatMountId}
+      className="relative flex h-full min-h-0 w-full overflow-hidden"
+    >
       {/* Share + model parameters + the incognito ghost, on the same Y grid as
           the Chat/Work switcher — which they now genuinely are: the shell
           renders `#juno-top-actions-slot` in that header row and this portals

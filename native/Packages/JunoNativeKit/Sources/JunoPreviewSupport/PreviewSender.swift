@@ -158,6 +158,12 @@ public actor PreviewSender: NativeChatRequestSending {
             }
             return PreviewWorkFixtures.sessionsBody(empty: empty)
         }
+        if path.hasPrefix("/api/tasks") {
+            return Data(#"{"tasks":[{"id":"task-1","name":"Daily market pulse","prompt":"Summarise key European indices and overnight macro moves.","model":"google:gemini-3.7-flash","modelName":"Gemini 3.7 Flash","cadence":"DAILY","hour":8,"minute":30,"weekday":null,"monthday":null,"timezone":"Europe/Paris","webSearch":true,"enabled":true,"lastRunAt":"2026-08-20T06:30:00Z","nextRunAt":"2026-08-21T06:30:00Z","conversationId":null,"latestRun":{"id":"run-1","status":"done","error":null,"costMicroUsd":1200,"startedAt":"2026-08-20T06:30:00Z","finishedAt":"2026-08-20T06:30:05Z"}}],"limit":10}"#.utf8)
+        }
+        if path.hasPrefix("/api/connectors") {
+            return Data(#"{"connectors":[{"id":"github","kind":"oauth_app","label":"GitHub","description":"Pull requests, issues, and code browsing.","configured":true,"connected":true,"accountLabel":"LiamMagnier"},{"id":"notion","kind":"oauth_app","label":"Notion","description":"Search and read pages across your workspace.","configured":true,"connected":false,"accountLabel":null}],"composioConfigured":false}"#.utf8)
+        }
         if path.contains("/memory") {
             return Data(#"{"memories":[],"summary":null}"#.utf8)
         }

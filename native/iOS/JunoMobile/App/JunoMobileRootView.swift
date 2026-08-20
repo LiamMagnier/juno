@@ -103,11 +103,20 @@ struct JunoMobileRootView: View {
     /// preference, but nothing was applying it — the Dark option moved a value
     /// the UI never read, so the app stayed light whatever you picked.
     private var preferredColorScheme: ColorScheme? {
+        #if DEBUG
+        // The fixture account has a stored theme, but a visual review launch
+        // must be able to override it deterministically. Without this branch
+        // the root's account preference won over the preview container's
+        // appearance and every supposed dark-mode capture was actually light.
+        if let appearance = JunoPreviewEnvironment.appearance {
+            return appearance.colorScheme
+        }
+        #endif
         switch memorySettingsModel?.settings?.theme {
-        case .light: .light
-        case .dark: .dark
+        case .light: return ColorScheme.light
+        case .dark: return ColorScheme.dark
         // Nil, not a guess: `nil` is what tells SwiftUI to follow the system.
-        case .system, .none: nil
+        case .system, .none: return nil
         }
     }
 
@@ -1095,18 +1104,6 @@ private struct JunoMobileSidebarDrawer: View {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    if !attentionItems.isEmpty {
-                        sectionLabel("Attention Required")
-                        ForEach(attentionItems) { item in
-                            Button { openRecent(item) } label: {
-                                JunoRecentActivityRow(item: item)
-                                    .padding(.horizontal, 8)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("juno.mobile.attention.\(item.id)")
-                        }
-                    }
-
                     ForEach(JunoMobileSection.drawerDestinations) { destination in
                         JunoMobileSidebarRow(
                             junoIcon: destination.junoIcon,
@@ -1115,6 +1112,17 @@ private struct JunoMobileSidebarDrawer: View {
                             selected: selection == destination,
                             action: { openDestination(destination) }
                         )
+                    }
+
+                    // Attention is a state of the workspace, not a second
+                    // navigation tree. The old drawer expanded every waiting
+                    // Work/Code item above the destinations, pushing the actual
+                    // product navigation below the fold on iPhone and turning
+                    // the iPad sidebar into a dashboard of competing cards.
+                    // Keep one compact, actionable summary here; the detailed
+                    // rows remain in Work and Code where their actions belong.
+                    if !attentionItems.isEmpty {
+                        attentionSummary
                     }
 
                     if !pinnedProjects.isEmpty || !pinnedChats.isEmpty {
@@ -1195,6 +1203,48 @@ private struct JunoMobileSidebarDrawer: View {
         } message: {
             Text("Conversations are kept and unlinked; project files are removed.")
         }
+    }
+
+    private var attentionSummary: some View {
+        Button {
+            if let first = attentionItems.first { openRecent(first) }
+        } label: {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(Color.junoCaution)
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Needs attention")
+                        .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                    Text("\(attentionItems.count) item\(attentionItems.count == 1 ? "" : "s") waiting")
+                        .junoFont(size: 12, relativeTo: .caption)
+                        .junoSecondaryInk()
+                }
+
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                    .junoMetaInk()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(Color.junoSurface.opacity(0.72))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoHairline.opacity(0.65), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .accessibilityIdentifier("juno.mobile.attention-summary")
+        .accessibilityLabel("Needs attention, \(attentionItems.count) item\(attentionItems.count == 1 ? "" : "s") waiting")
     }
 
     /// One conversation, with the actions a long press should offer.
@@ -1298,7 +1348,7 @@ private struct JunoMobileSidebarDrawer: View {
         .disabled(project.isPending)
     }
 
-    // Compact brand header — Juno wordmark left, circular glass Search right.
+    // Compact brand header — Juno wordmark left, quiet search right.
     private var header: some View {
         HStack(spacing: 9) {
             // The real mark from `public/juno-mark.png`, not an SF Symbol
@@ -1312,9 +1362,9 @@ private struct JunoMobileSidebarDrawer: View {
             Spacer(minLength: 0)
             Button(action: { openDestination(.search) }) {
                 JunoIconView(.search, size: 18)
-                    .foregroundStyle(.primary)
-                    .frame(width: 46, height: 46)
-                    .modifier(JunoGlassCircle())
+                    .foregroundStyle(Color.junoSidebarForeground)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("navigation.search")
@@ -1328,7 +1378,7 @@ private struct JunoMobileSidebarDrawer: View {
         // The bottom inset is the load-bearing half: a brand header and a list of
         // destinations are two different things, and the gap is what says so.
         .padding(.top, 6)
-        .padding(.bottom, 14)
+            .padding(.bottom, 10)
     }
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
@@ -1337,7 +1387,7 @@ private struct JunoMobileSidebarDrawer: View {
             .junoSecondaryInk()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
-            .padding(.top, 14)
+        .padding(.top, 12)
             .padding(.bottom, 4)
     }
 
@@ -1390,7 +1440,7 @@ private struct JunoMobileSidebarDrawer: View {
                 .fontWeight(.semibold)
         }
         .junoProminentAction()
-        .controlSize(.large)
+        .controlSize(.regular)
         .disabled(!canCreateChat)
         .opacity(canCreateChat ? 1 : 0.5)
         .accessibilityLabel("chat.new")
@@ -1421,18 +1471,18 @@ private struct JunoMobileSidebarRow: View {
                             .font(.system(size: 19))
                     }
                 }
-                .frame(width: 26)
-                .foregroundStyle(.primary)
+                .frame(width: 24)
+                .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
                 Text(title)
-                    .font(.system(size: 17, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(.primary)
+                    .junoFont(size: 16, relativeTo: .body, weight: selected ? .semibold : .regular)
+                    .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Color.primary.opacity(0.06) : .clear)
+                    .fill(selected ? Color.junoMuted : .clear)
             )
             .contentShape(Rectangle())
         }

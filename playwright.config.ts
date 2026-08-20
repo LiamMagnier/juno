@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 
 const storageState = path.join(process.cwd(), "e2e", ".auth", "e2e-user.json");
+const useDeterministicSmokeProvider = process.env.E2E_USE_SMOKE_PROVIDER !== "0" && !process.env.E2E_BASE_URL;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -12,7 +13,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 2,
   reporter: "list",
   use: {
-    baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    baseURL: process.env.E2E_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     trace: "on-first-retry",
   },
   projects: [
@@ -66,5 +67,6 @@ export default defineConfig({
     port: 3000,
     reuseExistingServer: true,
     timeout: 120_000,
+    env: useDeterministicSmokeProvider ? { JUNO_E2E_SMOKE_PROVIDER: "1" } : undefined,
   },
 });

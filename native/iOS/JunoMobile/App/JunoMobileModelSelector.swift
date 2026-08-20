@@ -245,7 +245,8 @@ struct JunoMobileModelSelectorView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .scrollDismissesKeyboard(.interactively)
             }
             // The list is reading material, so it sits on an opaque canvas.
@@ -640,7 +641,14 @@ private struct JunoMobileSelectorSearchField: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
-        .background(JunoGlassBackground(cornerRadius: 12))
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoMuted)
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .strokeBorder(Color.junoHairline, lineWidth: 1)
+                )
+        )
         .accessibilityIdentifier("juno.mobile.model-search")
     }
 }

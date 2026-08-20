@@ -33,10 +33,11 @@ export interface Family {
    * registry uses (`ModelInfo.family` in models.ts).
    *
    * Discovery already keeps one model per rule, but `latestPerFamily` has to be
-   * able to see that a discovered `gemini-3.6-flash` and the curated
-   * `gemini-3.5-flash` are the same line — both are `current`, so nothing else
-   * would collapse them and the picker would list two Flashes. Matching the
-   * registry's slug exactly is the whole point: "flash", not "Gemini Flash".
+   * able to see that provider-listed Gemini Flash generations are the same
+   * line. The curated, probe-backed `gemini-3.6-flash` wins over the legacy
+   * 3.5 row; a newer listing stays disabled until its own chat probe passes.
+   * Matching the registry's slug exactly is the whole point: "flash", not
+   * "Gemini Flash".
    */
   family: string;
 }

@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const LEDGER_PATH = path.join(process.cwd(), "docs", "release", "JUNO_PHASE_2_RECOVERY_LEDGER.json");
+const LEDGER_PATH = process.env.PHASE2_LEDGER_PATH
+  ? path.resolve(process.env.PHASE2_LEDGER_PATH)
+  : path.join(process.cwd(), "docs", "release", "JUNO_PHASE_2_RECOVERY_LEDGER.json");
 
 if (!fs.existsSync(LEDGER_PATH)) {
   console.error(`[phase2-recovery] Error: Ledger file not found at ${LEDGER_PATH}`);
@@ -73,7 +75,16 @@ for (const req of requirements) {
       violations.push(`Requirement '${req.id}' is marked VERIFIED but lacks implementationFiles.`);
     } else {
       for (const file of req.implementationFiles) {
-        const fullPath = path.isAbsolute(file) ? file : path.join(process.cwd(), file);
+        if (typeof file !== "string" || file.trim().length === 0) {
+          violations.push(`Requirement '${req.id}' contains an empty or non-string implementation file path.`);
+          continue;
+        }
+        const fullPath = path.resolve(process.cwd(), file);
+        const root = path.resolve(process.cwd());
+        if (fullPath !== root && !fullPath.startsWith(`${root}${path.sep}`)) {
+          violations.push(`Requirement '${req.id}' references a path outside the repository: ${file}`);
+          continue;
+        }
         if (!fs.existsSync(fullPath)) {
           violations.push(`Requirement '${req.id}' references missing implementation file: ${file}`);
         } else if (fs.statSync(fullPath).isDirectory()) {

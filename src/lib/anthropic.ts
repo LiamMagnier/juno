@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
+import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { personalitySystemPrompt } from "@/lib/personalities";
@@ -510,7 +511,7 @@ export async function* streamAnthropic(
   ];
 
   const baseParams = {
-    model: model.providerModel,
+    model: providerRequestModel(model),
     max_tokens: thinkingBits.maxTokens,
     system: systemBlocks,
     messages,

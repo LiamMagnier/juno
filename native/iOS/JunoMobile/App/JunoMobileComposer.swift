@@ -296,8 +296,20 @@ struct JunoMobileComposer: View {
 
                     controlRow
                 }
-                .padding(JunoSpace.snug)
-                .background(JunoGlassBackground(cornerRadius: 26))
+                .padding(JunoSpace.cozy)
+                // The composer is the one persistent surface at the foot of
+                // the screen, so it should read as a calm editorial well — not
+                // as a second pane of refracting glass around every chip. The
+                // web uses an opaque warm surface here too; native glass stays
+                // reserved for transient menus and sheets.
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.junoSurface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Color.junoHairline, lineWidth: 1)
+                        )
+                )
                 .transition(.opacity)
             }
         }
@@ -1196,16 +1208,9 @@ struct JunoComposerSendBackground: ViewModifier {
     let active: Bool
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular.tint(active ? Color.junoAccent : nil).interactive(),
-                    in: Circle()
-                )
-        } else {
-            content
-                .background(active ? Color.junoAccent : Color.junoMuted, in: Circle())
-        }
+        content
+            .background(active ? Color.junoAccent : Color.junoMuted, in: Circle())
+            .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
     }
 }
 
@@ -1213,13 +1218,8 @@ struct JunoComposerSendBackground: ViewModifier {
 /// "+" button, with a material fallback below OS 26.
 struct JunoComposerGlassCircle: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            content
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
+        content
+            .background(Color.junoMuted, in: Circle())
+            .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
     }
 }

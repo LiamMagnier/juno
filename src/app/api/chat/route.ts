@@ -140,7 +140,7 @@ import {
   terminalFailureCode,
 } from "@/lib/chat/terminal-state";
 import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail } from "@/types/chat";
-import type { MessageForModel } from "@/types/llm";
+import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
 // Self-hosted (a plain `next start` Node process on the VM) has NO per-request
@@ -190,6 +190,27 @@ Then output the complete, publication-grade report inside ONE artifact block:
 The report is the long-form document described above: every section, every table, every citation. Do not abbreviate it because the chat answer already exists, and do not repeat the chat answer's wording as the report's opening — the report begins with its own title and executive summary.
 Give the artifact a title naming the actual subject, not the words "Research Report".
 Write nothing after the closing tag.`;
+
+/**
+ * A local-only provider for the authenticated browser gate.
+ *
+ * The browser suite must prove the real acceptance/persistence/SSE lifecycle
+ * without making a release decision depend on a developer API key's quota or
+ * billing state. This still runs through the normal chat route, database write,
+ * durable receipt, and client stream; only the external model call is replaced.
+ * The route enables it only in a non-production process when the test runner
+ * opts in explicitly, so it cannot silently become a production fallback.
+ */
+async function* streamDeterministicSmokeResponse(prompt: string): AsyncGenerator<LlmEvent> {
+  const requestedToken = prompt.match(/\bJUNO_[A-Z0-9_]+\b/g)?.at(-1);
+  const answer = requestedToken ?? "JUNO_E2E_SMOKE_OK";
+  const midpoint = Math.max(1, Math.floor(answer.length / 2));
+  yield { type: "text", text: answer.slice(0, midpoint) };
+  await Promise.resolve();
+  yield { type: "text", text: answer.slice(midpoint) };
+  yield { type: "usage", input: Math.max(1, Math.ceil(prompt.length / 4)), output: answer.length };
+  yield { type: "finish", reason: "stop" };
+}
 
 /** Turns an entitlement verdict into the response it describes. */
 function refuse(rejection: EntitlementRejection) {
@@ -355,6 +376,8 @@ async function handleChat(req: Request) {
     return NextResponse.json(admission.body, { status: admission.status });
   }
   const input = admission.input;
+  const deterministicSmokeProviderEnabled =
+    process.env.JUNO_E2E_SMOKE_PROVIDER === "1" && process.env.NODE_ENV !== "production" && !input.privateMode;
 
   // Valid durable retries are recovered here, before rate limiting; a legacy
   // caller without both keys falls through and keeps the historical order.
@@ -523,47 +546,57 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
-  // Capability evidence is short-lived and model-specific. Loading it once
-  // keeps every fallback decision in this request on the same snapshot: a
-  // model cannot pass the explicit-selection check and fail the platform
-  // budget degradation check because two probes changed between them.
-  const capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
+  let eligible: (model: ModelInfo) => boolean;
+  if (deterministicSmokeProviderEnabled) {
+    // Keep the requested model's identity in receipts and UI diagnostics while
+    // replacing only the external generation call below. This makes the E2E
+    // fixture exercise the same selected-model serialization as production.
+    modelInfo = modelInfo ?? getModel(DEFAULT_MODEL);
+    routingNote = "Deterministic browser smoke provider";
+    eligible = () => true;
+  } else {
+    // Capability evidence is short-lived and model-specific. Loading it once
+    // keeps every fallback decision in this request on the same snapshot: a
+    // model cannot pass the explicit-selection check and fail the platform
+    // budget degradation check because two probes changed between them.
+    const capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
 
-  // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
-  // decide what a turn costs, and inline here they were reachable only by
-  // standing up a request with auth, quota and a database behind it.
-  //
-  // `pickAutoModel` does not consult provider health, so Auto lands in the same
-  // reroute branch as an explicit request on a dead provider.
-  const eligible = (m: ModelInfo) =>
-    m.modality === "chat" &&
-    !m.comingSoon &&
-    !isAutoModelId(m.id) &&
-    isProviderConfigured(m.provider) &&
-    canUseModel(plan, m.id) &&
-    modelCanRoute(m, capabilityProbes);
+    // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
+    // decide what a turn costs, and inline here they were reachable only by
+    // standing up a request with auth, quota and a database behind it.
+    //
+    // `pickAutoModel` does not consult provider health, so Auto lands in the same
+    // reroute branch as an explicit selection on a dead provider.
+    eligible = (m: ModelInfo) =>
+      m.modality === "chat" &&
+      !m.comingSoon &&
+      !isAutoModelId(m.id) &&
+      isProviderConfigured(m.provider) &&
+      canUseModel(plan, m.id) &&
+      modelCanRoute(m, capabilityProbes);
 
-  const selection = selectModel<ModelInfo>({
-    requestedId,
-    requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
-    catalogue: MODEL_LIST,
-    isEligible: eligible,
-    isProviderHealthy: (provider) => providerHealthy(provider as Provider),
-  });
-  if (selection.reason === "rerouted_unhealthy_provider") {
-    console.warn("[chat] rerouting off an unhealthy provider", {
-      from: modelInfo?.id,
-      to: selection.model?.id,
-      provider: modelInfo?.provider,
+    const selection = selectModel<ModelInfo>({
+      requestedId,
+      requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
+      catalogue: MODEL_LIST,
+      isEligible: eligible,
+      isProviderHealthy: (provider) => providerHealthy(provider as Provider),
     });
+    if (selection.reason === "rerouted_unhealthy_provider") {
+      console.warn("[chat] rerouting off an unhealthy provider", {
+        from: modelInfo?.id,
+        to: selection.model?.id,
+        provider: modelInfo?.provider,
+      });
+    }
+    modelInfo = selection.model ?? undefined;
+    routingWarning = selection.warning ?? routingWarning;
   }
-  modelInfo = selection.model ?? undefined;
-  routingWarning = selection.warning ?? routingWarning;
   // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
   // set). Degrade to the cheapest capable model rather than refusing: a slower
   // answer beats a 500, and it keeps the product usable while an operator
   // decides what to do. Per-user budgets are enforced separately by checkBudget.
-  if (modelInfo && (await isPlatformBudgetExceeded())) {
+  if (!deterministicSmokeProviderEnabled && modelInfo && (await isPlatformBudgetExceeded())) {
     const cheapest =
       cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
     if (cheapest && cheapest.cost < modelInfo.cost) {
@@ -2071,7 +2104,11 @@ async function handleChat(req: Request) {
       });
 
       try {
-        for await (const ev of streamChat({
+        const modelStream = deterministicSmokeProviderEnabled
+          ? streamDeterministicSmokeResponse(
+              input.message?.trim() ?? [...modelHistory].reverse().find((message) => message.role === "USER")?.content ?? ""
+            )
+          : streamChat({
           model: modelInfo,
           system: synthesisSystem,
           history: modelHistory,
@@ -2106,7 +2143,8 @@ async function handleChat(req: Request) {
               send({ type: "approval", approval });
             },
           },
-        })) {
+        });
+        for await (const ev of modelStream) {
           stallWatchdog.touch();
           const effect = acc.apply(ev);
           if (effect.kind === "text") {

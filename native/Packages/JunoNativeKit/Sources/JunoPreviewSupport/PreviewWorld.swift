@@ -44,6 +44,8 @@ public final class PreviewWorld {
     /// The row is hidden entirely when no model is supplied — correct in the app,
     /// but it made the whole path invisible to visual QA and to the UI tests.
     public let libraryModel: NativeLibraryModel
+    public let connectorModel: NativeConnectorModel
+    public let scheduledTaskModel: NativeScheduledTaskModel
 
     /// The no-network sync model; exposed so the chat toolbar's sync indicator
     /// renders in preview.
@@ -153,6 +155,12 @@ public final class PreviewWorld {
             client: NativeLibraryClient(sender: sender),
             previewSource: NativeProjectAPIClient(sender: sender)
         )
+        connectorModel = NativeConnectorModel(
+            client: NativeConnectorClient(sender: sender)
+        )
+        scheduledTaskModel = NativeScheduledTaskModel(
+            client: NativeScheduledTaskClient(sender: sender)
+        )
         accountDataClient = NativeAccountDataClient(sender: sender)
     }
 
@@ -180,6 +188,8 @@ public final class PreviewWorld {
         searchModel.start(for: accountID)
         privateChatModel.start(for: accountID)
         libraryModel.start(for: accountID)
+        await connectorModel.start(for: accountID)
+        await scheduledTaskModel.start(for: accountID)
         await workModel.start(for: accountID)
         await codeModel.start(for: accountID)
 

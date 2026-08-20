@@ -53,14 +53,14 @@ describe("latestPerFamily", () => {
   it("lets a freshly discovered model replace the curated one it supersedes", () => {
     // Both are `current` — only the family collapse can tell that the live
     // 3.6 Flash is the same product line as the curated 3.5.
-    const discovered = toModelInfo("google", "models/gemini-3.6-flash", {
+    const discovered = toModelInfo("google", "models/gemini-3.8-flash", {
       label: "Gemini Flash", family: "flash", match: /flash/i, minPlan: "FREE", vision: true,
     });
     const kept = latestPerFamily([
       model({ id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "google", family: "flash", released: "2026-06" }),
       discovered,
     ]);
-    assert.deepEqual(names(kept), ["Gemini 3.6 Flash"]);
+    assert.deepEqual(names(kept), ["Gemini 3.8 Flash"]);
   });
 
   it("drops a superseded model even when nothing replaces it", () => {
@@ -177,7 +177,7 @@ describe("discovery families", () => {
       ["openai", "gpt-5.7-sol", "openai:gpt-5.6-sol"],
       ["openai", "gpt-5.7-luna", "openai:gpt-5.6-luna"],
       ["openai", "gpt-6-codex", "openai:gpt-5.3-codex"],
-      ["google", "models/gemini-3.7-flash", "google:gemini-3.5-flash"],
+      ["google", "models/gemini-3.8-flash", "google:gemini-3.7-flash"],
       ["zhipu", "glm-6", "zhipu:glm-5.2"],
       ["moonshot", "kimi-k4", "moonshot:kimi-k3"],
       ["mistral", "mistral-medium-4", "mistral:mistral-medium-latest"],
@@ -296,7 +296,7 @@ describe("withSupersededMarked", () => {
     // Both say `current`; only the family comparison can tell that the live
     // 3.6 Flash replaced the curated 3.5. The loser must come back marked, not
     // missing — it is still callable.
-    const discovered = toModelInfo("google", "models/gemini-3.6-flash", {
+    const discovered = toModelInfo("google", "models/gemini-3.8-flash", {
       label: "Gemini Flash", family: "flash", match: /flash/i, minPlan: "FREE", vision: true,
     });
     const marked = withSupersededMarked([
@@ -304,7 +304,7 @@ describe("withSupersededMarked", () => {
       discovered,
     ]);
     assert.equal(marked.length, 2);
-    assert.deepEqual(names(marked.filter((m) => !isSupersededModel(m))), ["Gemini 3.6 Flash"]);
+    assert.deepEqual(names(marked.filter((m) => !isSupersededModel(m))), ["Gemini 3.8 Flash"]);
     const demoted = marked.find((m) => m.name === "Gemini 3.5 Flash");
     assert.equal(demoted?.legacy, true);
     // `status` moves with `legacy` — the native manifest reads status for its

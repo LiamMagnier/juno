@@ -9,6 +9,7 @@ import {
   MODEL_CAPABILITY_TTL_MS,
   type ModelCapabilityEvidence,
 } from "@/lib/model-capability-policy";
+import { providerRequestModel } from "@/lib/model-request";
 
 export const MODEL_CAPABILITY_PROBE_VERSION = 1;
 
@@ -122,8 +123,8 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
 
   try {
     const body = PROVIDERS[model.provider].kind === "anthropic"
-      ? { model: model.providerModel, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }
-      : { model: model.providerModel, max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] };
+      ? { model: providerRequestModel(model), max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }
+      : { model: providerRequestModel(model), max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] };
     const response = await fetch(endpoint.url, {
       method: "POST",
       headers: endpoint.headers,

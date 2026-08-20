@@ -1,15 +1,12 @@
 {
   "glass": {
-    "total": 5,
+    "total": 2,
     "modules": {
       "JunoCode (shared)": 1,
-      "JunoDesktop (macOS)": 1,
-      "JunoMobile (iOS)": 3
+      "JunoDesktop (macOS)": 1
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/TranscriptView.swift": 1,
-      "native/iOS/JunoMobile/App/JunoMobileComposer.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileThinkingControl.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopVoice.swift": 1
     }
   },
@@ -136,12 +133,12 @@
     }
   },
   "type": {
-    "total": 90,
+    "total": 89,
     "modules": {
       "JunoNativeKit (shared)": 59,
       "JunoCode (shared)": 5,
       "JunoDesktop (macOS)": 9,
-      "JunoMobile (iOS)": 17
+      "JunoMobile (iOS)": 16
     },
     "files": {
       "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Composer.swift": 2,
@@ -166,7 +163,7 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoRecentActivityRow.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoSerif.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoThinkingControl.swift": 2,
-      "native/iOS/JunoMobile/App/JunoMobileRootView.swift": 7,
+      "native/iOS/JunoMobile/App/JunoMobileRootView.swift": 6,
       "native/iOS/JunoMobile/App/JunoMobileWorkView.swift": 9,
       "native/iOS/JunoMobile/App/JunoMobileWorkspaceChrome.swift": 1,
       "native/macOS/JunoDesktop/App/DesktopArtifactCanvas.swift": 3,

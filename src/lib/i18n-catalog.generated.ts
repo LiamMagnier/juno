@@ -330,6 +330,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Working out what to look up"
   },
   {
+    "id": "03975c0e7193dc84",
+    "source": "Earlier stable Flash generation."
+  },
+  {
     "id": "03a0e90ee550c2a7",
     "source": "Everyday prompt → Fast models · Instant"
   },
@@ -3928,6 +3932,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3ad1bdeaf3bbd4fb",
     "source": "You are signed out, so Juno could not record your answer. Sign in and answer again."
+  },
+  {
+    "id": "3ae0015e7835444e",
+    "source": "Previous Flash generation (preview), superseded by Gemini 3.6 Flash."
   },
   {
     "id": "3af06bdad05d4003",
@@ -11218,6 +11226,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "design"
   },
   {
+    "id": "a782609cfd06e341",
+    "source": "Earlier Flash generation."
+  },
+  {
     "id": "a7a9dc5bcf71adb2",
     "source": "paused"
   },
@@ -16898,10 +16910,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t open settings"
   },
   {
-    "id": "f972a24cc81efff9",
-    "source": "Google's GA flagship — frontier performance at Flash speed."
-  },
-  {
     "id": "f97435829e53ecfa",
     "source": "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat."
   },
@@ -17058,10 +17066,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "something in an app"
   },
   {
-    "id": "fb926e09c776d1f5",
-    "source": "Previous Flash generation (preview), superseded by 3.5 Flash."
-  },
-  {
     "id": "fb9ef894175c3274",
     "source": "Product"
   },
@@ -17096,6 +17100,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fc848488ab0d0da5",
     "source": "Search tools & connectors…"
+  },
+  {
+    "id": "fca27d14a66c3b27",
+    "source": "Google's flagship multimodal Flash model with hybrid reasoning."
   },
   {
     "id": "fcc41bccbdb8b793",

@@ -524,7 +524,7 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
   }
   if (lowered === 'flash' || lowered === 'fast' || lowered === 'flash_lite' || lowered === 'lite' || lowered === 'mini') {
     if (hostModel.startsWith('anthropic:')) return 'anthropic:claude-haiku-4-5-20251001';
-    if (hostModel.startsWith('google:')) return 'google:gemini-3.6-flash';
+    if (hostModel.startsWith('google:')) return 'google:gemini-3.7-flash';
     if (hostModel.startsWith('openai:')) return 'openai:gpt-5.4-mini';
     return hostModel;
   }

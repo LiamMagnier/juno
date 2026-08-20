@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MODEL_LIST, GEN_MODELS, resolveModel, RETIRED_MODELS } from "../src/lib/models";
+import { providerRequestModel } from "../src/lib/model-request";
 
 const ALL_MODELS = [...MODEL_LIST, ...GEN_MODELS];
 
@@ -14,8 +15,12 @@ test("model catalog fidelity: every displayed model has matching providerModel",
     const expectedId = `${m.provider}:${m.providerModel}`;
     assert.equal(m.id, expectedId, `Model id ${m.id} should equal ${expectedId}`);
 
-    // No non-existent 3.7 model in selectable list
-    assert.notEqual(m.providerModel, "gemini-3.7-flash", "gemini-3.7-flash must not be in selectable MODEL_LIST");
+  }
+});
+
+test("displayed catalog entries send the same provider model id", () => {
+  for (const model of MODEL_LIST) {
+    assert.equal(providerRequestModel(model), model.providerModel, `${model.id} must invoke its displayed providerModel`);
   }
 });
 

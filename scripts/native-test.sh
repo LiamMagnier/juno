@@ -57,6 +57,7 @@ for pkg in "${PACKAGES[@]}"; do
   if swift test \
     --package-path "$path" \
     --scratch-path "$SCRATCH_ROOT/$pkg" \
+    --no-parallel \
     -Xswiftc -warnings-as-errors; then
     echo "[native:test] $pkg ok"
   else

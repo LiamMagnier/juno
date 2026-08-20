@@ -1,7 +1,7 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "e5e00ef8",
+  "auditCommit": "FINAL_SHA_RECORDED_AFTER_PUSH",
   "auditDate": "2026-08-19",
   "branch": "main",
   "verification": {
@@ -10,18 +10,18 @@
     "typecheck": "passed: npx tsc --noEmit",
     "schema": "passed: npx prisma validate and prisma migrate diff",
     "build": "passed: npm run build Next.js compiled cleanly",
-    "phase2Verifier": "passed: npm run phase2:verify 12/12 mechanical suites passed with full implementationFiles validation",
-    "nativePackages": "passed: bash scripts/native-test.sh with 100% pass across JunoNativeKit, JunoWork, JunoCode",
-    "iosAppBuild": "passed: xcodebuild JunoMobile Debug simulator succeeded",
-    "playwrightE2E": "passed: npx playwright test 9/9 passed including auto-refresh regression and reload persistence",
-    "researchTargeted": "passed: npx tsx --test tests/research-*.test.ts 65/65 passed",
-    "modelCatalogFidelity": "passed: tests/model-catalog-fidelity.test.ts 2/2 passed",
-    "lastVerifiedAt": "2026-08-19T16:57:00+02:00"
+    "phase2Verifier": "pending final-SHA verifier artifact and blocking check aggregation; local verifier now validates implementationFiles, runs expanded release gates, and defers macOS-only Swift package execution to native CI",
+    "nativePackages": "pending final-SHA GitHub native workflow; package lane is explicitly --no-parallel after the observed intermittent timeout",
+    "iosAppBuild": "pending final-SHA GitHub iOS app check",
+    "playwrightE2E": "passed locally: strict authenticated chromium chat gate 5/5 with deterministic non-production smoke provider; authenticated production browser smoke remains outstanding",
+    "researchTargeted": "pending fresh current-tree run: npx tsx --test tests/research-*.test.ts",
+    "modelCatalogFidelity": "passed locally: catalog fidelity and selection tests pass with displayed providerModel identity checks",
+    "lastVerifiedAt": "2026-08-19T00:00:00+02:00"
   },
   "nextSlice": {
     "id": "production-deployment-and-testflight",
-    "state": "implemented",
-    "reason": "Phase 2 cross-platform implementation, native 2.0, mobile code command center, and chat recovery are verified locally with 100% passing test gates and automated verifiers."
+    "state": "blocked",
+    "reason": "Local closure work is implemented, but final-SHA GitHub native/deploy aggregation and authenticated browser smoke against https://chat.liams.dev are still required before release acceptance."
   },
   "slices": [
     {
@@ -190,9 +190,9 @@
       "state": "partial",
       "dependsOn": ["approval-broker"],
       "acceptance": [
-        { "id": "e2e-layer", "state": "implemented", "text": "Bounded production HTTP smoke exists for health, authenticated model-contract/provider-backed chat/receipt/replay, and public HTML/security/auth-boundary routes; the workflow requires authenticated smoke, while browser automation is still outstanding." },
+        { "id": "e2e-layer", "state": "implemented", "text": "Bounded production HTTP smoke exists for health, authenticated model-contract/provider-backed chat/receipt/replay, and public HTML/security/auth-boundary routes. The local authenticated browser gate now has a deterministic non-production smoke provider and strict success/error assertions; production browser automation still requires an authenticated session." },
         { "id": "http-smoke", "state": "verified", "text": "Read-only health and public UI/auth-boundary smoke pass against chat.liams.dev on live artifact 5278c31b8d54a40b1e13bab5ca5bd014f28c2206; authenticated catalog/chat replay remains unrun because it requires a controlled smoke account and creates real receipts." },
-        { "id": "journeys", "state": "partial", "text": "HTTP health and fail-closed authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
+        { "id": "journeys", "state": "partial", "text": "The strict local chat journey covers same-document SSE, second-turn navigation, reload/history/sidebar/copied-URL persistence, and typed provider failure. Production chat plus citation/search/approval/budget/disconnect/recovery still need configured credentials and browser/native execution." },
         { "id": "states", "state": "implemented", "text": "A deterministic 12-profile desktop/tablet/phone × light/dark/reduced-motion request matrix and static source contracts cover empty/loading/error/partial/success; browser rendering, visual snapshots, long/localized strings and native execution remain release-gated. Covered by tests/public-ui-smoke.test.ts." },
         { "id": "restore-drill", "state": "verified", "text": "scripts/restore-drill.mjs now runs a disposable local PostgreSQL backup→verify→restore round trip with three deterministic rows and three object fixtures, exact key/digest checks, and cleanup; covered by tests/restore-drill.test.ts. A remote scratch drill with measured RPO/RTO remains release-gated." }
       ]

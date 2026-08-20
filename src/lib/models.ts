@@ -218,9 +218,8 @@ interface ModelDef {
  * An ABSENT status means current, matching the `status` field's documented
  * default. That case is entirely "discovered": a model the provider is still
  * serving on its live API is current by definition, and only a curated entry
- * can demote one. Reading absent-as-legacy is what buried every freshly
- * discovered model (Gemini 3.6 Flash, 3.5 Flash-Lite) in the collapsed legacy
- * section, whatever its version.
+ * can demote one. Reading absent-as-legacy is what used to bury freshly
+ * discovered models in the collapsed legacy section, whatever their version.
  */
 export function isSupersededModel(model: Pick<ModelInfo, "legacy" | "status">): boolean {
   return model.legacy ?? (model.status != null && model.status !== "current");
@@ -314,10 +313,12 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
 
   // —— Google ——
-  def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "current", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Google's GA flagship — frontier performance at Flash speed." }),
+  def({ provider: "google", id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", family: "flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
+  def({ provider: "google", id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", family: "flash", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier Flash generation." }),
+  def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "legacy", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier stable Flash generation." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
-  def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by 3.5 Flash." }),
+  def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by Gemini 3.6 Flash." }),
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro", retiresOn: "2026-10-16", replacedBy: "google:gemini-3.1-pro-preview" }),
   // gemini-2.5-flash removed — ListModels still lists it, but EVERY call returns
   // 404 "This model models/gemini-2.5-flash is no longer available to new
@@ -579,13 +580,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "openai:dall-e-3": "openai:gpt-image-2", // shut down 2026-05-12
   "openai:dall-e-2": "openai:gpt-image-2", // shut down 2026-05-12
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
-  "google:nano-banana-pro": "google:gemini-3.5-flash", // was mis-listed as a chat model
-  "google:nano-banana-2": "google:gemini-3.5-flash", // was mis-listed as a chat model
+  "google:nano-banana-pro": "google:gemini-3.7-flash", // was mis-listed as a chat model
+  "google:nano-banana-2": "google:gemini-3.7-flash", // was mis-listed as a chat model
   "google:imagen-3.0-generate-002": "google:gemini-3.1-flash-image", // shut down 2025-11-10
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   // Listed by ListModels but 404s on every call: "no longer available to new users".
-  "google:gemini-2.5-flash": "google:gemini-3.5-flash",
-  "google:gemini-3.7-flash": "google:gemini-3.5-flash",
+  "google:gemini-2.5-flash": "google:gemini-3.7-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
   // Meta — the Llama ids are still retired (the Meta Model API does not serve

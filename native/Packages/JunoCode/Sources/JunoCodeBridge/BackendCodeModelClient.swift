@@ -90,7 +90,7 @@ public struct CodeModelProviderResolver: Sendable {
         if lowered == "flash" || lowered == "fast" {
             return CodeModelRoute(
                 providerID: "google",
-                providerModelID: "gemini-3.6-flash",
+                providerModelID: "gemini-3.7-flash",
                 wireProtocol: .openAIChat
             )
         }

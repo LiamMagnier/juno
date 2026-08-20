@@ -1,6 +1,6 @@
 {
   "name": "juno",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "scripts": {
     "i18n:extract": "node scripts/generate-i18n-catalog.mjs",
@@ -23,6 +23,7 @@
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
     "phase2:recovery:check": "node scripts/check-phase2-recovery.mjs",
     "phase2:verify": "node scripts/verify-phase2.mjs",
+    "phase2:ci:verify": "node scripts/verify-phase2-ci.mjs",
     "test:e2e": "playwright test",
     "native:test": "bash scripts/native-test.sh",
     "native:contract:check": "node scripts/check-native-swift-contract.mjs",

@@ -1,0 +1,296 @@
+
+> juno@1.2.3 prebuild
+> npm run i18n:extract
+
+
+> juno@1.2.3 i18n:extract
+> node scripts/generate-i18n-catalog.mjs
+
+Wrote 4329 UI strings to src/lib/i18n-catalog.generated.ts
+
+> juno@1.2.3 build
+> prisma generate && NODE_OPTIONS=--max-old-space-size=2048 next build
+
+Prisma schema loaded from prisma/schema.prisma
+
+✔ Generated Prisma Client (v6.19.3) to ./node_modules/@prisma/client in 219ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+
+[next.config] storage image hosts: none (local-disk storage, or S3_* absent from the build env)
+   ▲ Next.js 15.5.19
+   - Environments: .env
+
+   Creating an optimized production build ...
+[next.config] storage image hosts: none (local-disk storage, or S3_* absent from the build env)
+[next.config] storage image hosts: none (local-disk storage, or S3_* absent from the build env)
+[next.config] storage image hosts: none (local-disk storage, or S3_* absent from the build env)
+ ✓ Compiled successfully in 7.6s
+   Skipping validation of types
+   Skipping linting
+   Collecting page data ...
+   Generating static pages (0/114) ...
+   Generating static pages (28/114) 
+   Generating static pages (56/114) 
+   Generating static pages (85/114) 
+ ✓ Generating static pages (114/114)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                                                     Size  First Load JS
+┌ ƒ /                                                                          831 B         112 kB
+├ ƒ /_not-found                                                                 1 kB         103 kB
+├ ƒ /admin/announcements                                                     13.9 kB         176 kB
+├ ƒ /admin/moderation                                                        7.84 kB         152 kB
+├ ƒ /admin/users                                                             9.56 kB         189 kB
+├ ƒ /api/account                                                               621 B         103 kB
+├ ƒ /api/account/delete                                                        621 B         103 kB
+├ ƒ /api/account/export                                                        621 B         103 kB
+├ ƒ /api/admin/announcements                                                   621 B         103 kB
+├ ƒ /api/admin/announcements/[id]                                              621 B         103 kB
+├ ƒ /api/admin/announcements/upload                                            621 B         103 kB
+├ ƒ /api/admin/models/probe                                                    621 B         103 kB
+├ ƒ /api/admin/moderation                                                      621 B         103 kB
+├ ƒ /api/admin/moderation/[id]                                                 621 B         103 kB
+├ ƒ /api/admin/users                                                           621 B         103 kB
+├ ƒ /api/admin/users/[id]                                                      621 B         103 kB
+├ ƒ /api/admin/users/[id]/ban                                                  621 B         103 kB
+├ ƒ /api/admin/users/[id]/unban                                                621 B         103 kB
+├ ƒ /api/agent/[...path]                                                       621 B         103 kB
+├ ƒ /api/agent/usage                                                           621 B         103 kB
+├ ƒ /api/announcements                                                         621 B         103 kB
+├ ƒ /api/announcements/[id]/dismiss                                            621 B         103 kB
+├ ƒ /api/approvals                                                             621 B         103 kB
+├ ƒ /api/approvals/[id]                                                        621 B         103 kB
+├ ƒ /api/artifacts                                                             621 B         103 kB
+├ ƒ /api/artifacts/[id]                                                        621 B         103 kB
+├ ƒ /api/artifacts/[id]/export                                                 621 B         103 kB
+├ ƒ /api/assistants                                                            621 B         103 kB
+├ ƒ /api/assistants/[id]                                                       621 B         103 kB
+├ ƒ /api/attachments/[id]                                                      621 B         103 kB
+├ ƒ /api/attachments/[id]/preview                                              621 B         103 kB
+├ ƒ /api/attachments/[id]/restore                                              621 B         103 kB
+├ ƒ /api/attachments/[id]/versions                                             621 B         103 kB
+├ ƒ /api/attachments/[id]/versions/[version]/restore                           621 B         103 kB
+├ ƒ /api/auth/[...nextauth]                                                    621 B         103 kB
+├ ƒ /api/auth/forgot-password                                                  621 B         103 kB
+├ ƒ /api/auth/register                                                         621 B         103 kB
+├ ƒ /api/auth/reset-password                                                   621 B         103 kB
+├ ƒ /api/chat                                                                  621 B         103 kB
+├ ƒ /api/chat/cancel                                                           621 B         103 kB
+├ ƒ /api/chat/clarify                                                          621 B         103 kB
+├ ƒ /api/chat/follow-ups                                                       621 B         103 kB
+├ ƒ /api/chat/receipt                                                          621 B         103 kB
+├ ƒ /api/code/devices                                                          621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/commands                                      621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions                                      621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions/[sessionId]                          621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions/[sessionId]/approvals/[requestId]    621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions/[sessionId]/events                   621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions/[sessionId]/messages                 621 B         103 kB
+├ ƒ /api/code/devices/[deviceId]/sessions/[sessionId]/stop                     621 B         103 kB
+├ ƒ /api/code/github/pulls                                                     621 B         103 kB
+├ ƒ /api/code/github/repos                                                     621 B         103 kB
+├ ƒ /api/code/queue                                                            621 B         103 kB
+├ ƒ /api/code/search                                                           621 B         103 kB
+├ ƒ /api/code/tasks                                                            621 B         103 kB
+├ ƒ /api/code/tasks/[id]                                                       621 B         103 kB
+├ ƒ /api/code/tasks/[id]/cancel                                                621 B         103 kB
+├ ƒ /api/code/tasks/[id]/claim                                                 621 B         103 kB
+├ ƒ /api/code/tasks/[id]/events                                                621 B         103 kB
+├ ƒ /api/code/tasks/[id]/respond                                               621 B         103 kB
+├ ƒ /api/code/tasks/[id]/rollback                                              621 B         103 kB
+├ ƒ /api/code/tasks/[id]/runner-context                                        621 B         103 kB
+├ ƒ /api/code/workspaces                                                       621 B         103 kB
+├ ƒ /api/connectors                                                            621 B         103 kB
+├ ƒ /api/connectors/[id]                                                       621 B         103 kB
+├ ƒ /api/connectors/[id]/callback                                              621 B         103 kB
+├ ƒ /api/connectors/[id]/connect                                               621 B         103 kB
+├ ƒ /api/connectors/[id]/credentials                                           621 B         103 kB
+├ ƒ /api/connectors/apple-music/dev-token                                      621 B         103 kB
+├ ƒ /api/connectors/composio/[slug]                                            621 B         103 kB
+├ ƒ /api/connectors/composio/[slug]/callback                                   621 B         103 kB
+├ ƒ /api/connectors/composio/[slug]/connect                                    621 B         103 kB
+├ ƒ /api/connectors/composio/catalog                                           621 B         103 kB
+├ ƒ /api/conversations                                                         621 B         103 kB
+├ ƒ /api/conversations/[id]                                                    621 B         103 kB
+├ ƒ /api/conversations/[id]/fork                                               621 B         103 kB
+├ ƒ /api/conversations/[id]/messages                                           621 B         103 kB
+├ ƒ /api/conversations/[id]/title                                              621 B         103 kB
+├ ƒ /api/csp-report                                                            621 B         103 kB
+├ ƒ /api/design                                                                621 B         103 kB
+├ ƒ /api/design/[artifactId]                                                   621 B         103 kB
+├ ƒ /api/design/[artifactId]/edit                                              621 B         103 kB
+├ ƒ /api/design/[artifactId]/export                                            621 B         103 kB
+├ ƒ /api/design/[artifactId]/transactions                                      621 B         103 kB
+├ ƒ /api/downloads                                                             621 B         103 kB
+├ ƒ /api/files/[...key]                                                        621 B         103 kB
+├ ƒ /api/files/sandbox/[...key]                                                621 B         103 kB
+├ ƒ /api/folders                                                               621 B         103 kB
+├ ƒ /api/folders/[id]                                                          621 B         103 kB
+├ ƒ /api/generate                                                              621 B         103 kB
+├ ƒ /api/health                                                                621 B         103 kB
+├ ƒ /api/i18n/translations                                                     621 B         103 kB
+├ ƒ /api/import                                                                621 B         103 kB
+├ ƒ /api/knowledge/documents                                                   621 B         103 kB
+├ ƒ /api/knowledge/documents/[id]                                              621 B         103 kB
+├ ƒ /api/library                                                               621 B         103 kB
+├ ƒ /api/library/attach                                                        621 B         103 kB
+├ ƒ /api/mcp/[connector]                                                       621 B         103 kB
+├ ƒ /api/mcp/composio/[slug]                                                   621 B         103 kB
+├ ƒ /api/memory                                                                621 B         103 kB
+├ ƒ /api/memory/[id]                                                           621 B         103 kB
+├ ƒ /api/memory/backfill                                                       621 B         103 kB
+├ ƒ /api/memory/consolidate                                                    621 B         103 kB
+├ ƒ /api/memory/edit                                                           621 B         103 kB
+├ ƒ /api/memory/edit/apply                                                     621 B         103 kB
+├ ƒ /api/memory/edits                                                          621 B         103 kB
+├ ƒ /api/memory/edits/[id]                                                     621 B         103 kB
+├ ƒ /api/messages/[id]                                                         621 B         103 kB
+├ ƒ /api/messages/[id]/feedback                                                621 B         103 kB
+├ ƒ /api/messages/[id]/versions                                                621 B         103 kB
+├ ƒ /api/models                                                                621 B         103 kB
+├ ƒ /api/notifications                                                         621 B         103 kB
+├ ƒ /api/notifications/[id]                                                    621 B         103 kB
+├ ƒ /api/profile/avatar                                                        621 B         103 kB
+├ ƒ /api/profile/stats                                                         621 B         103 kB
+├ ƒ /api/profile/usage                                                         621 B         103 kB
+├ ƒ /api/profile/usage/breakdown                                               621 B         103 kB
+├ ƒ /api/projects                                                              621 B         103 kB
+├ ƒ /api/projects/[id]                                                         621 B         103 kB
+├ ƒ /api/projects/[id]/members                                                 621 B         103 kB
+├ ƒ /api/prompts                                                               621 B         103 kB
+├ ƒ /api/prompts/[id]                                                          621 B         103 kB
+├ ƒ /api/recents                                                               621 B         103 kB
+├ ƒ /api/research                                                              621 B         103 kB
+├ ƒ /api/research/[id]                                                         621 B         103 kB
+├ ƒ /api/research/[id]/control                                                 621 B         103 kB
+├ ƒ /api/research/[id]/plan                                                    621 B         103 kB
+├ ƒ /api/research/[id]/steer                                                   621 B         103 kB
+├ ƒ /api/research/citations                                                    621 B         103 kB
+├ ƒ /api/roadmap                                                               621 B         103 kB
+├ ƒ /api/roadmap/[id]                                                          621 B         103 kB
+├ ƒ /api/roadmap/[id]/comments                                                 621 B         103 kB
+├ ƒ /api/roadmap/[id]/vote                                                     621 B         103 kB
+├ ƒ /api/search                                                                621 B         103 kB
+├ ƒ /api/settings                                                              621 B         103 kB
+├ ƒ /api/share                                                                 621 B         103 kB
+├ ƒ /api/share/[id]                                                            621 B         103 kB
+├ ƒ /api/stripe/checkout                                                       621 B         103 kB
+├ ƒ /api/stripe/portal                                                         621 B         103 kB
+├ ƒ /api/stripe/webhook                                                        621 B         103 kB
+├ ƒ /api/sync/changes                                                          621 B         103 kB
+├ ƒ /api/sync/stream                                                           621 B         103 kB
+├ ƒ /api/tasks                                                                 621 B         103 kB
+├ ƒ /api/tasks/[id]                                                            621 B         103 kB
+├ ƒ /api/upload                                                                621 B         103 kB
+├ ƒ /api/v1/attachments                                                        621 B         103 kB
+├ ƒ /api/v1/auth/devices                                                       621 B         103 kB
+├ ƒ /api/v1/auth/devices/[id]                                                  621 B         103 kB
+├ ƒ /api/v1/auth/logout                                                        621 B         103 kB
+├ ƒ /api/v1/auth/password                                                      621 B         103 kB
+├ ƒ /api/v1/auth/refresh                                                       621 B         103 kB
+├ ƒ /api/v1/auth/session                                                       621 B         103 kB
+├ ƒ /api/v1/auth/token                                                         621 B         103 kB
+├ ƒ /api/v1/bootstrap                                                          621 B         103 kB
+├ ƒ /api/v1/changes                                                            621 B         103 kB
+├ ƒ /api/v1/changes/stream                                                     621 B         103 kB
+├ ƒ /api/v1/entities                                                           621 B         103 kB
+├ ƒ /api/v1/entities/index                                                     621 B         103 kB
+├ ƒ /api/v1/models                                                             621 B         103 kB
+├ ƒ /api/v1/mutations                                                          621 B         103 kB
+├ ƒ /api/voice/relay-token                                                     621 B         103 kB
+├ ƒ /api/voice/spend                                                           621 B         103 kB
+├ ƒ /api/voice/stt                                                             621 B         103 kB
+├ ƒ /api/voice/transcript                                                      621 B         103 kB
+├ ƒ /api/voice/tts                                                             621 B         103 kB
+├ ƒ /api/work/approvals/[id]/decision                                          621 B         103 kB
+├ ƒ /api/work/artifacts                                                        621 B         103 kB
+├ ƒ /api/work/artifacts/[id]                                                   621 B         103 kB
+├ ƒ /api/work/artifacts/[id]/download                                          621 B         103 kB
+├ ƒ /api/work/hosts                                                            621 B         103 kB
+├ ƒ /api/work/hosts/[id]                                                       621 B         103 kB
+├ ƒ /api/work/hosts/[id]/commands                                              621 B         103 kB
+├ ƒ /api/work/hosts/[id]/commands/[commandId]                                  621 B         103 kB
+├ ƒ /api/work/hosts/[id]/events                                                621 B         103 kB
+├ ƒ /api/work/hosts/register                                                   621 B         103 kB
+├ ƒ /api/work/runs/[id]/control                                                621 B         103 kB
+├ ƒ /api/work/schedules                                                        621 B         103 kB
+├ ƒ /api/work/schedules/[id]                                                   621 B         103 kB
+├ ƒ /api/work/schedules/[id]/run-now                                           621 B         103 kB
+├ ƒ /api/work/schedules/[id]/runs                                              621 B         103 kB
+├ ƒ /api/work/sessions                                                         621 B         103 kB
+├ ƒ /api/work/sessions/[id]                                                    621 B         103 kB
+├ ƒ /api/work/sessions/[id]/answer                                             621 B         103 kB
+├ ƒ /api/work/sessions/[id]/context                                            621 B         103 kB
+├ ƒ /api/work/sessions/[id]/events                                             621 B         103 kB
+├ ƒ /api/work/sessions/[id]/runs                                               621 B         103 kB
+├ ƒ /api/work/skills                                                           621 B         103 kB
+├ ƒ /api/work/skills/[id]                                                      621 B         103 kB
+├ ƒ /api/work/skills/[id]/versions                                             621 B         103 kB
+├ ƒ /api/work/skills/[id]/versions/[version]/consent                           621 B         103 kB
+├ ƒ /app-auth                                                                  692 B         103 kB
+├ ○ /apple-icon.png                                                              0 B            0 B
+├ ƒ /artifacts                                                               11.6 kB         177 kB
+├ ƒ /assistants                                                              5.21 kB         117 kB
+├ ƒ /aura-preview                                                            2.27 kB         111 kB
+├ ƒ /chat                                                                      253 B         655 kB
+├ ƒ /chat/[id]                                                               56.2 kB         722 kB
+├ ƒ /code                                                                    18.7 kB         174 kB
+├ ƒ /code/new                                                                14.3 kB         253 kB
+├ ƒ /code/pulls                                                              5.45 kB         137 kB
+├ ƒ /compare                                                                 15.8 kB         395 kB
+├ ƒ /connections                                                             15.3 kB         173 kB
+├ ƒ /design                                                                  7.26 kB         171 kB
+├ ƒ /design/[artifactId]                                                     8.86 kB         275 kB
+├ ƒ /dev/aicss                                                               13.3 kB         150 kB
+├ ƒ /dev/controls                                                            7.36 kB         119 kB
+├ ƒ /dev/learning                                                            8.81 kB         137 kB
+├ ƒ /dev/voice                                                                6.6 kB         116 kB
+├ ƒ /forgot-password                                                         3.08 kB         133 kB
+├ ○ /icon.png                                                                    0 B            0 B
+├ ƒ /knowledge/documents/[id]                                                6.48 kB         126 kB
+├ ○ /legal/cgu                                                                 621 B         103 kB
+├ ○ /legal/confidentialite                                                     621 B         103 kB
+├ ○ /legal/mentions-legales                                                    621 B         103 kB
+├ ƒ /library                                                                   14 kB         184 kB
+├ ƒ /memory                                                                  5.82 kB         399 kB
+├ ƒ /profile                                                                 6.68 kB         182 kB
+├ ƒ /projects                                                                8.77 kB         172 kB
+├ ƒ /projects/[id]                                                           12.1 kB         249 kB
+├ ƒ /reset-password                                                          3.17 kB         133 kB
+├ ƒ /roadmap                                                                 6.74 kB         176 kB
+├ ƒ /roadmap/[id]                                                            5.18 kB         170 kB
+├ ○ /robots.txt                                                                621 B         103 kB
+├ ƒ /settings                                                                6.42 kB         201 kB
+├ ƒ /share/[token]                                                           5.43 kB         378 kB
+├ ƒ /sign-in                                                                   139 B         131 kB
+├ ƒ /sign-up                                                                   139 B         131 kB
+├ ○ /sitemap.xml                                                               621 B         103 kB
+├ ƒ /suspended                                                               3.31 kB         121 kB
+├ ƒ /tasks                                                                   14.4 kB         203 kB
+├ ƒ /upgrade                                                                 6.23 kB         154 kB
+├ ƒ /work                                                                    23.4 kB         298 kB
+├ ƒ /work/[id]                                                               31.2 kB         512 kB
+├ ƒ /work/hosts                                                                621 B         103 kB
+├ ƒ /work/hosts/[id]                                                         9.63 kB         168 kB
+├ ƒ /work/permissions                                                        5.52 kB         139 kB
+├ ƒ /work/schedules                                                          6.74 kB         204 kB
+├ ƒ /work/schedules/[id]                                                     5.99 kB         213 kB
+├ ƒ /work/schedules/new                                                      3.01 kB         207 kB
+├ ƒ /work/skills                                                             3.56 kB         157 kB
+├ ƒ /work/skills/[id]                                                        8.44 kB         187 kB
+└ ƒ /work/skills/new                                                         5.83 kB         157 kB
++ First Load JS shared by all                                                 102 kB
+  ├ chunks/1255-b8cf77ab14370e57.js                                            46 kB
+  ├ chunks/4bd1b696-100b9d70ed4e49c1.js                                      54.2 kB
+  └ other shared chunks (total)                                              2.05 kB
+
+
+ƒ Middleware                                                                 35.7 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

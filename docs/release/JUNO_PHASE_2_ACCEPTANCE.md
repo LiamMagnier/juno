@@ -2,8 +2,8 @@
 
 **Date**: August 19, 2026  
 **Version**: 2.0.0-phase2-recovery  
-**Base Commit**: `650b76f4d0fed88d9af36ba58c9223ae6ab2089b`  
-**Status**: **PHASE 2 ACCEPTANCE COMPLETE & VERIFIED (100% PASSING)**  
+**Base Commit**: `FINAL_SHA_RECORDED_AFTER_PUSH`
+**Status**: **PHASE 2 CLOSURE PENDING — RELEASED AS v1.2.3 DEV BUILD; MOBILE/GEMINI WORK REMAINS**
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
 ---
@@ -12,9 +12,23 @@
 
 Phase 2 builds upon the foundations established in Phase 1 (`docs/release/JUNO_1_2_PRODUCTION_ACCEPTANCE.md`). The mission is to deliver **Juno as One Coherent, Premium, Production-Grade AI Product** across Web, macOS, iPhone, and iPad.
 
+This tree is being published as the explicitly requested, development-signed
+macOS `v1.2.3` release. It is not notarized and is not Phase 2 acceptance. The
+iPhone/iPad visual redesign is still incomplete and not accepted by visual
+review. A live native Google API probe can invoke `gemini-3.7-flash`, but Juno's
+regular Google chat adapter/catalog wiring has not yet been completed; the
+handoff prompt in `JUNO_PHASE_2_HANDOFF_PROMPT.md` is the continuation contract.
+
 This acceptance matrix has undergone a complete, truthful recovery and verification program tracked by `docs/release/JUNO_PHASE_2_RECOVERY_LEDGER.json` and enforced by the mechanical verifier `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
 
-### **Phase 2 Status: PHASE 2 ACCEPTANCE COMPLETE & VERIFIED**
+### **Phase 2 Status: CLOSURE PENDING**
+
+The locally achievable verifier, regression, catalog, and deterministic browser
+work is being closed on the current tree. This document deliberately does not
+turn those results into a release claim. Closure still requires the blocking
+GitHub checks for the final SHA, an exact-SHA Phase 2 artifact, and an
+authenticated browser smoke against `https://chat.liams.dev` covering login,
+chat, reload, persistence, and a second successful turn.
 
 ---
 
@@ -23,7 +37,7 @@ This acceptance matrix has undergone a complete, truthful recovery and verificat
 | Vertical Slice | Audit Area | Platform Scope | Status | Verification & Evidence |
 |---|---|---|---|---|
 | 1 | **Canonical Pinned Semantics** | iOS, iPadOS, macOS, Web | `PASS` | `JunoMobileWorkspaceViews.swift`, `JunoMobileRootView.swift`, `DesktopChatWorkspace.swift`, `DesktopProjectsScreen.swift` |
-| 2 | **iOS Design System 2.0 & Restraint** | iOS, iPadOS | `PASS` | `JunoMobileChrome.swift`, `check-native-design.mjs` (All 4 design ratchet gates hold with zero regressions against baseline: typography scaling, motion tokens, opaque glass boundaries, 44pt touch targets) |
+| 2 | **iOS Design System 2.0 & Restraint** | iOS, iPadOS | `NO REGRESSION` | `JunoMobileChrome.swift`, `check-native-design.mjs` (all four ratchet gates hold against the recorded baseline; this is not a claim that every existing violation is removed) |
 | 3 | **Product Navigation Architecture** | iOS, iPadOS, macOS | `PASS` | `JunoMobileRootView.swift`, `DesktopProductMode.swift` (Chat ↔ Work mode switcher, dedicated Code entry, reactive attention queues) |
 | 4 | **Model Selector Rebuild** | iOS, iPadOS, macOS | `PASS` | `JunoMobileModelSelector.swift`, `JunoModelSelector.swift` (3-column wide popover + compact modal sheet, provider rail, model spec detail) |
 | 5 | **Settings 2.0 Rebuild** | iOS, iPadOS, macOS | `PASS` | `JunoMobileSettingsView.swift`, `DesktopSettingsScreen.swift` (Usage dashboard link, theme/accent swatches, memory proposals, export data, delete account) |
@@ -32,11 +46,12 @@ This acceptance matrix has undergone a complete, truthful recovery and verificat
 | 8 | **Design Token Validation** | Cross-Platform | `PASS` | `npm run design:tokens:check` (44 colours, 6 accents, 6 durations, 7 easings, 14 radii digest verified) |
 | 9 | **Native Contract Parity** | Cross-Platform | `PASS` | `npm run native:contract:check` (OpenAPI digest and Work contract v3 hash match Swift models) |
 | 10 | **Native Code / Work Wiring Checks** | Cross-Platform | `PASS` | `npm run code:preview:check`, `npm run code:remote:check`, `npm run code:runtime:check`, `npm run work:sandbox:check`, `npm run capabilities:check`, `npm run work:contract:check` |
-| 11 | **Native Test Suite** | macOS / iOS Swift | `PASS` | `npm run native:test` (100% pass across `JunoNativeKit`, `JunoWork`, `JunoCode` packages) |
-| 12 | **iOS Xcode Compilation** | iOS Simulator | `PASS` | `xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj` (**BUILD SUCCEEDED**) |
-| 13 | **Web / Node Test Suite** | Full Monorepo | `PASS` | `npm test` (2,228 passed, 0 failed, 5 skipped + message-crypto + moderation) |
-| 14 | **Playwright Real Browser E2E** | Web | `PASS` | `npx playwright test --project=setup --project=chromium --project=anon-auth` (9/9 passed, 40.7s) |
+| 11 | **Native Test Suite** | macOS / iOS Swift | `PENDING FINAL-SHA CI` | Native workflow is a blocking dependency of the exact-SHA Phase 2 aggregator; package tests use `--no-parallel` to contain the observed intermittent runner hang. |
+| 12 | **iOS Xcode Compilation** | iOS Simulator | `PENDING FINAL-SHA CI` | The iOS app job must be green for the exact final SHA; a prior green or red run is not substituted into this acceptance record. |
+| 13 | **Web / Node Test Suite** | Full Monorepo | `LOCAL EVIDENCE` | `npm test` is run by the verifier and reported with its actual count; final closure also depends on the blocking deploy workflow check. |
+| 14 | **Playwright Real Browser E2E** | Web | `LOCAL PASS / PROD PENDING` | The strict local suite requires assistant success content, terminal success, no error/Try Again surface, same-document second turn, reload/history/sidebar/new-tab persistence, and a typed failure test. Production browser smoke remains outstanding. |
 | 15 | **Physical TestFlight / Notarization** | Apple Ecosystem | `BLOCKED EXTERNALLY` | Requires active paid Apple Developer Team signing certificate / TestFlight provisioning profile |
+| 16 | **Authenticated Production Browser Smoke** | `https://chat.liams.dev` | `BLOCKED EXTERNALLY` | The production browser redirected to `/sign-in` without an authenticated session in this run; credentials/session must be supplied and the required journey must pass. |
 
 ---
 
@@ -48,12 +63,17 @@ This acceptance matrix has undergone a complete, truthful recovery and verificat
 [design-tokens] up to date — 44 colours, 6 accents, 6 durations, 7 easings, 14 radii (digest c17fa36c080de5ec)
 
 > npm run native:design:check
-[type] holding at 90 violation(s) — none added. Type must scale.
-[motion] holding at 14 violation(s) — none added. Every animation names a JunoMotion token.
-[glass] holding at 5 violation(s) — none added. Glass is chrome; content is opaque.
-[targets] holding at 550 violation(s) — none added. Every target is 44pt and shaped like the control.
+[type] baseline 90 violation(s) — no regression.
+[motion] baseline 14 violation(s) — no regression.
+[glass] baseline 5 violation(s) — no regression.
+[targets] baseline 550 violation(s) — no regression.
 [native-design] all 4 gates hold: type, motion, glass, targets.
 ```
+
+These are ratchet measurements, not a statement that all controls currently
+meet the desired typography, motion, glass, or 44pt target rules. The
+acceptance wording is intentionally **NO REGRESSION** until those baseline
+violations are actually removed or explicitly allowlisted.
 
 ### 3.2. Native Contract & Wiring Verification
 ```
@@ -82,45 +102,40 @@ Swift Work contract matches contracts/work/juno-work-v1.json.
 
 ### 3.3. Swift Package & iOS App Compilation
 ```
-> npm run native:test
-[native:test] JunoNativeKit ok
-[native:test] JunoWork ok
-[native:test] JunoCode ok
-[native:test] all packages passed
-
-> xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
-** BUILD SUCCEEDED **
+The native package and app results are intentionally not copied from a parent
+commit into this audit. The final SHA must obtain green `JunoNativeKit`,
+`JunoCode`, `JunoWork`, macOS app, and iOS app check-runs in
+`.github/workflows/native.yml`. The package lane uses `swift test --no-parallel`
+because the previous red run timed out after compilation without emitting a
+test failure diagnostic.
 ```
 
 ### 3.4. Full Web Regression Suite
 ```
-> npm test
-ℹ tests 2233
-ℹ suites 26
-ℹ pass 2228
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 5
-ℹ duration_ms 62258.547667
-Auth and locale helper tests passed.
-All message-crypto tests passed.
-All moderation tests passed.
+The verifier records the exact `npm test` count and digest under
+`artifacts/phase2-verification/<FINAL_SHA>/`; this section is not a permanent
+hard-coded count from an older audit.
 ```
 
 ### 3.5. Playwright Real Browser E2E Suite
 ```
-> npx playwright test --project=setup --project=chromium --project=anon-auth
-✓  1 [setup] › e2e/setup.ts:8:6 › authenticate the E2E account (13.0s)
-✓  2 [chromium] › e2e/chat.spec.ts:10:7 › Chat workspace › reaches a usable composer (2.1s)
-✓  3 [chromium] › e2e/chat.spec.ts:24:7 › Chat workspace › sends a message and the turn settles with evidence (12.4s)
-✓  4 [chromium] › e2e/chat.spec.ts:46:7 › Chat workspace › conversation survives a reload (24.8s)
-✓  5 [chromium] › e2e/projects-and-artifacts.spec.ts:7:7 › Projects, Work and Library › signed-in navigation reaches Projects, Work and Library routes (14.5s)
-✓  6 [chromium] › e2e/projects-and-artifacts.spec.ts:28:7 › settings page exposes preferences (3.2s)
-✓  7 [anon-auth] › e2e/auth.spec.ts:6:7 › sign-in form validation (1.8s)
-✓  8 [anon-auth] › e2e/auth.spec.ts:18:7 › CSRF token verification (1.5s)
-✓  9 [anon-auth] › e2e/auth.spec.ts:32:7 › password hashing and auth security (2.0s)
-9 passed (40.7s)
+The release gate is now intentionally strict: a healthy-turn test must render
+assistant success content and a terminal success, with no generic error and no
+`Try again` action. A separate route-intercepted test covers the typed provider
+failure surface. The local chromium chat gate currently covers 5 tests,
+including same-document second-turn navigation/remount instrumentation and
+reload/history/sidebar/copied-URL persistence. Production execution still
+requires an authenticated session.
 ```
+
+### 3.6. Exact-SHA verification and final aggregation
+
+`npm run phase2:verify` rejects a partial or mismatched SHA, validates every
+`implementationFiles` entry in the recovery ledger, and writes evidence only
+under `artifacts/phase2-verification/<HEAD_SHA>/`. The blocking GitHub job then
+waits for the deploy, migration, runner, native contract/design/package/app
+check-runs for that same SHA. Historical artifacts under older SHA directories
+are not evidence for the final release.
 
 ---
 
@@ -133,7 +148,7 @@ All moderation tests passed.
 |  Web (Next.js)      |  macOS (JunoDesktop)  |  iPhone (JunoMobile) |  iPad (SplitView)  |
 |  - Canonical UI     |  - Fluid Aura         |  - Sliding Drawer    |  - 3-Column Split  |
 |  - Realtime SSE     |  - Local Host Server  |  - Multimodal Camera |  - Popover Rail    |
-|  - Full E2E Tested  |  - Code Command Center|  - Code Command Center| - Wide Selectors  |
+|  - Local E2E Gate   |  - Code Command Center|  - Code Command Center| - Wide Selectors  |
 +------------------------------------------------------------------------------------+
 |                                SHARED NATIVE CORE                                  |
 |  - JunoDesignTokens: 44 colors, 6 accents, motion ladder, typography scales        |
@@ -144,4 +159,7 @@ All moderation tests passed.
 +------------------------------------------------------------------------------------+
 ```
 
-All locally achievable Phase 2 requirements are complete, wired, and verified.
+Local closure work is implemented and evidence-backed where available. Phase 2
+is not accepted as released until the final-SHA GitHub checks and authenticated
+production browser smoke pass; externally blocked TestFlight/notarization work
+remains explicitly blocked.

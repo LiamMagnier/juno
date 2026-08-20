@@ -1,0 +1,339 @@
+{
+  "commitSHA": "4774fa35b56d24d885f1fb30a9f849dba6ca3bea",
+  "checkedOutHeadSHA": "4774fa35b56d24d885f1fb30a9f849dba6ca3bea",
+  "githubSHA": null,
+  "workingTreeClean": false,
+  "workingTreeStatusDigest": "f31012fd4f7f8aae7becf61b082ed7adeac2760f42c8d54349a3e4782758ea4d",
+  "artifactScope": "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/",
+  "statusScope": "local-gates-only-worktree-dirty",
+  "blockingCiJobs": [
+    {
+      "workflow": ".github/workflows/deploy.yml",
+      "job": "test"
+    },
+    {
+      "workflow": ".github/workflows/deploy.yml",
+      "job": "migrations"
+    },
+    {
+      "workflow": ".github/workflows/deploy.yml",
+      "job": "runner"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "contract"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "design"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "packages (JunoNativeKit)"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "packages (JunoCode)"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "packages (JunoWork)"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "macos-app"
+    },
+    {
+      "workflow": ".github/workflows/native.yml",
+      "job": "ios-app"
+    }
+  ],
+  "verifiedAt": "2026-08-20T17:07:43.642Z",
+  "totalSuites": 20,
+  "passedSuites": 20,
+  "deferredSuites": 0,
+  "failedSuites": 0,
+  "overallStatus": "LOCAL_GATES_PASSED_WORKTREE_DIRTY_CI_GATES_REQUIRED",
+  "requirements": [
+    {
+      "requirementId": "GATE_LEDGER",
+      "name": "Phase 2 Recovery Ledger Integrity",
+      "status": "PASSED",
+      "command": "node scripts/check-phase2-recovery.mjs",
+      "startedAt": "2026-08-20T17:04:34.220Z",
+      "finishedAt": "2026-08-20T17:04:34.250Z",
+      "exitCode": 0,
+      "outputDigest": "15b3b691c364c7f85e1264da936c84479f91e5d6ee4e28c014a2659247185dfc",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_LEDGER.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_MODELS",
+      "name": "Model Catalog and Reasoning Tiers Validation",
+      "status": "PASSED",
+      "command": "npx tsx scripts/validate-models.ts",
+      "startedAt": "2026-08-20T17:04:34.251Z",
+      "finishedAt": "2026-08-20T17:04:34.582Z",
+      "exitCode": 0,
+      "outputDigest": "49f285345644343ddc1ede66e5bfb52e9fdbf27bde2c6716f01fac5ee947184f",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_MODELS.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_PRISMA_VALIDATE",
+      "name": "Prisma Schema Validation",
+      "status": "PASSED",
+      "command": "npx prisma validate",
+      "startedAt": "2026-08-20T17:04:34.582Z",
+      "finishedAt": "2026-08-20T17:04:35.238Z",
+      "exitCode": 0,
+      "outputDigest": "87ec5a1ec220f83c7901f1e5363e347ac10881a41f69cdac2b2e74f2b3ed30a6",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_PRISMA_VALIDATE.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_LINT",
+      "name": "ESLint",
+      "status": "PASSED",
+      "command": "npm run lint",
+      "startedAt": "2026-08-20T17:04:35.239Z",
+      "finishedAt": "2026-08-20T17:04:41.939Z",
+      "exitCode": 0,
+      "outputDigest": "e22a91bfd227dc71d138b35db2bc22f45701fac3e7013dd48e5edde944410bd9",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_LINT.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_TYPECHECK",
+      "name": "TypeScript Typecheck",
+      "status": "PASSED",
+      "command": "npx tsc --noEmit",
+      "startedAt": "2026-08-20T17:04:41.939Z",
+      "finishedAt": "2026-08-20T17:04:47.647Z",
+      "exitCode": 0,
+      "outputDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_TYPECHECK.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_RUNNER_BUILD",
+      "name": "Cloud Runner Build",
+      "status": "PASSED",
+      "command": "npm run build --prefix runner/agent-core",
+      "startedAt": "2026-08-20T17:04:47.648Z",
+      "finishedAt": "2026-08-20T17:04:48.586Z",
+      "exitCode": 0,
+      "outputDigest": "285d6718a782ca6e793a1a62495e1d26a2da5908597450ba653ed8bfa76ce099",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_RUNNER_BUILD.log"
+      ],
+      "environmentClass": "runner"
+    },
+    {
+      "requirementId": "GATE_NEXT_BUILD",
+      "name": "Next.js Production Build",
+      "status": "PASSED",
+      "command": "npm run build",
+      "startedAt": "2026-08-20T17:04:48.586Z",
+      "finishedAt": "2026-08-20T17:05:07.415Z",
+      "exitCode": 0,
+      "outputDigest": "8d11ccc1b63af357a0a808992b718863be475a065847a405b19c1774cca4749c",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_NEXT_BUILD.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_SWIFT_CONTRACT",
+      "name": "Native Swift / TypeScript Contract Alignment",
+      "status": "PASSED",
+      "command": "node scripts/check-native-swift-contract.mjs",
+      "startedAt": "2026-08-20T17:05:07.416Z",
+      "finishedAt": "2026-08-20T17:05:07.536Z",
+      "exitCode": 0,
+      "outputDigest": "4886516f29c65a4ab018a9c1dfecd86d4b06b9c2a8eed57fb58a031bf51e2fb1",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_SWIFT_CONTRACT.log"
+      ],
+      "environmentClass": "native_ios"
+    },
+    {
+      "requirementId": "GATE_NATIVE_DESIGN",
+      "name": "Apple Native Design System Tokens & Restraint",
+      "status": "PASSED",
+      "command": "node scripts/check-native-design.mjs",
+      "startedAt": "2026-08-20T17:05:07.536Z",
+      "finishedAt": "2026-08-20T17:05:08.782Z",
+      "exitCode": 0,
+      "outputDigest": "d8c075000cd94610c4fbef8b9f6b5103b38f7f882bdf3505cedbb5738445a864",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_NATIVE_DESIGN.log"
+      ],
+      "environmentClass": "native_ios"
+    },
+    {
+      "requirementId": "GATE_CODE_PREVIEW",
+      "name": "Code Preview Wiring & Visual Evidence Verification",
+      "status": "PASSED",
+      "command": "node scripts/check-code-preview-wiring.mjs",
+      "startedAt": "2026-08-20T17:05:08.783Z",
+      "finishedAt": "2026-08-20T17:05:08.813Z",
+      "exitCode": 0,
+      "outputDigest": "4581ed95e84375c2105a21791f923004bd3b97d26978d420de0e989def08c2da",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_CODE_PREVIEW.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_CODE_REMOTE",
+      "name": "Code Remote Protocol and Host Device Verification",
+      "status": "PASSED",
+      "command": "node scripts/check-code-remote-wiring.mjs",
+      "startedAt": "2026-08-20T17:05:08.813Z",
+      "finishedAt": "2026-08-20T17:05:08.843Z",
+      "exitCode": 0,
+      "outputDigest": "051d78a4dd86571a07496c30b5e582ab05399b12c7a87e5f599dfa4f2e3bc7bf",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_CODE_REMOTE.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_CODE_RUNTIME",
+      "name": "Code Runtime Orchestrator Verification",
+      "status": "PASSED",
+      "command": "node scripts/check-code-runtime-wiring.mjs",
+      "startedAt": "2026-08-20T17:05:08.843Z",
+      "finishedAt": "2026-08-20T17:05:08.874Z",
+      "exitCode": 0,
+      "outputDigest": "acba1b73be8157806f6277f364ccd67fd535022050b4d27ae119b7f6a14a6aff",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_CODE_RUNTIME.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_WORK_SANDBOX",
+      "name": "Work Sandbox and Multi-Agent Orchestration",
+      "status": "PASSED",
+      "command": "node scripts/check-work-sandbox.mjs",
+      "startedAt": "2026-08-20T17:05:08.874Z",
+      "finishedAt": "2026-08-20T17:05:08.907Z",
+      "exitCode": 0,
+      "outputDigest": "65c611760101209296836d8fa156d4782961fa43ed8fff8d7be8fffedca64331",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_WORK_SANDBOX.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_CAPABILITIES",
+      "name": "Juno Capability Contract Synchronization",
+      "status": "PASSED",
+      "command": "node scripts/check-capability-contract.mjs",
+      "startedAt": "2026-08-20T17:05:08.908Z",
+      "finishedAt": "2026-08-20T17:05:08.967Z",
+      "exitCode": 0,
+      "outputDigest": "d5c3e8c59c00463c8e695cec98b07c0d65838adf1f643ff1918222fdcff01482",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_CAPABILITIES.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_WORK_CONTRACT",
+      "name": "Juno Work Contract Synchronization",
+      "status": "PASSED",
+      "command": "node scripts/check-work-contract.mjs",
+      "startedAt": "2026-08-20T17:05:08.967Z",
+      "finishedAt": "2026-08-20T17:05:09.026Z",
+      "exitCode": 0,
+      "outputDigest": "d230fb29117b8575f7c369ee77983e6740d47b0f68154253ddaeb09dd7b63f17",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_WORK_CONTRACT.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_NPM_TEST",
+      "name": "Full Node Test, Auth, Crypto, and Moderation Suite",
+      "status": "PASSED",
+      "command": "npm test",
+      "startedAt": "2026-08-20T17:05:09.027Z",
+      "finishedAt": "2026-08-20T17:06:12.590Z",
+      "exitCode": 0,
+      "outputDigest": "c5209b6f99942fa43da65c0c44d69218a715e65a41e6173085e2697a8107310e",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_NPM_TEST.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_RESEARCH_TARGETED",
+      "name": "Targeted Durable Research Regression Suite",
+      "status": "PASSED",
+      "command": "npx tsx --test tests/research-*.test.ts",
+      "startedAt": "2026-08-20T17:06:12.591Z",
+      "finishedAt": "2026-08-20T17:06:13.009Z",
+      "exitCode": 0,
+      "outputDigest": "21dceb978756879c4f342b7c71857022f57f6bbaa0967fd4b54d8da63c018265",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_RESEARCH_TARGETED.log"
+      ],
+      "environmentClass": "backend"
+    },
+    {
+      "requirementId": "GATE_SECURITY",
+      "name": "Security and Boundary Regression Suite",
+      "status": "PASSED",
+      "command": "npx tsx --test tests/*security*.test.ts tests/dlp-policy.test.ts tests/ownership-guard.test.ts",
+      "startedAt": "2026-08-20T17:06:13.009Z",
+      "finishedAt": "2026-08-20T17:06:13.544Z",
+      "exitCode": 0,
+      "outputDigest": "34b17da5a5d00a930da6497d51a0787ac61555e046b565c78b0cf59c1159e369",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_SECURITY.log"
+      ],
+      "environmentClass": "security"
+    },
+    {
+      "requirementId": "GATE_PLAYWRIGHT_CHAT",
+      "name": "Authenticated Browser Chat and Auto-refresh E2E",
+      "status": "PASSED",
+      "command": "npx playwright test e2e/chat.spec.ts --project=chromium",
+      "startedAt": "2026-08-20T17:06:13.545Z",
+      "finishedAt": "2026-08-20T17:07:04.545Z",
+      "exitCode": 0,
+      "outputDigest": "aaebf9af978929cf5c4a7d7a1107f2ad8c83e986390a8598988d414c718dfe05",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_PLAYWRIGHT_CHAT.log"
+      ],
+      "environmentClass": "browser"
+    },
+    {
+      "requirementId": "GATE_NATIVE_TESTS",
+      "name": "Native Swift Packages Unit Test Suite",
+      "status": "PASSED",
+      "command": "bash scripts/native-test.sh",
+      "startedAt": "2026-08-20T17:07:04.546Z",
+      "finishedAt": "2026-08-20T17:07:43.640Z",
+      "exitCode": 0,
+      "outputDigest": "42b26a5724d8ba2a73c4b45f13417a980679f693e7133c1b99f7357e7a2d48c3",
+      "artifactPaths": [
+        "artifacts/phase2-verification/4774fa35b56d24d885f1fb30a9f849dba6ca3bea/GATE_NATIVE_TESTS.log"
+      ],
+      "environmentClass": "native_macos"
+    }
+  ]
+}

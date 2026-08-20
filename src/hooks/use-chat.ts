@@ -435,10 +435,15 @@ export function useChat(opts: UseChatOptions) {
         });
 
         if (!res.ok || !res.body) {
-          const data = await res.json().catch(() => ({}));
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string | { message?: string };
+            message?: string;
+          };
           // Machine-readable errors (e.g. 402 budget_exceeded) carry the
           // human sentence in `message`; plain errors keep it in `error`.
-          throw new Error(data.message ?? data.error ?? "Something went wrong.");
+          const nestedMessage = typeof data.error === "object" && data.error ? data.error.message : undefined;
+          const errorText = typeof data.error === "string" ? data.error : undefined;
+          throw new Error(data.message ?? nestedMessage ?? errorText ?? "Something went wrong.");
         }
 
         await readChatStream(res.body, (chunk) => {

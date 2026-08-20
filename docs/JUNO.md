@@ -637,7 +637,10 @@ others are OpenAI-compatible** with a per-provider base URL and share
 **Current selectable chat models** (as of this writing — the registry is the live
 truth): Anthropic Fable 5, Opus 4.8, **Sonnet 5** (default, FREE-eligible), Haiku 4.5;
 OpenAI GPT-5.6 Sol/Terra/Luna, GPT-5.5 Pro, GPT-5.4 Mini/Nano, GPT-5.3 Codex;
-Google Gemini 3.5 Flash, 3.1 Pro, 3.1 Flash-Lite; Zhipu GLM-5.2 + turbo/vision/flash
+Google Gemini 3.6 Flash (the current catalog entry while the native adapter is
+completed; a live audit call through Google's native `v1` and `v1beta`
+`generateContent` APIs returned HTTP 200 for `gemini-3.7-flash` with the configured
+repository key), 3.1 Pro, 3.1 Flash-Lite; Zhipu GLM-5.2 + turbo/vision/flash
 tiers; Moonshot Kimi K3 (flagship), K2.6, K2.7 Code (+ high-speed); DeepSeek V4
 Flash/Pro; Mistral Medium 3.5 / Large 3 / Small 4 / Codestral / Ministral;
 xAI Grok 4.5 (+ Build 0.1, Multi-Agent); MiniMax M3 / M2.7 Highspeed;

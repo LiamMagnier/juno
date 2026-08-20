@@ -10,6 +10,7 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { providerRequestModel } from "@/lib/model-request";
 
 const clients = new Map<Provider, OpenAI>();
 
@@ -277,7 +278,7 @@ export async function* streamOpenAICompat(
     (model.provider === "moonshot" && modelId.includes("k3"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
-    model: model.providerModel,
+    model: providerRequestModel(model),
     messages,
     stream: true,
     // Request a final usage chunk on the compat path; without this most

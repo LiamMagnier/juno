@@ -824,34 +824,14 @@ private struct JunoMobileConversationDetail: View {
                 onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
             )
         }
-        // New chat earns a place in the header the moment there is a chat to
-        // leave — which is the moment the transcript has a turn in it. On an
-        // empty conversation it would offer to replace a blank chat with a blank
-        // chat, so it is not there.
-        //
-        // The two items are deliberately *adjacent* with no `ToolbarSpacer`
-        // between them: from OS 26 the toolbar merges neighbouring items into one
-        // Liquid Glass capsule, which is exactly the pill this needs — compose on
-        // the leading edge, the menu on the trailing one, one pane of glass. A
-        // hand-rolled capsule would have to re-implement the press flex and the
-        // light scatter, and would drift from the platform the moment it moves.
-        if !messages.isEmpty, let newChat {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: newChat) {
-                    Image(systemName: "square.and.pencil")
-                        .junoFont(size: 16, relativeTo: .callout, weight: .regular)
-                        // Ink, not the accent. The root sets `.tint` so system
-                        // controls follow the account's accent, and toolbar glyphs
-                        // inherit it — but chrome that is always present is not
-                        // emphasis, and colouring it spends the accent on nothing.
-                        .foregroundStyle(Color.primary)
-                }
-                .accessibilityLabel("New chat")
-                .accessibilityIdentifier("juno.mobile.chat-new")
-            }
-        }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                if !messages.isEmpty, let newChat {
+                    Button(action: newChat) {
+                        Label("New chat", systemImage: "square.and.pencil")
+                    }
+                    Divider()
+                }
                 if shareClient != nil {
                     Button {
                         Task { await createShare() }
@@ -889,7 +869,10 @@ private struct JunoMobileConversationDetail: View {
                 // `ellipsis`, not `ellipsis.circle`. The symbol's own ring sat
                 // inside the capsule the toolbar already draws, so the button
                 // wore two concentric outlines around three dots.
-                Label("Conversation actions", systemImage: "ellipsis")
+                Image(systemName: "ellipsis")
+                    .junoFont(size: 16, relativeTo: .callout, weight: .semibold)
+                    .foregroundStyle(Color.primary)
+                    .frame(minWidth: 32, minHeight: 32)
             }
             // On the Menu, not on the Label. A `Menu` tints its whole label with
             // the accent, and a `foregroundStyle` inside cannot override that —

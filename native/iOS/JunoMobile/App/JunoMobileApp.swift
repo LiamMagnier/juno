@@ -94,6 +94,8 @@ struct JunoMobileApp: App {
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
                         privateChatModel: world.privateChatModel,
+                        connectorModel: world.connectorModel,
+                        scheduledTaskModel: world.scheduledTaskModel,
                         // Code and Work are both relay-backed, and both were
                         // omitted here. The shell renders "Something went wrong"
                         // for a section whose model is nil, so
@@ -110,6 +112,12 @@ struct JunoMobileApp: App {
                         previewSession: world.session
                     )
                 }
+                // Keep appearance as part of the preview contract. The flag is
+                // intentionally applied outside the preview world so every
+                // native surface — sheets, menus and the drawer included — is
+                // rendered in the requested scheme rather than inheriting the
+                // fixture account's stored preference.
+                .junoPreviewAppearance()
             } else {
                 rootView
             }

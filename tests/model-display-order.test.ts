@@ -119,7 +119,7 @@ describe("sortModelsForDisplay", () => {
   it("marks a freshly discovered id as current at construction", () => {
     // toModelInfo is the discovery path; an id no curated entry knows about
     // must come out current, not status-less.
-    const built = toModelInfo("google", "gemini-3.6-flash");
+    const built = toModelInfo("google", "gemini-4.0-flash");
     assert.equal(built.status, "current");
     assert.equal(built.legacy, false);
     assert.equal(isSupersededModel(built), false);

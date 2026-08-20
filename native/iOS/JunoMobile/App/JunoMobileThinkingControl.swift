@@ -285,15 +285,14 @@ private struct JunoMobileThinkingWord: View {
 /// which is what it looks like and what a thumb aims at.
 struct JunoMobileComposerChipBackground: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: Capsule())
-                .contentShape(Capsule())
-        } else {
-            content
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
-                .contentShape(Capsule())
-        }
+        // These controls live inside the composer, so refracting glass here
+        // creates a capsule-inside-a-capsule and makes the row feel like a
+        // stack of floating controls. A quiet opaque fill keeps the model and
+        // thinking choices legible in both appearances; transient pickers still
+        // use the system sheet/popover treatment when opened.
+        content
+            .background(Color.junoMuted, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
+            .contentShape(Capsule())
     }
 }

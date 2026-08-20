@@ -16,31 +16,7 @@ name: native
 on:
   push:
     branches: [main]
-    paths:
-      - "native/**"
-      - "contracts/**"
-      - "scripts/check-native-swift-contract.mjs"
-      - "scripts/generate-native-swift-contract.mjs"
-      - "scripts/check-native-design*.mjs"
-      - "scripts/check-native-type.mjs"
-      - "scripts/check-native-motion.mjs"
-      - "scripts/check-native-glass.mjs"
-      - "scripts/check-native-targets.mjs"
-      - "scripts/check-native-design-baseline.json"
-      - ".github/workflows/native.yml"
   pull_request:
-    paths:
-      - "native/**"
-      - "contracts/**"
-      - "scripts/check-native-swift-contract.mjs"
-      - "scripts/generate-native-swift-contract.mjs"
-      - "scripts/check-native-design*.mjs"
-      - "scripts/check-native-type.mjs"
-      - "scripts/check-native-motion.mjs"
-      - "scripts/check-native-glass.mjs"
-      - "scripts/check-native-targets.mjs"
-      - "scripts/check-native-design-baseline.json"
-      - ".github/workflows/native.yml"
   workflow_dispatch:
 
 concurrency:
@@ -158,6 +134,7 @@ jobs:
           swift test \
             --package-path native/Packages/${{ matrix.package }} \
             --scratch-path "$RUNNER_TEMP/${{ matrix.package }}-tests" \
+            --no-parallel \
             -Xswiftc -warnings-as-errors
 
   # ---------------------------------------------------------------------------

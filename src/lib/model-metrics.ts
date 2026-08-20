@@ -96,6 +96,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 6) },
   ],
   google: [
+    { hints: ["3.7-flash"], metric: official(1.5, 9, 1_048_576, 8, 9) },
+    { hints: ["3.6-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) },
     { hints: ["3.5-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) }, // II 50.2 · 152 tok/s — 3x the 2.5 Flash price
     { hints: ["3.1-flash-lite"], metric: official(0.25, 1.5, 1_048_576, 10, 4) }, // II 25.0 · 251 tok/s — fastest in the lineup
     { hints: ["3.1-pro"], metric: official(2, 12, 1_048_576, 7, 7) }, // II 46.5 · 117 tok/s
@@ -399,9 +401,9 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
  *  - **The registry's own verdict.** A curated `legacy`/`deprecated` status is
  *    a statement that something newer replaced it, and it survives untouched.
  *  - **The family collapse.** Discovery keeps finding models the registry has
- *    not been curated for yet — a live `gemini-3.6-flash` arrives as `current`
- *    beside the curated `gemini-3.5-flash`, and both claim to be current, so
- *    only comparing them within their line can demote the older one. Discovered
+ *    not been curated for yet — a live Gemini Flash generation can arrive as
+ *    `current` beside an older curated row, so only comparing entries within
+ *    their line can demote the older one. Discovered
  *    entries carry the family slug their `FAMILIES` rule assigns
  *    (model-discovery-core.ts), which is what puts them in the same bucket.
  *
@@ -452,7 +454,7 @@ export function latestPerFamily<T extends ModelInfo>(models: T[], today?: string
  */
 function newerInFamily(a: ModelInfo, b: ModelInfo): number {
   // 1. Version, when both names carry one. This is what lets a freshly
-  //    discovered Gemini 3.6 Flash replace the curated 3.5 the day it ships.
+  //    discovered Gemini Flash generations replace the curated row the day they ship.
   const genA = modelGeneration(a.name);
   const genB = modelGeneration(b.name);
   if (genA !== null && genB !== null && genA !== genB) return genB - genA;
@@ -660,7 +662,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // param omitted; compat omitted -> completion=0, fully starved), and its
       // off-switch is proven NATIVELY (thinkingLevel=minimal -> 0) but could NOT
       // be exercised through the compat transport Juno actually uses — the
-      // free-tier daily cap was exhausted mid-probe. gemini-3.5-flash is 429 on
+      // free-tier daily cap was exhausted mid-probe. Older Gemini Flash rows can be 429 on
       // every transport today, so it is unverified too. Exposing "Instant" here
       // on inference alone would risk an Instant that silently reasons and bills
       // the user, so the tier stays hidden until it can be proven.
