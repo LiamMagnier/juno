@@ -429,6 +429,7 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
         skipped: failure.reason,
         ...(failure.reason === "unsupported_content_type" ? { detail: failure.contentType } : {}),
         ...(failure.reason === "http_error" ? { detail: String(failure.httpStatus) } : {}),
+        ...(failure.reason === "response_too_large" ? { detail: String(failure.limitBytes) } : {}),
         // Which PDF gave up and how: "encrypted", "malformed", "too_large",
         // "not_a_pdf". Without it every unreadable PDF looks the same in the
         // timeline, and a password-protected filing and a truncated download

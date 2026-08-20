@@ -1,5 +1,6 @@
 import "server-only";
 import { isDisallowedHost } from "./url-safety";
+import { fetchSafePublicUrl } from "./fetch-safe";
 import { fuseRankedLists, type EngineSpec, type SearchResult } from "./fusion";
 import {
   extractPdfText,
@@ -49,8 +50,10 @@ export interface ExtractResult {
  */
 export type ExtractFailure =
   | { reason: "blocked_host" }
+  | { reason: "redirect_limit" }
   | { reason: "http_error"; httpStatus: number }
   | { reason: "unsupported_content_type"; contentType: string }
+  | { reason: "response_too_large"; limitBytes: number }
   | { reason: "empty_document" }
   /*
    * A PDF that was fetched and recognised but still yielded nothing. Separate
@@ -231,6 +234,8 @@ export function htmlToCleanText(
 
 /** How much of one page is kept. The research engine truncates again, tighter. */
 const EXTRACT_CHARS = 16_000;
+/** HTML is untrusted network input; bound bytes before decoding/parsing it. */
+const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
 /**
  * The PDF half of `extractUrlDocument`, kept separate only for length.
@@ -292,16 +297,17 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
   if (!url || isDisallowedHost(url)) return { ok: false, failure: { reason: "blocked_host" } };
 
   try {
-    const res = await fetch(url, {
+    const fetched = await fetchSafePublicUrl(url, {
       method: "GET",
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoResearch/2.0",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
         "Accept-Language": "en-US,en;q=0.9",
       },
-      signal,
-      redirect: "follow",
-    });
+    }, signal);
+    if (fetched.kind === "blocked") return { ok: false, failure: { reason: "blocked_host" } };
+    if (fetched.kind === "redirect_limit") return { ok: false, failure: { reason: "redirect_limit" } };
+    const { response: res, url: finalUrl } = fetched;
 
     if (!res.ok) return { ok: false, failure: { reason: "http_error", httpStatus: res.status } };
     const contentType = res.headers.get("content-type") ?? "";
@@ -309,7 +315,7 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
 
     // The response URL, not the requested one — redirects are followed, and it is
     // the landing address whose extension means anything.
-    if (responseIsPdf(baseType, res.url || url)) return await extractPdfDocumentFrom(res, url, signal);
+    if (responseIsPdf(baseType, finalUrl)) return await extractPdfDocumentFrom(res, finalUrl, signal);
 
     if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
       // Everything this build genuinely has no parser for — images, archives,
@@ -317,11 +323,13 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
       return { ok: false, failure: { reason: "unsupported_content_type", contentType: baseType } };
     }
 
-    const html = await res.text();
+    const htmlBytes = await readBodyBounded(res, MAX_HTML_BYTES);
+    if (!htmlBytes) return { ok: false, failure: { reason: "response_too_large", limitBytes: MAX_HTML_BYTES } };
+    const html = new TextDecoder().decode(htmlBytes);
     // The response URL, not the requested one: redirects are followed, and
     // resolving a page's relative links against the pre-redirect address points
     // the hop stage at URLs that do not exist.
-    const parsed = htmlToCleanText(html, res.url || url);
+    const parsed = htmlToCleanText(html, finalUrl);
     if (!parsed.text || parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document" } };
 
     return {

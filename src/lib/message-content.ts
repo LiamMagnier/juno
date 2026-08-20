@@ -19,6 +19,12 @@ export interface ParsedArtifact {
   content: string;
 }
 
+export interface ArtifactMarkupUpdate {
+  identifier: string;
+  content?: string;
+  refusal?: string;
+}
+
 const ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*?)<\/juno:artifact>/g;
 const OPEN_ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*)$/; // still streaming (no close yet)
 const MEMORY_RE = /<juno:memory>([\s\S]*?)<\/juno:memory>/g;
@@ -93,6 +99,41 @@ export function parseArtifacts(text: string): ParsedArtifact[] {
   }
 
   return out;
+}
+
+/** Rewrite only the artifact bodies in a message after verification. This is
+ * the presentation boundary: a repaired body must match what was persisted,
+ * and a refused body must not remain renderable as an unsaved canvas card. */
+export function rewriteArtifactMarkup(text: string, updates: readonly ArtifactMarkupUpdate[]): string {
+  const byId = new Map(updates.map((update) => [update.identifier, update]));
+  const replace = (rawAttrs: string, originalContent: string) => {
+    const attrs = parseAttrs(rawAttrs);
+    const id = artifactId(attrs, originalContent);
+    const update = byId.get(id);
+    if (!update) return null;
+    if (update.refusal) return `\n\n${update.refusal}\n\n`;
+    if (update.content === undefined) return null;
+    const opening = `<juno:artifact ${rawAttrs.trim()}>`;
+    return `${opening}${update.content}</juno:artifact>`;
+  };
+
+  ARTIFACT_RE.lastIndex = 0;
+  let rewritten = text.replace(ARTIFACT_RE, (full, rawAttrs: string, content: string) => {
+    return replace(rawAttrs, content) ?? full;
+  });
+
+  // A truncated trailing block is made explicit after a repair, or removed
+  // after refusal. The original parser intentionally salvages it; the
+  // verifier decides whether that salvaged content is safe to present.
+  const lastClose = rewritten.lastIndexOf("</juno:artifact>");
+  const tailStart = lastClose >= 0 ? lastClose + "</juno:artifact>".length : 0;
+  const tail = rewritten.slice(tailStart);
+  const open = OPEN_ARTIFACT_RE.exec(tail);
+  if (open) {
+    const replacement = replace(open[1], open[2]);
+    if (replacement !== null) rewritten = `${rewritten.slice(0, tailStart + open.index)}${replacement}`;
+  }
+  return rewritten;
 }
 
 /** Detect an artifact that has started streaming but not yet closed. */

@@ -97,6 +97,12 @@ jobs:
       - name: Work contract is not stale
         run: npm run work:contract:check
 
+      - name: Phase 2 final closure ledger is internally consistent
+        run: npm run phase2:final:check
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          PHASE2_FINAL_REQUIRE_CLEAN: "1"
+
       # A cloud Work run has no container to sandbox a host tool in — the
       # `ToolContext.containerSandbox` field cannot even be reached from
       # `WorkSessionOptions`. One call to `withoutHostWorkspaceTools` is what
@@ -188,6 +194,12 @@ jobs:
         run: |
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
+
+      - name: Phase 2 final closure ledger is internally consistent
+        run: npm run phase2:final:check
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          PHASE2_FINAL_REQUIRE_CLEAN: "1"
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

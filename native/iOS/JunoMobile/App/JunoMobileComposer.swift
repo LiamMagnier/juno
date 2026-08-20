@@ -1023,7 +1023,7 @@ struct JunoMobileComposer: View {
 
     // MARK: Sending into a call
 
-    /// Sends the draft — text and up to four images — through the live session
+    /// Sends the draft — text, images, and durable document context — through the live session
     /// rather than through the chat route.
     ///
     /// This is what makes the composer worth keeping on screen during a call.
@@ -1060,34 +1060,46 @@ struct JunoMobileComposer: View {
             voiceTurnError = String(localized: "composer.voice.attachments-pending")
             return
         }
-        // `previewData` is the payload the upload model already holds for an
-        // image, which is why this needs no second read and no network. An
-        // attachment without one is either a document or a library clone whose
-        // bytes only ever existed on the server — neither can be shown to a
-        // model over this socket, so the turn is refused rather than silently
-        // sent without them.
-        //
-        // The uploaded id rides along where there is one, and nil where the
-        // upload has not landed yet — see ``JunoVoiceTurnImage``. Waiting for it
-        // would hold a spoken turn on a network round trip the model does not
-        // need.
-        let images = staged.compactMap { attachment in
-            attachment.previewData.map {
-                JunoVoiceTurnImage(jpeg: $0, attachmentID: attachment.uploadedID)
-            }
-        }
-        guard images.isEmpty || voiceCanSeeImages else {
+        guard !staged.contains(where: { $0.isImage }) || voiceCanSeeImages else {
             voiceTurnError = String(localized: "composer.voice.no-vision")
             return
         }
         let documentIDs = staged
-            .filter { $0.previewData == nil }
+            .filter { !$0.isImage }
             .compactMap { $0.uploadedID }
 
         sendSwell.fire()
         let text = prompt
         isSendingVoiceTurn = true
         Task {
+            var images: [JunoVoiceTurnImage] = []
+            if let attachmentModel {
+                do {
+                    for attachment in staged where attachment.isImage {
+                        let data = try await attachmentModel.voiceImageData(for: attachment.id)
+                        guard let uploadedID = attachment.uploadedID else {
+                            throw NativeAttachmentAPIError.malformedResponse
+                        }
+                        images.append(
+                            JunoVoiceTurnImage(jpeg: data, attachmentID: uploadedID)
+                        )
+                    }
+                } catch {
+                    isSendingVoiceTurn = false
+                    voiceTurnError = String(localized: "composer.voice.image-unavailable")
+                    return
+                }
+            } else if staged.contains(where: \.isImage) {
+                isSendingVoiceTurn = false
+                voiceTurnError = String(localized: "composer.voice.image-unavailable")
+                return
+            }
+            guard images.isEmpty || voiceCanSeeImages else {
+                isSendingVoiceTurn = false
+                voiceTurnError = String(localized: "composer.voice.no-vision")
+                return
+            }
+
             let context: NativeVoiceAttachmentContext?
             if documentIDs.isEmpty {
                 context = nil

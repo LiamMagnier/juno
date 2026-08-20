@@ -35,7 +35,12 @@ import {
   parseArtifactPatch,
   type ArtifactSourceForEdit,
 } from "@/lib/artifact-edit";
-import { parseArtifacts, parseMemories } from "@/lib/message-content";
+import { parseArtifacts, parseMemories, rewriteArtifactMarkup } from "@/lib/message-content";
+import {
+  artifactVerificationDetail,
+  ChatArtifactVerificationError,
+  verifyAndRepairChatArtifacts,
+} from "@/lib/chat-artifact-verification";
 import {
   formatClarificationModelMessage,
   formatClarificationVisibleMessage,
@@ -334,6 +339,43 @@ function createToolActivity(
       sender.send({ type: "activity", event: row.entry });
     },
   };
+}
+
+/**
+ * The canvas is a presentation boundary, not a side effect of parsing. Verify
+ * the exact bodies the client is about to receive, rewrite safe repairs into
+ * the message, and replace refused blocks with an honest explanation. The
+ * structured receipt is emitted into the activity log, which is persisted with
+ * the message so a later reload can see what was checked and why anything was
+ * withheld.
+ */
+function prepareChatArtifactOutput(
+  text: string,
+  sendActivity: SseSender["sendActivity"]
+): { text: string; result: ReturnType<typeof verifyAndRepairChatArtifacts> } | null {
+  const parsed = parseArtifacts(text);
+  if (parsed.length === 0) return null;
+  const result = verifyAndRepairChatArtifacts(parsed);
+  const updates = [
+    ...result.artifacts.map((artifact) => ({ identifier: artifact.identifier, content: artifact.content })),
+    ...result.report.refused.map((identifier) => ({
+      identifier,
+      refusal: "Artifact unavailable: verification failed, so it was not saved or presented.",
+    })),
+  ];
+  const rewritten = rewriteArtifactMarkup(text, updates);
+  sendActivity({
+    kind: "artifact",
+    title:
+      result.report.status === "verified"
+        ? "Artifact verified"
+        : result.report.status === "repaired"
+          ? "Artifact repaired and verified"
+          : "Artifact refused",
+    detail: artifactVerificationDetail(result.report),
+    artifactVerification: result.report,
+  });
+  return { text: rewritten, result };
 }
 
 /**
@@ -858,6 +900,9 @@ async function handleChat(req: Request) {
           // Provider done — stop measuring silence before Juno's own work. See
           // the same call on the persisted path.
           stallWatchdog.stop();
+
+          const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);
+          if (preparedArtifacts) acc.replaceText(preparedArtifacts.text);
 
           const finishReason = acc.finishReason;
           const usage = buildUsage(modelInfo, acc.rawUsage({ promptChars: privatePromptChars() }), acc.servedFast);
@@ -2200,6 +2245,21 @@ async function handleChat(req: Request) {
           acc.replaceText(buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary));
         }
 
+        const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);
+        if (preparedArtifacts) {
+          acc.replaceText(preparedArtifacts.text);
+          if (artifactEditTarget) {
+            if (preparedArtifacts.result.report.refused.length > 0) {
+              throw new ChatArtifactVerificationError(preparedArtifacts.result.report);
+            }
+            const verifiedTarget = preparedArtifacts.result.artifacts.find(
+              (artifact) => artifact.identifier === artifactEditTarget.identifier
+            );
+            if (!verifiedTarget) throw new ChatArtifactVerificationError(preparedArtifacts.result.report);
+            targetedArtifactContent = verifiedTarget.content;
+          }
+        }
+
         const finishReason = acc.finishReason;
         // Reconcile token usage across providers and estimate the $ cost once.
         // The prompt-character floor covers a provider that under-reports input.
@@ -2239,7 +2299,7 @@ async function handleChat(req: Request) {
         // Artifacts + memory side effects.
         const artifacts = targetedArtifact
           ? [targetedArtifact]
-          : await persistArtifacts(conversationId, assistant.id, parseArtifacts(acc.text));
+          : await persistArtifacts(conversationId, assistant.id, preparedArtifacts?.result.artifacts ?? []);
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         if (memoryEnabled) {
@@ -2378,6 +2438,8 @@ async function handleChat(req: Request) {
               acc.rawUsage({ promptChars: synthesisPromptChars() }),
               acc.servedFast
             );
+            const preparedArtifacts = prepareChatArtifactOutput(acc.text, sendActivity);
+            if (preparedArtifacts) acc.replaceText(preparedArtifacts.text);
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
@@ -2393,7 +2455,11 @@ async function handleChat(req: Request) {
               cacheWriteTokens: acc.tokens.cacheWriteTokens,
               costMicroUsd: partialUsage.costMicroUsd || null,
             });
-            const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(acc.text));
+            const artifacts = await persistArtifacts(
+              conversationId,
+              assistant.id,
+              preparedArtifacts?.result.artifacts ?? []
+            );
             await prisma.conversation.updateMany({
               where: { id: conversationId, userId: user.id },
               data: { lastMessageAt: new Date(), model: conversationModelId },
@@ -2500,6 +2566,8 @@ async function handleChat(req: Request) {
                 ? "This canvas changed while the edit was being prepared. Select the part again and retry."
                 : err instanceof ArtifactPatchError
                   ? `${err.message} Nothing in the canvas was changed.`
+                  : err instanceof ChatArtifactVerificationError
+                    ? "The edited canvas failed verification, so nothing was changed. Fix the source and try again."
                   : stallWatchdog.stalled
                     ? stallMessageFor(stallWatchdog)
                     : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);

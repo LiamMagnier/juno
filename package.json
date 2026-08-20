@@ -22,6 +22,7 @@
     "test:auth": "tsx scripts/test-auth.ts",
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
     "phase2:recovery:check": "node scripts/check-phase2-recovery.mjs",
+    "phase2:final:check": "node scripts/check-phase2-final.mjs",
     "phase2:verify": "node scripts/verify-phase2.mjs",
     "phase2:ci:verify": "node scripts/verify-phase2-ci.mjs",
     "test:e2e": "playwright test",

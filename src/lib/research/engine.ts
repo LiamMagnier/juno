@@ -308,8 +308,12 @@ export function pageSkipMessage(page: ResearchPageSkipped): string {
       return `This build cannot extract text from ${page.detail ?? "that file type"}.`;
     case "blocked_host":
       return "That address is not one this app is allowed to fetch.";
+    case "redirect_limit":
+      return "That address redirected too many times to read safely.";
     case "http_error":
       return `The site refused the request${page.detail ? ` (${page.detail})` : ""}.`;
+    case "response_too_large":
+      return `The page was larger than the ${page.detail ?? "allowed"} byte research limit.`;
     case "empty_document":
       return "The page loaded but contained no readable text.";
     case "pdf_unreadable":

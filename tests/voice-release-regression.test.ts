@@ -4,6 +4,13 @@ import test from "node:test";
 
 const relayVerifier = readFileSync(new URL("../scripts/verify-voice-relay.mjs", import.meta.url), "utf8");
 const tokenRoute = readFileSync(new URL("../src/app/api/voice/relay-token/route.ts", import.meta.url), "utf8");
+const contextRoute = readFileSync(new URL("../src/app/api/voice/context/route.ts", import.meta.url), "utf8");
+const transcriptRoute = readFileSync(new URL("../src/app/api/voice/transcript/route.ts", import.meta.url), "utf8");
+const nativeComposer = readFileSync(new URL("../native/iOS/JunoMobile/App/JunoMobileComposer.swift", import.meta.url), "utf8");
+const nativeAttachmentModel = readFileSync(
+  new URL("../native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeComposerAttachmentModel.swift", import.meta.url),
+  "utf8",
+);
 const productionSmoke = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
 
 test("voice relay verifier resolves ws from the standalone relay package", () => {
@@ -43,4 +50,31 @@ test("production chat smoke does not confuse a non-voice smoke plan with dead re
   assert.match(productionSmoke, /voiceTokenResponse\.status === 403/);
   assert.match(productionSmoke, /smoke account is not Voice-enabled/);
   assert.match(productionSmoke, /voice relay-token returned a non-WebSocket URL/);
+});
+
+test("voice document context remains owner-scoped and honest about parser state", () => {
+  assert.match(contextRoute, /userId:\s*user\.id/);
+  assert.match(contextRoute, /messageId:\s*null/);
+  assert.match(contextRoute, /deletedAt:\s*null/);
+  assert.match(contextRoute, /retrieveAttachmentKnowledge/);
+  assert.match(contextRoute, /buildAttachmentContext/);
+  assert.match(contextRoute, /VOICE_ATTACHMENT_LIMIT/);
+  assert.match(contextRoute, /pendingFiles/);
+  assert.match(contextRoute, /unavailableFiles/);
+});
+
+test("voice transcript accepts only the durable image/file attachment kinds", () => {
+  assert.match(transcriptRoute, /kind:\s*\{\s*in:\s*\[\s*["']IMAGE["']\s*,\s*["']FILE["']\s*\]/);
+  assert.match(transcriptRoute, /messageId:\s*null/);
+  assert.match(transcriptRoute, /AttachmentConflictError/);
+  assert.match(transcriptRoute, /prisma\.\$transaction/);
+});
+
+test("mobile Voice keeps Files independent from vision and preserves library image identity", () => {
+  assert.match(nativeComposer, /open\(\.files\)/);
+  assert.match(nativeComposer, /!voiceCanSeeImages/);
+  assert.match(nativeComposer, /!\$0\.isImage/);
+  assert.match(nativeComposer, /voiceImageData\(for:/);
+  assert.match(nativeAttachmentModel, /public let isImage: Bool/);
+  assert.match(nativeAttachmentModel, /public func voiceImageData\(for attachmentID: UUID\)/);
 });

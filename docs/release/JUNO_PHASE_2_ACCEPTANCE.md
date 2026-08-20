@@ -1,9 +1,9 @@
 # Juno Phase 2 Acceptance Audit & Production Expansion Matrix
 
-**Date**: August 20, 2026  
-**Version**: 2.0.0-phase2-recovery  
-**Base Commit**: `FINAL_SHA_RECORDED_AFTER_PUSH`
-**Status**: **PHASE 2 IMPLEMENTATION COMPLETE — LOCAL GATES 20/20 PASSED; CI AGGREGATION & PRODUCTION SMOKE REMAIN**
+**Date**: August 21, 2026
+**Version**: 2.1.0-final-closure
+**Base Commit**: `59dcbe55c5937f6b93d1ed869b281aa4369b16dd` (origin/main at takeover)
+**Status**: **LOCAL CLOSURE CHECKED — EXTERNAL RELEASE GATES ARE EXPLICITLY RECORDED**
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
 ---
@@ -16,16 +16,16 @@ Key implementation milestones completed in this pass:
 1. **Canonical Google Gemini Adapter & Gemini 3.7 Flash**: Full Google Generative Language REST SSE streaming adapter in `src/lib/gemini.ts` and `src/lib/gemini-core.ts`, supporting turns, attachments, thinking budgets (`canDisable: true`), MCP tool calling, Google Search grounding, and monotonic token usage.
 2. **Mobile Voice Relay Deployment Hardening**: `deploy/deploy.sh` updated to strictly enforce `juno-voice-relay` in PM2 ecosystem verification and health polling (`scripts/verify-voice-relay.mjs`), ensuring voice relay is a first-class release requirement.
 3. **iPhone / iPad Design System & Visual Review**: Warm editorial canvas, semantic token hierarchy, wide `NavigationSplitView` for iPad, compact drawer on iPhone, and verified zero-regression native design gates.
-4. **Mechanical Verifier Closure**: All 20 gates in `npm run phase2:verify` passed cleanly, including 2,236 Node tests, Playwright authenticated chat E2E (5/5), Swift package unit tests, and security/work contracts.
+4. **Mechanical Closure Boundary**: `scripts/check-phase2-final.mjs` and `npm run phase2:verify` enforce the final ledger, exact checked-out SHA, implementation evidence, fake-data regression checks, and the local test/release contracts. Counts are written only from the exact current run.
 
-This acceptance matrix has undergone a complete, truthful recovery and verification program tracked by `docs/release/JUNO_PHASE_2_RECOVERY_LEDGER.json` and enforced by the mechanical verifier `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
+This acceptance matrix is reconciled to `docs/release/JUNO_PHASE_2_FINAL_LEDGER.json`, with the earlier recovery ledger retained for history. The executable boundary is `scripts/check-phase2-final.mjs` (`npm run phase2:final:check`) plus `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
 
-### **Phase 2 Status: LOCAL GATES PASSED (20/20)**
+### **Phase 2 Status: LOCAL IMPLEMENTATION EVIDENCE CHECKED**
 
-The locally achievable verifier, regression, catalog, and deterministic browser
-work is completely verified on the current tree. Final production release closure
-proceeds via commit and push to `origin/main`, waiting for exact-SHA GitHub
-Actions CI (`Deploy to VM` and `native`), followed by production smoke.
+The locally achievable implementation, regression, catalog, security, and deterministic
+browser work is checked on the current tree. Final release closure still requires a
+clean push to `origin/main`, exact-SHA GitHub Actions conclusions, and authenticated
+production smoke. Those are not inferred from local output.
 
 ---
 
@@ -43,10 +43,10 @@ Actions CI (`Deploy to VM` and `native`), followed by production smoke.
 | 8 | **Design Token Validation** | Cross-Platform | `PASS` | `npm run design:tokens:check` (44 colours, 6 accents, 6 durations, 7 easings, 14 radii digest verified) |
 | 9 | **Native Contract Parity** | Cross-Platform | `PASS` | `npm run native:contract:check` (OpenAPI digest and Work contract v3 hash match Swift models) |
 | 10 | **Native Code / Work Wiring Checks** | Cross-Platform | `PASS` | `npm run code:preview:check`, `npm run code:remote:check`, `npm run code:runtime:check`, `npm run work:sandbox:check`, `npm run capabilities:check`, `npm run work:contract:check` |
-| 11 | **Native Test Suite** | macOS / iOS Swift | `PENDING FINAL-SHA CI` | Native workflow is a blocking dependency of the exact-SHA Phase 2 aggregator; package tests use `--no-parallel` to contain the observed intermittent runner hang. |
-| 12 | **iOS Xcode Compilation** | iOS Simulator | `PENDING FINAL-SHA CI` | The iOS app job must be green for the exact final SHA; a prior green or red run is not substituted into this acceptance record. |
+| 11 | **Native Test Suite** | macOS / iOS Swift | `LOCAL + FINAL-SHA CI REQUIRED` | Current local package evidence is recorded by the final ledger; the native workflow remains a blocking dependency of the exact-SHA aggregator. |
+| 12 | **iOS Xcode Compilation** | iOS Simulator | `LOCAL + FINAL-SHA CI REQUIRED` | The iOS app job must be green for the exact final SHA; a prior run is not substituted into this acceptance record. |
 | 13 | **Web / Node Test Suite** | Full Monorepo | `LOCAL EVIDENCE` | `npm test` is run by the verifier and reported with its actual count; final closure also depends on the blocking deploy workflow check. |
-| 14 | **Playwright Real Browser E2E** | Web | `LOCAL PASS / PROD PENDING` | The strict local suite requires assistant success content, terminal success, no error/Try Again surface, same-document second turn, reload/history/sidebar/new-tab persistence, and a typed failure test. Production browser smoke remains outstanding. |
+| 14 | **Playwright Real Browser E2E** | Web | `LOCAL PASS / PROD BLOCKED EXTERNALLY` | The strict local suite covers seven authenticated Chromium journeys: SSE/remount, persistence, navigation, settings, and typed provider failure. Production authenticated replay requires a controlled smoke account. |
 | 15 | **Physical TestFlight / Notarization** | Apple Ecosystem | `BLOCKED EXTERNALLY` | Requires active paid Apple Developer Team signing certificate / TestFlight provisioning profile |
 | 16 | **Authenticated Production Browser Smoke** | `https://chat.liams.dev` | `BLOCKED EXTERNALLY` | The production browser redirected to `/sign-in` without an authenticated session in this run; credentials/session must be supplied and the required journey must pass. |
 
@@ -60,9 +60,9 @@ Actions CI (`Deploy to VM` and `native`), followed by production smoke.
 [design-tokens] up to date — 44 colours, 6 accents, 6 durations, 7 easings, 14 radii (digest c17fa36c080de5ec)
 
 > npm run native:design:check
-[type] baseline 90 violation(s) — no regression.
+[type] baseline 89 violation(s) — no regression.
 [motion] baseline 14 violation(s) — no regression.
-[glass] baseline 5 violation(s) — no regression.
+[glass] baseline 2 violation(s) — no regression.
 [targets] baseline 550 violation(s) — no regression.
 [native-design] all 4 gates hold: type, motion, glass, targets.
 ```
@@ -116,18 +116,20 @@ hard-coded count from an older audit.
 
 ### 3.5. Playwright Real Browser E2E Suite
 ```
-The release gate is now intentionally strict: a healthy-turn test must render
+The release gate is intentionally strict: a healthy-turn test must render
 assistant success content and a terminal success, with no generic error and no
 `Try again` action. A separate route-intercepted test covers the typed provider
-failure surface. The local chromium chat gate currently covers 5 tests,
-including same-document second-turn navigation/remount instrumentation and
-reload/history/sidebar/copied-URL persistence. Production execution still
-requires an authenticated session.
+failure surface. The local Chromium journey currently covers seven tests,
+including same-document SSE/remount, reload/history/sidebar/copied-URL
+persistence, Projects/Work/Library navigation, Settings, and typed provider
+failure. Production execution still requires an authenticated session.
 ```
 
 ### 3.6. Exact-SHA verification and final aggregation
 
-`npm run phase2:verify` rejects a partial or mismatched SHA, validates every
+`npm run phase2:final:check` rejects incomplete P0/P1 local requirements, missing
+evidence, stale canonical partials, known fake runtime patterns, and release
+placeholders. `npm run phase2:verify` rejects a partial or mismatched SHA, validates every
 `implementationFiles` entry in the recovery ledger, and writes evidence only
 under `artifacts/phase2-verification/<HEAD_SHA>/`. The blocking GitHub job then
 waits for the deploy, migration, runner, native contract/design/package/app
@@ -158,5 +160,6 @@ are not evidence for the final release.
 
 Local closure work is implemented and evidence-backed where available. Phase 2
 is not accepted as released until the final-SHA GitHub checks and authenticated
-production browser smoke pass; externally blocked TestFlight/notarization work
-remains explicitly blocked.
+production browser smoke pass; externally blocked production credentials,
+TestFlight/notarization, camera, screen-share, and physical-device work remain
+explicitly blocked in the final ledger.

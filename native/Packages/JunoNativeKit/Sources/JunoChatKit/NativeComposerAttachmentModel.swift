@@ -26,6 +26,11 @@ public struct NativeComposerAttachment: Identifiable, Equatable, Sendable {
     public var state: State
     /// Set for images so the composer can show a thumbnail without a round trip.
     public var previewData: Data?
+    /// The server's kind, retained independently of `previewData`. Library
+    /// clones are already uploaded and therefore have no local bytes, but an
+    /// IMAGE clone is still an image and must not be mistaken for a document
+    /// on a Voice turn.
+    public let isImage: Bool
 
     public init(
         id: UUID = UUID(),
@@ -34,7 +39,8 @@ public struct NativeComposerAttachment: Identifiable, Equatable, Sendable {
         mimeType: String,
         byteCount: Int,
         state: State = .preparing,
-        previewData: Data? = nil
+        previewData: Data? = nil,
+        isImage: Bool? = nil
     ) {
         self.id = id
         self.idempotencyKey = idempotencyKey
@@ -43,6 +49,7 @@ public struct NativeComposerAttachment: Identifiable, Equatable, Sendable {
         self.byteCount = byteCount
         self.state = state
         self.previewData = previewData
+        self.isImage = isImage ?? mimeType.lowercased().hasPrefix("image/")
     }
 
     public var isTerminal: Bool {
@@ -111,6 +118,26 @@ public final class NativeComposerAttachmentModel {
 
     public var hasCapacity: Bool { attachments.count < Self.maximumAttachments }
 
+    /// Returns local image bytes for a Voice turn, fetching them through the
+    /// authenticated attachment route when the image came from the Library.
+    /// A missing preview is never treated as a document: the caller receives a
+    /// real error and keeps the staged attachment visible.
+    public func voiceImageData(for attachmentID: UUID) async throws -> Data {
+        guard let index = attachments.firstIndex(where: { $0.id == attachmentID }),
+            attachments[index].isImage,
+            let uploadedID = attachments[index].uploadedID,
+            let accountID
+        else { throw NativeAttachmentAPIError.malformedResponse }
+
+        if let previewData = attachments[index].previewData { return previewData }
+        let loaded = try await client.imageData(attachmentID: uploadedID, for: accountID)
+        guard let currentIndex = attachments.firstIndex(where: { $0.id == attachmentID }) else {
+            throw CancellationError()
+        }
+        attachments[currentIndex].previewData = loaded.data
+        return loaded.data
+    }
+
     /// Adds a file and begins uploading it. Images that the server would not
     /// accept are transcoded to JPEG first, on this device, which is why the
     /// server never has to decode HEIC.
@@ -156,7 +183,8 @@ public final class NativeComposerAttachmentModel {
             mimeType: mime,
             byteCount: payload.count,
             state: .preparing,
-            previewData: isImage ? payload : nil
+            previewData: isImage ? payload : nil,
+            isImage: isImage
         )
         attachments.append(attachment)
         payloads[attachment.id] = payload
@@ -186,7 +214,8 @@ public final class NativeComposerAttachmentModel {
                     fileName: attachment.fileName,
                     mimeType: attachment.mimeType,
                     byteCount: attachment.size,
-                    state: .uploaded(id: attachment.id)
+                    state: .uploaded(id: attachment.id),
+                    isImage: attachment.isImage
                 )
             )
         }

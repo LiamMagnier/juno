@@ -2598,23 +2598,6 @@
         }
       }
     },
-    "composer.voice.files-chat-only" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add files — chat only"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ajouter des fichiers — chat uniquement"
-          }
-        }
-      }
-    },
     "composer.voice.image-limit" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2628,6 +2611,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Le mode vocal accepte jusqu’à 4 pièces jointes par message."
+          }
+        }
+      }
+    },
+    "composer.voice.image-unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno could not load that image for Voice. Nothing was sent without it."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno n’a pas pu charger cette image pour la voix. Rien n’a été envoyé sans elle."
           }
         }
       }
@@ -2679,23 +2679,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Juno n’a pas pu lire cette pièce jointe et n’en inventera pas le contenu."
-          }
-        }
-      }
-    },
-    "composer.voice.images-only" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voice mode can send photos from Camera or Photos only — remove anything else first."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Le mode vocal ne peut envoyer que des photos prises ou choisies ici — retirez le reste d’abord."
           }
         }
       }

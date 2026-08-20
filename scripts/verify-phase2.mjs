@@ -183,6 +183,12 @@ const testSuites = [
     environmentClass: "backend",
   },
   {
+    id: "GATE_FINAL_LEDGER",
+    name: "Phase 2 Final Closure Ledger Integrity",
+    command: "node scripts/check-phase2-final.mjs",
+    environmentClass: "backend",
+  },
+  {
     id: "GATE_MODELS",
     name: "Model Catalog and Reasoning Tiers Validation",
     command: "npx tsx scripts/validate-models.ts",

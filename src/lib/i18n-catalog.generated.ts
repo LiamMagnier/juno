@@ -4442,6 +4442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This wasn’t saved — tell Juno to remember it again if that has changed."
   },
   {
+    "id": "4310a0d86ab1bcff",
+    "source": "Too many voice context requests. Try again later."
+  },
+  {
     "id": "4330c250082f7165",
     "source": "Search the Apple Music catalog for songs, albums, artists, or playlists."
   },
@@ -5352,6 +5356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5060552031a7d1da",
     "source": "Navigate to"
+  },
+  {
+    "id": "50844a0b0d03ca72",
+    "source": "Invalid voice attachment context"
   },
   {
     "id": "509c3e500d384e2a",
@@ -9002,6 +9010,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This"
   },
   {
+    "id": "86e9ffe5b90009bf",
+    "source": "The edited canvas failed verification, so nothing was changed. Fix the source and try again."
+  },
+  {
     "id": "86ecfb2dbb2dfb9a",
     "source": "Approval broker unavailable for mutating action"
   },
@@ -12100,6 +12112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b456698ccf105457",
     "source": "This run reached its limit for recorded call detail before this call returned."
+  },
+  {
+    "id": "b460938a290d55f0",
+    "source": "Voice attachment context needs a question."
   },
   {
     "id": "b46a096aa0eac51c",
@@ -16200,6 +16216,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ee9347bb68eb361e",
     "source": "Could not remove file."
+  },
+  {
+    "id": "ee938eb58c183af7",
+    "source": "One or more voice attachments are unavailable."
   },
   {
     "id": "ee9926e97aa9890c",

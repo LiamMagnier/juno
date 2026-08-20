@@ -152,6 +152,29 @@ final class NativeComposerAttachmentModelTests: XCTestCase {
         XCTAssertNotNil(model.lastErrorDescription)
     }
 
+    /// A Library clone has no local preview bytes, but the server's IMAGE kind
+    /// must survive the clone or Voice would misclassify it as a document and
+    /// send no picture at all.
+    func testLibraryImageCloneRetainsItsImageKindWithoutPreviewData() throws {
+        let transport = RecordingTransport(outcomes: [])
+        let model = NativeComposerAttachmentModel(
+            client: NativeAttachmentAPIClient(sender: transport)
+        )
+        model.adopt([
+            NativeUploadedAttachment(
+                id: "library-image",
+                fileName: "receipt.png",
+                mimeType: "image/png",
+                size: png.count,
+                kind: "IMAGE"
+            )
+        ])
+
+        let attachment = try XCTUnwrap(model.attachments.first)
+        XCTAssertTrue(attachment.isImage)
+        XCTAssertNil(attachment.previewData)
+    }
+
     /// Removing an in-flight attachment must cancel its upload, not leave it
     /// racing to attach a file the reader has already discarded.
     func testRemovingAnAttachmentCancelsItsUpload() async throws {

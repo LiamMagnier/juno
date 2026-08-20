@@ -135,7 +135,7 @@ export interface ClientMessageVersionDetail extends ClientMessageVersion {
   sources?: ClientSource[];
 }
 
-export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning" | "tool";
+export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning" | "tool" | "artifact";
 
 /**
  * The bytes behind a tool row: what the model asked the connector for, and what
@@ -235,6 +235,17 @@ export interface ClientActivityEvent {
   tool?: ClientToolDetail;
   /** Structured memory receipt; detail remains a compact legacy-friendly line. */
   memoryReceipt?: ClientMemoryReceipt[];
+  /** Durable parse/verify/repair receipt for generated chat artifacts. */
+  artifactVerification?: {
+    version: 1;
+    status: "verified" | "repaired" | "refused";
+    attempts: number;
+    checked: number;
+    accepted: string[];
+    refused: string[];
+    problems: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
+    repairs: Array<{ identifier: string; code: string; detail: string; repairable: boolean }>;
+  };
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */

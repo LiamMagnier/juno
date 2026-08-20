@@ -1,5 +1,10 @@
 # Juno Phase 2 continuation prompt
 
+> **Superseded on 2026-08-21.** This historical continuation prompt is retained
+> for traceability only. The current closure source of truth is
+> `docs/release/JUNO_PHASE_2_FINAL_LEDGER.json` and its executable checker;
+> do not use the historical status statements below as current release claims.
+
 Copy the prompt below into the next coding agent after checking out the current
 `main` branch. This is deliberately a continuation prompt, not an acceptance
 claim. The current tree was released as `v1.2.3` / macOS build `66` through the
@@ -31,15 +36,15 @@ Current known state:
   Chromium chat E2E gates were run successfully before packaging. The iOS
   simulator app also compiled successfully after the latest native edits.
   Re-run current-tree checks rather than trusting these historical results.
-- The native mobile redesign is NOT accepted. Existing
-  JunoMobileModelSelector/JunoMobileSettingsView files, native:design:check,
-  and a 'no new violations' ratchet are not proof of the requested redesign.
-  Some real simulator screenshots were captured, but the redesign pass stopped
-  partway through and was not signed off.
+- The prior audit had not accepted the native mobile redesign. This statement is
+  historical; the current source, design gates, simulator evidence, and any
+  remaining physical-device limitation are recorded in the final ledger.
 - The production browser smoke against https://chat.liams.dev was blocked by
   the available session redirecting to /sign-in. Do not claim that smoke passed
   without an authenticated session.
-- The Gemini 3.7 catalog/adapter is intentionally unfinished. Earlier
+- The earlier Gemini 3.7 catalog/adapter audit was unfinished. The current
+  exact provider identity and adapter evidence supersede that historical state.
+  Earlier
   OpenAI-compatible probing returned HTTP 403 for 3.7 while 3.6 returned 200.
   A later live probe using the configured GOOGLE_API_KEY against Google's native
   Generative Language API returned HTTP 200 for BOTH:
