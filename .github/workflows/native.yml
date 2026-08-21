@@ -111,10 +111,10 @@ jobs:
   packages:
     name: Swift packages
     runs-on: macos-26
-    # Observed 54s–2m33s. This is the JunoNativeKit job that hangs
-    # intermittently — seen sitting 45 minutes with no progress, where a plain
-    # re-run of the same commit then passed in about 1m45s.
-    timeout-minutes: 20
+    # JunoNativeKit can finish compiling and then leave xctest parked forever on
+    # a hosted runner. The package runner below bounds that state and retries it
+    # once with a clean scratch path; this outer limit remains the final fuse.
+    timeout-minutes: 22
     strategy:
       fail-fast: false
       matrix:
@@ -136,12 +136,11 @@ jobs:
           xcodebuild -version
 
       - name: Test ${{ matrix.package }}
-        run: |
-          swift test \
-            --package-path native/Packages/${{ matrix.package }} \
-            --scratch-path "$RUNNER_TEMP/${{ matrix.package }}-tests" \
-            --no-parallel \
-            -Xswiftc -warnings-as-errors
+        run: >-
+          python3 scripts/run-swift-package-tests.py
+          --package "${{ matrix.package }}"
+          --timeout-seconds 480
+          --attempts 2
 
   # ---------------------------------------------------------------------------
   # The macOS app. Unsigned: this job verifies that the app compiles, not that it
