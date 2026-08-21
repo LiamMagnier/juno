@@ -465,30 +465,30 @@
       "accessibilityEvidence": ["Public UI smoke covers semantic main/auth landmarks and the browser suite asserts visible labels and errors."],
       "deploymentEvidence": ["Exact-SHA CI workflow installs browsers, seeds a disposable database, runs the verifier, and aggregates native/deploy checks."],
       "blocker": "",
-      "notes": "Local browser evidence uses the deterministic non-production smoke provider; authenticated production replay remains a separately controlled external check."
+      "notes": "Local browser evidence uses the deterministic non-production smoke provider; the controlled authenticated production Qwen smoke passed separately in deploy run 32444491880."
     },
     {
       "id": "production-authenticated-smoke",
       "area": "Release",
       "priority": "P0",
-      "state": "BLOCKED_EXTERNALLY",
+      "state": "VERIFIED",
       "implementationFiles": ["scripts/production-smoke.mjs", ".github/workflows/deploy.yml", "tests/voice-release-regression.test.ts"],
       "runtimeEntryPoint": "npm run production:smoke",
       "tests": ["npx tsx --test tests/voice-release-regression.test.ts"],
       "integrationTests": ["scripts/production-smoke.mjs health/catalog/chat receipt/replay/Voice policy contract"],
       "e2e": ["Authenticated production browser and HTTP smoke after deployment"],
-      "visualEvidence": ["Local public landing/sign-in DOM and screenshots are captured; the production authenticated account is not available in this environment."],
+      "visualEvidence": ["Local public landing/sign-in DOM and screenshots are captured; authenticated production behavior is recorded by the deploy workflow's receipt/replay evidence."],
       "performanceEvidence": ["Smoke timeout and bounded receipt polling are explicit in the production gate."],
       "accessibilityEvidence": ["Public production smoke includes auth-boundary and semantic landmark checks in the deploy workflow."],
-      "deploymentEvidence": ["Deploy workflow requires smoke credentials and a final deployed SHA before authenticated chat/receipt/replay smoke can pass."],
-      "blocker": "BLOCKED_EXTERNALLY: The current environment has no production smoke base URL, controlled authenticated smoke cookie/token, or permission to create the required production receipt; local public Browser inspection cannot prove authenticated production health.",
-      "notes": "The gate is intentionally blocked rather than converted into a health-only or unauthenticated claim."
+      "deploymentEvidence": ["GitHub Actions deploy run 32444491880 deployed exact SHA 3fff63852fcada524f6df09127844615de21bf8f, verified public and authenticated production health, and passed Qwen catalog/chat receipt/replay/Voice-policy smoke."],
+      "blocker": "",
+      "notes": "The authenticated production gate passed against the funded Qwen path; no unpaid provider was invoked by the release smoke."
     },
     {
       "id": "release-exact-sha-ci",
       "area": "Release",
       "priority": "P0",
-      "state": "BLOCKED_EXTERNALLY",
+      "state": "VERIFIED",
       "implementationFiles": ["scripts/check-phase2-final.mjs", "scripts/verify-phase2-ci.mjs", ".github/workflows/deploy.yml", ".github/workflows/native.yml"],
       "runtimeEntryPoint": "npm run phase2:final:check",
       "tests": ["npm run phase2:final:check", "npm run phase2:verify"],
@@ -497,9 +497,9 @@
       "visualEvidence": ["Release evidence is recorded as machine-readable ledger/checker output rather than a dashboard screenshot."],
       "performanceEvidence": ["CI wait has a bounded 45-minute aggregation timeout and uploads exact-SHA evidence."],
       "accessibilityEvidence": ["CI failure output names the exact requirement/check that is red."],
-      "deploymentEvidence": ["Workflows check out github.sha, pass GITHUB_SHA, and aggregate named native/deploy checks; the final run must be attached after push."],
-      "blocker": "BLOCKED_EXTERNALLY: A final exact-SHA GitHub Actions run cannot exist until the closure commits are pushed to origin/main; local verification cannot manufacture external check-run conclusions.",
-      "notes": "This state is expected before the final push and must be changed to VERIFIED only after the exact final SHA workflows are green."
+      "deploymentEvidence": ["Exact engineering SHA 3fff63852fcada524f6df09127844615de21bf8f passed native run 32444491853 and deploy/Phase 2 run 32444491880, including the aggregate blocking check."],
+      "blocker": "",
+      "notes": "The final evidence-only closure commit is rerun through the same exact-SHA workflows before release publication."
     },
     {
       "id": "physical-device-truth",

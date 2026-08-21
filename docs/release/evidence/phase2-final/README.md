@@ -16,3 +16,13 @@ mockups.
 The Voice recovery screenshots deliberately use a closed local preview relay;
 they validate the real typed failure UI without spending provider credit or
 fabricating a successful call.
+
+External exact-SHA evidence for engineering commit
+`3fff63852fcada524f6df09127844615de21bf8f`:
+
+- Native CI run `32444491853`: all Swift packages, macOS Debug/Stable builds,
+  macOS unit tests, iOS app/unit tests, design rules, and API contract passed.
+- Deploy/Phase 2 run `32444491880`: all 22 mechanical suites, aggregate
+  blocking checks, exact immutable VM deployment, public health/version, and
+  authenticated production Qwen catalog/chat receipt/replay/Voice-policy smoke
+  passed.

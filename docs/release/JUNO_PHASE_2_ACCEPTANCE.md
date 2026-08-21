@@ -3,7 +3,7 @@
 **Date**: August 21, 2026
 **Version**: 2.1.0-final-closure
 **Base Commit**: `9acf1ef80b6ea95b63959193f46083f675b0aab7` (origin/main at takeover)
-**Status**: **LOCAL CLOSURE CHECKED — EXTERNAL RELEASE GATES ARE EXPLICITLY RECORDED**
+**Status**: **PHASE 2 ENGINEERING CLOSURE VERIFIED — APPLE-ONLY DISTRIBUTION GATES REMAIN EXPLICIT**
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
 ---
@@ -20,12 +20,15 @@ Key implementation milestones completed in this pass:
 
 This acceptance matrix is reconciled to `docs/release/JUNO_PHASE_2_FINAL_LEDGER.json`, with the earlier recovery ledger retained for history. The executable boundary is `scripts/check-phase2-final.mjs` (`npm run phase2:final:check`) plus `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
 
-### **Phase 2 Status: LOCAL IMPLEMENTATION EVIDENCE CHECKED**
+### **Phase 2 Status: ENGINEERING CLOSURE VERIFIED**
 
-The locally achievable implementation, regression, catalog, security, and deterministic
-browser work is checked on the current tree. Final release closure still requires a
-clean push to `origin/main`, exact-SHA GitHub Actions conclusions, and authenticated
-production smoke. Those are not inferred from local output.
+The implementation, regression, catalog, security, deterministic browser, exact-SHA
+native CI, deployment, and authenticated production Qwen smoke gates passed for
+`3fff63852fcada524f6df09127844615de21bf8f`. GitHub Actions runs `32444491853`
+(native) and `32444491880` (deploy/Phase 2 verification) are the external evidence.
+Only physical-device/TestFlight and Apple notarization remain outside this engineering
+closure; this release intentionally uses the established development-signed,
+non-notarized updater path.
 
 ---
 
@@ -43,12 +46,12 @@ production smoke. Those are not inferred from local output.
 | 8 | **Design Token Validation** | Cross-Platform | `PASS` | `npm run design:tokens:check` (44 colours, 6 accents, 6 durations, 7 easings, 14 radii digest verified) |
 | 9 | **Native Contract Parity** | Cross-Platform | `PASS` | `npm run native:contract:check` (OpenAPI digest and Work contract v3 hash match Swift models) |
 | 10 | **Native Code / Work Wiring Checks** | Cross-Platform | `PASS` | `npm run code:preview:check`, `npm run code:remote:check`, `npm run code:runtime:check`, `npm run work:sandbox:check`, `npm run capabilities:check`, `npm run work:contract:check` |
-| 11 | **Native Test Suite** | macOS / iOS Swift | `LOCAL + FINAL-SHA CI REQUIRED` | Current local package evidence is recorded by the final ledger; the native workflow remains a blocking dependency of the exact-SHA aggregator. |
-| 12 | **iOS Xcode Compilation** | iOS Simulator | `LOCAL + FINAL-SHA CI REQUIRED` | The iOS app job must be green for the exact final SHA; a prior run is not substituted into this acceptance record. |
+| 11 | **Native Test Suite** | macOS / iOS Swift | `PASS` | Local package suites passed; exact-SHA native run `32444491853` passed JunoCode, JunoWork, JunoNativeKit, macOS app/unit tests, iOS app/unit tests, design rules, and API contracts. |
+| 12 | **iOS Xcode Compilation** | iOS Simulator | `PASS` | Local simulator compilation passed and the exact-SHA iOS app build/unit-test job passed in native run `32444491853`. |
 | 13 | **Web / Node Test Suite** | Full Monorepo | `LOCAL EVIDENCE` | `npm test` is run by the verifier and reported with its actual count; final closure also depends on the blocking deploy workflow check. |
-| 14 | **Playwright Real Browser E2E** | Web | `LOCAL PASS / PROD BLOCKED EXTERNALLY` | The strict local suite covers seven authenticated Chromium journeys: SSE/remount, persistence, navigation, settings, and typed provider failure. Production authenticated replay requires a controlled smoke account. |
+| 14 | **Playwright Real Browser E2E** | Web | `PASS` | The strict local suite covers seven authenticated Chromium journeys; deploy run `32444491880` also passed the authenticated production Qwen health/catalog/chat receipt/replay smoke. |
 | 15 | **Physical TestFlight / Notarization** | Apple Ecosystem | `BLOCKED EXTERNALLY` | Requires active paid Apple Developer Team signing certificate / TestFlight provisioning profile |
-| 16 | **Authenticated Production Browser Smoke** | `https://chat.liams.dev` | `BLOCKED EXTERNALLY` | The production browser redirected to `/sign-in` without an authenticated session in this run; credentials/session must be supplied and the required journey must pass. |
+| 16 | **Authenticated Production Smoke** | `https://chat.liams.dev` | `PASS` | Exact-SHA deploy run `32444491880` passed production health/version, public health, and authenticated Qwen catalog/chat receipt/replay/Voice-policy checks. |
 
 ---
 

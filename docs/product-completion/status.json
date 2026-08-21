@@ -1,7 +1,7 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "e252e4b5bcebf0ad73b7bdd7269743b28dae49ed",
+  "auditCommit": "3fff63852fcada524f6df09127844615de21bf8f",
   "auditDate": "2026-08-21",
   "branch": "main",
   "verification": {
@@ -10,7 +10,7 @@
     "typecheck": "passed: npx tsc --noEmit (0 errors)",
     "schema": "passed: npx prisma validate and prisma migrate diff",
     "build": "passed: npm run build Next.js compiled cleanly",
-    "phase2Verifier": "passed: all 22 local mechanical suites passed (npm run phase2:verify); exact-SHA CI and final deployment evidence remain external",
+    "phase2Verifier": "passed: all 22 local mechanical suites passed; exact-SHA native run 32444491853 and deploy/Phase 2 run 32444491880 passed for 3fff63852fcada524f6df09127844615de21bf8f",
     "nativePackages": "passed: JunoNativeKit, JunoWork, and JunoCode package suites all passed (npm run native:test)",
     "iosAppBuild": "passed: JunoMobile iPhone Simulator build and JunoDesktop development-signed verification build both succeeded",
     "playwrightE2E": "passed locally: authenticated Chromium chat gate and the 7-test deterministic non-production journey",
@@ -20,9 +20,9 @@
     "lastVerifiedAt": "2026-08-21T05:13:44+02:00"
   },
   "nextSlice": {
-    "id": "production-deployment-and-testflight",
+    "id": "physical-device-and-apple-distribution",
     "state": "blocked",
-    "reason": "Local closure evidence is complete. Final exact-SHA GitHub checks, authenticated production smoke, Apple signing, and physical-device semantics remain external release gates."
+    "reason": "Engineering closure, exact-SHA GitHub checks, and authenticated production Qwen smoke are complete. Physical-device/TestFlight semantics and Apple notarization remain external Apple-only gates."
   },
   "slices": [
     {
@@ -192,11 +192,11 @@
       "dependsOn": ["approval-broker"],
       "acceptance": [
         { "id": "e2e-layer", "state": "verified", "text": "Bounded production HTTP smoke exists for health, authenticated model-contract/provider-backed chat/receipt/replay, and public HTML/security/auth-boundary routes. The local authenticated browser gate uses a deterministic non-production smoke provider and strict success/error assertions." },
-        { "id": "http-smoke", "state": "blocked", "text": "Blocked externally: read-only health/public UI smoke evidence exists for chat.liams.dev, but authenticated catalog/chat receipt/replay requires a controlled smoke account and creates real receipts." },
-        { "id": "journeys", "state": "verified", "text": "The strict local Chromium journey covers same-document SSE, second-turn navigation, reload/history/sidebar/copied-URL persistence, Projects/Work/Library navigation, Settings, and typed provider failure; the exact run passed 7 tests on 2026-08-21. Production authenticated replay and native execution remain external release gates." },
+        { "id": "http-smoke", "state": "verified", "text": "Exact-SHA deploy run 32444491880 passed public health/version and authenticated Qwen catalog/chat receipt/replay/Voice-policy smoke against chat.liams.dev." },
+        { "id": "journeys", "state": "verified", "text": "The strict local Chromium journey covers same-document SSE, second-turn navigation, reload/history/sidebar/copied-URL persistence, Projects/Work/Library navigation, Settings, and typed provider failure; the exact run passed 7 tests on 2026-08-21. Controlled production Qwen receipt/replay smoke also passed; physical native execution remains an Apple hardware gate." },
         { "id": "states", "state": "verified", "text": "A deterministic 12-profile desktop/tablet/phone × light/dark/reduced-motion request matrix and static source contracts cover empty/loading/error/partial/success; Browser DOM/screenshot inspection covered the public landing and sign-in surfaces, and tests/public-ui-smoke.test.ts covers the source contract." },
         { "id": "restore-drill", "state": "verified", "text": "scripts/restore-drill.mjs runs a disposable local PostgreSQL backup→verify→restore round trip with three deterministic rows and three object fixtures, exact key/digest checks, and cleanup; covered by tests/restore-drill.test.ts. A remote scratch drill with measured RPO/RTO remains release-gated." },
-        { "id": "external-browser-native", "state": "blocked", "text": "Blocked externally: production authenticated browser replay needs a controlled smoke account, and physical-device/TestFlight execution needs Apple signing and hardware. No local implementation gap is hidden by this state." }
+        { "id": "external-browser-native", "state": "blocked", "text": "Authenticated production Qwen smoke is verified. Physical-device/TestFlight execution still needs Apple signing and hardware; no local implementation gap is hidden by this state." }
       ]
     }
   ]
