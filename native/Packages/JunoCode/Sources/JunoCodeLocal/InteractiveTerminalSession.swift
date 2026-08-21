@@ -37,6 +37,7 @@ public enum InteractiveTerminalEvent: Equatable, Sendable {
 /// interactive installers).
 public final class InteractiveTerminalSession: @unchecked Sendable {
     private let lock = NSLock()
+    private let ioQueue = DispatchQueue(label: "com.liammagnier.juno.code-terminal-io")
     private let workspaceRootURL: URL
     private let sandbox: CommandSandboxProfile?
     private let classifier = CommandClassifier()
@@ -221,6 +222,11 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
             fail("Could not allocate a pseudo-terminal.", continuation: continuation)
             return
         }
+        // The read source and termination drain share one serial queue. A
+        // non-blocking master lets the termination path consume every byte the
+        // kernel queued before publishing the terminal exit event.
+        let flags = fcntl(master, F_GETFL)
+        if flags >= 0 { _ = fcntl(master, F_SETFL, flags | O_NONBLOCK) }
         var window = winsize(
             ws_row: rows,
             ws_col: columns,
@@ -233,7 +239,9 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
         process.standardOutput = slaveHandle
         process.standardError = slaveHandle
         process.terminationHandler = { [weak self] process in
-            self?.didTerminate(process, continuation: continuation)
+            self?.ioQueue.async { [weak self] in
+                self?.didTerminate(process, continuation: continuation)
+            }
         }
 
         do {
@@ -254,9 +262,9 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
         continuation.yield(.state(currentState))
         lock.unlock()
 
-        let source = DispatchSource.makeReadSource(fileDescriptor: master, queue: .global(qos: .userInitiated))
+        let source = DispatchSource.makeReadSource(fileDescriptor: master, queue: ioQueue)
         source.setEventHandler { [weak self] in
-            self?.readOutput(from: master, continuation: continuation)
+            self?.drainOutput(from: master, continuation: continuation)
         }
         source.setCancelHandler {
             close(master)
@@ -267,20 +275,30 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
         source.resume()
     }
 
-    private func readOutput(
+    private func drainOutput(
         from descriptor: Int32,
         continuation: AsyncStream<InteractiveTerminalEvent>.Continuation
     ) {
         var buffer = [UInt8](repeating: 0, count: 16 * 1_024)
-        let count = Darwin.read(descriptor, &buffer, buffer.count)
-        guard count > 0 else {
-            if count < 0, errno == EAGAIN || errno == EINTR { return }
-            readSource?.cancel()
+        while true {
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            if count > 0 {
+                let raw = String(decoding: buffer.prefix(count), as: UTF8.self)
+                let sanitized = redactor.redact(DevServerOutputSanitizer.sanitize(raw))
+                if !sanitized.isEmpty { continuation.yield(.output(sanitized)) }
+                continue
+            }
+            if count < 0, errno == EINTR { continue }
+            // EAGAIN means the descriptor is drained for now. EOF and hard
+            // failures are closed by the source's cancellation path.
+            if count == 0 || (count < 0 && errno != EAGAIN) {
+                lock.lock()
+                let source = readSource
+                lock.unlock()
+                source?.cancel()
+            }
             return
         }
-        let raw = String(decoding: buffer.prefix(count), as: UTF8.self)
-        let sanitized = redactor.redact(DevServerOutputSanitizer.sanitize(raw))
-        if !sanitized.isEmpty { continuation.yield(.output(sanitized)) }
     }
 
     private func didTerminate(
@@ -289,7 +307,20 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
     ) {
         lock.lock()
         let wasCurrent = self.process?.processIdentifier == process.processIdentifier
-        if wasCurrent {
+        let descriptor = masterFileDescriptor
+        lock.unlock()
+        guard wasCurrent else { return }
+
+        // Process.terminationHandler can win the race against DispatchSource's
+        // final readability callback for very short commands. Drain first on
+        // the same serial queue so `.exited` is always the last event.
+        if descriptor >= 0 {
+            drainOutput(from: descriptor, continuation: continuation)
+        }
+
+        lock.lock()
+        let isStillCurrent = self.process?.processIdentifier == process.processIdentifier
+        if isStillCurrent {
             self.process = nil
             self.masterFileDescriptor = -1
             self.currentState = .exited(code: process.terminationStatus)
@@ -297,7 +328,7 @@ public final class InteractiveTerminalSession: @unchecked Sendable {
             self.readSource = nil
         }
         lock.unlock()
-        guard wasCurrent else { return }
+        guard isStillCurrent else { return }
         continuation.yield(.state(.exited(code: process.terminationStatus)))
         continuation.finish()
     }
