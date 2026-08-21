@@ -112,6 +112,7 @@ public struct NativeThinkingScale: Equatable, Sendable {
     public let stops: [NativeThinkingStop]
     public let isAutomatic: Bool
     public let modelName: String
+    private let declaredDefault: NativeReasoningEffort?
     /// Carried alongside the ladder, not folded into it. Both are separate axes
     /// from thinking depth — Flash changes how the answer is served, Pro how
     /// hard the model works — and neither is ever a stop, because every stop
@@ -121,6 +122,7 @@ public struct NativeThinkingScale: Equatable, Sendable {
 
     public init(model: NativeChatModelOption) {
         modelName = model.displayName
+        declaredDefault = model.defaultReasoningEffort
         isAutomatic = model.choosesReasoningAutomatically
         fastModeRateMultiplier = model.fastModeRateMultiplier
         supportsProMode = model.supportsProMode
@@ -160,6 +162,12 @@ public struct NativeThinkingScale: Equatable, Sendable {
     public var defaultStop: NativeThinkingStop? {
         guard let first = stops.first else { return nil }
         if first == .instant { return .instant }
+        if let declared = declaredDefault,
+            stops.contains(.effort(declared))
+        {
+            return .effort(declared)
+        }
+        // Backward compatibility with manifests that predate defaultEffort.
         if stops.contains(.effort(.medium)) { return .effort(.medium) }
         return stop(at: min(1, stops.count - 1))
     }
@@ -208,18 +216,24 @@ public struct NativeThinkingScale: Equatable, Sendable {
                 explanation: "\(modelName) always thinks — set to \(fallback.label)."
             )
         }
-        let atOrBelow = stops.filter { stop in
-            guard let candidate = stop.effort else { return false }
-            return candidate.depth <= requested.depth
+        let fallback: NativeThinkingStop
+        if declaredDefault != nil {
+            fallback = defaultStop ?? stops[0]
+        } else {
+            // Older servers published no default; retain the historical nearest
+            // supported migration until a canonical default arrives.
+            let atOrBelow = stops.filter { stop in
+                guard let candidate = stop.effort else { return false }
+                return candidate.depth <= requested.depth
+            }
+            fallback = atOrBelow.last ?? stops[0]
         }
-        let fallback = atOrBelow.last ?? stops[0]
         return NativeThinkingAdjustment(
             stop: fallback,
-            explanation: "\(modelName) supports up to \(deepestLabel) — thinking set to \(fallback.label)."
+            explanation: declaredDefault == nil
+                ? "\(modelName) supports up to \(stops.last?.label ?? "no thinking") — thinking set to \(fallback.label)."
+                : "\(modelName) supports \(stops.map(\.label).joined(separator: ", ")). Thinking was reset to \(fallback.label)."
         )
     }
 
-    private var deepestLabel: String {
-        stops.last?.label ?? "no thinking"
-    }
 }

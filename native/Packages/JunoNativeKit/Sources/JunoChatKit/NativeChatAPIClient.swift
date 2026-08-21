@@ -104,6 +104,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     public let pricing: NativeModelPricing?
     public let grades: NativeModelGrades?
     public let supportedReasoningEfforts: [NativeReasoningEffort]
+    public let defaultReasoningEffort: NativeReasoningEffort?
     public let canDisableReasoning: Bool
     public let supportsReasoning: Bool
     /// One thinking state rather than depths (GLM-4.6, Haiku 4.5): the server
@@ -181,6 +182,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         pricing: NativeModelPricing? = nil,
         grades: NativeModelGrades? = nil,
         supportedReasoningEfforts: [NativeReasoningEffort],
+        defaultReasoningEffort: NativeReasoningEffort? = nil,
         canDisableReasoning: Bool,
         supportsReasoning: Bool = false,
         isOnOffReasoningOnly: Bool = false,
@@ -213,6 +215,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         self.pricing = pricing
         self.grades = grades
         self.supportedReasoningEfforts = supportedReasoningEfforts
+        self.defaultReasoningEffort = defaultReasoningEffort
         self.canDisableReasoning = canDisableReasoning
         self.supportsReasoning = supportsReasoning
         self.isOnOffReasoningOnly = isOnOffReasoningOnly
@@ -723,6 +726,12 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             guard Set(efforts).count == efforts.count else {
                 throw NativeChatAPIError.malformedResponse
             }
+            let defaultEffort = try model.reasoning.defaultEffort.map { value in
+                guard let effort = NativeReasoningEffort(rawValue: value), efforts.contains(effort) else {
+                    throw NativeChatAPIError.malformedResponse
+                }
+                return effort
+            }
             // Grades are presentation-critical (the detail panel draws bars from
             // them), so a nonsense range is a malformed manifest rather than
             // something to clamp into looking real.
@@ -771,6 +780,7 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     NativeModelGrades(speed: $0.speed, intelligence: $0.intelligence)
                 },
                 supportedReasoningEfforts: efforts,
+                defaultReasoningEffort: defaultEffort,
                 canDisableReasoning: model.reasoning.canDisable,
                 supportsReasoning: model.reasoning.supported ?? !efforts.isEmpty,
                 isOnOffReasoningOnly: model.reasoning.onOffOnly ?? false,
@@ -1380,6 +1390,7 @@ private struct ModelCatalogWire: Decodable {
             let canDisable: Bool
             let onOffOnly: Bool?
             let automatic: Bool?
+            let defaultEffort: String?
             /// GPT-5.6's `reasoning.mode:"pro"`. Optional like its neighbours,
             /// and that is load-bearing rather than stylistic: the whole body is
             /// decoded in ONE do/catch, so a non-optional field would turn a

@@ -64,7 +64,16 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     public static let downlinkSampleRate: Double = 24_000
 
     private let box = CaptureShuttle()
+    /// Capture and playback deliberately use separate engines on macOS. A
+    /// voice-processing input node is a duplex AudioUnit; placing the player in
+    /// that same graph makes CoreAudio reconcile the microphone and speaker
+    /// device formats during `start()`. On real Mac hardware that can leave the
+    /// input advertising the voice processor's synthetic multichannel format
+    /// and fail with `kAudioUnitErr_FailedInitialization` (-10875). Separate
+    /// engines keep the hardware clocks independent while each mixer performs
+    /// its own conversion.
     private var engine: AVAudioEngine?
+    private var playbackEngine: AVAudioEngine?
     private var player: AVAudioPlayerNode?
     private var playbackFormat: AVAudioFormat?
     private var resolvedEchoCancellation: RealtimeEchoCancellation = .unknown
@@ -101,14 +110,15 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         // initialisation failure. Costs nothing when there is nothing to drop.
         dispose()
 
+        let attempts = RealtimeAudioGraphPlan.current.voiceProcessingAttempts
         do {
-            try build(voiceProcessing: true)
+            try build(voiceProcessing: attempts[0])
         } catch {
             // The refusal only surfaces at `start()`, so the only way to find out
             // is to try. A conversation without echo cancellation is still a
             // conversation — it is just one where barge-in has to be manual.
             do {
-                try build(voiceProcessing: false)
+                try build(voiceProcessing: attempts[1])
             } catch {
                 throw Failure.engine(error.localizedDescription)
             }
@@ -224,13 +234,22 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     /// **last**, immediately before the converter and tap built from it.
     private func build(voiceProcessing: Bool) throws {
         let engine = AVAudioEngine()
+        #if os(macOS)
+        let outputEngine = AVAudioEngine()
+        #else
+        let outputEngine = engine
+        #endif
         let player = AVAudioPlayerNode()
         let input = engine.inputNode
         // Any exit but the last one leaves a half-built graph holding the input
         // device open, and the caller's retry is about to ask that same device
         // for a different configuration.
         var started = false
-        defer { if !started { Self.unwind(engine: engine, player: player) } }
+        defer {
+            if !started {
+                Self.unwind(captureEngine: engine, playbackEngine: outputEngine, player: player)
+            }
+        }
 
         // Asked for on **both** platforms. On iOS this is what makes ``echoCancellation``
         // able to answer `.active` at all: the session's `.voiceChat` mode cancels
@@ -258,8 +277,8 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
             )
         else { throw Failure.formatUnavailable }
 
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: playback)
+        outputEngine.attach(player)
+        outputEngine.connect(player, to: outputEngine.mainMixerNode, format: playback)
 
         let inputFormat = Self.usableInputFormat(of: input)
         guard RealtimeInputFormat.isUsable(
@@ -277,8 +296,14 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         input.removeTap(onBus: 0)
         Self.installTap(on: input, format: inputFormat, box: box)
         engine.prepare()
+        #if os(macOS)
+        outputEngine.prepare()
+        #endif
         do {
             try engine.start()
+            #if os(macOS)
+            try outputEngine.start()
+            #endif
         } catch {
             throw Failure.engine(error.localizedDescription)
         }
@@ -286,6 +311,7 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         started = true
         player.play()
         self.engine = engine
+        self.playbackEngine = outputEngine
         self.player = player
         self.playbackFormat = playback
         // Read from the node rather than from what was requested: asking for the
@@ -335,17 +361,31 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     /// would hand the second attempt the very configuration the first one failed
     /// on. Always called before ``stop()`` deactivates the iOS session — reaching
     /// `engine.inputNode` under a dead session is not something to ask iOS for.
-    private nonisolated static func unwind(engine: AVAudioEngine, player: AVAudioPlayerNode?) {
-        engine.inputNode.removeTap(onBus: 0)
+    private nonisolated static func unwind(
+        captureEngine: AVAudioEngine,
+        playbackEngine: AVAudioEngine,
+        player: AVAudioPlayerNode?
+    ) {
+        captureEngine.inputNode.removeTap(onBus: 0)
         player?.stop()
-        engine.stop()
-        try? engine.inputNode.setVoiceProcessingEnabled(false)
-        if let player, engine.attachedNodes.contains(player) { engine.detach(player) }
+        playbackEngine.stop()
+        if playbackEngine !== captureEngine { captureEngine.stop() }
+        try? captureEngine.inputNode.setVoiceProcessingEnabled(false)
+        if let player, playbackEngine.attachedNodes.contains(player) {
+            playbackEngine.detach(player)
+        }
     }
 
     private func dispose() {
-        if let engine { Self.unwind(engine: engine, player: player) }
+        if let engine {
+            Self.unwind(
+                captureEngine: engine,
+                playbackEngine: playbackEngine ?? engine,
+                player: player
+            )
+        }
         engine = nil
+        playbackEngine = nil
         player = nil
         playbackFormat = nil
         box.reset()

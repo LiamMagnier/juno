@@ -28,6 +28,35 @@ export interface RealtimeDialect {
   supportsVideo: boolean;
 }
 
+/**
+ * Qwen uses the audio stream as the multimodal timeline and rejects an image
+ * until at least one audio packet exists on that timeline. A screen can be
+ * enabled immediately after `session.ready`, before the first microphone tap
+ * reaches the relay, so retain only the newest early frame and place it directly
+ * after the first audio append. Keeping one frame also bounds memory while the
+ * microphone is muted or unavailable.
+ */
+export class QwenInputOrderGate {
+  private audioStarted = false;
+  private pendingImage: string | null = null;
+
+  audio(audio: string): Record<string, unknown>[] {
+    const events: Record<string, unknown>[] = [{ type: "input_audio_buffer.append", audio }];
+    this.audioStarted = true;
+    if (this.pendingImage) {
+      events.push({ type: "input_image_buffer.append", image: this.pendingImage });
+      this.pendingImage = null;
+    }
+    return events;
+  }
+
+  image(image: string): Record<string, unknown>[] {
+    if (this.audioStarted) return [{ type: "input_image_buffer.append", image }];
+    this.pendingImage = image;
+    return [];
+  }
+}
+
 interface RealtimeUsagePayload {
   input_tokens?: number;
   output_tokens?: number;
@@ -95,6 +124,7 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
   private events: ProviderEvents | null = null;
   private closedByUs = false;
   private assistantSpeaking = false;
+  private qwenInputOrder = new QwenInputOrderGate();
 
   constructor(private dialect: RealtimeDialect) {
     this.provider = dialect.provider;
@@ -102,6 +132,7 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
     this.events = events;
+    this.qwenInputOrder = new QwenInputOrderGate();
     const ws = new WebSocket(this.dialect.url(), { headers: this.dialect.headers() });
     this.ws = ws;
 
@@ -146,7 +177,12 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
 
   sendAudio(pcm16k: Buffer): void {
     const pcm = resamplePcm16(pcm16k, 16000, this.dialect.inputRate);
-    this.send({ type: "input_audio_buffer.append", audio: pcm.toString("base64") });
+    const audio = pcm.toString("base64");
+    if (this.provider === "qwen") {
+      for (const event of this.qwenInputOrder.audio(audio)) this.send(event);
+      return;
+    }
+    this.send({ type: "input_audio_buffer.append", audio });
   }
 
   sendText(text: string): void {
@@ -173,8 +209,9 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
       });
       return;
     }
-    // Qwen's realtime dialect accepts appended video frames alongside audio.
-    this.send({ type: "input_image_buffer.append", image: jpeg.toString("base64") });
+    // Qwen requires an audio packet to establish its multimodal timeline. The
+    // gate makes a screen-share click racing the first mic callback deterministic.
+    for (const event of this.qwenInputOrder.image(jpeg.toString("base64"))) this.send(event);
   }
 
   interrupt(): void {

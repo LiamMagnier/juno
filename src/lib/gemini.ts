@@ -10,6 +10,7 @@ import {
   toGeminiContents,
   resolveGroundingUrls,
   geminiThinkingBudget,
+  geminiThinkingConfig,
   MAX_GEMINI_TOOL_ROUNDS,
   type GeminiPart,
   type GeminiContent,
@@ -19,6 +20,7 @@ export {
   toGeminiContents,
   resolveGroundingUrls,
   geminiThinkingBudget,
+  geminiThinkingConfig,
   type GeminiPart,
   type GeminiContent,
 };
@@ -76,12 +78,12 @@ export async function* streamGemini(
     toolsPayload.push({ google_search: {} });
   }
 
-  const thinkingBudget = geminiThinkingBudget(model, reasoningEffort);
+  const thinkingConfig = geminiThinkingConfig(model, reasoningEffort);
   const generationConfig: Record<string, unknown> = {
     maxOutputTokens: maxTokens,
   };
-  if (thinkingBudget !== undefined) {
-    generationConfig.thinkingConfig = { thinkingBudget };
+  if (thinkingConfig !== undefined) {
+    generationConfig.thinkingConfig = thinkingConfig;
   }
 
   const sources = new Map<string, ClientSource>();

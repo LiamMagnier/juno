@@ -424,7 +424,12 @@ public final class JunoRealtimeVoiceController {
     private var echoCancellation: RealtimeEchoCancellation = .unknown
 
     private let box = VoiceRelayShuttle()
+    /// On macOS capture and playback must not share a graph. The Voice Processing
+    /// IO unit is duplex even when requested from `inputNode`; combining it with
+    /// the player made CoreAudio reconcile independent device formats and is the
+    /// reproduced source of -10875 on the owner's built-in route.
     private var audioEngine: AVAudioEngine?
+    private var playbackEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var playbackFormat: AVAudioFormat?
     private var socket: URLSessionWebSocketTask?
@@ -432,6 +437,8 @@ public final class JunoRealtimeVoiceController {
     private var pingTask: Task<Void, Never>?
     private var meterTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
+    private var audioConfigurationObservers: [NSObjectProtocol] = []
+    private var audioRouteRecoveryTask: Task<Void, Never>?
     /// Set by ``end()``. Every async step re-checks it, because a token fetch or
     /// a permission prompt can outlive the screen that started it and would
     /// otherwise bring an audio engine up behind a dismissed sheet.
@@ -754,7 +761,7 @@ public final class JunoRealtimeVoiceController {
         // unplugged), and reconnecting onto that carcass hands the reader a
         // conversation with no audio in either direction and no error to
         // explain it.
-        if audioEngine?.isRunning != true {
+        if audioEngine?.isRunning != true || playbackEngine?.isRunning != true {
             do {
                 try startAudioEngine()
             } catch {
@@ -1381,14 +1388,15 @@ public final class JunoRealtimeVoiceController {
         // initialisation failure. Costs nothing when there is nothing to drop.
         disposeAudioGraph()
 
+        let attempts = RealtimeAudioGraphPlan.current.voiceProcessingAttempts
         do {
-            try buildAudioGraph(voiceProcessing: true)
+            try buildAudioGraph(voiceProcessing: attempts[0])
         } catch {
             Self.audioLog.error(
                 "Voice start failed, voice processing: \(Self.diagnostic(error), privacy: .public)"
             )
             do {
-                try buildAudioGraph(voiceProcessing: false)
+                try buildAudioGraph(voiceProcessing: attempts[1])
             } catch {
                 Self.audioLog.error(
                     "Voice start failed, raw format: \(Self.diagnostic(error), privacy: .public)"
@@ -1422,13 +1430,22 @@ public final class JunoRealtimeVoiceController {
     ///   false is the caller's second rung, after the first one failed.
     private func buildAudioGraph(voiceProcessing: Bool) throws {
         let engine = AVAudioEngine()
+        #if os(macOS)
+        let outputEngine = AVAudioEngine()
+        #else
+        let outputEngine = engine
+        #endif
         let player = AVAudioPlayerNode()
         let input = engine.inputNode
         // Any exit but the last one leaves a half-built graph holding the input
         // device open, and the caller's retry is about to ask that same device
         // for a different configuration.
         var started = false
-        defer { if !started { Self.unwind(engine: engine, player: player) } }
+        defer {
+            if !started {
+                Self.unwind(captureEngine: engine, playbackEngine: outputEngine, player: player)
+            }
+        }
 
         // Ask this node for its voice-processing IO unit: echo cancellation, so
         // the model does not hear itself through the speakers and interrupt its
@@ -1472,8 +1489,8 @@ public final class JunoRealtimeVoiceController {
         else {
             throw RealtimeAudioSetupError.formatUnavailable
         }
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: playback)
+        outputEngine.attach(player)
+        outputEngine.connect(player, to: outputEngine.mainMixerNode, format: playback)
 
         let inputFormat = Self.usableInputFormat(of: input)
         guard RealtimeInputFormat.isUsable(
@@ -1492,13 +1509,21 @@ public final class JunoRealtimeVoiceController {
         input.removeTap(onBus: 0)
         Self.installMicTap(on: input, format: inputFormat, box: box)
         engine.prepare()
+        #if os(macOS)
+        outputEngine.prepare()
+        #endif
         try engine.start()
+        #if os(macOS)
+        try outputEngine.start()
+        #endif
 
         started = true
         player.play()
         audioEngine = engine
+        playbackEngine = outputEngine
         playerNode = player
         playbackFormat = playback
+        installAudioConfigurationObservers(captureEngine: engine, playbackEngine: outputEngine)
         // Read from the node, never from what was asked for: `setVoiceProcessingEnabled`
         // only sets a flag, and on the Macs whose input and output are different
         // devices the unit refuses to initialise inside `engine.start()`. Asking
@@ -1506,6 +1531,9 @@ public final class JunoRealtimeVoiceController {
         // second one makes automatic barge-in safe — so the policy is derived
         // here, once the graph is genuinely up.
         echoCancellation = Self.echoCancellation(of: input)
+        Self.audioLog.info(
+            "Voice graph started: \(Self.graphDiagnostic(captureEngine: engine, playbackEngine: outputEngine, voiceProcessing: input.isVoiceProcessingEnabled), privacy: .public)"
+        )
         setBargeInPolicy(RealtimeBargeInPolicy(echoCancellation: echoCancellation))
     }
 
@@ -1530,6 +1558,58 @@ public final class JunoRealtimeVoiceController {
         of input: AVAudioInputNode
     ) -> RealtimeEchoCancellation {
         .fromInputNode(reportsVoiceProcessing: input.isVoiceProcessingEnabled)
+    }
+
+    /// AVAudioEngine stops itself when the default route changes. Rebuild both
+    /// graphs after the route settles while retaining the relay and transcript.
+    private func installAudioConfigurationObservers(
+        captureEngine: AVAudioEngine,
+        playbackEngine: AVAudioEngine
+    ) {
+        removeAudioConfigurationObservers()
+        var engines = [captureEngine]
+        if playbackEngine !== captureEngine { engines.append(playbackEngine) }
+        audioConfigurationObservers = engines.map { engine in
+            NotificationCenter.default.addObserver(
+                forName: .AVAudioEngineConfigurationChange,
+                object: engine,
+                queue: nil
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleAudioRouteRecovery() }
+            }
+        }
+    }
+
+    private func removeAudioConfigurationObservers() {
+        for observer in audioConfigurationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        audioConfigurationObservers.removeAll()
+    }
+
+    /// A headset transition can emit several graph notifications; debounce them
+    /// into one fresh voice-processing attempt followed by the raw fallback.
+    private func scheduleAudioRouteRecovery() {
+        guard phase == .live, !closedByUser else { return }
+        audioRouteRecoveryTask?.cancel()
+        Self.audioLog.notice("Audio route changed; scheduling voice graph recovery")
+        audioRouteRecoveryTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self, self.phase == .live, !self.closedByUser else {
+                return
+            }
+            do {
+                try self.startAudioEngine()
+                Self.audioLog.info("Voice graph recovered after audio route change")
+            } catch {
+                let voiceError = error as? JunoRealtimeVoiceError ?? Self.audioFailure(error)
+                Self.audioLog.error(
+                    "Voice route recovery failed: \(Self.diagnostic(error), privacy: .public)"
+                )
+                self.teardown(closeCode: .abnormalClosure)
+                self.phase = .error(voiceError)
+            }
+        }
     }
 
     /// The input node's format now, with voice processing withdrawn if enabling
@@ -1589,12 +1669,19 @@ public final class JunoRealtimeVoiceController {
     ///
     /// Ordered before the session is deactivated, in every caller: reaching
     /// `engine.inputNode` under a dead session is not something to ask iOS for.
-    private nonisolated static func unwind(engine: AVAudioEngine, player: AVAudioPlayerNode?) {
-        engine.inputNode.removeTap(onBus: 0)
+    private nonisolated static func unwind(
+        captureEngine: AVAudioEngine,
+        playbackEngine: AVAudioEngine,
+        player: AVAudioPlayerNode?
+    ) {
+        captureEngine.inputNode.removeTap(onBus: 0)
         player?.stop()
-        engine.stop()
-        try? engine.inputNode.setVoiceProcessingEnabled(false)
-        if let player, engine.attachedNodes.contains(player) { engine.detach(player) }
+        playbackEngine.stop()
+        if playbackEngine !== captureEngine { captureEngine.stop() }
+        try? captureEngine.inputNode.setVoiceProcessingEnabled(false)
+        if let player, playbackEngine.attachedNodes.contains(player) {
+            playbackEngine.detach(player)
+        }
     }
 
     /// Releases the running graph and forgets it.
@@ -1604,8 +1691,16 @@ public final class JunoRealtimeVoiceController {
     /// halfway, or an engine a route change stopped, still owns this process's
     /// claim on the input device.
     private func disposeAudioGraph() {
-        if let engine = audioEngine { Self.unwind(engine: engine, player: playerNode) }
+        removeAudioConfigurationObservers()
+        if let engine = audioEngine {
+            Self.unwind(
+                captureEngine: engine,
+                playbackEngine: playbackEngine ?? engine,
+                player: playerNode
+            )
+        }
         audioEngine = nil
+        playbackEngine = nil
         playerNode = nil
         playbackFormat = nil
         // Back to the third answer, not to a pessimistic second one: "no graph"
@@ -1627,6 +1722,19 @@ public final class JunoRealtimeVoiceController {
     nonisolated static func diagnostic(_ error: any Error) -> String {
         let failure = error as NSError
         return "\(failure.domain) \(failure.code): \(failure.localizedDescription)"
+    }
+
+    /// Active topology and hardware formats, without device or user names.
+    private nonisolated static func graphDiagnostic(
+        captureEngine: AVAudioEngine,
+        playbackEngine: AVAudioEngine,
+        voiceProcessing: Bool
+    ) -> String {
+        let input = captureEngine.inputNode.inputFormat(forBus: 0)
+        let output = playbackEngine.outputNode.outputFormat(forBus: 0)
+        let topology = RealtimeAudioGraphPlan.current.topology == .splitCapturePlayback
+            ? "split" : "unified"
+        return "topology=\(topology) capture=\(Int(input.sampleRate))Hz/\(input.channelCount)ch playback=\(Int(output.sampleRate))Hz/\(output.channelCount)ch voiceProcessing=\(voiceProcessing)"
     }
 
     /// AVFAudio's error domain, which the framework does not export as a symbol.
@@ -2010,6 +2118,7 @@ public final class JunoRealtimeVoiceController {
         pingTask?.cancel(); pingTask = nil
         meterTask?.cancel(); meterTask = nil
         noticeTask?.cancel(); noticeTask = nil
+        audioRouteRecoveryTask?.cancel(); audioRouteRecoveryTask = nil
         stopTranscriber()
         #if os(macOS)
         // Before the socket, like the pumps: a capture that outlives the session

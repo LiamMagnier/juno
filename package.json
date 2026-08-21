@@ -1,6 +1,6 @@
 {
   "name": "juno",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "private": true,
   "scripts": {
     "i18n:extract": "node scripts/generate-i18n-catalog.mjs",
@@ -56,6 +56,7 @@
     "import:recovery": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-import-runs.ts",
     "search:check": "NODE_OPTIONS=--conditions=react-server tsx scripts/check-search-providers.ts",
     "validate:models": "tsx scripts/validate-models.ts",
+    "models:capabilities:audit": "tsx scripts/audit-model-capabilities.ts",
     "sync:models": "tsx scripts/sync-models.ts",
     "sync:prune": "tsx scripts/prune-sync.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune",

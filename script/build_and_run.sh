@@ -32,8 +32,7 @@ build_app() {
     -configuration Debug \
     -destination 'platform=macOS' \
     -derivedDataPath "$DERIVED_DATA" \
-    build \
-    CODE_SIGNING_ALLOWED=NO
+    build
 }
 
 open_app() {

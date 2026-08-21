@@ -575,13 +575,32 @@ export interface ReasoningCaps {
   canDisable: boolean;
   /** On/off-only model (e.g. GLM-4.6): one "Thinking" state, no depth levels. */
   onOff: boolean;
+  /** Provider/model default represented in Juno's canonical tier vocabulary. */
+  defaultLevel: ReasoningEffort;
 }
 
-const caps = (tiers: ReasoningTier[], canDisable: boolean, onOff = false): ReasoningCaps => ({ tiers, canDisable, onOff });
+const caps = (
+  tiers: ReasoningTier[],
+  canDisable: boolean,
+  onOff = false,
+  defaultLevel?: ReasoningEffort,
+): ReasoningCaps => ({
+  tiers,
+  canDisable,
+  onOff,
+  defaultLevel:
+    defaultLevel !== undefined
+      ? defaultLevel
+      : canDisable || tiers.length === 0
+        ? null
+        : tiers.includes("medium")
+          ? "medium"
+          : tiers[Math.min(1, tiers.length - 1)] ?? null,
+});
 
 /** What thinking tiers a model actually supports, keyed off its provider + id. */
 export function reasoningCaps(model: ModelInfo): ReasoningCaps {
-  if (!model.reasoning) return caps([], true);
+  if (!model.reasoning) return caps([], false);
   const id = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
@@ -634,40 +653,25 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
       return caps(LMH, true);
     case "google":
-      // These tiers are only real because openai-compat.ts now actually SENDS
-      // reasoning_effort to Google (it previously sent nothing, making every
-      // Gemini tier inert). The shim's enum is none|minimal|low|medium|high.
-      //
-      // Honouring is PROVEN, not assumed. The compat shim reports no reasoning
-      // accounting at all, so it was measured by budget starvation (max_tokens
-      // 64), calibrated against native generateContent thoughtsTokenCount on
-      // the same model:
-      //   native   thinkingLevel=high    -> thoughts=646, answer truncated
-      //   native   thinkingLevel=minimal -> thoughts=0,   full answer
-      //   compat   effort=low/medium/high -> completion<=1 (thinking ate it)
-      //   compat   effort=none/minimal    -> completion=60, full answer
-      // i.e. the shim maps reasoning_effort onto the same thinking_config the
-      // native API uses — corroborated by the shim's own 400 when both are set:
-      // "Expected one of either `reasoning_effort` or custom `thinking_config`".
-      //
-      // Pro line: UNVERIFIED — this key's free tier is quota 0 on gemini-*-pro
-      // (429 "limit: 0"), so no completion was ever obtainable. Left as-is.
-      if (id.includes("pro")) return caps(LMH, false);
-      if (/3\.7-flash/.test(id)) return caps(["minimal", "low", "medium", "high", "xhigh", "max"], true);
-      // gemini-3.1-flash-lite: off-switch PROVEN on both transports (native
-      // thinkingLevel=minimal/thinkingBudget=0 -> thoughtsTokenCount absent(=0);
-      // compat effort=none -> full answer under a 64-token cap).
-      if (/3\.1-flash-lite/.test(id)) return caps(["minimal", "low", "medium", "high"], true);
-      // Everything else on the flash line keeps canDisable:false DELIBERATELY.
-      // gemini-3-flash-preview THINKS BY DEFAULT (native thoughts=380 with the
-      // param omitted; compat omitted -> completion=0, fully starved), and its
-      // off-switch is proven NATIVELY (thinkingLevel=minimal -> 0) but could NOT
-      // be exercised through the compat transport Juno actually uses — the
-      // free-tier daily cap was exhausted mid-probe. Older Gemini Flash rows can be 429 on
-      // every transport today, so it is unverified too. Exposing "Instant" here
-      // on inference alone would risk an Instant that silently reasons and bills
-      // the user, so the tier stays hidden until it can be proven.
-      return caps(["minimal", "low", "medium", "high"], false);
+      // Per-model contracts from Google's current Gemini thinking table. Gemini
+      // 3.x uses thinking_level on Juno's native GenerateContent transport;
+      // Gemini 2.5 retains the legacy budget transport. Reasoning cannot be
+      // disabled for any selectable row below.
+      if (/3\.7-flash/.test(id)) return caps(LMH, false, false, "medium");
+      if (/3\.[56]-flash/.test(id)) {
+        return caps(["minimal", ...LMH], false, false, "medium");
+      }
+      if (/3\.1-pro/.test(id)) return caps(LMH, false, false, "high");
+      if (/3\.1-flash-lite/.test(id)) {
+        return caps(["minimal", ...LMH], false, false, "minimal");
+      }
+      if (/3-flash/.test(id)) {
+        return caps(["minimal", ...LMH], false, false, "high");
+      }
+      if (/2\.5-pro/.test(id)) return caps(LMH, false, false, "high");
+      // Unknown discovered Gemini models fail closed: provider default only,
+      // with no invented ladder exposed in any picker.
+      return caps([], false);
     case "xai":
       if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
       if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
@@ -779,11 +783,7 @@ export function reasoningOptions(model: ModelInfo): ReasoningOption[] {
  *  sensible middle tier for always-on models). */
 export function defaultReasoning(model: ModelInfo): ReasoningEffort {
   if (!model.reasoning) return null;
-  const c = reasoningCaps(model);
-  if (c.canDisable) return null;
-  if (c.tiers.length === 0) return null; // always-on with no control — send nothing
-  if (c.tiers.includes("medium")) return "medium";
-  return c.tiers[Math.min(1, c.tiers.length - 1)] ?? null;
+  return reasoningCaps(model).defaultLevel;
 }
 
 /** Coerce a requested effort into something the model actually accepts, so a
@@ -793,11 +793,12 @@ export function clampReasoningEffort(model: ModelInfo, requested: ReasoningEffor
   const c = reasoningCaps(model);
   if (c.onOff) return requested ? "high" : null;
   if (c.tiers.length === 0) return null; // always-on, no control → send nothing
-  if (requested == null) return null; // Instant (or provider default for always-on)
+  if (requested == null) return c.canDisable ? null : c.defaultLevel;
   if (c.tiers.includes(requested as ReasoningTier)) return requested;
-  const ri = TIER_ORDER.indexOf(requested as ReasoningTier);
-  const atOrBelow = c.tiers.filter((t) => TIER_ORDER.indexOf(t) <= ri);
-  return atOrBelow.length ? atOrBelow[atOrBelow.length - 1] : c.tiers[0];
+  // Persisted values from a different model are reset to this model's declared
+  // default. This is explicit and stable; silently mapping Max to High makes a
+  // saved preference look preserved when it is not.
+  return c.defaultLevel;
 }
 
 // Documented assumption for the budget gauge's "requests left" estimate:

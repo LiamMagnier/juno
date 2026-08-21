@@ -8,6 +8,7 @@ final class NativeThinkingScaleTests: XCTestCase {
         id: String = "openai:gpt-5",
         name: String = "GPT-5",
         efforts: [NativeReasoningEffort] = [],
+        defaultEffort: NativeReasoningEffort? = nil,
         canDisable: Bool = true,
         reasoning: Bool = true,
         onOffOnly: Bool = false,
@@ -22,6 +23,7 @@ final class NativeThinkingScaleTests: XCTestCase {
             minimumPlan: "free",
             availability: availability,
             supportedReasoningEfforts: efforts,
+            defaultReasoningEffort: defaultEffort,
             canDisableReasoning: canDisable,
             supportsReasoning: reasoning,
             isOnOffReasoningOnly: onOffOnly,
@@ -51,6 +53,22 @@ final class NativeThinkingScaleTests: XCTestCase {
 
         XCTAssertEqual(scale.stops.map(\.label), ["Medium", "High", "Extra high"])
         XCTAssertEqual(scale.defaultStop?.effort, .medium)
+    }
+
+    func testGemini37HasOnlyLowMediumHighAndDefaultsToMedium() {
+        let scale = NativeThinkingScale(
+            model: option(
+                id: "google:gemini-3.7-flash",
+                name: "Gemini 3.7 Flash",
+                efforts: [.low, .medium, .high],
+                defaultEffort: .medium,
+                canDisable: false
+            )
+        )
+
+        XCTAssertEqual(scale.stops.map(\.label), ["Low", "Medium", "High"])
+        XCTAssertEqual(scale.defaultStop?.effort, .medium)
+        XCTAssertEqual(scale.adjusting(.max).effort, .medium)
     }
 
     func testNonReasoningModelPresentsNoControlAtAll() {

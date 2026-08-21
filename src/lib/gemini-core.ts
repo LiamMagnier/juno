@@ -1,5 +1,5 @@
 import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
@@ -168,4 +168,19 @@ export function geminiThinkingBudget(
     default:
       return undefined;
   }
+}
+
+/** The provider-native Gemini thinking object for Juno's GenerateContent path. */
+export function geminiThinkingConfig(
+  model: ModelInfo,
+  effort?: ReasoningEffort | null,
+): { thinkingLevel: string } | { thinkingBudget: number } | undefined {
+  if (!model.reasoning) return undefined;
+  const id = model.providerModel.toLowerCase();
+  if (/gemini-3(?:\.|-)/.test(id)) {
+    const level = clampReasoningEffort(model, effort ?? null);
+    return level ? { thinkingLevel: level } : undefined;
+  }
+  const thinkingBudget = geminiThinkingBudget(model, effort);
+  return thinkingBudget === undefined ? undefined : { thinkingBudget };
 }

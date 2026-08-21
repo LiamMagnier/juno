@@ -468,6 +468,20 @@ final class RealtimeBargeInPolicyTests: XCTestCase {
     }
 }
 
+final class RealtimeAudioGraphPlanTests: XCTestCase {
+    func testPlatformTopologyIsPinned() {
+        #if os(macOS)
+        XCTAssertEqual(RealtimeAudioGraphPlan.current.topology, .splitCapturePlayback)
+        #else
+        XCTAssertEqual(RealtimeAudioGraphPlan.current.topology, .unifiedDuplex)
+        #endif
+    }
+
+    func testVoiceProcessingFallsBackToRawInputExactlyOnce() {
+        XCTAssertEqual(RealtimeAudioGraphPlan.current.voiceProcessingAttempts, [true, false])
+    }
+}
+
 // MARK: - Echo cancellation, as read from the node
 
 /// The gate that decides whether talking over Juno is allowed to interrupt it.

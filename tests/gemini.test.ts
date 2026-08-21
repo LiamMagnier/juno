@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Attachment } from "@prisma/client";
-import { geminiThinkingBudget, resolveGroundingUrls, toGeminiContents } from "@/lib/gemini-core";
+import { geminiThinkingBudget, geminiThinkingConfig, resolveGroundingUrls, toGeminiContents } from "@/lib/gemini-core";
 import type { ModelInfo } from "@/lib/models";
 import type { MessageForModel } from "@/types/llm";
 
@@ -69,7 +69,7 @@ test("toGeminiContents handles attachments with extracted text", async () => {
   );
 });
 
-test("geminiThinkingBudget maps reasoning effort correctly", () => {
+test("Gemini 3.7 serializes its exact supported thinking level", () => {
   const model: ModelInfo = {
     id: "google:gemini-3.7-flash",
     provider: "google",
@@ -84,13 +84,23 @@ test("geminiThinkingBudget maps reasoning effort correctly", () => {
     webSearch: true,
   };
 
-  assert.equal(geminiThinkingBudget(model, "minimal"), 1024);
-  assert.equal(geminiThinkingBudget(model, "low"), 2048);
-  assert.equal(geminiThinkingBudget(model, "medium"), 8192);
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingLevel: "low" });
+  assert.deepEqual(geminiThinkingConfig(model, "medium"), { thinkingLevel: "medium" });
+  assert.deepEqual(geminiThinkingConfig(model, "high"), { thinkingLevel: "high" });
+  assert.deepEqual(geminiThinkingConfig(model, "minimal"), { thinkingLevel: "medium" });
+  assert.deepEqual(geminiThinkingConfig(model, "xhigh"), { thinkingLevel: "medium" });
+  assert.deepEqual(geminiThinkingConfig(model, "max"), { thinkingLevel: "medium" });
+  assert.deepEqual(geminiThinkingConfig(model, null), { thinkingLevel: "medium" });
+});
+
+test("legacy Gemini 2.5 retains the thinking budget transport", () => {
+  const model = {
+    id: "google:gemini-2.5-pro", provider: "google", providerModel: "gemini-2.5-pro",
+    name: "Gemini 2.5 Pro", minPlan: "PRO", vision: true, reasoning: true,
+    agenticTools: true, cost: 3, modality: "chat", webSearch: true,
+  } as ModelInfo;
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingBudget: 2048 });
   assert.equal(geminiThinkingBudget(model, "high"), 16384);
-  assert.equal(geminiThinkingBudget(model, "xhigh"), 24576);
-  assert.equal(geminiThinkingBudget(model, "max"), 32768);
-  assert.equal(geminiThinkingBudget(model, null), 0);
 });
 
 test("resolveGroundingUrls keeps regular urls intact", async () => {

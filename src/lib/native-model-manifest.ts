@@ -147,6 +147,7 @@ export function nativeModelCatalog(
         supported: model.reasoning,
         canDisable: auto ? true : reasoning.canDisable,
         onOffOnly: auto ? false : reasoning.onOff,
+        defaultEffort: auto ? null : reasoning.defaultLevel,
         supportsProMode: auto ? false : supportsProMode(model),
         // Auto picks the thinking depth per message; a client must not offer a
         // slider for it, and must not send an effort with `juno:auto`.

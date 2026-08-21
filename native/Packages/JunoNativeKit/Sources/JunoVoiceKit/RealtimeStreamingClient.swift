@@ -169,6 +169,29 @@ public enum RealtimeBargeInPolicy: Equatable, Sendable {
     }
 }
 
+// MARK: - Audio graph plan
+
+/// The deterministic graph contract shared by both native realtime endpoints.
+/// macOS keeps capture and playback on separate hardware graphs so a duplex
+/// voice-processing unit cannot force unrelated devices onto one format.
+public struct RealtimeAudioGraphPlan: Equatable, Sendable {
+    public enum Topology: Equatable, Sendable {
+        case splitCapturePlayback
+        case unifiedDuplex
+    }
+
+    public let topology: Topology
+    public let voiceProcessingAttempts: [Bool]
+
+    public static var current: Self {
+        #if os(macOS)
+        Self(topology: .splitCapturePlayback, voiceProcessingAttempts: [true, false])
+        #else
+        Self(topology: .unifiedDuplex, voiceProcessingAttempts: [true, false])
+        #endif
+    }
+}
+
 // MARK: - Session failures
 
 /// Why a realtime session stopped, when it stopped for a reason that is not an
