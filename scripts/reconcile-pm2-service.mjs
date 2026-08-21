@@ -48,6 +48,12 @@ try {
     { mode: 0o600 },
   );
 
+  // A stale PM2 dump can retain the service name with a dead numeric slot.
+  // `pm2 start` then resolves the one-service ecosystem back to that slot and
+  // fails before it can create a process. Delete only this broken named entry
+  // before starting it so healthy services keep running untouched.
+  spawnSync("pm2", ["delete", service], { stdio: "inherit" });
+
   const result = spawnSync("pm2", ["start", tempConfig, "--update-env"], {
     stdio: "inherit",
   });

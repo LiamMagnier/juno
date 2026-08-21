@@ -255,6 +255,7 @@ test("production activation repairs a stale PM2 slot with a one-service ecosyste
   assert.match(DEPLOY_SCRIPT, /reconcile-pm2-service\.mjs/);
   assert.match(DEPLOY_SCRIPT, /execFileSync\("node", \[serviceStarter, "--config", configFile, "--service", name\]/);
   assert.match(PM2_SERVICE_STARTER, /apps: \[app\]/);
+  assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["delete", service\]/);
   assert.match(PM2_SERVICE_STARTER, /spawnSync\("pm2", \["start", tempConfig, "--update-env"\]/);
   assert.match(PM2_SERVICE_STARTER, /mkdtempSync/);
   const verificationIndex = DEPLOY_SCRIPT.indexOf('verify_pm2_ecosystem "$config_file"');
