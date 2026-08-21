@@ -72,6 +72,10 @@ public final class PreviewWorld {
     private let repository: SQLiteAccountRepository
     private let outbox: InMemoryMutationOutbox
     private let sender: PreviewSender
+    /// The same no-network sender used by the fixture models. Exposed so the
+    /// mobile preview can render Voice's real connecting/recovery dock without
+    /// borrowing a production credential.
+    public var requestSender: any NativeAuthenticatedRequestSending { sender }
     /// A stable dev key — never a real account key. In-memory database only.
     static let developmentKey = Data(repeating: 0x7A, count: 32)
     private var activated = false

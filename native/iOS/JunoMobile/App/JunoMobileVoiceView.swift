@@ -232,6 +232,7 @@ struct JunoMobileVoiceDock: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color.junoAccent)
                 .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -389,9 +390,11 @@ struct JunoMobileVoiceDock: View {
                     Button("voice.save.retry") { hangUp() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
+                    .contentShape(.rect)
                     Button("voice.save.discard") { session.close() }
                         .buttonStyle(.plain)
                         .foregroundStyle(Color.junoMutedForeground)
+                    .contentShape(.rect)
                 }
                 .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .accessibilityIdentifier("juno.mobile.voice-save-error")
@@ -406,6 +409,7 @@ struct JunoMobileVoiceDock: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color.junoAccent)
                 .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.regular)

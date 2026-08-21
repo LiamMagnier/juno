@@ -80,14 +80,14 @@ public struct NativeCompareView: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("One prompt · \(model.panes.count) models")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
                 Text("Compare")
                     .junoPageHeading()
             }
             Spacer(minLength: 12)
             Text("Comparisons aren't saved")
-                .font(.system(size: 11, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground.opacity(0.8))
                 .multilineTextAlignment(.trailing)
         }
@@ -103,7 +103,7 @@ public struct NativeCompareView: View {
             TextField("Ask every model at once…", text: $prompt, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .body)
                 .focused($promptFocused)
                 .disabled(model.anyStreaming)
                 .onSubmit(send)
@@ -113,7 +113,7 @@ public struct NativeCompareView: View {
             HStack(spacing: JunoSpace.snug) {
                 Button(action: addPane) {
                     Label("Add model", systemImage: "plus")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .body)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(model.canAddPane ? Color.primary.opacity(0.8) : Color.junoMutedForeground)
@@ -125,7 +125,7 @@ public struct NativeCompareView: View {
                 )
 
                 Text("\(model.panes.count)/\(NativeCompareModel.maximumPanes)")
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
 
                 Spacer(minLength: 0)
@@ -146,7 +146,7 @@ public struct NativeCompareView: View {
                     }
                 } label: {
                     Image(systemName: model.anyStreaming ? "stop.fill" : "arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
+                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .frame(width: 30, height: 30)
                         .background(
                             RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
@@ -326,7 +326,7 @@ struct NativeComparePane: View {
             if let remove {
                 Button(action: remove) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .junoFont(size: 10, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -345,7 +345,7 @@ struct NativeComparePane: View {
         switch run.status {
         case .idle:
             Text(summary ?? "Send a prompt to put this model in the race.")
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground.opacity(0.75))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
@@ -375,7 +375,7 @@ struct NativeComparePane: View {
                 }
                 if let note = finishNote {
                     Text(note)
-                        .font(.system(size: 12))
+                        .junoFont(size: 12, relativeTo: .body)
                         .foregroundStyle(Color.junoMutedForeground)
                         .padding(.horizontal, JunoSpace.snug)
                         .padding(.vertical, JunoSpace.tight)
@@ -407,7 +407,7 @@ struct NativeComparePane: View {
     private var failure: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text(run.errorMessage ?? "Something went wrong.")
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .body)
                 .foregroundStyle(Color.junoDanger)
                 .fixedSize(horizontal: false, vertical: true)
             // One recovery, the one that fits. `upgrade` has no in-app
@@ -416,7 +416,7 @@ struct NativeComparePane: View {
             if run.errorAction == .retry {
                 Button(action: retry) {
                     Label("Try again", systemImage: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
+                        .junoFont(size: 12, relativeTo: .body, weight: .medium)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.junoDanger)
@@ -460,7 +460,7 @@ struct NativeComparePane: View {
             )
             if let usage = usageLine {
                 Text(usage)
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground.opacity(0.75))
                     .lineLimit(1)
@@ -472,7 +472,7 @@ struct NativeComparePane: View {
                     copied = true
                 } label: {
                     Text(copied ? "Copied" : "Copy")
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 .buttonStyle(.plain)
@@ -516,7 +516,7 @@ struct NativeCompareClock: View {
         Group {
             if let seconds {
                 Text(String(format: "%.1fs", seconds))
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground.opacity(0.75))
             }

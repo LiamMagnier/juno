@@ -101,6 +101,7 @@ struct JunoMobileSettingsView: View {
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             default:
                 page
@@ -183,7 +184,9 @@ struct JunoMobileSettingsView: View {
             Button("auth.sign-out", role: .destructive) {
                 Task { await authModel?.signOut() }
             }
+            .contentShape(.rect)
             Button("action.cancel", role: .cancel) {}
+            .contentShape(.rect)
         } message: {
             Text("auth.sign-out.confirm.message")
         }
@@ -672,10 +675,12 @@ struct JunoMobileSettingsView: View {
                 Button("Keep mine") {
                     Task { await model.resolveConflicts(keepLocalChanges: true) }
                 }
+                .contentShape(.rect)
                 Spacer()
                 Button("Use server version") {
                     Task { await model.resolveConflicts(keepLocalChanges: false) }
                 }
+                .contentShape(.rect)
             }
         }
         .font(.caption)
@@ -694,6 +699,7 @@ struct JunoMobileSettingsView: View {
                 .lineLimit(2)
             Spacer()
             Button("Retry") { Task { await model.refresh() } }
+            .contentShape(.rect)
         }
         .font(.caption)
         .padding(JunoSpace.cozy)
@@ -948,6 +954,7 @@ private struct JunoMobileSettingsPreferences: View {
                     .junoRowLabel()
                     .junoSecondaryInk()
                     .disabled(instructionsDraft == settings.customInstructions)
+                .contentShape(.rect)
                 Spacer(minLength: 0)
                 Button("Save") {
                     update(NativeSettingsPatch(customInstructions: instructionsDraft))
@@ -956,6 +963,7 @@ private struct JunoMobileSettingsPreferences: View {
                 .tint(Color.junoAccent)
                 .disabled(disabled || instructionsDraft == settings.customInstructions)
                 .accessibilityIdentifier("juno.mobile.settings-save-instructions")
+                .contentShape(.rect)
             }
         }
         .task(id: settings.customInstructions) {
@@ -1341,6 +1349,7 @@ private struct JunoMobileSettingsLink: View {
             JunoMobileSettingsRowLabel(title: title, symbol: symbol, value: value)
         }
         .buttonStyle(.plain)
+        .contentShape(.rect)
     }
 }
 
@@ -1389,6 +1398,7 @@ private struct JunoMobileSettingsAction: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
+        .frame(minWidth: 44, minHeight: 44)
     }
 }
 

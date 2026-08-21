@@ -3,7 +3,7 @@
   "name": "Juno Phase 2 Final Closure Ledger",
   "version": "2.1.0-final",
   "updatedAt": "2026-08-21",
-  "initialOriginMainSha": "59dcbe55c5937f6b93d1ed869b281aa4369b16dd",
+  "initialOriginMainSha": "9acf1ef80b6ea95b63959193f46083f675b0aab7",
   "authority": "This ledger is the release closure source of truth. A green local checker proves local evidence only; external deployment, authenticated production smoke, Apple hardware, signing, and GitHub check-runs remain explicitly stated per requirement.",
   "requirements": [
     {
@@ -112,7 +112,7 @@
       "tests": ["npm run native:design:check", "npm run native:contract:check", "npm run native:test"],
       "integrationTests": ["npm run design:tokens:check"],
       "e2e": ["xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -destination 'generic/platform=iOS Simulator' build"],
-      "visualEvidence": ["Current native design gates hold at type=89, motion=14, glass=2, targets=550; no new violations were introduced."],
+      "visualEvidence": ["Current native design gates hold at type=0, motion=0, glass=0, targets=410; all 140 iPhone/iPad target-size violations were removed and the remaining macOS/shared baseline is explicitly ratcheted."],
       "performanceEvidence": ["Native chrome uses bounded surfaces and the established token system; no unbounded polling was added."],
       "accessibilityEvidence": ["The design gates enforce Dynamic Type, reduced motion, opaque content surfaces, and 44pt targets."],
       "deploymentEvidence": ["Swift contract/design checks and unsigned iOS/macOS build gates are configured in native CI."],
@@ -151,6 +151,9 @@
         "native/iOS/JunoMobile/App/JunoMobileVoiceView.swift",
         "native/iOS/JunoMobile/App/JunoMobileVoiceCamera.swift",
         "native/iOS/JunoMobile/App/JunoMobileComposer.swift",
+        "native/Packages/JunoNativeKit/Sources/JunoVoiceKit/RealtimeStreamingClient.swift",
+        "native/Packages/JunoNativeKit/Sources/JunoVoiceKit/RealtimeAudioEngineEndpoint.swift",
+        "src/lib/voice-access-policy.ts",
         "relay/src/server.ts",
         "relay/src/session.ts",
         "src/app/api/voice/transcript/route.ts",
@@ -160,12 +163,12 @@
       "tests": ["npm run native:test", "npm test --prefix relay", "npx tsx --test tests/voice-release-regression.test.ts"],
       "integrationTests": ["relay/tests/voice-context.test.ts", "tests/voice-spend-report.test.ts"],
       "e2e": ["npm run test:moderation"],
-      "visualEvidence": ["Voice overlay, waveform, transcript, in-call controls, camera/photo surfaces, and attachment notices are real runtime surfaces."],
-      "performanceEvidence": ["Relay context, transcript, history, and reconnect payloads are bounded; audio/video transport remains explicitly throttled."],
+      "visualEvidence": ["Voice overlay, waveform, transcript, in-call controls, camera/photo surfaces, attachment notices, and the real Mac Qwen anti-loop run are captured under docs/release/evidence/phase2-final/."],
+      "performanceEvidence": ["Relay context, transcript, history, and reconnect payloads are bounded; audio/video transport remains throttled, and microphone uplink is suppressed through assistant playback plus a 750 ms acoustic tail."],
       "accessibilityEvidence": ["VoiceOver transcript output and explicit pending/unavailable/error notices are localized and surfaced."],
-      "deploymentEvidence": ["Relay verifier, canonical relay URL, authenticated token route, and production smoke policy checks pass locally; deployment health is separately gated."],
+      "deploymentEvidence": ["Qwen is the funded production default, relay verifier and authenticated Voice routes pass locally, and a real Mac hardware Qwen session produced one answer with no self-heard repetition during the post-playback open-mic window."],
       "blocker": "",
-      "notes": "Camera and screen-share semantic hardware checks are separate external blockers, not hidden inside this core contract."
+      "notes": "Playback completion accounting, interruption-safe flushing, and the acoustic tail guard prevent the model from transcribing and answering its own speaker output. Camera and screen-share semantic hardware checks remain separate external blockers."
     },
     {
       "id": "voice-document-context",

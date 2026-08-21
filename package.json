@@ -1,6 +1,6 @@
 {
   "name": "juno",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": true,
   "scripts": {
     "i18n:extract": "node scripts/generate-i18n-catalog.mjs",

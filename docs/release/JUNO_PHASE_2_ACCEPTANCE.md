@@ -2,7 +2,7 @@
 
 **Date**: August 21, 2026
 **Version**: 2.1.0-final-closure
-**Base Commit**: `59dcbe55c5937f6b93d1ed869b281aa4369b16dd` (origin/main at takeover)
+**Base Commit**: `9acf1ef80b6ea95b63959193f46083f675b0aab7` (origin/main at takeover)
 **Status**: **LOCAL CLOSURE CHECKED — EXTERNAL RELEASE GATES ARE EXPLICITLY RECORDED**
 **Audit Scope**: Juno Phase 2 Master Plan — Cross-Platform Product Parity, Native 2.0, Mobile Remote Code Command Center, Multimodal Voice Hardening, Intelligence Platform, and Production Expansion across Web, macOS, iPhone, and iPad.
 
@@ -13,9 +13,9 @@
 Phase 2 builds upon the foundations established in Phase 1 (`docs/release/JUNO_1_2_PRODUCTION_ACCEPTANCE.md`). The mission is to deliver **Juno as One Coherent, Premium, Production-Grade AI Product** across Web, macOS, iPhone, and iPad.
 
 Key implementation milestones completed in this pass:
-1. **Canonical Google Gemini Adapter & Gemini 3.7 Flash**: Full Google Generative Language REST SSE streaming adapter in `src/lib/gemini.ts` and `src/lib/gemini-core.ts`, supporting turns, attachments, thinking budgets (`canDisable: true`), MCP tool calling, Google Search grounding, and monotonic token usage.
-2. **Mobile Voice Relay Deployment Hardening**: `deploy/deploy.sh` updated to strictly enforce `juno-voice-relay` in PM2 ecosystem verification and health polling (`scripts/verify-voice-relay.mjs`), ensuring voice relay is a first-class release requirement.
-3. **iPhone / iPad Design System & Visual Review**: Warm editorial canvas, semantic token hierarchy, wide `NavigationSplitView` for iPad, compact drawer on iPhone, and verified zero-regression native design gates.
+1. **Qwen-first funded production path**: fresh accounts, web Voice, native Voice, and deployment smoke use Qwen; unpaid providers remain selectable but are not invoked by the release gate.
+2. **Voice anti-loop and relay hardening**: Mac capture/playback use separate raw paths, microphone uplink is muted through assistant playback plus a 750 ms acoustic tail, and interruption-safe completion accounting prevents late buffers from reopening capture. A real Mac Qwen session produced one answer and remained silent through an extended open-mic window.
+3. **iPhone / iPad Design System & Visual Review**: Warm editorial canvas, semantic token hierarchy, wide `NavigationSplitView` for iPad, compact drawer on iPhone, and current-run screenshots across Chat, Projects, Artifacts, Work, Code, Library, Settings, model selection, search, tasks, and Voice recovery.
 4. **Mechanical Closure Boundary**: `scripts/check-phase2-final.mjs` and `npm run phase2:verify` enforce the final ledger, exact checked-out SHA, implementation evidence, fake-data regression checks, and the local test/release contracts. Counts are written only from the exact current run.
 
 This acceptance matrix is reconciled to `docs/release/JUNO_PHASE_2_FINAL_LEDGER.json`, with the earlier recovery ledger retained for history. The executable boundary is `scripts/check-phase2-final.mjs` (`npm run phase2:final:check`) plus `scripts/verify-phase2.mjs` (`npm run phase2:verify`).
@@ -60,17 +60,16 @@ production smoke. Those are not inferred from local output.
 [design-tokens] up to date — 44 colours, 6 accents, 6 durations, 7 easings, 14 radii (digest c17fa36c080de5ec)
 
 > npm run native:design:check
-[type] baseline 89 violation(s) — no regression.
-[motion] baseline 14 violation(s) — no regression.
-[glass] baseline 2 violation(s) — no regression.
-[targets] baseline 550 violation(s) — no regression.
+[type] baseline 0 violation(s).
+[motion] baseline 0 violation(s).
+[glass] baseline 0 violation(s).
+[targets] baseline 410 violation(s) — down from 550; all 140 iPhone/iPad target-size violations were removed, with the remaining macOS/shared findings ratcheted.
 [native-design] all 4 gates hold: type, motion, glass, targets.
 ```
 
-These are ratchet measurements, not a statement that all controls currently
-meet the desired typography, motion, glass, or 44pt target rules. The
-acceptance wording is intentionally **NO REGRESSION** until those baseline
-violations are actually removed or explicitly allowlisted.
+These are current-run ratchet measurements. Typography, motion, and glass are at
+zero; iPhone/iPad controls are clear of the target-size gate. The 410 remaining
+target findings are confined to shared/macOS sources and cannot regress.
 
 ### 3.2. Native Contract & Wiring Verification
 ```

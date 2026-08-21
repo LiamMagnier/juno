@@ -151,7 +151,7 @@ public struct JunoAIcssThinkingLabel: View {
 
     public var body: some View {
         Text(text)
-            .font(.system(size: size, weight: .medium))
+            .junoFont(size: size, relativeTo: .body, weight: .medium)
             .monospacedDigit()
             .junoAIcssShine(color: tone.color, settled: settled)
     }

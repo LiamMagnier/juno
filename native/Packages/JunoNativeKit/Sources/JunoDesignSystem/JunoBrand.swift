@@ -234,7 +234,7 @@ public struct JunoAvatar: View {
         ZStack {
             Color.junoMuted
             Text(JunoAvatar.initials(from: name))
-                .font(.system(size: size * 0.4, weight: .semibold))
+                .junoFont(size: size * 0.4, relativeTo: .body, weight: .semibold)
                 .foregroundStyle(Color.junoMutedForeground)
         }
     }

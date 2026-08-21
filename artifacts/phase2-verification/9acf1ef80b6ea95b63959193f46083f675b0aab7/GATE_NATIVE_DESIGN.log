@@ -1,0 +1,5 @@
+[type] holding at 0 violation(s) — none added. Type must scale.
+[motion] holding at 0 violation(s) — none added. Every animation names a JunoMotion token.
+[glass] holding at 0 violation(s) — none added. Glass is chrome; content is opaque.
+[targets] holding at 410 violation(s) — none added. Every target is 44pt and shaped like the control.
+[native-design] all 4 gates hold: type, motion, glass, targets.

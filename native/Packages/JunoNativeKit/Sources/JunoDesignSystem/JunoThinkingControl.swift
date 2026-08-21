@@ -309,9 +309,9 @@ private struct JunoModeToggle: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: 9, weight: .semibold))
+                    .junoFont(size: 9, relativeTo: .body, weight: .semibold)
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .junoFont(size: 11, relativeTo: .body, weight: .medium)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

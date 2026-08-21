@@ -403,6 +403,7 @@ struct JunoMobileModelSelectorView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(reason != nil)
+                .contentShape(.rect)
 
                 if showsDetailToggle {
                     Button {
@@ -481,6 +482,7 @@ struct JunoMobileModelSelectorView: View {
         .buttonStyle(.plain)
         .listRowBackground(provider == id ? Color.junoRowSelected : Color.clear)
         .accessibilityAddTraits(provider == id ? [.isSelected] : [])
+        .frame(minWidth: 44, minHeight: 44)
     }
 
     /// A horizontally scrolling provider filter — the compact-width stand-in for
@@ -522,6 +524,7 @@ struct JunoMobileModelSelectorView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(name)
         .accessibilityAddTraits(active ? [.isSelected] : [])
+        .contentShape(.rect)
     }
 
     private var noResults: some View {
@@ -637,6 +640,7 @@ private struct JunoMobileSelectorSearchField: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.cozy)

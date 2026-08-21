@@ -3,10 +3,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getUserPlan } from "@/lib/usage";
-import { PLANS } from "@/lib/plans";
-import { isOwnerEmail } from "@/lib/owner";
-import { rateLimit } from "@/lib/rate-limit";
+import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
 import { loadBackgroundProviderPolicy } from "@/lib/memory";
 import { retrieveAttachmentKnowledge } from "@/lib/knowledge/retrieve";
 import { buildAttachmentContext } from "@/lib/chat/context-assembly";
@@ -40,9 +37,9 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const plan = await getUserPlan(user.id);
-  if (!PLANS[plan].voice) {
-    return NextResponse.json({ error: "Voice mode requires a paid plan." }, { status: 403 });
+  const access = await evaluateVoiceAccess(user, "context");
+  if (!access.allowed && access.denial) {
+    return NextResponse.json({ error: access.denial.error }, { status: access.denial.status });
   }
 
   const parsed = inputSchema.safeParse(await req.json().catch(() => null));
@@ -52,11 +49,6 @@ export async function POST(req: Request) {
   const query = normalizeVoiceAttachmentQuery(input.query);
   if (attachmentIds.length === 0 || query.length === 0) {
     return NextResponse.json({ error: "Voice attachment context needs a question." }, { status: 400 });
-  }
-
-  if (!isOwnerEmail(user.email)) {
-    const limit = await rateLimit({ key: `voice-context:${user.id}`, limit: 120, windowSec: 3600 });
-    if (!limit.success) return NextResponse.json({ error: "Too many voice context requests. Try again later." }, { status: 429 });
   }
 
   const attachments = await prisma.attachment.findMany({

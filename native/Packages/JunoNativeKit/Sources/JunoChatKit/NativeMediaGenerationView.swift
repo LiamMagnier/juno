@@ -45,7 +45,7 @@ public struct NativeMediaGenerationView: View {
                 JunoAIcssImageCanvas(pitch: 14)
                 if isVideo {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 18))
+                        .junoFont(size: 18, relativeTo: .body)
                         .foregroundStyle(Color.primary.opacity(0.42))
                         .padding(16)
                         .background(.ultraThinMaterial, in: Circle())

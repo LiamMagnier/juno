@@ -2136,7 +2136,7 @@ private struct DesktopWorkHomeRow: View {
         .onChange(of: isExecuting) { _, executing in breathing = executing && !reduceMotion }
         .animation(
             JunoMotion.ambient(
-                .easeInOut(duration: 2.6).repeatForever(autoreverses: true),
+                JunoMotion.outSoft(2.6).repeatForever(autoreverses: true),
                 when: reduceMotion
             ),
             value: breathing

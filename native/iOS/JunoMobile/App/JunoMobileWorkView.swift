@@ -118,6 +118,7 @@ struct JunoMobileWorkView: View {
         } actions: {
             Button("Retry") { Task { await model.refresh() } }
                 .buttonStyle(.borderedProminent)
+            .contentShape(.rect)
         }
     }
 
@@ -194,6 +195,7 @@ struct JunoMobileWorkView: View {
                 .junoProminentAction()
                 .controlSize(.large)
                 .padding(.top, 2)
+                .contentShape(.rect)
             }
         }
     }
@@ -269,12 +271,12 @@ private struct JunoMobileWorkHostCard: View {
         let style = JunoMobileWorkHostStyle.of(host)
         return HStack(alignment: .top, spacing: 10) {
             Image(systemName: style.symbol)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .body)
                 .foregroundStyle(style.tint)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.displayName)
-                    .font(.system(size: 15, weight: .medium))
+                    .junoFont(size: 15, relativeTo: .body, weight: .medium)
                     .lineLimit(1)
                 Text(style.sentence)
                     .font(.caption)
@@ -359,6 +361,7 @@ private struct JunoMobileWorkSessionCard: View {
         }
         .accessibilityLabel("\(session.title). \(style.sentence)")
         .accessibilityIdentifier("juno.mobile.work.task")
+        .contentShape(.rect)
     }
 
     /// Where it ran and when it last moved, on one line.
@@ -448,7 +451,9 @@ private struct JunoMobileWorkThread: View {
             "Stop this task?", isPresented: $confirmingStop, titleVisibility: .visible
         ) {
             Button("Stop", role: .destructive) { Task { await model.stopOpenRun() } }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) {}
+            .contentShape(.rect)
         } message: {
             Text("Juno stops where it is. Anything it has already changed stays changed.")
         }
@@ -456,7 +461,9 @@ private struct JunoMobileWorkThread: View {
             "Try this again?", isPresented: $confirmingRetry, titleVisibility: .visible
         ) {
             Button("Start a new task") { retry() }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) {}
+            .contentShape(.rect)
         } message: {
             Text(
                 "Juno starts a second task with the same goal, aimed at the same place. The one you are reading is kept as it is."
@@ -708,6 +715,7 @@ private struct JunoMobileWorkThread: View {
         .disabled(model.isMutating)
         .accessibilityLabel("Task actions")
         .accessibilityIdentifier("juno.mobile.work.menu")
+        .contentShape(.rect)
     }
 
     private var status: JunoWorkStatus? {
@@ -768,12 +776,12 @@ private struct JunoMobileWorkThread: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "clock.badge.questionmark")
-                        .font(.system(size: 14))
+                        .junoFont(size: 14, relativeTo: .body)
                         .junoSecondaryInk()
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(action.title)
-                        .font(.system(size: 15, weight: .medium))
+                        .junoFont(size: 15, relativeTo: .body, weight: .medium)
                         .fixedSize(horizontal: false, vertical: true)
                     if let detail = action.detail {
                         Text(detail)
@@ -813,7 +821,7 @@ private struct JunoMobileWorkThread: View {
                 ForEach(steps) { step in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: step.symbol)
-                            .font(.system(size: 14))
+                            .junoFont(size: 14, relativeTo: .body)
                             .foregroundStyle(step.tint)
                             .frame(width: 18)
                         Text(step.title)
@@ -847,7 +855,7 @@ private struct JunoMobileWorkThread: View {
                 ForEach(references) { reference in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: reference.direction == .read ? "link" : "doc")
-                            .font(.system(size: 14))
+                            .junoFont(size: 14, relativeTo: .body)
                             .foregroundStyle(Color.junoMutedForeground)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
@@ -896,7 +904,7 @@ private struct JunoMobileWorkThread: View {
                         // "xlsx" / "docx" reads as a directory listing; this
                         // section is the things Juno made for you.
                         Image(systemName: JunoWorkVocabulary.artifactSymbol(artifact.kind))
-                            .font(.system(size: 15))
+                            .junoFont(size: 15, relativeTo: .body)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
                         VStack(alignment: .leading, spacing: 1) {
@@ -971,7 +979,7 @@ private struct JunoMobileWorkThread: View {
                 ForEach(entries) { entry in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: entry.symbol)
-                            .font(.system(size: 13))
+                            .junoFont(size: 13, relativeTo: .body)
                             .foregroundStyle(entry.tint)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
@@ -1032,7 +1040,7 @@ private struct JunoMobileWorkApprovalCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: risk?.alwaysRequiresApproval == true
                         ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
-                        .font(.system(size: 12, weight: .semibold))
+                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(tint)
                     Text(JunoWorkVocabulary.risk(approval.risk))
                         .font(.system(.caption, design: .default, weight: .semibold))
@@ -1085,6 +1093,7 @@ private struct JunoMobileWorkApprovalCard: View {
                     .junoProminentAction()
                     .controlSize(.large)
                     .accessibilityIdentifier("juno.mobile.work.approval.allow")
+                    .contentShape(.rect)
 
                     HStack(spacing: 8) {
                         if approval.allowsStandingGrant {
@@ -1101,6 +1110,7 @@ private struct JunoMobileWorkApprovalCard: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("juno.mobile.work.approval.allow-always")
+                            .contentShape(.rect)
                         }
 
                         Button { decide(.denied) } label: {
@@ -1116,6 +1126,7 @@ private struct JunoMobileWorkApprovalCard: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("juno.mobile.work.approval.deny")
+                        .contentShape(.rect)
                     }
                 }
                 .disabled(model.isMutating)
@@ -1162,6 +1173,7 @@ private struct JunoMobileWorkQuestionCard: View {
                 .junoProminentAction()
                 .controlSize(.large)
                 .accessibilityIdentifier("juno.mobile.work.answer")
+                .contentShape(.rect)
             }
         }
         .accessibilityIdentifier("juno.mobile.work.question")
@@ -1357,6 +1369,7 @@ private struct JunoMobileWorkThreadComposerCard: View {
                 // added to it; three names would leave a test asserting on a
                 // control that is correct but differently spelled today.
                 .accessibilityIdentifier("juno.mobile.work.instruct")
+                .contentShape(.rect)
 
                 if let outcome = model.lastInstructionOutcome {
                     HStack(alignment: .top, spacing: 8) {

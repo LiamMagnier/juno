@@ -4,10 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
-import { getUserPlan } from "@/lib/usage";
-import { PLANS } from "@/lib/plans";
-import { rateLimit } from "@/lib/rate-limit";
-import { isOwnerEmail } from "@/lib/owner";
+import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -58,8 +55,10 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const plan = await getUserPlan(user.id);
-  if (!PLANS[plan].voice) return NextResponse.json({ error: "Voice mode requires a paid plan." }, { status: 403 });
+  const access = await evaluateVoiceAccess(user, "transcript");
+  if (!access.allowed && access.denial) {
+    return NextResponse.json({ error: access.denial.error }, { status: access.denial.status });
+  }
 
   const parsed = inputSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid voice transcript" }, { status: 400 });
@@ -68,11 +67,6 @@ export async function POST(req: Request) {
   // Fast idempotent path for explicit retries/navigation races.
   const alreadySaved = await serializeSavedSession(user.id, input.sessionId);
   if (alreadySaved) return NextResponse.json(alreadySaved);
-  if (!isOwnerEmail(user.email)) {
-    const limit = await rateLimit({ key: `voice-transcript:${user.id}`, limit: 30, windowSec: 3600 });
-    if (!limit.success) return NextResponse.json({ error: "Too many voice sessions. Try again later." }, { status: 429 });
-  }
-
   try {
     await prisma.$transaction(async (tx) => {
       let conversation = input.conversationId

@@ -251,16 +251,16 @@ public struct NativeFilePreviewTile: View {
     private var fallback: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: file.isImage ? "photo" : "doc.text")
-                .font(.system(size: 26))
+                .junoFont(size: 26, relativeTo: .body)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Text(file.fileName)
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .body, weight: .medium)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .truncationMode(.middle)
             Text(file.sizeLabel)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .body, weight: .medium, design: .monospaced)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -277,6 +277,6 @@ public struct NativeFilePreviewPressStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.16), value: configuration.isPressed)
+            .animation(JunoMotion.fast, value: configuration.isPressed)
     }
 }

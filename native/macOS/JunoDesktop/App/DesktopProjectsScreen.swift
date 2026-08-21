@@ -548,7 +548,7 @@ struct DesktopProjectsScreen: View {
             voiceUnavailable = "Voice is unavailable for this account."
             return
         }
-        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
+        let initialProvider = JunoVoiceProvider.productionDefault
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(

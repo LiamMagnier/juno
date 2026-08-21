@@ -77,11 +77,13 @@ struct JunoMobileMemoryView: View {
             set: { if !$0 { deleteMemoryID = nil } }
         )) {
             Button("Cancel", role: .cancel) { deleteMemoryID = nil }
+            .contentShape(.rect)
             Button("Delete", role: .destructive) {
                 guard let id = deleteMemoryID else { return }
                 deleteMemoryID = nil
                 Task { await model.deleteMemory(id: id) }
             }
+            .contentShape(.rect)
         } message: {
             Text("Juno will no longer use this fact in conversations.")
         }
@@ -358,6 +360,7 @@ struct JunoMobileMemoryView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear filter")
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -413,6 +416,7 @@ struct JunoMobileMemoryView: View {
                     .foregroundStyle(Color.junoAccent)
                     .disabled(model.isMutating)
                     .accessibilityIdentifier("juno.mobile.settings-memory-add")
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -612,11 +616,13 @@ struct JunoMobileMemoryView: View {
                 .junoFont(size: 14, relativeTo: .subheadline, weight: .medium)
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.junoMutedForeground)
+                .contentShape(.rect)
                 Button("Erase") { showingEraseAll = true }
                     .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.junoDanger)
                     .accessibilityIdentifier("juno.mobile.settings-memory-erase-confirm")
+                .contentShape(.rect)
             } else {
                 Button {
                     withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {

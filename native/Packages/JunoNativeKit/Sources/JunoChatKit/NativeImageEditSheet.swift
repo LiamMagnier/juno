@@ -64,14 +64,14 @@ public struct NativeImageEditSheet: View {
             status {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Label("The edited image is ready.", systemImage: "checkmark.circle")
-                        .font(.system(size: 14))
+                        .junoFont(size: 14, relativeTo: .body)
                         .foregroundStyle(Color.junoSuccess)
                     Text(
                         conversationID == nil
                             ? "It is in a new chat."
                             : "It is in a new chat, along with your instructions."
                     )
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .body)
                     .foregroundStyle(Color.junoMutedForeground)
                     HStack(spacing: JunoSpace.snug) {
                         if let conversationID, let openConversation {
@@ -88,7 +88,7 @@ public struct NativeImageEditSheet: View {
             status {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Label(message, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .body)
                         .foregroundStyle(Color.junoDanger)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: JunoSpace.snug) {
@@ -103,7 +103,7 @@ public struct NativeImageEditSheet: View {
     private func status<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             Text("Editing \(fileName)")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .junoFont(size: 10, relativeTo: .body, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             content()
             Spacer(minLength: 0)

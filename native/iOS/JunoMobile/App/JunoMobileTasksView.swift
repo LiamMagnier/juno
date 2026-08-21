@@ -33,6 +33,7 @@ struct JunoMobileTasksView: View {
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             case .ready:
                 content
@@ -89,7 +90,9 @@ struct JunoMobileTasksView: View {
                 deleteTarget = nil
                 Task { await model.delete(id: target.id) }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { deleteTarget = nil }
+            .contentShape(.rect)
         } message: {
             Text("tasks.delete.detail")
         }
@@ -165,6 +168,7 @@ struct JunoMobileTasksView: View {
                 .controlSize(.large)
                 .disabled(models.isEmpty)
                 .padding(.top, JunoSpace.hairline)
+                .contentShape(.rect)
             }
         }
     }
@@ -275,6 +279,7 @@ private struct JunoMobileTaskCard: View {
                         }
                         .buttonStyle(.plain)
                         .junoSecondaryInk()
+                        .contentShape(.rect)
                     }
                 }
             }

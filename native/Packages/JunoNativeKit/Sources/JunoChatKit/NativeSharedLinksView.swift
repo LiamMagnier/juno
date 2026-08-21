@@ -59,10 +59,10 @@ public struct NativeSharedLinksView: View {
         HStack(alignment: .top, spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(share.title ?? "Untitled conversation")
-                    .font(.system(size: 14, weight: .medium))
+                    .junoFont(size: 14, relativeTo: .body, weight: .medium)
                     .lineLimit(2)
                 Text(detail(for: share))
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
                     .truncationMode(.middle)

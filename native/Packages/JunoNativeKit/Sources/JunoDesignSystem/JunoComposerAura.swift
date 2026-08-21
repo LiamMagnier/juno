@@ -209,7 +209,9 @@ public struct JunoComposerAura: View {
                 withTransaction(still) { breathing = false }
                 return
             }
-            withAnimation(Self.breatheEase) { breathing = true }
+            withAnimation(JunoMotion.ambient(Self.breatheEase, when: reduceMotion)) {
+                breathing = true
+            }
         }
     }
 

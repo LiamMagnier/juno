@@ -74,6 +74,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(option.title)
                 .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+                .frame(minWidth: 44, minHeight: 44)
             }
         }
         .padding(JunoSpace.hairline)
@@ -201,7 +202,7 @@ struct JunoMobileClampedText: View {
     }
 
     private var font: Font {
-        .system(size: 13, design: monospaced ? .monospaced : .default)
+        .system(.footnote, design: monospaced ? .monospaced : .default)
     }
 
     var body: some View {
@@ -233,6 +234,7 @@ struct JunoMobileClampedText: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.clamped-toggle")
+                .contentShape(.rect)
             }
         }
     }
@@ -288,6 +290,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                         .foregroundStyle(Color.junoAccent)
                     }
                     .buttonStyle(.plain)
+                    .contentShape(.rect)
                 }
             }
 

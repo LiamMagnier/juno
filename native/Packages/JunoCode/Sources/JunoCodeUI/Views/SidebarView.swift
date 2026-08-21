@@ -231,7 +231,7 @@ struct SidebarView: View {
                     Text("New session").junoRowLabel()
                 } icon: {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
                         .frame(width: 16)
                 }
                 .foregroundStyle(Color.junoAccent)

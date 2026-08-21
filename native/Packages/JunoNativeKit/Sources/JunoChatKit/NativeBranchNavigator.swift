@@ -49,7 +49,8 @@ public struct NativeBranchNavigator: View {
                 available: canGoBack
             )
             Text("\(position.index + 1) / \(position.siblingsCount)")
-                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                .monospacedDigit()
                 .foregroundStyle(Color.junoMutedForeground)
                 // Monospaced digits so stepping from 9 to 10 does not shift the
                 // arrows sideways under the reader's finger.
@@ -73,7 +74,7 @@ public struct NativeBranchNavigator: View {
     ) -> some View {
         Button { onStep(offset) } label: {
             Image(systemName: systemName)
-                .font(.system(size: 10, weight: .semibold))
+                .junoFont(size: 10, relativeTo: .body, weight: .semibold)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }

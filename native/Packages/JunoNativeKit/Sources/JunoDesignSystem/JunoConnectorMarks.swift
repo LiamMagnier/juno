@@ -127,7 +127,7 @@ public struct JunoConnectorMark: View {
             .fill(Color.junoMuted)
             .overlay {
                 Text(String(connectorName.prefix(1)).uppercased())
-                    .font(.system(size: size * 0.55, weight: .semibold, design: .rounded))
+                    .junoFont(size: size * 0.55, relativeTo: .body, weight: .semibold, design: .rounded)
                     .junoSecondaryInk()
             }
     }

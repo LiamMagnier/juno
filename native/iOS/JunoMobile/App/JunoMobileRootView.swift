@@ -197,6 +197,9 @@ struct JunoMobileRootView: View {
                     conversationModel?.selectedConversationID = nil
                     incognito = true
                 }
+                if CommandLine.arguments.contains("--juno-preview-voice") {
+                    startVoice()
+                }
                 return
             }
             // Opens the real, signed-in shell straight onto one destination, so
@@ -506,7 +509,7 @@ struct JunoMobileRootView: View {
                     // system's one — two concentric rings around one ×.
                     Button { showingSettings = false } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
+                            .junoFont(size: 15, relativeTo: .body, weight: .semibold)
                             // Ink: closing a sheet is chrome, not emphasis.
                             .foregroundStyle(Color.primary)
                     }
@@ -618,7 +621,7 @@ struct JunoMobileRootView: View {
         if reduceMotion {
             incognito = on
         } else {
-            withAnimation(.snappy(duration: 0.28)) { incognito = on }
+            withAnimation(JunoMotion.standard) { incognito = on }
         }
     }
 
@@ -1155,11 +1158,13 @@ private struct JunoMobileSidebarDrawer: View {
         )) {
             TextField("Title", text: $renameValue)
             Button("Cancel", role: .cancel) { renameTarget = nil }
+            .contentShape(.rect)
             Button("Save") {
                 guard let target = renameTarget else { return }
                 renameTarget = nil
                 Task { await conversationModel?.renameConversation(id: target.id, title: renameValue) }
             }
+            .contentShape(.rect)
         }
         .confirmationDialog(
             deleteTarget.map { "Delete “\($0.title)”?" } ?? "",
@@ -1174,7 +1179,9 @@ private struct JunoMobileSidebarDrawer: View {
                 deleteTarget = nil
                 Task { await conversationModel?.deleteConversation(id: target.id) }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { deleteTarget = nil }
+            .contentShape(.rect)
         } message: {
             Text("chat.delete.warning")
         }
@@ -1184,11 +1191,13 @@ private struct JunoMobileSidebarDrawer: View {
         )) {
             TextField("Name", text: $renameProjectValue)
             Button("Cancel", role: .cancel) { renameProjectTarget = nil }
+            .contentShape(.rect)
             Button("Save") {
                 guard let target = renameProjectTarget else { return }
                 renameProjectTarget = nil
                 Task { await projectModel?.updateProject(id: target.id, name: renameProjectValue) }
             }
+            .contentShape(.rect)
         }
         .confirmationDialog(
             deleteProjectTarget.map { "Delete “\($0.name)”?" } ?? "",
@@ -1203,7 +1212,9 @@ private struct JunoMobileSidebarDrawer: View {
                 deleteProjectTarget = nil
                 Task { await projectModel?.deleteProject(id: target.id) }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { deleteProjectTarget = nil }
+            .contentShape(.rect)
         } message: {
             Text("Conversations are kept and unlinked; project files are removed.")
         }
@@ -1249,6 +1260,8 @@ private struct JunoMobileSidebarDrawer: View {
         .padding(.top, 12)
         .accessibilityIdentifier("juno.mobile.attention-summary")
         .accessibilityLabel("Needs attention, \(attentionItems.count) item\(attentionItems.count == 1 ? "" : "s") waiting")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 
     /// One conversation, with the actions a long press should offer.
@@ -1361,7 +1374,7 @@ private struct JunoMobileSidebarDrawer: View {
             // always-present chrome would spend the accent on nothing.
             JunoMark(size: 24)
             Text("Juno")
-                .font(.system(size: 22, weight: .semibold))
+                .junoFont(size: 22, relativeTo: .body, weight: .semibold)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             Button(action: { openDestination(.search) }) {
@@ -1372,6 +1385,7 @@ private struct JunoMobileSidebarDrawer: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("navigation.search")
+            .frame(minWidth: 44, minHeight: 44)
         }
         .padding(.horizontal, 16)
         // No fixed height. It was pinned to 44pt around a 46pt glass circle, so
@@ -1387,7 +1401,7 @@ private struct JunoMobileSidebarDrawer: View {
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
         Text(key)
-            .font(.system(size: 14, weight: .semibold))
+            .junoFont(size: 14, relativeTo: .body, weight: .semibold)
             .junoSecondaryInk()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
@@ -1433,6 +1447,7 @@ private struct JunoMobileSidebarDrawer: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open settings for \(profileName)")
+        .contentShape(.rect)
     }
 
     /// The drawer's one primary action, and therefore the one tinted surface on
@@ -1448,6 +1463,7 @@ private struct JunoMobileSidebarDrawer: View {
         .disabled(!canCreateChat)
         .opacity(canCreateChat ? 1 : 0.5)
         .accessibilityLabel("chat.new")
+        .contentShape(.rect)
     }
 }
 
@@ -1472,7 +1488,7 @@ private struct JunoMobileSidebarRow: View {
                         JunoIconView(junoIcon, size: 19)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: 19))
+                            .junoFont(size: 19, relativeTo: .body)
                     }
                 }
                 .frame(width: 24)
@@ -1516,14 +1532,14 @@ private struct JunoMobileConversationRow: View {
                         .foregroundStyle(Color.junoAccent)
                 }
                 Text(title)
-                    .font(.system(size: 16))
+                    .junoFont(size: 16, relativeTo: .body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
                 if pending {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 11))
+                        .junoFont(size: 11, relativeTo: .body)
                         .junoSecondaryInk()
                 }
             }
@@ -1532,6 +1548,7 @@ private struct JunoMobileConversationRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())
+        .frame(minWidth: 44, minHeight: 44)
     }
 }
 
@@ -1588,6 +1605,7 @@ private struct JunoMobileSignInView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSubmitPassword)
                     .accessibilityIdentifier("juno.mobile.sign-in.password")
+                    .contentShape(.rect)
 
                     Text("auth.divider.or")
                         .junoCaption()
@@ -1602,6 +1620,7 @@ private struct JunoMobileSignInView: View {
                     .buttonStyle(.bordered)
                     .disabled(isBusy)
                     .accessibilityIdentifier("juno.mobile.sign-in")
+                    .contentShape(.rect)
 
                     Text("auth.password.disclaimer")
                         .junoCaption()
@@ -1650,6 +1669,7 @@ private struct JunoMobileOfflineBanner: View {
                 .font(.footnote)
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+            .contentShape(.rect)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

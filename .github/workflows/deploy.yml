@@ -103,6 +103,9 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           PHASE2_FINAL_REQUIRE_CLEAN: "1"
 
+      - name: Per-model reasoning capability evidence is current
+        run: npm run models:capabilities:audit
+
       # A cloud Work run has no container to sandbox a host tool in — the
       # `ToolContext.containerSandbox` field cannot even be reached from
       # `WorkSessionOptions`. One call to `withoutHostWorkspaceTools` is what
@@ -200,6 +203,9 @@ jobs:
         env:
           GITHUB_SHA: ${{ github.sha }}
           PHASE2_FINAL_REQUIRE_CLEAN: "1"
+
+      - name: Per-model reasoning capability evidence is current
+        run: npm run models:capabilities:audit
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
@@ -1065,7 +1071,10 @@ jobs:
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
-          SMOKE_MODEL="$(grep -m1 '^JUNO_SMOKE_MODEL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          # Qwen is the funded production provider. Keep the deploy gate pinned
+          # to it so an obsolete VM-only smoke setting cannot roll back a good
+          # release by calling an unfunded provider.
+          SMOKE_MODEL="qwen:qwen3.6-flash"
           # Run the smoke implementation from the exact immutable release that
           # was just activated. ~/juno is the long-lived checkout and can still
           # contain an older smoke contract after a deploy.

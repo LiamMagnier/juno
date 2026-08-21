@@ -151,6 +151,7 @@ struct JunoMobileSearchView: View {
             } actions: {
                 Button("Retry") { model.setQuery(model.query, debounced: false) }
                     .buttonStyle(.borderedProminent)
+                .contentShape(.rect)
             }
         case .ready where visibleGroups.isEmpty:
             // Names the corpus, because "no results" and "not synced yet" are
@@ -239,6 +240,7 @@ struct JunoMobileSearchView: View {
         // accent and the entire row turns coral.
         .buttonStyle(JunoSidebarPressStyle())
         .accessibilityHint("Opens \(sectionTitle(result.kind).lowercased())")
+        .frame(minWidth: 44, minHeight: 44)
     }
 
     // MARK: - Recents
@@ -339,6 +341,7 @@ struct JunoMobileSearchView: View {
         }
         .buttonStyle(JunoSidebarPressStyle())
         .accessibilityLabel(title)
+        .frame(minWidth: 44, minHeight: 44)
     }
 
     // MARK: - Kinds

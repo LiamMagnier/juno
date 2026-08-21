@@ -702,7 +702,10 @@ export const MODELS_BY_PROVIDER: ReadonlyMap<Provider, readonly ModelInfo[]> = (
 // Legacy bare ids (stored before namespacing) -> namespaced id.
 const LEGACY_ALIAS: Record<string, string> = Object.fromEntries(CURATED.map((m) => [m.providerModel, m.id]));
 
-export const DEFAULT_MODEL: ModelId = "anthropic:claude-sonnet-5";
+// Qwen is the production-backed default for this deployment. Other providers
+// remain selectable when credentials are configured, but a fresh account must
+// start on the provider that is actually funded and covered by release smoke.
+export const DEFAULT_MODEL: ModelId = "qwen:qwen3.6-flash";
 
 function isProvider(p: string): p is Provider {
   return (PROVIDER_LIST as string[]).includes(p);

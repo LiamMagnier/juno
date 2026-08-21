@@ -195,6 +195,12 @@ const testSuites = [
     environmentClass: "backend",
   },
   {
+    id: "GATE_MODEL_CAPABILITIES",
+    name: "Provider-true Per-model Reasoning Capability Evidence",
+    command: "npm run models:capabilities:audit",
+    environmentClass: "backend",
+  },
+  {
     id: "GATE_PRISMA_VALIDATE",
     name: "Prisma Schema Validation",
     command: "npx prisma validate",
@@ -310,6 +316,11 @@ const testSuites = [
     command: "bash scripts/native-test.sh",
     environmentClass: "native_macos",
     platform: "darwin",
+    // `CI=true` makes the real macOS keychain regression tests wait for a
+    // non-interactive SecurityAgent prompt on a developer Mac. GitHub's native
+    // workflow is the authoritative CI lane; this local verifier must exercise
+    // the same tests in the signed-in user's normal keychain context.
+    env: { CI: "" },
   }
 ];
 

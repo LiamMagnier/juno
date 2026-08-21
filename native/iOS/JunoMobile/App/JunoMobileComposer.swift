@@ -455,6 +455,8 @@ struct JunoMobileComposer: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Send this message as a file")
             .accessibilityIdentifier("juno.mobile.chat-attach-draft")
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
         .padding(.horizontal, JunoSpace.snug)
         .transition(.opacity)
@@ -510,6 +512,7 @@ struct JunoMobileComposer: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.chat-expand-draft")
+                .contentShape(.rect)
 
                 if canAttachDraft {
                     Button(action: attachDraftAsFile) {
@@ -517,6 +520,7 @@ struct JunoMobileComposer: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("juno.mobile.chat-attach-draft")
+                    .contentShape(.rect)
                 }
                 Spacer(minLength: 0)
             }
@@ -801,6 +805,7 @@ struct JunoMobileComposer: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("juno.mobile.chat-retry")
+            .contentShape(.rect)
         }
         .font(.caption)
     }
@@ -866,6 +871,7 @@ struct JunoMobileComposer: View {
             .transition(.scale.combined(with: .opacity))
             .accessibilityLabel("Stop generation")
             .accessibilityIdentifier("juno.mobile.chat-stop")
+            .contentShape(.rect)
         } else if showsVoiceAction, let openVoiceMode {
             Button(action: openVoiceMode) {
                 actionLabel(active: true) { JunoMobileVoiceWave() }
@@ -874,6 +880,7 @@ struct JunoMobileComposer: View {
             .transition(.scale.combined(with: .opacity))
             .accessibilityLabel("Start voice conversation")
             .accessibilityIdentifier("juno.mobile.chat-voice")
+            .contentShape(.rect)
         } else {
             Button(action: send) {
                 actionLabel(active: !sendDisabled) {
@@ -887,6 +894,7 @@ struct JunoMobileComposer: View {
             .transition(.scale.combined(with: .opacity))
             .accessibilityLabel("Send message")
             .accessibilityIdentifier("juno.mobile.chat-send")
+            .contentShape(.rect)
         }
     }
 

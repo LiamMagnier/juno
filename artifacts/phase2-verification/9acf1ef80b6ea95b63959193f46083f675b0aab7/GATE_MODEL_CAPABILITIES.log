@@ -1,0 +1,5 @@
+
+> juno@1.2.7 models:capabilities:audit
+> tsx scripts/audit-model-capabilities.ts
+
+Model capability audit passed: 103 selectable chat models, 13 official provider evidence roots.

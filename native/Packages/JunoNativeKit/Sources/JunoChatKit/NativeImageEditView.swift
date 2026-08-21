@@ -109,20 +109,20 @@ public struct NativeImageEditView: View {
         HStack(spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Image editor")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .junoFont(size: 10, relativeTo: .body, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
                 Text(fileName)
-                    .font(.system(size: 13, weight: .medium))
+                    .junoFont(size: 13, relativeTo: .body, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
             Text(region == nil ? "Whole image" : "Selected area")
-                .font(.system(size: 11, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .junoFont(size: 11, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
@@ -239,7 +239,7 @@ public struct NativeImageEditView: View {
                 .path(in: rect)
                 .stroke(Color.white.opacity(0.9), lineWidth: 1)
             Text("\(Int((region.width * 100).rounded()))% × \(Int((region.height * 100).rounded()))")
-                .font(.system(size: 10, design: .monospaced))
+                .junoFont(size: 10, relativeTo: .body, design: .monospaced)
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
@@ -253,10 +253,10 @@ public struct NativeImageEditView: View {
     private func unavailable(_ message: String, symbol: String) -> some View {
         VStack(spacing: JunoSpace.snug) {
             Image(systemName: symbol)
-                .font(.system(size: 22))
+                .junoFont(size: 22, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
                 .multilineTextAlignment(.center)
         }
@@ -278,7 +278,7 @@ public struct NativeImageEditView: View {
     private var areaPicker: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text("Edit area")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .junoFont(size: 10, relativeTo: .body, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             // Two states, and the second is not a *mode* — it reports whether a
             // selection exists. Making "Select area" a toggle would leave the app
@@ -286,7 +286,7 @@ public struct NativeImageEditView: View {
             HStack(spacing: JunoSpace.snug) {
                 Button { region = nil } label: {
                     Label("Whole image", systemImage: "photo")
-                        .font(.system(size: 12, weight: .medium))
+                        .junoFont(size: 12, relativeTo: .body, weight: .medium)
                         .frame(maxWidth: .infinity)
                         .frame(height: 32)
                         .background(
@@ -301,7 +301,7 @@ public struct NativeImageEditView: View {
                     region == nil ? "Drag on the image" : "Selected area",
                     systemImage: "crop"
                 )
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .body, weight: .medium)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .foregroundStyle(region == nil ? Color.junoMutedForeground : Color.primary)
@@ -320,7 +320,7 @@ public struct NativeImageEditView: View {
                     "Selection: \(Int(($0.width * 100).rounded()))% × \(Int(($0.height * 100).rounded()))%."
                 } ?? "Applies to the whole image."
             )
-            .font(.system(size: 11))
+            .junoFont(size: 11, relativeTo: .body)
             .foregroundStyle(Color.junoMutedForeground)
         }
     }
@@ -332,7 +332,7 @@ public struct NativeImageEditView: View {
                 : "This model can't edit images. Pick one that can.",
             systemImage: "exclamationmark.triangle"
         )
-        .font(.system(size: 12))
+        .junoFont(size: 12, relativeTo: .body)
         .foregroundStyle(Color.junoDanger)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -342,7 +342,7 @@ public struct NativeImageEditView: View {
             "\(editor.displayName) uses the selected area as guidance, so nearby detail may also change.",
             systemImage: "info.circle"
         )
-        .font(.system(size: 11))
+        .junoFont(size: 11, relativeTo: .body)
         .foregroundStyle(Color.junoMutedForeground)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -350,7 +350,7 @@ public struct NativeImageEditView: View {
     private var instructionsField: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             Text("Instructions")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .junoFont(size: 10, relativeTo: .body, weight: .semibold, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             TextField(
                 region == nil
@@ -361,7 +361,7 @@ public struct NativeImageEditView: View {
             )
             .textFieldStyle(.plain)
             .lineLimit(3...6)
-            .font(.system(size: 13))
+            .junoFont(size: 13, relativeTo: .body)
             .disabled(support == .none)
             .padding(JunoSpace.snug)
             .background(
@@ -388,7 +388,7 @@ public struct NativeImageEditView: View {
                 .fixedSize()
             } else if let editor {
                 Text(editor.displayName)
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
             }
             Spacer(minLength: 0)
@@ -397,7 +397,7 @@ public struct NativeImageEditView: View {
                 .foregroundStyle(Color.junoMutedForeground)
             Button(action: generate) {
                 Text("Generate edit")
-                    .font(.system(size: 13, weight: .semibold))
+                    .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                     .padding(.horizontal, JunoSpace.regular)
                     .frame(height: 32)
                     .background(

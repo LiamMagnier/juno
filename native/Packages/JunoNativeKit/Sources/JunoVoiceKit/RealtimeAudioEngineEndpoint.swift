@@ -113,7 +113,7 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
         let attempts = RealtimeAudioGraphPlan.current.voiceProcessingAttempts
         do {
             try build(voiceProcessing: attempts[0])
-        } catch {
+        } catch where attempts.count > 1 {
             // The refusal only surfaces at `start()`, so the only way to find out
             // is to try. A conversation without echo cancellation is still a
             // conversation — it is just one where barge-in has to be manual.
@@ -122,6 +122,8 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
             } catch {
                 throw Failure.engine(error.localizedDescription)
             }
+        } catch {
+            throw Failure.engine(error.localizedDescription)
         }
     }
 
@@ -170,7 +172,8 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
                 channel[0][index] = Float(Int16(littleEndian: samples[index])) / 32_768
             }
         }
-        Self.schedule(buffer, on: player)
+        box.playbackBufferScheduled()
+        Self.schedule(buffer, on: player, box: box)
     }
 
     /// Queues one buffer and returns immediately.
@@ -186,9 +189,12 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     /// one that is wanted.
     private nonisolated static func schedule(
         _ buffer: AVAudioPCMBuffer,
-        on player: AVAudioPlayerNode
+        on player: AVAudioPlayerNode,
+        box: CaptureShuttle
     ) {
-        player.scheduleBuffer(buffer)
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
+            box.playbackBufferCompleted()
+        }
     }
 
     /// Barge-in's local half. `stop()` alone leaves the node unable to accept new
@@ -198,6 +204,7 @@ public actor AVAudioEngineRealtimeEndpoint: RealtimeAudioEndpoint {
     public func flushPlayback() async {
         guard let player else { return }
         player.stop()
+        box.clearPlaybackBuffers()
         player.play()
     }
 
@@ -428,6 +435,7 @@ private final class CaptureShuttle: @unchecked Sendable {
     private var continuations: [UUID: AsyncStream<RealtimeCaptureFrame>.Continuation] = [:]
     private var storedMuted = false
     private var storedSuppressed = false
+    private var playbackDrain = RealtimePlaybackDrain()
 
     var muted: Bool {
         get { lock.lock(); defer { lock.unlock() }; return storedMuted }
@@ -437,6 +445,21 @@ private final class CaptureShuttle: @unchecked Sendable {
     var suppressed: Bool {
         get { lock.lock(); defer { lock.unlock() }; return storedSuppressed }
         set { lock.lock(); defer { lock.unlock() }; storedSuppressed = newValue }
+    }
+
+    func playbackBufferScheduled() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.scheduled()
+    }
+
+    func playbackBufferCompleted() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.completed()
+    }
+
+    func clearPlaybackBuffers() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.clear()
     }
 
     func configure(converter: AVAudioConverter, uplinkFormat: AVAudioFormat) {
@@ -477,6 +500,7 @@ private final class CaptureShuttle: @unchecked Sendable {
         converter = nil
         uplinkFormat = nil
         storedSuppressed = false
+        playbackDrain.clear()
     }
 
     /// The whole uplink, on the audio thread: meter, downsample to PCM16 mono
@@ -499,7 +523,10 @@ private final class CaptureShuttle: @unchecked Sendable {
             )
         }
 
-        let pcm16 = (muted || suppressed) ? nil : encode(buffer)
+        lock.lock()
+        let shouldSuppress = storedMuted || storedSuppressed || playbackDrain.isActive
+        lock.unlock()
+        let pcm16 = shouldSuppress ? nil : encode(buffer)
         // Absent, not empty: nil says "nothing was uploaded", and a zero-length
         // `Data` would say "a slice of silence was". See ``RealtimeCaptureFrame``.
         yield(RealtimeCaptureFrame(pcm16: pcm16, loudness: loudness))

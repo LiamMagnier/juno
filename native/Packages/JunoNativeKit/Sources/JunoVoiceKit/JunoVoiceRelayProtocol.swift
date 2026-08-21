@@ -24,6 +24,12 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
 
     public var id: String { rawValue }
 
+    /// The provider this deployment can actually fund and operate. Voice is a
+    /// separate realtime product from the selected text model, so silently
+    /// mapping a Gemini chat to an unpaid Gemini Live credential only adds a
+    /// 15-second timeout before the working Qwen session can begin.
+    public static let productionDefault: Self = .qwen
+
     public var displayName: String {
         switch self {
         case .openai: "OpenAI"

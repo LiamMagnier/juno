@@ -151,7 +151,9 @@ struct JunoMobileIncognitoChat: View {
                 titleVisibility: .visible
             ) {
                 Button("End chat", role: .destructive) { close() }
+                .contentShape(.rect)
                 Button("Keep chatting", role: .cancel) {}
+                .contentShape(.rect)
             } message: {
                 Text("It was never saved, so closing it is the only copy gone.")
             }

@@ -1067,7 +1067,9 @@ private struct JunoMobileConversationDetail: View {
             Button("Delete", role: .destructive) {
                 Task { await model.deleteConversation(id: conversation.id) }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) {}
+            .contentShape(.rect)
         } message: {
             Text("chat.delete.warning")
         }
@@ -1464,6 +1466,7 @@ private struct JunoMobileMessageRow: View {
                 }
                 .foregroundStyle(Color.junoMutedForeground)
                 .accessibilityIdentifier("juno.mobile.message-edit-cancel")
+                .contentShape(.rect)
 
                 Button("Send") { submitEdit() }
                     .fontWeight(.semibold)
@@ -1472,6 +1475,7 @@ private struct JunoMobileMessageRow: View {
                     )
                     .disabled(!canSubmitEdit)
                     .accessibilityIdentifier("juno.mobile.message-edit-send")
+                .contentShape(.rect)
             }
             .junoFont(size: 14, relativeTo: .subheadline)
             .buttonStyle(.plain)
@@ -1611,6 +1615,8 @@ private struct JunoMobileMessageRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("juno.mobile.message-expand")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 
     /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
@@ -1900,6 +1906,7 @@ private struct JunoMobileMessageRow: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityIdentifier(identifier)
+        .frame(minWidth: 44, minHeight: 44)
     }
 
     private func copy() {
@@ -1926,6 +1933,7 @@ private struct JunoMobileMessageRow: View {
             Label("Copy", systemImage: "doc.on.doc")
         }
         .disabled(plainText.isEmpty)
+        .contentShape(.rect)
     }
 }
 
@@ -1962,6 +1970,7 @@ private struct JunoMobileArtifactInlineCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Artifact, \(artifact.title), \(subtitle). Opens it.")
                 .accessibilityIdentifier("juno.mobile.chat-artifact")
+            .contentShape(.rect)
         } else {
             card.accessibilityElement(children: .combine)
                 .accessibilityLabel("Artifact, \(artifact.title), \(subtitle)")

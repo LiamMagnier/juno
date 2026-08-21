@@ -1,0 +1,10 @@
+
+Running 5 tests using 1 worker
+
+  ✓  1 [setup] › e2e/setup.ts:8:6 › authenticate the E2E account (9.3s)
+  ✓  2 [chromium] › e2e/chat.spec.ts:76:7 › Chat workspace › reaches a usable composer (732ms)
+  ✓  3 [chromium] › e2e/chat.spec.ts:80:7 › Chat workspace › healthy chat streams success without a document reload or ChatView remount (7.0s)
+  ✓  4 [chromium] › e2e/chat.spec.ts:110:7 › Chat workspace › success persists across reload, sidebar navigation, history, and a copied URL (12.6s)
+  ✓  5 [chromium] › e2e/chat.spec.ts:153:7 › Chat workspace › typed provider failure renders a controlled error and retry action (1.9s)
+
+  5 passed (34.4s)

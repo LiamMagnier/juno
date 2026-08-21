@@ -92,6 +92,7 @@ struct JunoMobileDesignArtifactBody: View {
                     Text(reason(for: error))
                 } actions: {
                     Button("Show source") { reading = .source }
+                    .contentShape(.rect)
                 }
             case nil:
                 // One frame, between `onAppear` and the decode landing.
@@ -121,6 +122,7 @@ struct JunoMobileDesignArtifactBody: View {
                         Text(reason)
                     } actions: {
                         Button("Show layers") { reading = .layers }
+                        .contentShape(.rect)
                     }
                     .background(Color.junoSurface)
                 case .ready:

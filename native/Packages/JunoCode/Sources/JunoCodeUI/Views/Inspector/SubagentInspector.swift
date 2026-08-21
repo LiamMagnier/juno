@@ -145,7 +145,7 @@ private struct SubagentEmptyState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Image(systemName: "person.2")
-                .font(.system(size: 18, weight: .medium))
+                .junoFont(size: 18, relativeTo: .body, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 36, height: 36)
                 .background(Color.junoRaised, in: Circle())

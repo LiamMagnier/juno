@@ -68,10 +68,6 @@ struct DesktopSegmented<Value: Hashable>: View {
     @Namespace private var knob
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var travel: Animation? {
-        JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion)
-    }
-
     var body: some View {
         // spacing 0: the knob is a single element, so there is no second piece
         // of glass for it to blend with. The container is here to give that one
@@ -81,7 +77,9 @@ struct DesktopSegmented<Value: Hashable>: View {
                 ForEach(options) { option in
                     let selected = option.value == selection
                     Button {
-                        withAnimation(travel) { selection = option.value }
+                        withAnimation(JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion)) {
+                            selection = option.value
+                        }
                     } label: {
                         HStack(spacing: 5) {
                             if let symbol = option.symbol {
@@ -90,12 +88,12 @@ struct DesktopSegmented<Value: Hashable>: View {
                                 // and `.medium` so a 12pt glyph does not read
                                 // thinner than the word beside it.
                                 Image(systemName: symbol)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .junoFont(size: 11, relativeTo: .body, weight: .medium)
                                     .accessibilityHidden(true)
                             }
                             Text(option.title)
                         }
-                            .font(.system(size: 12, weight: .medium))
+                            .junoFont(size: 12, relativeTo: .body, weight: .medium)
                             .foregroundStyle(
                                 selected ? Color.junoForeground : Color.junoMutedForeground
                             )
@@ -129,7 +127,9 @@ struct DesktopSegmented<Value: Hashable>: View {
             @unknown default: return
             }
             guard options.indices.contains(next) else { return }
-            withAnimation(travel) { selection = options[next].value }
+            withAnimation(JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion)) {
+                selection = options[next].value
+            }
         }
     }
 }

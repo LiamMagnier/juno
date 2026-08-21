@@ -893,7 +893,7 @@ struct DesktopCodeWorkspace: View {
             return
         }
 
-        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
+        let initialProvider = JunoVoiceProvider.productionDefault
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(

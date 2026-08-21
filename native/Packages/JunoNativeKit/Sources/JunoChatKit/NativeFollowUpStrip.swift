@@ -49,10 +49,10 @@ public struct NativeFollowUpStrip: View {
                         Button { onPick(suggestion) } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Image(systemName: "plus")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .junoFont(size: 11, relativeTo: .body, weight: .semibold)
                                     .foregroundStyle(Color.junoMutedForeground)
                                 Text(suggestion)
-                                    .font(.system(size: 14))
+                                    .junoFont(size: 14, relativeTo: .body)
                                     .foregroundStyle(Color.primary.opacity(0.85))
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)

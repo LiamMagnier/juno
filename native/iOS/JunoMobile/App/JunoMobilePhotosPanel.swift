@@ -178,6 +178,7 @@ struct JunoMobilePhotosPanel: View {
         .junoProminentAction()
         .controlSize(.large)
         .accessibilityIdentifier("juno.mobile.photos-all")
+        .contentShape(.rect)
     }
 
     /// Confirm the staged selection and return to the composer. The selected

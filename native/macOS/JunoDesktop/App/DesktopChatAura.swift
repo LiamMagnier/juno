@@ -21,7 +21,7 @@ enum DesktopChatMotion {
     /// `--dur-fast`: the canvas leaving while the transcript reflows underneath.
     /// Deliberately quicker than the entrance — a panel you asked to close should
     /// be gone before you have looked away from the button.
-    static let canvasExit = Animation.easeOut(duration: 0.12)
+    static let canvasExit = JunoMotion.fast
     /// The web's `slide-in-from-right-4`. Sixteen points, not a full-width sweep:
     /// opening reads as the card handing off to the workspace beside it rather
     /// than as a scene change.
@@ -39,7 +39,7 @@ enum DesktopChatMotion {
     /// throws an object. The bounce is small on purpose: at more than about
     /// 0.15 the knob visibly overshoots its segment and the label underneath it
     /// reads as mistimed.
-    static let segmentTravel = Animation.smooth(duration: 0.34, extraBounce: 0.12)
+    static let segmentTravel = JunoMotion.standard
     /// The greeting's first beat — the web's `[animation-delay:60ms]`.
     static let greetingPhraseBeat = Duration.milliseconds(60)
     /// Its second — `[animation-delay:180ms]` on the name.
@@ -354,10 +354,14 @@ struct DesktopDraftGreeting: View {
             return
         }
         try? await Task.sleep(for: DesktopChatMotion.greetingPhraseBeat)
-        withAnimation(DesktopChatMotion.riseIn) { phraseRisen = true }
+        withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+            phraseRisen = true
+        }
         try? await Task.sleep(
             for: DesktopChatMotion.greetingNameBeat - DesktopChatMotion.greetingPhraseBeat
         )
-        withAnimation(DesktopChatMotion.riseIn) { nameRisen = true }
+        withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+            nameRisen = true
+        }
     }
 }

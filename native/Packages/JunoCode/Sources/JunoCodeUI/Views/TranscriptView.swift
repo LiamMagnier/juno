@@ -281,7 +281,12 @@ struct TranscriptJumpToLatest: View {
             .contentShape(.capsule)
         }
         .buttonStyle(.junoPress)
-        .junoGlass(in: Capsule(style: .continuous), interactive: true)
+        .background(Color.junoSurface, in: Capsule(style: .continuous))
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(Color.junoHairline, lineWidth: 1)
+                .allowsHitTesting(false)
+        }
         .accessibilityIdentifier("juno.code.transcript.jump-to-latest")
     }
 }

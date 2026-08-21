@@ -382,7 +382,7 @@ public struct Composer: View {
                     Task { await controller.stop() }
                 } label: {
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(Color.junoOnAccent)
                         .frame(width: 26, height: 26)
                 }
@@ -408,7 +408,7 @@ public struct Composer: View {
             } else {
                 Button(action: send) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
+                        .junoFont(size: 12, relativeTo: .body, weight: .bold)
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 30, height: 30)
                         .contentShape(.circle)

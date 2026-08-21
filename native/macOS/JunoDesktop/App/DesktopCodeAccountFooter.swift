@@ -429,7 +429,7 @@ struct DesktopCodeRunningDot: View {
     /// Reduce Motion an ambient loop does not want to be faster, it wants to
     /// stop, and `ambient` returns `nil` so it does.
     private var breath: Animation {
-        .easeInOut(duration: Self.period / 2).repeatForever(autoreverses: true)
+        JunoMotion.outSoft(Self.period / 2).repeatForever(autoreverses: true)
     }
 
     var body: some View {

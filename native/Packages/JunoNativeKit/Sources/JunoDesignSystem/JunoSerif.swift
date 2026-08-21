@@ -76,7 +76,7 @@ public enum JunoSerif {
         face: Face = .regular
     ) -> Font {
         guard isBundled else {
-            let system = Font.system(size: size, weight: face.systemWeight, design: .serif)
+            let system = Font.system(textStyle, design: .serif, weight: face.systemWeight)
             return face.isItalic ? system.italic() : system
         }
         return .custom(face.rawValue, size: size, relativeTo: textStyle)

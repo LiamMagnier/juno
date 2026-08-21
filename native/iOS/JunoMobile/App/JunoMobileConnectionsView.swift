@@ -34,6 +34,7 @@ struct JunoMobileConnectionsView: View {
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             case .ready:
                 list
@@ -71,7 +72,9 @@ struct JunoMobileConnectionsView: View {
                 disconnectTarget = nil
                 Task { await model.disconnect(target) }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { disconnectTarget = nil }
+            .contentShape(.rect)
         } message: {
             Text("connections.disconnect.detail")
         }
@@ -130,6 +133,7 @@ struct JunoMobileConnectionsView: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.junoAccent)
+                    .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -210,6 +214,8 @@ struct JunoMobileConnectionsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 
     private var empty: some View {
@@ -278,6 +284,8 @@ struct JunoMobileConnectionsView: View {
             .accessibilityLabel(
                 Text(String(format: String(localized: "connections.disconnect.label"), connector.label))
             )
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         } else if connector.canConnect {
             Button {
                 connectURL = connectURL(for: connector)
@@ -289,6 +297,7 @@ struct JunoMobileConnectionsView: View {
             .accessibilityLabel(
                 Text(String(format: String(localized: "connections.connect.label"), connector.label))
             )
+            .contentShape(.rect)
         } else {
             // No button at all where Connect cannot work. A disabled control with
             // a tooltip is a desktop idiom; on a phone the reason belongs in the

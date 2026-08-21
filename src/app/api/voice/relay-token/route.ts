@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { getUserPlan } from "@/lib/usage";
-import { PLANS } from "@/lib/plans";
 import { signState } from "@/lib/crypto";
-import { rateLimit } from "@/lib/rate-limit";
-import { isOwnerEmail } from "@/lib/owner";
-import { checkBudget, budgetExceededMessage } from "@/lib/spend";
+import { evaluateVoiceAccess } from "@/lib/voice-access-policy";
 
 export const runtime = "nodejs";
 
@@ -44,23 +40,12 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const owner = isOwnerEmail(user.email);
-  const plan = await getUserPlan(user.id);
-  // Owner/internal dogfooding bypasses plan/budget gates just like the other
-  // owner-only usage paths. Previously the owner bypass happened *after* this
-  // plan check, so an owner account on a plan without the `voice` entitlement
-  // could never start mobile Voice even though the relay and provider were
-  // correctly configured.
-  if (!owner && !PLANS[plan].voice) {
-    return NextResponse.json({ error: "Voice mode requires a paid plan." }, { status: 403 });
-  }
-  if (!owner) {
-    const limit = await rateLimit({ key: `relay-token:${user.id}`, limit: 30, windowSec: 60 });
-    if (!limit.success) return NextResponse.json({ error: "Slow down." }, { status: 429 });
-    const budget = await checkBudget(user.id, plan);
-    if (!budget.allowed) {
-      return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
-    }
+  const access = await evaluateVoiceAccess(user, "relay-token");
+  if (!access.allowed && access.denial) {
+    return NextResponse.json(
+      { error: access.denial.error, ...(access.denial.message ? { message: access.denial.message } : {}) },
+      { status: access.denial.status },
+    );
   }
 
   const url = resolveVoiceRelayURL();

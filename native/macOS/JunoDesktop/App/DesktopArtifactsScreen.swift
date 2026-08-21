@@ -1325,7 +1325,7 @@ struct DesktopArtifactsScreen: View {
     private var viewSwitch: some View {
         if artifact?.kind.isDesignDocument == true {
             Text("Design")
-                .font(.system(size: 11, weight: .medium))
+                .junoFont(size: 11, relativeTo: .body, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 148)
                 .help("A design opens in the design editor — there is no separate source view to switch to")
@@ -1346,7 +1346,7 @@ struct DesktopArtifactsScreen: View {
             .accessibilityIdentifier("juno.artifact-view-mode")
         } else {
             Text(resolvedMode.title)
-                .font(.system(size: 11, weight: .medium))
+                .junoFont(size: 11, relativeTo: .body, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 148)
                 .help("This artifact kind has no native renderer and nothing to run — its source is shown")

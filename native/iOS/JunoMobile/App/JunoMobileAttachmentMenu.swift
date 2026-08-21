@@ -139,6 +139,7 @@ struct JunoMobileComposerActions: View {
         )
         .accessibilityIdentifier("juno.mobile.chat-plus")
         .task { await applyPreviewFlags() }
+        .contentShape(.rect)
     }
 
     /// **Tools**, as a nested menu beside Project rather than as a run of rows.
@@ -160,6 +161,7 @@ struct JunoMobileComposerActions: View {
             Label(toolsLabel, systemImage: "slider.horizontal.3")
         }
         .accessibilityIdentifier("juno.mobile.composer-tools")
+        .contentShape(.rect)
     }
 
     /// "Tools" alone, or "Tools · 3". Counted the web's way — rows that are
@@ -242,6 +244,7 @@ struct JunoMobileComposerActions: View {
                 JunoIconLabel("composer.connect-an-app", icon: .connections)
             }
             .disabled(!canOpenPlugins)
+            .contentShape(.rect)
         } else {
             Menu {
                 ForEach(connectors) { connector in
@@ -284,6 +287,7 @@ struct JunoMobileComposerActions: View {
                 JunoIconLabel(verbatim: connectorLabel, icon: .connections)
             }
             .accessibilityIdentifier("juno.mobile.composer-connectors")
+            .contentShape(.rect)
         }
     }
 
@@ -348,6 +352,7 @@ struct JunoMobileComposerActions: View {
             JunoIconLabel(verbatim: selectedProjectName, icon: .projects)
         }
         .accessibilityIdentifier("juno.mobile.composer-project")
+        .contentShape(.rect)
     }
 
     /// The selected row keeps the checkmark and the rest carry the project mark,
@@ -366,6 +371,7 @@ struct JunoMobileComposerActions: View {
                 JunoIconLabel(verbatim: name, icon: .projects)
             }
         }
+        .contentShape(.rect)
     }
 
     private var selectedProjectName: String {

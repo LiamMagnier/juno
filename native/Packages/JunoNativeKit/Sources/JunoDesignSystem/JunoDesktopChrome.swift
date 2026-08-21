@@ -522,7 +522,7 @@ public struct JunoEmptyState: View {
                         // a fixed 72pt plate, so growing it at AX5 would push it
                         // outside the circle. The empty state's *text* below
                         // scales, which is where the reading is.
-                        .font(.system(size: 30, weight: .regular))
+                        .junoFont(size: 30, relativeTo: .body, weight: .regular)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
             }

@@ -81,6 +81,7 @@ struct JunoMobileCodeView: View {
                     } actions: {
                         Button("Retry") { Task { await model.refresh() } }
                             .buttonStyle(.borderedProminent)
+                        .contentShape(.rect)
                     }
                 }
             case .ready:
@@ -204,6 +205,7 @@ struct JunoMobileCodeView: View {
                             JunoMobileCodeTaskRow(task: task)
                         }
                         .buttonStyle(.plain)
+                        .contentShape(.rect)
                     }
                 }
             }
@@ -269,6 +271,7 @@ struct JunoMobileCodeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("juno.mobile.code.account-card")
+            .contentShape(.rect)
         }
     }
 
@@ -665,6 +668,8 @@ private struct JunoMobileCodeTargetSheet: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
                 }
             }
             .searchable(text: $search, prompt: Text("code.target.search-repos"))
@@ -684,6 +689,7 @@ private struct JunoMobileCodeTargetSheet: View {
                 if failure == .unreachable {
                     Button("Retry") { model.loadRepositoriesIfNeeded(force: true) }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             }
         }
@@ -1642,6 +1648,7 @@ private struct JunoMobileCodeSessionView: View {
                 .tint(Color.junoMutedForeground)
                 .foregroundStyle(.primary)
                 .controlSize(.large)
+                .contentShape(.rect)
                 Button {
                     Task { await model.respondToApproval(approve: true) }
                 } label: {
@@ -1653,6 +1660,7 @@ private struct JunoMobileCodeSessionView: View {
                 .tint(Color.junoAccent)
                 .controlSize(.large)
                 .accessibilityIdentifier("juno.mobile.code-approve")
+                .contentShape(.rect)
             }
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))

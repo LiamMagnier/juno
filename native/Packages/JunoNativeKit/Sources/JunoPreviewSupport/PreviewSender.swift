@@ -132,6 +132,12 @@ public actor PreviewSender: NativeChatRequestSending {
         ) {
             return body
         }
+        if path == "/api/voice/relay-token" {
+            // A deliberately closed local port: enough to exercise the real
+            // Voice authorization and typed relay-recovery UI, with no network
+            // access and no fake provider response.
+            return Data(#"{"token":"preview-voice-token","url":"ws://127.0.0.1:9"}"#.utf8)
+        }
         if path == "/api/work/artifacts" {
             return PreviewWorkFixtures.artifactsBody(sessionID: PreviewWorkFixtures.openSessionID)
         }

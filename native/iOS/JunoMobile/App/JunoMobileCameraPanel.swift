@@ -378,6 +378,7 @@ struct JunoMobileCameraPanel: View {
                 }
                 Button("attachments.camera.close", action: close)
                     .buttonStyle(.bordered)
+                .contentShape(.rect)
             }
             .tint(Color.junoAccent)
         }

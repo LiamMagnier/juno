@@ -6,6 +6,7 @@ const relayVerifier = readFileSync(new URL("../scripts/verify-voice-relay.mjs", 
 const tokenRoute = readFileSync(new URL("../src/app/api/voice/relay-token/route.ts", import.meta.url), "utf8");
 const contextRoute = readFileSync(new URL("../src/app/api/voice/context/route.ts", import.meta.url), "utf8");
 const transcriptRoute = readFileSync(new URL("../src/app/api/voice/transcript/route.ts", import.meta.url), "utf8");
+const accessPolicy = readFileSync(new URL("../src/lib/voice-access-policy.ts", import.meta.url), "utf8");
 const nativeComposer = readFileSync(new URL("../native/iOS/JunoMobile/App/JunoMobileComposer.swift", import.meta.url), "utf8");
 const nativeAttachmentModel = readFileSync(
   new URL("../native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeComposerAttachmentModel.swift", import.meta.url),
@@ -28,13 +29,20 @@ test("voice relay verifier loads the immutable release env before checking auth"
 
 test("owner voice access bypasses plan and spend gates without bypassing authentication", () => {
   const userLookup = tokenRoute.indexOf("const user = await getCurrentUser()");
-  const ownerLookup = tokenRoute.indexOf("const owner = isOwnerEmail(user.email)");
-  const planGate = tokenRoute.indexOf("if (!owner && !PLANS[plan].voice)");
-  const rateGate = tokenRoute.indexOf("if (!owner) {");
+  const policyLookup = tokenRoute.indexOf("evaluateVoiceAccess(user, \"relay-token\")");
   assert.ok(userLookup >= 0, "voice route must still require an authenticated user");
-  assert.ok(ownerLookup > userLookup, "owner detection must happen only after authentication");
-  assert.ok(planGate > ownerLookup, "owner-aware plan gate is missing");
-  assert.ok(rateGate > planGate, "owner-aware rate/budget gate is missing");
+  assert.ok(policyLookup > userLookup, "canonical access policy must run only after authentication");
+  assert.match(accessPolicy, /const owner = isOwnerEmail\(user\.email\)/);
+  assert.match(accessPolicy, /if \(!owner && !PLANS\[plan\]\.voice\)/);
+  assert.match(accessPolicy, /if \(owner\) return \{ allowed: true, owner, plan \}/);
+  assert.match(accessPolicy, /surface === ["']relay-token["']/);
+  assert.match(accessPolicy, /checkBudget\(user\.id, plan\)/);
+});
+
+test("every user-authenticated Voice route uses the canonical access policy", () => {
+  assert.match(tokenRoute, /evaluateVoiceAccess\(user, ["']relay-token["']\)/);
+  assert.match(contextRoute, /evaluateVoiceAccess\(user, ["']context["']\)/);
+  assert.match(transcriptRoute, /evaluateVoiceAccess\(user, ["']transcript["']\)/);
 });
 
 test("voice token route derives the canonical same-origin relay when explicit env is absent", () => {

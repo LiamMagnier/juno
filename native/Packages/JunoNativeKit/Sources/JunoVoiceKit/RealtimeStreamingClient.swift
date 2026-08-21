@@ -185,10 +185,61 @@ public struct RealtimeAudioGraphPlan: Equatable, Sendable {
 
     public static var current: Self {
         #if os(macOS)
-        Self(topology: .splitCapturePlayback, voiceProcessingAttempts: [true, false])
+        // A macOS Voice Processing input node is a duplex AudioUnit even when it
+        // lives in a capture-only AVAudioEngine. In the split topology its
+        // hidden downlink has no timestamped render source: the graph can report
+        // `start()` success and then continuously fail at runtime with
+        // `ProcessDownlinkAudio` / invalid sample-time I/O faults. That is worse
+        // than an ordinary startup refusal because there is no thrown error for
+        // the fallback ladder to catch. Raw capture is therefore the only
+        // compatible macOS split-graph attempt; interruption remains available
+        // explicitly and the mixer in the independent playback engine still
+        // resamples the provider's 24 kHz stream to the output hardware.
+        Self(topology: .splitCapturePlayback, voiceProcessingAttempts: [false])
         #else
         Self(topology: .unifiedDuplex, voiceProcessingAttempts: [true, false])
         #endif
+    }
+}
+
+/// Tracks whether provider audio is still physically queued for playback.
+/// `turn.end` means the provider stopped producing bytes; it does not mean the
+/// speaker has consumed the buffers already scheduled on AVAudioPlayerNode.
+public struct RealtimePlaybackDrain: Equatable, Sendable {
+    /// Raw macOS capture hears a short acoustic tail after CoreAudio reports the
+    /// final buffer played. Keep that tail out of the provider uplink as well.
+    public static let acousticTailSeconds: TimeInterval = 0.75
+
+    public private(set) var pendingBuffers = 0
+    public private(set) var suppressUntilUptime: TimeInterval = 0
+    public var isActive: Bool { isActive(atUptime: ProcessInfo.processInfo.systemUptime) }
+
+    public init() {}
+
+    public mutating func scheduled() {
+        pendingBuffers += 1
+        suppressUntilUptime = 0
+    }
+
+    public mutating func completed(
+        atUptime uptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) {
+        guard pendingBuffers > 0 else { return }
+        pendingBuffers -= 1
+        if pendingBuffers == 0 {
+            suppressUntilUptime = uptime + Self.acousticTailSeconds
+        }
+    }
+
+    public func isActive(atUptime uptime: TimeInterval) -> Bool {
+        pendingBuffers > 0 || uptime < suppressUntilUptime
+    }
+
+    /// An explicit interruption intentionally reopens the microphone now; late
+    /// completion callbacks from the discarded buffers must not re-arm a tail.
+    public mutating func clear() {
+        pendingBuffers = 0
+        suppressUntilUptime = 0
     }
 }
 
@@ -773,7 +824,7 @@ public actor RealtimeStreamingClient {
         public var detector: RealtimeVoiceActivityDetector
 
         public init(
-            provider: JunoVoiceProvider = .openai,
+            provider: JunoVoiceProvider = .productionDefault,
             history: [JunoVoiceHistoryEntry] = [],
             reconnectDelay: Duration = .seconds(1),
             detector: RealtimeVoiceActivityDetector = RealtimeVoiceActivityDetector()

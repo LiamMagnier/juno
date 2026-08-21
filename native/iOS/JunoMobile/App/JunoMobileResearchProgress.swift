@@ -110,6 +110,7 @@ struct JunoMobileResearchProgress: View {
                 .font(.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(.tint)
+            .contentShape(.rect)
         }
         .accessibilityElement(children: .combine)
     }

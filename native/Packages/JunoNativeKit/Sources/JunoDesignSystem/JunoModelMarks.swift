@@ -71,7 +71,7 @@ public struct JunoProviderMark: View {
             .fill(Color.junoMuted)
             .overlay {
                 Text(String(providerName.prefix(1)).uppercased())
-                    .font(.system(size: size * 0.55, weight: .semibold, design: .rounded))
+                    .junoFont(size: size * 0.55, relativeTo: .body, weight: .semibold, design: .rounded)
                     .junoSecondaryInk()
             }
     }

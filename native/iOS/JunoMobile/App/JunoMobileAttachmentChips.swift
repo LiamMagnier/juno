@@ -48,6 +48,7 @@ struct JunoMobileAttachmentChips: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("attachments.retry"))
+                .contentShape(.rect)
             }
 
             Button {
@@ -59,6 +60,7 @@ struct JunoMobileAttachmentChips: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("attachments.remove"))
+            .contentShape(.rect)
         }
         .padding(.horizontal, JunoSpace.snug)
         .padding(.vertical, JunoSpace.tight)

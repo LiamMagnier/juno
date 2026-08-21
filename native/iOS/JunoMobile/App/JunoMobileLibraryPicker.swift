@@ -85,6 +85,7 @@ struct JunoMobileLibraryPicker: View {
                     Button("action.retry") { Task { await model.refresh() } }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
+                    .contentShape(.rect)
                 }
             }
         } else {
@@ -180,6 +181,7 @@ struct JunoMobileLibraryPicker: View {
         .task(id: item.id) {
             await previews.load(file) { await model.accessFile(id: item.id) }
         }
+        .contentShape(.rect)
     }
 
     private func commit() {

@@ -436,14 +436,16 @@ struct DesktopVoiceDock: View {
     /// bottom is exactly what makes a pill look hand-drawn next to the
     /// composer's own geometry.
     private var pill: some View {
-        HStack(spacing: Metric.controlGap) {
-            status
-            controls
-            optionsMenu
-            hangUpButton
+        JunoDesktopGlass(spacing: Metric.controlGap) {
+            HStack(spacing: Metric.controlGap) {
+                status
+                controls
+                optionsMenu
+                hangUpButton
+            }
+            .padding(JunoSpace.hairline)
+            .junoGlass(in: Capsule(style: .continuous))
         }
-        .padding(JunoSpace.hairline)
-        .junoGlass(in: Capsule(style: .continuous))
         // The web lifts this pill further off the page than the composer below
         // it, and it has to: the dock is the transient thing, and depth is what
         // says so when the two surfaces are the same material.

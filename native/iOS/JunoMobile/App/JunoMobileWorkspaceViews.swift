@@ -44,6 +44,7 @@ struct JunoMobileProjectsView: View {
                 } actions: {
                     Button("Retry") { Task { await model.reload() } }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             default:
                 content
@@ -91,12 +92,14 @@ struct JunoMobileProjectsView: View {
         )) {
             TextField("Name", text: $renameValue)
             Button("Cancel", role: .cancel) { renameTarget = nil }
+            .contentShape(.rect)
             Button("Save") {
                 if let target = renameTarget {
                     Task { await model.updateProject(id: target.id, name: renameValue) }
                 }
                 renameTarget = nil
             }
+            .contentShape(.rect)
         }
         .confirmationDialog(
             deleteTarget.map { "Delete “\($0.name)”?" } ?? "",
@@ -112,7 +115,9 @@ struct JunoMobileProjectsView: View {
                 }
                 deleteTarget = nil
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { deleteTarget = nil }
+            .contentShape(.rect)
         } message: {
             Text("Conversations are kept and unlinked; project files are removed.")
         }
@@ -168,6 +173,7 @@ struct JunoMobileProjectsView: View {
                 .junoProminentAction()
                 .controlSize(.large)
                 .padding(.top, JunoSpace.hairline)
+                .contentShape(.rect)
             }
         }
     }
@@ -241,16 +247,19 @@ struct JunoMobileProjectsView: View {
                 systemImage: project.starred ? "pin.slash" : "pin"
             )
         }
+        .contentShape(.rect)
         Button {
             renameValue = project.name
             renameTarget = project
         } label: {
             Label("Rename", systemImage: "pencil")
         }
+        .contentShape(.rect)
         Divider()
         Button(role: .destructive) { deleteTarget = project } label: {
             Label("Delete", systemImage: "trash")
         }
+        .contentShape(.rect)
     }
 
     private func startCreate() {
@@ -394,6 +403,7 @@ struct JunoMobileArtifactsView: View {
                 } actions: {
                     Button("Retry") { Task { await model.reload() } }
                         .buttonStyle(.borderedProminent)
+                    .contentShape(.rect)
                 }
             default:
                 content
@@ -509,6 +519,8 @@ struct JunoMobileArtifactsView: View {
         }
         .buttonStyle(JunoMobileChipPressStyle())
         .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 
     private func card(_ artifact: NativeArtifact) -> some View {
@@ -622,8 +634,10 @@ struct JunoMobileWorkspaceStatus: View {
                         .junoSecondaryInk()
                     HStack(spacing: JunoSpace.cozy) {
                         Button("Keep mine", action: keepMine)
+                        .contentShape(.rect)
                         Spacer(minLength: 0)
                         Button("Use server version", action: useServer)
+                        .contentShape(.rect)
                     }
                     .font(.caption.weight(.semibold))
                     .buttonStyle(.plain)
@@ -959,17 +973,20 @@ private struct JunoMobileProjectDetail: View {
         )) {
             TextField("File name", text: $renameValue)
             Button("Cancel", role: .cancel) { renameFileID = nil }
+            .contentShape(.rect)
             Button("Save") {
                 guard let id = renameFileID else { return }
                 renameFileID = nil
                 Task { await model.renameFile(id: id, fileName: renameValue) }
             }
+            .contentShape(.rect)
         }
         .alert("File unavailable", isPresented: Binding(
             get: { localError != nil },
             set: { if !$0 { localError = nil } }
         )) {
             Button("OK") { localError = nil }
+            .contentShape(.rect)
         } message: {
             Text(localError ?? "Try again.")
         }
@@ -1180,6 +1197,7 @@ struct JunoMobileArtifactDetail: View {
         }
         .accessibilityLabel("Version")
         .accessibilityIdentifier("juno.mobile.artifact-version")
+        .contentShape(.rect)
     }
 
     /// One switch and the shares, on one line. Kinds with a single view — a code
@@ -1302,6 +1320,7 @@ struct JunoMobileArtifactDetail: View {
             Task { await model.restoreArtifact(id: artifact.id, version: version.version) }
         }
         .disabled(model.isMutating)
+        .contentShape(.rect)
     }
 
     /// Whichever header this presentation calls for, then the artifact itself.
@@ -1403,6 +1422,7 @@ struct JunoMobileArtifactDetail: View {
         .disabled(model.isMutating || model.isExporting)
         .accessibilityLabel("Artifact actions")
         .accessibilityIdentifier("juno.mobile.artifact-menu")
+        .contentShape(.rect)
     }
 
     /// Header, then one switch, then the artifact — with the artifact getting the
@@ -1457,6 +1477,7 @@ struct JunoMobileArtifactDetail: View {
             set: { if !$0 { localError = nil } }
         )) {
             Button("OK") { localError = nil }
+            .contentShape(.rect)
         } message: {
             Text(localError ?? "Try again.")
         }
@@ -1514,6 +1535,7 @@ struct JunoMobileArtifactDetail: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .accessibilityIdentifier("juno.mobile.design.discard")
+            .contentShape(.rect)
 
             Button("Save") {
                 guard let designDraft else { return }
@@ -1528,6 +1550,7 @@ struct JunoMobileArtifactDetail: View {
             .controlSize(.small)
             .disabled(model.isMutating)
             .accessibilityIdentifier("juno.mobile.design.save")
+            .contentShape(.rect)
         }
     }
 }

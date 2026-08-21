@@ -80,19 +80,19 @@ public struct NativePullsView: View {
                     // Colour AND glyph, so draft is legible without either one:
                     // an open PR is a filled arrow, a draft is a hollow one.
                     Image(systemName: pull.isDraft ? "arrow.trianglehead.pull" : "arrow.trianglehead.merge")
-                        .font(.system(size: 14, weight: .medium))
+                        .junoFont(size: 14, relativeTo: .body, weight: .medium)
                         .foregroundStyle(pull.isDraft ? Color.junoMutedForeground : Color.junoSuccess)
                         .frame(width: 20)
                         .padding(.top, 1)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pull.title)
-                            .font(.system(size: 14, weight: .medium))
+                            .junoFont(size: 14, relativeTo: .body, weight: .medium)
                             .foregroundStyle(Color.primary)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         Text(subtitle(for: pull))
-                            .font(.system(size: 11, design: .monospaced))
+                            .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                             .foregroundStyle(Color.junoMutedForeground)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -102,7 +102,7 @@ public struct NativePullsView: View {
 
                     if let updated = pull.updatedAt {
                         Text(updated, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-                            .font(.system(size: 11, design: .monospaced))
+                            .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                             .foregroundStyle(Color.junoMutedForeground.opacity(0.8))
                             .lineLimit(1)
                     }

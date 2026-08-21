@@ -1057,7 +1057,7 @@ struct DesktopConversationView: View {
             voiceUnavailable = "Voice is unavailable for this account."
             return
         }
-        let initialProvider = JunoVoiceProvider.from(modelID: modelID)
+        let initialProvider = JunoVoiceProvider.productionDefault
         let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
@@ -1572,7 +1572,9 @@ private struct DesktopMessageRise: ViewModifier {
                     risen = true
                     return
                 }
-                withAnimation(DesktopChatMotion.riseIn) { risen = true }
+                withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+                    risen = true
+                }
             }
     }
 }

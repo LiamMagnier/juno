@@ -673,7 +673,7 @@ struct DesktopArtifactCanvas: View {
     /// ink happens to be.
     private func headerGlyph(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 12, weight: .medium))
+            .junoFont(size: 12, relativeTo: .body, weight: .medium)
             .junoSecondaryInk()
             .frame(width: 24, height: 24)
             .contentShape(.rect)
@@ -719,7 +719,7 @@ struct DesktopArtifactCanvas: View {
                 // JSON body is not something anyone reads by choice. The editor's
                 // own header carries the tools.
                 Text("Design")
-                    .font(.system(size: 12, weight: .medium))
+                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                     .padding(.horizontal, 10)
                     .frame(height: 28)
@@ -736,7 +736,7 @@ struct DesktopArtifactCanvas: View {
                 // says which one is showing rather than going bare, as the web's
                 // tab row does.
                 Text(resolvedMode.title)
-                    .font(.system(size: 12, weight: .medium))
+                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                     .padding(.horizontal, 10)
                     .frame(height: 28)

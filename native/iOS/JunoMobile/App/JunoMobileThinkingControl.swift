@@ -244,7 +244,7 @@ private struct JunoMobileThinkingRamp: View {
             .onAppear {
                 withAnimation(
                     JunoMotion.ambient(
-                        .linear(duration: 12).repeatForever(autoreverses: true),
+                        JunoMotion.outSoft(12).repeatForever(autoreverses: true),
                         when: reduceMotion
                     )
                 ) {

@@ -5,18 +5,19 @@
   "auditDate": "2026-08-21",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 2250 passed, 0 failed, 6 skipped (node --test)",
+    "fullTest": "passed: 2258 passed, 0 failed, 6 skipped (node --test)",
     "lint": "passed: npm run lint with 0 errors",
     "typecheck": "passed: npx tsc --noEmit (0 errors)",
     "schema": "passed: npx prisma validate and prisma migrate diff",
     "build": "passed: npm run build Next.js compiled cleanly",
-    "phase2Verifier": "passed: all 21 local mechanical suites passed (npm run phase2:verify); exact-SHA CI and production evidence remain external",
+    "phase2Verifier": "passed: all 22 local mechanical suites passed (npm run phase2:verify); exact-SHA CI and final deployment evidence remain external",
     "nativePackages": "passed: JunoNativeKit, JunoWork, and JunoCode package suites all passed (npm run native:test)",
-    "iosAppBuild": "passed: JunoMobile iOS Simulator and JunoDesktop macOS builds both succeeded with signing disabled",
+    "iosAppBuild": "passed: JunoMobile iPhone Simulator build and JunoDesktop development-signed verification build both succeeded",
     "playwrightE2E": "passed locally: authenticated Chromium chat gate and the 7-test deterministic non-production journey",
     "researchTargeted": "passed: targeted research regression suites pass cleanly",
-    "modelCatalogFidelity": "passed locally: catalog fidelity, reasoning caps, and Gemini 3.7 Flash adapter validated",
-    "lastVerifiedAt": "2026-08-21T01:15:34+02:00"
+    "modelCatalogFidelity": "passed locally: 103 selectable chat models and 13 provider evidence roots audited; Qwen is the funded production default",
+    "voiceAntiLoop": "passed on real Mac hardware: Qwen produced one requested answer and did not self-transcribe or repeat during the extended open-mic window",
+    "lastVerifiedAt": "2026-08-21T05:13:44+02:00"
   },
   "nextSlice": {
     "id": "production-deployment-and-testflight",

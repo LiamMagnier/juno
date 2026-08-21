@@ -104,6 +104,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     private var storedSpeechRequest: SFSpeechAudioBufferRecognitionRequest?
     private var storedMuted = false
     private var storedAssistantSpeaking = false
+    private var playbackDrain = RealtimePlaybackDrain()
     private var storedMicLevel: Double = 0
     private var storedPlaybackLevel: Double = 0
 
@@ -144,6 +145,26 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         set { lock.lock(); defer { lock.unlock() }; storedAssistantSpeaking = newValue }
     }
 
+    /// Keeps raw-capture uplink suppressed until the speaker has actually
+    /// drained, not merely until the provider has finished *sending* audio.
+    /// Relay `turn.end` commonly arrives while several buffers are still queued;
+    /// opening the microphone at that frame feeds the tail of Juno's own answer
+    /// back as a new user turn on Macs running without echo cancellation.
+    func playbackBufferScheduled() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.scheduled()
+    }
+
+    func playbackBufferCompleted() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.completed()
+    }
+
+    func clearPlaybackBuffers() {
+        lock.lock(); defer { lock.unlock() }
+        playbackDrain.clear()
+    }
+
     var micLevel: Double {
         get { lock.lock(); defer { lock.unlock() }; return storedMicLevel }
         set { lock.lock(); defer { lock.unlock() }; storedMicLevel = newValue }
@@ -168,6 +189,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         storedSpeechRequest = nil
         storedMicLevel = 0
         storedPlaybackLevel = 0
+        playbackDrain.clear()
         // A session that ends mid-answer leaves this true, and a stale true is a
         // microphone that never uploads again. The controller does re-assign
         // `assistantSpeaking` on the next start, but a teardown invariant should
@@ -195,7 +217,11 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         micLevel = Double((sum / Float(frames)).squareRoot())
 
         // Metering continues above this line and the send stops below it.
-        guard !muted, !assistantSpeaking else { return }
+        lock.lock()
+        let uplinkSuppressed = storedMuted || storedAssistantSpeaking
+            || playbackDrain.isActive
+        lock.unlock()
+        guard !uplinkSuppressed else { return }
         speechRequest?.append(buffer)
 
         lock.lock()
@@ -484,7 +510,7 @@ public final class JunoRealtimeVoiceController {
     public init(
         authorization: any JunoVoiceRelayAuthorizing,
         relayURL: URL? = nil,
-        provider: JunoVoiceProvider = .gemini
+        provider: JunoVoiceProvider = .productionDefault
     ) {
         self.authorization = authorization
         self.fallbackRelayURL = relayURL
@@ -1391,7 +1417,7 @@ public final class JunoRealtimeVoiceController {
         let attempts = RealtimeAudioGraphPlan.current.voiceProcessingAttempts
         do {
             try buildAudioGraph(voiceProcessing: attempts[0])
-        } catch {
+        } catch where attempts.count > 1 {
             Self.audioLog.error(
                 "Voice start failed, voice processing: \(Self.diagnostic(error), privacy: .public)"
             )
@@ -1403,6 +1429,11 @@ public final class JunoRealtimeVoiceController {
                 )
                 throw Self.audioFailure(error)
             }
+        } catch {
+            Self.audioLog.error(
+                "Voice start failed, raw format: \(Self.diagnostic(error), privacy: .public)"
+            )
+            throw Self.audioFailure(error)
         }
     }
 
@@ -1915,7 +1946,18 @@ public final class JunoRealtimeVoiceController {
         // `max`, because several frames arrive per meter tick and the loudest is
         // the one the ear registers; averaging them flattens every consonant.
         box.playbackLevel = max(box.playbackLevel, Double((energy / Float(frames)).squareRoot()))
-        playerNode.scheduleBuffer(buffer)
+        box.playbackBufferScheduled()
+        Self.schedulePlaybackBuffer(buffer, on: playerNode, box: box)
+    }
+
+    private nonisolated static func schedulePlaybackBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        on player: AVAudioPlayerNode,
+        box: VoiceRelayShuttle
+    ) {
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
+            box.playbackBufferCompleted()
+        }
     }
 
     /// Drops everything queued. `stop()` alone leaves the node unable to accept
@@ -1924,6 +1966,7 @@ public final class JunoRealtimeVoiceController {
     private func flushPlayback() {
         guard let playerNode else { return }
         playerNode.stop()
+        box.clearPlaybackBuffers()
         box.playbackLevel = 0
         playerNode.play()
     }

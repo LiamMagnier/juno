@@ -110,6 +110,7 @@ struct JunoMobileApp: App {
                         codeModel: world.codeModel,
                         workModel: world.workModel,
                         libraryModel: world.libraryModel,
+                        requestSender: world.requestSender,
                         accountDataClient: world.accountDataClient,
                         previewSession: world.session
                     )

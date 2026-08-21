@@ -35,6 +35,26 @@ public struct JunoSettingsTile<Content: View>: View {
     }
 
     public var body: some View {
+        #if os(iOS)
+        // On iPhone and iPad, Settings reads as one native grouped document.
+        // A card around every section created a second hierarchy on top of the
+        // controls' own cards and fields; quiet separators preserve scanning
+        // without turning the page into a dashboard.
+        contentLayout
+            .padding(.vertical, JunoSpace.roomy)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(Color.junoBorder.opacity(0.72))
+                    .frame(height: 0.5)
+            }
+        #else
+        contentLayout
+            .padding(JunoSpace.roomy)
+            .junoCard(cornerRadius: JunoSettingsMetrics.tileRadius)
+        #endif
+    }
+
+    private var contentLayout: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text(eyebrow)
                 .junoCodeSmall()
@@ -46,8 +66,6 @@ public struct JunoSettingsTile<Content: View>: View {
         // `maxHeight: .infinity, alignment: .top` is what makes two tiles in one
         // grid row match heights without the shorter one centring its content.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(JunoSpace.roomy)
-        .junoCard(cornerRadius: JunoSettingsMetrics.tileRadius)
     }
 }
 

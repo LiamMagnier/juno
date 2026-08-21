@@ -84,17 +84,20 @@ struct JunoMobileLibraryView: View {
         )) {
             TextField("File name", text: $renameValue)
             Button("Cancel", role: .cancel) { renameFileID = nil }
+            .contentShape(.rect)
             Button("Save") {
                 guard let id = renameFileID else { return }
                 renameFileID = nil
                 Task { await model.renameFile(id: id, fileName: renameValue) }
             }
+            .contentShape(.rect)
         }
         .alert("File unavailable", isPresented: Binding(
             get: { localError != nil },
             set: { if !$0 { localError = nil } }
         )) {
             Button("OK") { localError = nil }
+            .contentShape(.rect)
         } message: {
             Text(localError ?? "Try again.")
         }
@@ -332,6 +335,7 @@ struct JunoMobileLibraryView: View {
                 }
                 .accessibilityLabel("Manage indexed documents")
                 .accessibilityIdentifier("juno.mobile.library-document-index-manage")
+                .contentShape(.rect)
             }
         }
     }
@@ -372,6 +376,7 @@ struct JunoMobileLibraryView: View {
             }
             .buttonStyle(.plain)
             .junoCaption()
+            .contentShape(.rect)
         }
         .accessibilityIdentifier("juno.mobile.library-document-index-error")
     }
@@ -452,6 +457,8 @@ struct JunoMobileLibraryView: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
         .accessibilityIdentifier("juno.mobile.library-filter.\(option.rawValue)")
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
     }
 
     /// The search field floats over the grid rather than sitting in the
@@ -480,6 +487,7 @@ struct JunoMobileLibraryView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("library.search.clear")
+                    .contentShape(.rect)
                 }
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -598,6 +606,7 @@ private struct JunoLibraryCard: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
         .task(id: file.id) { await previews.load(request, using: load) }
+        .contentShape(.rect)
     }
 
     private var sizeLabel: String {

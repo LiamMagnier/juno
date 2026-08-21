@@ -70,7 +70,7 @@ public struct SimulatorPane: View {
 
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .medium))
+                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .junoSecondaryInk()
                     .frame(width: 24, height: 24)
                     .contentShape(.rect)
@@ -312,7 +312,9 @@ public struct SimulatorPane: View {
                     // Long builds must not freeze the window: lines are appended
                     // to a bounded buffer and the scroll is the only work done
                     // per line.
-                    withAnimation(.none) { proxy.scrollTo(id, anchor: .bottom) }
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { proxy.scrollTo(id, anchor: .bottom) }
                 }
             }
             .frame(height: 160)

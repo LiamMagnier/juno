@@ -61,7 +61,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     // An account with no settings row yet. Must name a CURRENT model: this is
     // what the picker shows as selected before the user has chosen anything,
     // and it was still pointing at Opus 4.8, two generations superseded.
-    defaultModel: settings?.defaultModel ?? "claude-sonnet-5",
+    defaultModel: settings?.defaultModel ?? "qwen:qwen3.6-flash",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",

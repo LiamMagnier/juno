@@ -1,27 +1,29 @@
 import { nativeModelCatalog } from "../src/lib/native-model-manifest";
 import { REASONING_TIERS, reasoningCaps, reasoningOptions } from "../src/lib/model-metrics";
+import {
+  buildReasoningCapabilityRegistry,
+  OFFICIAL_REASONING_DOCS,
+} from "../src/lib/model-reasoning-capabilities";
 import { MODEL_LIST } from "../src/lib/models";
-
-const OFFICIAL_REASONING_DOCS: Record<string, string> = {
-  anthropic: "https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking",
-  openai: "https://platform.openai.com/docs/guides/reasoning",
-  google: "https://ai.google.dev/gemini-api/docs/thinking",
-  xai: "https://docs.x.ai/docs/guides/reasoning",
-  mistral: "https://docs.mistral.ai/capabilities/reasoning/",
-  deepseek: "https://api-docs.deepseek.com/guides/thinking_mode",
-  zhipu: "https://docs.z.ai/guides/capabilities/thinking-mode",
-  moonshot: "https://platform.moonshot.ai/docs/guide/use-kimi-k2-thinking-model",
-  minimax: "https://platform.minimax.io/docs/api-reference/text-openai-api",
-  meta: "https://ai.meta.com/resources/models-and-libraries/",
-  qwen: "https://www.alibabacloud.com/help/en/model-studio/deep-thinking",
-  mimo: "https://platform.xiaomimimo.com/#/docs/api/text-generation",
-  longcat: "https://longcat.chat/platform/docs",
-};
 
 const failures: string[] = [];
 const chatModels = MODEL_LIST.filter((model) => model.modality === "chat" && !model.comingSoon);
+const registry = buildReasoningCapabilityRegistry(chatModels);
 for (const model of chatModels) {
   const caps = reasoningCaps(model);
+  const evidence = registry[model.id];
+  if (!evidence) failures.push(`${model.id}: no machine-readable capability evidence`);
+  if (evidence?.providerModel !== model.providerModel || evidence?.canonicalId !== model.id) {
+    failures.push(`${model.id}: evidence identity drifted from selectable catalog`);
+  }
+  if (!evidence?.officialDocs.startsWith("https://")) failures.push(`${model.id}: missing official documentation URL`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(evidence?.verifiedAt ?? "")) failures.push(`${model.id}: invalid verification date`);
+  if (model.reasoning && evidence?.controlType === "none") failures.push(`${model.id}: reasoning model has no declared control contract`);
+  if (!model.reasoning && evidence?.controlType !== "none") failures.push(`${model.id}: non-reasoning model declares a reasoning wire control`);
+  if (JSON.stringify(evidence?.tiers) !== JSON.stringify(caps.tiers)) failures.push(`${model.id}: evidence tiers drifted from runtime capabilities`);
+  if (evidence?.defaultLevel !== caps.defaultLevel || evidence?.canDisable !== caps.canDisable) {
+    failures.push(`${model.id}: evidence default/off-switch drifted from runtime capabilities`);
+  }
   const unique = new Set(caps.tiers);
   if (unique.size !== caps.tiers.length) failures.push(`${model.id}: duplicate reasoning tier`);
   if (caps.tiers.some((tier) => !REASONING_TIERS.includes(tier))) {

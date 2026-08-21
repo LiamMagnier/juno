@@ -478,7 +478,35 @@ final class RealtimeAudioGraphPlanTests: XCTestCase {
     }
 
     func testVoiceProcessingFallsBackToRawInputExactlyOnce() {
+        #if os(macOS)
+        XCTAssertEqual(RealtimeAudioGraphPlan.current.voiceProcessingAttempts, [false])
+        #else
         XCTAssertEqual(RealtimeAudioGraphPlan.current.voiceProcessingAttempts, [true, false])
+        #endif
+    }
+}
+
+final class RealtimePlaybackDrainTests: XCTestCase {
+    func testUplinkRemainsSuppressedUntilEveryPlaybackBufferDrains() {
+        var drain = RealtimePlaybackDrain()
+        drain.scheduled()
+        drain.scheduled()
+        XCTAssertTrue(drain.isActive(atUptime: 10))
+        drain.completed(atUptime: 10)
+        XCTAssertTrue(drain.isActive(atUptime: 10))
+        drain.completed(atUptime: 10)
+        XCTAssertTrue(drain.isActive(atUptime: 10.5))
+        XCTAssertFalse(drain.isActive(atUptime: 10.76))
+    }
+
+    func testInterruptClearsQueuedPlaybackAndLateCallbacksCannotUnderflow() {
+        var drain = RealtimePlaybackDrain()
+        drain.scheduled()
+        drain.scheduled()
+        drain.clear()
+        drain.completed(atUptime: 10)
+        XCTAssertEqual(drain.pendingBuffers, 0)
+        XCTAssertFalse(drain.isActive(atUptime: 10))
     }
 }
 

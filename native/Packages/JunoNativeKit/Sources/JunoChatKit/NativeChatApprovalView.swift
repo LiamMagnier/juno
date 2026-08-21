@@ -32,7 +32,7 @@ public struct NativeChatApprovalCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 7) {
                 Image(systemName: riskIcon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(riskColor)
                 Text(riskLabel)
                     .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
