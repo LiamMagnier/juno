@@ -69,6 +69,8 @@ export async function* streamChat(opts: {
   /** OpenAI GPT-5.6 `reasoning.mode: "pro"` — deeper execution on the same model
    *  id. The route only sets this on models that support it. */
   proMode?: boolean;
+  /** Safe correlation metadata for provider diagnostics; never prompt text. */
+  requestContext?: { requestId?: string | null; generationId?: string | null; conversationId?: string | null };
   /**
    * Who connector tool calls are attributed to in the audit trail and in the
    * approval broker, and which conversation they belong to. Required whenever
@@ -107,6 +109,7 @@ export async function* streamChat(opts: {
         mode: (opts.audit.surface as AgentMode) || "chat",
         environment: "server_sandbox",
         projectId: opts.audit.projectId || undefined,
+        onApprovalRequest: opts.audit.onApprovalRequest,
         abortSignal: signal,
       };
       toolset = await openUnifiedAgentToolset(active, agentContext, {
@@ -128,7 +131,7 @@ export async function* streamChat(opts: {
     if (model.provider === "google") {
       yield* streamGemini(
         model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-        toolset, dynamicContext
+        toolset, dynamicContext, opts.requestContext
       );
       return;
     }

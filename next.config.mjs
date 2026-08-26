@@ -52,6 +52,7 @@ function storageImagePatterns() {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   eslint: { ignoreDuringBuilds: true },
   // Type-checking runs in the editor and on the dev machine before pushing. On
   // the 1 GB build VM, Next's type-check worker OOMs (it ignores
@@ -90,7 +91,7 @@ const nextConfig = {
   },
   // Baseline security headers. The Content-Security-Policy is NOT here — it
   // needs a per-request nonce, so it is built in src/middleware.ts and is
-  // currently Report-Only (see the note there before promoting it to enforcing).
+  // enforcing on document responses.
   async headers() {
     return [
       {

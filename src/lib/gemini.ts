@@ -15,6 +15,7 @@ import {
   type GeminiPart,
   type GeminiContent,
 } from "@/lib/gemini-core";
+import { GeminiProviderError, requestGeminiStream, type GeminiRequestContext } from "@/lib/gemini-network";
 
 export {
   toGeminiContents,
@@ -49,7 +50,8 @@ export async function* streamGemini(
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
   toolset?: McpToolset,
-  dynamicContext?: string
+  dynamicContext?: string,
+  requestContext?: Partial<GeminiRequestContext>,
 ): AsyncGenerator<LlmEvent> {
   const key = providerApiKey("google") || process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) throw new Error("Google API key is not configured.");
@@ -68,6 +70,15 @@ export async function* streamGemini(
 
   const path = model.providerModel.startsWith("models/") ? model.providerModel : `models/${model.providerModel}`;
   const url = `https://generativelanguage.googleapis.com/v1beta/${path}:streamGenerateContent?alt=sse`;
+  const geminiContext: GeminiRequestContext = {
+    modelId: model.id,
+    providerModel: model.providerModel,
+    reasoningEffort: reasoningEffort ?? null,
+    endpoint: `${path}:streamGenerateContent`,
+    requestId: requestContext?.requestId,
+    generationId: requestContext?.generationId,
+    conversationId: requestContext?.conversationId,
+  };
 
   const hasTools = !!toolset && toolset.tools.length > 0;
   const toolsPayload: Array<Record<string, unknown>> = [];
@@ -108,19 +119,19 @@ export async function* streamGemini(
       requestBody.tools = toolsPayload;
     }
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(requestBody),
+    const res = await requestGeminiStream({
+      url,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(requestBody),
+      },
       signal,
+      context: geminiContext,
     });
 
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Gemini ${res.status}: ${text.slice(0, 300)}`);
-    }
-
-    const reader = res.body.getReader();
+    // requestGeminiStream rejects successful responses without a body.
+    const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let streamBuffer = "";
     let roundInput = 0;
@@ -132,6 +143,7 @@ export async function* streamGemini(
 
     const roundAssistantParts: GeminiPart[] = [];
     const pendingFunctionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    let roundSawSignal = false;
 
     const handleChunk = (jsonText: string) => {
       let data: {
@@ -155,6 +167,7 @@ export async function* streamGemini(
       }
 
       const candidate = data.candidates?.[0];
+      if (candidate || data.usageMetadata) roundSawSignal = true;
       if (candidate?.finishReason) {
         lastFinishReason = candidate.finishReason;
       }
@@ -212,6 +225,15 @@ export async function* streamGemini(
           }
         }
       }
+    }
+
+    if (!roundSawSignal) {
+      throw new GeminiProviderError({
+        httpStatus: 502,
+        googleStatus: "EMPTY_STREAM",
+        message: "Google ended the stream without a candidate or usage record",
+        context: geminiContext,
+      });
     }
 
     if (roundSawUsage) {
@@ -281,6 +303,15 @@ export async function* streamGemini(
     };
   }
 
-  const finalRaw = lastFinishReason ?? "STOP";
+  if (!lastFinishReason) {
+    throw new GeminiProviderError({
+      httpStatus: 502,
+      googleStatus: "MISSING_FINISH_REASON",
+      message: "Google ended the stream without a terminal finish reason",
+      context: geminiContext,
+    });
+  }
+
+  const finalRaw = lastFinishReason;
   yield { type: "finish", reason: normalizeFinishReason(finalRaw), raw: finalRaw };
 }

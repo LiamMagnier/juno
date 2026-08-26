@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { LogOut, User } from "lucide-react";
+import { LogOut, ShieldCheck, User } from "lucide-react";
 import { AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
@@ -81,7 +81,7 @@ function MenuRow({
 }
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
-  const { user, quota } = useApp();
+  const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
 
   // Photo avatars are circles (matching the Avatar primitive app-wide); the
@@ -175,6 +175,14 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           icon={<AppIcons.settings className="size-4" />}
           label="Settings"
         />
+        {features.isOwner && (
+          <MenuRow
+            href="/admin"
+            icon={<ShieldCheck className="size-4" />}
+            label="Admin Panel"
+            accent
+          />
+        )}
 
         {/* Sign out — the one destructive row: quiet red at rest, full red fill
             with white text/icon on hover (150ms), the icon easing toward the

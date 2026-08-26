@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 /**
- * Where the Report-Only CSP sends its violations (see src/middleware.ts).
+ * Where the enforcing CSP sends its violation reports (see src/middleware.ts).
  *
  * The point of the report-only phase is to find out what a real policy would
  * break before it breaks it. Without somewhere to send them the reports go

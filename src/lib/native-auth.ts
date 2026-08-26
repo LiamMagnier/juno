@@ -4,7 +4,6 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   NATIVE_AUTH_CODE_TTL_MS,
-  NATIVE_REFRESH_REPLAY_GRACE_MS,
   NATIVE_REFRESH_TTL_MS,
   hashSecret,
   isValidCodeVerifier,
@@ -154,7 +153,7 @@ export async function exchangeNativeAuthorizationCode(input: {
 // to the account and the caller, not to the surface they happen to knock on, so
 // an attacker cannot double their budget by alternating web and app.
 const NATIVE_SIGNIN_WINDOW_SEC = 15 * 60;
-const NATIVE_SIGNIN_MAX_PER_EMAIL = 10;
+const NATIVE_SIGNIN_MAX_PER_PAIR = 10;
 const NATIVE_SIGNIN_MAX_PER_IP = 30;
 
 /**
@@ -181,14 +180,14 @@ export async function signInNativeWithPassword(input: {
   // imports this module purely for `NativeAuthError`, so a top-level import
   // would drag that guard into every consumer — including the plain-node
   // contract tests, which have no react-server condition set.
-  const { hashPassword, verifyPassword } = await import("@/lib/password");
+  const { hashPassword, verifyPasswordConstantTime } = await import("@/lib/password");
   const invalid = () => new NativeAuthError("invalid_grant", 400, "The credentials are invalid.");
   const email = input.email.trim().toLowerCase();
 
   const checks = [
     rateLimit({
-      key: `signin:email:${email}`,
-      limit: NATIVE_SIGNIN_MAX_PER_EMAIL,
+      key: `signin:pair:${input.ip}:${email}`,
+      limit: NATIVE_SIGNIN_MAX_PER_PAIR,
       windowSec: NATIVE_SIGNIN_WINDOW_SEC,
     }),
   ];
@@ -211,8 +210,8 @@ export async function signInNativeWithPassword(input: {
     select: { id: true, sessionVersion: true, bannedAt: true, hashedPassword: true },
   });
   // OAuth-only accounts have no hash; they must keep using the browser flow.
+  const { ok, needsUpgrade } = await verifyPasswordConstantTime(input.password, user?.hashedPassword);
   if (!user?.hashedPassword) throw invalid();
-  const { ok, needsUpgrade } = await verifyPassword(input.password, user.hashedPassword);
   if (!ok) throw invalid();
   if (user.bannedAt) throw invalid();
   if (needsUpgrade) {
@@ -280,49 +279,6 @@ export async function rotateNativeRefreshToken(rawToken: string) {
       current.expiresAt > new Date() &&
       !current.deviceSession.revokedAt &&
       !current.deviceSession.user.bannedAt;
-
-    // A replay of a token this device consumed moments ago is the rotation it
-    // never got to keep, not an attack. The client only persists a rotated
-    // token after the response lands, so quitting the app mid-refresh — the
-    // most reliable way there is to cancel that request — leaves the device
-    // holding a token the server has already marked used. Revoking the family
-    // for that is what turned "closed the app" into "sign in again".
-    //
-    // The successor is the evidence. If it was never used, the client did not
-    // receive it, so re-grant into the same family: drop the orphan and hand
-    // out a fresh child of the token that was actually presented. If it WAS
-    // used, this device demonstrably moved on and something else is holding
-    // the old secret — that is reuse whenever it arrives, and falls through.
-    if (current.usedAt && !current.revokedAt && stillUsable) {
-      const withinGrace =
-        Date.now() - current.usedAt.getTime() <= NATIVE_REFRESH_REPLAY_GRACE_MS;
-      if (withinGrace) {
-        const successor = await tx.nativeRefreshToken.findFirst({
-          where: { parentTokenId: current.id },
-          orderBy: { createdAt: "desc" },
-        });
-        if (successor && !successor.usedAt && !successor.revokedAt) {
-          await tx.nativeRefreshToken.update({
-            where: { id: successor.id },
-            data: { revokedAt: new Date() },
-          });
-          await tx.nativeRefreshToken.create({
-            data: {
-              deviceSessionId: current.deviceSessionId,
-              familyId: current.familyId,
-              parentTokenId: current.id,
-              tokenHash: hashSecret(nextToken),
-              expiresAt: nextExpiresAt,
-            },
-          });
-          await tx.nativeDeviceSession.update({
-            where: { id: current.deviceSessionId, userId: current.deviceSession.userId },
-            data: { lastSeenAt: new Date() },
-          });
-          return { kind: "ok" as const, current };
-        }
-      }
-    }
 
     if (current.usedAt || current.revokedAt) {
       await tx.nativeDeviceSession.updateMany({

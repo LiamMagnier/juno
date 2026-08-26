@@ -9,7 +9,6 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env, isStorageConfigured } from "@/lib/env";
 
 /*
@@ -202,7 +201,8 @@ export async function deleteObject(key: string): Promise<void> {
 
 /** URL the browser uses to view/download an object. */
 export async function getViewUrl(key: string): Promise<string> {
-  if (usesLocalDisk()) return `/api/files/${key}`;
-  if (env.s3.publicUrl) return `${env.s3.publicUrl.replace(/\/$/, "")}/${key}`;
-  return getSignedUrl(s3(), new GetObjectCommand({ Bucket: env.s3.bucket!, Key: key }), { expiresIn: 3600 });
+  // Private uploads always traverse the authenticated, owner-aware route.
+  // Neither a permanent CDN URL nor a presigned bearer URL is an authorization
+  // boundary, and both outlive the session that was allowed to request them.
+  return `/api/files/${key}`;
 }

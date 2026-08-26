@@ -4,12 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Pin,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Pin } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { usePathname } from "next/navigation";
 import { DownloadMenu } from "@/components/app/download-menu";
@@ -40,7 +35,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { Pressable, pressableVariants } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
 import {
@@ -54,7 +53,12 @@ import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientConversation } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
 
-type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
+type ConfirmState = {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+} | null;
 
 /** The product mode the whole sidebar is threaded through.
  *
@@ -119,7 +123,13 @@ type SidebarProject = {
 
 /** `key` is the stable server-synced workspace identity (nullable for rows
  *  mirrored by pre-key clients); `path` is device metadata. */
-type CodeWorkspace = { id: string; name: string; path: string; key?: string | null; lastOpenedAt: string };
+type CodeWorkspace = {
+  id: string;
+  name: string;
+  path: string;
+  key?: string | null;
+  lastOpenedAt: string;
+};
 
 /** Remote Juno Code task (from /api/code/tasks) — status rides on these rows.
  *  Tasks started from a web session carry its conversationId and show as a
@@ -143,7 +153,11 @@ const LEGACY_STARRED_KEY = "starredProjects";
 const CODE_POLL_MS = 30_000;
 // A failed task stays visible for a day; after that it's stale noise.
 const FAILED_TASK_TTL_MS = 24 * 60 * 60 * 1000;
-const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "awaiting_approval"]);
+const ACTIVE_TASK_STATUSES = new Set([
+  "queued",
+  "running",
+  "awaiting_approval",
+]);
 
 /**
  * The row kebab, once.
@@ -219,18 +233,26 @@ export function AppSidebar({
   }, [pathname]);
 
   // Work mode data: the user's Work tasks, polled like the Code lists below.
-  const [workSessions, setWorkSessions] = React.useState<ClientWorkSession[]>([]);
+  const [workSessions, setWorkSessions] = React.useState<ClientWorkSession[]>(
+    [],
+  );
   const [workLoaded, setWorkLoaded] = React.useState(false);
   const [workError, setWorkError] = React.useState(false);
   // Code mode data: the app's workspaces (project folders) mirrored from
   // /api/code/workspaces, and remote code tasks for status rows.
-  const [codeWorkspaces, setCodeWorkspaces] = React.useState<CodeWorkspace[]>([]);
+  const [codeWorkspaces, setCodeWorkspaces] = React.useState<CodeWorkspace[]>(
+    [],
+  );
   const [codeTasks, setCodeTasks] = React.useState<CodeTaskRow[]>([]);
   const [codeLoaded, setCodeLoaded] = React.useState(false);
   const [codeError, setCodeError] = React.useState(false);
   // Per-workspace disclosure, persisted; unlisted paths default to open.
-  const [codeExpanded, setCodeExpanded] = React.useState<Record<string, boolean>>({});
-  const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
+  const [codeExpanded, setCodeExpanded] = React.useState<
+    Record<string, boolean>
+  >({});
+  const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(
+    null,
+  );
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
 
@@ -244,14 +266,22 @@ export function AppSidebar({
       const res = await fetch("/api/projects");
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const nextProjects: SidebarProject[] = Array.isArray(data.projects) ? data.projects : [];
+      const nextProjects: SidebarProject[] = Array.isArray(data.projects)
+        ? data.projects
+        : [];
       if (!migratedLegacyStars.current) {
         migratedLegacyStars.current = true;
         try {
-          const raw = JSON.parse(localStorage.getItem(LEGACY_STARRED_KEY) || "[]");
-          const legacy: string[] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : [];
+          const raw = JSON.parse(
+            localStorage.getItem(LEGACY_STARRED_KEY) || "[]",
+          );
+          const legacy: string[] = Array.isArray(raw)
+            ? raw.filter((v): v is string => typeof v === "string")
+            : [];
           if (legacy.length > 0) {
-            const toStar = nextProjects.filter((p) => legacy.includes(p.id) && !p.starred);
+            const toStar = nextProjects.filter(
+              (p) => legacy.includes(p.id) && !p.starred,
+            );
             const results = await Promise.all(
               toStar.map((p) =>
                 fetch(`/api/projects/${p.id}`, {
@@ -260,14 +290,15 @@ export function AppSidebar({
                   body: JSON.stringify({ starred: true }),
                 })
                   .then((r) => r.ok)
-                  .catch(() => false)
-              )
+                  .catch(() => false),
+              ),
             );
             toStar.forEach((p, i) => {
               if (results[i]) p.starred = true;
             });
             // Only drop the legacy key once every star made it to the server.
-            if (results.every(Boolean)) localStorage.removeItem(LEGACY_STARRED_KEY);
+            if (results.every(Boolean))
+              localStorage.removeItem(LEGACY_STARRED_KEY);
           } else {
             localStorage.removeItem(LEGACY_STARRED_KEY);
           }
@@ -292,7 +323,9 @@ export function AppSidebar({
       if (recents) setRecentsCollapsed(JSON.parse(recents));
       const modePref = localStorage.getItem("juno:sidebar:mode");
       if (modePref === "code" || modePref === "work") setMode(modePref);
-      const expanded = JSON.parse(localStorage.getItem(CODE_EXPANDED_KEY) || "{}");
+      const expanded = JSON.parse(
+        localStorage.getItem(CODE_EXPANDED_KEY) || "{}",
+      );
       if (expanded && typeof expanded === "object") setCodeExpanded(expanded);
     } catch {}
 
@@ -312,7 +345,10 @@ export function AppSidebar({
     const next = !starredCollapsed;
     setStarredCollapsed(next);
     try {
-      localStorage.setItem("juno:sidebar:starred:collapsed", JSON.stringify(next));
+      localStorage.setItem(
+        "juno:sidebar:starred:collapsed",
+        JSON.stringify(next),
+      );
     } catch {}
   };
 
@@ -320,7 +356,10 @@ export function AppSidebar({
     const next = !recentsCollapsed;
     setRecentsCollapsed(next);
     try {
-      localStorage.setItem("juno:sidebar:recents:collapsed", JSON.stringify(next));
+      localStorage.setItem(
+        "juno:sidebar:recents:collapsed",
+        JSON.stringify(next),
+      );
     } catch {}
   };
 
@@ -328,19 +367,26 @@ export function AppSidebar({
   const sidebarProjects = React.useMemo(() => {
     return [...projects]
       .filter((p) => p.starred)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
   }, [projects]);
 
   const toggleProjectStar = async (project: SidebarProject) => {
     const next = !project.starred;
-    setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, starred: next } : p)));
+    setProjects((prev) =>
+      prev.map((p) => (p.id === project.id ? { ...p, starred: next } : p)),
+    );
     const r = await fetch(`/api/projects/${project.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ starred: next }),
     }).catch(() => null);
     if (!r || !r.ok) {
-      setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)));
+      setProjects((prev) =>
+        prev.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)),
+      );
       toast.error("Could not update the project.");
       return;
     }
@@ -377,7 +423,9 @@ export function AppSidebar({
         "Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.",
       confirmLabel: "Delete project",
       onConfirm: async () => {
-        const r = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+        const r = await fetch(`/api/projects/${project.id}`, {
+          method: "DELETE",
+        });
         if (!r.ok) {
           toast.error("Could not delete project.");
           return;
@@ -418,7 +466,9 @@ export function AppSidebar({
     // show. Giving Work a conversation kind purely to reuse this list would
     // put every Work task into the chat sidebar of anyone on an older client.
     if (mode === "work") return [];
-    return conversations.filter((c) => (mode === "code" ? c.kind === "code" : c.kind !== "code"));
+    return conversations.filter((c) =>
+      mode === "code" ? c.kind === "code" : c.kind !== "code",
+    );
   }, [conversations, mode]);
 
   const loadWork = React.useCallback(async () => {
@@ -457,14 +507,20 @@ export function AppSidebar({
     [workSessions],
   );
   const workRecent = React.useMemo(
-    () => workSessions.filter((session) => !session.needsAttention && !session.archived),
+    () =>
+      workSessions.filter(
+        (session) => !session.needsAttention && !session.archived,
+      ),
     [workSessions],
   );
 
   const loadCode = React.useCallback(async () => {
     setCodeError(false);
     try {
-      const [w, t] = await Promise.all([fetch("/api/code/workspaces"), fetch("/api/code/tasks?limit=100")]);
+      const [w, t] = await Promise.all([
+        fetch("/api/code/workspaces"),
+        fetch("/api/code/tasks?limit=100"),
+      ]);
       if (!w.ok || !t.ok) throw new Error();
       const wd = await w.json();
       const td = await t.json();
@@ -473,15 +529,21 @@ export function AppSidebar({
         (Array.isArray(td.tasks) ? td.tasks : []).map(
           (x: Record<string, unknown>): CodeTaskRow => ({
             id: String(x.id ?? ""),
-            conversationId: typeof x.conversationId === "string" && x.conversationId ? x.conversationId : null,
+            conversationId:
+              typeof x.conversationId === "string" && x.conversationId
+                ? x.conversationId
+                : null,
             workspacePath: String(x.workspacePath ?? ""),
             workspaceName: String(x.workspaceName ?? ""),
-            workspaceKey: typeof x.workspaceKey === "string" && x.workspaceKey ? x.workspaceKey : null,
+            workspaceKey:
+              typeof x.workspaceKey === "string" && x.workspaceKey
+                ? x.workspaceKey
+                : null,
             title: String(x.title ?? ""),
             status: String(x.status ?? ""),
             createdAt: String(x.createdAt ?? ""),
-          })
-        )
+          }),
+        ),
       );
       setCodeLoaded(true);
     } catch {
@@ -529,19 +591,40 @@ export function AppSidebar({
   // Sessions without a workspace fall through to the flat Sessions list below.
   const codeProjects = React.useMemo(() => {
     if (mode !== "code")
-      return [] as { id: string; key: string | null; name: string; path: string; sessions: ClientConversation[] }[];
-    const sessionsFor = (w: { key: string | null; name: string; path: string }) =>
+      return [] as {
+        id: string;
+        key: string | null;
+        name: string;
+        path: string;
+        sessions: ClientConversation[];
+      }[];
+    const sessionsFor = (w: {
+      key: string | null;
+      name: string;
+      path: string;
+    }) =>
       filtered.filter((c) => {
         // Both sides keyed → identity decides, path/name are just metadata.
         if (c.codeWorkspaceKey && w.key) return c.codeWorkspaceKey === w.key;
-        return c.codeWorkspacePath === w.path || (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name);
+        return (
+          c.codeWorkspacePath === w.path ||
+          (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name)
+        );
       });
     const projects = codeWorkspaces.map((w) => {
       const key = w.key ?? null;
-      return { id: key ?? w.path, key, name: w.name, path: w.path, sessions: sessionsFor({ key, name: w.name, path: w.path }) };
+      return {
+        id: key ?? w.path,
+        key,
+        name: w.name,
+        path: w.path,
+        sessions: sessionsFor({ key, name: w.name, path: w.path }),
+      };
     });
     // Sessions naming a workspace the mirror doesn't know yet still group.
-    const knownKeys = new Set(projects.map((p) => p.key).filter((k): k is string => k != null));
+    const knownKeys = new Set(
+      projects.map((p) => p.key).filter((k): k is string => k != null),
+    );
     const known = new Set(projects.map((p) => p.path));
     const knownNames = new Set(projects.map((p) => p.name));
     const orphans = new Map<string, ClientConversation[]>();
@@ -555,7 +638,13 @@ export function AppSidebar({
     }
     return [
       ...projects,
-      ...[...orphans.entries()].map(([name, sessions]) => ({ id: name, key: null, name, path: name, sessions })),
+      ...[...orphans.entries()].map(([name, sessions]) => ({
+        id: name,
+        key: null,
+        name,
+        path: name,
+        sessions,
+      })),
     ];
   }, [filtered, mode, codeWorkspaces]);
 
@@ -570,7 +659,10 @@ export function AppSidebar({
 
   // Session ids currently listed in Code mode — a task linked to one of these
   // shows as a status dot ON the session row, never as a duplicate status row.
-  const codeSessionIds = React.useMemo(() => new Set(filtered.map((c) => c.id)), [filtered]);
+  const codeSessionIds = React.useMemo(
+    () => new Set(filtered.map((c) => c.id)),
+    [filtered],
+  );
 
   // The latest still-relevant task per linked session, for the row status dots.
   const taskByConversation = React.useMemo(() => {
@@ -580,10 +672,14 @@ export function AppSidebar({
       if (!t.conversationId) continue;
       const relevant =
         ACTIVE_TASK_STATUSES.has(t.status) ||
-        (t.status === "failed" && now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
+        (t.status === "failed" &&
+          now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
       if (!relevant) continue;
       const existing = map.get(t.conversationId);
-      if (!existing || new Date(t.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+      if (
+        !existing ||
+        new Date(t.createdAt).getTime() > new Date(existing.createdAt).getTime()
+      ) {
         map.set(t.conversationId, t);
       }
     }
@@ -601,7 +697,8 @@ export function AppSidebar({
     for (const t of codeTasks) {
       const active =
         ACTIVE_TASK_STATUSES.has(t.status) ||
-        (t.status === "failed" && now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
+        (t.status === "failed" &&
+          now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
       if (!active) continue;
       // Attributed to a listed session — its row carries the dot instead.
       if (t.conversationId && codeSessionIds.has(t.conversationId)) continue;
@@ -623,12 +720,18 @@ export function AppSidebar({
   }, [codeTasks, codeSessionIds]);
 
   const pinned = React.useMemo(
-    () => filtered.filter((c) => c.pinned && !(mode === "code" && groupedSessionIds.has(c.id))),
-    [filtered, mode, groupedSessionIds]
+    () =>
+      filtered.filter(
+        (c) => c.pinned && !(mode === "code" && groupedSessionIds.has(c.id)),
+      ),
+    [filtered, mode, groupedSessionIds],
   );
   const recents = React.useMemo(
-    () => filtered.filter((c) => !c.pinned && !(mode === "code" && groupedSessionIds.has(c.id))),
-    [filtered, mode, groupedSessionIds]
+    () =>
+      filtered.filter(
+        (c) => !c.pinned && !(mode === "code" && groupedSessionIds.has(c.id)),
+      ),
+    [filtered, mode, groupedSessionIds],
   );
 
   const newChat = () => {
@@ -654,7 +757,10 @@ export function AppSidebar({
   // layout swap reads as a cross-fade instead of a pop.
   if (collapsed) {
     return (
-      <div key="rail" className="flex h-full w-[64px] flex-col items-center py-3 text-sidebar-foreground motion-safe:animate-fade-in">
+      <div
+        key="rail"
+        className="flex h-full w-[64px] flex-col items-center py-3 text-sidebar-foreground motion-safe:animate-fade-in"
+      >
         {/* A real Tooltip, not the native `title` the rail used to lean on: the
             OS bubble ignores the provider's 200ms delay and the popper's motion
             pair, so the rail's labels appeared on a different clock from every
@@ -688,9 +794,27 @@ export function AppSidebar({
                   <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
-              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
-              <RailIcon href="/connections" active={pathname === "/connections"} label="Connected apps"><SidebarMotionIcon kind="connections" /></RailIcon>
-              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Documents"><SidebarMotionIcon kind="artifacts" /></RailIcon>
+              <RailIcon
+                href="/tasks"
+                active={pathname === "/tasks"}
+                label="Scheduled"
+              >
+                <SidebarMotionIcon kind="tasks" />
+              </RailIcon>
+              <RailIcon
+                href="/connections"
+                active={pathname === "/connections"}
+                label="Connected apps"
+              >
+                <SidebarMotionIcon kind="connections" />
+              </RailIcon>
+              <RailIcon
+                href="/artifacts"
+                active={pathname === "/artifacts"}
+                label="Documents"
+              >
+                <SidebarMotionIcon kind="artifacts" />
+              </RailIcon>
             </>
           ) : mode === "code" ? (
             <>
@@ -699,10 +823,30 @@ export function AppSidebar({
                   <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
-              <RailIcon href="/code" active={pathname === "/code"} label="Runs"><SidebarMotionIcon kind="code" /></RailIcon>
-              <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><SidebarMotionIcon kind="pulls" /></RailIcon>
-              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
-              <RailIcon href="/connections" active={pathname === "/connections"} label="Plugins"><SidebarMotionIcon kind="connections" /></RailIcon>
+              <RailIcon href="/code" active={pathname === "/code"} label="Runs">
+                <SidebarMotionIcon kind="code" />
+              </RailIcon>
+              <RailIcon
+                href="/code/pulls"
+                active={pathname === "/code/pulls"}
+                label="Pull requests"
+              >
+                <SidebarMotionIcon kind="pulls" />
+              </RailIcon>
+              <RailIcon
+                href="/tasks"
+                active={pathname === "/tasks"}
+                label="Scheduled"
+              >
+                <SidebarMotionIcon kind="tasks" />
+              </RailIcon>
+              <RailIcon
+                href="/connections"
+                active={pathname === "/connections"}
+                label="Plugins"
+              >
+                <SidebarMotionIcon kind="connections" />
+              </RailIcon>
             </>
           ) : (
             <>
@@ -711,15 +855,54 @@ export function AppSidebar({
                   <SidebarMotionIcon kind="new" className="size-4" />
                 </span>
               </RailIcon>
-              <RailIcon href="/assistants" active={pathname === "/assistants"} label="Assistants"><SidebarMotionIcon kind="assistants" /></RailIcon>
-              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><SidebarMotionIcon kind="projects" /></RailIcon>
-              <RailIcon href="/library" active={pathname === "/library"} label="Library"><SidebarMotionIcon kind="library" /></RailIcon>
-              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><SidebarMotionIcon kind="artifacts" /></RailIcon>
-              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><SidebarMotionIcon kind="tasks" /></RailIcon>
-              <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><SidebarMotionIcon kind="connections" /></RailIcon>
+              <RailIcon
+                href="/assistants"
+                active={pathname === "/assistants"}
+                label="Assistants"
+              >
+                <SidebarMotionIcon kind="assistants" />
+              </RailIcon>
+              <RailIcon
+                href="/projects"
+                active={!!pathname?.startsWith("/projects")}
+                label="Projects"
+              >
+                <SidebarMotionIcon kind="projects" />
+              </RailIcon>
+              <RailIcon
+                href="/library"
+                active={pathname === "/library"}
+                label="Library"
+              >
+                <SidebarMotionIcon kind="library" />
+              </RailIcon>
+              <RailIcon
+                href="/artifacts"
+                active={pathname === "/artifacts"}
+                label="Artifacts"
+              >
+                <SidebarMotionIcon kind="artifacts" />
+              </RailIcon>
+              <RailIcon
+                href="/tasks"
+                active={pathname === "/tasks"}
+                label="Tasks"
+              >
+                <SidebarMotionIcon kind="tasks" />
+              </RailIcon>
+              <RailIcon
+                href="/connections"
+                active={pathname === "/connections"}
+                label="Connections"
+              >
+                <SidebarMotionIcon kind="connections" />
+              </RailIcon>
             </>
           )}
-          <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))} label="Search chats and projects">
+          <RailIcon
+            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+            label="Search chats and projects"
+          >
             <SidebarMotionIcon kind="search" />
           </RailIcon>
         </div>
@@ -727,7 +910,11 @@ export function AppSidebar({
             both layouts, so the rail and the full sidebar agree about where
             the door is. */}
         <div className="mt-auto flex flex-col items-center gap-1">
-          <RailIcon href="/design" active={pathname === "/design"} label="Design">
+          <RailIcon
+            href="/design"
+            active={pathname === "/design"}
+            label="Design"
+          >
             <SidebarMotionIcon kind="design" />
           </RailIcon>
           <UserMenu compact />
@@ -748,7 +935,10 @@ export function AppSidebar({
     // over a black page under a black scrim, which is exactly the failure
     // SheetContent's own comment says it moved to --popover to avoid. The fill
     // belongs to whichever frame is hosting the panel.
-    <div key="expanded" className="flex size-full flex-col text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
+    <div
+      key="expanded"
+      className="flex size-full flex-col text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]"
+    >
       {/* pb-2 (+ the nav's pt-1) = 12px to the first row. This was pb-7, which
           left a ~32px void between the wordmark and "New chat" and read as a
           layout gap rather than a deliberate break. */}
@@ -758,14 +948,20 @@ export function AppSidebar({
             the top of button.tsx, where four forked ring-offset colours had to be
             unpicked); switching the outline off here bought a ring that draws in
             the accent, which is reserved for actions and status. */}
-        <Link href="/chat" onClick={() => setSidebarOpen(false)} className="group/brand rounded-control">
+        <Link
+          href="/chat"
+          onClick={() => setSidebarOpen(false)}
+          className="group/brand rounded-control"
+        >
           <span className="flex items-center gap-2 pl-1">
             <JunoMark className="h-[21px] w-[21px]" />
             {/* Off the type scale on purpose: this is the logotype, not a
                 heading — the same exemption AsciiWordmark's tracking carries.
                 Snapping it to `title` (22px) would alter the brand mark to
                 satisfy a ladder built for interface text. */}
-            <span className="font-serif text-[1.45rem] font-normal tracking-[-0.02em] text-foreground">Juno</span>
+            <span className="font-sans text-lg font-semibold tracking-[-0.02em] text-foreground">
+              Juno
+            </span>
           </span>
         </Link>
         {/* Every bare glyph in this panel carries a Tooltip on the shared
@@ -779,7 +975,9 @@ export function AppSidebar({
                 variant="ghost"
                 size="icon-sm"
                 className="group"
-                onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("juno:search"))
+                }
                 aria-label="Search chats and projects"
               >
                 <SidebarMotionIcon kind="search" className="size-4" />
@@ -805,7 +1003,13 @@ export function AppSidebar({
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="group md:hidden"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close menu"
+              >
                 <SidebarMotionIcon kind="close" className="size-4" />
               </Button>
             </TooltipTrigger>
@@ -834,9 +1038,27 @@ export function AppSidebar({
               }
               label="New task"
             />
-            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Scheduled" />
-            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Connected apps" />
-            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="artifacts" />} label="Documents" />
+            <NavRow
+              href="/tasks"
+              active={pathname === "/tasks"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="tasks" />}
+              label="Scheduled"
+            />
+            <NavRow
+              href="/connections"
+              active={pathname === "/connections"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="connections" />}
+              label="Connected apps"
+            />
+            <NavRow
+              href="/artifacts"
+              active={pathname === "/artifacts"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="artifacts" />}
+              label="Documents"
+            />
           </>
         ) : mode === "code" ? (
           <>
@@ -849,10 +1071,34 @@ export function AppSidebar({
               }
               label="New session"
             />
-            <NavRow href="/code" active={pathname === "/code"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="code" />} label="Runs" />
-            <NavRow href="/code/pulls" active={pathname === "/code/pulls"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="pulls" />} label="Pull requests" />
-            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Scheduled" />
-            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Plugins" />
+            <NavRow
+              href="/code"
+              active={pathname === "/code"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="code" />}
+              label="Runs"
+            />
+            <NavRow
+              href="/code/pulls"
+              active={pathname === "/code/pulls"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="pulls" />}
+              label="Pull requests"
+            />
+            <NavRow
+              href="/tasks"
+              active={pathname === "/tasks"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="tasks" />}
+              label="Scheduled"
+            />
+            <NavRow
+              href="/connections"
+              active={pathname === "/connections"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="connections" />}
+              label="Plugins"
+            />
           </>
         ) : (
           <>
@@ -865,12 +1111,48 @@ export function AppSidebar({
               }
               label="New chat"
             />
-            <NavRow href="/assistants" active={pathname === "/assistants"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="assistants" />} label="Assistants" />
-            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="projects" />} label="Projects" />
-            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="library" />} label="Library" />
-            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="artifacts" />} label="Artifacts" />
-            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Connections" />
-            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Tasks" />
+            <NavRow
+              href="/assistants"
+              active={pathname === "/assistants"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="assistants" />}
+              label="Assistants"
+            />
+            <NavRow
+              href="/projects"
+              active={!!pathname?.startsWith("/projects")}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="projects" />}
+              label="Projects"
+            />
+            <NavRow
+              href="/library"
+              active={pathname === "/library"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="library" />}
+              label="Library"
+            />
+            <NavRow
+              href="/artifacts"
+              active={pathname === "/artifacts"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="artifacts" />}
+              label="Artifacts"
+            />
+            <NavRow
+              href="/connections"
+              active={pathname === "/connections"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="connections" />}
+              label="Connections"
+            />
+            <NavRow
+              href="/tasks"
+              active={pathname === "/tasks"}
+              onClick={() => setSidebarOpen(false)}
+              icon={<SidebarMotionIcon kind="tasks" />}
+              label="Tasks"
+            />
           </>
         )}
       </nav>
@@ -881,16 +1163,29 @@ export function AppSidebar({
         {!mounted ? (
           <div className="space-y-1 px-1 pt-1">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
+              <div
+                key={i}
+                className="skeleton h-8 rounded-control"
+                style={staggerDelay(i, "tight")}
+              />
             ))}
           </div>
         ) : mode === "work" ? (
           <>
-            {workError && <InlineErrorRow message="Couldn’t load your Work tasks." onRetry={loadWork} />}
+            {workError && (
+              <InlineErrorRow
+                message="Couldn’t load your Work tasks."
+                onRetry={loadWork}
+              />
+            )}
             {!workLoaded && !workError ? (
               <div className="space-y-1 px-1 pt-1">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
+                  <div
+                    key={i}
+                    className="skeleton h-8 rounded-control"
+                    style={staggerDelay(i, "tight")}
+                  />
                 ))}
               </div>
             ) : (
@@ -931,8 +1226,13 @@ export function AppSidebar({
                 ) : (
                   workAttention.length === 0 &&
                   !workError && (
-                    <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
-                      No tasks yet.<br />Start one above.
+                    <p
+                      className="px-3 py-8 text-center text-sm text-muted-foreground"
+                      aria-live="polite"
+                    >
+                      No tasks yet.
+                      <br />
+                      Start one above.
                     </p>
                   )
                 )}
@@ -945,11 +1245,18 @@ export function AppSidebar({
                 sessions still has workspaces worth showing (commit 4364b90). */}
             <Section label="Projects">
               {codeError ? (
-                <InlineErrorRow message="Couldn’t load your Code projects." onRetry={loadCode} />
+                <InlineErrorRow
+                  message="Couldn’t load your Code projects."
+                  onRetry={loadCode}
+                />
               ) : !codeLoaded ? (
                 <div className="space-y-1 px-1 pt-1">
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
+                    <div
+                      key={i}
+                      className="skeleton h-8 rounded-control"
+                      style={staggerDelay(i, "tight")}
+                    />
                   ))}
                 </div>
               ) : codeProjects.length === 0 ? (
@@ -963,7 +1270,9 @@ export function AppSidebar({
                     name={p.name}
                     sessions={p.sessions}
                     tasks={
-                      (p.key ? codeTasksByWorkspace.byKey.get(p.key) : undefined) ??
+                      (p.key
+                        ? codeTasksByWorkspace.byKey.get(p.key)
+                        : undefined) ??
                       codeTasksByWorkspace.byPath.get(p.path) ??
                       codeTasksByWorkspace.byName.get(p.name) ??
                       []
@@ -971,8 +1280,15 @@ export function AppSidebar({
                     taskStatusFor={(id) => taskByConversation.get(id)?.status}
                     // Legacy prefs were keyed by path; fall back so an upgrade
                     // (path → key ids) doesn't reset anyone's disclosure state.
-                    expanded={codeExpanded[p.id] ?? codeExpanded[p.path] ?? true}
-                    onToggle={() => toggleWorkspaceExpanded(p.id, codeExpanded[p.id] ?? codeExpanded[p.path] ?? true)}
+                    expanded={
+                      codeExpanded[p.id] ?? codeExpanded[p.path] ?? true
+                    }
+                    onToggle={() =>
+                      toggleWorkspaceExpanded(
+                        p.id,
+                        codeExpanded[p.id] ?? codeExpanded[p.path] ?? true,
+                      )
+                    }
                     activeConversationId={activeConversationId}
                     activePath={pathname}
                     renamingId={renamingId}
@@ -1042,14 +1358,29 @@ export function AppSidebar({
           </>
         ) : filtered.length === 0 && sidebarProjects.length === 0 ? (
           <>
-            {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
-            <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
-              No conversations yet.<br />Start one above.
+            {projectsError && (
+              <InlineErrorRow
+                message="Couldn’t load your projects."
+                onRetry={loadProjects}
+              />
+            )}
+            <p
+              className="px-3 py-8 text-center text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              No conversations yet.
+              <br />
+              Start one above.
             </p>
           </>
         ) : (
           <>
-            {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
+            {projectsError && (
+              <InlineErrorRow
+                message="Couldn’t load your projects."
+                onRetry={loadProjects}
+              />
+            )}
             {(sidebarProjects.length > 0 || pinned.length > 0) && (
               <Section
                 label="Pinned"
@@ -1175,11 +1506,16 @@ export function AppSidebar({
       </Dialog>
 
       {/* Project rename dialog */}
-      <Dialog open={renameTarget !== null} onOpenChange={(o) => !o && setRenameTarget(null)}>
+      <Dialog
+        open={renameTarget !== null}
+        onOpenChange={(o) => !o && setRenameTarget(null)}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Rename project</DialogTitle>
-            <DialogDescription>Change the name of this project.</DialogDescription>
+            <DialogDescription>
+              Change the name of this project.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="sidebar-rename-project">Project name</Label>
@@ -1198,7 +1534,10 @@ export function AppSidebar({
             <Button variant="ghost" onClick={() => setRenameTarget(null)}>
               Cancel
             </Button>
-            <Button onClick={renameProject} disabled={renamingProject || !renameDraft.trim()}>
+            <Button
+              onClick={renameProject}
+              disabled={renamingProject || !renameDraft.trim()}
+            >
               {renamingProject ? "Renaming…" : "Rename project"}
             </Button>
           </DialogFooter>
@@ -1249,8 +1588,16 @@ function ModeToggle({
       // get their size back.
       optionClassName={compact ? undefined : "gap-1.5 px-2"}
       options={[
-        { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
-        { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
+        {
+          value: "home",
+          label: "Home",
+          icon: <SidebarMotionIcon kind="home" className="size-3.5" />,
+        },
+        {
+          value: "code",
+          label: "Code",
+          icon: <SidebarMotionIcon kind="code" className="size-3.5" />,
+        },
       ]}
     />
   );
@@ -1285,7 +1632,9 @@ function WorkSessionRow({
       <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
         <SidebarMotionIcon kind="work" className="h-[15px] w-[15px]" />
       </span>
-      <span className="min-w-0 flex-1 truncate">{session.title || "Untitled task"}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {session.title || "Untitled task"}
+      </span>
       <WorkStatusDot status={session.status} />
     </Link>
   );
@@ -1293,7 +1642,13 @@ function WorkSessionRow({
 
 /** Compact in-list failure row + retry — the sidebar-density version of the
  *  tasks page's error card, so a failed fetch never masquerades as empty. */
-function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
+function InlineErrorRow({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
     // role="alert": these replace a section's contents when a fetch fails, so
     // without it the section just reads as empty to a screen reader.
@@ -1345,7 +1700,7 @@ function RailIcon({
   const cls = cn(
     pressableVariants({ kind: "icon", size: "lg" }),
     "group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground",
-    active && "bg-sidebar-accent text-foreground"
+    active && "bg-sidebar-accent text-foreground",
   );
   // Tooltip, not the native `title` this carried: the OS bubble runs on its own
   // ~1s clock and skips the popper motion pair, so the rail's labels were the
@@ -1356,11 +1711,21 @@ function RailIcon({
     <Tooltip>
       <TooltipTrigger asChild>
         {href ? (
-          <Link href={href} aria-label={label} aria-current={active ? "page" : undefined} className={cls}>
+          <Link
+            href={href}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            className={cls}
+          >
             {children}
           </Link>
         ) : (
-          <button type="button" onClick={onClick} aria-label={label} className={cls}>
+          <button
+            type="button"
+            onClick={onClick}
+            aria-label={label}
+            className={cls}
+          >
             {children}
           </button>
         )}
@@ -1387,23 +1752,34 @@ function NavRow({
     "group relative flex min-h-9 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-sm font-medium transition-colors duration-fast ease-out-soft",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
-      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+      : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground",
   );
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">{icon}</span>
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+        {icon}
+      </span>
       <span className="flex-1 truncate">{label}</span>
     </>
   );
   if (href) {
     return (
-      <Link href={href} onClick={onClick} aria-current={active ? "page" : undefined} className={cls}>
+      <Link
+        href={href}
+        onClick={onClick}
+        aria-current={active ? "page" : undefined}
+        className={cls}
+      >
         {inner}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={onClick} className={cn(cls, "w-full text-left")}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(cls, "w-full text-left")}
+    >
       {inner}
     </button>
   );
@@ -1430,7 +1806,9 @@ function Section({
     <>
       {/* Claude-style header: sentence-case label with a small chevron hugging
           it ("Pinned ⌄") — no leading icon column, no count badge. */}
-      {Icon && !collapsible && <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />}
+      {Icon && !collapsible && (
+        <Icon className="size-3.5 shrink-0 text-muted-foreground/70" />
+      )}
       {/* Full --muted-foreground, no alpha. At /75 against the black ground this
           label measured under the 4.5:1 floor, and it is the only thing naming
           the list under it.
@@ -1446,7 +1824,7 @@ function Section({
         <ChevronDown
           className={cn(
             "size-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
-            isCollapsed && "-rotate-90"
+            isCollapsed && "-rotate-90",
           )}
         />
       )}
@@ -1479,9 +1857,13 @@ function Section({
             {headerInner}
           </Pressable>
         ) : (
-          <div className="flex min-w-0 flex-1 select-none items-center gap-1.5 px-2.5 py-1">{headerInner}</div>
+          <div className="flex min-w-0 flex-1 select-none items-center gap-1.5 px-2.5 py-1">
+            {headerInner}
+          </div>
         )}
-        {action != null && <span className="flex shrink-0 items-center pr-1">{action}</span>}
+        {action != null && (
+          <span className="flex shrink-0 items-center pr-1">{action}</span>
+        )}
       </div>
       <Disclosure open={!isCollapsed}>
         <div className="space-y-0.5">{children}</div>
@@ -1503,19 +1885,25 @@ function Section({
  * in 256px cannot disagree about what folding looks like, and keeping the recipe
  * in one place is the only way that stays true.
  */
-function Disclosure({ open, children }: { open: boolean; children: React.ReactNode }) {
+function Disclosure({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className={cn(
         "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft motion-reduce:transition-none",
-        open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]"
+        open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]",
       )}
     >
       <div
         className={cn(
           // -mx/px bleed keeps the rows' hover nudge from clipping at the fold edge.
           "-mx-2 min-h-0 overflow-hidden px-2 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
-          !open && "opacity-0"
+          !open && "opacity-0",
         )}
       >
         {children}
@@ -1570,18 +1958,22 @@ function CodeWorkspaceGroup({
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
         </span>
-        <span dir="auto" className="min-w-0 flex-1 truncate">{name}</span>
+        <span dir="auto" className="min-w-0 flex-1 truncate">
+          {name}
+        </span>
         <ChevronRight
           className={cn(
             "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
-            expanded && "rotate-90"
+            expanded && "rotate-90",
           )}
         />
       </button>
       <Disclosure open={expanded}>
         <div className="mt-0.5 flex flex-col gap-0.5">
           {sessions.length === 0 && tasks.length === 0 && (
-            <p className="py-1 pl-6 pr-2 text-ui text-muted-foreground">No sessions yet.</p>
+            <p className="py-1 pl-6 pr-2 text-ui text-muted-foreground">
+              No sessions yet.
+            </p>
           )}
           {sessions.map((c) => (
             <ConversationRow
@@ -1590,7 +1982,9 @@ function CodeWorkspaceGroup({
               variant="code"
               nested
               taskStatus={taskStatusFor(c.id)}
-              active={c.id === activeConversationId || activePath === `/chat/${c.id}`}
+              active={
+                c.id === activeConversationId || activePath === `/chat/${c.id}`
+              }
               renaming={renamingId === c.id}
               setRenaming={setRenaming}
               onUpdate={onUpdate}
@@ -1614,7 +2008,10 @@ const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
   // cubic-bezier(0.4,0,0.6,1) loop which appears nowhere in the motion tokens,
   // and an ease-OUT curve run as a loop visibly stutters at its seam — the exact
   // failure --ease-breathe was added to fix.
-  running: { label: "Running", dot: "bg-success motion-safe:animate-icon-breathe" },
+  running: {
+    label: "Running",
+    dot: "bg-success motion-safe:animate-icon-breathe",
+  },
   awaiting_approval: { label: "Approval", dot: "bg-warning" },
   failed: { label: "Failed", dot: "bg-destructive" },
 };
@@ -1623,13 +2020,24 @@ const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
  *  the list). Linked tasks deep-link to their session; app-started tasks have
  *  no session to open, so their row stays a plain, non-interactive readout —
  *  a row that went nowhere would be a dead button. */
-function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate?: () => void }) {
+function CodeTaskStatusRow({
+  task,
+  onNavigate,
+}: {
+  task: CodeTaskRow;
+  onNavigate?: () => void;
+}) {
   const meta = TASK_STATUS_META[task.status];
   if (!meta) return null;
   const inner = (
     <>
-      <span className={cn("size-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
-      <span dir="auto" className="min-w-0 flex-1 truncate">{task.title}</span>
+      <span
+        className={cn("size-1.5 shrink-0 rounded-full", meta.dot)}
+        aria-hidden="true"
+      />
+      <span dir="auto" className="min-w-0 flex-1 truncate">
+        {task.title}
+      </span>
       {/* text-micro is the mono metadata floor (tailwind.config.ts) — the
           text-[10px] it replaces sat under it, losing hairline strokes on 1x
           displays in exactly the muted ink this label is set in. */}
@@ -1655,7 +2063,10 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
     );
   }
   return (
-    <div className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70" title={task.title}>
+    <div
+      className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70"
+      title={task.title}
+    >
       {inner}
     </div>
   );
@@ -1695,13 +2106,20 @@ function ConversationRow({
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
-    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
+  const patch = async (
+    data: Partial<
+      Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">
+    >,
+  ) => {
+    const optimistic =
+      data.title != null ? { ...data, titleSource: "manual" as const } : data;
     onUpdate(conversation.id, optimistic);
     const res = await fetch(`/api/conversations/${conversation.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
+      body: JSON.stringify(
+        data.titleSource == null ? data : { ...data, titleSource: undefined },
+      ),
     });
     if (!res.ok) toast.error("Update failed.");
   };
@@ -1714,12 +2132,18 @@ function ConversationRow({
 
   const remove = () => {
     onRequestConfirm({
-      title: variant === "code" ? "Delete this session?" : "Delete this conversation?",
-      description: "This permanently removes the conversation and its messages. This can't be undone.",
+      title:
+        variant === "code"
+          ? "Delete this session?"
+          : "Delete this conversation?",
+      description:
+        "This permanently removes the conversation and its messages. This can't be undone.",
       confirmLabel: variant === "code" ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
-        const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" });
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "DELETE",
+        });
         if (!res.ok) {
           toast.error("Delete failed.");
           return;
@@ -1736,7 +2160,12 @@ function ConversationRow({
 
   if (renaming) {
     return (
-      <div className={cn("flex items-center gap-1 pl-2 pr-1 py-1", nested && "pl-6")}>
+      <div
+        className={cn(
+          "flex items-center gap-1 pl-2 pr-1 py-1",
+          nested && "pl-6",
+        )}
+      >
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -1750,7 +2179,12 @@ function ConversationRow({
         />
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="icon-sm" variant="ghost" onClick={commitRename} aria-label="Save">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={commitRename}
+              aria-label="Save"
+            >
               <StatusIcons.success className="size-4" />
             </Button>
           </TooltipTrigger>
@@ -1765,7 +2199,7 @@ function ConversationRow({
       className={cn(
         "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft",
         nested && "pl-6",
-        active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
+        active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent",
       )}
     >
       <Link
@@ -1777,16 +2211,22 @@ function ConversationRow({
           // text-ui is L2, text-sm is L1 (see the header comment) — the two row
           // tiers, named, so this row cannot drift half a point off either one.
           nested ? "text-ui" : "text-sm",
-          active && "font-semibold text-foreground"
+          active && "font-semibold text-foreground",
         )}
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-          <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
+          <SidebarMotionIcon
+            kind="conversation"
+            className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"}
+          />
         </span>
         <AnimatedTitle
-          title={conversation.title || (variant === "code" ? "New session" : "New chat")}
+          title={
+            conversation.title ||
+            (variant === "code" ? "New session" : "New chat")
+          }
           animate={conversation.titleSource === "ai"}
           className="min-w-0 flex-1"
         />
@@ -1799,11 +2239,21 @@ function ConversationRow({
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="flex shrink-0 items-center pl-1">
-                <span className={cn("size-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
-                <span className="sr-only">{TASK_STATUS_META[taskStatus].label}</span>
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    TASK_STATUS_META[taskStatus].dot,
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="sr-only">
+                  {TASK_STATUS_META[taskStatus].label}
+                </span>
               </span>
             </TooltipTrigger>
-            <TooltipContent className="font-mono text-micro">{TASK_STATUS_META[taskStatus].label}</TooltipContent>
+            <TooltipContent className="font-mono text-micro">
+              {TASK_STATUS_META[taskStatus].label}
+            </TooltipContent>
           </Tooltip>
         )}
       </Link>
@@ -1817,20 +2267,33 @@ function ConversationRow({
               <Pressable
                 kind="icon"
                 className={KEBAB_CLASS}
-                aria-label={variant === "code" ? "Session options" : "Conversation options"}
+                aria-label={
+                  variant === "code"
+                    ? "Session options"
+                    : "Conversation options"
+                }
               >
                 <SidebarMotionIcon kind="more" className="size-4" />
               </Pressable>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent>{variant === "code" ? "Session options" : "Conversation options"}</TooltipContent>
+          <TooltipContent>
+            {variant === "code" ? "Session options" : "Conversation options"}
+          </TooltipContent>
         </Tooltip>
         {/* Width only. The origin and the pop-in/out pair are already on the
             primitive; re-declaring them here (with `!` to win a specificity fight
             that no longer exists) is how the other ~30 menus quietly drifted. */}
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            <Pin className={cn("size-4", conversation.pinned ? "fill-primary text-primary" : "")} />
+          <DropdownMenuItem
+            onSelect={() => patch({ pinned: !conversation.pinned })}
+          >
+            <Pin
+              className={cn(
+                "size-4",
+                conversation.pinned ? "fill-primary text-primary" : "",
+              )}
+            />
             <span>{conversation.pinned ? "Unpin" : "Pin"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -1850,12 +2313,26 @@ function ConversationRow({
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
                   <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                    {conversation.projectId == null ? <StatusIcons.success className="size-4" /> : <span className="size-4" />} No project
+                    {conversation.projectId == null ? (
+                      <StatusIcons.success className="size-4" />
+                    ) : (
+                      <span className="size-4" />
+                    )}{" "}
+                    No project
                   </DropdownMenuItem>
                   {projects.map((p) => (
-                    <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                      {conversation.projectId === p.id ? <StatusIcons.success className="size-4" /> : <AppIcons.projects className="size-4" />}
-                      <span dir="auto" className="truncate">{p.name}</span>
+                    <DropdownMenuItem
+                      key={p.id}
+                      onSelect={() => patch({ projectId: p.id })}
+                    >
+                      {conversation.projectId === p.id ? (
+                        <StatusIcons.success className="size-4" />
+                      ) : (
+                        <AppIcons.projects className="size-4" />
+                      )}
+                      <span dir="auto" className="truncate">
+                        {p.name}
+                      </span>
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
@@ -1913,136 +2390,158 @@ function ProjectRow({
 
   return (
     <div>
-    <div
-      className={cn(
-        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft",
-        active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
-      )}
-    >
-      <Link
-        href={`/projects/${project.id}`}
-        onClick={onNavigate}
-        aria-current={active ? "page" : undefined}
+      <div
         className={cn(
-          // flex-1 so the link fills the row it paints hover across: a
-          // content-width link next to a flex-1 spacer left the middle of the
-          // row looking clickable but doing nothing (as ConversationRow does).
-          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground/90 hover:text-foreground",
-          active && "font-semibold text-foreground"
+          "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft",
+          active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent",
         )}
-        title={project.name}
       >
-        {/* 20px box, 15px mark — the same icon column as ConversationRow, which
+        <Link
+          href={`/projects/${project.id}`}
+          onClick={onNavigate}
+          aria-current={active ? "page" : undefined}
+          className={cn(
+            // flex-1 so the link fills the row it paints hover across: a
+            // content-width link next to a flex-1 spacer left the middle of the
+            // row looking clickable but doing nothing (as ConversationRow does).
+            "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground/90 hover:text-foreground",
+            active && "font-semibold text-foreground",
+          )}
+          title={project.name}
+        >
+          {/* 20px box, 15px mark — the same icon column as ConversationRow, which
             this row is stacked directly on top of under "Pinned". It was a 22px
             box around an unsized 18px glyph, so a project and the chats beneath
             it started their titles 2px apart and wore marks three points
             different in weight, in one list. */}
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-          <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
-        </span>
-        <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
-      </Link>
-      {/* Disclosure ›, rotating open. Sits with the kebab at the row's trailing
+          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+            <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
+          </span>
+          <AnimatedTitle
+            title={project.name}
+            animate={project.nameSource === "ai"}
+            className="min-w-0 flex-1"
+          />
+        </Link>
+        {/* Disclosure ›, rotating open. Sits with the kebab at the row's trailing
           edge: the project link owns the whole span it paints hover across. */}
-      {hasChats && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => {
-                setExpanded((v) => !v);
-                if (expanded) setShowAll(false);
-              }}
-              aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
-              aria-expanded={expanded}
-              // 20px is well under the 44px touch minimum — widen on coarse
-              // pointers only, with negative margins so row height is unchanged.
-              // Circular, and it fills on hover: `rounded-sm` (4px, off the ladder)
-              // put a square 2px from the circular kebab it shares a row with, and a
-              // colour-only hover on a 20px glyph gives the pointer nothing to land
-              // on — the kebab beside it has answered with a fill all along.
-              className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:size-11"
-            >
-              <ChevronRight className={cn("size-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
-            </button>
-          </TooltipTrigger>
-          {/* The verb alone — aria-label keeps the project name for readers,
-              but a hover hint restating a title already on screen is noise. */}
-          <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
-        </Tooltip>
-      )}
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Pressable
-                kind="icon"
-                className={KEBAB_CLASS}
-                aria-label="Project options"
+        {hasChats && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => {
+                  setExpanded((v) => !v);
+                  if (expanded) setShowAll(false);
+                }}
+                aria-label={
+                  expanded
+                    ? `Collapse ${project.name}`
+                    : `Expand ${project.name}`
+                }
+                aria-expanded={expanded}
+                // 20px is well under the 44px touch minimum — widen on coarse
+                // pointers only, with negative margins so row height is unchanged.
+                // Circular, and it fills on hover: `rounded-sm` (4px, off the ladder)
+                // put a square 2px from the circular kebab it shares a row with, and a
+                // colour-only hover on a 20px glyph gives the pointer nothing to land
+                // on — the kebab beside it has answered with a fill all along.
+                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:size-11"
               >
-                <SidebarMotionIcon kind="more" className="size-4" />
-              </Pressable>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>Project options</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={onNewChat}>
-            <Plus className="size-4" /> New chat in project
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onToggleStar}>
-            <Pin className={cn("size-4", starred && "fill-primary text-primary")} />
-            <span>{starred ? "Unpin" : "Pin"}</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onRename}>
-            <ActionIcons.edit className="size-4" /> Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {/* Same variant note as ConversationRow's Delete: the primitive owns
-              the destructive treatment. */}
-          <DropdownMenuItem onSelect={onDelete} variant="destructive">
-            <ActionIcons.delete className="size-4" /> Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-    {hasChats && (
-      <Disclosure open={expanded}>
-        <div className="mt-0.5 flex flex-col">
-        {visibleChats.map((c) => (
-          <Link
-            key={c.id}
-            href={`/chat/${c.id}`}
-            onClick={onNavigate}
-            aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
-            title={c.title}
-            className={cn(
-              "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-ui transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
-              // bg-sidebar-accent on the active row, like every other selected
-              // row in this panel (a deliberate QA decision: neutral fill, no
-              // accent rail). This was the one selected state carried by weight
-              // alone, so the open chat vanished the moment a sibling hovered.
-              activePath === `/chat/${c.id}`
-                ? "bg-sidebar-accent font-medium text-foreground"
-                : "text-sidebar-foreground/70 hover:text-foreground"
-            )}
-          >
-            <SidebarMotionIcon kind="conversation" className="size-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground" />
-            <span dir="auto" className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
-          </Link>
-        ))}
-        {chats.length > PREVIEW && (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="flex items-center rounded-xs py-1 pl-9 pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
-          >
-            {showAll ? "Show less" : `View all ${chats.length}`}
-          </button>
+                <ChevronRight
+                  className={cn(
+                    "size-3.5 transition-transform duration-fast ease-out-soft",
+                    expanded && "rotate-90",
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            {/* The verb alone — aria-label keeps the project name for readers,
+              but a hover hint restating a title already on screen is noise. */}
+            <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
+          </Tooltip>
         )}
-        </div>
-      </Disclosure>
-    )}
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Pressable
+                  kind="icon"
+                  className={KEBAB_CLASS}
+                  aria-label="Project options"
+                >
+                  <SidebarMotionIcon kind="more" className="size-4" />
+                </Pressable>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Project options</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onSelect={onNewChat}>
+              <Plus className="size-4" /> New chat in project
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleStar}>
+              <Pin
+                className={cn("size-4", starred && "fill-primary text-primary")}
+              />
+              <span>{starred ? "Unpin" : "Pin"}</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onRename}>
+              <ActionIcons.edit className="size-4" /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {/* Same variant note as ConversationRow's Delete: the primitive owns
+              the destructive treatment. */}
+            <DropdownMenuItem onSelect={onDelete} variant="destructive">
+              <ActionIcons.delete className="size-4" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {hasChats && (
+        <Disclosure open={expanded}>
+          <div className="mt-0.5 flex flex-col">
+            {visibleChats.map((c) => (
+              <Link
+                key={c.id}
+                href={`/chat/${c.id}`}
+                onClick={onNavigate}
+                aria-current={
+                  activePath === `/chat/${c.id}` ? "page" : undefined
+                }
+                title={c.title}
+                className={cn(
+                  "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-ui transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
+                  // bg-sidebar-accent on the active row, like every other selected
+                  // row in this panel (a deliberate QA decision: neutral fill, no
+                  // accent rail). This was the one selected state carried by weight
+                  // alone, so the open chat vanished the moment a sibling hovered.
+                  activePath === `/chat/${c.id}`
+                    ? "bg-sidebar-accent font-medium text-foreground"
+                    : "text-sidebar-foreground/70 hover:text-foreground",
+                )}
+              >
+                <SidebarMotionIcon
+                  kind="conversation"
+                  className="size-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground"
+                />
+                <span dir="auto" className="min-w-0 flex-1 truncate">
+                  {c.title || "New chat"}
+                </span>
+              </Link>
+            ))}
+            {chats.length > PREVIEW && (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="flex items-center rounded-xs py-1 pl-9 pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+              >
+                {showAll ? "Show less" : `View all ${chats.length}`}
+              </button>
+            )}
+          </div>
+        </Disclosure>
+      )}
     </div>
   );
 }

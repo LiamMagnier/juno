@@ -22,6 +22,8 @@ export type ProviderErrorClass =
   | "context"
   /** The provider's safety system refused. */
   | "content_filter"
+  /** Provider rejected a syntactically/semantically invalid request (4xx). */
+  | "invalid_request"
   /** Provider-side fault: 5xx, overloaded, gateway errors. */
   | "capacity"
   /** No such model at this provider. */
@@ -104,7 +106,6 @@ const RATE = /rate.?limit|too many requests|overloaded|concurrent|tpm|rpm|resour
 const CONTEXT = /context length|context window|maximum context|too many tokens|prompt is too long|input is too long|reduce the length|string too long|exceeds.{0,20}token/i;
 const FILTER = /content.?(filter|policy)|safety|blocked by|prohibited|risk control|data_inspection/i;
 const NOT_FOUND = /not found|does not exist|unknown model|no such model|model_not_found|unsupported model/i;
-const CAPACITY = /server error|unavailable|bad gateway|gateway timeout|no body|internal error|try again later/i;
 const NETWORK = /econnreset|econnrefused|enotfound|etimedout|socket hang up|network|fetch failed|aborted/i;
 
 /**
@@ -139,9 +140,10 @@ export function classifyProviderError(err: unknown): {
   // like rather than Google's throttle phrasing.
   if (QUOTA.test(raw)) return { class: "billing", status, raw };
   if (status === 404 || NOT_FOUND.test(raw)) return { class: "not_found", status, raw };
-  if ((typeof status === "number" && status >= 500) || CAPACITY.test(raw)) {
+  if (typeof status === "number" && status >= 500) {
     return { class: "capacity", status, raw };
   }
+  if (status === 400 || status === 422) return { class: "invalid_request", status, raw };
   return { class: "unknown", status, raw };
 }
 
@@ -151,6 +153,7 @@ const RETRYABLE: Record<ProviderErrorClass, boolean> = {
   rate_limit: true,
   context: false,
   content_filter: false,
+  invalid_request: false,
   capacity: true,
   not_found: false,
   network: true,
@@ -164,6 +167,7 @@ const ACCOUNT_FAULT: Record<ProviderErrorClass, boolean> = {
   rate_limit: false,
   context: false,
   content_filter: false,
+  invalid_request: false,
   capacity: false,
   not_found: false,
   network: false,
@@ -202,6 +206,9 @@ export function normalizeProviderError(err: unknown, providerLabel?: string): No
       break;
     case "content_filter":
       userMessage = `${who} declined to answer this request under its content policy.`;
+      break;
+    case "invalid_request":
+      userMessage = `${who} couldn't accept this request. Try again, or choose another model.`;
       break;
     case "capacity":
       userMessage = `${who} is temporarily unavailable (a server error on their end). Please try again in a moment.`;

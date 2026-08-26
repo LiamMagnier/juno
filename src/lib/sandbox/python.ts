@@ -14,6 +14,7 @@ import type { ToolDefinition, AgentExecutionContext, ToolExecutionResult, AgentO
 
 export interface PythonExecutionOptions {
   code: string;
+  userId?: string;
   timeoutMs?: number;
   workingDirectory?: string;
   env?: Record<string, string>;
@@ -132,6 +133,7 @@ export function getScrubbedSandboxEnv(customEnv?: Record<string, string>): Recor
 
 export interface PythonExecutionOptions {
   code: string;
+  userId?: string;
   sessionId?: string;
   timeoutMs?: number;
   workingDirectory?: string;
@@ -148,7 +150,9 @@ export async function executePythonSandbox(
   const startTime = Date.now();
   const timeout = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const sessionId = options.sessionId || crypto.randomUUID();
-  const tempDir = options.workingDirectory ?? path.join(os.tmpdir(), "juno-python-workspaces", sessionId);
+  const userScope = options.userId?.replace(/[^a-zA-Z0-9_-]/g, "") || "local-only";
+  const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const tempDir = options.workingDirectory ?? path.join(os.tmpdir(), "juno-python-workspaces", userScope, safeSession);
 
   await fs.mkdir(tempDir, { recursive: true });
 
@@ -156,7 +160,9 @@ export async function executePythonSandbox(
     // Write input files if provided
     if (options.inputFiles && options.inputFiles.length > 0) {
       for (const file of options.inputFiles) {
-        const filePath = path.join(tempDir, file.name);
+        const safeName = path.basename(file.name);
+        if (safeName !== file.name || !safeName) throw new Error("Invalid sandbox input filename");
+        const filePath = path.join(tempDir, safeName);
         await fs.writeFile(filePath, file.content);
       }
     }
@@ -345,7 +351,10 @@ export const pythonTool: ToolDefinition<{ code: string; reason?: string }, Pytho
     },
     required: ["code"],
   },
-  riskClass: "read_only", // Sandbox execution is self-contained with no external system mutation
+  // Arbitrary code is sensitive even when the eventual isolated runner uses a
+  // read-only filesystem. This legacy host runner is not registered in hosted
+  // execution at all; the risk class keeps any direct/local use fail-closed.
+  riskClass: "destructive_or_sensitive",
   formatPreview: (params) => ({
     title: "Python Data Analysis",
     detail: params.reason || "Executing Python script",
@@ -367,6 +376,7 @@ export const pythonTool: ToolDefinition<{ code: string; reason?: string }, Pytho
 
     const result = await executePythonSandbox({
       code: params.code,
+      userId: context.userId,
       sessionId: context.conversationId || context.sessionId,
       workingDirectory: context.workingDirectory,
       env: context.env,
@@ -412,7 +422,7 @@ export const pythonTool: ToolDefinition<{ code: string; reason?: string }, Pytho
           title: file.name,
           mimeType: file.mimeType,
           sizeBytes: file.sizeBytes,
-          downloadUrl: `/api/files/sandbox/${sessionScope}/${file.name}`,
+          downloadUrl: `/api/files/sandbox/${context.userId}/${sessionScope}/${encodeURIComponent(file.name)}`,
         });
       }
     }

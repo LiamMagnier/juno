@@ -31,9 +31,9 @@ broken()
   assert.ok(result.stderr.includes("ValueError: Intentional test error"));
 });
 
-test("pythonTool integrates into Unified Agent Runtime with read_only classification", () => {
+test("legacy python tool is classified sensitive and must stay outside hosted runtime", () => {
   assert.equal(pythonTool.id, "python_interpreter");
   assert.equal(pythonTool.category, "python");
-  assert.equal(pythonTool.riskClass, "read_only");
+  assert.equal(pythonTool.riskClass, "destructive_or_sensitive");
   assert.ok(pythonTool.parameters.properties.code);
 });

@@ -23,7 +23,7 @@ node scripts/restore-drill.mjs --check
 node scripts/restore-drill.mjs
 ```
 
-The local drill requires Node.js 20 or newer and these PostgreSQL 16-compatible
+The local drill requires Node.js 24 LTS and these PostgreSQL 16-compatible
 binaries on `PATH`: `initdb`, `pg_ctl`, `postgres`, `createdb`, `pg_isready`,
 `psql`, `pg_dump`, and `pg_restore`. If they are installed in another
 directory, set `JUNO_PG_BIN_DIR` to that directory. No Docker, cloud account,

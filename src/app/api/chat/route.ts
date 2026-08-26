@@ -2169,6 +2169,11 @@ async function handleChat(req: Request) {
           cacheKey: conversationId,
           fastMode: useFastMode,
           proMode: useProMode,
+          requestContext: {
+            requestId: req.headers.get("x-juno-request-id"),
+            generationId,
+            conversationId,
+          },
           audit: {
             userId: user.id,
             conversationId,

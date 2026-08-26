@@ -7,22 +7,17 @@ import { readBodyBounded } from "@/lib/search/pdf-text";
 const searchEngineSource = readFileSync(new URL("../src/lib/search/search-engine.ts", import.meta.url), "utf8");
 
 test("research fetch rejects a public URL that redirects to a private host", async () => {
-  const originalFetch = globalThis.fetch;
   const requested: string[] = [];
-  globalThis.fetch = async (input) => {
-    requested.push(String(input));
+  const transport = async (input: string) => {
+    requested.push(input);
     return new Response(null, {
       status: 302,
       headers: { location: "http://127.0.0.1:3000/admin" },
     });
   };
-  try {
-    const result = await fetchSafePublicUrl("https://public.example/redirect", {});
-    assert.deepEqual(result, { kind: "blocked" });
-    assert.deepEqual(requested, ["https://public.example/redirect"]);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const result = await fetchSafePublicUrl("https://public.example/redirect", {}, undefined, transport);
+  assert.deepEqual(result, { kind: "blocked" });
+  assert.deepEqual(requested, ["https://public.example/redirect"]);
 });
 
 test("research HTML extraction uses the bounded body reader before decoding", async () => {

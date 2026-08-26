@@ -7,7 +7,7 @@ import { z } from "zod";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env, isGoogleConfigured } from "@/lib/env";
 import { encryptAccountTokens, decryptAccountTokens } from "@/lib/crypto";
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { hashPassword, verifyPasswordConstantTime } from "@/lib/password";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 
 /**
@@ -38,13 +38,13 @@ const credentialsSchema = z.object({
   password: z.string().min(8).max(200),
 });
 
-// Brute-force limits on the credentials sign-in: per-account (lowercased email)
-// plus a wider per-IP net so one attacker can't spray many accounts. Every
+// Brute-force limits on the credentials sign-in: per caller+account pair plus
+// a wider per-IP net so one attacker can't spray many accounts. Every
 // failure path returns `null` — next-auth then yields the same generic
 // CredentialsSignin error whether the account exists, the password is wrong,
 // or the caller is throttled, so nothing leaks about account existence.
 const SIGNIN_WINDOW_SEC = 15 * 60;
-const SIGNIN_MAX_PER_EMAIL = 10;
+const SIGNIN_MAX_PER_PAIR = 10;
 const SIGNIN_MAX_PER_IP = 30;
 
 const providers: NextAuthConfig["providers"] = [
@@ -57,7 +57,7 @@ const providers: NextAuthConfig["providers"] = [
       const email = parsed.data.email.toLowerCase();
 
       const ip = request?.headers ? ipFromHeaders(new Headers(request.headers)) : "unknown";
-      const checks = [rateLimit({ key: `signin:email:${email}`, limit: SIGNIN_MAX_PER_EMAIL, windowSec: SIGNIN_WINDOW_SEC })];
+      const checks = [rateLimit({ key: `signin:pair:${ip}:${email}`, limit: SIGNIN_MAX_PER_PAIR, windowSec: SIGNIN_WINDOW_SEC })];
       if (ip !== "unknown") {
         checks.push(rateLimit({ key: `signin:ip:${ip}`, limit: SIGNIN_MAX_PER_IP, windowSec: SIGNIN_WINDOW_SEC }));
       }
@@ -65,8 +65,8 @@ const providers: NextAuthConfig["providers"] = [
       if (results.some((r) => !r.success)) return null;
 
       const user = await prisma.user.findUnique({ where: { email } });
+      const { ok, needsUpgrade } = await verifyPasswordConstantTime(parsed.data.password, user?.hashedPassword);
       if (!user?.hashedPassword) return null;
-      const { ok, needsUpgrade } = await verifyPassword(parsed.data.password, user.hashedPassword);
       if (!ok) return null;
       if (user.bannedAt) return null;
       // Migrate a legacy (pre-72-byte-safe) hash to the current scheme now that

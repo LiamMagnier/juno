@@ -10,32 +10,32 @@ import SwiftUI
 /// Liquid Glass, which already flexes — so the scale is small on purpose: enough
 /// to confirm the tap landed, not enough to fight the material underneath.
 struct JunoMobileChipPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        // The environment is read in a nested `View`, not on the style itself: a
-        // `ButtonStyle` is not a dynamic-property container, so an `@Environment`
-        // declared here would silently keep its default and Reduce Motion would
-        // never be honoured.
-        Press(pressed: configuration.isPressed, label: configuration.label)
+  func makeBody(configuration: Configuration) -> some View {
+    // The environment is read in a nested `View`, not on the style itself: a
+    // `ButtonStyle` is not a dynamic-property container, so an `@Environment`
+    // declared here would silently keep its default and Reduce Motion would
+    // never be honoured.
+    Press(pressed: configuration.isPressed, label: configuration.label)
+  }
+
+  private struct Press: View {
+    let pressed: Bool
+    let label: ButtonStyleConfiguration.Label
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+      label
+        .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
+        .animation(
+          JunoMotion.reduced(
+            JunoMotion.outSoft(JunoMotion.Duration.fast),
+            when: reduceMotion
+          ),
+          value: pressed
+        )
     }
-
-    private struct Press: View {
-        let pressed: Bool
-        let label: ButtonStyleConfiguration.Label
-
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-        var body: some View {
-            label
-                .scaleEffect(pressed && !reduceMotion ? 0.97 : 1)
-                .animation(
-                    JunoMotion.reduced(
-                        JunoMotion.outSoft(JunoMotion.Duration.fast),
-                        when: reduceMotion
-                    ),
-                    value: pressed
-                )
-        }
-    }
+  }
 }
 
 // MARK: - The bloom's inputs
@@ -50,48 +50,48 @@ struct JunoMobileChipPressStyle: ButtonStyle {
 /// belongs, since the greeting is the thing you are reading while you decide
 /// what to ask. The screen is the only place that can see both.
 struct JunoMobileAuraLight: Equatable {
-    /// The lab's own ambient light, or the account's accent for a model this
-    /// client has never heard of.
-    var tint: JunoColorToken
-    /// How hard the model is set to think, 0…1.
-    var think: Double
-    /// True while the composer holds focus. Typing warms the bloom.
-    var focused: Bool
-    /// Flipped on an accepted send; the aura clears it itself.
-    var sending: Bool
-    /// The chat column's measured height, so the aura's `54vh` cap means
-    /// something on a short screen. Nil until the column has been measured —
-    /// handing the aura a zero would clamp the bloom out of existence on the
-    /// first frame.
-    var viewport: CGFloat?
+  /// The lab's own ambient light, or the account's accent for a model this
+  /// client has never heard of.
+  var tint: JunoColorToken
+  /// How hard the model is set to think, 0…1.
+  var think: Double
+  /// True while the composer holds focus. Typing warms the bloom.
+  var focused: Bool
+  /// Flipped on an accepted send; the aura clears it itself.
+  var sending: Bool
+  /// The chat column's measured height, so the aura's `54vh` cap means
+  /// something on a short screen. Nil until the column has been measured —
+  /// handing the aura a zero would clamp the bloom out of existence on the
+  /// first frame.
+  var viewport: CGFloat?
 
-    /// - Parameter model: the selected model, or nil while the catalog loads.
-    ///
-    /// Main-actor isolated because the palette it reads is: `JunoProviderGlow`
-    /// resolves the account's accent through a main-actor store, and every caller
-    /// builds this from a `View` body anyway.
-    @MainActor
-    init(
-        model: NativeChatModelOption?,
-        effort: NativeReasoningEffort?,
-        focused: Bool,
-        sending: Bool,
-        viewport: CGFloat,
-        dark: Bool
-    ) {
-        tint = JunoProviderGlow.glow(providerID: model?.providerID ?? "", dark: dark)
-        // Gated on whether a thinking control is actually on screen, not on
-        // whether the model reasons: models that reason without exposing tiers
-        // would otherwise burn at the dimmest end with no slider anywhere to
-        // explain why. Same contract the composer uses.
-        think = JunoProviderGlow.auraThink(
-            effort: effort?.rawValue,
-            hasEffortControl: model.map { NativeThinkingScale(model: $0).isPresentable } ?? false
-        )
-        self.focused = focused
-        self.sending = sending
-        self.viewport = viewport > 0 ? viewport : nil
-    }
+  /// - Parameter model: the selected model, or nil while the catalog loads.
+  ///
+  /// Main-actor isolated because the palette it reads is: `JunoProviderGlow`
+  /// resolves the account's accent through a main-actor store, and every caller
+  /// builds this from a `View` body anyway.
+  @MainActor
+  init(
+    model: NativeChatModelOption?,
+    effort: NativeReasoningEffort?,
+    focused: Bool,
+    sending: Bool,
+    viewport: CGFloat,
+    dark: Bool
+  ) {
+    tint = JunoProviderGlow.glow(providerID: model?.providerID ?? "", dark: dark)
+    // Gated on whether a thinking control is actually on screen, not on
+    // whether the model reasons: models that reason without exposing tiers
+    // would otherwise burn at the dimmest end with no slider anywhere to
+    // explain why. Same contract the composer uses.
+    think = JunoProviderGlow.auraThink(
+      effort: effort?.rawValue,
+      hasEffortControl: model.map { NativeThinkingScale(model: $0).isPresentable } ?? false
+    )
+    self.focused = focused
+    self.sending = sending
+    self.viewport = viewport > 0 ? viewport : nil
+  }
 }
 
 /// The send swell, held by the screen rather than by the composer.
@@ -109,23 +109,23 @@ struct JunoMobileAuraLight: Equatable {
 @MainActor
 @Observable
 final class JunoMobileSendSwell {
-    private(set) var active = false
+  private(set) var active = false
 
-    @ObservationIgnored private var reset: Task<Void, Never>?
+  @ObservationIgnored private var reset: Task<Void, Never>?
 
-    /// The 1100ms keyframe plus 50ms, so the belt-and-braces clear lands just
-    /// past the end of the animation rather than inside it.
-    private static let clearAfter = Duration.milliseconds(1150)
+  /// The 1100ms keyframe plus 50ms, so the belt-and-braces clear lands just
+  /// past the end of the animation rather than inside it.
+  private static let clearAfter = Duration.milliseconds(1150)
 
-    func fire() {
-        reset?.cancel()
-        active = true
-        reset = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.clearAfter)
-            guard !Task.isCancelled else { return }
-            self?.active = false
-        }
+  func fire() {
+    reset?.cancel()
+    active = true
+    reset = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: Self.clearAfter)
+      guard !Task.isCancelled else { return }
+      self?.active = false
     }
+  }
 }
 
 // MARK: - The bloom, mounted
@@ -148,27 +148,27 @@ final class JunoMobileSendSwell {
 /// is created. The Mac carries the same shim, as `DesktopChatAuraLayer`; every
 /// iOS mount point goes through this one so the two platforms cannot drift.
 struct JunoMobileAuraLayer: View {
-    let light: JunoMobileAuraLight
-    /// `false` is the empty state's full bloom; `true` the dialled-down variant
-    /// that pools around the capsule inside a conversation.
-    let docked: Bool
+  let light: JunoMobileAuraLight
+  /// `false` is the empty state's full bloom; `true` the dialled-down variant
+  /// that pools around the capsule inside a conversation.
+  let docked: Bool
 
-    /// The swell flag, one update behind the light's. See above.
-    @State private var sending = false
+  /// The swell flag, one update behind the light's. See above.
+  @State private var sending = false
 
-    var body: some View {
-        JunoComposerAura(
-            tint: light.tint,
-            think: light.think,
-            focused: light.focused,
-            sending: sending,
-            docked: docked,
-            viewport: light.viewport
-        )
-        .onChange(of: light.sending, initial: true) { _, isSending in
-            sending = isSending
-        }
+  var body: some View {
+    JunoComposerAura(
+      tint: light.tint,
+      think: light.think,
+      focused: light.focused,
+      sending: sending,
+      docked: docked,
+      viewport: light.viewport
+    )
+    .onChange(of: light.sending, initial: true) { _, isSending in
+      sending = isSending
     }
+  }
 }
 
 // MARK: - The greeting
@@ -198,146 +198,224 @@ struct JunoMobileAuraLayer: View {
 /// so the two copies cannot drift apart — and a clear glyph casts no halo, so
 /// each copy's legibility shadow lands only around the words it actually shows.
 struct JunoMobileGreeting: View {
-    var name: String?
-    /// The bloom behind the sentence. Nil where something else owns the light:
-    /// during a call the voice field has it, and two lights under one sentence
-    /// read as a bug.
-    var aura: JunoMobileAuraLight?
+  var name: String?
+  /// The bloom behind the sentence. Nil where something else owns the light:
+  /// during a call the voice field has it, and two lights under one sentence
+  /// read as a bug.
+  var aura: JunoMobileAuraLight?
+  /// Seeds the real composer with a useful starting point. Nil keeps the
+  /// greeting compact in contexts that do not own a draft binding.
+  var onSuggestion: ((String) -> Void)?
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var phrase = ""
-    /// The two beats, flipped 60ms and 180ms after the greeting appears.
-    @State private var phraseIn = false
-    @State private var nameIn = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @State private var phrase = ""
+  /// The two beats, flipped 60ms and 180ms after the greeting appears.
+  @State private var phraseIn = false
+  @State private var nameIn = false
 
-    private var firstName: String? {
-        guard let name, let first = name.split(separator: " ").first else { return nil }
-        return String(first)
-    }
+  private var firstName: String? {
+    guard let name, let first = name.split(separator: " ").first else { return nil }
+    return String(first)
+  }
 
-    private var compact: Bool { sizeClass == .compact }
+  private var compact: Bool { sizeClass == .compact }
 
-    var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.cozy) {
-            JunoMark(size: compact ? 21 : 29)
-                .opacity(phraseIn ? 1 : 0)
-                .offset(y: phraseIn ? 0 : 8)
-            sentence
+  var body: some View {
+    VStack(spacing: JunoSpace.section) {
+      VStack(spacing: JunoSpace.snug) {
+        JunoMark(size: compact ? 34 : 40)
+          .opacity(phraseIn ? 1 : 0)
+          .offset(y: phraseIn ? 0 : 8)
+        sentence
+        Text("Ask anything. Juno is here to help.")
+          .font(.subheadline)
+          .junoSecondaryInk()
+          .opacity(nameIn ? 1 : 0)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(plainGreeting + ". Ask anything. Juno is here to help.")
+
+      if onSuggestion != nil {
+        VStack(spacing: JunoSpace.snug) {
+          suggestion(
+            title: "Explain a concept",
+            subtitle: "Break down any topic",
+            systemImage: "sparkles",
+            prompt: "Explain a concept to me step by step: "
+          )
+          suggestion(
+            title: "Write or debug code",
+            subtitle: "From a quick fix to a full app",
+            systemImage: "chevron.left.forwardslash.chevron.right",
+            prompt: "Help me write or debug this code: "
+          )
+          suggestion(
+            title: "Summarize a document",
+            subtitle: "Pull out the decisions and next steps",
+            systemImage: "doc.text",
+            prompt: "Summarize this document and list the key decisions: "
+          )
         }
-        .padding(.horizontal, JunoSpace.section)
-        .frame(maxWidth: .infinity)
-        .background { auraLayer }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(plainGreeting)
-        .onAppear {
-            if phrase.isEmpty {
-                phrase = JunoGreeting.phrase(
-                    forHour: Calendar.current.component(.hour, from: Date())
-                )
-            }
-            play()
-        }
+        .frame(maxWidth: compact ? 390 : 520)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+      }
     }
-
-    /// The two stacked copies of the one sentence. See the type's note for why
-    /// this is not two `Text`s side by side.
-    private var sentence: some View {
-        ZStack {
-            layer(showsName: false)
-                .opacity(phraseIn ? 1 : 0)
-                .offset(y: phraseIn ? 0 : 8)
-            layer(showsName: true)
-                .opacity(nameIn ? 1 : 0)
-                .offset(y: nameIn ? 0 : 8)
-        }
-    }
-
-    private func layer(showsName: Bool) -> some View {
-        Text(greetingText(showsName: showsName))
-            .font(JunoSerif.greeting(compact: compact))
-            .multilineTextAlignment(.center)
-            .minimumScaleFactor(0.7)
-            .lineLimit(2)
-            // `.empty-greeting`: the page's own background, shaped to the
-            // glyphs. It restores local contrast over the bloom without a plate,
-            // a blur or a second colour, and costs nothing where there is no
-            // glow behind the text. Two stacked shadows rather than CSS's two
-            // independent ones — the second sees the first, which reads as a
-            // marginally denser halo and is the closest SwiftUI offers.
-            .shadow(color: Color.junoCanvas.opacity(0.8), radius: 5)
-            .shadow(color: Color.junoCanvas.opacity(0.55), radius: 15)
-    }
-
-    @ViewBuilder
-    private var auraLayer: some View {
-        if let aura {
-            // The empty state's full bloom. Docked is for a transcript that has
-            // messages to stay out of the way of; here the sentence is the only
-            // thing on screen and the light is meant to reach it.
-            JunoMobileAuraLayer(light: aura, docked: false)
-        }
-    }
-
-    /// Runs the two beats. Delays rather than a single spring, because the
-    /// website's stagger is what gives the greeting its cadence — the name
-    /// arriving a moment after the phrase is the difference between a sentence
-    /// being said and a block being shown.
-    private func play() {
-        guard !phraseIn else { return }
-        guard !reduceMotion else {
-            phraseIn = true
-            nameIn = true
-            return
-        }
-        withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.06)) {
-            phraseIn = true
-        }
-        withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.18)) {
-            nameIn = true
-        }
-    }
-
-    /// One sentence, with one half made invisible.
-    ///
-    /// `.clear` and not an omission: both copies must lay out the *whole* string
-    /// or they would break lines differently and the two beats would land in
-    /// different places.
-    private func greetingText(showsName: Bool) -> AttributedString {
-        var result = AttributedString(firstName == nil ? phrase : "\(phrase), ")
-        if showsName { result.foregroundColor = .clear }
-        guard let firstName else { return result }
-        var name = AttributedString(firstName)
-        name.font = JunoSerif.greetingName(compact: compact)
-        name.foregroundColor = showsName ? nameColour : .clear
-        result.append(name)
-        return result
-    }
-
-    /// The name's step in lightness *away* from the light behind it — up on dark
-    /// paper, down on light — so accent type and accent glow can never meet in
-    /// the middle. `globals.css`'s `.empty-greeting__name`, including its two
-    /// deliberate asymmetries: the dark step is additive and clamped rather than
-    /// proportional (multiplying moves the palest accents furthest, which is
-    /// backwards), and amber takes a deeper light-mode step of its own because
-    /// hue near 39° carries far more luminance per unit of lightness.
-    private var nameColour: Color {
-        let accent = JunoAccentSelection.shared.current
-        let light = accent.hsl(dark: false)
-        let dark = accent.hsl(dark: true)
-        return Color.junoAdaptive(
-            light: JunoColorToken(
-                hsl: accent == .amber
-                    ? (h: light.h, s: light.s, l: light.l * 0.68)
-                    : (h: light.h, s: light.s * 0.94, l: light.l * 0.82)
-            ),
-            dark: JunoColorToken(
-                hsl: (h: dark.h, s: dark.s, l: min(0.78, max(0.52, dark.l + 0.14)))
-            )
+    .padding(.horizontal, JunoSpace.regular)
+    .frame(maxWidth: .infinity)
+    .background { auraLayer }
+    .accessibilityElement(children: .contain)
+    .onAppear {
+      if phrase.isEmpty {
+        phrase = JunoGreeting.phrase(
+          forHour: Calendar.current.component(.hour, from: Date())
         )
+      }
+      play()
     }
+  }
 
-    private var plainGreeting: String {
-        firstName.map { "\(phrase), \($0)" } ?? phrase
+  private func suggestion(
+    title: String,
+    subtitle: String,
+    systemImage: String,
+    prompt: String
+  ) -> some View {
+    Button {
+      onSuggestion?(prompt)
+    } label: {
+      HStack(spacing: JunoSpace.cozy) {
+        Image(systemName: systemImage)
+          .font(.body.weight(.medium))
+          .foregroundStyle(Color.junoAccent)
+          .frame(width: 34, height: 34)
+          .background(
+            Color.junoAccent.opacity(0.10),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .font(.subheadline.weight(.semibold))
+            .junoInk()
+          Text(subtitle)
+            .font(.caption)
+            .junoSecondaryInk()
+        }
+        Spacer(minLength: 0)
+        Image(systemName: "chevron.right")
+          .font(.caption.weight(.semibold))
+          .junoMetaInk()
+      }
+      .padding(.horizontal, JunoSpace.cozy)
+      .frame(minHeight: 58)
+      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          .strokeBorder(Color.junoHairline, lineWidth: 1)
+      )
+      .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
+    .buttonStyle(JunoSidebarPressStyle())
+    .accessibilityHint("Places this prompt in the composer")
+  }
+
+  /// The two stacked copies of the one sentence. See the type's note for why
+  /// this is not two `Text`s side by side.
+  private var sentence: some View {
+    ZStack {
+      layer(showsName: false)
+        .opacity(phraseIn ? 1 : 0)
+        .offset(y: phraseIn ? 0 : 8)
+      layer(showsName: true)
+        .opacity(nameIn ? 1 : 0)
+        .offset(y: nameIn ? 0 : 8)
+    }
+  }
+
+  private func layer(showsName: Bool) -> some View {
+    Text(greetingText(showsName: showsName))
+      .font(JunoSerif.greeting(compact: compact))
+      .multilineTextAlignment(.center)
+      .minimumScaleFactor(0.7)
+      .lineLimit(2)
+      // `.empty-greeting`: the page's own background, shaped to the
+      // glyphs. It restores local contrast over the bloom without a plate,
+      // a blur or a second colour, and costs nothing where there is no
+      // glow behind the text. Two stacked shadows rather than CSS's two
+      // independent ones — the second sees the first, which reads as a
+      // marginally denser halo and is the closest SwiftUI offers.
+      .shadow(color: Color.junoCanvas.opacity(0.8), radius: 5)
+      .shadow(color: Color.junoCanvas.opacity(0.55), radius: 15)
+  }
+
+  @ViewBuilder
+  private var auraLayer: some View {
+    if let aura {
+      // The empty state's full bloom. Docked is for a transcript that has
+      // messages to stay out of the way of; here the sentence is the only
+      // thing on screen and the light is meant to reach it.
+      JunoMobileAuraLayer(light: aura, docked: false)
+    }
+  }
+
+  /// Runs the two beats. Delays rather than a single spring, because the
+  /// website's stagger is what gives the greeting its cadence — the name
+  /// arriving a moment after the phrase is the difference between a sentence
+  /// being said and a block being shown.
+  private func play() {
+    guard !phraseIn else { return }
+    guard !reduceMotion else {
+      phraseIn = true
+      nameIn = true
+      return
+    }
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.06)) {
+      phraseIn = true
+    }
+    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)?.delay(0.18)) {
+      nameIn = true
+    }
+  }
+
+  /// One sentence, with one half made invisible.
+  ///
+  /// `.clear` and not an omission: both copies must lay out the *whole* string
+  /// or they would break lines differently and the two beats would land in
+  /// different places.
+  private func greetingText(showsName: Bool) -> AttributedString {
+    var result = AttributedString(firstName == nil ? phrase : "\(phrase), ")
+    if showsName { result.foregroundColor = .clear }
+    guard let firstName else { return result }
+    var name = AttributedString(firstName)
+    name.font = JunoSerif.greetingName(compact: compact)
+    name.foregroundColor = showsName ? nameColour : .clear
+    result.append(name)
+    return result
+  }
+
+  /// The name's step in lightness *away* from the light behind it — up on dark
+  /// paper, down on light — so accent type and accent glow can never meet in
+  /// the middle. `globals.css`'s `.empty-greeting__name`, including its two
+  /// deliberate asymmetries: the dark step is additive and clamped rather than
+  /// proportional (multiplying moves the palest accents furthest, which is
+  /// backwards), and amber takes a deeper light-mode step of its own because
+  /// hue near 39° carries far more luminance per unit of lightness.
+  private var nameColour: Color {
+    let accent = JunoAccentSelection.shared.current
+    let light = accent.hsl(dark: false)
+    let dark = accent.hsl(dark: true)
+    return Color.junoAdaptive(
+      light: JunoColorToken(
+        hsl: accent == .amber
+          ? (h: light.h, s: light.s, l: light.l * 0.68)
+          : (h: light.h, s: light.s * 0.94, l: light.l * 0.82)
+      ),
+      dark: JunoColorToken(
+        hsl: (h: dark.h, s: dark.s, l: min(0.78, max(0.52, dark.l + 0.14)))
+      )
+    )
+  }
+
+  private var plainGreeting: String {
+    firstName.map { "\(phrase), \($0)" } ?? phrase
+  }
 }

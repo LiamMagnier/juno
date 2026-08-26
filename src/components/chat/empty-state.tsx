@@ -4,6 +4,7 @@ import * as React from "react";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
+import { ChevronRight, Code2, FileText, Sparkles } from "lucide-react";
 
 // Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
 // feels fresh — and every phrase has to survive two readings: alone, and with
@@ -11,16 +12,33 @@ import { cn } from "@/lib/utils";
 // "bright and early" at 11:40) and nothing saccharine; the 0–5 bucket is the one
 // allowed real personality, because nobody is at a 3am composer by accident.
 const TIME_GREETINGS: { from: number; to: number; phrases: string[] }[] = [
-  { from: 0, to: 5, phrases: ["Still going", "Moonlight chat", "Up late", "The small hours"] },
-  { from: 5, to: 12, phrases: ["Good morning", "Morning", "A fresh page", "Back at it"] },
-  { from: 12, to: 18, phrases: ["Good afternoon", "Afternoon", "What's next", "Onward"] },
-  { from: 18, to: 24, phrases: ["Good evening", "Evening", "Settling in", "Winding down"] },
+  {
+    from: 0,
+    to: 5,
+    phrases: ["Still going", "Moonlight chat", "Up late", "The small hours"],
+  },
+  {
+    from: 5,
+    to: 12,
+    phrases: ["Good morning", "Morning", "A fresh page", "Back at it"],
+  },
+  {
+    from: 12,
+    to: 18,
+    phrases: ["Good afternoon", "Afternoon", "What's next", "Onward"],
+  },
+  {
+    from: 18,
+    to: 24,
+    phrases: ["Good evening", "Evening", "Settling in", "Winding down"],
+  },
 ];
 
 function pickGreeting(): string {
   const now = new Date();
   const h = now.getHours();
-  const bucket = TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
+  const bucket =
+    TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
   // A clock-keyed rotation, not Math.random(). Random would re-roll on every
   // mount — each new chat a slot machine — and would guarantee a visible text
   // swap at hydration, since the server's roll can never match the client's.
@@ -53,9 +71,30 @@ export function EmptyGreeting() {
   // The mark's press animation: retrigger the spring-pop keyframe per click.
   const [popping, setPopping] = React.useState(false);
 
+  const suggestions = [
+    {
+      title: "Explain a concept",
+      detail: "Break down any topic",
+      prompt: "Explain a concept to me step by step: ",
+      icon: Sparkles,
+    },
+    {
+      title: "Write or debug code",
+      detail: "From a quick fix to a full app",
+      prompt: "Help me write or debug this code: ",
+      icon: Code2,
+    },
+    {
+      title: "Summarize a document",
+      detail: "Pull out decisions and next steps",
+      prompt: "Summarize this document and list the key decisions: ",
+      icon: FileText,
+    },
+  ] as const;
+
   return (
-    <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
-      <div className="flex items-center justify-end pr-[0.38em]">
+    <div className="flex w-full max-w-xl flex-col items-center gap-5 sm:gap-6">
+      <div className="flex flex-col items-center gap-2 text-center">
         <button
           type="button"
           aria-label="Juno"
@@ -67,48 +106,77 @@ export function EmptyGreeting() {
             // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
             // where it was and grows only the hit area around it, so nothing
             // moves and the button becomes tappable.
-            "grid size-7 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in sm:size-8",
+            "grid size-11 shrink-0 place-items-center rounded-full border border-primary/15 bg-primary/5 [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "block h-[1.4rem] w-[1.4rem] sm:h-[1.75rem] sm:w-[1.75rem]",
+              "block size-7",
               "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
-              !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
+              !popping &&
+                "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
           />
         </button>
-      </div>
-      <h1
-        className="empty-greeting text-center font-serif text-[1.95rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2.45rem]"
-        suppressHydrationWarning
-      >
-        {/* The greeting and the name rise as two beats rather than one block.
+        <h1
+          className="empty-greeting text-center font-sans text-title font-semibold leading-tight tracking-[-0.025em] sm:text-page-title"
+          suppressHydrationWarning
+        >
+          {/* The greeting and the name rise as two beats rather than one block.
             suppressHydrationWarning belongs HERE, not only on the <h1>: React
             does not apply it to deeply nested children, and this is the node
             whose text differs. The server picks its bucket from UTC and the
             client from the visitor's own clock, so any timezone that crosses a
             bucket boundary hydrates with different words — which is the whole
             point of the effect below, not a bug to fix. */}
-        <span
-          suppressHydrationWarning
-          className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in"
-        >
-          {phrase}
-          {firstName ? "," : null}
-        </span>
-        {firstName ? (
-          <>
-            {" "}
-            <span className="empty-greeting__name inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
-              {firstName}
+          <span
+            suppressHydrationWarning
+            className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in"
+          >
+            {phrase}
+            {firstName ? "," : null}
+          </span>
+          {firstName ? (
+            <>
+              {" "}
+              <span className="empty-greeting__name inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+                {firstName}
+              </span>
+            </>
+          ) : null}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Ask anything. Juno is here to help.
+        </p>
+      </div>
+      <div className="grid w-full gap-2 sm:grid-cols-3">
+        {suggestions.map(({ title, detail, prompt, icon: Icon }) => (
+          <button
+            key={title}
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("juno:composer-seed", { detail: prompt }),
+              )
+            }
+            className="group flex min-h-16 items-center gap-3 rounded-card border border-border/70 bg-card px-3 py-2.5 text-left shadow-soft transition-[border-color,box-shadow,transform] duration-fast ease-out-soft hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lift focus-visible:outline-none sm:flex-col sm:items-start"
+          >
+            <span className="grid size-8 shrink-0 place-items-center rounded-field bg-primary/10 text-primary">
+              <Icon className="size-4" />
             </span>
-          </>
-        ) : null}
-      </h1>
-      {/* Mirror column keeps the text cell on the true horizontal center. */}
-      <div aria-hidden="true" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">
+                {title}
+              </span>
+              <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                {detail}
+              </span>
+            </span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast group-hover:translate-x-0.5 sm:hidden" />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -117,7 +185,7 @@ export function EmptyGreeting() {
 export function PrivateGreeting() {
   return (
     <div className="flex w-full flex-col items-center gap-2 text-center">
-      <h1 className="font-serif text-[1.65rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2rem]">
+      <h1 className="font-sans text-title font-semibold leading-tight tracking-[-0.025em] sm:text-page-title">
         You&apos;re incognito
       </h1>
       <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">

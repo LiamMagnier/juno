@@ -127,9 +127,9 @@ const config: Config = {
         // hand-written `rounded-[Npx]`, and a scale you cannot land on is a scale
         // people step off. 26 distinct arbitrary radii existed across 256 call
         // sites before this; `eslint-local/no-arbitrary-radius` now keeps it shut.
-        micro: "2px",     // heatmap cells, crop handles — anything under ~12px square
-        xs: "6px",        // chips, dots, tiny badges
-        control: "9px",   // sm buttons, menu items, list rows
+        micro: "2px", // heatmap cells, crop handles — anything under ~12px square
+        xs: "6px", // chips, dots, tiny badges
+        control: "9px", // sm buttons, menu items, list rows
         // 10px. Named for inputs because that is where it started, but it is the
         // general small-container rung: wells, segmented thumbs, icon tiles,
         // inline notes, the dashed box a short empty state sits in. 99 sites were
@@ -137,10 +137,10 @@ const config: Config = {
         // scope is being written down to match the use rather than the use bent
         // to match a narrower name.
         field: "10px",
-        menu: "12px",     // dropdown / select / tabs shells
-        card: "14px",     // cards, toasts, tiles
-        popover: "14px",  // popovers, transcripts
-        surface: "16px",  // in-flow panels and section wells
+        menu: "12px", // dropdown / select / tabs shells
+        card: "14px", // cards, toasts, tiles
+        popover: "14px", // popovers, transcripts
+        surface: "16px", // in-flow panels and section wells
         // The composer shell. Deliberately the largest rung on the ladder and a
         // long way clear of `surface` — this is the one box on the page the user
         // is aiming at before they have done anything, and at 16px it was
@@ -247,21 +247,32 @@ const config: Config = {
         emphasis: "560ms",
       },
       fontFamily: {
-        // Two-face system. `sans` is the interface voice (controls, menus, tables,
-        // metadata — anything at or below ~15px). `serif` is reserved for display
-        // and for continuous reading: headings, greetings, assistant prose. Mono is
-        // labels, model ids, code and the dot/ASCII signature layer.
-        //
-        // Archivo's x-height ratio (~0.52) is within 5% of Newsreader's, so no
-        // `size-adjust` is needed and every existing px size still holds.
-        sans: ["var(--font-sans)", "Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        // "Source Serif 4" MUST stay quoted. Unquoted, its last component is the
-        // number 4, which is not a valid CSS custom-ident — that makes the whole
-        // font-family declaration invalid and the browser drops it, so every
-        // `font-serif` element silently falls back to inheriting body. It went
-        // unnoticed for as long as body was itself serif.
-        serif: ["var(--font-serif)", "Newsreader", "'Source Serif 4'", "Georgia", "serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+        // A single product voice. `serif` remains as a compatibility alias for
+        // existing semantic call sites, but resolves to the same interface face
+        // so web and native no longer switch personalities between controls and
+        // headings. Mono is reserved for code, ids and compact telemetry.
+        sans: [
+          "var(--font-sans)",
+          "Archivo",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
+        ],
+        serif: [
+          "var(--font-sans)",
+          "Archivo",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
+        ],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "monospace",
+        ],
       },
       fontSize: {
         // Legacy hero (empty-state) — kept.
@@ -273,9 +284,15 @@ const config: Config = {
         // match the old values to within a rounding error at every viewport.
         //   hero    38.4px → 64px : m = 2.7826vw, b = 28.38px = 1.7739rem
         //   display 32px   → 48px : m = 1.7391vw, b = 25.74px = 1.6087rem
-        hero: ["clamp(2.4rem, 1.7739rem + 2.7826vw, 4rem)", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
+        hero: [
+          "clamp(2.4rem, 1.7739rem + 2.7826vw, 4rem)",
+          { lineHeight: "1.1", letterSpacing: "-0.02em" },
+        ],
         // Type scale. Contrast comes from family (serif/sans/mono) + 3x size jumps, not timid weights.
-        display: ["clamp(2rem, 1.6087rem + 1.7391vw, 3rem)", { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" }],
+        display: [
+          "clamp(2rem, 1.6087rem + 1.7391vw, 3rem)",
+          { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" },
+        ],
         /*
          * The <h1> of an app page — the rung between `display` (marketing) and
          * `title` (a section head). It was missing, so the size that appears on
@@ -292,9 +309,18 @@ const config: Config = {
          * document: a pure-vw preferred value ignores the user's base font size,
          * so text zoom cannot move it (WCAG 1.4.4).
          */
-        "page-title": ["clamp(1.65rem, 1.4rem + 0.8vw, 2.1rem)", { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" }],
-        title: ["1.375rem", { lineHeight: "1.25", letterSpacing: "-0.012em", fontWeight: "600" }],
-        heading: ["1.125rem", { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" }],
+        "page-title": [
+          "clamp(1.65rem, 1.4rem + 0.8vw, 2.1rem)",
+          { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" },
+        ],
+        title: [
+          "1.375rem",
+          { lineHeight: "1.25", letterSpacing: "-0.012em", fontWeight: "600" },
+        ],
+        heading: [
+          "1.125rem",
+          { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" },
+        ],
         "body-lg": ["1.0625rem", { lineHeight: "1.6" }],
         body: ["0.9375rem", { lineHeight: "1.6" }],
         /*
@@ -320,7 +346,10 @@ const config: Config = {
         // the most likely SC 1.4.12 failure in the tree, since tracking stacks with
         // a user-forced 0.12em on fixed-height chips. AsciiWordmark keeps its own
         // 0.12em — that is a logotype, not a label.
-        label: ["0.75rem", { lineHeight: "1.4", letterSpacing: "0.10em", fontWeight: "500" }],
+        label: [
+          "0.75rem",
+          { lineHeight: "1.4", letterSpacing: "0.10em", fontWeight: "500" },
+        ],
         caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
         /*
          * The mono metadata floor — token counts, model ids, timestamps, the
@@ -395,7 +424,10 @@ const config: Config = {
         // note beside them says. The fallback in each `var()` is that keyframe's
         // own original value, so nothing changes when the preference is unset.
         "fade-in-up": {
-          from: { opacity: "0", transform: "translateY(calc(6px * var(--motion-shift, 1)))" },
+          from: {
+            opacity: "0",
+            transform: "translateY(calc(6px * var(--motion-shift, 1)))",
+          },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "pulse-ring": {
@@ -417,10 +449,22 @@ const config: Config = {
         // A dark point travels through a still 3×3 matrix. Adjacent staggered
         // peaks overlap just enough to leave a soft trail.
         "thinking-matrix": {
-          "0%, 100%": { opacity: "0", boxShadow: "0 0 0 hsl(var(--foreground) / 0)" },
-          "8%": { opacity: "0.28", boxShadow: "0 0 2px hsl(var(--foreground) / 0.05)" },
-          "15%": { opacity: "0.95", boxShadow: "0 0 5px hsl(var(--foreground) / 0.12)" },
-          "30%": { opacity: "0", boxShadow: "0 0 0 hsl(var(--foreground) / 0)" },
+          "0%, 100%": {
+            opacity: "0",
+            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
+          },
+          "8%": {
+            opacity: "0.28",
+            boxShadow: "0 0 2px hsl(var(--foreground) / 0.05)",
+          },
+          "15%": {
+            opacity: "0.95",
+            boxShadow: "0 0 5px hsl(var(--foreground) / 0.12)",
+          },
+          "30%": {
+            opacity: "0",
+            boxShadow: "0 0 0 hsl(var(--foreground) / 0)",
+          },
         },
         // The reduced-motion substitute for the matrix above, and it did not
         // exist. `thinking-dots.tsx` has always applied
@@ -455,21 +499,32 @@ const config: Config = {
           "50%": { transform: "scale(1.1)", opacity: "1" },
         },
         "rise-in": {
-          from: { opacity: "0", transform: "translateY(calc(8px * var(--motion-shift, 1)))" },
+          from: {
+            opacity: "0",
+            transform: "translateY(calc(8px * var(--motion-shift, 1)))",
+          },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         // Learning blocks (step-lab-block.tsx + quiz-block.tsx). One parametrized
         // keyframe covers both navigation directions: the caller sets --stage-dx
         // to 12px (forward) or -12px (back) on the keyed stage element.
         "stage-in": {
-          from: { opacity: "0", transform: "translateX(calc(var(--stage-dx, 12px) * var(--motion-shift, 1)))" },
+          from: {
+            opacity: "0",
+            transform:
+              "translateX(calc(var(--stage-dx, 12px) * var(--motion-shift, 1)))",
+          },
           to: { opacity: "1", transform: "none" },
         },
         // Wrong-answer feedback — a one-shot 3px sideways nudge, then still.
         nudge: {
           "0%, 100%": { transform: "translateX(0)" },
-          "35%": { transform: "translateX(calc(-3px * var(--motion-shift, 1)))" },
-          "70%": { transform: "translateX(calc(2px * var(--motion-shift, 1)))" },
+          "35%": {
+            transform: "translateX(calc(-3px * var(--motion-shift, 1)))",
+          },
+          "70%": {
+            transform: "translateX(calc(2px * var(--motion-shift, 1)))",
+          },
         },
         // Draws an SVG path once (next-token autoregression return arc). The
         // caller sets stroke-dasharray and --draw-len to the path length.
@@ -480,16 +535,22 @@ const config: Config = {
         "title-in": {
           "0%": {
             opacity: "0",
-            transform: "translateY(calc(4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
+            transform:
+              "translateY(calc(4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
             backgroundColor: "hsl(var(--primary) / 0.12)",
           },
-          "100%": { opacity: "1", transform: "translateY(0) scale(1)", backgroundColor: "transparent" },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+            backgroundColor: "transparent",
+          },
         },
         "title-out": {
           "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
           "100%": {
             opacity: "0",
-            transform: "translateY(calc(-4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
+            transform:
+              "translateY(calc(-4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
           },
         },
         // Overlay enter/exit pair — sized for Radix data-[state=open/closed].
@@ -500,7 +561,8 @@ const config: Config = {
         "pop-in": {
           from: {
             opacity: "0",
-            transform: "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
+            transform:
+              "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
           },
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
@@ -508,7 +570,8 @@ const config: Config = {
           from: { opacity: "1", transform: "translateY(0) scale(1)" },
           to: {
             opacity: "0",
-            transform: "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
+            transform:
+              "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
           },
         },
         "fade-out": {
@@ -552,10 +615,14 @@ const config: Config = {
         // life without demanding attention. Direction/peak are per-particle CSS
         // vars so no two sparks travel the same way.
         "ultra-spark": {
-          "0%, 100%": { opacity: "0", transform: "translate3d(0, 0, 0) scale(0.6)" },
+          "0%, 100%": {
+            opacity: "0",
+            transform: "translate3d(0, 0, 0) scale(0.6)",
+          },
           "50%": {
             opacity: "var(--spark-peak, 0.5)",
-            transform: "translate3d(var(--spark-dx, 4px), var(--spark-dy, -2px), 0) scale(1)",
+            transform:
+              "translate3d(var(--spark-dx, 4px), var(--spark-dy, -2px), 0) scale(1)",
           },
         },
         // One-shot flourish when the thumb lands on the top tier.

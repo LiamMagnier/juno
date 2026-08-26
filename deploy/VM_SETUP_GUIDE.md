@@ -76,8 +76,8 @@ sudo apt update && sudo apt upgrade -y
 Run the following commands inside your VM SSH session to set up runtime requirements:
 
 ```bash
-# 1. Install Node.js v20 LTS
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+# 1. Install Node.js v24 LTS
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # 2. Install Git
@@ -99,10 +99,9 @@ pm2 -v    # Should show version number
 Oracle Cloud's Ubuntu image has pre-configured local firewall rules (`iptables`) that block incoming traffic even after you open the Oracle dashboard firewall. You need to allow traffic locally:
 
 ```bash
-# 1. Insert rules to accept HTTP, HTTPS and Next.js (port 3000)
+# 1. Insert rules to accept only the public HTTP and HTTPS ingress.
 sudo iptables -I INPUT 6 -p tcp --dport 80 -j ACCEPT
 sudo iptables -I INPUT 6 -p tcp --dport 443 -j ACCEPT
-sudo iptables -I INPUT 6 -p tcp --dport 3000 -j ACCEPT
 
 # 2. Make these rules persist when the server reboots
 sudo apt-get install iptables-persistent -y

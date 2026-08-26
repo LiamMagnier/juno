@@ -171,6 +171,17 @@ test("a non-provider error does not masquerade as a provider failure", () => {
   assert.doesNotMatch(normalized.userMessage, /prisma/i);
 });
 
+test("a real provider 400 is an invalid request and never described as a server error", () => {
+  const invalid = {
+    status: 400,
+    error: { status: "INVALID_ARGUMENT", message: "Invalid thinking level" },
+  };
+  const normalized = normalizeProviderError(invalid, "Google · Gemini 3.7 Flash");
+  assert.equal(normalized.class, "invalid_request");
+  assert.equal(normalized.retryable, false);
+  assert.doesNotMatch(normalized.userMessage, /server error|their end/i);
+});
+
 test("the operator message keeps the detail the user message drops", () => {
   const normalized = normalizeProviderError(deepseekBalance, "DeepSeek");
   assert.match(normalized.operatorMessage, /DeepSeek/);

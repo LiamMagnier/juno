@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
+import { isOwnerEmail } from "@/lib/owner";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -36,8 +37,14 @@ export async function POST(req: Request) {
 
   const email = parsed.data.email.toLowerCase();
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
+  if (existing || isOwnerEmail(email)) {
+    // Match the externally visible success path so registration cannot be used
+    // as an account-membership oracle. Password hashing also narrows the timing
+    // difference without mutating the existing account. Configured owner
+    // addresses are also reserved: an unverified public registration can never
+    // become the identity that receives OWNER capabilities.
+    await hashPassword(parsed.data.password);
+    return NextResponse.json({ ok: true }, { status: 201 });
   }
 
   const hashedPassword = await hashPassword(parsed.data.password);

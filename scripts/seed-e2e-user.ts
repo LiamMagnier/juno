@@ -45,7 +45,7 @@ async function main() {
   // Playwright setup step can authenticate immediately after seeding, no
   // matter how many failed/throttled attempts a previous run made.
   const cleared = await prisma.rateLimit.deleteMany({
-    where: { key: { startsWith: `signin:email:${EMAIL}` } },
+    where: { key: { startsWith: "signin:pair:", endsWith: `:${EMAIL}` } },
   });
   console.log(`Cleared ${cleared.count} sign-in rate-limit bucket(s) for ${EMAIL}`);
   await prisma.$disconnect();

@@ -77,7 +77,7 @@ can **skip the Oracle guide's iptables step entirely**. Nothing to do here.
 
 From here, follow **`VM_SETUP_GUIDE.md`** exactly:
 
-- **Step 4** — Install Node.js 20, Git, PM2
+- **Step 4** — Install Node.js 24 LTS, Git, PM2
 - **Step 6** — `git clone` your repo, create `.env` (copy every var from your Vercel project:
   `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `NEXTAUTH_URL`/`AUTH_URL`, all provider keys,
   S3 keys), then `npm ci` → `npx prisma migrate deploy` → `npx prisma generate` →

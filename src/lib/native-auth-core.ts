@@ -24,7 +24,6 @@ export const NATIVE_REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
  * requires that the successor was never used. A replay whose successor the
  * client demonstrably received is still reuse, whenever it arrives.
  */
-export const NATIVE_REFRESH_REPLAY_GRACE_MS = 60 * 1000;
 
 const BASE64URL_256 = /^[A-Za-z0-9_-]{43,256}$/;
 const INSTALLATION_ID = /^[A-Za-z0-9._:-]{16,200}$/;

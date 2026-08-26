@@ -11,6 +11,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
 
   const { key } = await params;
+  if (!key || key.length < 3 || key[0] !== user.id) {
+    return new NextResponse("Not found", { status: 404 });
+  }
   const safePath = (key ?? []).join("/");
   if (!safePath || safePath.includes("..") || path.isAbsolute(safePath)) {
     return new NextResponse("Not found", { status: 404 });
@@ -21,17 +24,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
 
   // Security check: ensure path stays within juno-python-workspaces
   const normalized = path.normalize(fullPath);
-  if (!normalized.startsWith(baseDir)) {
+  if (!normalized.startsWith(`${baseDir}${path.sep}`)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
   try {
-    const stats = await fs.stat(normalized);
-    if (!stats.isFile()) {
+    const stats = await fs.lstat(normalized);
+    if (!stats.isFile() || stats.isSymbolicLink()) {
       return new NextResponse("Not found", { status: 404 });
     }
 
-    const data = await fs.readFile(normalized);
+    const [realBase, realFile] = await Promise.all([fs.realpath(baseDir), fs.realpath(normalized)]);
+    if (!realFile.startsWith(`${realBase}${path.sep}`)) {
+      return new NextResponse("Not found", { status: 404 });
+    }
+
+    const data = await fs.readFile(realFile);
     const ext = path.extname(normalized).toLowerCase();
     
     let mimeType = "application/octet-stream";

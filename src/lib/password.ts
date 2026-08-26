@@ -23,6 +23,10 @@ import { createHash } from "crypto";
 
 const BCRYPT_ROUNDS = 12;
 const V2_PREFIX = "v2:";
+// A real cost-12 hash used only to equalize the unknown-account path. It does
+// not protect a credential and can be public; its value must remain stable so
+// sign-in never performs an accidental hash operation per request.
+const DUMMY_V2_HASH = "v2:$2b$12$hZD0iBTItXrcLVqca/T6PO8WU3UBBceFrOwqTO2NWjG.u3J/zXw1a";
 
 function prehash(password: string): string {
   return createHash("sha256").update(password, "utf8").digest("base64");
@@ -50,4 +54,13 @@ export async function verifyPassword(
   // so this still verifies pre-existing accounts.
   const ok = await bcrypt.compare(password, stored);
   return { ok, needsUpgrade: ok };
+}
+
+/** Always performs one bcrypt comparison, even when no account/hash exists. */
+export async function verifyPasswordConstantTime(
+  password: string,
+  stored?: string | null,
+): Promise<{ ok: boolean; needsUpgrade: boolean }> {
+  const result = await verifyPassword(password, stored || DUMMY_V2_HASH);
+  return stored ? result : { ok: false, needsUpgrade: false };
 }

@@ -24,7 +24,33 @@ function isPrivateIPv4(host: string): boolean {
   // Link-local, which is how the cloud metadata endpoints are reached.
   if (/^169\.254\./.test(host)) return true;
   // RFC 1918.
-  return /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  const [a, b, c] = host.split(".").map(Number);
+  return /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 192 && b === 0 && c === 0)
+    || (a === 192 && b === 0 && c === 2)
+    || (a === 198 && b >= 18 && b <= 19)
+    || (a === 198 && b === 51 && c === 100)
+    || (a === 203 && b === 0 && c === 113)
+    || a >= 224;
+}
+
+/** True when a resolved IP is not a permitted public-web destination. */
+export function isDisallowedAddress(rawAddress: string): boolean {
+  const address = rawAddress.trim().replace(/^\[|\]$/g, "").toLowerCase();
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)) return isPrivateIPv4(address);
+  if (!address.includes(":")) return true;
+  if (address === "::" || address === "::1") return true;
+  if (/^f[cd]/.test(address) || /^fe[89ab]/.test(address) || /^ff/.test(address)) return true;
+  if (/^2001:db8(?::|$)/.test(address)) return true;
+  const mapped = /^::ffff:(.+)$/.exec(address)?.[1];
+  if (!mapped) return false;
+  if (mapped.includes(".")) return isPrivateIPv4(mapped);
+  const groups = mapped.split(":");
+  if (groups.length !== 2) return true;
+  const [hi, lo] = groups.map((group) => Number.parseInt(group, 16));
+  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return true;
+  return isPrivateIPv4(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
 }
 
 /**

@@ -45,16 +45,14 @@ function requestIdFor(req: NextRequest): string {
  * Attaches the per-request id to both the request (for logging) and the
  * response (for the client), and — on document requests — the CSP.
  *
- * **Content-Security-Policy, in Report-Only to start with.** Juno renders
+ * **Enforcing Content-Security-Policy.** Juno renders
  * model-authored markdown and model-authored code, so CSP is the layer that
  * turns a renderer bug into a blocked console message rather than script
  * execution on the user's session. There is no known bypass today
  * (react-markdown without rehype-raw, two audited dangerouslySetInnerHTML
  * sites), which is exactly when to add it — before there is one.
  *
- * Report-Only means it cannot break the app. Watch /api/csp-report, fix what it
- * surfaces, and only then rename the response header to enforce. The policy
- * itself lives in @/lib/csp so it can be unit tested; the artifact iframe is
+ * The policy lives in @/lib/csp so it can be unit tested; the artifact iframe is
  * `srcdoc` + `sandbox` WITHOUT allow-same-origin, so it is an opaque origin and
  * unaffected by any of this.
  */
@@ -68,15 +66,15 @@ function withRequestContext(req: NextRequest, applyCsp: boolean): NextResponse {
     const nonce = crypto.randomUUID();
     csp = buildCsp({ nonce, relayUrl: process.env.NEXT_PUBLIC_VOICE_RELAY_URL });
     // Next reads the nonce off the REQUEST header to stamp its own script tags.
-    // It looks for `Content-Security-Policy`, not the report-only name, so the
-    // request carries the enforcing name even while the response only reports.
+    // It looks for `Content-Security-Policy`, so request and response use the
+    // same enforcing policy and nonce.
     headers.set("x-nonce", nonce);
     headers.set("Content-Security-Policy", csp);
   }
 
   const res = NextResponse.next({ request: { headers } });
   res.headers.set(RESPONSE_REQUEST_ID_HEADER, requestId);
-  if (csp) res.headers.set("Content-Security-Policy-Report-Only", csp);
+  if (csp) res.headers.set("Content-Security-Policy", csp);
   return res;
 }
 

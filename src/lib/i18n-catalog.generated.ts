@@ -438,10 +438,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno could not verify that this only reads, so it is treated as a change that leaves Juno. Read the arguments below before you answer."
   },
   {
-    "id": "05cfc22f388685df",
-    "source": "An account with this email already exists."
-  },
-  {
     "id": "05d0e5f0e341070f",
     "source": "Folder not found"
   },
@@ -2600,6 +2596,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "275d4eb39f9207f7",
     "source": "Moonshot · Kimi"
+  },
+  {
+    "id": "276afea723501bb0",
+    "source": "Approval broker unavailable"
   },
   {
     "id": "2781f2d9058eda29",
@@ -6454,6 +6454,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· found, not read"
   },
   {
+    "id": "622969c61e1fb812",
+    "source": "Google returned no streaming response body"
+  },
+  {
     "id": "622a494d3ea8c7ba",
     "source": "spring"
   },
@@ -7694,6 +7698,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A selected row"
   },
   {
+    "id": "72a0c188da6f4e3f",
+    "source": "From a quick fix to a full app"
+  },
+  {
     "id": "72b5fed2c985ba8d",
     "source": "Spend ceiling is switched off"
   },
@@ -8626,6 +8634,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Distilled from your conversations and preferences to make answers relevant and personalized."
   },
   {
+    "id": "80f770d8437f7f79",
+    "source": "Write or debug code"
+  },
+  {
     "id": "8127d9e0e004357f",
     "source": "Invalid request body."
   },
@@ -9014,10 +9026,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The edited canvas failed verification, so nothing was changed. Fix the source and try again."
   },
   {
-    "id": "86ecfb2dbb2dfb9a",
-    "source": "Approval broker unavailable for mutating action"
-  },
-  {
     "id": "86eff0228fe66ead",
     "source": "Loading Mac"
   },
@@ -9292,6 +9300,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8c19ad207e9210b3",
     "source": "Share this chat"
+  },
+  {
+    "id": "8c2dedc0010338bb",
+    "source": "Admin Panel"
   },
   {
     "id": "8c2ef559f91d5f39",
@@ -11090,6 +11102,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "matches"
   },
   {
+    "id": "a5409abb6bed19af",
+    "source": "Google rejected the generation request"
+  },
+  {
     "id": "a5433d2fa358ec7d",
     "source": "Microphone access was denied — allow it in your browser to dictate."
   },
@@ -11774,6 +11790,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Only when the message has an attachment"
   },
   {
+    "id": "af7bb543eb19b7b9",
+    "source": "Explain a concept"
+  },
+  {
     "id": "af8a897d2feb975e",
     "source": "Conversation options"
   },
@@ -11860,6 +11880,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b0c70a73470afbd8",
     "source": "Designs"
+  },
+  {
+    "id": "b0e19ec491a10c83",
+    "source": "Ask anything. Juno is here to help."
   },
   {
     "id": "b0e1b8889847a6d1",
@@ -12104,6 +12128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b43a528ade42c3bc",
     "source": "A yearly trigger needs a month (1-12) and a day of the month (1-31)."
+  },
+  {
+    "id": "b43bdd8c3ecd4847",
+    "source": "Google ended the stream without a candidate or usage record"
   },
   {
     "id": "b455784ab5307277",
@@ -12616,6 +12644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bc6316faf7208d1d",
     "source": "Couldn’t refresh — still showing the last results."
+  },
+  {
+    "id": "bc7050d75a085ed7",
+    "source": "Summarize a document"
   },
   {
     "id": "bc7b631a689b45ca",
@@ -14230,6 +14262,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Query token"
   },
   {
+    "id": "d3b15d46f01f67e4",
+    "source": "Pull out decisions and next steps"
+  },
+  {
     "id": "d3b637f2bbb309f0",
     "source": "GPT-5.5 just got released"
   },
@@ -14968,6 +15004,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd13ebe14f012b6b",
     "source": "7-day window"
+  },
+  {
+    "id": "dd15511640000eb1",
+    "source": "Google ended the stream without a terminal finish reason"
   },
   {
     "id": "dd167905de0defca",
@@ -16848,6 +16888,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f83c806522865605",
     "source": "No projects yet"
+  },
+  {
+    "id": "f83ec1e351f85a63",
+    "source": "Break down any topic"
   },
   {
     "id": "f8634a1158ce45ba",

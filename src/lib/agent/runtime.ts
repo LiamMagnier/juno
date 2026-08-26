@@ -12,18 +12,16 @@ import type {
   ToolExecutionResult,
   AgentMode,
 } from "@/lib/agent/types";
-import { pythonTool } from "@/lib/sandbox/python";
 import { browserTool } from "@/lib/agent/browser";
-import { computerTool } from "@/lib/agent/computer";
-import type { ActionRiskClass } from "@/lib/action-approval";
 
 export class UnifiedAgentRegistry {
   private tools = new Map<string, ToolDefinition<unknown, unknown>>();
 
   constructor() {
-    this.registerTool(pythonTool as unknown as ToolDefinition<unknown, unknown>);
+    // Deliberately no host-Python registration here. `sandbox/python.ts` uses a
+    // child process and is retained only for local migration/tests; it is not a
+    // tenant isolation boundary and must never be exposed by the hosted toolset.
     this.registerTool(browserTool as unknown as ToolDefinition<unknown, unknown>);
-    this.registerTool(computerTool as unknown as ToolDefinition<unknown, unknown>);
   }
 
   public registerTool(tool: ToolDefinition<unknown, unknown>): void {
@@ -77,8 +75,6 @@ export class UnifiedAgentRegistry {
     }
 
     const callId = crypto.randomUUID();
-    const actionRisk: ActionRiskClass = tool.riskClass;
-
     // Pass through the Universal Action Approval Broker
     let receiptId: string | null = null;
     try {
@@ -131,14 +127,14 @@ export class UnifiedAgentRegistry {
 
       receiptId = authorization.receiptId;
     } catch {
-      // If broker authorization throws, fail-closed for mutation tools
-      if (actionRisk !== "read_only") {
-        return {
-          success: false,
-          error: "Approval broker unavailable for mutating action",
-          summary: "Could not safely verify permissions for this action.",
-        };
-      }
+      // Authorization infrastructure is part of the trust boundary even for a
+      // nominally read-only tool: reads can disclose private data or reach an
+      // attacker-selected network target. Never execute when it is unavailable.
+      return {
+        success: false,
+        error: "Approval broker unavailable",
+        summary: "Could not safely verify permissions for this action.",
+      };
     }
 
     // Execute the tool
@@ -200,6 +196,7 @@ export async function openUnifiedAgentToolset(
     surface: context.mode || "chat",
     sessionId: context.sessionId,
     projectId: context.projectId,
+    onApprovalRequest: context.onApprovalRequest,
   };
 
   const { openMcpToolset } = await import("@/lib/mcp");
@@ -215,7 +212,7 @@ export async function openUnifiedAgentToolset(
 
   // Register registry tools (python, browser, computer, etc.)
   const registryTools = defaultAgentRegistry.listTools().filter((t) => {
-    if (options?.allowedToolIds && options.allowedToolIds.length > 0) {
+    if (Array.isArray(options?.allowedToolIds)) {
       return options.allowedToolIds.includes(t.id);
     }
     return true;
@@ -305,7 +302,7 @@ export function detectAutomaticEscalation(prompt: string): {
   ) {
     return {
       recommendedMode: "data",
-      suggestedTools: ["python_interpreter"],
+      suggestedTools: ["browser_agent"],
       reason: "Prompt requests quantitative analysis or plotting best solved with Python execution.",
     };
   }
@@ -337,7 +334,7 @@ export function detectAutomaticEscalation(prompt: string): {
   ) {
     return {
       recommendedMode: "work",
-      suggestedTools: ["work_plan", "python_interpreter"],
+      suggestedTools: ["work_plan"],
       reason: "Prompt requests a multi-step project with structured deliverables.",
     };
   }
@@ -347,5 +344,3 @@ export function detectAutomaticEscalation(prompt: string): {
     reason: "Standard conversation prompt.",
   };
 }
-
-

@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import type { ToolDefinition, AgentExecutionContext, ToolExecutionResult } from "@/lib/agent/types";
 import { isDisallowedHost } from "@/lib/search/url-safety";
+import { fetchSafePublicUrl } from "@/lib/search/fetch-safe";
 
 import { wrapUntrusted } from "@/lib/untrusted-content";
 
@@ -45,14 +46,16 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
     throw new Error(`Unsafe or disallowed URL: ${targetUrl}`);
   }
 
-  const res = await fetch(targetUrl, {
+  const fetched = await fetchSafePublicUrl(targetUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 JunoAssistant/1.0",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
     },
-    signal: AbortSignal.timeout(15000),
-  });
+  }, AbortSignal.timeout(15000));
+  if (fetched.kind === "blocked") throw new Error("Unsafe or disallowed redirect target");
+  if (fetched.kind === "redirect_limit") throw new Error("Too many redirects");
+  const res = fetched.response;
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText}`);

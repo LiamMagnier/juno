@@ -1,4 +1,5 @@
 import { isDisallowedHost } from "./url-safety";
+import { fetchPinnedPublicUrl } from "./pinned-fetch";
 
 export const MAX_SAFE_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -20,11 +21,13 @@ export async function fetchSafePublicUrl(
   initialUrl: string,
   init: RequestInit,
   signal?: AbortSignal,
+  transport: (url: string, init: RequestInit, signal?: AbortSignal) => Promise<Response> = fetchPinnedPublicUrl,
 ): Promise<SafeFetchResult> {
   let currentUrl = initialUrl;
   let redirects = 0;
   for (;;) {
-    const response = await fetch(currentUrl, { ...init, signal, redirect: "manual" });
+    if (isDisallowedHost(currentUrl)) return { kind: "blocked" };
+    const response = await transport(currentUrl, init, signal);
     if (!REDIRECT_STATUSES.has(response.status)) return { kind: "response", response, url: currentUrl };
 
     const location = response.headers.get("location");

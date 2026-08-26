@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -184,7 +184,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -332,7 +332,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -468,7 +468,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install runner dependencies
         run: npm ci --prefix runner/agent-core
@@ -535,7 +535,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Write production .env (single source of truth = PROD_ENV secret)
@@ -984,6 +984,18 @@ jobs:
           tar -xzf "$ARCHIVE" -C "$SOURCE_STAGE" --no-same-owner
           [ -f "$SOURCE_STAGE/deploy/deploy.sh" ] || { echo "::error::Source archive is missing deploy/deploy.sh." >&2; exit 1; }
           install -m 600 "$REMOTE_ENV" "$INCOMING_ENV"
+          node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+          if [ "$node_major" != "24" ]; then
+            echo "Upgrading production runtime from Node ${node_major:-missing} to Node 24 LTS."
+            curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/juno-nodesource-24.sh
+            sudo -E bash /tmp/juno-nodesource-24.sh
+            sudo apt-get install -y nodejs
+            sudo npm install -g pm2
+            rm -f /tmp/juno-nodesource-24.sh
+            hash -r
+          fi
+          [ "$(node -p 'process.versions.node.split(".")[0]')" = "24" ] || { echo "::error::Production Node 24 activation failed." >&2; exit 1; }
+          echo "Production runtime: $(node --version), npm $(npm --version), PM2 $(pm2 --version)"
           JUNO_APP_HOME="$SOURCE_STAGE" \
             JUNO_RELEASES_DIR="$LIVE_ROOT/releases" \
             JUNO_CURRENT_LINK="$LIVE_ROOT/current" \

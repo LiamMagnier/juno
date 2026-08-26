@@ -5,7 +5,7 @@
  * and execution environments across Chat, Work, Code, Research, and Voice.
  */
 
-import type { ActionRiskClass, ActionReceiptBinding } from "@/lib/action-approval";
+import type { ActionRiskClass, ActionReceiptBinding, ClientActionApproval } from "@/lib/action-approval";
 
 export type AgentMode = "chat" | "work" | "code" | "research" | "voice" | "data";
 
@@ -67,6 +67,7 @@ export interface AgentExecutionContext {
   environment: ExecutionEnvironment;
   abortSignal?: AbortSignal;
   onEvent?: (event: AgentRuntimeEvent) => void | Promise<void>;
+  onApprovalRequest?: (approval: ClientActionApproval) => void;
   /** Optional project or workspace scope */
   projectId?: string;
   /** Optional assistant scope */
