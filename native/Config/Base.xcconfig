@@ -15,6 +15,9 @@ JUNO_AUTH_CALLBACK_SCHEME = com.liammagnier.juno
 // which is exactly how device builds started failing to sign.
 DEVELOPMENT_TEAM = 8RSCGS63QP
 CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_IDENTITY[sdk=macosx*] = Apple Development
+CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Development
 
 // Build identity surfaced by Settings › Diagnostics. The whole point is to be
 // able to tell two installed builds apart from the device, which "0.1.0 (1)"

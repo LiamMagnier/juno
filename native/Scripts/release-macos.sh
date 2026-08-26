@@ -280,7 +280,7 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -archivePath "$BUILD_DIR/archive.xcarchive" \
   ENABLE_HARDENED_RUNTIME=YES \
   DEVELOPMENT_TEAM="$CONFIGURED_TEAM" \
-  CODE_SIGN_IDENTITY="$IDENTITY_CLASS" \
+  CODE_SIGNING_ALLOWED=NO \
   archive
 
 cat > "$BUILD_DIR/export.plist" <<PLIST
@@ -296,10 +296,18 @@ cat > "$BUILD_DIR/export.plist" <<PLIST
 PLIST
 
 step "Export"
-xcodebuild -exportArchive \
-  -archivePath "$BUILD_DIR/archive.xcarchive" \
-  -exportPath "$BUILD_DIR/export" \
-  -exportOptionsPlist "$BUILD_DIR/export.plist"
+if [ "$NOTARIZE" = 1 ]; then
+  xcodebuild -exportArchive \
+    -archivePath "$BUILD_DIR/archive.xcarchive" \
+    -exportPath "$BUILD_DIR/export" \
+    -exportOptionsPlist "$BUILD_DIR/export.plist"
+else
+  mkdir -p "$BUILD_DIR/export"
+  cp -R "$BUILD_DIR/archive.xcarchive/Products/Applications/Juno.app" "$BUILD_DIR/export/"
+  codesign --force --deep --options runtime --sign "$IDENTITY" \
+    --entitlements native/macOS/JunoDesktop/Resources/JunoDesktop.entitlements \
+    "$BUILD_DIR/export/Juno.app"
+fi
 
 APP="$(find "$BUILD_DIR/export" -maxdepth 1 -type d -name '*.app' -print -quit)"
 [ -n "$APP" ] || die "The export produced no application bundle."
