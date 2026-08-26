@@ -217,6 +217,8 @@ reload_release() {
   [[ -f "$config_file" ]] || return 1
 
   export GIT_SHA="$release_sha_value"
+  # Keep in-memory PM2 in sync with local binary to avoid warning noise on stdout.
+  pm2 update 2>/dev/null || true
   # `pm2 start`/`pm2 reload` can throw when an older dump contains a process
   # id whose process object has disappeared.  Keep the bulk reconciliation
   # best-effort; verify_pm2_ecosystem repairs each missing service below from
@@ -238,14 +240,32 @@ verify_pm2_ecosystem() {
     const configFile = process.env.PM2_CONFIG || "";
     const serviceStarter = process.env.PM2_SERVICE_STARTER || "";
 
+    function parseJlist(out) {
+      if (!out || typeof out !== "string") return [];
+      try {
+        const start = out.indexOf("[");
+        const end = out.lastIndexOf("]");
+        if (start !== -1 && end !== -1 && end > start) {
+          return JSON.parse(out.slice(start, end + 1));
+        }
+      } catch (err) {
+        console.error("Failed to parse pm2 jlist:", err.message);
+      }
+      return [];
+    }
+
+    function isOnline(row) {
+      return (row.pm2_env && row.pm2_env.status === "online") || row.status === "online";
+    }
+
     for (let attempt = 1; attempt <= 15; attempt++) {
       let rows = [];
       try {
         const out = execSync("pm2 jlist", { encoding: "utf8" });
-        rows = JSON.parse(out);
+        rows = parseJlist(out);
       } catch {}
 
-      const missing = expected.filter((name) => !rows.some((row) => row.name === name && row.pm2_env?.status === "online"));
+      const missing = expected.filter((name) => !rows.some((row) => row.name === name && isOnline(row)));
       if (missing.length === 0) {
         console.log(`PM2 ecosystem healthy: ${expected.join(", ")}`);
         process.exit(0);
@@ -275,10 +295,10 @@ verify_pm2_ecosystem() {
 
     let rows = [];
     try {
-      rows = JSON.parse(execSync("pm2 jlist", { encoding: "utf8" }));
+      rows = parseJlist(execSync("pm2 jlist", { encoding: "utf8" }));
     } catch {}
-    const backendOnline = rows.some((row) => row.name === "juno-backend" && row.pm2_env?.status === "online");
-    const voiceRelayOnline = rows.some((row) => row.name === "juno-voice-relay" && row.pm2_env?.status === "online");
+    const backendOnline = rows.some((row) => row.name === "juno-backend" && isOnline(row));
+    const voiceRelayOnline = rows.some((row) => row.name === "juno-voice-relay" && isOnline(row));
     if (!backendOnline) {
       console.error("Critical service juno-backend failed to come online.");
       process.exit(1);
