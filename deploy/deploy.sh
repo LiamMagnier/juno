@@ -101,7 +101,7 @@ verify_source_archive() {
   # compressed stream is exhausted. Temporarily disabling pipefail prevents
   # gzip's expected SIGPIPE from masquerading as an archive-integrity failure.
   set +o pipefail
-  if ! archive_sha="$(set +o pipefail; gzip -cd "$archive" | git get-tar-commit-id)"; then
+  if ! archive_sha="$(set +o pipefail; gzip -cd "$archive" 2>/dev/null | git get-tar-commit-id)"; then
     set -o pipefail
     fail "The reviewed source archive is not a valid Git tar archive: $archive"
   fi
@@ -500,7 +500,8 @@ main() {
   mkdir -p -- "$RELEASES_DIR"
 
   # Pre-flight cleanup of old releases and staging directories to ensure disk space
-  prune_old_releases "$RELEASES_DIR" "$CURRENT_LINK" "$PREVIOUS_LINK" 2
+  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -name '.staging-*' -exec rm -rf -- {} + 2>/dev/null || true
+  prune_old_releases "$RELEASES_DIR" "$CURRENT_LINK" "$PREVIOUS_LINK" 1
 
   local release_id
   release_id="${TARGET_SHA:0:12}-$(date -u +%Y%m%d%H%M%S)-$$"

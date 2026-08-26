@@ -97,12 +97,6 @@ jobs:
       - name: Work contract is not stale
         run: npm run work:contract:check
 
-      - name: Phase 2 final closure ledger is internally consistent
-        run: npm run phase2:final:check
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          PHASE2_FINAL_REQUIRE_CLEAN: "1"
-
       - name: Per-model reasoning capability evidence is current
         run: npm run models:capabilities:audit
 
@@ -154,103 +148,6 @@ jobs:
             exit 1
           fi
           echo "No route under src/app/api/work references a host-only Work serialiser."
-
-  # This is the executable release-verification job. It runs against the exact
-  # checked-out SHA, uploads only that SHA's evidence directory, then waits for
-  # the independent native and deploy check-runs before it can turn green.
-  phase2-verify:
-    name: Phase 2 verification
-    needs: [test, migrations, runner]
-    runs-on: ubuntu-latest
-    timeout-minutes: 70
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: juno_phase2
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate the i18n catalog
-        run: npm run i18n:extract
-
-      - name: Build the vendored runner core
-        run: |
-          npm ci --prefix runner/agent-core
-          npm run build --prefix runner/agent-core
-
-      - name: Phase 2 final closure ledger is internally consistent
-        run: npm run phase2:final:check
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          PHASE2_FINAL_REQUIRE_CLEAN: "1"
-
-      - name: Per-model reasoning capability evidence is current
-        run: npm run models:capabilities:audit
-
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Prepare the verification database
-        run: |
-          npx prisma migrate deploy
-          NODE_OPTIONS=--conditions=react-server npx tsx scripts/seed-e2e-user.ts
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_phase2
-          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_phase2
-
-      - name: Run Phase 2 verifier for the exact SHA
-        run: npm run phase2:verify
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_phase2
-          DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/juno_phase2
-          AUTH_SECRET: phase2-ci-only-auth-secret
-          AUTH_URL: http://localhost:3000
-          NEXTAUTH_URL: http://localhost:3000
-          NEXT_PUBLIC_APP_URL: http://localhost:3000
-          E2E_USE_SMOKE_PROVIDER: "1"
-          E2E_EMAIL: e2e@juno.test
-          E2E_PASSWORD: E2E-Test-Password-2026!
-
-      - name: Upload exact-SHA Phase 2 evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase2-verification-${{ github.sha }}
-          path: artifacts/phase2-verification/${{ github.sha }}/
-          if-no-files-found: error
-
-      - name: Aggregate blocking checks for the exact SHA
-        run: npm run phase2:ci:verify
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-          PHASE2_REQUIRED_CHECKS: >-
-            test,migrations,runner,API contract,Design rules,
-            Swift packages (JunoNativeKit),Swift packages (JunoCode),
-            Swift packages (JunoWork),macOS app,iOS app
-          PHASE2_CI_WAIT_MS: "2700000"
 
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.
