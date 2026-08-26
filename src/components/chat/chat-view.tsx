@@ -26,6 +26,9 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
+import { isAutoModelId } from "@/lib/auto-model";
+import { providerGlow } from "@/lib/provider-colors";
+import { reasoningGlow, clampReasoningEffort, reasoningOptions } from "@/lib/model-metrics";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
 import { cleanForSpeech } from "@/lib/message-content";
@@ -1213,6 +1216,82 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // visit — before they have sent anything — is simply untrue.
   const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
+
+  const resolvedModelInfo = React.useMemo(() => resolveModel(model), [model]);
+
+  const auraStyle = React.useMemo(() => {
+    if (!resolvedModelInfo) return undefined;
+    const hasEffortControl = !isAutoModelId(model) && reasoningOptions(resolvedModelInfo).length > 0;
+    const think = hasEffortControl
+      ? reasoningGlow(clampReasoningEffort(resolvedModelInfo, reasoningEffort ?? null))
+      : 0.5;
+    return {
+      "--aura-provider": providerGlow(resolvedModelInfo.provider),
+      "--aura-think": think,
+    } as React.CSSProperties;
+  }, [resolvedModelInfo, reasoningEffort, model]);
+
+  const thinkingGlow = React.useMemo(() => {
+    switch (reasoningEffort) {
+      case "max":
+        return {
+          opacity: 0.52,
+          width: "min(750px, 94%)",
+          height: "270px",
+          blur: "115px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, #8b5cf6 36%, #a855f7 64%, transparent 78%)",
+        };
+      case "xhigh":
+        return {
+          opacity: 0.44,
+          width: "min(690px, 90%)",
+          height: "245px",
+          blur: "100px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 45%, hsl(var(--primary) / 0.25) 68%, transparent 78%)",
+        };
+      case "high":
+        return {
+          opacity: 0.38,
+          width: "min(630px, 86%)",
+          height: "220px",
+          blur: "90px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.6) 45%, transparent 75%)",
+        };
+      case "medium":
+        return {
+          opacity: 0.30,
+          width: "min(570px, 82%)",
+          height: "200px",
+          blur: "85px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.85) 0%, hsl(var(--primary) / 0.45) 45%, transparent 72%)",
+        };
+      case "low":
+        return {
+          opacity: 0.24,
+          width: "min(520px, 78%)",
+          height: "180px",
+          blur: "80px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.7) 0%, hsl(var(--primary) / 0.35) 45%, transparent 70%)",
+        };
+      case "minimal":
+      default:
+        return {
+          opacity: 0.18,
+          width: "min(470px, 74%)",
+          height: "160px",
+          blur: "75px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.55) 0%, hsl(var(--primary) / 0.22) 45%, transparent 68%)",
+        };
+    }
+  }, [reasoningEffort]);
+
+  const [auraSending, setAuraSending] = React.useState(false);
+  React.useEffect(() => {
+    if (!auraSending) return;
+    const t = window.setTimeout(() => setAuraSending(false), 1150);
+    return () => window.clearTimeout(t);
+  }, [auraSending]);
+
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
 
@@ -1275,6 +1354,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // send can still be refused downstream, in which case the transcript
       // never appears and the arm simply expires.
       if (!hasMessages) handoffArmedAtRef.current = Date.now();
+      setAuraSending(true);
       if (!voiceOpen) return chat.send(text, attachments, options);
       if (voiceTurnSendingRef.current) return { accepted: false };
       if (realtimeVoice.status !== "live") {
@@ -1857,16 +1937,26 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <div
                 ref={dockComposerRef}
                 className={cn(
-                  // `isolate` matters: the aura sits on z-index -1, and without a
-                  // stacking context here it would escape this wrapper and paint
-                  // behind the whole column instead of behind the composer.
-                  // No transition-[padding] utility here: it would out-order the
-                  // .composer-aura-host transition and drop the aura's colour and
-                  // effort easing with it. That rule carries the padding now.
                   "composer-aura-host relative isolate w-full",
                   privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1",
+                  auraSending && "is-sending"
                 )}
+                style={auraStyle}
               >
+                {/* Dynamic Ambient Accent Glow behind Docked Composer */}
+                {!privateMode && !voiceOpen && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                    style={{
+                      opacity: thinkingGlow.opacity,
+                      width: thinkingGlow.width,
+                      height: thinkingGlow.height,
+                      filter: `blur(${thinkingGlow.blur})`,
+                      background: thinkingGlow.gradient,
+                    }}
+                  />
+                )}
                 {/* Voice field while a call is live */}
                 {voiceOpen && !privateMode && (
                   <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
@@ -1948,8 +2038,26 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
                   <div
                     ref={emptyComposerRef}
-                    className="relative w-full max-w-[44rem]"
+                    className={cn(
+                      "composer-aura-host relative isolate w-full max-w-[44rem]",
+                      auraSending && "is-sending"
+                    )}
+                    style={auraStyle}
                   >
+                    {/* Dynamic Ambient Accent Glow behind Centered Composer */}
+                    {!privateMode && !voiceOpen && (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                        style={{
+                          opacity: thinkingGlow.opacity,
+                          width: thinkingGlow.width,
+                          height: thinkingGlow.height,
+                          filter: `blur(${thinkingGlow.blur})`,
+                          background: thinkingGlow.gradient,
+                        }}
+                      />
+                    )}
                     {voiceOpen && !privateMode && (
                       <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
                     )}

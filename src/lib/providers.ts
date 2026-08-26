@@ -51,6 +51,7 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
   google: {
     label: "Google · Gemini",
     apiKeyEnv: "GOOGLE_API_KEY",
+    apiKeyEnvAliases: ["GEMINI_API_KEY", "GEMINI_LIVE_API_KEY"],
     baseUrlEnv: "GOOGLE_BASE_URL",
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
     kind: "openai",
