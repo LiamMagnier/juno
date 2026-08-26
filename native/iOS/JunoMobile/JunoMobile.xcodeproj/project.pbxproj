@@ -483,16 +483,16 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					6D5615F8AFDDA70B8927E8F7 = {
-						DevelopmentTeam = 8RSCGS63QP;
+						DevelopmentTeam = 58PVP763WX;
 						ProvisioningStyle = Automatic;
 					};
 					714C7D189431CDC91730331B = {
-						DevelopmentTeam = 8RSCGS63QP;
+						DevelopmentTeam = 58PVP763WX;
 						ProvisioningStyle = Automatic;
 						TestTargetID = A1B08015F59BA5814B520393;
 					};
 					A1B08015F59BA5814B520393 = {
-						DevelopmentTeam = 8RSCGS63QP;
+						DevelopmentTeam = 58PVP763WX;
 						ProvisioningStyle = Automatic;
 					};
 				};
