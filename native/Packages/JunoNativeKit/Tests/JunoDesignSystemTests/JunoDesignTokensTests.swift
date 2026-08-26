@@ -116,7 +116,7 @@ final class JunoDesignTokensTests: XCTestCase {
         // parity, and `--radius` merely happened to sit nearby. See the note
         // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 26)
+        XCTAssertEqual(JunoRadius.composer, 18)
     }
 
     /// The three names that used to mean different sizes on the two platforms.

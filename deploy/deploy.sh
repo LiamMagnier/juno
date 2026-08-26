@@ -238,7 +238,7 @@ verify_pm2_ecosystem() {
     const configFile = process.env.PM2_CONFIG || "";
     const serviceStarter = process.env.PM2_SERVICE_STARTER || "";
 
-    for (let attempt = 1; attempt <= 6; attempt++) {
+    for (let attempt = 1; attempt <= 15; attempt++) {
       let rows = [];
       try {
         const out = execSync("pm2 jlist", { encoding: "utf8" });
@@ -251,7 +251,7 @@ verify_pm2_ecosystem() {
         process.exit(0);
       }
 
-      console.log(`Waiting for PM2 services to be online (attempt ${attempt}/6): ${missing.join(", ")}`);
+      console.log(`Waiting for PM2 services to be online (attempt ${attempt}/15): ${missing.join(", ")}`);
       for (const name of missing) {
         let started = false;
         if (configFile && serviceStarter) {
@@ -269,7 +269,7 @@ verify_pm2_ecosystem() {
         }
       }
       try {
-        execSync("sleep 2");
+        execSync("sleep 3");
       } catch {}
     }
 
