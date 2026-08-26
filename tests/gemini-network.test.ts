@@ -36,7 +36,7 @@ test("Gemini retries bounded pre-stream 503 responses and then succeeds", async 
   }, {
     fetchImpl: async () => {
       calls += 1;
-      if (calls < 3) {
+      if (calls < 4) {
         return new Response(JSON.stringify({ error: { code: 503, status: "UNAVAILABLE", message: "High demand" } }), {
           status: 503,
         });
@@ -46,8 +46,8 @@ test("Gemini retries bounded pre-stream 503 responses and then succeeds", async 
     sleep: async (ms) => { sleeps.push(ms); },
   });
   assert.equal(response.status, 200);
-  assert.equal(calls, 3);
-  assert.deepEqual(sleeps, [250, 750]);
+  assert.equal(calls, 4);
+  assert.deepEqual(sleeps, [750, 2_000, 4_000]);
 });
 
 test("Gemini does not retry a model-specific 400", async () => {

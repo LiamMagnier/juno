@@ -303,7 +303,12 @@ struct JunoDesktopConfiguration {
                     syncModel: syncModel,
                     sender: runtime
                 ),
-                projectWorkspaceModel: ProjectWorkspaceModel(repository: localStore),
+                projectWorkspaceModel: ProjectWorkspaceModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel
+                ),
                 artifactModel: NativeArtifactModel(
                     repository: localStore,
                     syncModel: syncModel,

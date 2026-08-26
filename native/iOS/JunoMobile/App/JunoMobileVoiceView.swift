@@ -433,33 +433,6 @@ struct JunoMobileVoiceDock: View {
                 Task { await controller.start() }
             }
         } else {
-            // Barge-in, offered only while there is something to interrupt. A
-            // permanently disabled glyph sitting through every pause is chrome
-            // that means nothing.
-            if controller.assistantSpeaking, session.isLive {
-                // The label names the barge-in mode, because this control is the
-                // one place the fact is about. Under `.automatic` the tap is a
-                // shortcut for something a reader can also just do by talking;
-                // under `.manualOnly` it is the only way, and saying so stops
-                // "talking over Juno does nothing" reading as a bug rather than
-                // as this device's audio hardware.
-                //
-                // Both are now reachable on a phone. The voice-processing unit is
-                // requested on iOS as well as macOS and the policy is read back
-                // off the input node, so this label is the live answer for this
-                // call and not a platform constant.
-                circleButton(
-                    systemImage: "stop.fill",
-                    label: controller.bargeIn == .automatic
-                        ? "voice.interrupt.or-talk"
-                        : "voice.interrupt",
-                    identifier: "juno.mobile.voice-interrupt",
-                    tone: .prominent
-                ) {
-                    controller.interrupt()
-                }
-                .transition(.scale.combined(with: .opacity))
-            }
             circleButton(
                 systemImage: controller.muted ? "mic.slash.fill" : "mic.fill",
                 label: controller.muted ? "voice.unmute" : "voice.mute",

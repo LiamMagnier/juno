@@ -141,15 +141,10 @@ const config: Config = {
         card: "14px", // cards, toasts, tiles
         popover: "14px", // popovers, transcripts
         surface: "16px", // in-flow panels and section wells
-        // The composer shell. Deliberately the largest rung on the ladder and a
-        // long way clear of `surface` — this is the one box on the page the user
-        // is aiming at before they have done anything, and at 16px it was
-        // indistinguishable from the panels around it. 26px is the point where
-        // the shell reads as a distinct object rather than another section well,
-        // and it is still short of a capsule, which the two-tier layout could not
-        // take: a pill radius on a box this tall pinches the utility strip's
-        // corners into its own content.
-        composer: "26px",
+        // The composer is distinct through placement and material, not an
+        // oversized novelty radius. This stays one step above ordinary surfaces
+        // while sharing their geometry closely enough to feel like one product.
+        composer: "18px",
         // The two composer-seated control radii. The primary action sits at
         // `composer-action` at its 36px rest size and morphs to
         // `composer-control` as it widens to 44px while busy — the corner
@@ -159,8 +154,8 @@ const config: Config = {
         // chosen. They move WITH the shell — nesting reads as concentric only
         // while the inner radius stays a consistent fraction of the outer one,
         // so a shell that got 10px rounder hands its children a share of it.
-        "composer-control": "12px",
-        "composer-action": "14px",
+        "composer-control": "10px",
+        "composer-action": "12px",
         // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
         // at every size — 24% is the iOS app-icon superellipse ratio these marks
         // are imitating. Owned by <ProviderLogo>; call sites must not override it.

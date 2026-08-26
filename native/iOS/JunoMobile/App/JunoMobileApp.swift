@@ -21,6 +21,7 @@ struct JunoMobileApp: App {
     @State private var privateChatModel: NativePrivateChatModel?
     @State private var generateClient: NativeChatAPIClient?
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    @State private var projectWorkspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var memoryLearningModel: MemoryLearningModel<SQLiteAccountRepository>?
@@ -56,6 +57,7 @@ struct JunoMobileApp: App {
         _privateChatModel = State(initialValue: configuration.privateChatModel)
         _generateClient = State(initialValue: configuration.generateClient)
         _projectModel = State(initialValue: configuration.projectModel)
+        _projectWorkspaceModel = State(initialValue: configuration.projectWorkspaceModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _memoryLearningModel = State(initialValue: configuration.memoryLearningModel)
@@ -92,6 +94,7 @@ struct JunoMobileApp: App {
                         attachmentModel: world.attachmentModel,
                         conversationModel: world.conversationModel,
                         projectModel: world.projectModel,
+                        projectWorkspaceModel: nil,
                         artifactModel: world.artifactModel,
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
@@ -139,6 +142,7 @@ struct JunoMobileApp: App {
             avatarModel: avatarModel,
             conversationModel: conversationModel,
             projectModel: projectModel,
+            projectWorkspaceModel: projectWorkspaceModel,
             artifactModel: artifactModel,
             memorySettingsModel: memorySettingsModel,
             memoryLearningModel: memoryLearningModel,
@@ -264,6 +268,12 @@ struct JunoMobileApp: App {
                     syncModel: syncModel,
                     sender: runtime
                 ),
+                projectWorkspaceModel: ProjectWorkspaceModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel
+                ),
                 artifactModel: NativeArtifactModel(
                     repository: localStore,
                     syncModel: syncModel,
@@ -321,6 +331,7 @@ struct JunoMobileApp: App {
                 avatarModel: nil,
                 conversationModel: nil,
                 projectModel: nil,
+                projectWorkspaceModel: nil,
                 artifactModel: nil,
                 memorySettingsModel: nil,
                 searchModel: nil,
@@ -362,6 +373,7 @@ private struct JunoMobileConfiguration {
     let avatarModel: NativeAvatarModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    let projectWorkspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     /// Runs ``MemoryExtractionEngine`` after a finished turn and holds what it

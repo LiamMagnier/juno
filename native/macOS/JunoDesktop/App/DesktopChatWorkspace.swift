@@ -946,20 +946,6 @@ struct DesktopConversationView: View {
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             composer
-            // The docked bloom — a third of the light, short enough to pool
-            // around the capsule instead of washing up the transcript. Suppressed
-            // during a call: the voice field below already lights this column,
-            // and two lights under one capsule read as a bug. The web makes the
-            // same swap.
-            .background(alignment: .bottom) {
-                if voiceSession == nil {
-                    DesktopChatAuraLayer(
-                        state: aura,
-                        docked: true,
-                        viewport: columnHeight > 0 ? columnHeight : nil
-                    )
-                }
-            }
         }
         .junoVoiceField(voiceColumn)
     }

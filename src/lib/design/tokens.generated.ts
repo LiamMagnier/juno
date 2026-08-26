@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: c17fa36c080de5ec
+// tokens-digest: e8f836336b4022cb
 //
 
 /** `--dur-*` in milliseconds. */
@@ -36,14 +36,14 @@ export const RADIUS = {
   "md": 8,
   "control": 9,
   "field": 10,
+  "composerControl": 10,
   "menu": 12,
-  "composerControl": 12,
+  "composerAction": 12,
   "card": 14,
   "popover": 14,
-  "composerAction": 14,
   "surface": 16,
   "panel": 18,
-  "composer": 26,
+  "composer": 18,
 } as const;
 
 export type DurationToken = keyof typeof DURATION;

@@ -182,6 +182,22 @@ export function useChat(opts: UseChatOptions) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
+  // Reconcile incoming server messages when initialMessages updates (via sync / router.refresh)
+  React.useEffect(() => {
+    if (status !== "idle") return;
+    if (convoIdRef.current !== opts.conversationId) return;
+    if (opts.initialMessages.length === 0 && messages.length === 0) return;
+    if (
+      opts.initialMessages.length !== messages.length ||
+      opts.initialMessages.some(
+        (m, idx) => m.id !== messages[idx]?.id || m.content !== messages[idx]?.content
+      )
+    ) {
+      setMessages(opts.initialMessages);
+      setArtifacts(opts.initialArtifacts);
+    }
+  }, [opts.initialMessages, opts.initialArtifacts, opts.conversationId, status, messages]);
+
   const mergeArtifacts = React.useCallback(
     (incoming: ClientArtifact[]) => {
       if (incoming.length === 0) return;
@@ -780,7 +796,12 @@ export function useChat(opts: UseChatOptions) {
       }
       if (modality !== "chat") {
         void runGeneration(
-          { conversationId: convoIdRef.current ?? undefined, prompt: trimmed, model: opts.model },
+          {
+            conversationId: convoIdRef.current ?? undefined,
+            projectId: convoIdRef.current ? undefined : opts.projectId,
+            prompt: trimmed,
+            model: opts.model,
+          },
           assistantTempId,
           "/api/generate"
         );
@@ -982,13 +1003,19 @@ export function useChat(opts: UseChatOptions) {
       };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       void runGeneration(
-        { conversationId: convoIdRef.current ?? undefined, prompt: trimmed, model: input.model, edit: input.edit },
+        {
+          conversationId: convoIdRef.current ?? undefined,
+          projectId: convoIdRef.current ? undefined : opts.projectId,
+          prompt: trimmed,
+          model: input.model,
+          edit: input.edit,
+        },
         assistantTempId,
         "/api/generate"
       );
       return { accepted: true };
     },
-    [status, pendingClarification, runGeneration, opts.privateMode]
+    [status, pendingClarification, runGeneration, opts.privateMode, opts.projectId]
   );
 
   const resolvePendingClarification = React.useCallback(

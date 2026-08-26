@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
@@ -132,6 +133,7 @@ export function useApp(): AppContextValue {
 }
 
 export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; children: React.ReactNode }) {
+  const router = useRouter();
   const [settings, setSettingsState] = React.useState(bootstrap.settings);
   const [quota, setQuota] = React.useState(bootstrap.quota);
   const [conversations, setConversations] = React.useState(bootstrap.conversations);
@@ -145,6 +147,57 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // loaded).
   const [models, setModels] = React.useState<ModelInfo[]>(INITIAL_MODELS);
   const { resolvedTheme } = useTheme();
+
+  // A server-component refresh delivers a new bootstrap object. Mirror that
+  // authoritative account snapshot into the provider without remounting the
+  // shell, so open drawers, composer state, and the current route stay put.
+  React.useEffect(() => {
+    React.startTransition(() => {
+      setSettingsState(bootstrap.settings);
+      setQuota(bootstrap.quota);
+      setConversations(bootstrap.conversations);
+      setFolders(bootstrap.folders);
+    });
+  }, [bootstrap.settings, bootstrap.quota, bootstrap.conversations, bootstrap.folders]);
+
+  // The native clients already publish into the account change feed. Keep the
+  // website on that same path: a cursor advance refreshes the server bootstrap,
+  // making changes from iPhone, iPad, Mac, or another browser visible without a
+  // manual reload. Cursor events can arrive in bursts for one user action, so
+  // coalesce them into one refresh while retaining the latest cursor.
+  React.useEffect(() => {
+    const stream = new EventSource("/api/sync/stream");
+    let lastCursor: string | null = null;
+    let refreshTimer: number | null = null;
+
+    const refresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        React.startTransition(() => router.refresh());
+        refreshTimer = null;
+      }, 120);
+    };
+
+    const onCursor = (event: Event) => {
+      try {
+        const cursor = String(JSON.parse((event as MessageEvent<string>).data)?.cursor ?? "");
+        if (!cursor || cursor === lastCursor) return;
+        lastCursor = cursor;
+        window.dispatchEvent(new CustomEvent("juno:sync", { detail: { cursor } }));
+        refresh();
+      } catch {
+        // A malformed wake-up is ignored; EventSource reconnects automatically
+        // and the next valid cursor remains authoritative.
+      }
+    };
+
+    stream.addEventListener("cursor", onCursor);
+    return () => {
+      stream.removeEventListener("cursor", onCursor);
+      stream.close();
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+    };
+  }, [router]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;

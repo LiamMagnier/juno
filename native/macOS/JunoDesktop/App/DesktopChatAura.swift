@@ -173,9 +173,8 @@ struct DesktopChatAuraLayer: View {
 /// silence.
 struct DesktopDraftGreeting: View {
     let profileName: String?
-    /// The bloom this greeting is read on. Mounted as a `background` of the whole
-    /// block, so the light is centred on the sentence rather than on the capsule
-    /// below it.
+    /// Retained in the screen contract while older preview fixtures migrate;
+    /// ordinary chat no longer uses model-coloured decorative lighting.
     let aura: DesktopChatAuraState
     /// The column's measured height, forwarded to the aura's `vh` caps.
     let viewport: CGFloat?
@@ -246,9 +245,6 @@ struct DesktopDraftGreeting: View {
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, JunoSpace.region)
-        .background {
-            DesktopChatAuraLayer(state: aura, docked: false, viewport: viewport)
-        }
         .accessibilityElement(children: .combine)
         .task { await rise() }
     }

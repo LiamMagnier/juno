@@ -74,7 +74,6 @@ struct JunoMobileComposer: View {
   var greetingVisible: Bool = false
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorScheme) private var colorScheme
   /// The call in progress, published by the shell. Non-nil is what puts the
   /// dock above this composer, the voice field behind it, and every voice-mode
   /// degradation below into effect. See ``JunoMobileVoiceSession``.
@@ -270,73 +269,50 @@ struct JunoMobileComposer: View {
         )
         .transition(.opacity.combined(with: .move(edge: .bottom)))
       } else {
-        VStack(spacing: JunoSpace.snug) {
-          if !attachments.isEmpty, let attachmentModel {
-            JunoMobileAttachmentChips(
-              attachments: attachments,
-              onRemove: { attachmentModel.remove($0) },
-              onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
-            )
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-          }
-
-          if showsCollapsedDraft {
-            collapsedDraftCard
-              .transition(.opacity)
-          } else {
-            TextField("Message Juno", text: $prompt, axis: .vertical)
-              .lineLimit(1...6)
-              .textFieldStyle(.plain)
-              .focused(composerFocused)
-              .padding(.horizontal, JunoSpace.snug)
-              .padding(.top, JunoSpace.hairline)
-              .accessibilityIdentifier("juno.mobile.chat-composer")
-
-            if isLongDraft {
-              attachAsFileOffer
+        JunoGlass(spacing: JunoSpace.snug) {
+          VStack(spacing: JunoSpace.snug) {
+            if !attachments.isEmpty, let attachmentModel {
+              JunoMobileAttachmentChips(
+                attachments: attachments,
+                onRemove: { attachmentModel.remove($0) },
+                onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+              )
+              .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-          }
 
-          controlRow
+            if showsCollapsedDraft {
+              collapsedDraftCard
+                .transition(.opacity)
+            } else {
+              TextField("Message Juno", text: $prompt, axis: .vertical)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .focused(composerFocused)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.top, JunoSpace.hairline)
+                .accessibilityIdentifier("juno.mobile.chat-composer")
+
+              if isLongDraft {
+                attachAsFileOffer
+              }
+            }
+
+            controlRow
+          }
+          .padding(.horizontal, JunoSpace.cozy)
+          .padding(.vertical, JunoSpace.snug)
+          .junoGlass(
+            in: RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
+          )
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
-        // The composer is the one persistent surface at the foot of
-        // the screen, so it should read as a calm editorial well — not
-        // as a second pane of refracting glass around every chip. The
-        // web uses an opaque warm surface here too; native glass stays
-        // reserved for transient menus and sheets.
-        .background(
-          RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-            .fill(Color.junoSurface)
-            .overlay(
-              RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-                .strokeBorder(Color.junoHairline, lineWidth: 1)
-            )
-        )
-        .shadow(color: .black.opacity(0.055), radius: 18, y: 8)
         .transition(.opacity)
       }
     }
     .padding(.horizontal, JunoSpace.regular)
     .padding(.vertical, JunoSpace.tight)
-    // The light behind the composer, and the one place it can be mounted.
-    //
-    // It has to be *here*, on the outer stack, and not on the capsule's own
-    // `.background(JunoGlassBackground…)` a few lines up: a background of
-    // the capsule paints inside the glass, over the text field, and washes
-    // out what is being typed. A background of this stack paints behind the
-    // whole composer, glass included, which is the sibling-at-z-index-minus-one
-    // arrangement the web builds by hand.
-    //
-    // And it has to be inside this view, because this view is what a
-    // `safeAreaInset` moves with the keyboard. Anything anchored to the
-    // screen stays put while the composer rises away from it.
-    //
-    // Never in incognito: that mode is deliberately colourless, and its
-    // composer is a different view entirely (``JunoMobileIncognitoChat``)
-    // which never reaches this line.
-    .background(alignment: .bottom) { auraLayer }
+    // Voice is the one ambient field with semantic meaning. It remains mounted
+    // here so it tracks the keyboard with the safe-area composer.
+    .background(alignment: .bottom) { voiceFieldLayer }
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -359,80 +335,16 @@ struct JunoMobileComposer: View {
     .task { await applyPreviewFlags() }
   }
 
-  // MARK: Aura
+  // MARK: Voice field
 
-  /// The two auras, which are mutually exclusive on purpose — and, once there
-  /// is a greeting on screen, neither.
-  ///
-  /// A call replaces the composer's bloom with the voice field for its whole
-  /// duration — the web makes the same swap, and for the same reason: two
-  /// lights under one capsule read as a bug, and while someone is talking the
-  /// thing worth reporting is the conversation, not which model is selected.
-  ///
-  /// The greeting takes it on the same terms. There is exactly one bloom in
-  /// the browser and it is tall enough to light both the sentence and the
-  /// capsule from one place; a SwiftUI background is sized by its host, so
-  /// native gets the same result by *moving* the mount rather than by adding a
-  /// second one — see ``JunoMobileGreeting``. That is what ``greetingVisible``
-  /// decides, and why this view draws nothing at all on an empty screen.
-  ///
-  /// **The voice field is scoped to the column but mounted here, and that is a
-  /// choice rather than an accident.** On the web the field is a sibling of the
-  /// composer inside `.composer-aura-host` — a stacking context whose only job
-  /// is to make `z-index: -1` mean "behind the composer" — and it overflows
-  /// upward to `min(30rem, 46vh)`, framing the reading area from below. This
-  /// background is that same arrangement: it paints behind the composer, glass
-  /// included, and is free to overflow into the transcript above.
-  ///
-  /// The phone adds one constraint the browser does not have. This composer is
-  /// installed as a `.safeAreaInset(edge: .bottom)`, and the inset's content is
-  /// the *only* thing in the chat screen that rises with the keyboard — the
-  /// scroll view keeps its frame and grows its safe area instead. A field
-  /// anchored to the transcript, or to the screen, would therefore stay behind
-  /// the keyboard the moment anyone typed during a call. So the mount point
-  /// stays here, where it inherits keyboard tracking for free, and what changes
-  /// is the box: ``chatColumnHeight`` carries the column's own measurement down
-  /// so the field can be sized from the conversation rather than from the strip
-  /// it happens to be mounted in.
   @ViewBuilder
-  private var auraLayer: some View {
+  private var voiceFieldLayer: some View {
     if let voiceSession {
       JunoMobileVoiceField(
         controller: voiceSession.controller,
         columnHeight: chatColumnHeight
       )
-    } else if !greetingVisible {
-      // Only when nothing else is holding it. On an empty screen the
-      // greeting carries the undocked bloom instead, because that is where
-      // the web's one 32rem-tall element actually lands — see
-      // ``JunoMobileGreeting``. Mounting it in both places would double
-      // every alpha in the ramp.
-      //
-      // Through ``JunoMobileAuraLayer`` rather than straight into
-      // `JunoComposerAura`: this bloom is regularly *born* with the send
-      // already in flight — sending the first message is what takes the
-      // greeting away and puts this one on screen — and an aura born hot
-      // never sees the rising edge its swell needs.
-      JunoMobileAuraLayer(
-        light: light,
-        // The dialled-down variant inside a conversation: there are
-        // messages above it to stay out of the way of.
-        docked: conversation != nil
-      )
     }
-  }
-
-  /// The bloom's inputs, in the one form the greeting reads them too, so the
-  /// two mount points cannot describe different light.
-  private var light: JunoMobileAuraLight {
-    JunoMobileAuraLight(
-      model: selectedModel,
-      effort: reasoningEffort,
-      focused: composerFocused.wrappedValue,
-      sending: sendSwell.active,
-      viewport: chatColumnHeight,
-      dark: colorScheme == .dark
-    )
   }
 
   /// The quiet offer under a long draft: "That's a long one — attach it as a
@@ -1275,8 +1187,11 @@ struct JunoComposerSendBackground: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .background(active ? Color.junoAccent : Color.junoMuted, in: Circle())
-      .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
+      .junoGlass(
+        in: Circle(),
+        tint: active ? Color.junoAccent : nil,
+        interactive: true
+      )
   }
 }
 
@@ -1285,7 +1200,6 @@ struct JunoComposerSendBackground: ViewModifier {
 struct JunoComposerGlassCircle: ViewModifier {
   func body(content: Content) -> some View {
     content
-      .background(Color.junoMuted, in: Circle())
-      .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
+      .junoGlass(in: Circle(), interactive: true)
   }
 }

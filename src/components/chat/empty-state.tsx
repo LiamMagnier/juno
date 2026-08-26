@@ -4,7 +4,6 @@ import * as React from "react";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
-import { ChevronRight, Code2, FileText, Sparkles } from "lucide-react";
 
 // Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
 // feels fresh — and every phrase has to survive two readings: alone, and with
@@ -71,30 +70,9 @@ export function EmptyGreeting() {
   // The mark's press animation: retrigger the spring-pop keyframe per click.
   const [popping, setPopping] = React.useState(false);
 
-  const suggestions = [
-    {
-      title: "Explain a concept",
-      detail: "Break down any topic",
-      prompt: "Explain a concept to me step by step: ",
-      icon: Sparkles,
-    },
-    {
-      title: "Write or debug code",
-      detail: "From a quick fix to a full app",
-      prompt: "Help me write or debug this code: ",
-      icon: Code2,
-    },
-    {
-      title: "Summarize a document",
-      detail: "Pull out decisions and next steps",
-      prompt: "Summarize this document and list the key decisions: ",
-      icon: FileText,
-    },
-  ] as const;
-
   return (
-    <div className="flex w-full max-w-xl flex-col items-center gap-5 sm:gap-6">
-      <div className="flex flex-col items-center gap-2 text-center">
+    <div className="flex w-full max-w-lg flex-col items-center">
+      <div className="flex flex-col items-center gap-2.5 text-center">
         <button
           type="button"
           aria-label="Juno"
@@ -106,7 +84,7 @@ export function EmptyGreeting() {
             // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
             // where it was and grows only the hit area around it, so nothing
             // moves and the button becomes tappable.
-            "grid size-11 shrink-0 place-items-center rounded-full border border-primary/15 bg-primary/5 [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in",
+            "grid size-10 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             popping && "juno-mark-popping",
           )}
         >
@@ -149,33 +127,6 @@ export function EmptyGreeting() {
         <p className="text-sm text-muted-foreground">
           Ask anything. Juno is here to help.
         </p>
-      </div>
-      <div className="grid w-full gap-2 sm:grid-cols-3">
-        {suggestions.map(({ title, detail, prompt, icon: Icon }) => (
-          <button
-            key={title}
-            type="button"
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent("juno:composer-seed", { detail: prompt }),
-              )
-            }
-            className="group flex min-h-16 items-center gap-3 rounded-card border border-border/70 bg-card px-3 py-2.5 text-left shadow-soft transition-[border-color,box-shadow,transform] duration-fast ease-out-soft hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lift focus-visible:outline-none sm:flex-col sm:items-start"
-          >
-            <span className="grid size-8 shrink-0 place-items-center rounded-field bg-primary/10 text-primary">
-              <Icon className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-foreground">
-                {title}
-              </span>
-              <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
-                {detail}
-              </span>
-            </span>
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast group-hover:translate-x-0.5 sm:hidden" />
-          </button>
-        ))}
       </div>
     </div>
   );

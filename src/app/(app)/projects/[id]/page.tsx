@@ -50,6 +50,19 @@ import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  WORKSPACE_TOOLS,
+  type WorkspaceConfig,
+  type WorkspaceTool,
+} from "@/lib/projects/workspace-config";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -66,12 +79,22 @@ interface Detail {
     kind: string;
     knowledge?: (KnowledgeIndexState & { documentId: string }) | null;
   }[];
+  workspace: WorkspaceConfig;
 }
+
+const WORKSPACE_TOOL_LABELS: Record<WorkspaceTool, string> = {
+  webSearch: "Web search",
+  deepResearch: "Deep research",
+  canvas: "Canvas",
+  mediaGeneration: "Image & video",
+  connectors: "Connected apps",
+  memoryRecall: "Memory",
+};
 
 export default function ProjectDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { settings } = useApp();
+  const { settings, models } = useApp();
   const [data, setData] = React.useState<Detail | null>(null);
   const [error, setError] = React.useState<"notfound" | "error" | null>(null);
   const [instructions, setInstructions] = React.useState("");
@@ -99,6 +122,8 @@ export default function ProjectDetailPage() {
   const [allProjects, setAllProjects] = React.useState<{ id: string; name: string }[]>([]);
   // Chat pending deletion — a real dialog, matching the project-delete confirm.
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
+  const [workspace, setWorkspace] = React.useState<WorkspaceConfig>({});
+  const [savingWorkspace, setSavingWorkspace] = React.useState(false);
 
   // Composer states. `null` model = not chosen yet → fall back to account default
   // without overwriting a pick the user already made (that overwrite was sending
@@ -106,12 +131,13 @@ export default function ProjectDetailPage() {
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
   const [canvasEnabled, setCanvasEnabled] = React.useState(true);
   const [selectedModel, setSelectedModel] = React.useState<string | null>(null);
-  const projectModel = selectedModel ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
+  const projectModel = selectedModel ?? workspace.preferredModelId
+    ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
 
   // Deep-link: /projects/{id}?tab=workspace
   React.useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "workspace") setTab("workspace");
+    if (t === "workspace" || t === "assistant") setTab(t);
   }, []);
 
   const coverFile = data?.files.find((f) => f.fileName === "__cover__");
@@ -126,6 +152,7 @@ export default function ProjectDetailPage() {
       const d: Detail = await r.json();
       setData(d);
       setInstructions(d.project.instructions);
+      setWorkspace(d.workspace ?? {});
     } catch {
       setError("error");
     }
@@ -161,6 +188,12 @@ export default function ProjectDetailPage() {
   }, [load]);
 
   React.useEffect(() => {
+    const refresh = () => void load();
+    window.addEventListener("juno:sync", refresh);
+    return () => window.removeEventListener("juno:sync", refresh);
+  }, [load]);
+
+  React.useEffect(() => {
     if (data?.project.id) setIsStarred(data.project.starred);
   }, [data?.project.id, data?.project.starred]);
 
@@ -182,6 +215,30 @@ export default function ProjectDetailPage() {
     toast.success(next ? "Project starred!" : "Project unstarred.");
     window.dispatchEvent(new CustomEvent("starred:sync"));
     window.dispatchEvent(new CustomEvent("projects:sync"));
+  };
+
+  const saveWorkspace = async () => {
+    setSavingWorkspace(true);
+    const response = await fetch(`/api/projects/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspace }),
+    }).catch(() => null);
+    setSavingWorkspace(false);
+    if (!response?.ok) {
+      toast.error("Could not save the assistant settings.");
+      return;
+    }
+    toast.success("Assistant settings synced.");
+    await load();
+  };
+
+  const setWorkspaceTool = (tool: WorkspaceTool, enabled: boolean) => {
+    setWorkspace((current) => {
+      const allowed = new Set(current.allowedTools ?? WORKSPACE_TOOLS);
+      if (enabled) allowed.add(tool); else allowed.delete(tool);
+      return { ...current, allowedTools: WORKSPACE_TOOLS.filter((item) => allowed.has(item)) };
+    });
   };
 
   /**
@@ -661,6 +718,7 @@ export default function ProjectDetailPage() {
           <TabsList className="mb-6">
             <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
             <TabsTrigger value="workspace" className="px-4">Workspace</TabsTrigger>
+            <TabsTrigger value="assistant" className="px-4">Assistant</TabsTrigger>
           </TabsList>
 
           {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
@@ -1143,6 +1201,150 @@ export default function ProjectDetailPage() {
                   Drag &amp; drop anywhere on this card to add files.
                 </p>
               </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="assistant" forceMount className="data-[state=inactive]:hidden">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="font-serif text-heading text-foreground">Project assistant</h2>
+                <p className="mt-1 max-w-2xl text-body text-muted-foreground">
+                  These defaults and restrictions follow this project on web, iPhone, iPad and Mac.
+                </p>
+              </div>
+              <Button onClick={saveWorkspace} disabled={savingWorkspace} className="gap-2">
+                {savingWorkspace && <Loader2 className="size-4 animate-spin" />}
+                Save assistant
+              </Button>
+            </div>
+
+            <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
+              <div className="space-y-6">
+                <Card className="p-5">
+                  <CardEyebrow>Identity</CardEyebrow>
+                  <div className="mt-4 space-y-4">
+                    <label className="block space-y-2">
+                      <span className="text-body font-medium text-foreground">Persona name</span>
+                      <Input
+                        value={workspace.personaName ?? ""}
+                        onChange={(event) => setWorkspace((current) => ({
+                          ...current,
+                          personaName: event.target.value || undefined,
+                        }))}
+                        placeholder={data.project.name}
+                      />
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-body font-medium text-foreground">Preferred model</span>
+                      <Select
+                        value={workspace.preferredModelId ?? "account-default"}
+                        onValueChange={(value) => setWorkspace((current) => ({
+                          ...current,
+                          preferredModelId: value === "account-default" ? undefined : value,
+                        }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="account-default">Account default</SelectItem>
+                          {models.filter((model) => model.modality === "chat").map((model) => (
+                            <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </label>
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <CardEyebrow>Instructions</CardEyebrow>
+                      <p className="mt-1 text-body font-medium text-foreground">Replace project instructions</p>
+                    </div>
+                    <Switch
+                      checked={workspace.instructionsOverride !== undefined}
+                      onCheckedChange={(checked) => setWorkspace((current) => ({
+                        ...current,
+                        instructionsOverride: checked ? data.project.instructions : undefined,
+                      }))}
+                      aria-label="Replace project instructions"
+                    />
+                  </div>
+                  {workspace.instructionsOverride !== undefined && (
+                    <Textarea
+                      className="mt-4 min-h-56 font-mono text-sm leading-relaxed"
+                      value={workspace.instructionsOverride}
+                      onChange={(event) => setWorkspace((current) => ({
+                        ...current,
+                        instructionsOverride: event.target.value,
+                      }))}
+                      placeholder="Assistant-specific instructions"
+                    />
+                  )}
+                </Card>
+              </div>
+
+              <div className="space-y-6">
+                <Card className="p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <CardEyebrow>Tools</CardEyebrow>
+                      <p className="mt-1 text-body font-medium text-foreground">Restrict this assistant</p>
+                    </div>
+                    <Switch
+                      checked={workspace.allowedTools !== undefined}
+                      onCheckedChange={(checked) => setWorkspace((current) => ({
+                        ...current,
+                        allowedTools: checked ? [...WORKSPACE_TOOLS] : undefined,
+                      }))}
+                      aria-label="Restrict assistant tools"
+                    />
+                  </div>
+                  {workspace.allowedTools !== undefined && (
+                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                      {WORKSPACE_TOOLS.map((tool) => (
+                        <label key={tool} className="flex min-h-12 items-center justify-between gap-4 py-2.5">
+                          <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
+                          <Switch
+                            checked={workspace.allowedTools?.includes(tool) ?? false}
+                            onCheckedChange={(checked) => setWorkspaceTool(tool, checked)}
+                            aria-label={WORKSPACE_TOOL_LABELS[tool]}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
+                    Restrictions only narrow your account and model permissions; they never grant new access.
+                  </p>
+                </Card>
+
+                <Card className="p-5">
+                  <CardEyebrow>Knowledge</CardEyebrow>
+                  <p className="mt-1 text-body font-medium text-foreground">Standing reference files</p>
+                  {workspaceFiles.length === 0 ? (
+                    <p className="mt-4 text-body text-muted-foreground">Add files in Workspace before selecting reference material.</p>
+                  ) : (
+                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
+                      {workspaceFiles.map((file) => (
+                        <label key={file.id} className="flex min-h-12 items-center justify-between gap-4 py-2.5">
+                          <span className="min-w-0 truncate text-body text-foreground">{file.fileName}</span>
+                          <Switch
+                            checked={workspace.knowledgeFileIds?.includes(file.id) ?? false}
+                            onCheckedChange={(checked) => setWorkspace((current) => {
+                              const ids = new Set(current.knowledgeFileIds ?? []);
+                              if (checked) ids.add(file.id); else ids.delete(file.id);
+                              return { ...current, knowledgeFileIds: workspaceFiles
+                                .map((item) => item.id).filter((item) => ids.has(item)) };
+                            })}
+                            aria-label={`Use ${file.fileName} as knowledge`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
             </div>
           </TabsContent>
         </Tabs>

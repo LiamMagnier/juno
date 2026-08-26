@@ -169,15 +169,27 @@ public actor NativeMutationDrainer<Repository: AccountScopedRepository> {
         var acknowledged = 0
         var retries = 0
         var conflicts = 0
+        // A drain can contain several offline edits to the same entity. The
+        // repository only receives the refreshed server row after the batch,
+        // so carry each accepted revision forward inside this drain; otherwise
+        // mutation two incorrectly reuses mutation one's stale base revision.
+        var acceptedRevisions: [RecordKey: UInt64] = [:]
         for mutation in leased {
             let snapshot = try await repository.snapshot(for: storageAccountID)
-            let baseRevision = snapshot.records[mutation.draft.entity]?.revision ?? 0
+            let baseRevision = acceptedRevisions[mutation.draft.entity]
+                ?? snapshot.records[mutation.draft.entity]?.revision
+                ?? 0
             do {
-                _ = try await client.submit(
+                let result = try await client.submit(
                     mutation.draft,
                     baseRevision: baseRevision,
                     for: accountID
                 )
+                acceptedRevisions[mutation.draft.entity] = result.revision
+                acceptedRevisions[RecordKey(
+                    namespace: mutation.draft.entity.namespace,
+                    id: result.entityID
+                )] = result.revision
                 try await outbox.acknowledge(
                     id: mutation.draft.id,
                     accountID: storageAccountID,

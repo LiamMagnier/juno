@@ -75,11 +75,11 @@ function retryDelayMs(response: Response, attempt: number): number {
   const raw = response.headers.get("retry-after");
   if (raw) {
     const seconds = Number(raw);
-    if (Number.isFinite(seconds)) return Math.min(2_000, Math.max(0, seconds * 1_000));
+    if (Number.isFinite(seconds)) return Math.min(10_000, Math.max(0, seconds * 1_000));
     const date = Date.parse(raw);
-    if (Number.isFinite(date)) return Math.min(2_000, Math.max(0, date - Date.now()));
+    if (Number.isFinite(date)) return Math.min(10_000, Math.max(0, date - Date.now()));
   }
-  return attempt === 1 ? 250 : 750;
+  return [750, 2_000, 4_000][attempt - 1] ?? 4_000;
 }
 
 async function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -109,7 +109,7 @@ export async function requestGeminiStream(
 ): Promise<Response> {
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const sleep = dependencies.sleep ?? abortableDelay;
-  const maxAttempts = Math.max(1, Math.min(3, dependencies.maxAttempts ?? 3));
+  const maxAttempts = Math.max(1, Math.min(4, dependencies.maxAttempts ?? 4));
   const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

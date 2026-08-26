@@ -6296,13 +6296,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use Interrupt to cut Juno off"
+            "value" : "Talk-over interruption needs an echo-cancelled audio route"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Utilisez Interrompre pour couper Juno"
+            "value" : "L’interruption vocale nécessite un appareil audio avec annulation d’écho"
           }
         }
       }

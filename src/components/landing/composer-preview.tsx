@@ -6,20 +6,18 @@ import { DEFAULT_MODEL, MODEL_LIST, getModel, type ModelInfo } from "@/lib/model
  * The composer, on the front door.
  *
  * A visitor's first sight of Juno used to be on the far side of a sign-up form:
- * the landing depicted no composer, no aura, no picker. The composer with its
- * aura is the most recognisable object the product owns, so the first thing a
+ * the landing depicted no composer and no picker. The composer is the most
+ * recognisable object the product owns, so the first thing a
  * user touches after signing in is now visually the thing that sold them.
  *
  * This is a DEPICTION, not a copy of the component: it reuses the real surface
  * class string from chat/composer.tsx (search `composer-surface`), the real
- * `.composer-aura` from globals.css, the real ProviderLogo and the real primary
- * button lighting classes. If any of those change, change this with them — a
+ * real ProviderLogo and the real primary button treatment. If any of those
+ * change, change this with them — a
  * front door that misdescribes the product is worse than one that shows nothing.
  *
- * The aura is pinned on via `.is-preview` (globals.css, beside the
- * `:focus-within` rule): nothing here is focusable, so it can never light up on
- * its own. aria-hidden + pointer-events-none — it is imagery, not a control, and
- * the whole thing stays server-rendered, keeping the landing at zero client JS.
+ * aria-hidden + pointer-events-none: it is imagery, not a control, and the whole
+ * thing stays server-rendered, keeping the landing at zero client JS.
  */
 
 /** The picker's actual default, read from the registry rather than hardcoded. */
@@ -33,15 +31,7 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
     // one off the column. max-w-2xl is the lede's measure, so it shares an edge
     // and a width with it. Centring, if wanted, is the hero's call, not this
     // component's.
-    // `relative isolate` is load-bearing, not decoration. `.composer-aura` is
-    // `position:absolute; z-index:-1` with a 138%-of-parent width — with no
-    // positioned ancestor here it resolved its box against the hero <section>
-    // and centred itself in the full 1152px column, and with no stacking context
-    // its negative z put it behind the page ground. The front door's signature
-    // object shipped mispositioned with its light off. chat-view.tsx and the
-    // voice gallery both carry `relative isolate` on their hosts for this reason.
-    <div aria-hidden className="composer-aura-host is-preview relative isolate pointer-events-none w-full max-w-2xl">
-      <div className="composer-aura" />
+    <div aria-hidden className="pointer-events-none w-full max-w-2xl">
       {/* `border bg-card`, matching chat/composer.tsx verbatim — this was
           `border-border/65 bg-card/95 backdrop-blur`. On the true-black theme the
           border alpha is the only separation cue the composer has left (its

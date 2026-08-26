@@ -121,6 +121,7 @@ import {
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
 import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
+import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import {
   codeSessionRefusal,
   emptySubmissionRefusal,
@@ -507,6 +508,42 @@ async function handleChat(req: Request) {
   // chat model that can handle it (vision / web-search constraints applied).
   const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
 
+  // Resolve the project assistant before any tool is admitted. Native clients
+  // already hide denied controls, but the server is the trust boundary and the
+  // web/iOS clients must receive identical enforcement even on an older build.
+  let workspaceProjectID: string | null = null;
+  if (!input.privateMode) {
+    if (input.conversationId) {
+      workspaceProjectID = (
+        await prisma.conversation.findFirst({
+          where: { id: input.conversationId, userId: user.id },
+          select: { projectId: true },
+        })
+      )?.projectId ?? null;
+    } else if (input.projectId) {
+      workspaceProjectID = (
+        await prisma.project.findFirst({
+          where: { id: input.projectId, userId: user.id },
+          select: { id: true },
+        })
+      )?.id ?? null;
+    }
+  }
+  const workspaceRow = workspaceProjectID
+    ? await prisma.projectWorkspace.findFirst({
+        where: { projectId: workspaceProjectID, userId: user.id },
+        select: { config: true },
+      })
+    : null;
+  const workspaceConfig = parseWorkspaceConfig(workspaceRow?.config);
+  // A workspace row means the reader has configured an assistant. Its omitted
+  // knowledge list is the compact spelling of "no standing files"; with no row
+  // at all, preserve the longstanding project behaviour of referencing every
+  // project file.
+  const selectedKnowledgeFileIds = workspaceRow
+    ? (workspaceConfig.knowledgeFileIds ?? [])
+    : undefined;
+
   /*
    * Whether the thought-process panel receives connector ARGUMENTS and RESULTS
    * rather than only the tool's name.
@@ -521,9 +558,15 @@ async function handleChat(req: Request) {
    */
   const toolDetailEnabled = !settings?.lockdownMode;
 
+  const workspacePreferredModel =
+    !input.model && workspaceConfig.preferredModelId && isModelId(workspaceConfig.preferredModelId)
+      ? workspaceConfig.preferredModelId
+      : null;
   const requestedId =
     input.model && isModelId(input.model)
       ? input.model
+      : workspacePreferredModel
+        ? workspacePreferredModel
       : settings?.defaultModel && isModelId(settings.defaultModel)
         ? settings.defaultModel
         : DEFAULT_MODEL;
@@ -665,8 +708,16 @@ async function handleChat(req: Request) {
 
   // Linked tool connectors (GitHub/Figma…) the user enabled for this message.
   // Never honored in private mode — they'd send the message to a third party.
+  const requestedConnectorIDs = workspacePermits(workspaceConfig, "connectors")
+    ? (input.connectors ?? []).filter(
+        (id) => workspaceConfig.allowedConnectorIds === undefined
+          || workspaceConfig.allowedConnectorIds.includes(id)
+      )
+    : [];
   const activeConnectors =
-    !input.privateMode && input.connectors?.length ? await getActiveConnectors(user.id, input.connectors) : [];
+    !input.privateMode && requestedConnectorIDs.length
+      ? await getActiveConnectors(user.id, requestedConnectorIDs)
+      : [];
 
   if (input.privateMode) {
     const unavailable = privateModeFeatureRefusal(input);
@@ -1083,7 +1134,11 @@ async function handleChat(req: Request) {
     input.clientMessageId &&
     firstSubmissionHash
   );
-  const connectorSelection = input.connectors === undefined ? undefined : [...new Set(input.connectors)];
+  // Persist the effective selection, not the untrusted request. Otherwise a
+  // workspace-disabled connector would reappear as selected on the next device
+  // even though this turn correctly refused to execute it.
+  const connectorSelection =
+    input.connectors === undefined ? undefined : [...new Set(requestedConnectorIDs)];
   const preflightVisibleContent = input.preflightClarification
     ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
     : null;
@@ -1516,7 +1571,8 @@ async function handleChat(req: Request) {
     clarificationModelContent ?? preflightClarificationModelContent
   );
 
-  const memoryEnabled = settings?.memoryEnabled ?? true;
+  const memoryEnabled = (settings?.memoryEnabled ?? true)
+    && workspacePermits(workspaceConfig, "memoryRecall");
   // The consolidated summary carries settled account-wide memory; `recent` is
   // the individually-selected entries on top of it — ranked against what the
   // user just asked, scoped to this conversation's project, and cut to a token
@@ -1544,8 +1600,18 @@ async function handleChat(req: Request) {
   const projectRow = conversation.projectId
     ? await prisma.project.findUnique({
         where: { id: conversation.projectId },
-        select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
+        select: { name: true, instructions: true, files: { select: { id: true, fileName: true, extractedText: true } } },
       })
+    : null;
+  const assistantProjectRow = projectRow
+    ? {
+        ...projectRow,
+        name: workspaceConfig.personaName ?? projectRow.name,
+        instructions: workspaceConfig.instructionsOverride ?? projectRow.instructions,
+        files: selectedKnowledgeFileIds === undefined
+          ? projectRow.files
+          : projectRow.files.filter((file) => selectedKnowledgeFileIds.includes(file.id)),
+      }
     : null;
   const knowledgeQuery =
     [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
@@ -1553,16 +1619,24 @@ async function handleChat(req: Request) {
   if (conversation.projectId && projectRow) {
     if (knowledgeQuery) {
       try {
-        const retrieved = await retrieveProjectKnowledge({
+        const retrievalOptions = {
           userId: user.id,
-          projectId: conversation.projectId,
           query: knowledgeQuery,
           policy: await loadBackgroundProviderPolicy(user.id),
           // Embedding the question is background work on the user's content, so
           // it answers to the same provider policy as everything else — and
           // `same_provider` means the provider they picked for this turn.
           conversationProvider: modelInfo.provider,
-        });
+        };
+        const retrieved = selectedKnowledgeFileIds === undefined
+          ? await retrieveProjectKnowledge({
+              ...retrievalOptions,
+              projectId: conversation.projectId,
+            })
+          : await retrieveAttachmentKnowledge({
+              ...retrievalOptions,
+              attachmentIds: selectedKnowledgeFileIds,
+            });
         if (retrieved && retrieved.passages.length > 0) {
           projectKnowledge = {
             passages: retrieved.passages,
@@ -1578,7 +1652,7 @@ async function handleChat(req: Request) {
       }
     }
   }
-  const projectContext = buildProjectContext(projectRow, projectKnowledge);
+  const projectContext = buildProjectContext(assistantProjectRow, projectKnowledge);
 
   // A file attached directly to a conversation may have no project at all.
   // Retrieve its indexed passages by the durable attachment → document join so
@@ -1626,16 +1700,19 @@ async function handleChat(req: Request) {
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
   // data — so the two are never both active. Voice turns stay conversational.
-  const researchRequested = !!input.deepResearch && !input.voiceMode;
+  const researchRequested = !!input.deepResearch && !input.voiceMode
+    && workspacePermits(workspaceConfig, "deepResearch");
   const researchActive = researchRequested && PLANS[plan].webSearch && isWebSearchConfigured();
   // Native web search: the model searches via its own tool/grounding while it
   // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
   // collect the sources it returns from the stream below — no third-party search.
-  const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+  const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch
+    && modelInfo.webSearch && workspacePermits(workspaceConfig, "webSearch");
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
-  const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
+  const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
+    && workspacePermits(workspaceConfig, "canvas");
   const baseSystem = buildSystemPrompt({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",

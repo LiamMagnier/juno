@@ -196,8 +196,8 @@ export function writeWorkspaceConfig(config: WorkspaceConfig): Record<string, un
 /**
  * Whether a tool is permitted, given the account's own list.
  *
- * The client is what actually enforces this — it stops sending the flag — but
- * the rule is written once, here, so the server and any future surface agree on
+ * Clients stop sending denied flags for immediate feedback and the chat route
+ * enforces the same rule at the trust boundary, so every platform agrees on
  * what an absent list means. A project NARROWS and never widens: a tool the
  * account does not allow stays disallowed however the workspace is configured.
  */

@@ -9,7 +9,6 @@ import {
   Monitor,
   X,
   Volume2,
-  Sparkles,
   AlertCircle,
   RefreshCw,
   Radio,
@@ -24,6 +23,11 @@ import {
   MIC_SAMPLE_RATE,
   PLAYBACK_SAMPLE_RATE,
 } from "@/lib/voice-relay-protocol";
+import {
+  RealtimeVoiceActivityDetector,
+  normalizedSpeechLoudness,
+} from "@/lib/realtime-voice-activity";
+import { cn } from "@/lib/utils";
 
 export type LiveSessionState =
   | "idle"
@@ -89,11 +93,37 @@ export function LiveMultimodalSession({
   const audioInputSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const playContextRef = useRef<AudioContext | null>(null);
+  const playSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextPlayTimeRef = useRef<number>(0);
+  const speakingRef = useRef<boolean>(false);
+  const bargeDetectorRef = useRef(new RealtimeVoiceActivityDetector());
   const videoFrameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttemptRef = useRef<number>(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isManuallyClosedRef = useRef<boolean>(false);
+
+  const flushPlayback = useCallback(() => {
+    for (const src of playSourcesRef.current) {
+      try {
+        src.stop();
+      } catch {}
+    }
+    playSourcesRef.current.clear();
+    if (playContextRef.current && playContextRef.current.state !== "closed") {
+      nextPlayTimeRef.current = playContextRef.current.currentTime;
+    }
+  }, []);
+
+  const handleInterrupt = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const msg: VoiceClientMessage = { type: "control.interrupt" };
+      wsRef.current.send(JSON.stringify(msg));
+    }
+    flushPlayback();
+    bargeDetectorRef.current.reset();
+    speakingRef.current = false;
+    setSessionState("listening");
+  }, [flushPlayback]);
 
   // Play incoming PCM chunk
   const playPcm = useCallback((arrayBuffer: ArrayBuffer) => {
@@ -124,6 +154,17 @@ export function LiveMultimodalSession({
       const startTime = Math.max(now, nextPlayTimeRef.current);
       source.start(startTime);
       nextPlayTimeRef.current = startTime + audioBuffer.duration;
+      playSourcesRef.current.add(source);
+      speakingRef.current = true;
+      setSessionState("speaking");
+
+      source.onended = () => {
+        playSourcesRef.current.delete(source);
+        if (playSourcesRef.current.size === 0) {
+          speakingRef.current = false;
+          setSessionState((prev) => (prev === "speaking" ? "listening" : prev));
+        }
+      };
     } catch (e) {
       console.warn("[LiveMultimodal] PCM playback error:", e);
     }
@@ -194,6 +235,7 @@ export function LiveMultimodalSession({
       void audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
+    flushPlayback();
     if (playContextRef.current && playContextRef.current.state !== "closed") {
       void playContextRef.current.close().catch(() => {});
       playContextRef.current = null;
@@ -212,7 +254,9 @@ export function LiveMultimodalSession({
       } catch {}
       wsRef.current = null;
     }
-  }, []);
+    speakingRef.current = false;
+    bargeDetectorRef.current.reset();
+  }, [flushPlayback]);
 
   // Start live session connection
   const connectSession = useCallback(async (isRetry = false) => {
@@ -282,6 +326,24 @@ export function LiveMultimodalSession({
         processor.onaudioprocess = (e) => {
           if (isAudioMuted || ws.readyState !== WebSocket.OPEN) return;
           const inputData = e.inputBuffer.getChannelData(0);
+
+          // Real-time automatic barge-in / speech activity detection
+          if (speakingRef.current) {
+            let sum = 0;
+            for (let i = 0; i < inputData.length; i++) sum += inputData[i] * inputData[i];
+            const rms = Math.sqrt(sum / inputData.length);
+            const loudness = normalizedSpeechLoudness(rms);
+            const transition = bargeDetectorRef.current.observe(
+              loudness,
+              (inputData.length / MIC_SAMPLE_RATE) * 1000
+            );
+            if (transition === "began") {
+              handleInterrupt();
+            }
+          } else {
+            bargeDetectorRef.current.reset();
+          }
+
           const pcmBuffer = floatTo16BitPCM(inputData);
           ws.send(pcmBuffer);
         };
@@ -293,7 +355,6 @@ export function LiveMultimodalSession({
       ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           // Assistant audio output
-          setSessionState("speaking");
           playPcm(event.data);
         } else if (typeof event.data === "string") {
           try {
@@ -302,9 +363,13 @@ export function LiveMultimodalSession({
               setSessionState("listening");
             } else if (msg.type === "turn") {
               if (msg.phase === "start") {
+                speakingRef.current = true;
                 setSessionState("speaking");
               } else if (msg.phase === "end") {
-                setSessionState("listening");
+                if (playSourcesRef.current.size === 0) {
+                  speakingRef.current = false;
+                  setSessionState("listening");
+                }
               }
             } else if (msg.type === "transcript") {
               setCurrentTranscript(msg.text);
@@ -312,10 +377,9 @@ export function LiveMultimodalSession({
                 onTranscriptReceived(msg.text, msg.role, msg.final);
               }
             } else if (msg.type === "interrupted") {
+              flushPlayback();
+              speakingRef.current = false;
               setSessionState("listening");
-              if (playContextRef.current) {
-                nextPlayTimeRef.current = playContextRef.current.currentTime;
-              }
             } else if (msg.type === "error") {
               console.error("[LiveMultimodal] Server error:", msg.message);
               setErrorMessage(msg.message);
@@ -355,7 +419,7 @@ export function LiveMultimodalSession({
       setErrorMessage(msg.includes("Permission") ? "Microphone permission denied." : msg);
       if (onError) onError(msg);
     }
-  }, [provider, initialHistory, isAudioMuted, onTranscriptReceived, onError, playPcm]);
+  }, [provider, initialHistory, isAudioMuted, onTranscriptReceived, onError, playPcm, flushPlayback, handleInterrupt]);
 
   // Handle Mute toggle
   const toggleMute = () => {
@@ -387,7 +451,6 @@ export function LiveMultimodalSession({
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
-        // Replace or add video track
         if (mediaStreamRef.current) {
           mediaStreamRef.current.getVideoTracks().forEach((t) => t.stop());
           stream.getVideoTracks().forEach((t) => mediaStreamRef.current?.addTrack(t));
@@ -395,7 +458,6 @@ export function LiveMultimodalSession({
         setIsVideoEnabled(true);
         setIsScreenShareEnabled(false);
 
-        // Send 1 frame per second
         if (videoFrameIntervalRef.current) clearInterval(videoFrameIntervalRef.current);
         videoFrameIntervalRef.current = setInterval(sendVideoFrame, 1000);
       } catch {
@@ -442,18 +504,6 @@ export function LiveMultimodalSession({
     }
   };
 
-  // Handle interruption / barge-in
-  const handleInterrupt = () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      const msg: VoiceClientMessage = { type: "control.interrupt" };
-      wsRef.current.send(JSON.stringify(msg));
-    }
-    if (playContextRef.current) {
-      nextPlayTimeRef.current = playContextRef.current.currentTime;
-    }
-    setSessionState("listening");
-  };
-
   useEffect(() => {
     if (isOpen) {
       isManuallyClosedRef.current = false;
@@ -482,52 +532,53 @@ export function LiveMultimodalSession({
       role="dialog"
       aria-modal="true"
       aria-labelledby="live-multimodal-title"
-      className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-scrim/80 p-4 backdrop-blur-md animate-fade-in"
     >
-      <div className="relative w-full max-w-4xl bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col items-center">
+      <div className="relative flex w-full max-w-4xl flex-col items-center overflow-hidden rounded-panel border border-border/80 bg-card shadow-float">
         {/* Header */}
-        <div className="w-full flex items-center justify-between px-6 py-4 border-b border-neutral-800 bg-neutral-950/50">
+        <div className="flex w-full items-center justify-between border-b border-border/60 bg-muted/40 px-6 py-4">
           <div className="flex items-center gap-3">
             <div
-              className={`h-3 w-3 rounded-full ${
-                sessionState === "connected" || sessionState === "listening" || sessionState === "speaking"
-                  ? "bg-emerald-500 animate-pulse"
+              className={cn(
+                "size-2.5 rounded-full transition-colors",
+                isSpeaking || isListening
+                  ? "bg-primary animate-pulse"
                   : isReconnecting
-                  ? "bg-amber-500 animate-pulse"
+                  ? "bg-warning animate-pulse"
                   : sessionState === "failed"
-                  ? "bg-red-500"
-                  : "bg-neutral-500"
-              }`}
+                  ? "bg-destructive"
+                  : "bg-muted-foreground/40"
+              )}
             />
-            <span id="live-multimodal-title" className="text-sm font-semibold text-neutral-200">
-              Juno Live Multimodal Session
+            <span id="live-multimodal-title" className="text-sm font-semibold tracking-tight text-foreground">
+              Live Voice & Video
             </span>
-            <span className="text-xs bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded-full font-mono">
+            <span className="rounded-full border border-border/60 bg-secondary/80 px-2 py-0.5 font-mono text-micro text-muted-foreground">
               {provider} {modelId ? `· ${modelId}` : ""}
             </span>
           </div>
           <button
             onClick={onClose}
             aria-label="Close session"
-            className="p-1.5 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded-lg transition-colors"
+            className="pressable inline-flex size-8 items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <X className="w-5 h-5" />
+            <X className="size-4" />
           </button>
         </div>
 
-        {/* Error Banner if any */}
+        {/* Error Banner */}
         {errorMessage && (
-          <div className="w-full bg-red-950/60 border-b border-red-900/50 px-6 py-2.5 flex items-center justify-between text-xs text-red-200">
+          <div className="flex w-full items-center justify-between border-b border-destructive/30 bg-destructive/10 px-6 py-2.5 text-xs text-destructive">
             <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <AlertCircle className="size-4 shrink-0" />
               <span>{errorMessage}</span>
             </div>
             {sessionState === "failed" && (
               <button
                 onClick={() => void connectSession()}
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-red-900/60 hover:bg-red-800 text-red-100 rounded-md font-medium"
+                className="pressable flex items-center gap-1.5 rounded-control bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground hover:opacity-90"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="size-3.5" />
                 Retry
               </button>
             )}
@@ -535,130 +586,137 @@ export function LiveMultimodalSession({
         )}
 
         {/* Video / Visual Stream Area */}
-        <div className="w-full h-[380px] bg-neutral-950 flex items-center justify-center relative overflow-hidden">
+        <div className="relative flex h-[380px] w-full items-center justify-center overflow-hidden bg-background/50">
           {isVideoEnabled || isScreenShareEnabled ? (
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              className="w-full h-full object-contain rounded-lg"
+              className="h-full w-full rounded-lg object-contain"
             />
           ) : (
-            <div className="flex flex-col items-center gap-4 text-neutral-500">
-              <div className="relative">
-                <div
-                  className={`w-24 h-24 rounded-full flex items-center justify-center border-2 ${
-                    isSpeaking
-                      ? "border-indigo-500 scale-110 shadow-lg shadow-indigo-500/20"
-                      : isListening
-                      ? "border-emerald-500/60"
-                      : "border-neutral-700"
-                  } transition-all duration-300`}
-                >
-                  <Sparkles
-                    className={`w-10 h-10 ${
-                      isSpeaking
-                        ? "text-indigo-400 animate-spin"
-                        : isListening
-                        ? "text-emerald-400"
-                        : "text-neutral-600"
-                    }`}
-                  />
-                </div>
+            <div className="flex flex-col items-center gap-5 text-muted-foreground">
+              {/* Dynamic Aura Pulse */}
+              <div className="relative flex size-24 items-center justify-center">
                 {isSpeaking && (
-                  <div className="absolute inset-0 rounded-full border border-indigo-400 animate-ping opacity-25" />
+                  <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
                 )}
+                <div
+                  className={cn(
+                    "flex size-20 items-center justify-center rounded-full border transition-all duration-base",
+                    isSpeaking
+                      ? "border-primary/80 bg-primary/10 shadow-lg scale-110"
+                      : isListening
+                      ? "border-primary/40 bg-secondary/50"
+                      : "border-border/80 bg-muted/20"
+                  )}
+                >
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={cn(
+                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        isSpeaking ? "h-6 animate-pulse" : isListening ? "h-3" : "h-1.5 opacity-40"
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        isSpeaking ? "h-8 animate-pulse [animation-delay:150ms]" : isListening ? "h-4" : "h-1.5 opacity-40"
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        isSpeaking ? "h-5 animate-pulse [animation-delay:300ms]" : isListening ? "h-2.5" : "h-1.5 opacity-40"
+                      )}
+                    />
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-neutral-400 max-w-md text-center px-4">
+
+              <p className="max-w-md px-4 text-center text-sm text-foreground/80">
                 {currentTranscript || (
                   isSpeaking
-                    ? "Juno is speaking..."
+                    ? "Juno is speaking… (speak anytime to interrupt)"
                     : isListening
-                    ? "Listening... Speak naturally or interrupt anytime."
+                    ? "Listening… speak naturally."
                     : isConnecting
-                    ? "Connecting to live voice relay..."
+                    ? "Connecting to live voice relay…"
                     : isReconnecting
-                    ? "Network dropped. Reconnecting..."
+                    ? "Reconnecting…"
                     : "Session ended."
                 )}
               </p>
             </div>
           )}
 
-          {/* Live Status Pill */}
-          <div className="absolute bottom-4 left-4 bg-neutral-900/80 backdrop-blur-sm border border-neutral-800 px-3 py-1.5 rounded-full flex items-center gap-2 text-xs text-neutral-300">
+          {/* Live Status Indicator */}
+          <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full border border-border/80 bg-card/90 px-3 py-1.5 text-xs text-foreground shadow-sm backdrop-blur-md">
             {isSpeaking ? (
               <>
-                <Volume2 className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-                <span>Speaking (Click Interrupt to stop)</span>
+                <Volume2 className="size-3.5 text-primary animate-pulse" />
+                <span className="font-medium">Speaking</span>
               </>
             ) : isListening ? (
               <>
-                <Radio className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Listening</span>
+                <Radio className="size-3.5 text-primary" />
+                <span className="font-medium">Listening</span>
               </>
             ) : (
-              <span>{sessionState}</span>
+              <span className="font-medium capitalize text-muted-foreground">{sessionState}</span>
             )}
           </div>
-
-          {/* Barge-in Button when speaking */}
-          {isSpeaking && (
-            <button
-              onClick={handleInterrupt}
-              className="absolute bottom-4 right-4 bg-indigo-600/90 hover:bg-indigo-600 text-white text-xs px-3.5 py-1.5 rounded-full shadow-lg font-medium transition-all"
-            >
-              Interrupt
-            </button>
-          )}
         </div>
 
         {/* Control Bar */}
-        <div className="w-full px-6 py-4 bg-neutral-950 border-t border-neutral-800 flex items-center justify-center gap-4">
+        <div className="flex w-full items-center justify-center gap-3 border-t border-border/60 bg-muted/30 px-6 py-4">
           <button
             onClick={toggleMute}
             aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
-            className={`p-3.5 rounded-full border transition-all ${
+            className={cn(
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
               isAudioMuted
-                ? "bg-red-500/20 border-red-500/50 text-red-400"
-                : "bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700"
-            }`}
+                ? "border-destructive/60 bg-destructive/15 text-destructive"
+                : "border-border/80 bg-secondary text-foreground hover:bg-accent"
+            )}
             title={isAudioMuted ? "Unmute Mic" : "Mute Mic"}
           >
-            {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            {isAudioMuted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
           </button>
 
           <button
             onClick={toggleVideo}
             aria-label={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
-            className={`p-3.5 rounded-full border transition-all ${
+            className={cn(
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
               isVideoEnabled
-                ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
-                : "bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700"
-            }`}
+                ? "border-primary/60 bg-primary/15 text-primary"
+                : "border-border/80 bg-secondary text-foreground hover:bg-accent"
+            )}
             title={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
           >
-            {isVideoEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+            {isVideoEnabled ? <Video className="size-4" /> : <VideoOff className="size-4" />}
           </button>
 
           <button
             onClick={toggleScreenShare}
             aria-label={isScreenShareEnabled ? "Stop screen sharing" : "Share screen"}
-            className={`p-3.5 rounded-full border transition-all ${
+            className={cn(
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
               isScreenShareEnabled
-                ? "bg-blue-500/20 border-blue-500/50 text-blue-400"
-                : "bg-neutral-800 border-neutral-700 text-neutral-200 hover:bg-neutral-700"
-            }`}
+                ? "border-primary/60 bg-primary/15 text-primary"
+                : "border-border/80 bg-secondary text-foreground hover:bg-accent"
+            )}
             title={isScreenShareEnabled ? "Stop screen sharing" : "Share screen"}
           >
-            <Monitor className="w-5 h-5" />
+            <Monitor className="size-4" />
           </button>
 
           <button
             onClick={onClose}
             aria-label="End call"
-            className="px-5 py-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-medium text-sm transition-colors ml-4"
+            className="pressable ml-3 inline-flex h-10 items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive px-5 text-sm font-medium text-destructive-foreground shadow-sm hover:opacity-90 active:scale-95"
           >
             End Call
           </button>

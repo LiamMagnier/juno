@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: c17fa36c080de5ec
+// tokens-digest: e8f836336b4022cb
 //
 
 import CoreGraphics
@@ -393,12 +393,12 @@ public enum JunoGeneratedRadius {
     public static let md: CGFloat = 8.0
     public static let control: CGFloat = 9.0
     public static let field: CGFloat = 10.0
+    public static let composerControl: CGFloat = 10.0
     public static let menu: CGFloat = 12.0
-    public static let composerControl: CGFloat = 12.0
+    public static let composerAction: CGFloat = 12.0
     public static let card: CGFloat = 14.0
     public static let popover: CGFloat = 14.0
-    public static let composerAction: CGFloat = 14.0
     public static let surface: CGFloat = 16.0
     public static let panel: CGFloat = 18.0
-    public static let composer: CGFloat = 26.0
+    public static let composer: CGFloat = 18.0
 }

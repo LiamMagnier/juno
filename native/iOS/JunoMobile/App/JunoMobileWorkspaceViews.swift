@@ -19,6 +19,7 @@ import UniformTypeIdentifiers
 
 struct JunoMobileProjectsView: View {
   @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+  var workspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
   let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
   let openConversation: (String) -> Void
   @State private var showingCreate = false
@@ -69,6 +70,7 @@ struct JunoMobileProjectsView: View {
       if let project = model.projects.first(where: { $0.id == projectID }) {
         JunoMobileProjectDetail(
           model: model,
+          workspaceModel: workspaceModel,
           conversationModel: conversationModel,
           project: project,
           openConversation: openConversation
@@ -220,11 +222,7 @@ struct JunoMobileProjectsView: View {
             .junoMetaInk()
             .lineLimit(1)
           if !project.instructions.isEmpty {
-            Text(
-              project.instructions
-                .split(whereSeparator: \.isNewline)
-                .joined(separator: " ")
-            )
+            Text(JunoPromptPreview.text(project.instructions))
             .font(.caption)
             .junoSecondaryInk()
             .lineLimit(2)
@@ -670,6 +668,7 @@ struct JunoMobileWorkspaceStatus: View {
 }
 private struct JunoMobileProjectDetail: View {
   @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+  var workspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
   let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
   let project: NativeProject
   let openConversation: (String) -> Void
@@ -683,6 +682,11 @@ private struct JunoMobileProjectDetail: View {
   @State private var renameValue = ""
   @State private var previewURL: URL?
   @State private var localError: String?
+  @State private var showingAssistant = false
+
+  private var assistantConfiguration: ProjectWorkspaceConfiguration? {
+    workspaceModel?.workspaces[project.id]
+  }
 
   /// The project's own identity, stated once in the editorial serif with its
   /// two counts beneath — the same header shape the projects *list* uses for
@@ -759,6 +763,7 @@ private struct JunoMobileProjectDetail: View {
         : {
           Task {
             if let id = await conversationModel?.createConversation(
+              model: assistantConfiguration?.preferredModelID,
               projectID: project.id
             ) {
               openConversation(id)
@@ -781,6 +786,57 @@ private struct JunoMobileProjectDetail: View {
               conversationRow(conversation)
             }
           }
+        }
+      }
+    }
+  }
+
+  private var assistantSection: some View {
+    JunoMobileWorkspaceSection(
+      title: "Assistant",
+      actionTitle: assistantConfiguration == nil ? "Set up" : "Edit",
+      actionImage: assistantConfiguration == nil ? "plus" : "slider.horizontal.3",
+      action: workspaceModel == nil || project.isPending
+        ? nil : { showingAssistant = true },
+      footnote: "Persona, model, tools and knowledge sync across your Juno devices.",
+      identifier: "juno.mobile.project-assistant"
+    ) {
+      JunoCard {
+        if let assistantConfiguration {
+          VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            JunoMobileAssistantFact(
+              title: "Persona",
+              value: assistantConfiguration.personaName ?? project.name,
+              systemImage: "person.crop.circle"
+            )
+            Divider()
+            JunoMobileAssistantFact(
+              title: "Model",
+              value: conversationModel?.selectableModels.first {
+                $0.id == assistantConfiguration.preferredModelID
+              }?.displayName ?? "Account default",
+              systemImage: "sparkles"
+            )
+            Divider()
+            JunoMobileAssistantFact(
+              title: "Tools",
+              value: assistantConfiguration.toolAccess.isRestricted
+                ? "Restricted" : "Account defaults",
+              systemImage: "wrench.and.screwdriver"
+            )
+            if !assistantConfiguration.knowledgeFileIDs.isEmpty {
+              Divider()
+              JunoMobileAssistantFact(
+                title: "Knowledge",
+                value: count(assistantConfiguration.knowledgeFileIDs.count, "file"),
+                systemImage: "books.vertical"
+              )
+            }
+          }
+        } else {
+          JunoMobileEmptyLine(
+            text: "Uses the project instructions and your account defaults."
+          )
         }
       }
     }
@@ -877,6 +933,7 @@ private struct JunoMobileProjectDetail: View {
       VStack(alignment: .leading, spacing: JunoSpace.section) {
         header
         instructionsSection
+        assistantSection
         conversationsSection
         filesSection
       }
@@ -979,6 +1036,17 @@ private struct JunoMobileProjectDetail: View {
       // document to edit one in.
       .junoSheetSurface(.page)
     }
+    .sheet(isPresented: $showingAssistant) {
+      if let workspaceModel {
+        JunoMobileProjectAssistantEditor(
+          project: project,
+          files: model.selectedFiles,
+          models: conversationModel?.selectableModels ?? [],
+          model: workspaceModel,
+          dismiss: { showingAssistant = false }
+        )
+      }
+    }
     .alert("Delete project?", isPresented: $showingDelete) {
       Button("Cancel", role: .cancel) {}
       Button("Delete", role: .destructive) {
@@ -1074,6 +1142,188 @@ private struct JunoMobileProjectDetail: View {
         localError = error.localizedDescription
       }
     }
+  }
+}
+
+private struct JunoMobileAssistantFact: View {
+  let title: String
+  let value: String
+  let systemImage: String
+
+  var body: some View {
+    HStack(spacing: JunoSpace.cozy) {
+      Image(systemName: systemImage)
+        .frame(width: 20)
+        .foregroundStyle(Color.junoAccent)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .junoFont(size: 12, relativeTo: .caption)
+          .junoMetaInk()
+        Text(value)
+          .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+          .foregroundStyle(.primary)
+      }
+      Spacer(minLength: 0)
+    }
+  }
+}
+
+private struct JunoMobileProjectAssistantEditor: View {
+  let project: NativeProject
+  let files: [NativeProjectFile]
+  let models: [NativeChatModelOption]
+  @Bindable var model: ProjectWorkspaceModel<SQLiteAccountRepository>
+  let dismiss: () -> Void
+
+  @State private var persona: String
+  @State private var preferredModelID: String?
+  @State private var overridesInstructions: Bool
+  @State private var instructions: String
+  @State private var restrictsTools: Bool
+  @State private var tools: Set<ProjectWorkspaceTool>
+  @State private var knowledgeFileIDs: Set<String>
+
+  init(
+    project: NativeProject,
+    files: [NativeProjectFile],
+    models: [NativeChatModelOption],
+    model: ProjectWorkspaceModel<SQLiteAccountRepository>,
+    dismiss: @escaping () -> Void
+  ) {
+    self.project = project
+    self.files = files
+    self.models = models.filter(\.isChatCapable)
+    self.model = model
+    self.dismiss = dismiss
+    let current = model.workspaces[project.id]
+    _persona = State(initialValue: current?.personaName ?? "")
+    _preferredModelID = State(initialValue: current?.preferredModelID)
+    _overridesInstructions = State(initialValue: current?.instructionsOverride != nil)
+    _instructions = State(initialValue: current?.instructionsOverride ?? project.instructions)
+    if case .restricted(let allowed)? = current?.toolAccess {
+      _restrictsTools = State(initialValue: true)
+      _tools = State(initialValue: allowed)
+    } else {
+      _restrictsTools = State(initialValue: false)
+      _tools = State(initialValue: Set(ProjectWorkspaceTool.allCases))
+    }
+    _knowledgeFileIDs = State(initialValue: Set(current?.knowledgeFileIDs ?? []))
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField(project.name, text: $persona)
+          Picker("Preferred model", selection: $preferredModelID) {
+            Text("Account default").tag(String?.none)
+            ForEach(models) { option in
+              Text(option.displayName).tag(String?.some(option.id))
+            }
+          }
+        } header: {
+          Text("Persona")
+        } footer: {
+          Text("These defaults follow the project on every Juno device. A model picked in the composer still wins for that chat.")
+        }
+
+        Section("Instructions") {
+          Toggle("Replace project instructions", isOn: $overridesInstructions)
+          if overridesInstructions {
+            TextEditor(text: $instructions)
+              .junoFont(size: 14, relativeTo: .subheadline, design: .monospaced)
+              .frame(minHeight: 140)
+          }
+        }
+
+        Section {
+          Toggle("Restrict tools", isOn: $restrictsTools)
+          if restrictsTools {
+            ForEach(ProjectWorkspaceTool.allCases) { tool in
+              Toggle(tool.displayName, isOn: toolBinding(tool))
+            }
+          }
+        } header: {
+          Text("Tools")
+        } footer: {
+          Text("A project can narrow your account permissions. It cannot grant a tool your account or the selected model does not have.")
+        }
+
+        if !files.isEmpty {
+          Section {
+            ForEach(files) { file in
+              Toggle(file.fileName, isOn: knowledgeBinding(file.id))
+            }
+          } header: {
+            Text("Knowledge")
+          } footer: {
+            Text("Only selected files are treated as standing reference material for this assistant.")
+          }
+        }
+
+        if model.workspaces[project.id] != nil {
+          Section {
+            Button("Reset assistant", role: .destructive) {
+              Task {
+                await model.delete(projectID: project.id)
+                dismiss()
+              }
+            }
+          }
+        }
+      }
+      .scrollContentBackground(.hidden)
+      .junoScreenCanvas()
+      .navigationTitle("Assistant")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel", action: dismiss)
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          if model.isSaving {
+            ProgressView()
+          } else {
+            Button("Save") { Task { await save() } }
+          }
+        }
+      }
+    }
+    .junoSheetSurface(.page)
+  }
+
+  private func toolBinding(_ tool: ProjectWorkspaceTool) -> Binding<Bool> {
+    Binding(
+      get: { tools.contains(tool) },
+      set: { enabled in
+        if enabled { tools.insert(tool) } else { tools.remove(tool) }
+      }
+    )
+  }
+
+  private func knowledgeBinding(_ id: String) -> Binding<Bool> {
+    Binding(
+      get: { knowledgeFileIDs.contains(id) },
+      set: { enabled in
+        if enabled { knowledgeFileIDs.insert(id) } else { knowledgeFileIDs.remove(id) }
+      }
+    )
+  }
+
+  private func save() async {
+    let existing = model.workspaces[project.id]
+    let trimmedPersona = persona.trimmingCharacters(in: .whitespacesAndNewlines)
+    let saved = await model.save(ProjectWorkspaceConfiguration(
+      projectID: project.id,
+      personaName: trimmedPersona.isEmpty ? nil : trimmedPersona,
+      instructionsOverride: overridesInstructions ? instructions : nil,
+      toolAccess: restrictsTools ? .restricted(tools) : .inheritsAccountDefaults,
+      allowedConnectorIDs: existing?.allowedConnectorIDs,
+      knowledgeFileIDs: files.map(\.id).filter(knowledgeFileIDs.contains),
+      preferredModelID: preferredModelID
+    ))
+    if saved { dismiss() }
   }
 }
 

@@ -980,30 +980,7 @@ private struct DesktopProjectRow: Identifiable {
     /// the detail page and the editor still show the prompt exactly as written,
     /// because a prompt is source and a reader editing one needs its structure.
     var instructionsPreview: String {
-        let collapsed = project.instructions
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        let unwrapped = collapsed
-            .replacingOccurrences(
-                of: #"</?[A-Za-z][A-Za-z0-9_.:-]*(?:\s[^<>]*)?/?>"#,
-                with: " ",
-                options: .regularExpression
-            )
-            // The tags left gaps where they stood; one space, or the preview
-            // reads as a sentence with holes punched through it.
-            .replacingOccurrences(
-                of: #"\s{2,}"#,
-                with: " ",
-                options: .regularExpression
-            )
-            .trimmingCharacters(in: .whitespaces)
-        // A prompt that is *only* markup leaves nothing behind. Falling back to
-        // the collapsed original is more honest than an empty card: it at least
-        // says instructions exist.
-        if !unwrapped.isEmpty { return unwrapped }
-        return collapsed.isEmpty ? "No instructions set." : collapsed
+        JunoPromptPreview.text(project.instructions)
     }
 }
 
@@ -1012,14 +989,12 @@ private struct DesktopProjectRow: Identifiable {
 private enum DesktopProjectTab: String, CaseIterable, Identifiable {
     case overview
     case workspace
-    /// The **local** half of the project: persona, tool whitelist, knowledge
+    /// The assistant half of the project: persona, tool whitelist, knowledge
     /// selection, preferred model.
     ///
     /// Its own section rather than a third column on Workspace, because
-    /// everything on Workspace round-trips to `/api/v1` and nothing here does.
-    /// Mixing a synced instructions editor with a device-local tool whitelist in
-    /// one card is how a reader comes to believe the whitelist follows them to
-    /// their phone. See ``ProjectWorkspaceStore``.
+    /// everything here has its own independently revisioned sync entity, so a
+    /// tool edit cannot collide with a project rename from another device.
     case assistant
 
     var id: Self { self }
@@ -1529,7 +1504,7 @@ private struct DesktopProjectDetail: View {
         } else {
             DesktopProjectPlaceholder(
                 title: "Assistant setup is unavailable",
-                message: "Juno could not open this Mac's local store, so a persona and tool whitelist cannot be saved here.",
+                message: "Juno could not open the account store, so assistant settings cannot be saved.",
                 symbol: "exclamationmark.triangle"
             )
         }
@@ -1815,12 +1790,9 @@ private enum DesktopAssistantCopy {
 /// One project's **custom assistant**: the persona, the tool whitelist, which of
 /// its files count as knowledge, and which model it prefers.
 ///
-/// Everything on this panel is stored by ``ProjectWorkspaceStore`` on this Mac
-/// only, and the panel says so rather than implying otherwise by sitting next to
-/// controls that sync. The alternative the store's own notes reject — folding a
-/// whitelist into the project's synced `instructions` as prose — is not offered
-/// here either: prose is not a gate, and a tool restriction the model can decline
-/// to honour is worse than none, because the reader believes it.
+/// Everything on this panel is stored as a revisioned `project_workspace`
+/// entity. The alternative — folding a whitelist into project instructions as
+/// prose — remains deliberately absent: prose is not an enforceable gate.
 private struct DesktopProjectAssistantPanel: View {
     let project: NativeProject
     let files: [NativeProjectFile]
@@ -1848,7 +1820,7 @@ private struct DesktopProjectAssistantPanel: View {
             ? AnyLayout(HStackLayout(alignment: .top, spacing: JunoSpace.section))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: JunoSpace.section))
         return VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            localOnlyNotice
+            syncNotice
             layout {
                 VStack(alignment: .leading, spacing: JunoSpace.section) {
                     personaCard
@@ -1876,27 +1848,21 @@ private struct DesktopProjectAssistantPanel: View {
         .accessibilityIdentifier("Project assistant")
     }
 
-    // MARK: Local-only
+    // MARK: Sync
 
-    /// The one claim this panel must never leave implicit.
-    ///
-    /// `/api/v1` has no column for a tool whitelist, a persona or a knowledge
-    /// selection, so none of it syncs. Saying it once, at the top, is the
-    /// difference between a documented limitation and a reader discovering on
-    /// their phone that the assistant they built does not exist.
-    private var localOnlyNotice: some View {
+    private var syncNotice: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: "laptopcomputer")
+            Image(systemName: "arrow.triangle.2.circlepath")
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
-            Text("Saved on this Mac only. The project's name, instructions and files sync to your other devices; this assistant's persona, tools and knowledge selection do not — Juno's backend has nowhere to put them yet.")
+            Text("Persona, preferred model, tool limits and knowledge selection sync with this project on your Juno devices.")
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(JunoSpace.cozy)
         .junoPanel(cornerRadius: JunoRadius.chip)
-        .accessibilityIdentifier("Assistant local only")
+        .accessibilityIdentifier("Assistant sync status")
     }
 
     // MARK: Persona
@@ -1936,7 +1902,7 @@ private struct DesktopProjectAssistantPanel: View {
                 // "Chat's own model picker still chooses the model for each
                 // turn". It does now, so this says what it does and, just as
                 // importantly, what still beats it.
-                Text("Chats in this project use this model. Choosing a different one in the composer overrides it for that conversation. Saved on this Mac only — there is no backend field for an assistant's model, so your other devices keep their own choice.")
+                Text("Chats in this project use this model on every device. An explicit composer choice still wins for that conversation.")
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
             }

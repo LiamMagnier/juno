@@ -5,21 +5,17 @@ import JunoStorage
 import JunoSync
 import Observation
 
-// MARK: - What this adds to NativeProjectStore, and what it deliberately does not
+// MARK: - Project assistant configuration
 //
 // A project already exists. ``NativeProjectStore`` owns its identity, its name,
 // its **synced** `instructions`, its attachments and its conversations, and every
 // one of those round-trips through the outbox to `/api/v1`. None of that is
 // restated here.
 //
-// What turns a project into a *custom assistant* is the part the backend has no
-// column for: which tools it may reach for, which of its attachments are actually
-// knowledge for the model rather than files someone dropped in a chat, and which
-// model it prefers. Those are stored **locally only**, in this account's encrypted
-// record store, under a namespace the sync engine does not manage — which is a
-// real limitation and is stated in ``ProjectWorkspaceConfiguration``, not hidden:
-// a whitelist configured on the Mac does not appear on the phone until the
-// backend grows a schema for it.
+// What turns a project into a *custom assistant* is which tools it may reach for,
+// which attachments are knowledge, the persona it shows and the model it prefers.
+// Those fields have their own revisioned sync entity, separate from `project`, so
+// an assistant edit and a project rename cannot overwrite one another.
 //
 // The alternative was to encode the whitelist into the synced `instructions`
 // string as prose. That was rejected on purpose: prose is not a gate. A tool
@@ -137,7 +133,7 @@ public struct ProjectWorkspaceTurnPermissions: Equatable, Sendable {
 
 // MARK: - Configuration
 
-/// The local half of a custom assistant.
+/// The independently synced half of a custom assistant.
 ///
 /// Everything a project already has — name, synced instructions, attachments,
 /// conversations — stays in ``NativeProject``. This holds only what the backend
@@ -307,13 +303,19 @@ public struct ProjectWorkspaceSnapshot: Equatable, Sendable {
     /// throws away a reader's tool whitelist for a project that was about to
     /// arrive.
     public let orphanedProjectIDs: Set<String>
+    /// Legacy Mac-only records which have no synced counterpart yet. The live
+    /// model promotes these through the ordinary mutation outbox once, so an
+    /// assistant somebody already configured is not lost during the upgrade.
+    public let legacyProjectIDs: Set<String>
 
     public init(
         workspaces: [String: ProjectWorkspaceConfiguration],
-        orphanedProjectIDs: Set<String>
+        orphanedProjectIDs: Set<String>,
+        legacyProjectIDs: Set<String> = []
     ) {
         self.workspaces = workspaces
         self.orphanedProjectIDs = orphanedProjectIDs
+        self.legacyProjectIDs = legacyProjectIDs
     }
 }
 
@@ -518,6 +520,269 @@ public actor ProjectWorkspaceStore<Repository: AccountScopedRepository> {
 
 }
 
+// MARK: - Synced store
+
+/// The account-synced transport for project assistant configuration.
+///
+/// The older ``ProjectWorkspaceStore`` remains as a migration reader because
+/// released builds wrote encrypted Mac-only records into
+/// `native_project_workspace`. New writes go through the same durable mutation
+/// outbox as projects and settings, and server rows arrive back through the
+/// normal `project_workspace` sync namespace.
+public actor SyncedProjectWorkspaceStore<Repository: AccountScopedRepository> {
+    public static var namespace: String { "project_workspace" }
+
+    private let repository: Repository
+    private let outbox: any MutationOutboxRepository
+    private let legacy: ProjectWorkspaceStore<Repository>
+
+    public init(repository: Repository, outbox: any MutationOutboxRepository) {
+        self.repository = repository
+        self.outbox = outbox
+        legacy = ProjectWorkspaceStore(repository: repository)
+    }
+
+    public func load(
+        accountID: StorageAccountID,
+        knownProjectIDs: Set<String> = []
+    ) async throws -> ProjectWorkspaceSnapshot {
+        let snapshot = try await repository.snapshot(for: accountID)
+        var workspaces: [String: ProjectWorkspaceConfiguration] = [:]
+        var entityIDs: [String: String] = [:]
+
+        for record in snapshot.records.values
+        where !record.isTombstone && record.key.namespace == Self.namespace {
+            let decoded = try decode(record)
+            workspaces[decoded.workspace.projectID] = decoded.workspace
+            entityIDs[decoded.workspace.projectID] = record.key.id
+        }
+
+        let legacySnapshot = try await legacy.load(
+            accountID: accountID,
+            knownProjectIDs: knownProjectIDs
+        )
+        var legacyProjectIDs: Set<String> = []
+        for (projectID, workspace) in legacySnapshot.workspaces
+        where workspaces[projectID] == nil {
+            workspaces[projectID] = workspace
+            legacyProjectIDs.insert(projectID)
+        }
+
+        let mutations = try await outbox.mutations(accountID: accountID)
+        for mutation in mutations where mutation.draft.entity.namespace == Self.namespace {
+            switch mutation.state {
+            case .acknowledged, .discarded:
+                continue
+            default:
+                break
+            }
+            try apply(mutation, workspaces: &workspaces, entityIDs: entityIDs)
+        }
+
+        let orphans = knownProjectIDs.isEmpty
+            ? Set<String>()
+            : Set(workspaces.keys).subtracting(knownProjectIDs)
+        return ProjectWorkspaceSnapshot(
+            workspaces: workspaces,
+            orphanedProjectIDs: orphans,
+            legacyProjectIDs: legacyProjectIDs
+        )
+    }
+
+    public func save(
+        _ workspace: ProjectWorkspaceConfiguration,
+        accountID: StorageAccountID
+    ) async throws {
+        try ProjectWorkspaceStore<Repository>.validate(workspace)
+        let entityID = try await syncedEntityID(
+            projectID: workspace.projectID,
+            accountID: accountID
+        ) ?? workspace.projectID
+        let object: [String: Any] = [
+            "type": "project_workspace.upsert",
+            "projectId": workspace.projectID,
+            "config": configObject(workspace),
+        ]
+        try await enqueue(
+            operation: "project_workspace.upsert",
+            entityID: entityID,
+            object: object,
+            accountID: accountID
+        )
+    }
+
+    public func delete(projectID: String, accountID: StorageAccountID) async throws {
+        guard !projectID.isEmpty else { throw ProjectWorkspaceStoreError.invalidProjectID }
+        let entityID = try await syncedEntityID(
+            projectID: projectID,
+            accountID: accountID
+        ) ?? projectID
+        try await enqueue(
+            operation: "project_workspace.delete",
+            entityID: entityID,
+            object: ["type": "project_workspace.delete", "entityId": entityID],
+            accountID: accountID
+        )
+    }
+
+    private func enqueue(
+        operation: String,
+        entityID: String,
+        object: [String: Any],
+        accountID: StorageAccountID
+    ) async throws {
+        guard JSONSerialization.isValidJSONObject(object) else {
+            throw ProjectWorkspaceStoreError.invalidProjectID
+        }
+        let payload = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        _ = try await outbox.enqueue(MutationDraft(
+            id: OutboxMutationID(UUID().uuidString.lowercased()),
+            accountID: accountID,
+            idempotencyKey: IdempotencyKey(UUID().uuidString.lowercased()),
+            entity: RecordKey(namespace: Self.namespace, id: entityID),
+            operation: operation,
+            payload: payload,
+            createdAt: Date()
+        ))
+    }
+
+    private func syncedEntityID(
+        projectID: String,
+        accountID: StorageAccountID
+    ) async throws -> String? {
+        let snapshot = try await repository.snapshot(for: accountID)
+        for record in snapshot.records.values
+        where !record.isTombstone && record.key.namespace == Self.namespace {
+            if let decoded = try? decode(record), decoded.workspace.projectID == projectID {
+                return record.key.id
+            }
+        }
+        return nil
+    }
+
+    private func configObject(_ workspace: ProjectWorkspaceConfiguration) -> [String: Any] {
+        var config: [String: Any] = [:]
+        if let personaName = workspace.personaName { config["personaName"] = personaName }
+        if let instructions = workspace.instructionsOverride {
+            config["instructionsOverride"] = instructions
+        }
+        switch workspace.toolAccess {
+        case .inheritsAccountDefaults:
+            break
+        case .restricted(let tools):
+            config["allowedTools"] = tools.map(\.rawValue).sorted()
+        }
+        if let connectors = workspace.allowedConnectorIDs {
+            config["allowedConnectorIds"] = connectors.sorted()
+        }
+        if !workspace.knowledgeFileIDs.isEmpty {
+            config["knowledgeFileIds"] = workspace.knowledgeFileIDs
+        }
+        if let preferredModelID = workspace.preferredModelID {
+            config["preferredModelId"] = preferredModelID
+        }
+        return config
+    }
+
+    private func apply(
+        _ mutation: QueuedMutation,
+        workspaces: inout [String: ProjectWorkspaceConfiguration],
+        entityIDs: [String: String]
+    ) throws {
+        guard let object = try JSONSerialization.jsonObject(with: mutation.draft.payload)
+                as? [String: Any],
+            object["type"] as? String == mutation.draft.operation
+        else { throw ProjectWorkspaceStoreError.invalidProjectID }
+
+        switch mutation.draft.operation {
+        case "project_workspace.upsert":
+            guard let projectID = object["projectId"] as? String,
+                let config = object["config"] as? [String: Any]
+            else { throw ProjectWorkspaceStoreError.invalidProjectID }
+            workspaces[projectID] = decodeConfig(
+                projectID: projectID,
+                config: config,
+                updatedAt: mutation.draft.createdAt
+            )
+        case "project_workspace.delete":
+            let entityID = object["entityId"] as? String ?? mutation.draft.entity.id
+            if let projectID = entityIDs.first(where: { $0.value == entityID })?.key {
+                workspaces[projectID] = nil
+            } else {
+                // New rows use the project id as their mutation identity until
+                // the first sync response supplies the server row id.
+                workspaces[entityID] = nil
+            }
+        default:
+            break
+        }
+    }
+
+    private func decode(_ record: StoredRecord) throws
+        -> (workspace: ProjectWorkspaceConfiguration, entityID: String)
+    {
+        guard let payload = record.payload,
+            let wire = try? JSONDecoder().decode(SyncedWorkspaceWire.self, from: payload),
+            wire.id == record.key.id,
+            let updatedAt = ProjectWorkspaceDates.parse(wire.updatedAt)
+        else { throw ProjectWorkspaceStoreError.corruptRecord(record.key) }
+        return (
+            decodeConfig(projectID: wire.projectId, config: wire.config.dictionary, updatedAt: updatedAt),
+            wire.id
+        )
+    }
+
+    private func decodeConfig(
+        projectID: String,
+        config: [String: Any],
+        updatedAt: Date
+    ) -> ProjectWorkspaceConfiguration {
+        let allowedTools = config["allowedTools"] as? [String]
+        let toolAccess: ProjectWorkspaceToolAccess = allowedTools.map {
+            .restricted(Set($0.compactMap(ProjectWorkspaceTool.init(rawValue:))))
+        } ?? .inheritsAccountDefaults
+        return ProjectWorkspaceConfiguration(
+            projectID: projectID,
+            personaName: config["personaName"] as? String,
+            instructionsOverride: config["instructionsOverride"] as? String,
+            toolAccess: toolAccess,
+            allowedConnectorIDs: (config["allowedConnectorIds"] as? [String]).map(Set.init),
+            knowledgeFileIDs: config["knowledgeFileIds"] as? [String] ?? [],
+            preferredModelID: config["preferredModelId"] as? String,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+private struct SyncedWorkspaceWire: Decodable {
+    let id: String
+    let projectId: String
+    let config: SyncedWorkspaceConfigWire
+    let configVersion: Int
+    let createdAt: String
+    let updatedAt: String
+}
+
+private struct SyncedWorkspaceConfigWire: Decodable {
+    let personaName: String?
+    let instructionsOverride: String?
+    let allowedTools: [String]?
+    let allowedConnectorIds: [String]?
+    let knowledgeFileIds: [String]?
+    let preferredModelId: String?
+
+    var dictionary: [String: Any] {
+        var value: [String: Any] = [:]
+        if let personaName { value["personaName"] = personaName }
+        if let instructionsOverride { value["instructionsOverride"] = instructionsOverride }
+        if let allowedTools { value["allowedTools"] = allowedTools }
+        if let allowedConnectorIds { value["allowedConnectorIds"] = allowedConnectorIds }
+        if let knowledgeFileIds { value["knowledgeFileIds"] = knowledgeFileIds }
+        if let preferredModelId { value["preferredModelId"] = preferredModelId }
+        return value
+    }
+}
+
 /// ISO-8601 both ways, generic-free.
 ///
 /// Free of the store's `Repository` parameter on purpose: the wire struct below
@@ -611,10 +876,31 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
     public private(set) var activeProjectID: String?
 
     private let store: ProjectWorkspaceStore<Repository>
+    private let syncedStore: SyncedProjectWorkspaceStore<Repository>?
+    private let drainer: NativeMutationDrainer<Repository>?
+    private let syncModel: NativeSyncModel<Repository>?
     private var accountID: AccountID?
+    private var lastKnownProjectIDs: Set<String> = []
+    private var lastSynchronizationGeneration = -1
+    private var isReconciling = false
 
     public init(repository: Repository) {
         store = ProjectWorkspaceStore(repository: repository)
+        syncedStore = nil
+        drainer = nil
+        syncModel = nil
+    }
+
+    public init(
+        repository: Repository,
+        outbox: any MutationOutboxRepository,
+        drainer: NativeMutationDrainer<Repository>,
+        syncModel: NativeSyncModel<Repository>
+    ) {
+        store = ProjectWorkspaceStore(repository: repository)
+        syncedStore = SyncedProjectWorkspaceStore(repository: repository, outbox: outbox)
+        self.drainer = drainer
+        self.syncModel = syncModel
     }
 
     public var activeWorkspace: ProjectWorkspaceConfiguration? {
@@ -630,6 +916,8 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
         self.accountID = accountID
         phase = .loading
         await reload()
+        await migrateLegacyWorkspacesIfNeeded()
+        await reconcilePendingMutations()
     }
 
     public func stop() {
@@ -639,7 +927,17 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
         activeProjectID = nil
         lastErrorDescription = nil
         isSaving = false
+        lastKnownProjectIDs = []
+        lastSynchronizationGeneration = -1
+        isReconciling = false
         phase = .idle
+    }
+
+    public func synchronizationDidAdvance(to generation: Int) async {
+        guard generation != lastSynchronizationGeneration else { return }
+        lastSynchronizationGeneration = generation
+        await reload(knownProjectIDs: lastKnownProjectIDs)
+        await reconcilePendingMutations()
     }
 
     /// - Parameter knownProjectIDs: The projects currently loaded, so orphans can
@@ -647,11 +945,23 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
     ///   why it is not the same as passing the empty set deliberately.
     public func reload(knownProjectIDs: Set<String> = []) async {
         guard let accountID else { return }
+        if !knownProjectIDs.isEmpty { lastKnownProjectIDs = knownProjectIDs }
         do {
-            let snapshot = try await store.load(
-                accountID: StorageAccountID(accountID.rawValue),
-                knownProjectIDs: knownProjectIDs
-            )
+            let storageAccountID = StorageAccountID(accountID.rawValue)
+            let effectiveKnownIDs = knownProjectIDs.isEmpty
+                ? lastKnownProjectIDs : knownProjectIDs
+            let snapshot: ProjectWorkspaceSnapshot
+            if let syncedStore {
+                snapshot = try await syncedStore.load(
+                    accountID: storageAccountID,
+                    knownProjectIDs: effectiveKnownIDs
+                )
+            } else {
+                snapshot = try await store.load(
+                    accountID: storageAccountID,
+                    knownProjectIDs: effectiveKnownIDs
+                )
+            }
             guard self.accountID == accountID else { return }
             workspaces = snapshot.workspaces
             orphanedProjectIDs = snapshot.orphanedProjectIDs
@@ -685,10 +995,16 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
         var stamped = workspace
         stamped.updatedAt = Date()
         do {
-            try await store.save(stamped, accountID: StorageAccountID(accountID.rawValue))
+            let storageAccountID = StorageAccountID(accountID.rawValue)
+            if let syncedStore {
+                try await syncedStore.save(stamped, accountID: storageAccountID)
+            } else {
+                try await store.save(stamped, accountID: storageAccountID)
+            }
             guard self.accountID == accountID else { return false }
             workspaces[stamped.projectID] = stamped
             lastErrorDescription = nil
+            await reconcilePendingMutations()
             return true
         } catch {
             guard self.accountID == accountID else { return false }
@@ -715,14 +1031,17 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
     public func delete(projectID: String) async {
         guard let accountID else { return }
         do {
-            try await store.delete(
-                projectID: projectID,
-                accountID: StorageAccountID(accountID.rawValue)
-            )
+            let storageAccountID = StorageAccountID(accountID.rawValue)
+            if let syncedStore {
+                try await syncedStore.delete(projectID: projectID, accountID: storageAccountID)
+            } else {
+                try await store.delete(projectID: projectID, accountID: storageAccountID)
+            }
             guard self.accountID == accountID else { return }
             workspaces[projectID] = nil
             orphanedProjectIDs.remove(projectID)
             if activeProjectID == projectID { activeProjectID = nil }
+            await reconcilePendingMutations()
         } catch {
             guard self.accountID == accountID else { return }
             lastErrorDescription = NativeFailureMessage.presentable(error)
@@ -738,5 +1057,44 @@ public final class ProjectWorkspaceModel<Repository: AccountScopedRepository> {
         _ requested: ProjectWorkspaceTurnPermissions
     ) -> ProjectWorkspaceTurnPermissions {
         activeWorkspace?.permitting(requested) ?? requested
+    }
+
+    private func migrateLegacyWorkspacesIfNeeded() async {
+        guard let accountID, let syncedStore else { return }
+        let storageAccountID = StorageAccountID(accountID.rawValue)
+        do {
+            let snapshot = try await syncedStore.load(
+                accountID: storageAccountID,
+                knownProjectIDs: lastKnownProjectIDs
+            )
+            for projectID in snapshot.legacyProjectIDs {
+                guard let workspace = snapshot.workspaces[projectID] else { continue }
+                try await syncedStore.save(workspace, accountID: storageAccountID)
+            }
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+        }
+    }
+
+    private func reconcilePendingMutations() async {
+        guard !isReconciling, let accountID, let drainer else { return }
+        isReconciling = true
+        defer { isReconciling = false }
+        do {
+            let result = try await drainer.drain(for: accountID, owner: "project-workspace-ui")
+            if result.acknowledged > 0 { await syncModel?.refresh() }
+            await reload(knownProjectIDs: lastKnownProjectIDs)
+            if result.retryScheduled > 0 {
+                lastErrorDescription = "Assistant changes are saved and will sync when Juno reconnects."
+            } else if result.conflicted > 0 {
+                lastErrorDescription = "This assistant changed on another device. Refresh before retrying."
+                phase = .failed
+            }
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+            if syncModel?.phase == .offline { phase = .failed }
+        }
     }
 }

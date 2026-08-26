@@ -28,9 +28,6 @@ import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
-import { providerGlow } from "@/lib/provider-colors";
-import { clampReasoningEffort, reasoningGlow, reasoningOptions } from "@/lib/model-metrics";
-import { isAutoModelId } from "@/lib/auto-model";
 import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
@@ -1216,108 +1213,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // visit — before they have sent anything — is simply untrue.
   const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
-  const resolvedModelInfo = resolveModel(model);
-
-  // Composer aura. Two inputs travel down as custom properties on the host:
-  // the lab colour (inert until :focus-within reads it) and how hard the model
-  // is set to think, which drives both how bright and how big the bloom is.
-  //
-  // The effort is clamped to what the model actually accepts first — a sticky
-  // "max" carried over from the last model would otherwise light the page at
-  // full burn for a model that silently runs it at high.
-  //
-  // A model with no effort control is not "thinking at zero", it is a question
-  // the slider never asks, so those sit at the middle of the ramp — as does an
-  // unresolved model, by way of the property's initial-value.
-  //
-  // The test is whether a control is actually on screen, so it mirrors the
-  // composer's own gate exactly (composer.tsx: `isAuto || !resolved ? [] :
-  // reasoningOptions(resolved)`). The obvious `model.reasoning` is NOT that
-  // test, in two ways. Eleven shipped models — Kimi K2.7 Code, DeepSeek
-  // Reasoner, Magistral, several Grok and MiniMax — declare reasoning: true but
-  // expose no tiers, so they would have clamped to null and lit the page at its
-  // dimmest with no slider anywhere to explain why. And Auto resolves with the
-  // full ladder while showing no slider at all, so it would have been driven by
-  // a sticky global pref that Auto ignores on the wire anyway.
-  const auraStyle = React.useMemo(() => {
-    if (!resolvedModelInfo) return undefined;
-    const hasEffortControl = !isAutoModelId(model) && reasoningOptions(resolvedModelInfo).length > 0;
-    const think = hasEffortControl
-      ? reasoningGlow(clampReasoningEffort(resolvedModelInfo, reasoningEffort ?? null))
-      : 0.5;
-    return {
-      "--aura-provider": providerGlow(resolvedModelInfo.provider),
-      "--aura-think": think,
-    } as React.CSSProperties;
-  }, [resolvedModelInfo, reasoningEffort, model]);
-
-  const thinkingGlow = React.useMemo(() => {
-    switch (reasoningEffort) {
-      case "max":
-        return {
-          opacity: 0.52,
-          width: "min(750px, 94%)",
-          height: "270px",
-          blur: "115px",
-          // Exclusive deep bloom transition from accent color to violet and purple
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, #8b5cf6 36%, #a855f7 64%, transparent 78%)",
-        };
-      case "xhigh":
-        return {
-          opacity: 0.44,
-          width: "min(690px, 90%)",
-          height: "245px",
-          blur: "100px",
-          // Pure rich accent color
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 45%, hsl(var(--primary) / 0.25) 68%, transparent 78%)",
-        };
-      case "high":
-        return {
-          opacity: 0.36,
-          width: "min(630px, 86%)",
-          height: "220px",
-          blur: "90px",
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.6) 45%, transparent 75%)",
-        };
-      case "medium":
-        return {
-          opacity: 0.28,
-          width: "min(570px, 82%)",
-          height: "200px",
-          blur: "85px",
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.85) 0%, hsl(var(--primary) / 0.45) 45%, transparent 72%)",
-        };
-      case "low":
-        return {
-          opacity: 0.22,
-          width: "min(520px, 78%)",
-          height: "180px",
-          blur: "80px",
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.7) 0%, hsl(var(--primary) / 0.35) 45%, transparent 70%)",
-        };
-      case "minimal":
-      default:
-        // Instant / none / minimal: clearly visible, soft accent baseline glow
-        return {
-          opacity: 0.16,
-          width: "min(470px, 74%)",
-          height: "160px",
-          blur: "75px",
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.55) 0%, hsl(var(--primary) / 0.22) 45%, transparent 68%)",
-        };
-    }
-  }, [reasoningEffort]);
-
-  // Send swells the bloom once. Cleared on a timer rather than animationend:
-  // under prefers-reduced-motion the keyframes are switched off, so that event
-  // would never arrive and the class would stick for the rest of the session.
-  const [auraSending, setAuraSending] = React.useState(false);
-  React.useEffect(() => {
-    if (!auraSending) return;
-    const t = window.setTimeout(() => setAuraSending(false), 1150);
-    return () => window.clearTimeout(t);
-  }, [auraSending]);
-
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
 
@@ -1376,9 +1271,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         toast.error(voiceSaveError ?? "Wait for the voice transcript to finish saving.");
         return { accepted: false };
       }
-      // Past the guards that can still refuse the turn, so the aura only swells
-      // for a send that is actually going out.
-      setAuraSending(true);
       // Arm the first-message handoff (see the choreography block above). The
       // send can still be refused downstream, in which case the transcript
       // never appears and the arm simply expires.
@@ -1973,9 +1865,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   // effort easing with it. That rule carries the padding now.
                   "composer-aura-host relative isolate w-full",
                   privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1",
-                  auraSending && "is-sending"
                 )}
-                style={auraStyle}
               >
                 {/* Voice field while a call is live */}
                 {voiceOpen && !privateMode && (
@@ -2058,36 +1948,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
                   <div
                     ref={emptyComposerRef}
-                    className={cn(
-                      // NO z-index here, deliberately. A z-index would make this
-                      // a stacking context and flatten everything inside it into
-                      // one layer — which is exactly what made the greeting hard
-                      // to read: the aura is z-index -1, but trapped in this
-                      // layer it was composited OVER the text above rather than
-                      // under it. Without the stacking context the aura falls to
-                      // the isolate above, below the greeting, while the panels
-                      // the composer opens upward keep their own z-30 and stay
-                      // above it. Raising the greeting instead would have put it
-                      // over those panels.
-                      "composer-aura-host relative w-full max-w-[44rem]",
-                      auraSending && "is-sending"
-                    )}
-                    style={auraStyle}
+                    className="relative w-full max-w-[44rem]"
                   >
-                    {/* Dynamic Ambient Accent Glow behind Centered Composer */}
-                    {!privateMode && !voiceOpen && (
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
-                        style={{
-                          opacity: thinkingGlow.opacity,
-                          width: thinkingGlow.width,
-                          height: thinkingGlow.height,
-                          filter: `blur(${thinkingGlow.blur})`,
-                          background: thinkingGlow.gradient,
-                        }}
-                      />
-                    )}
                     {voiceOpen && !privateMode && (
                       <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
                     )}

@@ -74,6 +74,8 @@ struct JunoDesktopRootView: View {
                         .synchronizationDidAdvance(to: generation)
                     await configuration.projectModel?
                         .synchronizationDidAdvance(to: generation)
+                    await configuration.projectWorkspaceModel?
+                        .synchronizationDidAdvance(to: generation)
                     await configuration.artifactModel?
                         .synchronizationDidAdvance(to: generation)
                     await configuration.memorySettingsModel?

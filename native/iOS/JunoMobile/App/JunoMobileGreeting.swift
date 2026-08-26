@@ -173,20 +173,10 @@ struct JunoMobileAuraLayer: View {
 
 // MARK: - The greeting
 
-/// The website's home greeting, ported: the mark, a time-of-day phrase, then the
-/// reader's first name in medium italic accent — lit from behind by the same
-/// bloom the composer used to keep to itself.
-///
-/// **The glow is here, not under the capsule.** On the web there is exactly one
-/// `.composer-aura`; it lives in the composer's host but stands 32rem tall and is
-/// centred above it, so its top half spills over the gap and the greeting reads
-/// *on* the light (`globals.css`, the comment above `.empty-greeting`). Native
-/// cannot borrow that trick — a SwiftUI background is sized by its host, and the
-/// composer's host is a strip at the foot of the screen — so the mount point
-/// moves instead: on an empty screen the greeting carries the undocked bloom and
-/// the composer carries none, and inside a conversation it is the other way
-/// round. Exactly one instance either way, which is what keeps the `--aura` /
-/// `--aura-lit` / `--aura-pulse` arithmetic honest.
+/// Juno's compact home greeting: the shared mark, a time-of-day phrase, then the
+/// reader's first name in the account accent. It intentionally leaves the empty
+/// screen quiet; actions and capabilities belong in the composer, not in generic
+/// prompt cards competing with it.
 ///
 /// **Two beats, one line box.** The phrase rises at 60ms and the name at 180ms,
 /// as the browser does. Doing that with two `Text`s in an `HStack` is what broke
@@ -199,13 +189,6 @@ struct JunoMobileAuraLayer: View {
 /// each copy's legibility shadow lands only around the words it actually shows.
 struct JunoMobileGreeting: View {
   var name: String?
-  /// The bloom behind the sentence. Nil where something else owns the light:
-  /// during a call the voice field has it, and two lights under one sentence
-  /// read as a bug.
-  var aura: JunoMobileAuraLight?
-  /// Seeds the real composer with a useful starting point. Nil keeps the
-  /// greeting compact in contexts that do not own a draft binding.
-  var onSuggestion: ((String) -> Void)?
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -222,48 +205,20 @@ struct JunoMobileGreeting: View {
   private var compact: Bool { sizeClass == .compact }
 
   var body: some View {
-    VStack(spacing: JunoSpace.section) {
-      VStack(spacing: JunoSpace.snug) {
-        JunoMark(size: compact ? 34 : 40)
-          .opacity(phraseIn ? 1 : 0)
-          .offset(y: phraseIn ? 0 : 8)
-        sentence
-        Text("Ask anything. Juno is here to help.")
-          .font(.subheadline)
-          .junoSecondaryInk()
-          .opacity(nameIn ? 1 : 0)
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(plainGreeting + ". Ask anything. Juno is here to help.")
-
-      if onSuggestion != nil {
-        VStack(spacing: JunoSpace.snug) {
-          suggestion(
-            title: "Explain a concept",
-            subtitle: "Break down any topic",
-            systemImage: "sparkles",
-            prompt: "Explain a concept to me step by step: "
-          )
-          suggestion(
-            title: "Write or debug code",
-            subtitle: "From a quick fix to a full app",
-            systemImage: "chevron.left.forwardslash.chevron.right",
-            prompt: "Help me write or debug this code: "
-          )
-          suggestion(
-            title: "Summarize a document",
-            subtitle: "Pull out the decisions and next steps",
-            systemImage: "doc.text",
-            prompt: "Summarize this document and list the key decisions: "
-          )
-        }
-        .frame(maxWidth: compact ? 390 : 520)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-      }
+    VStack(spacing: JunoSpace.snug) {
+      JunoMark(size: compact ? 30 : 34)
+        .opacity(phraseIn ? 1 : 0)
+        .offset(y: phraseIn ? 0 : 8)
+      sentence
+      Text("Ask anything. Juno is here to help.")
+        .font(.subheadline)
+        .junoSecondaryInk()
+        .opacity(nameIn ? 1 : 0)
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(plainGreeting + ". Ask anything. Juno is here to help.")
     .padding(.horizontal, JunoSpace.regular)
     .frame(maxWidth: .infinity)
-    .background { auraLayer }
     .accessibilityElement(children: .contain)
     .onAppear {
       if phrase.isEmpty {
@@ -273,49 +228,6 @@ struct JunoMobileGreeting: View {
       }
       play()
     }
-  }
-
-  private func suggestion(
-    title: String,
-    subtitle: String,
-    systemImage: String,
-    prompt: String
-  ) -> some View {
-    Button {
-      onSuggestion?(prompt)
-    } label: {
-      HStack(spacing: JunoSpace.cozy) {
-        Image(systemName: systemImage)
-          .font(.body.weight(.medium))
-          .foregroundStyle(Color.junoAccent)
-          .frame(width: 34, height: 34)
-          .background(
-            Color.junoAccent.opacity(0.10),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .font(.subheadline.weight(.semibold))
-            .junoInk()
-          Text(subtitle)
-            .font(.caption)
-            .junoSecondaryInk()
-        }
-        Spacer(minLength: 0)
-        Image(systemName: "chevron.right")
-          .font(.caption.weight(.semibold))
-          .junoMetaInk()
-      }
-      .padding(.horizontal, JunoSpace.cozy)
-      .frame(minHeight: 58)
-      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-      .overlay(
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-          .strokeBorder(Color.junoHairline, lineWidth: 1)
-      )
-      .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-    .buttonStyle(JunoSidebarPressStyle())
-    .accessibilityHint("Places this prompt in the composer")
   }
 
   /// The two stacked copies of the one sentence. See the type's note for why
@@ -337,24 +249,6 @@ struct JunoMobileGreeting: View {
       .multilineTextAlignment(.center)
       .minimumScaleFactor(0.7)
       .lineLimit(2)
-      // `.empty-greeting`: the page's own background, shaped to the
-      // glyphs. It restores local contrast over the bloom without a plate,
-      // a blur or a second colour, and costs nothing where there is no
-      // glow behind the text. Two stacked shadows rather than CSS's two
-      // independent ones — the second sees the first, which reads as a
-      // marginally denser halo and is the closest SwiftUI offers.
-      .shadow(color: Color.junoCanvas.opacity(0.8), radius: 5)
-      .shadow(color: Color.junoCanvas.opacity(0.55), radius: 15)
-  }
-
-  @ViewBuilder
-  private var auraLayer: some View {
-    if let aura {
-      // The empty state's full bloom. Docked is for a transcript that has
-      // messages to stay out of the way of; here the sentence is the only
-      // thing on screen and the light is meant to reach it.
-      JunoMobileAuraLayer(light: aura, docked: false)
-    }
   }
 
   /// Runs the two beats. Delays rather than a single spring, because the

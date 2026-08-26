@@ -29,6 +29,7 @@ struct JunoMobileRootView: View {
   var avatarModel: NativeAvatarModel?
   let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
   let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+  var projectWorkspaceModel: ProjectWorkspaceModel<SQLiteAccountRepository>?
   let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
   let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
   /// Runs ``MemoryExtractionEngine`` when a turn finishes, and holds what it
@@ -240,10 +241,16 @@ struct JunoMobileRootView: View {
         // Attached before anything can be sent. Nothing in this client
         // used to look at a finished conversation at all, which is why
         // `MemoryExtractionEngine` had no caller — this is the seam.
-        connectMemoryLearning()
+        connectProjectAssistantHooks()
         syncModel?.start(for: session.profile.id)
         Task { await conversationModel?.start(for: session.profile.id) }
         Task { await projectModel?.start(for: session.profile.id) }
+        Task {
+          await projectWorkspaceModel?.start(for: session.profile.id)
+          await projectWorkspaceModel?.reload(
+            knownProjectIDs: Set((projectModel?.projects ?? []).map(\.id))
+          )
+        }
         Task { await artifactModel?.start(for: session.profile.id) }
         Task { await memorySettingsModel?.start(for: session.profile.id) }
         searchModel?.start(for: session.profile.id)
@@ -267,6 +274,7 @@ struct JunoMobileRootView: View {
         attachmentModel?.stop()
         conversationModel?.stop()
         projectModel?.stop()
+        projectWorkspaceModel?.stop()
         artifactModel?.stop()
         memorySettingsModel?.stop()
         // Proposals are held in memory and belong to one account. Leaving
@@ -304,6 +312,7 @@ struct JunoMobileRootView: View {
       guard let generation else { return }
       Task { await conversationModel?.synchronizationDidAdvance(to: generation) }
       Task { await projectModel?.synchronizationDidAdvance(to: generation) }
+      Task { await projectWorkspaceModel?.synchronizationDidAdvance(to: generation) }
       Task { await artifactModel?.synchronizationDidAdvance(to: generation) }
       Task { await memorySettingsModel?.synchronizationDidAdvance(to: generation) }
       searchModel?.synchronizationDidAdvance(to: generation)
@@ -311,6 +320,11 @@ struct JunoMobileRootView: View {
     .onChange(of: syncModel?.phase) { _, _ in
       Task { await conversationModel?.reload() }
       Task { await projectModel?.reload() }
+      Task {
+        await projectWorkspaceModel?.reload(
+          knownProjectIDs: Set((projectModel?.projects ?? []).map(\.id))
+        )
+      }
       Task { await artifactModel?.reload() }
       Task { await memorySettingsModel?.reload() }
     }
@@ -912,6 +926,7 @@ struct JunoMobileRootView: View {
       if let projectModel {
         JunoMobileProjectsView(
           model: projectModel,
+          workspaceModel: projectWorkspaceModel,
           conversationModel: conversationModel,
           openConversation: openConversation
         )
@@ -958,7 +973,7 @@ struct JunoMobileRootView: View {
     }
   }
 
-  /// Points the chat model's post-turn hook at the extraction engine.
+  /// Joins chat turns to the synced project assistant and memory learner.
   ///
   /// **Incognito needs no exclusion here and gets none by construction.** A
   /// private chat runs on ``NativePrivateChatModel``, which shares no state with
@@ -967,12 +982,13 @@ struct JunoMobileRootView: View {
   /// weaker guarantee sitting on top of a structural one, and the weaker one is
   /// what a future refactor would preserve.
   ///
-  /// `turn.mayLearn` is always true on the phone today: it reports a project's
-  /// tool whitelist, and those are stored on the Mac that made them — there is
-  /// no `/api/v1` route to bring one here. Honouring the flag anyway is what
-  /// makes this correct on the day there is.
-  private func connectMemoryLearning() {
-    guard let conversationModel, let memoryLearningModel else { return }
+  private func connectProjectAssistantHooks() {
+    guard let conversationModel else { return }
+    conversationModel.workspacePermissions = {
+      [weak projectWorkspaceModel] projectID, requested in
+      projectWorkspaceModel?.workspaces[projectID]?.permitting(requested) ?? requested
+    }
+    guard let memoryLearningModel else { return }
     conversationModel.didFinishTurn = { [weak memoryLearningModel] turn in
       guard let memoryLearningModel else { return }
       Task {

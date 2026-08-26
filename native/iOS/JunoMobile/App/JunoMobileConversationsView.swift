@@ -186,7 +186,6 @@ private struct JunoMobileDraftChat: View {
   /// most calls are started: nothing is selected, so the spoken turns have no
   /// conversation to appear in until the save route makes one on hang-up.
   @Environment(\.junoVoiceSession) private var voiceSession
-  @Environment(\.colorScheme) private var colorScheme
   @FocusState private var composerFocused: Bool
 
   /// Whether the reader has actually chosen a model on this screen.
@@ -221,18 +220,7 @@ private struct JunoMobileDraftChat: View {
   @ViewBuilder
   private var column: some View {
     if voiceMessages.isEmpty {
-      // The bloom rides with the greeting on this screen, not with the
-      // composer: it is the sentence the reader is looking at, and the web
-      // lights it with the same one element. `nil` during a call, where the
-      // voice field below has the light instead.
-      JunoMobileGreeting(
-        name: profileName,
-        aura: voiceSession == nil ? auraLight : nil,
-        onSuggestion: { suggestion in
-          prompt = suggestion
-          composerFocused = true
-        }
-      )
+      JunoMobileGreeting(name: profileName)
     } else {
       ScrollView {
         // The transcript's own metrics, so a spoken turn is the same
@@ -252,19 +240,6 @@ private struct JunoMobileDraftChat: View {
   /// The live half of the call. Empty when no session is running.
   private var voiceMessages: [NativeChatMessage] {
     voiceSession?.liveMessages() ?? []
-  }
-
-  /// What the greeting's bloom is made of. Gathered here because this screen is
-  /// the one that owns both the model selection and the send swell.
-  private var auraLight: JunoMobileAuraLight {
-    JunoMobileAuraLight(
-      model: model.modelCatalog.first { $0.id == selectedModelID },
-      effort: reasoningEffort,
-      focused: composerFocused,
-      sending: sendSwell.active,
-      viewport: chatColumnHeight,
-      dark: colorScheme == .dark
-    )
   }
 
   var body: some View {
@@ -454,7 +429,6 @@ private struct JunoMobileConversationDetail: View {
   /// See ``JunoMobileComposer/auraLayer``.
   @State private var chatColumnHeight: CGFloat = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.colorScheme) private var colorScheme
   /// Regular width docks the artifact canvas beside the thread instead of
   /// covering it, which is what the browser does.
   @Environment(\.horizontalSizeClass) private var sizeClass
@@ -676,17 +650,6 @@ private struct JunoMobileConversationDetail: View {
 
   /// What the greeting's bloom is made of, gathered here because this screen
   /// owns both the model selection and the send swell.
-  private var auraLight: JunoMobileAuraLight {
-    JunoMobileAuraLight(
-      model: selectedModel,
-      effort: reasoningEffort,
-      focused: composerFocused,
-      sending: sendSwell.active,
-      viewport: chatColumnHeight,
-      dark: colorScheme == .dark
-    )
-  }
-
   /// The transcript itself. Extracted from `body` because the merged view
   /// stacks a long modifier chain on an inline `ScrollView`, and the type
   /// checker times out on the combined expression.
@@ -698,14 +661,7 @@ private struct JunoMobileConversationDetail: View {
       // `containerRelativeFrame` gives it the scroll view's own height so
       // it centres in the visible area — a fixed `minHeight` inside a
       // bottom-anchored scroll view pins it to the composer instead.
-      JunoMobileGreeting(
-        name: profileName,
-        aura: voiceSession == nil ? auraLight : nil,
-        onSuggestion: { suggestion in
-          prompt = suggestion
-          composerFocused = true
-        }
-      )
+      JunoMobileGreeting(name: profileName)
       .frame(maxWidth: .infinity)
       .containerRelativeFrame(.vertical)
     } else {

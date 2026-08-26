@@ -174,13 +174,25 @@ export function geminiThinkingBudget(
 export function geminiThinkingConfig(
   model: ModelInfo,
   effort?: ReasoningEffort | null,
-): { thinkingLevel: string } | { thinkingBudget: number } | undefined {
+): { thinkingBudget: number } | undefined {
   if (!model.reasoning) return undefined;
-  const id = model.providerModel.toLowerCase();
-  if (/gemini-3(?:\.|-)/.test(id)) {
-    const level = clampReasoningEffort(model, effort ?? null);
-    return level ? { thinkingLevel: level } : undefined;
-  }
-  const thinkingBudget = geminiThinkingBudget(model, effort);
+  const clamped = clampReasoningEffort(model, effort ?? null);
+  const thinkingBudget = geminiThinkingBudget(model, clamped);
   return thinkingBudget === undefined ? undefined : { thinkingBudget };
+}
+
+/**
+ * Build the native GenerateContent configuration in one place. Gemini 3.x
+ * rejects legacy sampling knobs and token budgets that older adapters often
+ * sent by default, so keep its payload deliberately small and provider-native.
+ */
+export function geminiGenerationConfig(
+  model: ModelInfo,
+  maxOutputTokens: number,
+  effort?: ReasoningEffort | null,
+): Record<string, unknown> {
+  const config: Record<string, unknown> = { maxOutputTokens };
+  const thinkingConfig = geminiThinkingConfig(model, effort);
+  if (thinkingConfig !== undefined) config.thinkingConfig = thinkingConfig;
+  return config;
 }

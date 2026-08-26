@@ -17,6 +17,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPageHeader } from "@/components/app/app-page-header";
+import { promptPreview } from "@/lib/prompt-preview";
 
 interface ProjectItem {
   id: string;
@@ -395,7 +396,7 @@ export default function ProjectsPage() {
 
                       {/* Preview of instructions */}
                       <p className="mt-2 text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed">
-                        {p.instructions ? p.instructions : "No instructions set."}
+                        {promptPreview(p.instructions)}
                       </p>
                     </div>
                   </div>

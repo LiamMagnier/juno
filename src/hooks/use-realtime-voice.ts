@@ -16,6 +16,10 @@ import {
   VOICE_PROVIDERS,
 } from "@/lib/voice-relay-protocol";
 import type { ClientAttachment } from "@/types/chat";
+import {
+  normalizedSpeechLoudness,
+  RealtimeVoiceActivityDetector,
+} from "@/lib/realtime-voice-activity";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -152,6 +156,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const playCtxRef = React.useRef<AudioContext | null>(null);
   const playCursorRef = React.useRef(0);
   const playSourcesRef = React.useRef<Set<AudioBufferSourceNode>>(new Set());
+  const playRmsRef = React.useRef(0);
   const mutedRef = React.useRef(false);
   const speakingRef = React.useRef(false);
   const providerTurnActiveRef = React.useRef(false);
@@ -175,6 +180,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const speechRestartTimerRef = React.useRef<number | null>(null);
   const reconnectAttemptsRef = React.useRef(0);
   const reconnectTimerRef = React.useRef<number | null>(null);
+  const echoCancellationRef = React.useRef<boolean | null>(null);
+  const bargeDetectorRef = React.useRef(new RealtimeVoiceActivityDetector());
+  const bargeFramesRef = React.useRef<Float32Array[]>([]);
+  const bargeSamplesRef = React.useRef(0);
+  const interruptRef = React.useRef<() => void>(() => {});
   // Reconnects re-enter `start` from inside its own socket handlers.
   const startRef = React.useRef<((initialProvider?: VoiceProviderId, history?: VoiceHistoryEntry[]) => Promise<void>) | null>(null);
 
@@ -233,6 +243,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       const target = speakingRef.current ? playLevelRef.current : mutedRef.current ? 0 : micLevelRef.current;
       levelRef.current += (target - levelRef.current) * 0.25;
       playLevelRef.current *= 0.92; // decay between chunks
+      playRmsRef.current *= 0.92;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -362,8 +373,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     playCtxRef.current = null;
     speakingRef.current = false;
     providerTurnActiveRef.current = false;
+    echoCancellationRef.current = null;
+    bargeDetectorRef.current.reset();
+    bargeFramesRef.current = [];
+    bargeSamplesRef.current = 0;
     micLevelRef.current = 0;
     playLevelRef.current = 0;
+    playRmsRef.current = 0;
     setAssistantSpeaking(false);
   }, [flushPlayback, stopScreenShare]);
 
@@ -406,6 +422,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     }
     const rms = Math.sqrt(sum / int16.length);
     playLevelRef.current = Math.max(playLevelRef.current, Math.min(1, rms * 4));
+    playRmsRef.current = Math.max(playRmsRef.current, rms);
 
     const buffer = ctx.createBuffer(1, float.length, PLAYBACK_SAMPLE_RATE);
     buffer.copyToChannel(float, 0);
@@ -441,6 +458,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       throw new DOMException("Voice start was superseded", "AbortError");
     }
     micStreamRef.current = stream;
+    echoCancellationRef.current =
+      stream.getAudioTracks()[0]?.getSettings().echoCancellation ?? null;
     const ctx = new AudioContext();
     micCtxRef.current = ctx;
     await ctx.resume();
@@ -478,18 +497,61 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       const chunk = e.data;
       let sum = 0;
       for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
-      micLevelRef.current = Math.min(1, Math.sqrt(sum / chunk.length) * 5);
-      // Half-duplex: while the assistant is speaking, keep measuring the local
-      // level (above, for the orb) but DON'T upload frames. Browser
-      // echoCancellation can't cancel audio played through a separate Web Audio
-      // graph, so on speakers the mic captures the assistant's own TTS and the
-      // provider transcribes it as user speech — the model answers itself. Users
-      // interrupt with the on-screen control instead of by talking over it.
-      if (mutedRef.current || speakingRef.current) return;
+      const rms = Math.sqrt(sum / chunk.length);
+      micLevelRef.current = Math.min(1, rms * 5);
+      if (mutedRef.current) {
+        bargeDetectorRef.current.reset();
+        bargeFramesRef.current = [];
+        bargeSamplesRef.current = 0;
+        return;
+      }
+
+      let upload = chunk;
+      if (speakingRef.current) {
+        // Keep the word's onset while deciding whether this is deliberate
+        // speech. Once VAD fires, these frames are sent immediately after the
+        // local player is flushed, so barge-in does not clip the first syllable.
+        bargeFramesRef.current.push(chunk);
+        bargeSamplesRef.current += chunk.length;
+        const maximumBufferedSamples = Math.round(inRate * 0.35);
+        while (bargeSamplesRef.current > maximumBufferedSamples && bargeFramesRef.current.length > 1) {
+          bargeSamplesRef.current -= bargeFramesRef.current.shift()!.length;
+        }
+
+        const speech = normalizedSpeechLoudness(rms);
+        const playback = normalizedSpeechLoudness(playRmsRef.current);
+        // When the browser confirms AEC, use the same speech floor as native.
+        // On a route without it, require the microphone to rise clearly above
+        // the current downlink before treating the assistant's own voice as the
+        // reader talking over it.
+        const echoGuard = echoCancellationRef.current === true
+          ? 0
+          : Math.min(0.82, playback + 0.14);
+        const transition = bargeDetectorRef.current.observe(
+          speech >= echoGuard ? speech : 0,
+          (chunk.length / inRate) * 1_000,
+        );
+        if (transition !== "began") return;
+
+        interruptRef.current();
+        const buffered = bargeFramesRef.current;
+        upload = new Float32Array(bargeSamplesRef.current);
+        let offset = 0;
+        for (const frame of buffered) {
+          upload.set(frame, offset);
+          offset += frame.length;
+        }
+        bargeFramesRef.current = [];
+        bargeSamplesRef.current = 0;
+      } else {
+        bargeDetectorRef.current.reset();
+        bargeFramesRef.current = [];
+        bargeSamplesRef.current = 0;
+      }
       // Downsample inRate -> 16k with simple decimation-by-average.
-      const merged = new Float32Array(carry.length + chunk.length);
+      const merged = new Float32Array(carry.length + upload.length);
       merged.set(carry);
-      merged.set(chunk, carry.length);
+      merged.set(upload, carry.length);
       const ratio = inRate / MIC_SAMPLE_RATE;
       const outLen = Math.floor(merged.length / ratio);
       const out = new Int16Array(outLen);
@@ -724,8 +786,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     flushPlayback();
     providerTurnActiveRef.current = false;
     speakingRef.current = false;
+    bargeDetectorRef.current.reset();
     setAssistantSpeaking(false);
   }, [flushPlayback]);
+  interruptRef.current = interrupt;
 
   /** Send a typed turn through the live voice session without stopping audio. */
   const sendText = React.useCallback((text: string) => {

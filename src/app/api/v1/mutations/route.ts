@@ -207,7 +207,11 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       const config = writeWorkspaceConfig(op.config) as Prisma.InputJsonObject;
       const row = await tx.projectWorkspace.upsert({
         where: { userId_projectId: { userId: accountId, projectId: op.projectId } },
-        create: { userId: accountId, projectId: op.projectId, config, configVersion: WORKSPACE_CONFIG_VERSION },
+        // Project id is also the row id for newly-created workspaces. Besides
+        // making the identity legible, this lets several offline edits queued
+        // before the first sync share one revision chain instead of each
+        // believing it is creating a different revision-zero entity.
+        create: { id: op.projectId, userId: accountId, projectId: op.projectId, config, configVersion: WORKSPACE_CONFIG_VERSION },
         update: { config, configVersion: WORKSPACE_CONFIG_VERSION },
       });
       return { entity: { id: row.id, revision: await nextRevision(tx, accountId, "project_workspace", row.id) } };

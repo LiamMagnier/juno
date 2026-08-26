@@ -8,7 +8,6 @@ import {
   MonitorUp,
   MonitorX,
   PhoneOff,
-  Square,
 } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
@@ -25,12 +24,7 @@ import { cn, formatUsd } from "@/lib/utils";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
-/**
- * Premium Realtime Voice Bar inspired by modern Dynamic Island & ChatGPT Voice.
- *
- * Lightweight, elegant floating pill with ambient waveform indicator,
- * seamless provider selection, tactile mute toggles, and graceful fallback handling.
- */
+/** Compact system status and controls for a live voice session. */
 export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onClose: () => void }) {
   const statusLabel =
     voice.status === "connecting"
@@ -42,7 +36,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
           : voice.status === "ended"
             ? "Session Ended"
             : voice.assistantSpeaking
-              ? "Juno is speaking"
+              ? "Speak to interrupt"
               : voice.muted
                 ? "Muted"
                 : "Listening…";
@@ -120,18 +114,6 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
             </button>
           ) : (
             <>
-              {voice.assistantSpeaking && voice.status === "live" && (
-                <button
-                  type="button"
-                  onClick={voice.interrupt}
-                  aria-label="Interrupt speech"
-                  className="inline-flex h-8 items-center gap-1 rounded-full bg-secondary px-2.5 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-95"
-                >
-                  <Square className="size-3 fill-current" />
-                  <span className="hidden sm:inline">Interrupt</span>
-                </button>
-              )}
-
               {/* Direct Screen Share Button when supported */}
               {voice.capabilities?.screenInput && voice.status === "live" && (
                 <button

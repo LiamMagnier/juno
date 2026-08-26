@@ -536,7 +536,8 @@ struct DesktopVoiceDock: View {
         guard controller.phase == .live else { return statusTitle }
         return switch controller.bargeIn {
         case .automatic: "\(statusTitle) — talk over Juno to interrupt it"
-        case .manualOnly: "\(statusTitle) — use Interrupt to cut Juno off"
+        case .manualOnly:
+            "\(statusTitle) — talk-over interruption needs an echo-cancelled audio route"
         }
     }
 
@@ -677,26 +678,6 @@ struct DesktopVoiceDock: View {
             }
             .accessibilityIdentifier("juno.desktop.voice-restart")
         } else {
-            // Barge-in, offered only while there is something to interrupt. A
-            // permanently disabled square is chrome that means nothing.
-            if controller.assistantSpeaking, controller.phase == .live {
-                // The label carries the barge-in mode because this is the one
-                // control the fact is about: under `.automatic` the button is a
-                // shortcut for something the reader can also just do, and under
-                // `.manualOnly` it is the only way. Naming which is which here
-                // is what stops "talking over Juno does nothing" reading as a
-                // bug rather than as this Mac's audio hardware.
-                control("stop.fill", label: interruptLabel, tone: .prominent) {
-                    controller.interrupt()
-                }
-                .accessibilityIdentifier("juno.desktop.voice-interrupt")
-                // The vocabulary's overlay transition, not a bare
-                // scale-plus-opacity: it carries its own on-ladder curves —
-                // decelerating entrance, accelerating exit — so the control
-                // animates even though neither screen that mounts the dock
-                // wraps `assistantSpeaking` changes in `withAnimation`.
-                .transition(.junoOverlay)
-            }
             if controller.capabilities?.screenInput == true, controller.phase == .live {
                 control(
                     controller.screenSharing ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle",
@@ -722,12 +703,6 @@ struct DesktopVoiceDock: View {
             .disabled(controller.phase != .live)
             .accessibilityIdentifier("juno.desktop.voice-mute")
         }
-    }
-
-    private var interruptLabel: String {
-        controller.bargeIn == .automatic
-            ? "Interrupt Juno — or just talk over it"
-            : "Interrupt Juno"
     }
 
     /// Restart is offered from a finished or failed session — except after a

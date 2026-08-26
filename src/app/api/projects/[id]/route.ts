@@ -4,6 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
 import { checkProjectAccess } from "@/lib/project-collaboration";
+import {
+  parseWorkspaceConfig,
+  workspaceConfigSchema,
+  writeWorkspaceConfig,
+  WORKSPACE_CONFIG_VERSION,
+} from "@/lib/projects/workspace-config";
 
 export const runtime = "nodejs";
 
@@ -23,6 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         select: { id: true, title: true, lastMessageAt: true, pinned: true },
       },
       files: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
+      workspace: { select: { config: true } },
     },
   });
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -84,6 +91,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         };
       })
     ),
+    workspace: parseWorkspaceConfig(project.workspace?.config),
   });
 }
 
@@ -92,6 +100,7 @@ const patchSchema = z.object({
   // No app-side character cap — model context is the real limit.
   instructions: z.string().optional(),
   starred: z.boolean().optional(),
+  workspace: workspaceConfigSchema.nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -105,11 +114,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const data = {
-    ...parsed.data,
-    ...(parsed.data.name != null ? { nameSource: "manual" } : {}),
-  };
-  await prisma.project.update({ where: { id }, data });
+  const { workspace, ...projectPatch } = parsed.data;
+  if (Object.keys(projectPatch).length > 0) {
+    const data = {
+      ...projectPatch,
+      ...(projectPatch.name != null ? { nameSource: "manual" } : {}),
+    };
+    await prisma.project.update({ where: { id }, data });
+  }
+  if (workspace === null) {
+    await prisma.projectWorkspace.deleteMany({ where: { projectId: id, userId: user.id } });
+  } else if (workspace !== undefined) {
+    const config = writeWorkspaceConfig(workspace);
+    await prisma.projectWorkspace.upsert({
+      where: { userId_projectId: { userId: user.id, projectId: id } },
+      create: {
+        id,
+        userId: user.id,
+        projectId: id,
+        config,
+        configVersion: WORKSPACE_CONFIG_VERSION,
+      },
+      update: { config, configVersion: WORKSPACE_CONFIG_VERSION },
+    });
+  }
   return NextResponse.json({ ok: true });
 }
 

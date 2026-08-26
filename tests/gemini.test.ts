@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Attachment } from "@prisma/client";
-import { geminiThinkingBudget, geminiThinkingConfig, resolveGroundingUrls, toGeminiContents } from "@/lib/gemini-core";
+import { geminiGenerationConfig, geminiThinkingBudget, geminiThinkingConfig, resolveGroundingUrls, toGeminiContents } from "@/lib/gemini-core";
 import type { ModelInfo } from "@/lib/models";
 import type { MessageForModel } from "@/types/llm";
 
@@ -69,7 +69,7 @@ test("toGeminiContents handles attachments with extracted text", async () => {
   );
 });
 
-test("Gemini 3.7 serializes its exact supported thinking level", () => {
+test("Gemini 3.7 serializes its exact supported thinking budget", () => {
   const model: ModelInfo = {
     id: "google:gemini-3.7-flash",
     provider: "google",
@@ -84,13 +84,20 @@ test("Gemini 3.7 serializes its exact supported thinking level", () => {
     webSearch: true,
   };
 
-  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingLevel: "low" });
-  assert.deepEqual(geminiThinkingConfig(model, "medium"), { thinkingLevel: "medium" });
-  assert.deepEqual(geminiThinkingConfig(model, "high"), { thinkingLevel: "high" });
-  assert.deepEqual(geminiThinkingConfig(model, "minimal"), { thinkingLevel: "medium" });
-  assert.deepEqual(geminiThinkingConfig(model, "xhigh"), { thinkingLevel: "medium" });
-  assert.deepEqual(geminiThinkingConfig(model, "max"), { thinkingLevel: "medium" });
-  assert.deepEqual(geminiThinkingConfig(model, null), { thinkingLevel: "medium" });
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingBudget: 2048 });
+  assert.deepEqual(geminiThinkingConfig(model, "medium"), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiThinkingConfig(model, "high"), { thinkingBudget: 16384 });
+  assert.deepEqual(geminiThinkingConfig(model, "minimal"), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiThinkingConfig(model, "xhigh"), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiThinkingConfig(model, "max"), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiThinkingConfig(model, null), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiGenerationConfig(model, 4096, "high"), {
+    maxOutputTokens: 4096,
+    thinkingConfig: { thinkingBudget: 16384 },
+  });
+  assert.equal("temperature" in geminiGenerationConfig(model, 4096, "high"), false);
+  assert.equal("topP" in geminiGenerationConfig(model, 4096, "high"), false);
+  assert.equal("topK" in geminiGenerationConfig(model, 4096, "high"), false);
 });
 
 test("legacy Gemini 2.5 retains the thinking budget transport", () => {

@@ -15,6 +15,7 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { assertLibraryCapacity, lockedLibraryCapacity } from "@/lib/library";
+import { parseWorkspaceConfig, workspacePermits } from "@/lib/projects/workspace-config";
 import type { StreamChunk } from "@/types/chat";
 
 export const runtime = "nodejs";
@@ -23,6 +24,7 @@ export const maxDuration = 300;
 
 const schema = z.object({
   conversationId: z.string().cuid().optional(),
+  projectId: z.string().cuid().optional(),
   prompt: z.string().trim().min(1).max(4000),
   model: z.string(),
   edit: z
@@ -64,6 +66,37 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const { prompt, model: modelId, edit } = parsed.data;
+
+  // Resolve project ownership and the assistant's effective media permission
+  // before metering or contacting a provider. This mirrors /api/chat: the UI is
+  // affordance, while the API remains the cross-platform trust boundary.
+  let projectId = parsed.data.projectId ?? null;
+  if (parsed.data.conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: parsed.data.conversationId, userId: user.id },
+      select: { id: true, projectId: true },
+    });
+    if (!conversation) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    projectId = conversation.projectId;
+  } else if (projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, userId: user.id },
+      select: { id: true },
+    });
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  if (projectId) {
+    const workspace = await prisma.projectWorkspace.findFirst({
+      where: { projectId, userId: user.id },
+      select: { config: true },
+    });
+    if (workspace && !workspacePermits(parseWorkspaceConfig(workspace.config), "mediaGeneration")) {
+      return NextResponse.json(
+        { error: "Media generation is disabled for this project assistant." },
+        { status: 403 }
+      );
+    }
+  }
 
   const model = resolveModel(modelId);
   if (!model || model.comingSoon || model.modality === "chat") {
@@ -120,10 +153,7 @@ export async function POST(req: Request) {
   // Verify / create the conversation up front (so we can fail fast with JSON).
   let conversationId = parsed.data.conversationId ?? null;
   let isNew = false;
-  if (conversationId) {
-    const owned = await prisma.conversation.findFirst({ where: { id: conversationId, userId: user.id }, select: { id: true } });
-    if (!owned) return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
-  }
+  // Existing-conversation ownership was resolved with its project above.
 
   const quotaRes = await consumeMessage(user.id, plan);
   if (!quotaRes.allowed) {
@@ -149,7 +179,7 @@ export async function POST(req: Request) {
           const fallback = model.modality === "video" ? "New video" : "New image";
           const title = prompt.replace(/\s+/g, " ").trim().slice(0, 60) || fallback;
           const convo = await prisma.conversation.create({
-            data: { userId: user.id, title, model: model.id },
+            data: { userId: user.id, projectId, title, model: model.id },
             select: { id: true, title: true },
           });
           conversationId = convo.id;
