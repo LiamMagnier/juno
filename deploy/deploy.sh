@@ -258,34 +258,41 @@ verify_pm2_ecosystem() {
       return row.pm2_env?.status === "online" || row.status === "online";
     }
 
-    for (let attempt = 1; attempt <= 15; attempt++) {
+    for (let attempt = 1; attempt <= 20; attempt++) {
       let rows = [];
       try {
         const out = execSync("pm2 jlist", { encoding: "utf8" });
         rows = parseJlist(out);
       } catch {}
 
-      const missing = expected.filter((name) => !rows.some((row) => row.name === name && isOnline(row)));
+      const missing = expected.filter((name) => !rows.some((row) => row.name === name && row.pm2_env?.status === "online"));
       if (missing.length === 0) {
         console.log(`PM2 ecosystem healthy: ${expected.join(", ")}`);
         process.exit(0);
       }
 
-      console.log(`Waiting for PM2 services to be online (attempt ${attempt}/15): ${missing.join(", ")}`);
-      for (const name of missing) {
-        let started = false;
-        if (configFile && serviceStarter) {
-          try {
-            execFileSync("node", [serviceStarter, "--config", configFile, "--service", name], {
-              stdio: "inherit",
-            });
-            started = true;
-          } catch {}
-        }
-        if (!started) {
-          try {
-            execFileSync("pm2", ["restart", name, "--update-env"], { stdio: "ignore" });
-          } catch {}
+      console.log(`Waiting for PM2 services to be online (attempt ${attempt}/20): ${missing.join(", ")}`);
+      // Only repair services that are dead/errored/missing after giving initial boot time
+      if (attempt >= 4) {
+        for (const name of missing) {
+          const row = rows.find((r) => r.name === name);
+          const status = row?.pm2_env?.status || row?.status;
+          if (!row || status === "errored" || status === "stopped") {
+            let started = false;
+            if (configFile && serviceStarter) {
+              try {
+                execFileSync("node", [serviceStarter, "--config", configFile, "--service", name], {
+                  stdio: "inherit",
+                });
+                started = true;
+              } catch {}
+            }
+            if (!started) {
+              try {
+                execFileSync("pm2", ["restart", name, "--update-env"], { stdio: "ignore" });
+              } catch {}
+            }
+          }
         }
       }
       try {
