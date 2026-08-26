@@ -280,7 +280,7 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -archivePath "$BUILD_DIR/archive.xcarchive" \
   ENABLE_HARDENED_RUNTIME=YES \
   DEVELOPMENT_TEAM="$CONFIGURED_TEAM" \
-  CODE_SIGN_IDENTITY="${IDENTITY:-$IDENTITY_CLASS}" \
+  CODE_SIGN_IDENTITY="$IDENTITY_CLASS" \
   archive
 
 cat > "$BUILD_DIR/export.plist" <<PLIST
