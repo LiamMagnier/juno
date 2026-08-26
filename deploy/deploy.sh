@@ -255,7 +255,7 @@ verify_pm2_ecosystem() {
     }
 
     function isOnline(row) {
-      return (row.pm2_env && row.pm2_env.status === "online") || row.status === "online";
+      return row.pm2_env?.status === "online" || row.status === "online";
     }
 
     for (let attempt = 1; attempt <= 15; attempt++) {
