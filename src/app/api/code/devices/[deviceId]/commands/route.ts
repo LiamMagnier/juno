@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { serializeSessionCommand } from "@/lib/code-remote-sessions";
-import { canonicalSessionCommand } from "@/lib/code-session-command-route";
+import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 
 export const runtime = "nodejs";
 
