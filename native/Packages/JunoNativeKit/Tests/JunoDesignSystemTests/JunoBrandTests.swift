@@ -9,9 +9,7 @@ final class JunoBrandTests: XCTestCase {
         XCTAssertEqual(
             Set(JunoIcon.allCases.map(\.rawValue)),
             [
-                // AppIcons — the destinations. `settings` is the one the web
-                // draws in the user menu rather than the rail; native gives it a
-                // sidebar row, so it has to be in the generated set too.
+                // AppIcons — the destinations.
                 "home", "work", "code", "library", "artifacts", "projects",
                 "tasks", "connections", "pulls", "conversation", "new", "search",
                 "settings",
@@ -21,6 +19,12 @@ final class JunoBrandTests: XCTestCase {
                 // ComposerIcons — what the "+" menu adds, and the tools it arms.
                 "attach", "photos", "files", "canvas",
                 "research", "web", "artifactsTool", "memory",
+                // Settings, profile, and feature sections.
+                "usage", "appearance", "writing", "language", "models", "notifications", "about",
+                "user", "tools", "knowledge", "sliders",
+                // Action controls, media, and navigation glyphs.
+                "mic", "send", "stop", "plus", "chevronRight", "chevronDown", "chevronUp",
+                "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
             ]
         )
     }

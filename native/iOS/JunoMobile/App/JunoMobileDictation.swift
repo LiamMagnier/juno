@@ -60,7 +60,7 @@ struct JunoMobileDictation: View {
                             )
                             .frame(width: 220, height: 110)
                             .scaleEffect(1.0 + averageLevel * 0.35)
-                            .animation(.easeOut(duration: 0.12), value: averageLevel)
+                            .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: averageLevel)
                     }
                     capsule
                 }
@@ -312,6 +312,7 @@ struct JunoMobileDictationMeter: View {
     private func height(at index: Int) -> Double {
         Self.restingHeight
             + level(at: index) * (Self.maximumHeight - Self.restingHeight)
+    }
 }
 
 #if DEBUG

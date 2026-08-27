@@ -72,6 +72,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     const sid = parsed.data.sessionID || parsed.data.sessionId;
     if (!sid) return NextResponse.json({ error: "Missing sessionID" }, { status: 400 });
 
+    const remoteSession = await prisma.codeRemoteSession.findUnique({
+      where: { deviceId_sessionId: { deviceId, sessionId: sid } },
+      select: { id: true },
+    });
+    const remoteSessionId = remoteSession?.id ?? (
+      await prisma.codeRemoteSession.create({
+        data: {
+          userId: user.id,
+          deviceId,
+          sessionId: sid,
+          title: "Remote Session",
+          modelId: "default",
+          createdAt: new Date(),
+          sessionUpdatedAt: new Date(),
+          lastMessageAt: new Date(),
+        },
+        select: { id: true },
+      })
+    ).id;
+
     const command = await prisma.codeSessionCommand.upsert({
       where: {
         userId_idempotencyKey: {
@@ -83,6 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
       create: {
         userId: user.id,
         deviceId,
+        remoteSessionId,
         sessionId: sid,
         kind: parsed.data.kind,
         payload: (parsed.data.payload ?? {}) as Prisma.InputJsonValue,

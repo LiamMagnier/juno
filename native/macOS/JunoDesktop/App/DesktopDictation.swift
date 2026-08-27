@@ -34,7 +34,7 @@ struct DesktopDictation: View {
             } else {
                 transcriptPreview
                 ZStack {
-                    if !accessibility.prefersReducedMotion {
+                    if !accessibility.reduceMotion {
                         Circle()
                             .fill(
                                 RadialGradient(
@@ -50,7 +50,7 @@ struct DesktopDictation: View {
                             )
                             .frame(width: 260, height: 100)
                             .scaleEffect(1.0 + averageLevel * 0.32)
-                            .animation(.easeOut(duration: 0.12), value: averageLevel)
+                            .animation(JunoMotion.reduced(JunoMotion.fast, when: accessibility.reduceMotion), value: averageLevel)
                     }
                     capsule
                 }
