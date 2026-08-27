@@ -154,7 +154,7 @@ export function AssistantStudio({
           {error && (
             <div
               role="alert"
-              className="rounded-field border border-destructive/25 bg-destructive/8 px-3.5 py-3 text-sm text-destructive"
+              className="rounded-field border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
             >
               {error}
             </div>
