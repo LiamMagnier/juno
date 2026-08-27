@@ -464,7 +464,7 @@ struct DesktopCodeSidebar: View {
                 Image(systemName: "magnifyingglass")
                     .junoSecondaryInk()
                     .accessibilityHidden(true)
-                TextField("Search sessions", text: $searchText)
+                TextField("Search sessions…", text: $searchText)
                     .textFieldStyle(.plain)
                     .focused(searchFocused)
                 if !searchText.isEmpty {
@@ -477,11 +477,22 @@ struct DesktopCodeSidebar: View {
                     .buttonStyle(.plain)
                     .contentShape(.rect)
                     .accessibilityLabel("Clear search")
+                } else {
+                    Text("⌘K")
+                        .junoFont(size: 10, relativeTo: .caption2, weight: .semibold, design: .rounded)
+                        .junoMetaInk()
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.junoRaised.opacity(0.8), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
             }
             .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 30)
-            .background(Color.junoMuted.opacity(0.55), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+            .frame(height: 32)
+            .background(Color.junoMuted.opacity(0.45), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(0.5), lineWidth: 0.5)
+            )
             .listRowInsets(EdgeInsets(top: JunoSpace.tight, leading: JunoSpace.snug, bottom: JunoSpace.snug, trailing: JunoSpace.snug))
             .listRowBackground(Color.clear)
             .selectionDisabled()
@@ -489,7 +500,13 @@ struct DesktopCodeSidebar: View {
 
             Section {
                 Label {
-                    Text("New task").junoRowLabel()
+                    HStack {
+                        Text("New task").junoRowLabel()
+                        Spacer(minLength: JunoSpace.hairline)
+                        Text("⌘N")
+                            .junoFont(size: 10, relativeTo: .caption2, weight: .medium, design: .rounded)
+                            .junoMetaInk()
+                    }
                 } icon: {
                     JunoIconView(.new, size: 15)
                         .junoSidebarMarkInk(selected: selection == .draft)
@@ -1557,20 +1574,26 @@ struct DesktopCodeDraftDetail: View {
                 .allowsHitTesting(false)
 
                 VStack(spacing: JunoSpace.roomy) {
-                    VStack(alignment: .center, spacing: JunoSpace.tight) {
+                    VStack(alignment: .center, spacing: JunoSpace.snug) {
+                        Image(systemName: "sparkles")
+                            .junoFont(size: 26, relativeTo: .title2, weight: .medium)
+                            .foregroundStyle(Color.junoAccent)
+                            .padding(.bottom, 2)
+
                         Text(record == nil ? "What do you want to build?" : "What are we working on?")
-                            .junoFont(size: 28, relativeTo: .title, weight: .semibold, design: .serif)
+                            .junoFont(size: 30, relativeTo: .largeTitle, weight: .bold, design: .serif)
                             .junoInk()
                             .multilineTextAlignment(.center)
 
                         Text(
                             record == nil
                                 ? "Autonomous coding tasks in your workspace or on a cloud runner with GitHub review."
-                                : "Describe the outcome. Juno will inspect the repository before it changes anything."
+                                : "Juno inspects your codebase, plans architectures, generates code, runs tests, and reviews diffs."
                         )
                             .font(.callout)
                             .junoSecondaryInk()
                             .multilineTextAlignment(.center)
+                            .frame(maxWidth: 580)
                     }
                     .frame(maxWidth: 680, alignment: .center)
 
@@ -1632,38 +1655,44 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private var launchIntentList: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: JunoSpace.snug) {
-                ForEach(launchIntents) { intent in
-                    Button {
-                        apply(intent)
-                    } label: {
-                        HStack(spacing: JunoSpace.tight) {
-                            Image(systemName: intent.icon)
-                                .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
-                                .foregroundStyle(intent.color)
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: JunoSpace.snug), GridItem(.flexible(), spacing: JunoSpace.snug)], spacing: JunoSpace.snug) {
+            ForEach(launchIntents.prefix(4)) { intent in
+                Button {
+                    apply(intent)
+                } label: {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
+                        Image(systemName: intent.icon)
+                            .junoFont(size: 13, relativeTo: .body, weight: .semibold)
+                            .foregroundStyle(intent.color)
+                            .frame(width: 26, height: 26)
+                            .background(intent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(intent.title)
-                                .font(.caption.weight(.medium))
+                                .font(.subheadline.weight(.semibold))
                                 .junoInk()
+                            Text(intent.detail)
+                                .font(.caption)
+                                .junoSecondaryInk()
+                                .lineLimit(1)
                         }
-                        .padding(.horizontal, JunoSpace.cozy)
-                        .padding(.vertical, JunoSpace.snug)
-                        .background(
-                            Color.junoRaised.opacity(0.7),
-                            in: Capsule()
-                        )
-                        .overlay(
-                            Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
-                        )
-                        .contentShape(Capsule())
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.junoPress)
-                    .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
+                    .padding(JunoSpace.snug)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                            .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
                 }
+                .buttonStyle(.junoPress)
+                .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
             }
-            .padding(.horizontal, JunoSpace.hairline)
         }
-        .frame(maxWidth: 720, alignment: .center)
+        .frame(maxWidth: 720)
     }
 
     private func apply(_ intent: LaunchIntent) {
@@ -1674,12 +1703,6 @@ struct DesktopCodeDraftDetail: View {
 
     /// The strip above the launchpad: which project this conversation is in,
     /// what that means, and the way to change it.
-    ///
-    /// Both branches are ``CodePageHeader`` because they were always the same
-    /// header — the same 52pt strip above the same composer, differing only in
-    /// what they had to say. Written out twice they had already drifted into
-    /// the app's only pair of 19pt glyphs and two different trailing button
-    /// treatments.
     @ViewBuilder
     private var repositoryContextBar: some View {
         if let record {
@@ -1688,9 +1711,6 @@ struct DesktopCodeDraftDetail: View {
                 title: record.descriptor.displayName,
                 subtitle: (record.descriptor.localPathHint as NSString)
                     .abbreviatingWithTildeInPath,
-                // A path, so it is set in the code face. That is the only thing
-                // monospace is for in this product — code, paths and terminal
-                // output — never a label.
                 subtitleIsPath: true,
                 badge: record.descriptor.isGitRepository ? "Git repository" : "Folder"
             ) {
@@ -1710,10 +1730,6 @@ struct DesktopCodeDraftDetail: View {
             }
             .accessibilityIdentifier("juno.code.repository-context")
         } else {
-            // It states the consequence — no files, no commands — rather than
-            // only the absence, because "No project" alone reads as a setup step
-            // the reader skipped rather than as a working mode. The action is an
-            // offer sitting beside a usable composer.
             CodePageHeader(
                 icon: .projects,
                 title: "No project",

@@ -161,14 +161,14 @@ struct TranscriptRow: View {
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug + 1)
+                .padding(.vertical, JunoSpace.snug + 2)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .fill(Color.junoRaised)
+                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                        .fill(Color.junoCard)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .strokeBorder(Color.junoBorder)
+                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                        .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
                 )
         }
         .accessibilityElement(children: .combine)

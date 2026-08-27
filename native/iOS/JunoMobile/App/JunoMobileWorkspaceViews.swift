@@ -39,7 +39,11 @@ struct JunoMobileProjectsView: View {
         JunoMobileQuietLoading()
       case .failed where model.projects.isEmpty:
         ContentUnavailableView {
-          Label("Projects unavailable", systemImage: "exclamationmark.triangle")
+          Label {
+            Text("Projects unavailable")
+          } icon: {
+            JunoIconView(.error, size: 30)
+          }
         } description: {
           Text(model.lastErrorDescription ?? "Check your connection and try again.")
         } actions: {
@@ -78,19 +82,12 @@ struct JunoMobileProjectsView: View {
         .onAppear { model.selectedProjectID = projectID }
       }
     }
-    .alert("New project", isPresented: $showingCreate) {
-      TextField("Name", text: $createName)
-      TextField("Instructions", text: $createInstructions)
-      Button("Cancel", role: .cancel) {}
-      Button("Create") {
-        Task {
-          await model.createProject(
-            name: createName, instructions: createInstructions
-          )
-        }
+    .sheet(isPresented: $showingCreate) {
+      JunoMobileProjectCreateSheet { name, instructions in
+        await model.createProject(name: name, instructions: instructions)
       }
-    } message: {
-      Text("Project instructions are included in every linked conversation.")
+      .presentationDetents([.medium, .large])
+      .presentationDragIndicator(.visible)
     }
     .alert(
       "Rename project",
@@ -150,6 +147,10 @@ struct JunoMobileProjectsView: View {
           useServer: { Task { await model.resolveConflicts(keepLocalChanges: false) } }
         )
 
+        if !model.projects.isEmpty {
+          projectOverview
+        }
+
         if model.projects.isEmpty {
           empty
         } else {
@@ -180,6 +181,55 @@ struct JunoMobileProjectsView: View {
         }
       }
     }
+  }
+
+  /// Orientation before the reader chooses a project. Every value comes from
+  /// the local project snapshot, so the overview remains useful offline and
+  /// never implies a server-side metric the native store cannot substantiate.
+  private var projectOverview: some View {
+    let conversations = model.conversationsByProject.values.reduce(0) { $0 + $1.count }
+    let files = model.filesByProject.values.reduce(0) { $0 + $1.count }
+    return JunoCard(padding: 13) {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: JunoSpace.tight) {
+          JunoIconView(.projects, size: 15)
+            .foregroundStyle(Color.junoAccent)
+          Text("Workspace overview")
+            .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+          Spacer(minLength: 4)
+          Text("Synced")
+            .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+            .junoMetaInk()
+        }
+        HStack(spacing: 0) {
+          projectMetric("Projects", value: model.projects.count, icon: .projects)
+          Divider().frame(height: 28)
+          projectMetric("Chats", value: conversations, icon: .conversation)
+          Divider().frame(height: 28)
+          projectMetric("Files", value: files, icon: .file)
+        }
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("juno.mobile.projects-overview")
+  }
+
+  private func projectMetric(_ title: String, value: Int, icon: JunoIcon) -> some View {
+    HStack(spacing: 6) {
+      JunoIconView(icon, size: 12)
+        .foregroundStyle(Color.junoMutedForeground)
+      VStack(alignment: .leading, spacing: 1) {
+        Text("\(value)")
+          .junoFont(size: 16, relativeTo: .body, weight: .semibold)
+          .monospacedDigit()
+        Text(title)
+          .junoFont(size: 10, relativeTo: .caption2, weight: .medium)
+          .junoMetaInk()
+          .lineLimit(1)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var empty: some View {
@@ -222,8 +272,7 @@ struct JunoMobileProjectsView: View {
                 .accessibilityLabel("Pinned")
             }
             if project.isPending {
-              Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.caption2)
+              JunoIconView(.refresh, size: 12)
                 .junoSecondaryInk()
                 .accessibilityLabel("Waiting to sync")
             }
@@ -293,6 +342,115 @@ struct JunoMobileProjectsView: View {
     createName = ""
     createInstructions = ""
     showingCreate = true
+  }
+}
+
+/// A real project form rather than an alert with two cramped text fields. The
+/// project name is the identity; instructions are a longer document, so the
+/// two fields get distinct surfaces and enough room to edit on a phone.
+private struct JunoMobileProjectCreateSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let create: (String, String) async -> String?
+  @State private var name = ""
+  @State private var instructions = ""
+  @State private var isSaving = false
+  @State private var error: String?
+
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        VStack(alignment: .leading, spacing: JunoSpace.section) {
+          VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text("A home for focused work")
+              .junoPageHeading(compact: true)
+            Text("Every conversation in this project inherits its instructions and files.")
+              .font(.callout)
+              .junoSecondaryInk()
+          }
+
+          JunoCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Name")
+                .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+                .junoMetaInk()
+              TextField("Project name", text: $name)
+                .textFieldStyle(.plain)
+                .junoFont(size: 17, relativeTo: .headline, weight: .medium)
+                .submitLabel(.next)
+                .accessibilityIdentifier("juno.mobile.project-create-name")
+            }
+          }
+
+          JunoCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Text("Instructions")
+                  .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+                  .junoMetaInk()
+                Spacer()
+                Text("Optional")
+                  .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+                  .junoMetaInk()
+              }
+              TextEditor(text: $instructions)
+                .frame(minHeight: 120)
+                .junoFont(size: 14, relativeTo: .subheadline, design: .monospaced)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("juno.mobile.project-create-instructions")
+            }
+          }
+
+          if let error {
+            Label {
+              Text(error)
+            } icon: {
+              JunoIconView(.error, size: 14)
+            }
+            .font(.caption)
+            .foregroundStyle(Color.junoDanger)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.top, JunoSpace.regular)
+        .padding(.bottom, JunoSpace.section)
+      }
+      .junoScreenCanvas()
+      .navigationTitle("New project")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+            .disabled(isSaving)
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          if isSaving {
+            ProgressView()
+          } else {
+            Button("Create") { save() }
+              .fontWeight(.semibold)
+              .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+        }
+      }
+    }
+    .junoSheetSurface(.page)
+  }
+
+  private func save() {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedName.isEmpty else { return }
+    isSaving = true
+    error = nil
+    Task {
+      let id = await create(trimmedName, instructions)
+      if id == nil {
+        error = "Juno could not create this project. Check the name and try again."
+      } else {
+        dismiss()
+      }
+      isSaving = false
+    }
   }
 }
 
@@ -424,7 +582,11 @@ struct JunoMobileArtifactsView: View {
         JunoMobileQuietLoading()
       case .failed where model.artifacts.isEmpty:
         ContentUnavailableView {
-          Label("Artifacts unavailable", systemImage: "exclamationmark.triangle")
+          Label {
+            Text("Artifacts unavailable")
+          } icon: {
+            JunoIconView(.error, size: 30)
+          }
         } description: {
           Text(model.lastErrorDescription ?? "Check your connection and try again.")
         } actions: {
@@ -557,7 +719,7 @@ struct JunoMobileArtifactsView: View {
       JunoCard(padding: JunoSpace.regular) {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
           HStack(spacing: JunoSpace.snug) {
-            JunoWorkspaceGlyph(systemName: Self.kindIcon(artifact.kind), size: 32)
+            JunoWorkspaceGlyph(icon: Self.kindIcon(artifact.kind), size: 32)
             Text(Self.kindLabel(artifact.kind).uppercased())
               .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
               .junoMetaInk()
@@ -572,8 +734,7 @@ struct JunoMobileArtifactsView: View {
             .lineLimit(2)
             .multilineTextAlignment(.leading)
           HStack(spacing: JunoSpace.tight) {
-            Image(systemName: "bubble.left")
-              .font(.caption2)
+            JunoIconView(.conversation, size: 12)
               .junoMetaInk()
             Text(artifact.conversationTitle)
               .font(.caption)
@@ -591,15 +752,15 @@ struct JunoMobileArtifactsView: View {
     .buttonStyle(.plain)
   }
 
-  private static func kindIcon(_ kind: NativeArtifactKind) -> String {
+  private static func kindIcon(_ kind: NativeArtifactKind) -> JunoIcon {
     switch kind {
-    case .html: "globe"
-    case .react: "atom"
-    case .code: "chevron.left.forwardslash.chevron.right"
-    case .markdown: "doc.text"
-    case .svg: "scribble.variable"
-    case .mermaid: "flowchart"
-    case .design: "pencil.and.outline"
+    case .html: .web
+    case .react: .code
+    case .code: .code
+    case .markdown: .file
+    case .svg: .artifacts
+    case .mermaid: .branch
+    case .design: .writing
     }
   }
 
@@ -676,9 +837,13 @@ struct JunoMobileWorkspaceStatus: View {
     if conflicted {
       JunoCard(padding: JunoSpace.cozy) {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-          Label(conflictMessage, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
-            .font(.caption)
-            .junoSecondaryInk()
+          Label {
+            Text(conflictMessage)
+          } icon: {
+            JunoIconView(.refresh, size: 14)
+          }
+          .font(.caption)
+          .junoSecondaryInk()
           HStack(spacing: JunoSpace.cozy) {
             Button("Keep mine", action: keepMine)
               .contentShape(.rect)
@@ -1449,11 +1614,11 @@ struct JunoMobileArtifactDetail: View {
         HStack(spacing: JunoSpace.tight) {
           JunoMobileMetaChip(
             title: artifact.conversationTitle,
-            systemImage: "bubble.left.and.text.bubble.right"
+            icon: .conversation
           ) {
             openConversation(artifact.conversationID)
           }
-          JunoMobileMetaChip(title: kindName, systemImage: kindGlyph)
+          JunoMobileMetaChip(title: kindName, icon: kindGlyph)
           if let language = artifact.language, !language.isEmpty {
             JunoMobileMetaChip(title: language.uppercased())
           }
@@ -1484,14 +1649,14 @@ struct JunoMobileArtifactDetail: View {
     }
   }
 
-  private var kindGlyph: String {
+  private var kindGlyph: JunoIcon {
     switch artifact.kind {
-    case .react, .html: "curlybraces.square"
-    case .svg: "square.on.circle"
-    case .mermaid: "flowchart"
-    case .design: "pencil.and.outline"
-    case .markdown: "doc.text"
-    case .code: "chevron.left.forwardslash.chevron.right"
+    case .react, .html: .code
+    case .svg: .artifacts
+    case .mermaid: .branch
+    case .design: .writing
+    case .markdown: .file
+    case .code: .code
     }
   }
 
@@ -1513,7 +1678,7 @@ struct JunoMobileArtifactDetail: View {
     } label: {
       JunoMobileMetaChip(
         title: "v\(selectedVersion == 0 ? artifact.currentVersion : selectedVersion)",
-        systemImage: "clock.arrow.circlepath"
+        icon: .refresh
       )
     }
     .accessibilityLabel("Version")
@@ -1681,11 +1846,15 @@ struct JunoMobileArtifactDetail: View {
         .padding(.top, close == nil ? 0 : 12)
         .padding(.bottom, close == nil ? 16 : 12)
       } else {
-        ContentUnavailableView(
-          "Version unavailable",
-          systemImage: "clock.arrow.circlepath",
-          description: Text("Reconnect to hydrate the latest artifact content.")
-        )
+        ContentUnavailableView {
+          Label {
+            Text("Version unavailable")
+          } icon: {
+            JunoIconView(.refresh, size: 30)
+          }
+        } description: {
+          Text("Reconnect to hydrate the latest artifact content.")
+        }
       }
     }
     .junoScreenCanvas()

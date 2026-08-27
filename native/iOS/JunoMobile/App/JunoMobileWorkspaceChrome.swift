@@ -126,14 +126,9 @@ struct JunoMobileMetaChip: View {
         .foregroundStyle(Color.junoMutedForeground)
         .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 28)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Color.junoSurface)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(Color.junoHairline, lineWidth: 0.5)
-                )
-        )
+        // Metadata is chrome, not content: use the same native glass treatment
+        // as the surrounding controls while keeping the label compact.
+        .modifier(JunoGlassCapsule())
         .contentShape(Capsule(style: .continuous))
     }
 }
@@ -346,13 +341,13 @@ struct JunoMobileEmptyLine: View {
                 accessibilityLabel: "View"
             )
             HStack {
-                JunoMobileMetaChip(title: "Merging two prompts", systemImage: "bubble.left.and.text.bubble.right") {}
-                JunoMobileMetaChip(title: "v3", systemImage: "clock.arrow.circlepath")
+                JunoMobileMetaChip(title: "Merging two prompts", icon: .conversation) {}
+                JunoMobileMetaChip(title: "v3", icon: .refresh)
             }
             JunoMobileWorkspaceSection(
                 title: "Instructions",
                 actionTitle: "Edit",
-                actionImage: "pencil",
+                actionIcon: .pencil,
                 action: {},
                 footnote: "Included in every conversation linked to this project."
             ) {

@@ -185,6 +185,8 @@ struct JunoMobileCodeView: View {
         )
         .padding(.top, 6)
 
+        codeOverview
+
         if let error = model.lastErrorDescription {
           JunoInlineError(message: error) { Task { await model.refresh() } }
         }
@@ -221,6 +223,86 @@ struct JunoMobileCodeView: View {
 
   private var recentTasks: [NativeCodeTask] {
     model.tasks.filter { !$0.status.isActive }
+  }
+
+  /// A compact command-center readout: the Code home should answer “what is
+  /// happening?” before asking somebody to read a list of sessions. These are
+  /// live model facts, not decorative badges, and the same status vocabulary is
+  /// used by the session rows and remote picker below.
+  private var codeOverview: some View {
+    JunoCard(padding: 14) {
+      VStack(alignment: .leading, spacing: 11) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          JunoIconView(.code, size: 16)
+            .foregroundStyle(Color.junoAccent)
+          Text("Build queue")
+            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+          Spacer(minLength: 4)
+          JunoStatusPill(
+            text: model.isTargetless
+              ? "No project"
+              : (model.startBlockedReason == nil ? "Ready" : "Needs setup"),
+            tint: model.isTargetless || model.startBlockedReason == nil
+              ? Color.junoSuccess : Color.junoCaution,
+            filled: false
+          )
+        }
+        HStack(spacing: 0) {
+          codeMetric("Active", value: activeTasks.count, icon: .refresh)
+          Divider().frame(height: 28)
+          codeMetric("Finished", value: finishedTasks.count, icon: .check)
+          Divider().frame(height: 28)
+          codeMetric("Remote ready", value: readyDeviceCount, icon: .device)
+        }
+        Text(overviewDetail)
+          .junoFont(size: 12, relativeTo: .caption)
+          .junoSecondaryInk()
+          .lineLimit(2)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("juno.mobile.code-overview")
+  }
+
+  private var finishedTasks: [NativeCodeTask] {
+    recentTasks.filter { $0.status == .done }
+  }
+
+  private var readyDeviceCount: Int {
+    model.devices.filter(\.canAcceptWork).count
+  }
+
+  private var overviewDetail: String {
+    if model.isTargetless {
+      return "Start a conversation without a repository, or choose Cloud or Remote below."
+    }
+    if let blocked = model.startBlockedReason {
+      return blocked
+    }
+    if model.target == .device {
+      return readyDeviceCount == 0
+        ? "Remote is selected. Connect a Juno Code host to run work locally."
+        : "Remote is ready. Work will run in the selected local workspace."
+    }
+    return "Cloud runs against the selected repository and returns a pull request."
+  }
+
+  private func codeMetric(_ title: String, value: Int, icon: JunoIcon) -> some View {
+    HStack(spacing: 6) {
+      JunoIconView(icon, size: 13)
+        .foregroundStyle(Color.junoMutedForeground)
+      VStack(alignment: .leading, spacing: 1) {
+        Text("\(value)")
+          .junoFont(size: 16, relativeTo: .body, weight: .semibold)
+          .monospacedDigit()
+        Text(title)
+          .junoFont(size: 10, relativeTo: .caption2, weight: .medium)
+          .junoMetaInk()
+          .lineLimit(1)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func taskGroup(_ tasks: [NativeCodeTask]) -> some View {
@@ -284,8 +366,7 @@ struct JunoMobileCodeView: View {
               if let plan {
                 JunoStatusPill(text: plan.planName, tint: .junoAccent)
               }
-              Image(systemName: "chevron.right")
-                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+              JunoIconView(.chevronRight, size: 11)
                 .junoMetaInk()
             }
 
@@ -337,7 +418,11 @@ struct JunoMobileCodeView: View {
   private var composer: some View {
     VStack(spacing: 8) {
       if let blocked = model.startBlockedReason, !prompt.isEmpty {
-        Label(blocked, systemImage: "info.circle")
+        Label {
+          Text(blocked)
+        } icon: {
+          JunoIconView(.error, size: 13)
+        }
           .font(.caption2)
           .junoSecondaryInk()
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -506,9 +591,8 @@ private struct JunoMobileCodeGreeting: View {
                     .foregroundStyle(.primary)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.junoRaised.opacity(0.8), in: Capsule())
-                .overlay(Capsule().stroke(Color.junoHairline, lineWidth: 0.5))
+                .frame(minHeight: 44)
+                .modifier(JunoGlassCapsule())
                 .contentShape(Capsule())
               }
               .buttonStyle(.plain)
@@ -612,8 +696,7 @@ private struct JunoMobileCodeTargetChip: View {
             .lineLimit(1)
             .truncationMode(.middle)
           Spacer(minLength: 4)
-          Image(systemName: "chevron.down")
-            .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
+          JunoIconView(.chevronDown, size: 9)
             .junoSecondaryInk()
         }
         .foregroundStyle(.primary)
@@ -1042,7 +1125,11 @@ private struct JunoMobileCodeSessionView: View {
     return Group {
       if fileEvents.isEmpty {
         ContentUnavailableView {
-          Label("No Changes Recorded", systemImage: "doc.badge.gearshape")
+          Label {
+            Text("No Changes Recorded")
+          } icon: {
+            JunoIconView(.file, size: 30)
+          }
         } description: {
           Text("Modified, created, and deleted files will appear here as the agent works.")
         }
@@ -1069,8 +1156,7 @@ private struct JunoMobileCodeSessionView: View {
                       .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                       .foregroundStyle(Color.junoSuccess)
                   } else {
-                    Image(systemName: "doc.text")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.file, size: 13)
                       .junoSecondaryInk()
                     Text(event.title)
                       .junoFont(size: 13, relativeTo: .footnote, design: .monospaced)
@@ -1108,7 +1194,11 @@ private struct JunoMobileCodeSessionView: View {
     return Group {
       if toolEvents.isEmpty {
         ContentUnavailableView {
-          Label("Terminal Idle", systemImage: "terminal")
+          Label {
+            Text("Terminal Idle")
+          } icon: {
+            JunoIconView(.terminal, size: 30)
+          }
         } description: {
           Text("Commands executed by the agent will stream here.")
         }
@@ -1119,8 +1209,7 @@ private struct JunoMobileCodeSessionView: View {
             JunoCard(padding: 12) {
               VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                  Image(systemName: "terminal")
-                    .junoFont(size: 12, relativeTo: .caption2)
+                  JunoIconView(.terminal, size: 12)
                     .foregroundStyle(Color.junoAccent)
                   Text(event.title)
                     .junoFont(
@@ -1160,7 +1249,11 @@ private struct JunoMobileCodeSessionView: View {
     return Group {
       if testSummaries.isEmpty {
         ContentUnavailableView {
-          Label("No Tests Executed", systemImage: "checklist.checked")
+          Label {
+            Text("No Tests Executed")
+          } icon: {
+            JunoIconView(.check, size: 30)
+          }
         } description: {
           Text("Structured test suite executions and pass/fail metrics will appear here.")
         }
@@ -1220,28 +1313,22 @@ private struct JunoMobileCodeSessionView: View {
                 HStack(spacing: 8) {
                   switch summary.status {
                   case .passed:
-                    Image(systemName: "checkmark.circle.fill")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.check, size: 13)
                       .foregroundStyle(Color.junoSuccess)
                   case .failed:
-                    Image(systemName: "xmark.circle.fill")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.error, size: 13)
                       .foregroundStyle(Color.junoDanger)
                   case .running:
-                    Image(systemName: "clock.arrow.circlepath")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.refresh, size: 13)
                       .foregroundStyle(Color.junoAccent)
                   case .skipped:
-                    Image(systemName: "minus.circle.fill")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.close, size: 13)
                       .junoSecondaryInk()
                   case .cancelled:
-                    Image(systemName: "slash.circle.fill")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.stop, size: 13)
                       .junoSecondaryInk()
                   case .unknown:
-                    Image(systemName: "questionmark.circle")
-                      .junoFont(size: 13, relativeTo: .caption)
+                    JunoIconView(.error, size: 13)
                       .junoMetaInk()
                   }
                   Text(summary.suite ?? summary.framework ?? "Test Suite")
@@ -1276,7 +1363,11 @@ private struct JunoMobileCodeSessionView: View {
     return Group {
       if previewEvents.isEmpty {
         ContentUnavailableView {
-          Label("No Preview Available", systemImage: "display")
+          Label {
+            Text("No Preview Available")
+          } icon: {
+            JunoIconView(.web, size: 30)
+          }
         } description: {
           Text(
             "Visual verification frames, WebKit screenshots, and web preview diagnostics will appear here."
@@ -1289,8 +1380,7 @@ private struct JunoMobileCodeSessionView: View {
             JunoCard(padding: 14) {
               VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                  Image(systemName: "safari")
-                    .junoFont(size: 14, relativeTo: .subheadline)
+                  JunoIconView(.web, size: 14)
                     .foregroundStyle(Color.junoAccent)
                   Text(info.url ?? "Web Preview")
                     .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
@@ -1320,7 +1410,7 @@ private struct JunoMobileCodeSessionView: View {
                         )
                     case .failure:
                       HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle")
+                        JunoIconView(.error, size: 13)
                         Text("Could not load preview screenshot")
                       }
                       .junoFont(size: 12, relativeTo: .caption)
@@ -1335,7 +1425,7 @@ private struct JunoMobileCodeSessionView: View {
                   }
                   Link(destination: url) {
                     HStack(spacing: 6) {
-                      Image(systemName: "arrow.up.right.square")
+                      JunoIconView(.external, size: 13)
                       Text("Open Full Visual Evidence")
                     }
                     .junoFont(size: 12, relativeTo: .caption, weight: .medium)
@@ -1356,7 +1446,11 @@ private struct JunoMobileCodeSessionView: View {
     return Group {
       if agents.isEmpty {
         ContentUnavailableView {
-          Label("No Delegated Agents", systemImage: "person.2.slash")
+          Label {
+            Text("No Delegated Agents")
+          } icon: {
+            JunoIconView(.user, size: 30)
+          }
         } description: {
           Text(
             "This run executed directly on the primary host runner without subagent delegations.")
@@ -1371,8 +1465,7 @@ private struct JunoMobileCodeSessionView: View {
             JunoCard(padding: 12) {
               VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                  Image(systemName: "person.2.fill")
-                    .junoFont(size: 13, relativeTo: .caption)
+                  JunoIconView(.user, size: 13)
                     .foregroundStyle(Color.junoAccent)
                   Text(agent.title ?? agent.role)
                     .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
@@ -1409,8 +1502,7 @@ private struct JunoMobileCodeSessionView: View {
         JunoCard(padding: 14) {
           VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-              Image(systemName: "arrow.triangle.branch")
-                .junoFont(size: 14, relativeTo: .subheadline)
+              JunoIconView(.branch, size: 14)
                 .junoSecondaryInk()
               Text("Branch / Target")
                 .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
@@ -1434,13 +1526,11 @@ private struct JunoMobileCodeSessionView: View {
               Divider()
               Link(destination: pr) {
                 HStack(spacing: 8) {
-                  Image(systemName: "arrow.triangle.pull")
-                    .junoFont(size: 14, relativeTo: .subheadline)
+                  JunoIconView(.pulls, size: 14)
                   Text("code.open-pull-request")
                     .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
                   Spacer(minLength: 4)
-                  Image(systemName: "arrow.up.right")
-                    .junoFont(size: 11, relativeTo: .caption2)
+                  JunoIconView(.external, size: 11)
                 }
                 .foregroundStyle(Color.junoAccent)
                 .frame(minHeight: 44)
@@ -1666,9 +1756,13 @@ private struct JunoMobileCodeSessionView: View {
   private func approvalPanel(_ approval: NativeCodeApproval) -> some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 8) {
-        Label("code.approval.title", systemImage: "hand.raised.fill")
-          .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
-          .foregroundStyle(Color.junoCaution)
+        Label {
+          Text("code.approval.title")
+        } icon: {
+          JunoIconView(.permission, size: 15)
+        }
+        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+        .foregroundStyle(Color.junoCaution)
         Spacer(minLength: 4)
         JunoStatusPill(
           text: approval.risk.uppercased(),
@@ -1759,11 +1853,7 @@ private struct JunoMobileCodeEventRow: View {
     default:
       HStack(alignment: .top, spacing: 8) {
         Group {
-          if event.kind == .approvalRequest {
-            JunoIconView(.permission, size: 12)
-          } else {
-            Image(systemName: symbol).font(.caption2)
-          }
+          JunoIconView(symbol, size: 12)
         }
         .junoSecondaryInk()
         .frame(width: 14)
@@ -1798,14 +1888,14 @@ private struct JunoMobileCodeEventRow: View {
     }
   }
 
-  private var symbol: String {
+  private var symbol: JunoIcon {
     switch event.kind {
-    case .tool: "wrench.and.screwdriver"
-    case .fileChange: "doc.badge.gearshape"
-    case .approvalRequest: "hand.raised"
-    case .approvalResponse: "checkmark.seal"
-    case .agent: "person.2"
-    default: "circle"
+    case .tool: .tools
+    case .fileChange: .file
+    case .approvalRequest: .permission
+    case .approvalResponse: .check
+    case .agent: .user
+    default: .refresh
     }
   }
 }

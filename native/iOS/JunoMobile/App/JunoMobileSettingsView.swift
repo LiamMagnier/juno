@@ -103,7 +103,11 @@ struct JunoMobileSettingsView: View {
         JunoMobileQuietLoading()
       case .failed where model.settings == nil && model.memories.isEmpty:
         ContentUnavailableView {
-          Label("Settings unavailable", systemImage: "exclamationmark.triangle")
+          Label {
+            Text("Settings unavailable")
+          } icon: {
+            JunoIconView(.error, size: 30)
+          }
         } description: {
           Text(model.lastErrorDescription ?? "Try again.")
         } actions: {
@@ -423,7 +427,7 @@ struct JunoMobileSettingsView: View {
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .background(Color.junoCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
       .accessibilityIdentifier("juno.mobile.settings-profile")
     } else {
       HStack(spacing: 12) {
@@ -434,7 +438,7 @@ struct JunoMobileSettingsView: View {
       }
       .padding(16)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.junoCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
   }
 
@@ -544,7 +548,7 @@ struct JunoMobileSettingsView: View {
           .junoCaption()
         JunoMobileSettingsLink(
           title: "Your usage",
-          symbol: "chart.bar"
+          icon: .usage
         ) { showUsagePage = true }
         .accessibilityIdentifier("juno.mobile.settings-usage-link")
       }
@@ -555,10 +559,11 @@ struct JunoMobileSettingsView: View {
   /// rendering ten controls bound to defaults that would write themselves back.
   private var unsyncedTile: some View {
     JunoSettingsTile("Preferences") {
-      Label(
-        "Account settings have not finished synchronizing.",
-        systemImage: "clock.arrow.circlepath"
-      )
+          Label {
+            Text("Account settings have not finished synchronizing.")
+          } icon: {
+            JunoIconView(.refresh, size: 14)
+          }
       .junoCaption()
     }
   }
@@ -631,10 +636,11 @@ struct JunoMobileSettingsView: View {
           .fixedSize(horizontal: false, vertical: true)
 
         if settings.backgroundProviderMode.permitsCrossProvider {
-          Label(
-            "settings.background-provider.crosses",
-            systemImage: "exclamationmark.triangle"
-          )
+          Label {
+            Text("settings.background-provider.crosses")
+          } icon: {
+            JunoIconView(.error, size: 14)
+          }
           .junoFont(size: 12, relativeTo: .caption)
           .foregroundStyle(Color.junoCaution)
         }
@@ -702,7 +708,7 @@ struct JunoMobileSettingsView: View {
       #if DEBUG
         JunoMobileSettingsLink(
           title: "diagnostics.title",
-          symbol: "stethoscope",
+          icon: .tools,
           value: Text(JunoBuildInfo.current.displayVersion)
         ) { showDiagnosticsPage = true }
         .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
@@ -733,7 +739,7 @@ struct JunoMobileSettingsView: View {
         JunoMobileSettingsAction(
           title: "Delete account",
           detail: "Permanently deletes your account, conversations and memories.",
-          symbol: "trash",
+            icon: .trash,
           isDestructive: true,
           isEnabled: !isDeletingAccount
         ) {
@@ -862,7 +868,7 @@ struct JunoMobileSettingsView: View {
   private var conflictBanner: some View {
     VStack(spacing: JunoSpace.snug) {
       HStack(spacing: JunoSpace.snug) {
-        Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+        JunoIconView(.refresh, size: 14)
         Text("Memory or settings changed on another device.")
           .lineLimit(2)
         Spacer()
@@ -1027,7 +1033,7 @@ private struct JunoMobileSettingsPreferences: View {
         } label: {
           JunoMobileSettingsRowLabel(
             title: "Favorite models",
-            symbol: "star",
+            icon: .models,
             value: Text("^[\(settings.favoriteModels.count) favorite](inflect: true)")
           )
         }
@@ -1458,8 +1464,7 @@ private struct JunoMobileSettingsSelect<Value: Hashable>: View {
           .junoRowLabel()
           .lineLimit(1)
         Spacer(minLength: JunoSpace.tight)
-        Image(systemName: "chevron.up.chevron.down")
-          .font(.caption2.weight(.semibold))
+        JunoIconView(.chevronDown, size: 12)
           .junoSecondaryInk()
       }
       .padding(.horizontal, JunoSpace.cozy)
