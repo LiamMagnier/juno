@@ -3,8 +3,10 @@ import XCTest
 
 @MainActor
 final class JunoBrandTests: XCTestCase {
-    /// The cases must mirror `src/lib/app-icons.ts` one-for-one. If the web adds
-    /// a destination and native does not, this is where it surfaces.
+    /// The cases mirror the web's icon vocabulary one-for-one, plus the
+    /// directional/navigation marks that native needs for its own controls.
+    /// If the web adds a product mark and native does not, this is where it
+    /// surfaces.
     func testIconSetMatchesTheWebsitesAppIcons() {
         XCTAssertEqual(
             Set(JunoIcon.allCases.map(\.rawValue)),
@@ -23,7 +25,7 @@ final class JunoBrandTests: XCTestCase {
                 "usage", "appearance", "writing", "language", "models", "notifications", "about",
                 "user", "tools", "knowledge", "sliders",
                 // Action controls, media, and navigation glyphs.
-                "mic", "send", "stop", "plus", "chevronRight", "chevronDown", "chevronUp",
+                "mic", "send", "stop", "plus", "chevronLeft", "chevronRight", "chevronDown", "chevronUp",
                 "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
                 "arrowDown", "volume", "thumbsUp", "thumbsDown", "eyeOff",
             ]

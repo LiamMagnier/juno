@@ -112,7 +112,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case user, tools, knowledge, sliders
 
     /// Action controls, media, and navigation glyphs.
-    case mic, send, stop, plus, chevronRight, chevronDown, chevronUp
+    case mic, send, stop, plus, chevronLeft, chevronRight, chevronDown, chevronUp
     case trash, pencil, copy, check, close, ellipsis, share, terminal
     case arrowDown, volume, thumbsUp, thumbsDown, eyeOff
 
@@ -130,7 +130,13 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         if value.contains("arrow.up.right") || value.contains("external") || value.contains("link") {
             return .external
         }
+        if value.contains("chevron.left") || value == "arrow.left" {
+            return .chevronLeft
+        }
         if value.contains("chevron") || value == "arrow.right" { return .chevronRight }
+        if value.contains("trianglehead.pull") || value.contains("pull-request") {
+            return .pulls
+        }
         if value.contains("square.and.pencil") { return .new }
         if value.contains("square.and.arrow.up") { return .share }
         if value.contains("point.3") || value.contains("powerplug") || value.contains("wifi") {
@@ -149,6 +155,23 @@ public enum JunoIcon: String, CaseIterable, Sendable {
             return .device
         }
         if value.contains("theatermask") { return .appearance }
+        if value.contains("gearshape") { return .settings }
+        if value.contains("checklist") { return .tasks }
+        if value.contains("person.2") { return .user }
+        if value.contains("hand.raised") { return .permission }
+        if value.contains("info.circle") || value == "info" { return .about }
+        if value.contains("macwindow") || value.contains("laptop") { return .device }
+        if value.contains("bolt") { return .work }
+        if value.contains("crop") { return .artifactsTool }
+        if value.contains("text.align") { return .writing }
+        if value.contains("doc.badge") { return .files }
+        if value.contains("square.stack") || value.contains("circle.grid") {
+            return .artifacts
+        }
+        if value.contains("arrow.down.to.line") || value.contains("arrow.down.circle") {
+            return .arrowDown
+        }
+        if value.contains("arrow.up.left") { return .external }
         if value.contains("phone.down") || value.contains("rectangle.slash") { return .close }
         if value.contains("mic") { return .mic }
         if value.contains("arrow.down") { return .arrowDown }

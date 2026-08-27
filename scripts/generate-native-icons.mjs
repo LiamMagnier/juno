@@ -104,6 +104,7 @@ const ICONS = {
   send: "arrow-up",
   stop: "square",
   plus: "plus",
+  chevronLeft: "chevron-left",
   chevronRight: "chevron-right",
   chevronDown: "chevron-down",
   chevronUp: "chevron-up",
