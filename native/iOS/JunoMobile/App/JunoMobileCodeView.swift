@@ -101,7 +101,7 @@ struct JunoMobileCodeView: View {
           Button {
             showingPulls = true
           } label: {
-            Image(systemName: "arrow.trianglehead.pull")
+            JunoIconView(.pulls, size: 17)
           }
           .accessibilityLabel("Pull requests")
           .accessibilityIdentifier("juno.mobile.code.pulls")
@@ -117,7 +117,7 @@ struct JunoMobileCodeView: View {
             Button {
               showingUsage = true
             } label: {
-              Label("Your usage", systemImage: "chart.line.uptrend.xyaxis")
+              JunoIconLabel("Your usage", icon: .usage)
             }
             if let openSettings {
               Button(action: openSettings) {
@@ -201,27 +201,11 @@ struct JunoMobileCodeView: View {
         } else {
           if !activeTasks.isEmpty {
             JunoGroupLabel(text: "Active")
-            ForEach(activeTasks) { task in
-              Button {
-                model.open(task)
-              } label: {
-                JunoMobileCodeTaskRow(task: task)
-              }
-              .buttonStyle(.plain)
-              .contentShape(.rect)
-            }
+            taskGroup(activeTasks)
           }
           if !recentTasks.isEmpty {
             JunoGroupLabel(text: "Recent")
-            ForEach(recentTasks) { task in
-              Button {
-                model.open(task)
-              } label: {
-                JunoMobileCodeTaskRow(task: task)
-              }
-              .buttonStyle(.plain)
-              .contentShape(.rect)
-            }
+            taskGroup(recentTasks)
           }
         }
       }
@@ -237,6 +221,25 @@ struct JunoMobileCodeView: View {
 
   private var recentTasks: [NativeCodeTask] {
     model.tasks.filter { !$0.status.isActive }
+  }
+
+  private func taskGroup(_ tasks: [NativeCodeTask]) -> some View {
+    JunoCard(padding: 0) {
+      VStack(spacing: 0) {
+        ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+          Button {
+            model.open(task)
+          } label: {
+            JunoMobileCodeTaskRow(task: task)
+          }
+          .buttonStyle(.plain)
+          .contentShape(.rect)
+          if index < tasks.count - 1 {
+            Divider().padding(.leading, 34)
+          }
+        }
+      }
+    }
   }
 
   /// Who is signed in, what they are on, and how much of it is left.
@@ -372,8 +375,7 @@ struct JunoMobileCodeView: View {
           Button {
             start()
           } label: {
-            Image(systemName: "arrow.up")
-              .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
+            JunoIconView(.send, size: 16)
               .foregroundStyle(
                 canStart ? Color.junoOnAccent : Color.junoMutedForeground
               )
@@ -427,36 +429,35 @@ private struct JunoMobileCodeGreeting: View {
     let id: String
     let title: String
     let prompt: String
-    let icon: String
-    let color: Color
+    let icon: JunoIcon
   }
 
   private static let presets: [MobilePreset] = [
     MobilePreset(
       id: "scaffold", title: "Scaffold Feature",
       prompt: "Scaffold a new feature with clean architecture, types, and unit tests.",
-      icon: "sparkles", color: .junoAccent),
+      icon: .plus),
     MobilePreset(
       id: "survey", title: "Codebase Audit",
       prompt:
         "Audit this codebase for architectural patterns, performance bottlenecks, and security.",
-      icon: "scope", color: .blue),
+      icon: .research),
     MobilePreset(
       id: "refactor", title: "Refactor",
       prompt: "Refactor and modernize code to reduce technical debt and improve type safety.",
-      icon: "bolt.fill", color: .orange),
+      icon: .tools),
     MobilePreset(
       id: "tests", title: "Generate Tests",
       prompt: "Write comprehensive unit and integration tests covering core workflows.",
-      icon: "checkmark.seal.fill", color: .green),
+      icon: .check),
     MobilePreset(
       id: "fix", title: "Fix Bug",
       prompt: "Diagnose and fix the root cause of this error. Propose the most reliable patch.",
-      icon: "wrench.and.screwdriver.fill", color: .red),
+      icon: .error),
     MobilePreset(
       id: "plan", title: "API & Schema",
       prompt: "Design the data models, database migration schema, and API contracts.",
-      icon: "network", color: .purple),
+      icon: .branch),
   ]
 
   private static let phrases = [
@@ -498,9 +499,8 @@ private struct JunoMobileCodeGreeting: View {
                 onSelectIntent(preset.prompt)
               } label: {
                 HStack(spacing: 6) {
-                  Image(systemName: preset.icon)
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                    .foregroundStyle(preset.color)
+                  JunoIconView(preset.icon, size: 12)
+                    .foregroundStyle(Color.junoAccent)
                   Text(preset.title)
                     .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(.primary)
@@ -745,7 +745,11 @@ private struct JunoMobileCodeTargetSheet: View {
   private var devices: some View {
     if model.devices.isEmpty {
       ContentUnavailableView {
-        Label("code.target.no-devices", systemImage: "laptopcomputer.slash")
+        Label {
+          Text("code.target.no-devices")
+        } icon: {
+          JunoIconView(.device, size: 34)
+        }
       } description: {
         Text("code.target.no-devices.detail")
       }
@@ -803,7 +807,7 @@ private struct JunoMobileCodeTargetSheet: View {
             }
           } header: {
             HStack(spacing: 6) {
-              Image(systemName: device.platformSymbol)
+              JunoIconView(.device, size: 14)
               Text(device.name)
               Spacer(minLength: 4)
               JunoStatusPill(
@@ -833,8 +837,7 @@ private struct JunoMobileCodeTaskRow: View {
   let task: NativeCodeTask
 
   var body: some View {
-    JunoCard(padding: 14) {
-      VStack(alignment: .leading, spacing: 7) {
+    VStack(alignment: .leading, spacing: 7) {
         HStack(spacing: 8) {
           JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
             .junoSecondaryInk()
@@ -868,8 +871,8 @@ private struct JunoMobileCodeTaskRow: View {
               .foregroundStyle(Color.junoAccent)
           }
         }
-      }
     }
+    .padding(14)
   }
 }
 
@@ -1003,7 +1006,7 @@ private struct JunoMobileCodeSessionView: View {
           Button(role: .destructive) {
             Task { await model.cancelOpenTask() }
           } label: {
-            Image(systemName: "stop.circle")
+            JunoIconView(.stop, size: 17)
           }
           .disabled(model.isMutating)
           .accessibilityLabel("code.stop")
@@ -1486,7 +1489,7 @@ private struct JunoMobileCodeSessionView: View {
         }
         if let url = task.pullRequestURL {
           Link(destination: url) {
-            Label("code.open-pull-request", systemImage: "arrow.triangle.pull")
+            JunoIconLabel("code.open-pull-request", icon: .pulls, size: 14)
               .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
           }
           .foregroundStyle(Color.junoAccent)
@@ -1596,8 +1599,7 @@ private struct JunoMobileCodeSessionView: View {
         Button {
           sendFollowUp()
         } label: {
-          Image(systemName: "arrow.up")
-            .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
+          JunoIconView(.send, size: 16)
             .foregroundStyle(
               canSendFollowUp ? Color.junoOnAccent : Color.junoMutedForeground
             )

@@ -622,7 +622,10 @@ struct JunoMobileRootView: View {
             .accessibilityAddTraits(.isButton)
         }
       }
-      .clipShape(RoundedRectangle(cornerRadius: sidebarOpen ? 32 : 0, style: .continuous))
+      // On iOS 26/27 the system can derive a concentric corner from the
+      // enclosing device shape. That keeps the revealed chat plate parallel
+      // to the iPhone instead of approximating it with a generic 32pt radius.
+      .modifier(JunoMobileDrawerPlate(open: sidebarOpen))
       .ignoresSafeArea()
       .shadow(color: .black.opacity(sidebarOpen ? 0.16 : 0), radius: 20, x: -1)
       .offset(x: sidebarOpen ? revealed : 0)
@@ -1083,6 +1086,32 @@ struct JunoMobileRootView: View {
   }
 }
 
+/// Clips the revealed chat plate with the device-aware shape introduced with
+/// Liquid Glass. The fallback keeps the same visual hierarchy on older iOS.
+private struct JunoMobileDrawerPlate: ViewModifier {
+  let open: Bool
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if open {
+      if #available(iOS 26.0, *) {
+        content.clipShape(
+          ConcentricRectangle(
+            corners: .concentric(minimum: .fixed(32)),
+            isUniform: true
+          )
+        )
+      } else {
+        content.clipShape(
+          RoundedRectangle(cornerRadius: 32, style: .continuous)
+        )
+      }
+    } else {
+      content.clipShape(Rectangle())
+    }
+  }
+}
+
 /// A fully custom iPhone/iPad sidebar drawer — deliberately **not** built on
 /// `List`/`Form`/`Section`, whose grouped metrics read like a Settings page.
 /// A compact header, a scrolling `LazyVStack` of dense rows, and a fixed footer
@@ -1337,7 +1366,7 @@ private struct JunoMobileSidebarDrawer: View {
         renameValue = conversation.title
         renameTarget = conversation
       } label: {
-        Label("Rename", systemImage: "pencil")
+        Label { Text("Rename") } icon: { JunoIconView(.pencil, size: 15) }
       }
       Button {
         Task {
@@ -1346,16 +1375,15 @@ private struct JunoMobileSidebarDrawer: View {
           )
         }
       } label: {
-        Label(
-          conversation.pinned ? "Unpin" : "Pin",
-          systemImage: conversation.pinned ? "pin.slash" : "pin"
-        )
+        Label { Text(conversation.pinned ? "Unpin" : "Pin") } icon: {
+          JunoIconView(.pin, size: 15)
+        }
       }
       Divider()
       Button(role: .destructive) {
         deleteTarget = conversation
       } label: {
-        Label("Delete", systemImage: "trash")
+        Label { Text("Delete") } icon: { JunoIconView(.trash, size: 15) }
       }
     }
     // A conversation still syncing cannot be renamed, pinned or deleted —
@@ -1395,7 +1423,7 @@ private struct JunoMobileSidebarDrawer: View {
         renameProjectValue = project.name
         renameProjectTarget = project
       } label: {
-        Label("Rename", systemImage: "pencil")
+        Label { Text("Rename") } icon: { JunoIconView(.pencil, size: 15) }
       }
       Button {
         Task {
@@ -1404,16 +1432,15 @@ private struct JunoMobileSidebarDrawer: View {
           )
         }
       } label: {
-        Label(
-          project.starred ? "Unpin" : "Pin",
-          systemImage: project.starred ? "pin.slash" : "pin"
-        )
+        Label { Text(project.starred ? "Unpin" : "Pin") } icon: {
+          JunoIconView(.pin, size: 15)
+        }
       }
       Divider()
       Button(role: .destructive) {
         deleteProjectTarget = project
       } label: {
-        Label("Delete", systemImage: "trash")
+        Label { Text("Delete") } icon: { JunoIconView(.trash, size: 15) }
       }
     }
     .disabled(project.isPending)
@@ -1465,7 +1492,18 @@ private struct JunoMobileSidebarDrawer: View {
 
   // MARK: Bottom bar — profile (glass circle) + New Chat (accent glass capsule)
 
+  @ViewBuilder
   private var bottomBar: some View {
+    if #available(iOS 26.0, *) {
+      GlassEffectContainer(spacing: 10) {
+        bottomBarControls
+      }
+    } else {
+      bottomBarControls
+    }
+  }
+
+  private var bottomBarControls: some View {
     HStack(spacing: 10) {
       profileButton
       Spacer(minLength: 0)
@@ -1496,11 +1534,13 @@ private struct JunoMobileSidebarDrawer: View {
         name: profileName,
         size: 32
       )
-      .padding(7)
+      .padding(8)
       .modifier(JunoGlassCircle())
     }
     .buttonStyle(.plain)
+    .frame(width: 48, height: 48)
     .accessibilityLabel("Open settings for \(profileName)")
+    .accessibilityIdentifier("juno.mobile.sidebar-profile")
     .contentShape(.rect)
   }
 
@@ -1514,12 +1554,20 @@ private struct JunoMobileSidebarDrawer: View {
         Text("navigation.chat")
           .fontWeight(.semibold)
       }
+      // Keep the visible pill compact; the outer frame below supplies the
+      // full 48pt hit target shared with Profile. The previous large control
+      // size added the system's own vertical insets on top of a 48pt label,
+      // which made the glass read as a 70pt slab in the drawer.
+      .padding(.horizontal, 14)
+      .frame(height: 36)
     }
     .junoProminentAction()
-    .controlSize(.regular)
+    .controlSize(.small)
+    .frame(height: 48)
     .disabled(!canCreateChat)
     .opacity(canCreateChat ? 1 : 0.5)
     .accessibilityLabel("chat.new")
+    .accessibilityIdentifier("juno.mobile.sidebar-chat")
     .contentShape(.rect)
   }
 }

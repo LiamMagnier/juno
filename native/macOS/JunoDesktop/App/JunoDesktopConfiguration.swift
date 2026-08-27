@@ -333,7 +333,10 @@ struct JunoDesktopConfiguration {
                     client: NativeCodeTaskClient(sender: runtime, streamer: runtime),
                     // The claim loop's transport. Supplied here so hosting can
                     // start; the switch is what decides whether it does.
-                    relay: NativeCodeRemoteClient(sender: runtime)
+                    relay: NativeCodeRemoteClient(sender: runtime),
+                    // iOS creates server-owned `/api/code/tasks`; this is the
+                    // authenticated host client that claims and streams them.
+                    agentClient: NativeCodeAgentClient(sender: runtime)
                 ),
                 workModel: NativeWorkModel(
                     client: NativeWorkClient(sender: runtime, streamer: runtime)

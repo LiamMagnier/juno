@@ -229,16 +229,15 @@ struct JunoMobileSettingsView: View {
   private var page: some View {
     List {
       Section {
-        header
+        profileHeader
           .listRowBackground(Color.clear)
-          .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 12, trailing: 0))
+          .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 14, trailing: 16))
       }
 
-      Section("Account") {
-        if session != nil, requestSender != nil {
+      if session != nil, requestSender != nil {
+        Section("Plan") {
           settingsLink(.usage, title: "Plan & Usage", icon: .usage)
         }
-        settingsLink(.data, title: "Account", icon: .user)
       }
 
       Section("Personalization") {
@@ -266,6 +265,8 @@ struct JunoMobileSettingsView: View {
     .listStyle(.insetGrouped)
     .scrollContentBackground(.hidden)
     .refreshable { await model.refresh() }
+    .navigationTitle("Settings")
+    .navigationBarTitleDisplayMode(.large)
     .navigationDestination(for: JunoMobileSettingsRoute.self) { route in
       settingsDestination(route)
     }
@@ -336,10 +337,7 @@ struct JunoMobileSettingsView: View {
         }
       }
     case .data:
-      detailPage(title: "Account") {
-        accountTile
-        dangerZone
-      }
+      accountPage
     case .advanced:
       NativeDiagnosticsView(
         syncModel: syncModel,
@@ -393,31 +391,140 @@ struct JunoMobileSettingsView: View {
     Task { await model.updateSettings(patch) }
   }
 
-  private var header: some View {
-    HStack(spacing: JunoSpace.cozy) {
-      if let session {
-        JunoAvatar(
-          imageData: avatarData,
-          imageURL: session.profile.imageURL,
-          name: session.profile.name ?? session.profile.email,
-          size: 44
-        )
+  /// The account is the first navigation control in Settings, matching the
+  /// sidebar's profile affordance. It is interactive chrome, so Liquid Glass is
+  /// appropriate here; the preference rows below stay native List content.
+  @ViewBuilder
+  private var profileHeader: some View {
+    if let session {
+      NavigationLink(value: JunoMobileSettingsRoute.data) {
+        HStack(spacing: 14) {
+          JunoAvatar(
+            imageData: avatarData,
+            imageURL: session.profile.imageURL,
+            name: session.profile.name ?? session.profile.email,
+            size: 52
+          )
+          VStack(alignment: .leading, spacing: 3) {
+            Text(session.profile.name ?? "Your account")
+              .junoFont(size: 18, relativeTo: .headline, weight: .semibold)
+              .foregroundStyle(Color.primary)
+            Text(session.profile.email)
+              .junoCaption()
+              .lineLimit(1)
+            Text("Profile, data and security")
+              .junoFont(size: 12, relativeTo: .caption)
+              .junoMetaInk()
+          }
+          Spacer(minLength: 8)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
       }
-      VStack(alignment: .leading, spacing: 2) {
+      .buttonStyle(.plain)
+      .background(Color.junoCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+      .accessibilityIdentifier("juno.mobile.settings-profile")
+    } else {
+      HStack(spacing: 12) {
+        JunoIconView(.settings, size: 22)
+          .foregroundStyle(Color.junoAccent)
         Text("Settings")
           .junoPageHeading(compact: true)
-          .accessibilityAddTraits(.isHeader)
-        // The account, stated once. It was here *and* repeated in the
-        // Account tile one scroll below, which was this page's most
-        // obvious piece of duplication.
-        if let session {
-          Text(session.profile.email)
-            .junoCaption()
+      }
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.junoCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+  }
+
+  /// Native account/profile page: one identity header, then ordinary grouped
+  /// actions. This replaces the old sparse canvas of custom tiles and keeps
+  /// destructive work in a dedicated final section.
+  private var accountPage: some View {
+    List {
+      if let session {
+        Section {
+          HStack(spacing: 16) {
+            JunoAvatar(
+              imageData: avatarData,
+              imageURL: session.profile.imageURL,
+              name: session.profile.name ?? session.profile.email,
+              size: 64
+            )
+            VStack(alignment: .leading, spacing: 4) {
+              Text(session.profile.name ?? "Your account")
+                .junoFont(size: 21, relativeTo: .title3, weight: .semibold)
+              Text(session.profile.email)
+                .junoBody()
+                .junoSecondaryInk()
+                .lineLimit(2)
+              Label {
+                Text("Synced with Juno")
+              } icon: {
+                JunoIconView(.refresh, size: 13)
+              }
+              .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+              .foregroundStyle(Color.junoSuccess)
+            }
+          }
+          .padding(.vertical, 10)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
-      Spacer(minLength: 0)
+
+      if canManageAccountData {
+        Section("Your data") {
+          JunoMobileSettingsAction(
+            title: "Export your data",
+            detail: "Every chat, project and memory, as JSON.",
+            icon: .external,
+            isBusy: isExporting,
+            isEnabled: !isExporting,
+            action: exportAccount
+          )
+          .accessibilityIdentifier("juno.mobile.settings-export")
+        }
+      }
+
+      if authModel != nil {
+        Section("Session") {
+          JunoMobileSettingsAction(
+            title: "auth.sign-out",
+            detail: "Keep local app data protected and return to sign in.",
+            icon: .close,
+            isDestructive: true
+          ) { showingSignOut = true }
+          .accessibilityIdentifier("juno.mobile.account-signout")
+        }
+      }
+
+      if let dangerError, !isExporting, !showingDeleteAccount {
+        Section { JunoInlineError(message: dangerError) }
+      }
+
+      if canManageAccountData {
+        Section("Danger zone") {
+          JunoMobileSettingsAction(
+            title: "Delete account",
+            detail: "Permanently deletes your account, conversations and memories.",
+            icon: .trash,
+            isDestructive: true,
+            isEnabled: !isDeletingAccount
+          ) {
+            deleteConfirmation = ""
+            dangerError = nil
+            showingDeleteAccount = true
+          }
+          .accessibilityIdentifier("juno.mobile.settings-delete-account")
+        }
+      }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Color.junoCanvas)
+    .navigationTitle("Account")
+    .navigationBarTitleDisplayMode(.inline)
   }
 
   // MARK: - Tiles the page owns

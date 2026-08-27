@@ -286,9 +286,13 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                             Text(actionTitle)
                                 .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                         }
-                        .foregroundStyle(Color.junoAccent)
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(minHeight: 32)
                     }
-                    .buttonStyle(.plain)
+                    .modifier(JunoMobileWorkspaceActionStyle())
+                    .controlSize(.small)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.rect)
                 }
             }
@@ -300,6 +304,20 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                     .junoFont(size: 12, relativeTo: .caption)
                     .foregroundStyle(Color.junoMutedForeground)
             }
+        }
+    }
+}
+
+/// Secondary section actions are controls, not coral prose links. Let the
+/// system draw Liquid Glass and its pressed state on iOS 26/27, with the native
+/// bordered control as the older-system fallback.
+private struct JunoMobileWorkspaceActionStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
         }
     }
 }

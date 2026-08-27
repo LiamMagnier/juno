@@ -42,8 +42,12 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
     /// the clamp and its toggle are both exercised.
     private func openFirstProject(_ app: XCUIApplication) {
         require(app.descendants(matching: .any)["juno.mobile.project-list"].firstMatch, app)
-        let card = app.buttons.containing(
-            NSPredicate(format: "label CONTAINS %@", "Astro research")
+        // The redesigned row combines icon, title, counts and instructions
+        // into one accessible button label. Query that label directly instead
+        // of asking for a descendant text element that no longer exists as a
+        // separate accessibility node.
+        let card = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Astro research,")
         ).firstMatch
         require(card, app)
         card.tap()
@@ -104,25 +108,25 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         )
     }
 
-    /// Star and the menu share one Liquid Glass capsule, as the chat header's
+    /// Pin and the menu share one Liquid Glass capsule, as the chat header's
     /// pair does — adjacency in the toolbar is what produces it, and only the
     /// laid-out frames can confirm it.
     @MainActor
-    func testProjectHeaderPairsStarWithTheMenuInOneCapsule() {
+    func testProjectHeaderPairsPinWithTheMenuInOneCapsule() {
         let app = launch(tab: "projects")
         openFirstProject(app)
 
-        let star = app.buttons["juno.mobile.project-star"]
+        let pin = app.buttons["juno.mobile.project-pin"]
         let menu = app.buttons["juno.mobile.project-menu"]
-        require(star, app, timeout: 5)
+        require(pin, app, timeout: 5)
         require(menu, app, timeout: 5)
 
-        XCTAssertLessThan(star.frame.maxX, menu.frame.minX + 1)
+        XCTAssertLessThan(pin.frame.maxX, menu.frame.minX + 1)
         XCTAssertLessThan(
-            menu.frame.minX - star.frame.maxX, 24,
-            "Star and the menu are too far apart to be sharing one capsule."
+            menu.frame.minX - pin.frame.maxX, 24,
+            "Pin and the menu are too far apart to be sharing one capsule."
         )
-        XCTAssertEqual(star.frame.midY, menu.frame.midY, accuracy: 2)
+        XCTAssertEqual(pin.frame.midY, menu.frame.midY, accuracy: 2)
     }
 
     // MARK: - Artifact detail

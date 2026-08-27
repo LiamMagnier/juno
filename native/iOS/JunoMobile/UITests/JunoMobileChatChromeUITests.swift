@@ -129,6 +129,60 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         require(app.descendants(matching: .any)["juno.mobile.chat-draft"].firstMatch, app, timeout: 10)
     }
 
+    /// The drawer footer is one control row. A system-sized profile control
+    /// beside an oversized primary button makes that row look accidental and
+    /// was the specific mismatch reported during the iOS 27 review.
+    @MainActor
+    func testSidebarChatAndProfileControlsHaveTheSameHeight() {
+        let app = launch(["--juno-preview-sidebar"])
+        // The drawer is one accessibility container, so SwiftUI deliberately
+        // propagates its identifier to descendants. Select these two controls
+        // by their stable user-facing labels instead.
+        let profile = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Open settings for")
+        ).firstMatch
+        let chat = app.buttons["New chat"]
+        require(profile, app)
+        require(chat, app)
+
+        XCTAssertEqual(
+            profile.frame.height,
+            chat.frame.height,
+            accuracy: 1,
+            "Profile is \(profile.frame.height)pt but Chat is \(chat.frame.height)pt."
+        )
+        XCTAssertGreaterThanOrEqual(profile.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(chat.frame.height, 44)
+    }
+
+    /// A device heartbeat alone is not enough to run Juno Code. The target
+    /// picker must distinguish the Mac that advertises queued execution from a
+    /// signed-in computer that would otherwise leave a task queued forever.
+    @MainActor
+    func testCodeRemotePickerDistinguishesRunnableAndUnavailableHosts() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--juno-ui-preview",
+            "--juno-preview-tab", "code",
+            "--juno-preview-appearance", "light",
+        ]
+        app.launch()
+
+        let target = app.buttons["Liam’s MacBook Pro · juno"]
+        require(target, app)
+        target.tap()
+
+        require(app.staticTexts["Computer"], app, timeout: 10)
+        XCTAssertTrue(app.staticTexts["Online"].exists)
+        XCTAssertTrue(app.staticTexts["Not hosting"].exists)
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "not set up to run remote Juno Code work")
+            ).firstMatch.exists,
+            "The unavailable host does not explain why it cannot accept a task."
+        )
+    }
+
     /// A draft has no chat to leave, so the pill collapses back to the menu
     /// alone — and New chat must not offer to replace a blank chat with one.
     @MainActor

@@ -59,7 +59,7 @@ struct JunoMobileProjectsView: View {
         Button {
           startCreate()
         } label: {
-          Image(systemName: "plus")
+          JunoIconView(.plus, size: 17)
         }
         .disabled(model.isMutating)
         .accessibilityLabel("New project")
@@ -155,11 +155,11 @@ struct JunoMobileProjectsView: View {
         } else {
           if !pinned.isEmpty {
             JunoGroupLabel(text: "Pinned")
-            ForEach(pinned) { card($0) }
+            projectGroup(pinned)
           }
           if !others.isEmpty {
             if !pinned.isEmpty { JunoGroupLabel(text: "All projects") }
-            ForEach(others) { card($0) }
+            projectGroup(others)
           }
         }
       }
@@ -167,6 +167,19 @@ struct JunoMobileProjectsView: View {
       .padding(.bottom, JunoSpace.section)
     }
     .accessibilityIdentifier("juno.mobile.project-list")
+  }
+
+  private func projectGroup(_ projects: [NativeProject]) -> some View {
+    JunoCard(padding: 0) {
+      VStack(spacing: 0) {
+        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+          if index > 0 {
+            Divider().padding(.leading, 66)
+          }
+          card(project)
+        }
+      }
+    }
   }
 
   private var empty: some View {
@@ -196,7 +209,7 @@ struct JunoMobileProjectsView: View {
     let files = model.filesByProject[project.id]?.count ?? 0
     return NavigationLink(value: project.id) {
       HStack(alignment: .top, spacing: JunoSpace.cozy) {
-        JunoWorkspaceGlyph(systemName: "folder")
+        JunoWorkspaceGlyph(icon: .projects)
         VStack(alignment: .leading, spacing: 3) {
           HStack(spacing: JunoSpace.tight) {
             Text(project.name)
@@ -204,8 +217,7 @@ struct JunoMobileProjectsView: View {
               .foregroundStyle(.primary)
               .lineLimit(1)
             if project.starred {
-              Image(systemName: "pin.fill")
-                .font(.caption2)
+              JunoIconView(.pin, size: 12)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityLabel("Pinned")
             }
@@ -230,19 +242,12 @@ struct JunoMobileProjectsView: View {
           }
         }
         Spacer(minLength: 0)
-        Image(systemName: "chevron.right")
-          .font(.caption.weight(.semibold))
+        JunoIconView(.chevronRight, size: 12)
           .junoMetaInk()
           .padding(.top, JunoSpace.hairline)
       }
       .padding(.vertical, JunoSpace.snug)
       .contentShape(Rectangle())
-      .overlay(alignment: .bottom) {
-        Rectangle()
-          .fill(Color.primary.opacity(0.10))
-          .frame(height: 0.5)
-          .padding(.leading, 48)
-      }
     }
     .buttonStyle(.plain)
     .contextMenu { projectMenu(project) }
@@ -253,24 +258,33 @@ struct JunoMobileProjectsView: View {
     Button {
       Task { await model.updateProject(id: project.id, starred: !project.starred) }
     } label: {
-      Label(
-        project.starred ? "Unpin" : "Pin",
-        systemImage: project.starred ? "pin.slash" : "pin"
-      )
+      Label {
+        Text(project.starred ? "Unpin" : "Pin")
+      } icon: {
+        JunoIconView(.pin, size: 15)
+      }
     }
     .contentShape(.rect)
     Button {
       renameValue = project.name
       renameTarget = project
     } label: {
-      Label("Rename", systemImage: "pencil")
+      Label {
+        Text("Rename")
+      } icon: {
+        JunoIconView(.pencil, size: 15)
+      }
     }
     .contentShape(.rect)
     Divider()
     Button(role: .destructive) {
       deleteTarget = project
     } label: {
-      Label("Delete", systemImage: "trash")
+      Label {
+        Text("Delete")
+      } icon: {
+        JunoIconView(.trash, size: 15)
+      }
     }
     .contentShape(.rect)
   }
@@ -307,7 +321,7 @@ private struct JunoMobileProjectFileRow: View {
     Button(action: open) {
       HStack(spacing: JunoSpace.cozy) {
         JunoWorkspaceGlyph(
-          systemName: file.kind == "IMAGE" ? "photo" : "doc.text",
+          icon: file.kind == "IMAGE" ? .photos : .file,
           size: 34
         )
         VStack(alignment: .leading, spacing: 3) {
@@ -608,16 +622,34 @@ struct JunoMobileArtifactsView: View {
 /// canvas is what made these lists read as unfinished; a contained glyph gives
 /// the row a left edge to align to.
 private struct JunoWorkspaceGlyph: View {
-  let systemName: String
+  var icon: JunoIcon?
+  var systemName: String?
   var size: CGFloat = 38
+
+  init(icon: JunoIcon, size: CGFloat = 38) {
+    self.icon = icon
+    self.systemName = nil
+    self.size = size
+  }
+
+  init(systemName: String, size: CGFloat = 38) {
+    self.icon = nil
+    self.systemName = systemName
+    self.size = size
+  }
 
   var body: some View {
     ZStack {
       RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         .fill(Color.junoAccent.opacity(0.12))
-      Image(systemName: systemName)
-        .junoFont(size: size * 0.44, relativeTo: .body)
-        .foregroundStyle(Color.junoAccent)
+      if let icon {
+        JunoIconView(icon, size: size * 0.44)
+          .foregroundStyle(Color.junoAccent)
+      } else if let systemName {
+        Image(systemName: systemName)
+          .junoFont(size: size * 0.44, relativeTo: .body)
+          .foregroundStyle(Color.junoAccent)
+      }
     }
     .frame(width: size, height: size)
     .accessibilityHidden(true)
@@ -692,10 +724,18 @@ private struct JunoMobileProjectDetail: View {
   /// each card, so opening one does not land somewhere that looks unrelated.
   private var header: some View {
     VStack(alignment: .leading, spacing: JunoSpace.snug) {
-      Text(project.name)
-        .junoPageHeading(compact: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityAddTraits(.isHeader)
+      HStack(spacing: JunoSpace.cozy) {
+        JunoWorkspaceGlyph(icon: .projects, size: 48)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(project.name)
+            .junoPageHeading(compact: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
+          Text("Project workspace")
+            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+            .junoMetaInk()
+        }
+      }
 
       // Scrollable, as the artifact header's chips are. Three chips fit an
       // iPhone in English and do not fit one in German, and a fixed HStack
@@ -954,8 +994,7 @@ private struct JunoMobileProjectDetail: View {
             )
           }
         } label: {
-          Image(systemName: project.starred ? "pin.fill" : "pin")
-            .junoFont(size: 15, relativeTo: .subheadline)
+          JunoIconView(.pin, size: 16)
             // Coral only when it is *on*: a pinned project is an
             // active state, which is what the accent is for.
             .foregroundStyle(project.starred ? Color.junoAccent : Color.primary)
@@ -974,7 +1013,7 @@ private struct JunoMobileProjectDetail: View {
         } label: {
           // `ellipsis`, not `ellipsis.circle` — the symbol's own ring
           // sat inside the capsule the toolbar already draws.
-          Image(systemName: "ellipsis")
+          JunoIconView(.ellipsis, size: 17)
         }
         // See the note on the chat header's menu: the tint has to be set
         // on the Menu itself or the glyph takes the accent.

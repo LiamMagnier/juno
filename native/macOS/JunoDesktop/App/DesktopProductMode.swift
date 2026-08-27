@@ -188,6 +188,7 @@ extension View {
             DesktopSidebarProductHeader(product: product)
             self
         }
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 

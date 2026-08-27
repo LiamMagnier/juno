@@ -159,6 +159,7 @@ struct JunoDesktopRootView: View {
         guard case .signedIn(let session) = phase else {
             let previousWorkbench = workbenchModel
             workbenchModel = nil
+            configuration.codeHostModel?.disconnectWorkbench()
             stopAuthenticatedModels()
             await previousWorkbench?.shutdown()
             return
@@ -230,7 +231,7 @@ struct JunoDesktopRootView: View {
         configuration.workHostModel?.start(for: accountID)
 
         if let runtime = configuration.runtime {
-            workbenchModel = WorkbenchModel(
+            let workbench = WorkbenchModel(
                 dependencies: .standard(
                     accountID: accountID.rawValue,
                     modelClient: BackendCodeModelClient(
@@ -244,6 +245,8 @@ struct JunoDesktopRootView: View {
                     )
                 )
             )
+            workbenchModel = workbench
+            configuration.codeHostModel?.connect(workbench: workbench)
         }
     }
 
