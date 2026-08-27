@@ -1681,7 +1681,7 @@ struct DesktopCodeDraftDetail: View {
                     .padding(JunoSpace.snug)
                     .frame(minWidth: 44, minHeight: 44)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.junoCard, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+                    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                             .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)

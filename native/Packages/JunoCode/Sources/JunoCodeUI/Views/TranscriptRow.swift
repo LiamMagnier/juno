@@ -164,7 +164,7 @@ struct TranscriptRow: View {
                 .padding(.vertical, JunoSpace.snug + 2)
                 .background(
                     RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                        .fill(Color.junoCard)
+                        .fill(Color.junoRaised)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
