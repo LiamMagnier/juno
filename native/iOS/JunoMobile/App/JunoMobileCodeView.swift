@@ -177,52 +177,83 @@ struct JunoMobileCodeView: View {
   // MARK: Session list + composer
 
   private var sessions: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: 12) {
-        JunoPageTitle(
-          title: "navigation.code",
-          subtitle: model.isTargetless ? "code.subtitle.none" : "code.subtitle"
-        )
-        .padding(.top, 6)
-
-        codeOverview
-
-        if let error = model.lastErrorDescription {
-          JunoInlineError(message: error) { Task { await model.refresh() } }
-        }
-
-        if model.tasks.isEmpty {
-          JunoMobileCodeGreeting(
-            targetless: model.isTargetless,
-            onSelectIntent: { selected in
-              prompt = selected
-              composerFocused = true
-            }
+    VStack(spacing: 0) {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 12) {
+          JunoPageTitle(
+            title: "navigation.code",
+            subtitle: model.isTargetless ? "code.subtitle.none" : "code.subtitle"
           )
-          .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
-        } else {
-          if !activeTasks.isEmpty {
-            JunoGroupLabel(text: "Active")
-            taskGroup(activeTasks)
+          .padding(.top, 6)
+
+          codeOverview
+
+          if let error = model.lastErrorDescription {
+            JunoInlineError(message: error) { Task { await model.refresh() } }
           }
-          if !recentTasks.isEmpty {
-            JunoGroupLabel(text: "Recent")
-            taskGroup(recentTasks)
+
+          if model.tasks.isEmpty {
+            JunoMobileCodeGreeting(
+              targetless: model.isTargetless,
+              onSelectIntent: { selected in
+                prompt = selected
+                composerFocused = true
+              }
+            )
+            .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
+          } else {
+            // Triage is the first job of Code. A run that is waiting on the
+            // reader must stay above ordinary activity, just like the website's
+            // Needs you bucket; grouping everything under "Active" hid that
+            // distinction in a list that otherwise looked like a generic feed.
+            if !attentionTasks.isEmpty {
+              codeTaskSection(
+                title: "Needs you", icon: .permission,
+                tint: Color.junoCaution, tasks: attentionTasks
+              )
+            }
+            if !inFlightTasks.isEmpty {
+              codeTaskSection(
+                title: "In progress", icon: .refresh,
+                tint: Color.junoMutedForeground, tasks: inFlightTasks
+              )
+            }
+            if !recentTasks.isEmpty {
+              codeTaskSection(
+                title: "Recently finished", icon: .check,
+                tint: Color.junoSuccess, tasks: recentTasks
+              )
+            }
           }
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 24)
       }
-      .padding(.horizontal, 16)
-      .padding(.bottom, 24)
+
+      // A layout sibling, rather than a safe-area overlay. The compact drawer
+      // uses a device-contour plate that intentionally ignores the container's
+      // safe area; keeping the composer in the vertical layout guarantees the
+      // last Code card can never render underneath it on iOS 26/27.
+      composer
     }
-    .safeAreaInset(edge: .bottom) { composer }
   }
 
   private var activeTasks: [NativeCodeTask] {
     model.tasks.filter { $0.status.isActive }
   }
 
+  private var attentionTasks: [NativeCodeTask] {
+    model.tasks.filter {
+      $0.status == .awaitingApproval || $0.status == .failed
+    }
+  }
+
+  private var inFlightTasks: [NativeCodeTask] {
+    model.tasks.filter { $0.status == .queued || $0.status == .running }
+  }
+
   private var recentTasks: [NativeCodeTask] {
-    model.tasks.filter { !$0.status.isActive }
+    model.tasks.filter { $0.status == .done || $0.status == .cancelled }
   }
 
   /// A compact command-center readout: the Code home should answer “what is
@@ -306,21 +337,46 @@ struct JunoMobileCodeView: View {
   }
 
   private func taskGroup(_ tasks: [NativeCodeTask]) -> some View {
-    JunoCard(padding: 0) {
-      VStack(spacing: 0) {
-        ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
-          Button {
-            model.open(task)
-          } label: {
+    VStack(spacing: JunoSpace.snug) {
+      ForEach(tasks) { task in
+        Button {
+          model.open(task)
+        } label: {
+          JunoCard(padding: 0) {
             JunoMobileCodeTaskRow(task: task)
           }
-          .buttonStyle(.plain)
-          .contentShape(.rect)
-          if index < tasks.count - 1 {
-            Divider().padding(.leading, 34)
-          }
         }
+        .buttonStyle(.plain)
+        .contentShape(.rect)
       }
+    }
+  }
+
+  private func codeTaskSection(
+    title: String,
+    icon: JunoIcon,
+    tint: Color,
+    tasks: [NativeCodeTask]
+  ) -> some View {
+    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+      HStack(spacing: JunoSpace.tight) {
+        JunoIconView(icon, size: 14)
+          .foregroundStyle(tint)
+        Text(title)
+          .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+          .junoSecondaryInk()
+        Spacer(minLength: JunoSpace.hairline)
+        Text("\(tasks.count)")
+          .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+          .monospacedDigit()
+          .foregroundStyle(tint)
+          .padding(.horizontal, 8)
+          .frame(minHeight: 22)
+          .background(Capsule().fill(tint.opacity(0.12)))
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("\(title), \(tasks.count)")
+      taskGroup(tasks)
     }
   }
 
@@ -437,26 +493,24 @@ struct JunoMobileCodeView: View {
           text: $prompt,
           axis: .vertical
         )
-        .lineLimit(1...6)
+        .lineLimit(1...3)
         .textFieldStyle(.plain)
         .focused($composerFocused)
         .padding(.horizontal, 8)
-        .padding(.top, 4)
+        .frame(minHeight: 38, alignment: .top)
         .accessibilityIdentifier("juno.mobile.code-composer")
 
-        // The repository or folder gets its own line above the switch.
-        //
-        // All three used to share one row, and on a 6.3" phone that is
-        // 369pt for a three-way switch, a repository slug and Send: the
-        // switch was squeezed to "N… … …" and the control that decides
-        // where somebody's code is written became unreadable. Nothing
-        // here truncates now, and the thing most likely to be long — a
-        // repository name — has the full width to be long in.
-        JunoMobileCodeTargetChip(model: model)
-
-        HStack(spacing: 8) {
+        // Target context, the three-way destination switch and Send share one
+        // compact control row. The old stacked arrangement made the composer
+        // cover the last run on a phone and made the destination feel like a
+        // settings form instead of a launch control.
+        HStack(alignment: .center, spacing: 6) {
+          if !model.isTargetless {
+            JunoMobileCodeTargetChip(model: model)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
           JunoMobileCodeTargetSwitch(model: model)
-          Spacer(minLength: 4)
+            .fixedSize(horizontal: true, vertical: false)
           Button {
             start()
           } label: {
@@ -475,11 +529,11 @@ struct JunoMobileCodeView: View {
           .accessibilityIdentifier("juno.mobile.code-start")
         }
       }
-      .padding(8)
+      .padding(7)
       .background(JunoGlassBackground(cornerRadius: 26))
     }
     .padding(.horizontal, 12)
-    .padding(.vertical, 8)
+    .padding(.vertical, 6)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: canStart)
   }
 
@@ -670,7 +724,8 @@ private struct JunoMobileCodeTargetSwitch: View {
         ),
       ],
       selection: choice,
-      accessibilityLabel: String(localized: "code.target")
+      accessibilityLabel: String(localized: "code.target"),
+      compact: true
     )
     .accessibilityIdentifier("juno.mobile.code-target")
   }
@@ -691,7 +746,7 @@ private struct JunoMobileCodeTargetChip: View {
       } label: {
         HStack(spacing: 6) {
           JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
-          Text(label)
+          Text(displayLabel)
             .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -701,10 +756,11 @@ private struct JunoMobileCodeTargetChip: View {
         }
         .foregroundStyle(.primary)
         .padding(.horizontal, 12)
-        // 44, not the 32 it used to be. This is the control that decides
-        // where somebody's code gets written, and it was the smallest
-        // target on the screen.
-        .frame(height: 44)
+        // A 36pt visual chip keeps the launch bar calm while the button's
+        // surrounding row still meets the 44pt touch target. The previous
+        // full-height chip stacked above the destination switch and made the
+        // composer feel like a settings form.
+        .frame(height: 36)
         .modifier(JunoGlassCapsule())
         .contentShape(Capsule())
       }
@@ -728,6 +784,22 @@ private struct JunoMobileCodeTargetChip: View {
         return String(localized: "code.target.pick-device")
       }
       return model.selectedWorkspace.map { "\(device.name) · \($0.name)" } ?? device.name
+    }
+  }
+
+  /// A short visual label leaves room for the target switch and Send. The full
+  /// repository or host/workspace identity remains the accessibility label and
+  /// is visible in the picker, so compactness never hides the selected target.
+  private var displayLabel: String {
+    switch model.target {
+    case .cloud:
+      return model.selectedRepository?.name
+        ?? String(localized: "code.target.pick-repo")
+    case .device:
+      guard let device = model.selectedDevice else {
+        return String(localized: "code.target.pick-device")
+      }
+      return model.selectedWorkspace?.name ?? device.name
     }
   }
 }
@@ -791,7 +863,7 @@ private struct JunoMobileCodeTargetSheet: View {
               }
               Spacer(minLength: 0)
               if model.selectedRepository?.id == repo.id {
-                Image(systemName: "checkmark")
+                JunoIconView(.check, size: 15)
                   .foregroundStyle(Color.junoAccent)
               }
             }
@@ -870,7 +942,7 @@ private struct JunoMobileCodeTargetSheet: View {
                   if model.selectedDeviceID == device.id,
                     model.selectedWorkspace?.id == workspace.id
                   {
-                    Image(systemName: "checkmark")
+                    JunoIconView(.check, size: 15)
                       .foregroundStyle(Color.junoAccent)
                   }
                 }
@@ -920,42 +992,63 @@ private struct JunoMobileCodeTaskRow: View {
   let task: NativeCodeTask
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 7) {
-        HStack(spacing: 8) {
-          JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
-            .junoSecondaryInk()
-          // A repository slug and a folder name are labels, not code.
-          // Setting them in the code face is what made every row in
-          // this list read as log output rather than as a session.
+    HStack(alignment: .top, spacing: JunoSpace.cozy) {
+      // A status-led rail gives the row a single scan point. The old list had
+      // three equal-weight text rows and asked the reader to hunt for what was
+      // actionable; the rail makes Needs you, Running and finished work read
+      // differently without turning every row into an alert.
+      RoundedRectangle(cornerRadius: 2, style: .continuous)
+        .fill(junoCodeStatusTint(task.status))
+        .frame(width: 4)
+
+      ZStack {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+          .fill(Color.junoAccent.opacity(0.10))
+        JunoIconView(task.target == .cloud ? .cloud : .device, size: 15)
+          .foregroundStyle(Color.junoAccent)
+      }
+      .frame(width: 34, height: 34)
+
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+          Text(task.title)
+            .font(JunoSerif.cardTitle)
+            .foregroundStyle(.primary)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+          Spacer(minLength: 0)
+          JunoIconView(.chevronRight, size: 11)
+            .junoMetaInk()
+        }
+
+        HStack(spacing: 6) {
           Text(task.whereItRuns)
             .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
             .junoMetaInk()
             .lineLimit(1)
             .truncationMode(.head)
-          Spacer(minLength: 4)
-          JunoStatusPill(
-            text: junoCodeStatusText(task.status),
-            tint: junoCodeStatusTint(task.status)
-          )
-        }
-        Text(task.title)
-          .font(JunoSerif.cardTitle)
-          .foregroundStyle(.primary)
-          .lineLimit(2)
-          .multilineTextAlignment(.leading)
-        HStack(spacing: 6) {
+          Text("·").junoMetaInk()
           Text(task.updatedAt.formatted(.relative(presentation: .named)))
-            .font(.caption)
+            .junoFont(size: 11, relativeTo: .caption2)
             .junoSecondaryInk()
+            .lineLimit(1)
           if task.pullRequestURL != nil {
-            Text("·").junoMetaInk()
-            JunoIconLabel("code.pull-request", icon: .pulls, size: 12)
-              .font(.caption)
+            JunoIconView(.pulls, size: 12)
               .foregroundStyle(Color.junoAccent)
+              .accessibilityLabel("Pull request")
           }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      JunoStatusPill(
+        text: junoCodeStatusText(task.status),
+        tint: junoCodeStatusTint(task.status)
+      )
     }
-    .padding(14)
+    .padding(.horizontal, 14)
+    .padding(.vertical, 13)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

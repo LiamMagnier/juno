@@ -60,7 +60,7 @@ public struct SimulatorPane: View {
 
             if model.isSharingFrameWithModel {
                 // Raised before the capture leaves the Mac, not after.
-                Label("Juno is looking", systemImage: "eye.fill")
+                JunoIconLabel("Juno is looking", icon: .eyeOff)
                     .font(.caption2)
                     .foregroundStyle(Color.junoAccent)
                     .accessibilityIdentifier("juno.code.simulator-ai-viewing")
@@ -69,8 +69,7 @@ public struct SimulatorPane: View {
             controlOwnerBadge
 
             Button(action: close) {
-                Image(systemName: "xmark")
-                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
+                JunoIconView(.close, size: 12)
                     .junoSecondaryInk()
                     .frame(width: 24, height: 24)
                     .contentShape(.rect)
@@ -90,11 +89,11 @@ public struct SimulatorPane: View {
     private var controlOwnerBadge: some View {
         switch model.lease.owner {
         case .juno:
-            Label("Juno is controlling", systemImage: "sparkles")
+            JunoIconLabel("Juno is controlling", icon: .work)
                 .font(.caption2)
                 .foregroundStyle(Color.junoAccent)
         case .user:
-            Label("You are controlling", systemImage: "hand.point.up.left")
+            JunoIconLabel("You are controlling", icon: .user)
                 .font(.caption2)
                 .junoSecondaryInk()
         case .none:
@@ -151,7 +150,7 @@ public struct SimulatorPane: View {
                 Divider()
                 Button("Rediscover Projects") { model.rediscover() }
             } label: {
-                Image(systemName: "ellipsis")
+                JunoIconView(.ellipsis, size: 15)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -184,7 +183,7 @@ public struct SimulatorPane: View {
                 JunoEmptyState(
                     title: "Simulator unavailable",
                     message: reason,
-                    symbol: "iphone.slash",
+                    icon: .device,
                     actionLabel: "Check Again",
                     action: { model.rediscover() }
                 )
@@ -233,7 +232,7 @@ public struct SimulatorPane: View {
     private var interactionNotice: some View {
         if model.state.isRunning, let reason = model.inputCapability.unavailableReason {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Image(systemName: "hand.tap")
+                JunoIconView(.conversation, size: 15)
                     .junoSecondaryInk()
                 Text(reason)
                     .junoCaption()
@@ -260,7 +259,7 @@ public struct SimulatorPane: View {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(model.diagnostics.prefix(30)) { diagnostic in
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                        Image(systemName: diagnostic.severity == .error ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                        JunoIconView(diagnostic.severity == .error ? .error : .error, size: 14)
                             .foregroundStyle(diagnostic.severity == .error ? Color.junoDanger : Color.junoCaution)
                             .font(.caption2)
                         VStack(alignment: .leading, spacing: 0) {

@@ -186,7 +186,7 @@ public struct CodeConsoleDrawer: View {
             Button {
                 copyVisibleOutput()
             } label: {
-                Image(systemName: "doc.on.doc")
+                JunoIconView(.copy, size: 15)
             }
             .buttonStyle(.borderless)
             .disabled(visibleLines.isEmpty)
@@ -196,7 +196,7 @@ public struct CodeConsoleDrawer: View {
             Button {
                 isPresented = false
             } label: {
-                Image(systemName: "chevron.down")
+                JunoIconView(.chevronDown, size: 15)
             }
             .buttonStyle(.borderless)
             .help("Hide the console")
@@ -231,7 +231,11 @@ public struct CodeConsoleDrawer: View {
         } else if let run = controller.consoleRun,
                   case let .finished(detail, failed) = run.outcome
         {
-            Label(detail, systemImage: failed ? "xmark.circle" : "checkmark.circle")
+            Label {
+                Text(detail)
+            } icon: {
+                JunoIconView(failed ? .error : .check, size: 14)
+            }
                 .junoCodeSmall()
                 .foregroundStyle(failed ? Color.junoDanger : Color.junoSuccess)
                 .lineLimit(1)
@@ -266,14 +270,19 @@ public struct CodeConsoleDrawer: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Interactive terminal running, process " + String(processID))
         case let .exited(code):
-            Label(
-                "Exited " + String(code),
-                systemImage: code == 0 ? "checkmark.circle" : "xmark.circle"
-            )
+            Label {
+                Text("Exited " + String(code))
+            } icon: {
+                JunoIconView(code == 0 ? .check : .error, size: 14)
+            }
             .junoCaption()
             .foregroundStyle(code == 0 ? Color.junoSuccess : Color.junoDanger)
         case let .failed(reason):
-            Label(reason, systemImage: "exclamationmark.triangle")
+            Label {
+                Text(reason)
+            } icon: {
+                JunoIconView(.error, size: 14)
+            }
                 .junoCaption()
                 .foregroundStyle(Color.junoDanger)
                 .lineLimit(1)
@@ -470,7 +479,7 @@ public struct CodeConsoleDrawer: View {
                 Button {
                     Task { await controller.stopInteractiveTerminal() }
                 } label: {
-                    Image(systemName: "stop.fill")
+                    JunoIconView(.stop, size: 15)
                 }
                 .buttonStyle(.borderless)
                 .help("Stop the terminal process group")

@@ -183,9 +183,11 @@ public struct JunoAIcssReasoningStream: View {
                 open.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    // "Thought" leads; "for 8.4s" sits a step below it, which is
-                    // the hierarchy the web sets with two opacities on one line.
-                    Text("Thought")
+                    // The caller owns the semantic label. The default keeps the
+                    // compact Chat wording, while Code can call this provenance
+                    // "Reasoning" without the interface pretending the trace is
+                    // a mysterious thought bubble.
+                    Text(label == "Thinking…" ? "Thought" : label)
                         .foregroundStyle(Color.junoMutedForeground)
                         + Text(duration.map { " for \($0)" } ?? "")
                         .foregroundStyle(Color.junoMutedForeground)
@@ -198,7 +200,7 @@ public struct JunoAIcssReasoningStream: View {
                 .frame(minHeight: 20)
             }
             .buttonStyle(.junoPress)
-            .accessibilityLabel("Toggle thought")
+            .accessibilityLabel("Toggle \(label == "Thinking…" ? "thought" : label.lowercased())")
         }
     }
 

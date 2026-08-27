@@ -33,6 +33,10 @@ struct JunoMobileSegmented<Value: Hashable>: View {
     let options: [Option]
     @Binding var selection: Value
     var accessibilityLabel: String
+    /// Compact is used by the Code launch bar, where the target name and Send
+    /// control share the same row. The regular workspace switch keeps its
+    /// roomier editorial rhythm.
+    var compact = false
 
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,7 +51,11 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                     }
                 } label: {
                     Text(option.title)
-                        .junoFont(size: 13, relativeTo: .footnote, weight: .medium)
+                        .junoFont(
+                          size: compact ? 12 : 13,
+                          relativeTo: .footnote,
+                          weight: .medium
+                        )
                         .foregroundStyle(selected ? Color.primary : Color.junoMutedForeground)
                         // A switch that wraps is not a switch. This one is now
                         // used inside the Code composer, where three options,
@@ -56,7 +64,7 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                         // pressure rather than breaking onto a second row.
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
-                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.horizontal, compact ? JunoSpace.snug : JunoSpace.regular)
                         .frame(height: 28)
                         .background {
                             if selected {
@@ -95,7 +103,6 @@ struct JunoMobileSegmented<Value: Hashable>: View {
 struct JunoMobileMetaChip: View {
     let title: String
     var icon: JunoIcon?
-    var systemImage: String?
     var action: (() -> Void)?
 
     var body: some View {
@@ -115,9 +122,6 @@ struct JunoMobileMetaChip: View {
         HStack(spacing: JunoSpace.tight) {
             if let icon {
                 JunoIconView(icon, size: 12)
-            } else if let systemImage {
-                Image(systemName: systemImage)
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             }
             Text(title)
                 .junoFont(size: 12, relativeTo: .caption, weight: .medium)
@@ -227,8 +231,7 @@ struct JunoMobileClampedText: View {
                 } label: {
                     HStack(spacing: JunoSpace.hairline) {
                         Text(expanded ? "Show less" : "Show all")
-                        Image(systemName: "chevron.down")
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .bold)
+                        JunoIconView(.chevronDown, size: 11)
                             .rotationEffect(.degrees(expanded ? 180 : 0))
                     }
                     .junoFont(size: 12, relativeTo: .caption, weight: .medium)
@@ -254,7 +257,6 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
     let title: String
     var actionTitle: String?
     var actionIcon: JunoIcon?
-    var actionImage: String?
     var action: (() -> Void)?
     var footnote: String?
     var identifier: String?
@@ -274,9 +276,6 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                         HStack(spacing: JunoSpace.tight) {
                             if let actionIcon {
                                 JunoIconView(actionIcon, size: 12)
-                            } else if let actionImage {
-                                Image(systemName: actionImage)
-                                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                             }
                             Text(actionTitle)
                                 .junoFont(size: 12, relativeTo: .caption, weight: .medium)
@@ -306,7 +305,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
 /// Secondary section actions are controls, not coral prose links. Let the
 /// system draw Liquid Glass and its pressed state on iOS 26/27, with the native
 /// bordered control as the older-system fallback.
-private struct JunoMobileWorkspaceActionStyle: ViewModifier {
+struct JunoMobileWorkspaceActionStyle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {

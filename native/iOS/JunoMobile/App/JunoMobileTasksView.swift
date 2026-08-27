@@ -27,7 +27,7 @@ struct JunoMobileTasksView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    Label("tasks.unavailable", systemImage: "exclamationmark.triangle")
+                    JunoIconLabel("tasks.unavailable", icon: .error, size: 28)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "tasks.retry"))
                 } actions: {
@@ -50,7 +50,7 @@ struct JunoMobileTasksView: View {
                         draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
                     )
                 } label: {
-                    Image(systemName: "plus")
+                    JunoIconView(.plus, size: 17)
                 }
                 .disabled(model.isAtLimit || model.isPlanLocked || models.isEmpty)
                 .accessibilityLabel("tasks.new")
@@ -176,7 +176,7 @@ struct JunoMobileTasksView: View {
     private var locked: some View {
         JunoCard {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Label("tasks.locked.title", systemImage: "lock")
+                JunoIconLabel("tasks.locked.title", icon: .lock, size: 18)
                     .junoFont(size: 17, relativeTo: .headline, weight: .semibold)
                 Text("tasks.locked.detail")
                     .font(.callout)
@@ -218,8 +218,7 @@ private struct JunoMobileTaskCard: View {
                                 .junoSecondaryInk()
                                 .lineLimit(1)
                             if task.webSearch {
-                                Image(systemName: "globe")
-                                    .font(.caption2)
+                                JunoIconView(.web, size: 12)
                                     .junoMetaInk()
                             }
                         }
@@ -244,19 +243,18 @@ private struct JunoMobileTaskCard: View {
                             )
                         )
                     Menu {
-                        Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
+                        Button { onEdit() } label: { JunoIconLabel("Edit", icon: .pencil) }
                         if task.conversationID != nil {
                             Button { onOpenResults() } label: {
-                                Label("tasks.results", systemImage: "arrow.up.right")
+                                JunoIconLabel("tasks.results", icon: .external)
                             }
                         }
                         Divider()
                         Button(role: .destructive) { onDelete() } label: {
-                            Label("Delete", systemImage: "trash")
+                            JunoIconLabel("Delete", icon: .trash)
                         }
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                        JunoIconView(.ellipsis, size: 15)
                             .junoSecondaryInk()
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
@@ -273,7 +271,7 @@ private struct JunoMobileTaskCard: View {
                         Button(action: onOpenResults) {
                             HStack(spacing: 3) {
                                 Text("tasks.results")
-                                Image(systemName: "arrow.up.right")
+                                JunoIconView(.external, size: 12)
                             }
                             .font(.caption.weight(.medium))
                         }
@@ -292,7 +290,7 @@ private struct JunoMobileTaskCard: View {
     @ViewBuilder
     private var statusLine: some View {
         if let run = task.latestRun, run.isRunning {
-            Label("tasks.status.running", systemImage: "circle.dotted")
+            JunoIconLabel("tasks.status.running", icon: .refresh, size: 13)
                 .font(.caption)
                 .foregroundStyle(Color.junoAccent)
         } else if !task.enabled {

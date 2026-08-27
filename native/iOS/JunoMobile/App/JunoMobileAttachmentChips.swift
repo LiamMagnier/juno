@@ -43,8 +43,7 @@ struct JunoMobileAttachmentChips: View {
                 Button {
                     onRetry(attachment.id)
                 } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption.weight(.semibold))
+                    JunoIconView(.refresh, size: 13)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("attachments.retry"))
@@ -54,8 +53,7 @@ struct JunoMobileAttachmentChips: View {
             Button {
                 onRemove(attachment.id)
             } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.bold))
+                JunoIconView(.close, size: 12)
                     .junoSecondaryInk()
             }
             .buttonStyle(.plain)

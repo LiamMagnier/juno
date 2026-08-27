@@ -1,6 +1,9 @@
 import "server-only";
 import { providerApiKey, providerBaseUrl } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
+import { isGoogleOmniModel, parseGoogleOmniInteraction } from "@/lib/video-gen-core";
+
+export { parseGoogleOmniInteraction } from "@/lib/video-gen-core";
 
 /*
  * Video generation is asynchronous on every provider: start a job, poll until
@@ -102,6 +105,52 @@ function googleHeaders(): Record<string, string> {
   if (!key) throw new Error("Google API key is not configured.");
   return { "Content-Type": "application/json", "x-goog-api-key": key };
 }
+
+interface GoogleOmniInteraction {
+  id?: string;
+  status?: string;
+  error?: { message?: string } | string;
+  steps?: unknown[];
+  outputs?: unknown[];
+  output?: unknown;
+}
+
+function googleOmniHeaders(): Record<string, string> {
+  return { ...googleHeaders(), "Api-Revision": "2026-05-20" };
+}
+
+const googleOmniAdapter: VideoAdapter = {
+  async start(model, prompt) {
+    const { ok, status, data, text } = await fetchJson<GoogleOmniInteraction>(
+      `${GOOGLE_API_BASE}/interactions`,
+      {
+        method: "POST",
+        headers: googleOmniHeaders(),
+        body: JSON.stringify({
+          model: model.providerModel,
+          input: prompt,
+          background: true,
+          // Prefer URI delivery for larger clips; the poll parser also accepts
+          // the inline base64 form returned by the preview endpoint.
+          response_format: { type: "video", aspect_ratio: "16:9", delivery: "uri" },
+        }),
+      }
+    );
+    if (!ok || !data.id) {
+      throw new Error(`${model.name} rejected the request (${status}). ${text.slice(0, 160)}`);
+    }
+    return data.id;
+  },
+
+  async poll(model, id) {
+    const { ok, status, data, text } = await fetchJson<GoogleOmniInteraction>(
+      `${GOOGLE_API_BASE}/interactions/${encodeURIComponent(id)}`,
+      { headers: googleOmniHeaders() }
+    );
+    if (!ok) throw new Error(`Polling ${model.name} failed (${status}). ${text.slice(0, 160)}`);
+    return parseGoogleOmniInteraction(data, model.name, { "x-goog-api-key": providerApiKey("google")! });
+  },
+};
 
 const googleVeoAdapter: VideoAdapter = {
   async start(model, prompt) {
@@ -289,9 +338,8 @@ const seedanceAdapter: VideoAdapter = {
   },
 };
 
-// xAI Grok Imagine and Gemini Omni have no documented job pattern wired yet —
-// they are registered as unsupported (honest error, no fakes).
 function adapterFor(model: ModelInfo): VideoAdapter | null {
+  if (isGoogleOmniModel(model)) return googleOmniAdapter;
   if (model.provider === "google" && model.providerModel.startsWith("veo-")) return googleVeoAdapter;
   if (model.provider === "minimax") return minimaxAdapter;
   if (model.provider === "zhipu") return zhipuAdapter;
@@ -304,7 +352,7 @@ export function isVideoGenSupported(model: ModelInfo): boolean {
 }
 
 export function videoGenUnsupportedMessage(model: ModelInfo): string {
-  return `Video generation for ${model.name} is not wired yet — try Veo or Hailuo.`;
+  return `Video generation for ${model.name} is not wired yet — try Veo, Gemini Omni, or Hailuo.`;
 }
 
 export async function startVideoJob(model: ModelInfo, prompt: string): Promise<VideoJobHandle> {

@@ -22,10 +22,10 @@ public struct TranscriptView: View {
     /// this file read the setting before.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// The transcript's measure. Long-form agent prose past roughly 90
-    /// characters is measurably harder to read, and a full-screen window is
-    /// otherwise 1800pt of single-column text.
-    static let measure: CGFloat = 720
+    /// The transcript shares a measure with the composer. Long-form prose still
+    /// needs a readable line length, but the old 720pt column left the task
+    /// visually detached from a wide desktop window and from the controls below.
+    static let measure: CGFloat = CodeSessionLayout.measure
 
     /// Whether the reader is still at the end of the record.
     ///
@@ -38,6 +38,10 @@ public struct TranscriptView: View {
     /// the alternative is a view that silently disagrees with where they are
     /// looking.
     @State private var isPinnedToBottom = true
+    /// Geometry can report a provisional offset while LazyVStack is still
+    /// mounting the tail. Do not interpret that first layout as an intentional
+    /// reader scroll; the initial positioning task owns the first pass.
+    @State private var hasCompletedInitialPositioning = false
 
     /// How close to the end still counts as being at the end. A line's height,
     /// roughly: a reader one pixel off the bottom has not chosen to leave.
@@ -77,17 +81,40 @@ public struct TranscriptView: View {
                         isPinnedToBottom: isPinnedToBottom
                     )
                 }
-                .padding(.horizontal, JunoSpace.tight)
+                .padding(.horizontal, JunoSpace.cozy)
                 .padding(.top, JunoSpace.regular)
                 .padding(.bottom, JunoSpace.snug)
                 .frame(maxWidth: Self.measure, alignment: .leading)
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, CodeSessionLayout.inset)
             }
             .environment(\.codeModelDisplayNames, modelDisplayNames)
+            .task(id: controller.sessionID) {
+                // A reopened task should land on its latest evidence. Without
+                // an explicit first-layout scroll, LazyVStack reports its
+                // initial geometry before the tail exists and the surface opens
+                // at the top with a misleading "Jump to latest" affordance.
+                hasCompletedInitialPositioning = false
+                isPinnedToBottom = true
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                // Give the scroll view one layout pass to resolve the tail
+                // before asking ScrollViewReader to position it. Calling
+                // `scrollTo` before that pass is a no-op when LazyVStack has
+                // not mounted the tail yet.
+                try? await Task.sleep(for: .milliseconds(120))
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(TranscriptTail.id, anchor: .bottom)
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                hasCompletedInitialPositioning = true
+                isPinnedToBottom = true
+            }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentOffset.y + geometry.containerSize.height
                     >= geometry.contentSize.height - Self.pinThreshold
             } action: { _, pinned in
+                guard hasCompletedInitialPositioning else { return }
                 isPinnedToBottom = pinned
             }
             // Anchored on the tail rather than on the last event, so a run that
@@ -109,6 +136,7 @@ public struct TranscriptView: View {
             .overlay(alignment: .bottom) {
                 if !isPinnedToBottom {
                     TranscriptJumpToLatest {
+                        isPinnedToBottom = true
                         withAnimation(
                             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)
                         ) {
@@ -272,8 +300,8 @@ struct TranscriptJumpToLatest: View {
     var body: some View {
         Button(action: jump) {
             HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "arrow.down")
-                    .font(.caption.weight(.bold))
+                JunoIconView(.arrowDown, size: 13)
+                    .foregroundStyle(Color.junoAccent)
                 Text("Jump to latest").junoRowLabel()
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -370,17 +398,17 @@ struct PreRunSuggestions: View {
 struct StarterPrompt: Identifiable {
     var id: String { title }
     let title: String
-    let glyph: String
+    let icon: JunoIcon
     let prompt: String
 
     static let tour = StarterPrompt(
         title: "Explain this codebase",
-        glyph: "map",
+        icon: .knowledge,
         prompt: "Give me a tour of this codebase: structure, key modules, and how they fit together."
     )
     static let plan = StarterPrompt(
         title: "Plan a change",
-        glyph: "list.bullet.rectangle",
+        icon: .sliders,
         prompt: """
         I want to change:
 
@@ -390,24 +418,24 @@ struct StarterPrompt: Identifiable {
     )
     static let survey = StarterPrompt(
         title: "Survey this project",
-        glyph: "scope",
+        icon: .research,
         prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence."
     )
     static let findBug = StarterPrompt(
         title: "Find a likely bug",
-        glyph: "ant",
+        icon: .error,
         prompt: "Look for likely bugs in the most recently changed files and explain what you find."
     )
     static let reviewUncommitted = StarterPrompt(
         title: "Review my uncommitted work",
-        glyph: "arrow.triangle.branch",
+        icon: .branch,
         prompt: "Review my uncommitted changes: correctness, regressions, and anything missing tests."
     )
 
     static func runTests(command: String) -> StarterPrompt {
         StarterPrompt(
             title: "Run the tests",
-            glyph: "checkmark.seal",
+            icon: .check,
             prompt: "Run `\(command)`. If anything fails, explain the failure."
         )
     }
@@ -426,8 +454,7 @@ struct StarterPromptList: View {
                     select(starter.prompt)
                 } label: {
                     HStack(spacing: JunoSpace.snug) {
-                        Image(systemName: starter.glyph)
-                            .imageScale(.small)
+                        JunoIconView(starter.icon, size: 16)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 16)
                         Text(starter.title).junoRowLabel()

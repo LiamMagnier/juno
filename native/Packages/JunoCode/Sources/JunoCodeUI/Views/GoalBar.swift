@@ -16,24 +16,25 @@ struct GoalBar: View {
     var body: some View {
         if let goal {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: lifecycleGlyph(goal.lifecycle))
+                JunoIconView(lifecycleIcon(goal.lifecycle), size: 16)
                     .foregroundStyle(lifecycleTint(goal.lifecycle))
                     .frame(width: 16)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(goal.objective)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                    Text(progressLabel(goal))
-                        .junoCaption()
-                        .lineLimit(1)
-                }
+                Text(goal.objective)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer(minLength: JunoSpace.regular)
 
+                Text(progressLabel(goal))
+                    .junoCodeSmall()
+                    .junoSecondaryInk()
+                    .lineLimit(1)
+
                 ProgressView(value: goal.progress.fractionCompleted)
                     .progressViewStyle(.linear)
-                    .frame(width: 96)
+                    .frame(width: 84)
                     .tint(lifecycleTint(goal.lifecycle))
                     .accessibilityLabel("Goal progress")
                     .accessibilityValue(progressLabel(goal))
@@ -41,12 +42,12 @@ struct GoalBar: View {
                 Button {
                     showsDetails.toggle()
                 } label: {
-                    Label("Goal details", systemImage: "chevron.down")
-                        .labelStyle(.iconOnly)
+                    JunoIconView(.chevronDown, size: 13)
                         .frame(width: 24, height: 24)
                 }
                 .buttonStyle(.plain)
                 .help("Show goal details")
+                .accessibilityLabel("Goal details")
                 .accessibilityIdentifier("juno.code.goal.details")
                 .popover(isPresented: $showsDetails, arrowEdge: .top) {
                     GoalDetails(controller: controller, goal: goal)
@@ -63,9 +64,11 @@ struct GoalBar: View {
                 // outside click to dismiss it first.
                 .onDisappear { showsDetails = false }
             }
-            .padding(.horizontal, JunoSpace.regular)
+            .frame(maxWidth: CodeSessionLayout.measure, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, CodeSessionLayout.inset)
             .padding(.vertical, JunoSpace.snug)
-            .background(.bar)
+            .background(Color.junoCanvas)
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(Color.junoHairline)
@@ -137,7 +140,7 @@ private struct GoalDetails: View {
                 if !goal.verificationEvidence.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                        Label("Verification", systemImage: "checkmark.seal")
+                        JunoIconLabel("Verification", icon: .check)
                             .font(.caption.weight(.semibold))
                             .junoSecondaryInk()
                         ForEach(goal.verificationEvidence, id: \.id) { evidence in
@@ -184,19 +187,19 @@ private struct GoalDetails: View {
                 Task { await controller.setGoalLifecycle(.active) }
             }
         case .completed:
-            Label("Complete", systemImage: "checkmark.seal.fill")
+            JunoIconLabel("Complete", icon: .check)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.junoSuccess)
         }
     }
 }
 
-private func lifecycleGlyph(_ lifecycle: GoalLifecycle) -> String {
+private func lifecycleIcon(_ lifecycle: GoalLifecycle) -> JunoIcon {
     switch lifecycle {
-    case .active: "target"
-    case .paused: "pause.circle.fill"
-    case .blocked: "exclamationmark.octagon.fill"
-    case .completed: "checkmark.seal.fill"
+    case .active: .pin
+    case .paused: .stop
+    case .blocked: .error
+    case .completed: .check
     }
 }
 
@@ -212,6 +215,4 @@ private func lifecycleTint(_ lifecycle: GoalLifecycle) -> Color {
     case .completed: Color.junoSuccess
     }
 }
-
-
 

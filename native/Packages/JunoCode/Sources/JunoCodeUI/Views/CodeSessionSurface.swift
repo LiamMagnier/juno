@@ -2,6 +2,14 @@ import JunoCodeCore
 import JunoDesignSystem
 import SwiftUI
 
+/// Shared reading measure for the active task surface. The transcript and the
+/// composer are one workbench, so their left and right edges should agree while
+/// the window grows around them.
+enum CodeSessionLayout {
+    static let measure: CGFloat = 900
+    static let inset: CGFloat = 28
+}
+
 /// The session surface: everything inside the detail column of a Code window.
 ///
 /// This is the boundary between the host app and this package. The app owns the
@@ -239,9 +247,9 @@ public struct CodeSessionCanvas: View {
                 beginDictation: beginDictation,
                 beginVoice: beginVoice
             )
-            .frame(maxWidth: 860)
+            .frame(maxWidth: CodeSessionLayout.measure)
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.horizontal, CodeSessionLayout.inset)
             .padding(.bottom, JunoSpace.snug)
         }
     }
@@ -262,7 +270,7 @@ public struct CodeSessionCanvas: View {
     private var transientError: some View {
         if let message = controller.transientError {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                JunoIconView(.error, size: 15)
                     .foregroundStyle(Color.junoCaution)
                 Text(message)
                     .junoCaption()
@@ -273,8 +281,7 @@ public struct CodeSessionCanvas: View {
                 Button {
                     controller.clearTransientError()
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.semibold))
+                    JunoIconView(.close, size: 13)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)

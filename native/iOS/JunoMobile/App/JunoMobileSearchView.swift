@@ -81,8 +81,7 @@ struct JunoMobileSearchView: View {
 
     private var field: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "magnifyingglass")
-                .junoFont(size: 15, relativeTo: .subheadline)
+            JunoIconView(.search, size: 15)
                 .foregroundStyle(Color.junoMutedForeground)
             TextField("Chats, messages, projects, files…", text: $draft)
                 .junoFont(size: 16, relativeTo: .callout)
@@ -103,8 +102,7 @@ struct JunoMobileSearchView: View {
                     draft = ""
                     fieldFocused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .junoFont(size: 16, relativeTo: .callout)
+                    JunoIconView(.close, size: 14)
                         .foregroundStyle(Color.junoMutedForeground)
                         // A glyph is not a touch target: the 16pt symbol was the
                         // whole of it, and a tap that missed by two points went
@@ -145,7 +143,7 @@ struct JunoMobileSearchView: View {
             JunoMobileQuietLoading()
         case .failed:
             ContentUnavailableView {
-                Label("Search unavailable", systemImage: "exclamationmark.triangle")
+                JunoIconLabel("Search unavailable", icon: .error, size: 28)
             } description: {
                 Text(model.lastErrorDescription ?? "Try again.")
             } actions: {
@@ -157,11 +155,11 @@ struct JunoMobileSearchView: View {
             // Names the corpus, because "no results" and "not synced yet" are
             // indistinguishable to the reader and only one of them is their
             // problem to solve.
-            ContentUnavailableView(
-                "No results",
-                systemImage: "magnifyingglass",
-                description: Text("Nothing synced to this device matches “\(model.query)”.")
-            )
+            ContentUnavailableView {
+                JunoIconLabel(verbatim: "No results", icon: .search, size: 28)
+            } description: {
+                Text("Nothing synced to this device matches “\(model.query)”.")
+            }
         default:
             results
         }
@@ -206,8 +204,7 @@ struct JunoMobileSearchView: View {
     private func row(_ result: NativeSearchResult) -> some View {
         Button { open(result) } label: {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                Image(systemName: icon(result.kind))
-                    .junoFont(size: 14, relativeTo: .subheadline)
+                JunoIconView(icon(result.kind), size: 14)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
@@ -251,11 +248,11 @@ struct JunoMobileSearchView: View {
     @ViewBuilder
     private var recents: some View {
         if recentConversations.isEmpty && projects.isEmpty {
-            ContentUnavailableView(
-                "Search Juno",
-                systemImage: "magnifyingglass",
-                description: Text("Chats, messages, projects and files — everything synced to this device, searchable offline.")
-            )
+            ContentUnavailableView {
+                JunoIconLabel(verbatim: "Search Juno", icon: .search, size: 28)
+            } description: {
+                Text("Chats, messages, projects and files — everything synced to this device, searchable offline.")
+            }
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
@@ -270,8 +267,7 @@ struct JunoMobileSearchView: View {
                                         recentRow(
                                             title: conversation.title,
                                             date: conversation.lastMessageAt,
-                                            glyph: conversation.pinned
-                                                ? "pin.fill" : "bubble.left.and.bubble.right",
+                                            icon: conversation.pinned ? .pin : .conversation,
                                             action: { openConversation?(conversation.id) }
                                         )
                                     }
@@ -291,7 +287,7 @@ struct JunoMobileSearchView: View {
                                         recentRow(
                                             title: project.name,
                                             date: project.updatedAt,
-                                            glyph: project.starred ? "pin.fill" : "folder",
+                                            icon: project.starred ? .pin : .projects,
                                             action: { openProject?(project.id) }
                                         )
                                     }
@@ -314,13 +310,12 @@ struct JunoMobileSearchView: View {
     private func recentRow(
         title: String,
         date: Date,
-        glyph: String,
+        icon: JunoIcon,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: glyph)
-                    .junoFont(size: 14, relativeTo: .subheadline)
+                JunoIconView(icon, size: 14)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 20, height: 20)
                     .accessibilityHidden(true)
@@ -357,14 +352,14 @@ struct JunoMobileSearchView: View {
         }
     }
 
-    private func icon(_ kind: NativeSearchResultKind) -> String {
+    private func icon(_ kind: NativeSearchResultKind) -> JunoIcon {
         switch kind {
-        case .conversation: "bubble.left.and.bubble.right"
-        case .message: "text.bubble"
-        case .project: "folder"
-        case .file: "doc"
-        case .artifact: "square.stack.3d.up"
-        case .memory: "brain.head.profile"
+        case .conversation: .conversation
+        case .message: .conversation
+        case .project: .projects
+        case .file: .file
+        case .artifact: .artifacts
+        case .memory: .memory
         }
     }
 }

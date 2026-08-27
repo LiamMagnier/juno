@@ -51,7 +51,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// Settings is `settings`, now that the shared icon set carries one — it fell
     /// back to `gearshape` before, the only SF Symbol in an otherwise Lucide
     /// column, which read as a glyph borrowed from another product.
-    var junoIcon: JunoIcon? {
+    var junoIcon: JunoIcon {
         switch self {
         case .chat: .home
         case .search: .search
@@ -66,7 +66,9 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    /// The fallback system symbol, used only where ``junoIcon`` is nil.
+    /// Legacy symbol names kept for older navigation tests and integrations.
+    /// The production drawer never renders this value; it always uses
+    /// ``junoIcon`` so the visible rail stays on the website's Lucide geometry.
     var systemImage: String {
         switch self {
         case .chat: "square.and.pencil"

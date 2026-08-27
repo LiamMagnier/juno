@@ -795,19 +795,25 @@ private struct JunoMobileConversationDetail: View {
         onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
       )
     }
-    ToolbarItem(placement: .topBarTrailing) {
-      Menu {
-        if !messages.isEmpty, let newChat {
-          Button(action: newChat) {
-            Label("New chat", systemImage: "square.and.pencil")
-          }
-          Divider()
+    ToolbarItemGroup(placement: .topBarTrailing) {
+      if !messages.isEmpty, let newChat {
+        Button(action: newChat) {
+          JunoIconView(.new, size: 16)
+            .foregroundStyle(Color.primary)
+            .frame(width: 32, height: 32)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("New chat")
+        .accessibilityIdentifier("juno.mobile.chat-new")
+      }
+      Menu {
         if shareClient != nil {
           Button {
             Task { await createShare() }
           } label: {
-            Label("Share…", systemImage: "square.and.arrow.up")
+            JunoIconLabel(verbatim: "Share…", icon: .share)
           }
           .disabled(sharing)
         }
@@ -815,16 +821,16 @@ private struct JunoMobileConversationDetail: View {
           editValue = conversation.title
           showingRename = true
         } label: {
-          Label("Rename", systemImage: "pencil")
+          JunoIconLabel(verbatim: "Rename", icon: .pencil)
         }
         Button {
           Task {
             await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
           }
         } label: {
-          Label(
-            conversation.pinned ? "Unpin" : "Pin",
-            systemImage: conversation.pinned ? "pin.slash" : "pin"
+          JunoIconLabel(
+            verbatim: conversation.pinned ? "Unpin" : "Pin",
+            icon: .pin
           )
         }
         Divider()
@@ -834,16 +840,13 @@ private struct JunoMobileConversationDetail: View {
         Button(role: .destructive) {
           showingDelete = true
         } label: {
-          Label("Delete", systemImage: "trash")
+          JunoIconLabel(verbatim: "Delete", icon: .trash)
         }
       } label: {
-        // `ellipsis`, not `ellipsis.circle`. The symbol's own ring sat
-        // inside the capsule the toolbar already draws, so the button
-        // wore two concentric outlines around three dots.
-        Image(systemName: "ellipsis")
-          .junoFont(size: 16, relativeTo: .callout, weight: .semibold)
+        JunoIconView(.ellipsis, size: 16)
           .foregroundStyle(Color.primary)
-          .frame(minWidth: 32, minHeight: 32)
+          .frame(width: 44, height: 44)
+          .contentShape(Rectangle())
       }
       // On the Menu, not on the Label. A `Menu` tints its whole label with
       // the accent, and a `foregroundStyle` inside cannot override that —
@@ -851,6 +854,7 @@ private struct JunoMobileConversationDetail: View {
       // composer's "+". With the accent applied this came out coral.
       .tint(Color.primary)
       .disabled(model.isMutating || conversation.isPending)
+      .accessibilityLabel("Conversation actions")
       .accessibilityIdentifier("juno.mobile.conversation-menu")
     }
   }
@@ -926,8 +930,7 @@ private struct JunoMobileConversationDetail: View {
           Button {
             jumpToLatest()
           } label: {
-            Image(systemName: "arrow.down")
-              .font(.body.weight(.semibold))
+            JunoIconView(.arrowDown, size: 16)
               // Ink, not coral. The screen's `.tint` is the accent, and
               // a bare `Image` in a `Button` label takes it — so the one
               // piece of chrome that means "you have scrolled up" was
@@ -1491,7 +1494,7 @@ private struct JunoMobileMessageRow: View {
         branchNavigator
         if editMessage != nil, !editing {
           actionButton(
-            systemImage: "pencil",
+            icon: .pencil,
             label: "message.edit",
             identifier: "juno.mobile.message-edit"
           ) {
@@ -1580,8 +1583,7 @@ private struct JunoMobileMessageRow: View {
       }
     } label: {
       HStack(spacing: JunoSpace.tight) {
-        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-          .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+        JunoIconView(expanded ? .chevronUp : .chevronDown, size: 11)
         Text(expandLabel)
           .junoFont(size: 12, relativeTo: .caption)
       }
@@ -1664,9 +1666,12 @@ private struct JunoMobileMessageRow: View {
       footer
 
       if let error = message.errorDescription {
-        Label(error, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(Color.junoCaution)
+        HStack(spacing: JunoSpace.tight) {
+          JunoIconView(.error, size: 14)
+          Text(error)
+            .font(.caption)
+        }
+        .foregroundStyle(Color.junoCaution)
       }
 
       if !message.isPending && !voice { actionRow }
@@ -1777,7 +1782,7 @@ private struct JunoMobileMessageRow: View {
       HStack(spacing: 2) {
         if !plainText.isEmpty {
           actionButton(
-            systemImage: copied ? "checkmark" : "doc.on.doc",
+            icon: copied ? .check : .copy,
             label: copied ? "message.copied" : "message.copy",
             identifier: "juno.mobile.message-copy"
           ) { copy() }
@@ -1785,10 +1790,7 @@ private struct JunoMobileMessageRow: View {
 
         if let readAloud, !plainText.isEmpty {
           actionButton(
-            systemImage: readAloud.isSpeaking(message.id)
-              ? "stop.fill"
-              : (readAloud.isPreparing(message.id)
-                ? "waveform" : "speaker.wave.2"),
+            icon: readAloud.isSpeaking(message.id) ? .stop : .volume,
             label: readAloud.isSpeaking(message.id)
               ? "message.stop-reading" : "message.read-aloud",
             identifier: "juno.mobile.message-read-aloud",
@@ -1803,7 +1805,7 @@ private struct JunoMobileMessageRow: View {
 
         if let regenerate {
           actionButton(
-            systemImage: "arrow.clockwise",
+            icon: .refresh,
             label: "message.regenerate",
             identifier: "juno.mobile.message-regenerate",
             action: regenerate
@@ -1815,7 +1817,7 @@ private struct JunoMobileMessageRow: View {
             || message.finishReason == .networkError
         {
           actionButton(
-            systemImage: "arrow.down.circle",
+            icon: .arrowDown,
             label: "message.continue",
             identifier: "juno.mobile.message-continue",
             action: continueResponse
@@ -1824,7 +1826,7 @@ private struct JunoMobileMessageRow: View {
 
         if let branch {
           actionButton(
-            systemImage: "arrow.triangle.branch",
+            icon: .branch,
             label: "message.branch",
             identifier: "juno.mobile.message-branch"
           ) { branch(message.id) }
@@ -1832,16 +1834,14 @@ private struct JunoMobileMessageRow: View {
 
         if let setFeedback {
           actionButton(
-            systemImage: message.feedback == .up
-              ? "hand.thumbsup.fill" : "hand.thumbsup",
+            icon: .thumbsUp,
             label: "message.good",
             identifier: "juno.mobile.message-thumbs-up",
             active: message.feedback == .up
           ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
 
           actionButton(
-            systemImage: message.feedback == .down
-              ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+            icon: .thumbsDown,
             label: "message.bad",
             identifier: "juno.mobile.message-thumbs-down",
             active: message.feedback == .down
@@ -1869,15 +1869,14 @@ private struct JunoMobileMessageRow: View {
   /// the symbol into a smear. Growing the row is the correct answer — the
   /// whole point of a larger text setting is that the controls get larger too.
   private func actionButton(
-    systemImage: String,
+    icon: JunoIcon,
     label: LocalizedStringKey,
     identifier: String,
     active: Bool = false,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
-      Image(systemName: systemImage)
-        .junoFont(size: 14, relativeTo: .footnote)
+      JunoIconView(icon, size: 15)
         .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
         .frame(minWidth: 34, minHeight: 34)
         .contentShape(Rectangle())
@@ -1909,7 +1908,7 @@ private struct JunoMobileMessageRow: View {
     Button {
       UIPasteboard.general.string = plainText
     } label: {
-      Label("Copy", systemImage: "doc.on.doc")
+      JunoIconLabel(verbatim: "Copy", icon: .copy)
     }
     .disabled(plainText.isEmpty)
     .contentShape(.rect)
@@ -1928,13 +1927,13 @@ private struct JunoMobileArtifactInlineCard: View {
   let artifact: NativeMessageContent.ArtifactReference
   var open: (() -> Void)?
 
-  private var glyph: String {
+  private var glyph: JunoIcon {
     switch artifact.kind {
-    case "REACT", "HTML": "curlybraces.square"
-    case "SVG": "square.on.circle"
-    case "MERMAID": "flowchart"
-    case "MARKDOWN": "doc.text"
-    default: "chevron.left.forwardslash.chevron.right"
+    case "REACT", "HTML": .code
+    case "SVG": .artifacts
+    case "MERMAID": .branch
+    case "MARKDOWN": .file
+    default: .code
     }
   }
 
@@ -1958,8 +1957,7 @@ private struct JunoMobileArtifactInlineCard: View {
 
   private var card: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: glyph)
-        .junoFont(size: 15, relativeTo: .subheadline)
+      JunoIconView(glyph, size: 17)
         .foregroundStyle(Color.junoMutedForeground)
         .frame(minWidth: 22)
 
@@ -1978,8 +1976,7 @@ private struct JunoMobileArtifactInlineCard: View {
         JunoThinkingMatrix(dot: 3, spacing: 2)
           .foregroundStyle(Color.junoMutedForeground)
       } else if open != nil {
-        Image(systemName: "chevron.right")
-          .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+        JunoIconView(.chevronRight, size: 13)
           .foregroundStyle(Color.junoMutedForeground)
       }
     }

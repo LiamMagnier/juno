@@ -142,11 +142,11 @@ struct ComputerUseSections: View {
     @ViewBuilder
     private var stateChip: some View {
         if controller.computerUseActive {
-            StatusChip("Active", systemImage: "record.circle", tint: .junoDanger)
+            StatusChip("Active", icon: .work, tint: .junoDanger)
         } else if controller.session.configuration.computerUseEnabled {
-            StatusChip("Not running", systemImage: "pause.circle", tint: .junoMutedForeground)
+            StatusChip("Not running", icon: .stop, tint: .junoMutedForeground)
         } else {
-            StatusChip("Off", systemImage: "stop.circle", tint: .junoMutedForeground)
+            StatusChip("Off", icon: .close, tint: .junoMutedForeground)
         }
     }
 
@@ -522,7 +522,7 @@ struct ComputerUseStopBar: View {
         if controller.computerUseActive {
             VStack(spacing: 0) {
                 HStack(spacing: JunoSpace.snug) {
-                    Image(systemName: "record.circle")
+                    JunoIconView(.work, size: 15)
                         .imageScale(.small)
                         .foregroundStyle(Color.junoDanger)
                         .symbolEffect(.pulse)

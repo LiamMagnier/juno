@@ -148,6 +148,14 @@ public final class NativeCodeModel {
                 return String(localized: "code.blocked.pick-device")
             }
             if !device.online { return String(localized: "code.blocked.device-offline") }
+            // A heartbeat only proves that the Mac is signed in. It does not
+            // prove that its queued-task claim loop is running. Refuse locally
+            // when the host advertises presence without execution capability;
+            // otherwise the phone creates a task that can sit in `queued`
+            // forever with no actionable explanation.
+            if !device.servesQueuedTasks {
+                return String(localized: "code.device.not-hosting")
+            }
             if selectedWorkspace == nil { return String(localized: "code.blocked.no-workspace") }
         }
         return nil
@@ -243,7 +251,11 @@ public final class NativeCodeModel {
         if let loadedDevices {
             devices = loadedDevices
             if selectedDeviceID == nil || !devices.contains(where: { $0.id == selectedDeviceID }) {
-                selectedDeviceID = devices.first(where: \.online)?.id ?? devices.first?.id
+                // Default to a host that can actually claim work. An online
+                // presence-only Mac belongs in the picker as an explanation,
+                // not as the default target for a task.
+                selectedDeviceID = devices.first(where: \.canAcceptWork)?.id
+                    ?? devices.first?.id
             }
         }
         lastRefreshReachedNothing = loadedTasks == nil && loadedDevices == nil

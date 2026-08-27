@@ -121,6 +121,7 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video"): numb
   if (id.includes("gpt-image")) return 40_000;
   if (id.includes("pro-image")) return 60_000;
   if (id.includes("lite")) return 10_000;
+  if (id.includes("grok-imagine-image-2.0")) return 40_000;
   if (id.includes("grok-imagine-image")) return id.includes("quality") ? 30_000 : 10_000;
   if (id.includes("glm-image") || id.includes("cogview") || id.includes("image-01")) return 20_000;
   return 30_000;

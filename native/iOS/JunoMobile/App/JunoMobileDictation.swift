@@ -134,7 +134,7 @@ struct JunoMobileDictation: View {
     private var capsule: some View {
         HStack(spacing: JunoSpace.cozy) {
             circleButton(
-                systemName: "xmark",
+                icon: .close,
                 label: "Cancel dictation",
                 identifier: "juno.mobile.dictation-cancel",
                 style: .outline,
@@ -145,7 +145,7 @@ struct JunoMobileDictation: View {
                 .frame(maxWidth: .infinity)
 
             circleButton(
-                systemName: "stop.fill",
+                icon: .stop,
                 label: "Stop and edit",
                 identifier: "juno.mobile.dictation-stop",
                 style: .neutral,
@@ -154,7 +154,7 @@ struct JunoMobileDictation: View {
             )
 
             circleButton(
-                systemName: "arrow.up",
+                icon: .send,
                 label: "Send dictation",
                 identifier: "juno.mobile.dictation-send",
                 style: .accent,
@@ -172,7 +172,7 @@ struct JunoMobileDictation: View {
     private enum CircleStyle { case outline, neutral, accent }
 
     private func circleButton(
-        systemName: String,
+        icon: JunoIcon,
         label: String,
         identifier: String,
         style: CircleStyle,
@@ -185,8 +185,7 @@ struct JunoMobileDictation: View {
             #endif
             action()
         }) {
-            Image(systemName: systemName)
-                .junoFont(size: glyphSize, relativeTo: .subheadline, weight: .semibold)
+            JunoIconView(icon, size: glyphSize)
                 .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.primary)
                 .frame(width: 40, height: 40)
                 .background {
@@ -212,15 +211,14 @@ struct JunoMobileDictation: View {
 
     private func unavailable(_ message: String) -> some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "mic.slash")
-                .junoFont(size: 15, relativeTo: .subheadline)
+            JunoIconView(.mic, size: 15)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
                 .junoFont(size: 13, relativeTo: .footnote)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
             circleButton(
-                systemName: "xmark",
+                icon: .close,
                 label: "Close dictation",
                 identifier: "juno.mobile.dictation-cancel",
                 style: .outline,

@@ -134,8 +134,7 @@ public struct ApprovalCard: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "hand.raised.fill")
-                .imageScale(.small)
+            JunoIconView(.permission, size: 15)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             Text("Approval required")
@@ -144,7 +143,7 @@ public struct ApprovalCard: View {
             ApprovalCountdown(expiresAt: request.expiresAt)
             StatusChip(
                 "\(request.risk.rawValue.capitalized) risk",
-                systemImage: "exclamationmark.triangle.fill",
+                icon: .error,
                 tint: tint
             )
         }

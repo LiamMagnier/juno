@@ -739,7 +739,7 @@ struct JunoMobileSettingsView: View {
         JunoMobileSettingsAction(
           title: "Delete account",
           detail: "Permanently deletes your account, conversations and memories.",
-            icon: .trash,
+          icon: .trash,
           isDestructive: true,
           isEnabled: !isDeletingAccount
         ) {
@@ -894,9 +894,7 @@ struct JunoMobileSettingsView: View {
 
   private var statusBanner: some View {
     HStack(spacing: JunoSpace.snug) {
-      Image(
-        systemName: model.phase == .offline
-          ? "wifi.slash" : "exclamationmark.circle")
+      JunoIconView(model.phase == .offline ? .cloud : .error, size: 15)
       Text(
         model.lastErrorDescription
           ?? "Offline — showing saved settings. Changes will sync when Juno reconnects."
@@ -1525,22 +1523,13 @@ private struct JunoMobileSettingsSwitch: View {
 /// Split from the button so a `NavigationLink` and a `Button` can wear the same
 private struct JunoMobileSettingsRowLabel: View {
   let title: LocalizedStringKey
-  var icon: JunoIcon?
-  var symbol: String?
+  let icon: JunoIcon
   var value: Text?
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Group {
-        if let icon {
-          JunoIconView(icon, size: 16)
-            .foregroundStyle(Color.junoAccent)
-        } else if let symbol {
-          Image(systemName: symbol)
-            .font(.body)
-            .foregroundStyle(Color.junoAccent)
-        }
-      }
+      JunoIconView(icon, size: 16)
+        .foregroundStyle(Color.junoAccent)
       .frame(width: 22)
       Text(title)
         .junoRowLabel()
@@ -1559,14 +1548,13 @@ private struct JunoMobileSettingsRowLabel: View {
 /// A row inside a tile that pushes a subpage.
 private struct JunoMobileSettingsLink: View {
   let title: LocalizedStringKey
-  var icon: JunoIcon?
-  var symbol: String?
+  let icon: JunoIcon
   var value: Text?
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      JunoMobileSettingsRowLabel(title: title, icon: icon, symbol: symbol, value: value)
+      JunoMobileSettingsRowLabel(title: title, icon: icon, value: value)
     }
     .buttonStyle(.plain)
     .contentShape(.rect)
@@ -1577,8 +1565,7 @@ private struct JunoMobileSettingsLink: View {
 private struct JunoMobileSettingsAction: View {
   let title: LocalizedStringKey
   var detail: LocalizedStringKey?
-  var icon: JunoIcon?
-  var symbol: String?
+  let icon: JunoIcon
   var isDestructive = false
   var isBusy = false
   var isEnabled = true
@@ -1590,12 +1577,8 @@ private struct JunoMobileSettingsAction: View {
         Group {
           if isBusy {
             ProgressView().controlSize(.small)
-          } else if let icon {
+          } else {
             JunoIconView(icon, size: 16)
-              .foregroundStyle(isDestructive ? Color.junoDanger : Color.junoAccent)
-          } else if let symbol {
-            Image(systemName: symbol)
-              .font(.body)
               .foregroundStyle(isDestructive ? Color.junoDanger : Color.junoAccent)
           }
         }

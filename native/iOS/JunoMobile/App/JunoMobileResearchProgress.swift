@@ -57,8 +57,7 @@ struct JunoMobileResearchProgress: View {
                 // Not `binoculars`: the header above already carries that glyph
                 // for "research is on", and repeating it here would make two
                 // rows that look like the same statement twice.
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.caption2)
+                JunoIconView(.research, size: 13)
                 Text("\(run.phase.displayName) · \(counts)")
                     .font(.caption2)
                     .lineLimit(1)
@@ -101,8 +100,7 @@ struct JunoMobileResearchProgress: View {
 
     private var header: some View {
         HStack(spacing: JunoSpace.tight) {
-            Image(systemName: "binoculars")
-                .font(.caption)
+            JunoIconView(.research, size: 14)
             Text("research.enabled")
                 .font(.caption.weight(.medium))
             Spacer()
@@ -121,8 +119,7 @@ struct JunoMobileResearchProgress: View {
     /// been misled about the basis of the reply.
     private func warningRow(_ message: String) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.caption2)
+            JunoIconView(.error, size: 13)
             Text(message)
                 .font(.caption2)
                 .lineLimit(2)

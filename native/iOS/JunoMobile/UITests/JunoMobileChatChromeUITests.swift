@@ -210,6 +210,12 @@ final class JunoMobileChatChromeUITests: XCTestCase {
         let app = launch()
         let row = app.descendants(matching: .any)["juno.mobile.thought-process"].firstMatch
         require(row, app)
+        // The fixture is deliberately a long transcript and opens at the
+        // newest turn. Reveal the disclosure before asserting its hit target;
+        // this is the same gesture a reader uses to inspect an older run.
+        if !row.isHittable {
+            app.swipeDown()
+        }
         XCTAssertTrue(row.isHittable, "The thought-process row is on screen but not hittable.")
 
         row.tap()
@@ -290,7 +296,12 @@ final class JunoMobileChatChromeUITests: XCTestCase {
     func testTappingAnArtifactCardOpensIt() {
         let app = launch()
 
-        let card = app.buttons["juno.mobile.chat-artifact"]
+        let card = app.buttons.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@",
+                "Artifact, Sidebar behaviour spec, Markdown"
+            )
+        ).firstMatch
         require(card, app)
         card.tap()
 
@@ -310,7 +321,12 @@ final class JunoMobileChatChromeUITests: XCTestCase {
     func testTheInlineArtifactViewerCloses() {
         let app = launch()
 
-        let card = app.buttons["juno.mobile.chat-artifact"]
+        let card = app.buttons.matching(
+            NSPredicate(
+                format: "label BEGINSWITH %@",
+                "Artifact, Sidebar behaviour spec, Markdown"
+            )
+        ).firstMatch
         require(card, app)
         card.tap()
 

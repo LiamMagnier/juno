@@ -209,21 +209,21 @@ struct JunoMobileComposer: View {
       // Above the composer, not below it: under the container it would sit
       // in the home-indicator strip and go unread.
       if let thinkingNotice {
-        notice(thinkingNotice, symbol: "info.circle", tint: Color.junoMutedForeground)
+        notice(thinkingNotice, icon: .about, tint: Color.junoMutedForeground)
           .accessibilityIdentifier("juno.mobile.thinking-notice")
       }
       if let attachmentError = attachmentModel?.lastErrorDescription {
-        notice(attachmentError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
+        notice(attachmentError, icon: .error, tint: Color.junoCaution)
           .accessibilityIdentifier("juno.mobile.attachment-error")
       }
       // A photo the picker accepted and the app could not read is its own
       // failure, separate from an upload that was refused.
       if let importError = attachmentCoordinator.importError {
-        notice(importError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
+        notice(importError, icon: .error, tint: Color.junoCaution)
           .accessibilityIdentifier("juno.mobile.attachment-import-error")
       }
       if let voiceTurnError {
-        notice(voiceTurnError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
+        notice(voiceTurnError, icon: .error, tint: Color.junoCaution)
           .accessibilityIdentifier("juno.mobile.voice-turn-error")
       }
 
@@ -359,8 +359,7 @@ struct JunoMobileComposer: View {
       Spacer(minLength: 4)
       Button(action: attachDraftAsFile) {
         HStack(spacing: JunoSpace.tight) {
-          Image(systemName: "doc.badge.arrow.up")
-            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+          JunoIconView(.file, size: 12)
           Text("Attach")
             .junoFont(size: 12, relativeTo: .caption, weight: .medium)
         }
@@ -410,8 +409,7 @@ struct JunoMobileComposer: View {
           prompt = ""
           draftExpanded = false
         } label: {
-          Image(systemName: "xmark")
-            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+          JunoIconView(.close, size: 12)
             .foregroundStyle(Color.junoMutedForeground)
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
@@ -425,7 +423,7 @@ struct JunoMobileComposer: View {
           draftExpanded = true
           composerFocused.wrappedValue = true
         } label: {
-          capsuleLabel("Edit", symbol: "pencil")
+          capsuleLabel("Edit", icon: .pencil)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("juno.mobile.chat-expand-draft")
@@ -433,7 +431,7 @@ struct JunoMobileComposer: View {
 
         if canAttachDraft {
           Button(action: attachDraftAsFile) {
-            capsuleLabel("Attach as file", symbol: "doc.badge.arrow.up")
+            capsuleLabel("Attach as file", icon: .file)
           }
           .buttonStyle(.plain)
           .accessibilityIdentifier("juno.mobile.chat-attach-draft")
@@ -452,10 +450,9 @@ struct JunoMobileComposer: View {
     .accessibilityIdentifier("juno.mobile.chat-collapsed-draft")
   }
 
-  private func capsuleLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
+  private func capsuleLabel(_ title: LocalizedStringKey, icon: JunoIcon) -> some View {
     HStack(spacing: JunoSpace.tight) {
-      Image(systemName: symbol)
-        .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+      JunoIconView(icon, size: 12)
       Text(title)
         .junoFont(size: 12, relativeTo: .caption, weight: .medium)
     }
@@ -465,8 +462,11 @@ struct JunoMobileComposer: View {
     .modifier(JunoGlassCapsule())
   }
 
-  private func notice(_ text: String, symbol: String, tint: Color) -> some View {
-    Label(text, systemImage: symbol)
+  private func notice(_ text: String, icon: JunoIcon, tint: Color) -> some View {
+    HStack(spacing: JunoSpace.tight) {
+      JunoIconView(icon, size: 13)
+      Text(text)
+    }
       .font(.caption2)
       .foregroundStyle(tint)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -599,7 +599,7 @@ struct JunoMobileComposer: View {
         Button {
           open(.camera)
         } label: {
-          Label("attachments.camera", systemImage: "camera")
+          JunoIconLabel("attachments.camera", icon: .photos)
         }
         .disabled(!canAttachInVoice || !voiceCanSeeImages)
 
@@ -621,7 +621,7 @@ struct JunoMobileComposer: View {
         Section {
           Button {
           } label: {
-            Label("composer.voice.no-vision", systemImage: "eye.slash")
+            JunoIconLabel("composer.voice.no-vision", icon: .error)
           }
           .disabled(true)
         }
@@ -697,7 +697,7 @@ struct JunoMobileComposer: View {
       if isStreamingPhase {
         ProgressView().controlSize(.mini)
       } else {
-        Image(systemName: phaseSymbol)
+        JunoIconView(phaseIcon, size: 13)
       }
       Text(phaseLabel)
         .lineLimit(1)
@@ -709,7 +709,7 @@ struct JunoMobileComposer: View {
 
   private var retryBanner: some View {
     HStack(spacing: JunoSpace.snug) {
-      Image(systemName: "exclamationmark.triangle.fill")
+      JunoIconView(.error, size: 14)
         .foregroundStyle(Color.junoCaution)
       Text(model.chatErrorDescription ?? "The response was interrupted.")
         .lineLimit(2)
@@ -746,12 +746,12 @@ struct JunoMobileComposer: View {
     }
   }
 
-  private var phaseSymbol: String {
+  private var phaseIcon: JunoIcon {
     switch model.chatPhase {
-    case .reconnecting: "wifi.exclamationmark"
-    case .failed: "exclamationmark.circle"
-    case .stopping: "stop.circle"
-    default: "sparkles"
+    case .reconnecting: .refresh
+    case .failed: .error
+    case .stopping: .stop
+    default: .models
     }
   }
 

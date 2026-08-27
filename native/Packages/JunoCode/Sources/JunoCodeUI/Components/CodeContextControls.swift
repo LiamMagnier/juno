@@ -17,45 +17,26 @@ import SwiftUI
 /// primary actions and therefore none.
 public struct CodeContextChipLabel: View {
     private let title: String
-    private let systemImage: String?
-    private let junoIcon: JunoIcon?
+    private let icon: JunoIcon
     private let tint: Color?
-
-    public init(_ title: String, systemImage: String, tint: Color? = nil) {
-        self.title = title
-        self.systemImage = systemImage
-        junoIcon = nil
-        self.tint = tint
-    }
 
     public init(_ title: String, icon: JunoIcon, tint: Color? = nil) {
         self.title = title
-        systemImage = nil
-        junoIcon = icon
+        self.icon = icon
         self.tint = tint
     }
 
     public var body: some View {
         HStack(spacing: JunoSpace.tight) {
-            if let junoIcon {
-                JunoIconView(junoIcon, size: 14)
-            } else if let systemImage {
-                Image(systemName: systemImage)
-                    // Scaled against the label it leads, one rung up so the
-                    // mark reads as the chip's anchor rather than as a second
-                    // word.
-                    .junoFont(size: 13, relativeTo: .callout, weight: .medium)
-                    .contentTransition(.symbolEffect(.replace))
-            }
+            JunoIconView(icon, size: 14)
             Text(title)
                 .junoRowLabel()
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Image(systemName: "chevron.down")
-                // The scale's floor. The fixed 8pt and 9pt chevrons this
-                // replaces sat below the caption rung and never moved with
-                // Dynamic Type.
-                .font(.caption2.weight(.bold))
+            // The disclosure is part of the same website icon vocabulary as
+            // the destination mark. Keeping it as a generated Lucide asset
+            // also gives the native and web composers the same optical weight.
+            JunoIconView(.chevronDown, size: 12)
         }
         .foregroundStyle(tint ?? Color.junoMutedForeground)
         .padding(.vertical, JunoSpace.hairline)

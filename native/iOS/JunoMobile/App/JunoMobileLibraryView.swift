@@ -165,17 +165,17 @@ struct JunoMobileLibraryView: View {
                         documentPickerFailure = nil
                         choosingDocument = true
                     } label: {
-                        Label("Add Document…", systemImage: "doc.badge.plus")
+                        JunoIconLabel(verbatim: "Add Document…", icon: .file)
                     }
                     .accessibilityIdentifier("juno.mobile.library-add-document")
                 }
                 Button {
                     Task { await model.reload() }
                 } label: {
-                    Label("library.refresh", systemImage: "arrow.clockwise")
+                    JunoIconLabel("library.refresh", icon: .refresh)
                 }
             } label: {
-                Label("library.options", systemImage: "ellipsis")
+                JunoIconLabel("library.options", icon: .ellipsis)
             }
             .accessibilityIdentifier("juno.mobile.library-options")
         }
@@ -310,7 +310,7 @@ struct JunoMobileLibraryView: View {
 
     private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "text.magnifyingglass")
+            JunoIconView(.search, size: 16)
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             Text(indexSummaryLine(index))
@@ -329,7 +329,7 @@ struct JunoMobileLibraryView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    JunoIconView(.ellipsis, size: 17)
                         .junoFont(size: 17, relativeTo: .body)
                         .junoSecondaryInk()
                 }
@@ -363,7 +363,7 @@ struct JunoMobileLibraryView: View {
 
     private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            JunoIconView(.error, size: 17)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)
@@ -468,7 +468,7 @@ struct JunoMobileLibraryView: View {
     private var searchField: some View {
         JunoGlass(spacing: JunoSpace.regular) {
             HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: "magnifyingglass")
+                JunoIconView(.search, size: 17)
                     .junoFont(size: 17, relativeTo: .body, weight: .medium)
                     .junoSecondaryInk()
                 TextField("library.search", text: $searchText)
@@ -481,7 +481,7 @@ struct JunoMobileLibraryView: View {
                     Button {
                         searchText = ""
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
+                        JunoIconView(.close, size: 17)
                             .junoFont(size: 17, relativeTo: .body)
                             .junoMetaInk()
                     }
@@ -502,13 +502,13 @@ struct JunoMobileLibraryView: View {
     private var empty: some View {
         if model.files.isEmpty {
             JunoLibraryMessage(
-                symbol: "tray",
+                icon: .files,
                 title: "library.empty.title",
                 detail: "library.empty.detail"
             )
         } else {
             JunoLibraryMessage(
-                symbol: "magnifyingglass",
+                icon: .search,
                 title: "library.no-matches.title",
                 detail: "library.no-matches.detail"
             )
@@ -528,14 +528,13 @@ struct JunoMobileLibraryView: View {
 }
 
 private struct JunoLibraryMessage: View {
-    let symbol: String
+    let icon: JunoIcon
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
 
     var body: some View {
         VStack(spacing: JunoSpace.cozy) {
-            Image(systemName: symbol)
-                .junoFont(size: 28, relativeTo: .title)
+            JunoIconView(icon, size: 28)
                 .junoMetaInk()
             Text(title)
                 .junoFont(size: 17, relativeTo: .headline, weight: .semibold)

@@ -228,8 +228,14 @@ public final class PreviewWorld {
         }
 
         // Select a conversation so the chat destination shows a real transcript
-        // rather than the empty state during QA.
-        if conversationModel.selectedConversationID == nil {
+        // rather than the empty state during QA. A draft is explicit, though:
+        // it is the state the reader reaches after tapping New chat and must be
+        // reproducible from a clean relaunch rather than depending on scene
+        // storage or a race with model activation.
+        if CommandLine.arguments.contains("--juno-preview-chat-draft") {
+            conversationModel.isDraftingNewConversation = true
+            conversationModel.selectedConversationID = nil
+        } else if conversationModel.selectedConversationID == nil {
             conversationModel.selectedConversationID =
                 conversationModel.conversations.first(where: { !$0.isArchived })?.id
         }

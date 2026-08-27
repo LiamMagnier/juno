@@ -178,8 +178,7 @@ struct JunoMobileThoughtProcessRow: View {
                         .foregroundStyle(Color.junoMutedForeground)
                 }
 
-                Image(systemName: "chevron.right")
-                    .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+                JunoIconView(.chevronRight, size: 12)
                     .foregroundStyle(Color.junoMutedForeground)
             }
             .frame(minHeight: 48)
@@ -307,8 +306,7 @@ private struct JunoMobileThoughtProcessPanel: View {
                     // A bare glyph: from OS 26 the toolbar draws its own glass
                     // capsule behind every item.
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                        JunoIconView(.close, size: 15)
                     }
                     .accessibilityLabel("Close thought process")
                     .accessibilityIdentifier("juno.mobile.thought-process-close")

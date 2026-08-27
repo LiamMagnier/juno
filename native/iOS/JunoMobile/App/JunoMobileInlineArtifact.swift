@@ -85,8 +85,7 @@ struct JunoMobileInlineArtifactView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: close) {
-                    Image(systemName: "xmark")
-                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                    JunoIconView(.close, size: 15)
                         .foregroundStyle(Color.primary)
                 }
                 .accessibilityLabel("artifact.close")
@@ -104,7 +103,7 @@ struct JunoMobileInlineArtifactView: View {
                 .accessibilityAddTraits(.isHeader)
 
             HStack(spacing: JunoSpace.tight) {
-                JunoMobileMetaChip(title: kindName, systemImage: kindGlyph)
+                JunoMobileMetaChip(title: kindName, icon: kindGlyph)
                 if let language = reference.language, !language.isEmpty {
                     JunoMobileMetaChip(title: language.uppercased())
                 }
@@ -113,7 +112,7 @@ struct JunoMobileInlineArtifactView: View {
                 // between the two screens.
                 JunoMobileMetaChip(
                     title: String(localized: "artifact.from-conversation"),
-                    systemImage: "bubble.left.and.text.bubble.right"
+                    icon: .conversation
                 )
             }
         }
@@ -134,8 +133,7 @@ struct JunoMobileInlineArtifactView: View {
             }
             Spacer(minLength: 0)
             ShareLink(item: reference.content) {
-                Image(systemName: "square.and.arrow.up")
-                    .junoFont(size: 15, relativeTo: .subheadline)
+                JunoIconView(.share, size: 15)
                     .foregroundStyle(Color.primary.opacity(0.75))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -156,14 +154,14 @@ struct JunoMobileInlineArtifactView: View {
         }
     }
 
-    private var kindGlyph: String {
+    private var kindGlyph: JunoIcon {
         switch artifact.kind {
-        case .react, .html: "curlybraces.square"
-        case .svg: "square.on.circle"
-        case .mermaid: "flowchart"
-        case .design: "pencil.and.outline"
-        case .markdown: "doc.text"
-        case .code: "chevron.left.forwardslash.chevron.right"
+        case .react, .html: .code
+        case .svg: .artifacts
+        case .mermaid: .branch
+        case .design: .writing
+        case .markdown: .file
+        case .code: .code
         }
     }
 }

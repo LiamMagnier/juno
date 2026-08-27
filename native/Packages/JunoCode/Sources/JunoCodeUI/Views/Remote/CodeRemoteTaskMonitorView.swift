@@ -28,7 +28,7 @@ public struct CodeRemoteTaskMonitorView: View {
                         Button {
                             Task { await model.refresh() }
                         } label: {
-                            Image(systemName: "arrow.clockwise")
+                            JunoIconView(.refresh, size: 16)
                         }
                         .help("Refresh remote tasks")
                         .disabled(model.phase == .loading)
@@ -81,14 +81,14 @@ public struct CodeRemoteTaskMonitorView: View {
             }
 
             if model.tasks.isEmpty {
-                ContentUnavailableView(
-                    "No remote tasks",
-                    systemImage: "bolt.horizontal.circle",
-                    description: Text(
+                ContentUnavailableView {
+                    JunoIconLabel(verbatim: "No remote tasks", icon: .cloud, size: 20)
+                } description: {
+                    Text(
                         model.lastErrorDescription
                             ?? "Cloud and Remote runs will appear here."
                     )
-                )
+                }
                 .listRowBackground(Color.clear)
             }
         }
@@ -145,11 +145,11 @@ public struct CodeRemoteTaskMonitorView: View {
                 selection: $selection
             )
         } else {
-            ContentUnavailableView(
-                "Select a remote task",
-                systemImage: "bolt.horizontal.circle",
-                description: Text("Choose an active or recent run to follow its live events.")
-            )
+            ContentUnavailableView {
+                JunoIconLabel(verbatim: "Select a remote task", icon: .cloud, size: 20)
+            } description: {
+                Text("Choose an active or recent run to follow its live events.")
+            }
         }
     }
 
@@ -190,7 +190,7 @@ public struct CodeRemoteTaskMonitorView: View {
     private func statusView(_ status: NativeCodeTaskStatus) -> some View {
         switch status {
         case .queued:
-            Image(systemName: "clock")
+            JunoIconView(.refresh, size: 15)
                 .junoSecondaryInk()
                 .accessibilityLabel("Queued")
         case .running:
@@ -199,19 +199,19 @@ public struct CodeRemoteTaskMonitorView: View {
                 .tint(Color.junoAccent)
                 .accessibilityLabel("Running")
         case .awaitingApproval:
-            Image(systemName: "hand.raised.fill")
+            JunoIconView(.permission, size: 15)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityLabel("Waiting for approval")
         case .done:
-            Image(systemName: "checkmark.circle")
+            JunoIconView(.check, size: 15)
                 .foregroundStyle(Color.junoSuccess)
                 .accessibilityLabel("Completed")
         case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
+            JunoIconView(.error, size: 15)
                 .foregroundStyle(Color.junoDanger)
                 .accessibilityLabel("Failed")
         case .cancelled:
-            Image(systemName: "stop.circle")
+            JunoIconView(.stop, size: 15)
                 .junoSecondaryInk()
                 .accessibilityLabel("Cancelled")
         }
@@ -301,11 +301,15 @@ public struct CodeRemoteTaskDetailView: View {
                     footer(task)
                 }
             } else {
-                ContentUnavailableView(
-                    "That task is no longer available",
-                    systemImage: "bolt.horizontal.circle",
-                    description: Text("Refresh the remote task list to continue.")
-                )
+                ContentUnavailableView {
+                    JunoIconLabel(
+                        verbatim: "That task is no longer available",
+                        icon: .cloud,
+                        size: 20
+                    )
+                } description: {
+                    Text("Refresh the remote task list to continue.")
+                }
             }
         }
         .background(Color.junoCanvasWarm)
@@ -321,14 +325,18 @@ public struct CodeRemoteTaskDetailView: View {
                 statusLabel(task.status)
             }
             HStack(spacing: JunoSpace.snug) {
-                Label(task.target.label, systemImage: task.target == .cloud ? "cloud" : "laptopcomputer")
+                JunoIconLabel(
+                    verbatim: task.target.label,
+                    icon: task.target.junoIcon,
+                    size: 14
+                )
                 if !task.whereItRuns.isEmpty {
                     Text("·")
                     Text(task.whereItRuns)
                 }
                 if let branch = task.baseRef, !branch.isEmpty {
                     Text("·")
-                    Label(branch, systemImage: "arrow.triangle.branch")
+                    JunoIconLabel(verbatim: branch, icon: .branch, size: 14)
                 }
             }
             .font(.caption)
@@ -351,8 +359,7 @@ public struct CodeRemoteTaskDetailView: View {
 
     private func eventRow(_ event: NativeCodeEvent) -> some View {
         HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            Image(systemName: event.kind.symbol)
-                .font(.caption)
+            JunoIconView(event.kind.junoIcon, size: 15)
                 .foregroundStyle(event.kind.color)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -378,7 +385,7 @@ public struct CodeRemoteTaskDetailView: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             if let approval = model.pendingApproval {
                 VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    Label("Approval required", systemImage: "hand.raised.fill")
+                    JunoIconLabel(verbatim: "Approval required", icon: .permission, size: 15)
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Color.junoCaution)
                     Text(approval.summary)
@@ -417,9 +424,10 @@ public struct CodeRemoteTaskDetailView: View {
 
             if task.status.isTerminal, task.conversationID != nil {
                 VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    Label(
-                        "Continue this Code conversation",
-                        systemImage: "arrow.turn.down.right"
+                    JunoIconLabel(
+                        verbatim: "Continue this Code conversation",
+                        icon: .conversation,
+                        size: 15
                     )
                     .font(.callout.weight(.medium))
                     Text(
@@ -455,7 +463,7 @@ public struct CodeRemoteTaskDetailView: View {
             HStack(spacing: JunoSpace.cozy) {
                 if let url = task.pullRequestURL {
                     Link(destination: url) {
-                        Label("Open pull request", systemImage: "arrow.up.right.square")
+                        JunoIconLabel(verbatim: "Open pull request", icon: .external, size: 14)
                     }
                 }
                 Spacer(minLength: 0)
@@ -504,6 +512,13 @@ private extension NativeCodeTarget {
         case .device: "Remote computer"
         }
     }
+
+    var junoIcon: JunoIcon {
+        switch self {
+        case .cloud: .cloud
+        case .device: .device
+        }
+    }
 }
 
 private extension NativeCodeTaskStatus {
@@ -529,20 +544,20 @@ private extension NativeCodeTaskStatus {
 }
 
 private extension NativeCodeEvent.Kind {
-    var symbol: String {
+    var junoIcon: JunoIcon {
         switch self {
-        case .status: "circle.dotted"
-        case .user: "person"
-        case .text: "text.alignleft"
-        case .tool: "wrench.and.screwdriver"
-        case .fileChange: "doc.badge.gearshape"
-        case .approvalRequest, .approvalResponse: "hand.raised"
-        case .cancelRequest: "stop.circle"
-        case .error: "exclamationmark.triangle"
-        case .done: "checkmark.circle"
-        case .agent: "person.2"
-        case .preview: "display"
-        case .testRun: "checklist.checked"
+        case .status: .refresh
+        case .user: .user
+        case .text: .conversation
+        case .tool: .tools
+        case .fileChange: .file
+        case .approvalRequest, .approvalResponse: .permission
+        case .cancelRequest: .stop
+        case .error: .error
+        case .done: .check
+        case .agent: .user
+        case .preview: .device
+        case .testRun: .check
         // The rollback verbs. `rollbackReady` is a host capability
         // advertisement that `decodeEvent` deliberately keeps so the log
         // decodes without dropping it, and which the monitor does not render;
@@ -550,11 +565,11 @@ private extension NativeCodeEvent.Kind {
         // accepted, rejected or undone. They are enumerated rather than left to
         // a `default` so the next verb added to `NativeCodeEvent.Kind` fails
         // this switch instead of silently rendering as a dotted circle.
-        case .rollbackReady: "circle.dotted"
-        case .acceptChange: "checkmark.circle"
-        case .rejectChange: "xmark.circle"
-        case .undoChange: "arrow.uturn.backward.circle"
-        case .rollbackResult: "arrow.triangle.2.circlepath"
+        case .rollbackReady: .refresh
+        case .acceptChange: .check
+        case .rejectChange: .close
+        case .undoChange: .refresh
+        case .rollbackResult: .refresh
         }
     }
 

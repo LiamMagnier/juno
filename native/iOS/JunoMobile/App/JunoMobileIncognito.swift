@@ -265,8 +265,7 @@ struct JunoMobileIncognitoChat: View {
 
                 if model.isStreaming {
                     Button { model.stopGeneration() } label: {
-                        Image(systemName: "stop.fill")
-                            .junoFont(size: 14, relativeTo: .subheadline, weight: .bold)
+                        JunoIconView(.stop, size: 14)
                             .foregroundStyle(Color.junoOnAccent)
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: true))
@@ -277,8 +276,7 @@ struct JunoMobileIncognitoChat: View {
                     .accessibilityLabel("Stop generation")
                 } else {
                     Button(action: send) {
-                        Image(systemName: "arrow.up")
-                            .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
+                        JunoIconView(.send, size: 15)
                             // Follows the ground: `junoOnAccent` on the coral,
                             // the quiet ink on the untinted glass the inactive
                             // state now wears.

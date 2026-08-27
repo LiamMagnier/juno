@@ -115,6 +115,11 @@ const ICONS = {
   ellipsis: "ellipsis",
   share: "share-2",
   terminal: "terminal",
+  arrowDown: "arrow-down",
+  volume: "volume-2",
+  thumbsUp: "thumbs-up",
+  thumbsDown: "thumbs-down",
+  eyeOff: "eye-off",
 };
 
 const TARGETS = [

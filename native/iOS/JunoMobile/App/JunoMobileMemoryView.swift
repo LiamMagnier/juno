@@ -180,7 +180,7 @@ struct JunoMobileMemoryView: View {
         JunoMobileWorkspaceSection(
             title: "What Juno knows about you",
             actionTitle: model.isRefreshingSummary ? nil : "Rebuild",
-            actionImage: "arrow.clockwise",
+            actionIcon: .refresh,
             action: model.isRefreshingSummary ? nil : { Task { await model.refresh() } },
             footnote: summaryFootnote
         ) {
@@ -266,8 +266,7 @@ struct JunoMobileMemoryView: View {
                                 .junoFont(size: 15, relativeTo: .subheadline)
                                 .foregroundStyle(Color.primary.opacity(0.82))
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "chevron.down")
-                                .junoFont(size: 11, relativeTo: .caption2, weight: .bold)
+                            JunoIconView(.chevronDown, size: 11)
                                 .foregroundStyle(Color.junoMutedForeground)
                                 .rotationEffect(.degrees(showingFacts ? 180 : 0))
                         }
@@ -341,8 +340,7 @@ struct JunoMobileMemoryView: View {
 
     private var searchRow: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "magnifyingglass")
-                .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+            JunoIconView(.search, size: 13)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18)
             TextField("Filter memories", text: $factQuery)
@@ -354,8 +352,7 @@ struct JunoMobileMemoryView: View {
                 Button {
                     factQuery = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .junoFont(size: 15, relativeTo: .subheadline)
+                    JunoIconView(.close, size: 14)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 .buttonStyle(.plain)
@@ -401,8 +398,7 @@ struct JunoMobileMemoryView: View {
 
     private var addRow: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "plus")
-                .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+            JunoIconView(.plus, size: 13)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18)
             TextField("Something Juno should remember", text: $newMemory)
@@ -427,8 +423,7 @@ struct JunoMobileMemoryView: View {
         HStack(alignment: .top, spacing: JunoSpace.cozy) {
             // A suppression is not a fact — it is an instruction to *stop* using
             // one, and it reads as a contradiction unless it is marked.
-            Image(systemName: memory.kind == .suppression ? "hand.raised" : "circle.fill")
-                .junoFont(size: memory.kind == .suppression ? 12 : 5, relativeTo: .caption)
+            JunoIconView(memory.kind == .suppression ? .permission : .memory, size: 12)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, height: 20)
 
@@ -456,8 +451,7 @@ struct JunoMobileMemoryView: View {
                 }
                 Button("Delete", role: .destructive) { deleteMemoryID = memory.id }
             } label: {
-                Image(systemName: "ellipsis")
-                    .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
+                JunoIconView(.ellipsis, size: 13)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -533,8 +527,7 @@ struct JunoMobileMemoryView: View {
                         .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                         .foregroundStyle(.primary)
                     Spacer(minLength: 6)
-                    Image(systemName: "square.and.arrow.up")
-                        .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                    JunoIconView(.share, size: 14)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 .padding(.horizontal, JunoSpace.regular)

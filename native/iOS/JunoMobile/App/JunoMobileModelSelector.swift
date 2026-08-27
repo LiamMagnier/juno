@@ -62,8 +62,7 @@ struct JunoMobileModelControl: View {
                 // popover opens. `chevron.up.chevron.down` cannot do that: it is
                 // symmetrical, so a 180° turn is indistinguishable from no turn
                 // at all, and it stated a direction the picker does not have.
-                Image(systemName: "chevron.up")
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                JunoIconView(.chevronUp, size: 11)
                     .junoSecondaryInk()
                     .rotationEffect(.degrees(presented ? 180 : 0))
                     .animation(
@@ -137,7 +136,7 @@ struct JunoMobileModelControl: View {
 struct JunoMobileModelSection: Identifiable {
     let key: String
     let title: String
-    let systemImage: String
+    let icon: JunoIcon
     let current: [NativeChatModelOption]
     let legacy: [NativeChatModelOption]
 
@@ -145,10 +144,10 @@ struct JunoMobileModelSection: Identifiable {
 
     /// Fixed presentation order — a lab shipping a video model should not
     /// reorder the sections.
-    static let order: [(key: String, title: String, systemImage: String)] = [
-        ("chat", "Chat", "bubble.left.and.text.bubble.right"),
-        ("image", "Image", "photo"),
-        ("video", "Video", "film"),
+    static let order: [(key: String, title: String, icon: JunoIcon)] = [
+        ("chat", "Chat", .conversation),
+        ("image", "Image", .photos),
+        ("video", "Video", .artifacts),
     ]
 }
 
@@ -321,11 +320,15 @@ struct JunoMobileModelSelectorView: View {
                     JunoModelDetailView(model: model)
                         .padding(JunoSpace.regular)
                 } else {
-                    ContentUnavailableView(
-                        "No model selected",
-                        systemImage: "cpu",
-                        description: Text("Pick a model to compare context, speed and cost.")
-                    )
+                    ContentUnavailableView {
+                        JunoIconLabel(
+                            verbatim: "No model selected",
+                            icon: .models,
+                            size: 26
+                        )
+                    } description: {
+                        Text("Pick a model to compare context, speed and cost.")
+                    }
                     .padding(JunoSpace.regular)
                 }
             }
@@ -362,9 +365,13 @@ struct JunoMobileModelSelectorView: View {
                 .accessibilityIdentifier("juno.mobile.model-legacy.\(section.key)")
             }
         } header: {
-            Label(section.title, systemImage: section.systemImage)
-                .font(.caption.weight(.semibold))
-                .textCase(nil)
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(section.icon, size: 13)
+                    .foregroundStyle(Color.junoAccent)
+                Text(section.title)
+                    .font(.caption.weight(.semibold))
+                    .textCase(nil)
+            }
         }
     }
 
@@ -415,8 +422,7 @@ struct JunoMobileModelSelectorView: View {
                             detailModelID = expanded ? nil : model.id
                         }
                     } label: {
-                        Image(systemName: expanded ? "chevron.up" : "info.circle")
-                            .junoFont(size: 15, relativeTo: .subheadline)
+                        JunoIconView(expanded ? .chevronUp : .about, size: 15)
                             .junoSecondaryInk()
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
@@ -466,8 +472,7 @@ struct JunoMobileModelSelectorView: View {
                 if let id {
                     JunoProviderMark(providerID: id, providerName: name, size: 18)
                 } else {
-                    Image(systemName: "square.grid.2x2")
-                        .junoFont(size: 14, relativeTo: .subheadline)
+                    JunoIconView(.models, size: 14)
                         .frame(width: 18, height: 18)
                         .junoSecondaryInk()
                 }
@@ -568,7 +573,7 @@ struct JunoMobileModelSelectorView: View {
             return JunoMobileModelSection(
                 key: modality.key,
                 title: modality.title,
-                systemImage: modality.systemImage,
+                icon: modality.icon,
                 current: models.filter { !$0.isLegacy },
                 legacy: models.filter(\.isLegacy)
             )
@@ -624,7 +629,7 @@ private struct JunoMobileSelectorSearchField: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "magnifyingglass")
+            JunoIconView(.search, size: 16)
                 .junoSecondaryInk()
             TextField("Search models", text: $query)
                 .textFieldStyle(.plain)
@@ -635,7 +640,7 @@ private struct JunoMobileSelectorSearchField: View {
                     query = ""
                     focused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    JunoIconView(.close, size: 14)
                         .junoMetaInk()
                 }
                 .buttonStyle(.plain)
@@ -691,8 +696,7 @@ private struct JunoMobileModelRowLabel: View {
                             }
                     }
                     if selected {
-                        Image(systemName: "checkmark")
-                            .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+                        JunoIconView(.check, size: 12)
                             .foregroundStyle(Color.junoAccent)
                     }
                     Spacer(minLength: 0)
@@ -715,9 +719,12 @@ private struct JunoMobileModelRowLabel: View {
                 }
 
                 if let unavailabilityReason {
-                    Label(unavailabilityReason, systemImage: "lock")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(Color.junoCaution)
+                    HStack(spacing: JunoSpace.tight) {
+                        JunoIconView(.lock, size: 12)
+                        Text(unavailabilityReason)
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color.junoCaution)
                 } else {
                     JunoCapabilityChips(model: model, compact: true)
                 }

@@ -51,8 +51,7 @@ struct JunoMobileThinkingControl: View {
                 HStack(spacing: JunoSpace.tight) {
                     JunoMobileThinkingLabel(text: label, ultra: atTopTier, pop: topArrivals)
                     if scale.isAdjustable {
-                        Image(systemName: "chevron.up")
-                            .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                        JunoIconView(.chevronUp, size: 11)
                             .junoSecondaryInk()
                             // Turns over while the picker is up, as the web's
                             // chevron does.

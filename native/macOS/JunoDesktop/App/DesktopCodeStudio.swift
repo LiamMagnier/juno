@@ -297,13 +297,7 @@ private struct DesktopCodeAddProjectLabel: View {
         HStack(spacing: JunoSpace.tight) {
             ZStack(alignment: .bottomTrailing) {
                 JunoIconView(.projects, size: 15)
-                Image(systemName: "plus")
-                    // Caption-class, not the 7pt it shipped at: 7pt is below
-                    // the scale's floor — illegible rather than merely small —
-                    // and a frozen `.system(size:)` stayed 7pt at every
-                    // accessibility setting. `.caption2` is the smallest rung
-                    // the scale allows, and it moves with Dynamic Type.
-                    .font(.caption2.weight(.bold))
+                JunoIconView(.plus, size: 8)
                     .padding(1)
                     .background(Color.junoSidebar)
                     .clipShape(Circle())
@@ -352,14 +346,6 @@ struct DesktopCodeSidebar: View {
     @State private var projectPendingDeletion: ProjectGroup?
     @State private var projectPendingRename: ProjectGroup?
     @State private var projectRenameDraft = ""
-    @State private var expandedProjects: Set<WorkspaceID> = []
-    /// The footer bar's glass namespace. One container, one participant, one
-    /// identity — a loose `.glassEffect` gets inconsistent sampling and no
-    /// morphing, which is the failure `GlassEffectContainer` exists to prevent.
-    @Namespace private var footerGlass
-
-    static let footerGlassID = "juno.code.sidebar.footer"
-
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
             sessions: workbench.filteredSessions,
@@ -457,48 +443,58 @@ struct DesktopCodeSidebar: View {
     var body: some View {
         let allRuns = runs
         let active = DesktopCodeNavigationState.active(allRuns)
+        let needsAttention = active.filter { $0.status.needsApproval }
+        let inProgress = active.filter { !$0.status.needsApproval }
         let groups = projectGroups(from: allRuns)
+        let pinned = workbench.favoriteSessions.compactMap { session in
+            allRuns.first(where: { $0.id == .session(session.id) })
+        }.filter { run in
+            !active.contains(where: { $0.id == run.id })
+        }
+        let recent = recentRuns(from: allRuns)
+        let relayed = relayedRuns(from: allRuns)
 
         return List(selection: $selection) {
-            HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "magnifyingglass")
-                    .junoSecondaryInk()
-                    .accessibilityHidden(true)
-                TextField("Search sessions…", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .focused(searchFocused)
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
+            JunoDesktopGlass(spacing: 0) {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(.search, size: 15)
+                        .junoSecondaryInk()
+                        .accessibilityHidden(true)
+                    TextField("Search sessions…", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .focused(searchFocused)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            JunoIconView(.close, size: 15)
+                                .junoMetaInk()
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(.rect)
+                        .accessibilityLabel("Clear search")
+                    } else {
+                        Text("⌘K")
+                            .junoFont(size: 10, relativeTo: .caption2, weight: .semibold, design: .rounded)
                             .junoMetaInk()
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.junoRaised.opacity(0.8), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(.rect)
-                    .accessibilityLabel("Clear search")
-                } else {
-                    Text("⌘K")
-                        .junoFont(size: 10, relativeTo: .caption2, weight: .semibold, design: .rounded)
-                        .junoMetaInk()
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.junoRaised.opacity(0.8), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
+                .padding(.horizontal, JunoSpace.snug)
+                .frame(height: 32)
+                .junoGlass(
+                    in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous),
+                    interactive: true
+                )
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 32)
-            .background(Color.junoMuted.opacity(0.45), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-                    .strokeBorder(Color.junoBorder.opacity(0.5), lineWidth: 0.5)
-            )
             .listRowInsets(EdgeInsets(top: JunoSpace.tight, leading: JunoSpace.snug, bottom: JunoSpace.snug, trailing: JunoSpace.snug))
             .listRowBackground(Color.clear)
             .selectionDisabled()
             .accessibilityIdentifier("juno.code.sidebar-search")
 
-            Section {
+            Section("Workspace") {
                 Label {
                     HStack {
                         Text("New task").junoRowLabel()
@@ -538,27 +534,23 @@ struct DesktopCodeSidebar: View {
                 }
             }
 
-            if !active.isEmpty {
-                Section("Working now") {
-                    ForEach(active) { row($0) }
+            if !needsAttention.isEmpty {
+                Section("Needs attention") {
+                    ForEach(needsAttention) { row($0) }
                 }
             }
 
-            let pinned = workbench.favoriteSessions.compactMap { session in
-                allRuns.first(where: { $0.id == .session(session.id) })
-            }.filter { run in
-                !active.contains(where: { $0.id == run.id })
+            if !inProgress.isEmpty {
+                Section("In progress") {
+                    ForEach(inProgress) { row($0) }
+                }
             }
-            if !pinned.isEmpty {
-                Section("Pinned") {
+
+            if !pinned.isEmpty || !recent.isEmpty || !relayed.isEmpty {
+                Section("History") {
                     ForEach(pinned) { row($0) }
-                }
-            }
-
-            let recent = recentRuns(from: allRuns)
-            if !recent.isEmpty {
-                Section("Recent") {
                     ForEach(recent) { row($0) }
+                    ForEach(relayed) { row($0) }
                 }
             }
 
@@ -590,12 +582,6 @@ struct DesktopCodeSidebar: View {
 
                     ForEach(groups) { group in
                         projectSummaryRow(group)
-                        if expandedProjects.contains(group.workspaceID) {
-                            ForEach(group.runs) { run in
-                                row(run, nested: true)
-                                    .padding(.leading, JunoSpace.cozy)
-                            }
-                        }
                     }
 
                     Button(action: openRepository) {
@@ -607,13 +593,6 @@ struct DesktopCodeSidebar: View {
                     .help("Add a project… (⌘O)")
                     .accessibilityIdentifier("juno.code.add-project")
                     .selectionDisabled()
-                }
-            }
-
-            let relayed = relayedRuns(from: allRuns)
-            if !relayed.isEmpty {
-                Section("Cloud & devices") {
-                    ForEach(relayed) { row($0) }
                 }
             }
 
@@ -679,40 +658,27 @@ struct DesktopCodeSidebar: View {
     }
 
     /// A project is a destination, not a second session history. Session rows
-    /// live in Recent/Pinned above, so this row only answers where work belongs
-    /// and how many local runs are available there.
+    /// live in History above, so this row answers where new work belongs and how
+    /// many local runs are available there.
     private func projectSummaryRow(_ group: ProjectGroup) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            Button {
-                withAnimation(JunoMotion.fast) {
-                    if expandedProjects.contains(group.workspaceID) {
-                        expandedProjects.remove(group.workspaceID)
-                    } else {
-                        expandedProjects.insert(group.workspaceID)
-                    }
-                }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .rotationEffect(.degrees(expandedProjects.contains(group.workspaceID) ? 90 : 0))
-                    .frame(width: 14, height: 18)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .frame(minWidth: 44, minHeight: 44)
-            .junoSecondaryInk()
-            .help(expandedProjects.contains(group.workspaceID) ? "Collapse project" : "Expand project")
-
             Button {
                 selection = .repository(group.workspaceID)
             } label: {
                 HStack(spacing: JunoSpace.tight) {
                     JunoIconView(.projects, size: 15)
                         .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
-                    Text(group.name)
-                        .junoRowLabel()
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(group.name)
+                            .junoRowLabel()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text((group.path as NSString).abbreviatingWithTildeInPath)
+                            .junoCodeSmall()
+                            .junoSecondaryInk()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(.rect)
@@ -722,6 +688,7 @@ struct DesktopCodeSidebar: View {
             if group.runs.count > 0 {
                 Text(group.runs.count, format: .number)
                     .junoCaption()
+                    .monospacedDigit()
             }
 
             projectMenu(group)
@@ -736,7 +703,7 @@ struct DesktopCodeSidebar: View {
         Menu {
             projectActions(group)
         } label: {
-            Image(systemName: "ellipsis")
+            JunoIconView(.ellipsis, size: 15)
                 .frame(width: 16, height: 16)
                 .contentShape(.rect)
         }
@@ -837,16 +804,14 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Rows
 
-    /// - Parameter nested: whether this row already sits under its project's own
-    ///   row, in which case it drops the facts that row has just stated.
-    private func row(_ run: DesktopCodeRun, nested: Bool = false) -> some View {
+    private func row(_ run: DesktopCodeRun) -> some View {
         // `CodeSessionRow` owns the shape — mark column, two lines, truncation
         // ends, 44pt target, the combined VoiceOver label. This column used to
         // build it by hand, and so did the cloud monitor and the relay list,
         // each with its own metrics.
         CodeSessionRow(
             title: run.title,
-            caption: nested ? run.nestedCaption : run.caption,
+            caption: run.caption,
             status: run.status
         ) {}
         .junoSidebarRowInk()
@@ -962,56 +927,39 @@ struct DesktopCodeSidebar: View {
     /// page it opens reads this Mac's own artifact store, which does not depend on
     /// the four account facts ``DesktopSidebarFooter`` needs to draw anything
     /// coherent.
-    /// **The footer is a glass bar, and that is what fixes the overlap.**
-    ///
-    /// It used to paint nothing at all and rely on the bottom scroll edge
-    /// effect to fade the rows sliding under it. That works for a bar one row
-    /// tall — the effect fades content across roughly its own inset — and this
-    /// footer is three rows and about a hundred points. So the last project row
-    /// arrived under the footer still legible, half-transparent and sliced
-    /// through the middle of its own glyphs by the row above, which is the
-    /// clipped ghost the audit photographed. Nothing was drawing over anything;
-    /// nothing was drawing *at all*.
-    ///
-    /// One `GlassEffectContainer` holding one glass element is the fix, and it
-    /// is the right one rather than a convenient one: a pinned bar over
-    /// scrolling content is exactly what the material is for, the sidebar is
-    /// this window's designated glass layer, and glass carries its own edge so
-    /// the bar needs no painted separator. The rows underneath now refract
-    /// instead of showing through. The scroll edge effect stays — it is what
-    /// softens the handful of points immediately above the bar.
+    /// The footer is deliberately plain. The sidebar and the system's bottom
+    /// scroll-edge material already provide the native translucency; wrapping a
+    /// three-row account block in a second glass container made the whole bottom
+    /// of the column look like a blurred floating card and competed with the
+    /// source list. Footer content is navigation furniture, not a floating tool.
     @ViewBuilder
     private var footer: some View {
-        JunoDesktopGlass(spacing: JunoSpace.snug) {
-            VStack(spacing: 0) {
-                workspaceStatus
-                DesktopSidebarDesignRow(isActive: selection == .design) {
-                    selection = .design
-                }
-                if let session {
-                    DesktopSidebarFooter(
-                        session: session,
-                        avatarModel: avatarModel,
-                        syncModel: syncModel,
-                        plan: plan,
-                        // Selection, not a closure out of the window: Usage and
-                        // Settings are this column's own destinations, so they are
-                        // reached the way every other row here is reached.
-                        openUsage: { selection = .usage },
-                        openSettings: {
-                            if let openSettingsModal {
-                                openSettingsModal()
-                            } else {
-                                selection = .settings
-                            }
-                        }
-                    )
-                }
+        VStack(spacing: 0) {
+            workspaceStatus
+            DesktopSidebarDesignRow(isActive: selection == .design) {
+                selection = .design
             }
-            .frame(maxWidth: .infinity)
-            .junoGlass(in: Rectangle())
-            .junoGlassID(DesktopCodeSidebar.footerGlassID, in: footerGlass)
+            if let session {
+                DesktopSidebarFooter(
+                    session: session,
+                    avatarModel: avatarModel,
+                    syncModel: syncModel,
+                    plan: plan,
+                    // Selection, not a closure out of the window: Usage and
+                    // Settings are this column's own destinations, so they are
+                    // reached the way every other row here is reached.
+                    openUsage: { selection = .usage },
+                    openSettings: {
+                        if let openSettingsModal {
+                            openSettingsModal()
+                        } else {
+                            selection = .settings
+                        }
+                    }
+                )
+            }
         }
+        .frame(maxWidth: .infinity)
     }
 
     /// The column's own progress, never skeleton rows.
@@ -1195,18 +1143,14 @@ enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The website's mark for this destination, where it has one.
-    ///
-    /// The web offers two targets, Device and Cloud, and draws them as a laptop
-    /// and a cloud. The Mac has a third — *another* of your computers — which
-    /// the web cannot express and therefore has no mark for, so that one keeps
-    /// a system symbol. Giving all three the laptop would say the wrong thing
-    /// twice over.
-    var junoIcon: JunoIcon? {
+    /// The website's mark for this destination. Both local and remote
+    /// computers use the same laptop mark; the label carries the distinction
+    /// between “This Mac” and “My devices”.
+    var junoIcon: JunoIcon {
         switch self {
         case .local: .device
         case .cloud: .cloud
-        case .device: nil
+        case .device: .device
         }
     }
 
@@ -1336,7 +1280,6 @@ struct DesktopCodeDraftDetail: View {
     @State private var isDropTargeted = false
     @State private var importError: String?
     @FocusState private var focused: Bool
-    @State private var auraState = DesktopChatAuraState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Cloud and device runs both need somewhere to run — a repository, or a
@@ -1432,130 +1375,85 @@ struct DesktopCodeDraftDetail: View {
     /// A short set of useful first moves. These are prompts, not decoration:
     /// choosing one fills the real composer so the user can edit the request,
     /// change its contract, and send it through the same path as a typed task.
-    private struct LaunchIntent: Identifiable {
+    private struct StarterTask: Identifiable {
         let id: String
         let title: String
         let detail: String
         let prompt: String
         let behavior: AgentBehavior
-        let icon: String
-        let color: Color
+        let icon: JunoIcon
     }
 
-    private var launchIntents: [LaunchIntent] {
+    private var starterTasks: [StarterTask] {
         if record == nil {
             return [
-                LaunchIntent(
-                    id: "scaffold",
-                    title: "Scaffold Feature",
-                    detail: "Generate components & models",
-                    prompt: "Scaffold a new feature with clean architecture, typed data models, robust error handling, and unit tests.",
-                    behavior: .code,
-                    icon: "sparkles",
-                    color: Color.junoAccent
-                ),
-                LaunchIntent(
-                    id: "survey",
-                    title: "Codebase Audit",
-                    detail: "Analyze patterns & risks",
-                    prompt: "Audit this codebase for architectural patterns, performance bottlenecks, and security vulnerabilities.",
-                    behavior: .survey,
-                    icon: "scope",
-                    color: .blue
-                ),
-                LaunchIntent(
-                    id: "refactor",
-                    title: "Refactor & Modernize",
-                    detail: "Clean debt & improve types",
-                    prompt: "Refactor and modernize code to reduce technical debt, improve type safety, and eliminate redundant logic.",
-                    behavior: .code,
-                    icon: "bolt.fill",
-                    color: .orange
-                ),
-                LaunchIntent(
-                    id: "tests",
-                    title: "Generate Tests",
-                    detail: "Unit, integration & E2E",
-                    prompt: "Write comprehensive unit and integration tests covering core workflows, edge cases, and error states.",
-                    behavior: .code,
-                    icon: "checkmark.seal.fill",
-                    color: .green
-                ),
-                LaunchIntent(
-                    id: "troubleshoot",
-                    title: "Troubleshoot & Fix",
-                    detail: "Trace root cause & patch",
-                    prompt: "Diagnose and fix the root cause of this error. Propose the most reliable and minimal patch.",
+                StarterTask(
+                    id: "ask",
+                    title: "Ask a question",
+                    detail: "Get an answer before you open a project",
+                    prompt: "Help me think through this coding question and show a small, concrete example.",
                     behavior: .ask,
-                    icon: "wrench.and.screwdriver.fill",
-                    color: .red
+                    icon: .conversation
                 ),
-                LaunchIntent(
+                StarterTask(
                     id: "plan",
-                    title: "Architecture & Schema",
-                    detail: "Design models & contracts",
-                    prompt: "Design the data models, database migration schema, and API contracts for this system.",
+                    title: "Plan a change",
+                    detail: "Turn an outcome into an implementation plan",
+                    prompt: "Create a focused implementation plan for the change I describe. Call out assumptions, files likely involved, and how to verify it.",
                     behavior: .plan,
-                    icon: "network",
-                    color: .purple
+                    icon: .sliders
+                ),
+                StarterTask(
+                    id: "explain",
+                    title: "Explain a concept",
+                    detail: "Work through architecture, APIs, or a bug",
+                    prompt: "Explain this coding problem clearly, including the trade-offs and the next step I should take.",
+                    behavior: .ask,
+                    icon: .knowledge
+                ),
+                StarterTask(
+                    id: "choose-project",
+                    title: "Start with a project",
+                    detail: "Open a folder to let Juno inspect and edit files",
+                    prompt: "Help me understand where to start in this project.",
+                    behavior: .survey,
+                    icon: .projects
                 ),
             ]
         }
 
         return [
-            LaunchIntent(
-                id: "draft",
-                title: "Draft a Feature",
-                detail: "Build and implement outcome",
-                prompt: "Design and implement this feature from the outcome I describe, keeping the solution focused and maintainable.",
-                behavior: .code,
-                icon: "hammer.fill",
-                color: Color.junoAccent
+            StarterTask(
+                id: "plan-change",
+                title: "Plan a change",
+                detail: "Inspect first, then outline the work",
+                prompt: "Create a focused implementation plan for the change I describe. Inspect the relevant code first, call out assumptions, and include verification steps.",
+                behavior: .plan,
+                icon: .sliders
             ),
-            LaunchIntent(
-                id: "survey-project",
-                title: "Survey Codebase",
-                detail: "Map boundaries and risks",
-                prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
+            StarterTask(
+                id: "explain-project",
+                title: "Understand this project",
+                detail: "Map entry points, modules, and risks",
+                prompt: "Explain the architecture of this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
                 behavior: .survey,
-                icon: "scope",
-                color: .blue
+                icon: .knowledge
             ),
-            LaunchIntent(
-                id: "review",
-                title: "Review Changes",
-                detail: "Spot risks before commit",
+            StarterTask(
+                id: "review-changes",
+                title: "Review current changes",
+                detail: "Find regressions before you commit",
                 prompt: "Review the current working tree for correctness, regressions, and missing tests. Summarize the highest-value fixes.",
                 behavior: .ask,
-                icon: "checklist",
-                color: .orange
+                icon: .check
             ),
-            LaunchIntent(
-                id: "tests",
-                title: "Run Test Suite",
-                detail: "Check state & fix regressions",
+            StarterTask(
+                id: "run-tests",
+                title: "Run the tests",
+                detail: "Report failures and fix the cause",
                 prompt: "Run the relevant test suite, report failures clearly, and fix failures that are caused by this project.",
                 behavior: .code,
-                icon: "checkmark.seal.fill",
-                color: .green
-            ),
-            LaunchIntent(
-                id: "fix",
-                title: "Fix a Bug",
-                detail: "Trace root cause & patch",
-                prompt: "Find the root cause of this bug, implement a focused fix, and add or update the smallest useful regression test.",
-                behavior: .code,
-                icon: "ladybug.fill",
-                color: .red
-            ),
-            LaunchIntent(
-                id: "explain-project",
-                title: "Explain Architecture",
-                detail: "Map modules & entry points",
-                prompt: "Explain the architecture of this project, its main entry points, and where a new contributor should start.",
-                behavior: .ask,
-                icon: "text.book.closed.fill",
-                color: .purple
+                icon: .check
             ),
         ]
     }
@@ -1565,61 +1463,35 @@ struct DesktopCodeDraftDetail: View {
             repositoryContextBar
             Divider()
 
-            ZStack {
-                DesktopChatAuraLayer(
-                    state: auraState,
-                    docked: false,
-                    viewport: nil
-                )
-                .allowsHitTesting(false)
-
-                VStack(spacing: JunoSpace.roomy) {
-                    VStack(alignment: .center, spacing: JunoSpace.snug) {
-                        Image(systemName: "sparkles")
-                            .junoFont(size: 26, relativeTo: .title2, weight: .medium)
-                            .foregroundStyle(Color.junoAccent)
-                            .padding(.bottom, 2)
-
-                        Text(record == nil ? "What do you want to build?" : "What are we working on?")
-                            .junoFont(size: 30, relativeTo: .largeTitle, weight: .bold, design: .serif)
-                            .junoInk()
-                            .multilineTextAlignment(.center)
-
-                        Text(
-                            record == nil
-                                ? "Autonomous coding tasks in your workspace or on a cloud runner with GitHub review."
-                                : "Juno inspects your codebase, plans architectures, generates code, runs tests, and reviews diffs."
-                        )
-                            .font(.callout)
-                            .junoSecondaryInk()
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: 580)
-                    }
-                    .frame(maxWidth: 680, alignment: .center)
+            ScrollView {
+                VStack(alignment: .leading, spacing: JunoSpace.section) {
+                    startHeader
 
                     if trimmedPrompt.isEmpty {
-                        launchIntentList
+                        starterTaskList
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
-                    if let voiceDock {
-                        voiceDock
-                    }
-
-                    composer
-
-                    Text(footerNote)
-                        .font(.caption2)
-                        .junoMetaInk()
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .accessibilityHidden(true)
+                    Spacer(minLength: JunoSpace.region)
                 }
-                .frame(maxWidth: 760)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .padding(.horizontal, JunoSpace.roomy)
-                .padding(.vertical, JunoSpace.regular)
+                .frame(maxWidth: 760, alignment: .leading)
+                .padding(.horizontal, JunoSpace.region)
+                .padding(.top, JunoSpace.region)
+                .padding(.bottom, JunoSpace.region)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
+            .scrollIndicators(.hidden)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: JunoSpace.snug) {
+                if let voiceDock {
+                    voiceDock
+                }
+                composer
+            }
+            .padding(.top, JunoSpace.snug)
+            .padding(.bottom, JunoSpace.regular)
+            .background(Color.junoCanvas)
         }
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
@@ -1629,75 +1501,123 @@ struct DesktopCodeDraftDetail: View {
             configureModel()
             configureNativeTarget(target)
             focused = true
-            syncAura()
         }
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, _ in
             configureModel()
-            syncAura()
-        }
-        .onChange(of: modelID) { _, _ in
-            syncAura()
-        }
-        .onChange(of: reasoningEffort) { _, _ in
-            syncAura()
-        }
-        .onChange(of: focused) { _, next in
-            auraState.focused = next
         }
     }
 
-    private func syncAura() {
-        auraState.providerID = selectedModel?.catalog?.providerID ?? ""
-        auraState.think = JunoProviderGlow.auraThink(
-            effort: reasoningEffort.rawValue,
-            hasEffortControl: selectedModel?.supportedReasoningEfforts.isEmpty == false
-        )
+    private var startHeader: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(record == nil ? "Start a task" : "Start work")
+                    .junoFont(size: 26, relativeTo: .title2, weight: .semibold)
+                    .junoInk()
+
+                Spacer(minLength: JunoSpace.regular)
+
+                Text("⌘↵ to run")
+                    .junoCaption()
+                    .monospacedDigit()
+            }
+
+            Text(
+                record == nil
+                    ? "Ask a question, make a plan, or open a project when you are ready for file work."
+                    : "Describe the outcome. Juno will inspect the repository before it changes anything."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(target.junoIcon, size: 14)
+                Text(record == nil ? "No project" : destinationTitle)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("·")
+                Text(startContractSummary)
+                    .lineLimit(1)
+            }
+            .font(.caption)
+            .junoSecondaryInk()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "\(record == nil ? "No project" : destinationTitle), \(startContractSummary)"
+            )
+        }
+        .frame(maxWidth: 640, alignment: .leading)
+        .accessibilityIdentifier("juno.code.start-header")
     }
 
-    private var launchIntentList: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: JunoSpace.snug), GridItem(.flexible(), spacing: JunoSpace.snug)], spacing: JunoSpace.snug) {
-            ForEach(launchIntents.prefix(4)) { intent in
+    private var startContractSummary: String {
+        if behavior == .code {
+            return PermissionModeLabel.shortText(for: record == nil ? .readOnly : permissionMode)
+        }
+        return AgentBehaviorLabel.text(for: behavior)
+    }
+
+    private var starterTaskList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(record == nil ? "Good starting points" : "Common tasks")
+                    .junoSidebarSection()
+                Spacer(minLength: JunoSpace.regular)
+                Text("Select to edit")
+                    .junoMetaInk()
+            }
+            .padding(.bottom, JunoSpace.snug)
+
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+
+            ForEach(Array(starterTasks.prefix(4).enumerated()), id: \.element.id) { index, task in
                 Button {
-                    apply(intent)
+                    apply(task)
                 } label: {
-                    HStack(alignment: .top, spacing: JunoSpace.snug) {
-                        Image(systemName: intent.icon)
-                            .junoFont(size: 13, relativeTo: .body, weight: .semibold)
-                            .foregroundStyle(intent.color)
-                            .frame(width: 26, height: 26)
-                            .background(intent.color.opacity(0.12), in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+                    HStack(spacing: JunoSpace.cozy) {
+                        JunoIconView(task.icon, size: 15)
+                            .junoSecondaryInk()
+                            .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(intent.title)
+                            Text(task.title)
                                 .font(.subheadline.weight(.semibold))
                                 .junoInk()
-                            Text(intent.detail)
+                            Text(task.detail)
                                 .font(.caption)
                                 .junoSecondaryInk()
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
+
                         Spacer(minLength: 0)
+
+                        JunoIconView(.external, size: 13)
+                            .junoMetaInk()
                     }
-                    .padding(JunoSpace.snug)
-                    .frame(minWidth: 44, minHeight: 44)
+                    .padding(.vertical, JunoSpace.cozy)
+                    .frame(minWidth: 44, minHeight: 52)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                            .strokeBorder(Color.junoBorder.opacity(0.7), lineWidth: 1)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.junoPress)
-                .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.code.launch-intent.\(task.id)")
+
+                if index < min(starterTasks.count, 4) - 1 {
+                    Rectangle()
+                        .fill(Color.junoHairline)
+                        .frame(height: 1)
+                        .padding(.leading, 36)
+                }
             }
         }
-        .frame(maxWidth: 720)
+        .frame(maxWidth: 640, alignment: .leading)
+        .accessibilityIdentifier("juno.code.starter-tasks")
     }
 
-    private func apply(_ intent: LaunchIntent) {
-        prompt = intent.prompt
-        behavior = intent.behavior
+    private func apply(_ task: StarterTask) {
+        prompt = task.prompt
+        behavior = task.behavior
         focused = true
     }
 
@@ -1719,8 +1639,7 @@ struct DesktopCodeDraftDetail: View {
                         URL(fileURLWithPath: record.descriptor.localPathHint)
                     ])
                 } label: {
-                    Image(systemName: "arrow.up.forward.app")
-                        .junoFont(size: 14, relativeTo: .body, weight: .medium)
+                    JunoIconView(.external, size: 15)
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
@@ -1850,7 +1769,7 @@ struct DesktopCodeDraftDetail: View {
                 }
 
                 if let issue = importError ?? launchIssue {
-                    Label(issue, systemImage: "info.circle")
+                    JunoIconLabel(verbatim: issue, icon: .error, size: 14)
                         .font(.caption)
                         .junoSecondaryInk()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1909,25 +1828,15 @@ struct DesktopCodeDraftDetail: View {
     /// choice.
     private var destinationIdentity: some View {
         HStack(spacing: JunoSpace.snug) {
-            // `.symbolEffect` is an SF Symbol capability; a Juno mark is an
-            // image asset and cannot morph, so the two branches differ in more
-            // than which glyph they draw.
-            //
             // Neutral, as the website's own target chip is: `code-target-picker.tsx`
             // draws its folder, branch and chevron marks `text-muted-foreground`
             // and keeps `--primary` for the send button at the other end of the
             // same row. A composer with a coral glyph on each side has two
             // primary actions and therefore none.
-            if let junoIcon = target.junoIcon {
-                JunoIconView(junoIcon, size: 15)
-                    .junoSecondaryInk()
-                    .transition(.opacity)
-                    .id(target)
-            } else {
-                Image(systemName: target.symbol)
-                    .junoSecondaryInk()
-                    .contentTransition(.symbolEffect(.replace))
-            }
+            JunoIconView(target.junoIcon, size: 15)
+                .junoSecondaryInk()
+                .transition(.opacity)
+                .id(target)
             Text(destinationTitle)
                 .junoRowLabel()
                 .lineLimit(1)
@@ -2001,12 +1910,12 @@ struct DesktopCodeDraftDetail: View {
         Menu {
             Picker("Run on", selection: targetBinding) {
                 ForEach(DesktopCodeLaunchTarget.allCases) { choice in
-                    Label(choice.label, systemImage: choice.symbol)
-                    .tag(choice)
+                    JunoIconLabel(verbatim: choice.label, icon: choice.junoIcon, size: 14)
+                        .tag(choice)
                 }
             }
         } label: {
-            CodeContextChipLabel(target.label, systemImage: target.symbol)
+            CodeContextChipLabel(target.label, icon: target.junoIcon)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -2033,29 +1942,29 @@ struct DesktopCodeDraftDetail: View {
     private struct DevToolOption: Identifiable {
         let id: String
         let name: String
-        let icon: String
+        let icon: JunoIcon
     }
 
     private var defaultDevTools: [DevToolOption] {
         [
-            DevToolOption(id: "github", name: "GitHub", icon: "arrow.triangle.branch"),
-            DevToolOption(id: "terminal", name: "Terminal", icon: "terminal"),
-            DevToolOption(id: "postgres", name: "PostgreSQL", icon: "cylinder.split.1x2"),
-            DevToolOption(id: "web_search", name: "Web Search", icon: "globe"),
-            DevToolOption(id: "linear", name: "Linear", icon: "checklist"),
-            DevToolOption(id: "slack", name: "Slack", icon: "bubble.left.and.bubble.right"),
+            DevToolOption(id: "github", name: "GitHub", icon: .branch),
+            DevToolOption(id: "terminal", name: "Terminal", icon: .terminal),
+            DevToolOption(id: "postgres", name: "PostgreSQL", icon: .tools),
+            DevToolOption(id: "web_search", name: "Web Search", icon: .web),
+            DevToolOption(id: "linear", name: "Linear", icon: .tasks),
+            DevToolOption(id: "slack", name: "Slack", icon: .conversation),
         ]
     }
 
-    private func connectorIcon(for id: String) -> String {
+    private func connectorIcon(for id: String) -> JunoIcon {
         switch id {
-        case "github": return "arrow.triangle.branch"
-        case "terminal": return "terminal"
-        case "postgres": return "cylinder.split.1x2"
-        case "web_search": return "globe"
-        case "linear": return "checklist"
-        case "slack": return "bubble.left.and.bubble.right"
-        default: return "network"
+        case "github": return .branch
+        case "terminal": return .terminal
+        case "postgres": return .tools
+        case "web_search": return .web
+        case "linear": return .tasks
+        case "slack": return .conversation
+        default: return .tools
         }
     }
 
@@ -2076,12 +1985,10 @@ struct DesktopCodeDraftDetail: View {
             selectedConnectors.remove(connectorID)
         } label: {
             HStack(spacing: JunoSpace.hairline) {
-                Image(systemName: icon)
-                    .font(.caption2)
+                JunoIconView(icon, size: 13)
                 Text(name)
                     .font(.caption2.weight(.medium))
-                Image(systemName: "xmark")
-                    .junoFont(size: 9, relativeTo: .caption2, weight: .bold)
+                JunoIconView(.close, size: 10)
                     .foregroundStyle(Color.secondary)
             }
             .padding(.horizontal, JunoSpace.snug)
@@ -2115,70 +2022,8 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
-    private var connectorsMenuButton: some View {
-        Menu {
-            Section("Developer Tools & Integrations") {
-                ForEach(defaultDevTools) { tool in
-                    Button {
-                        toggleConnector(tool.id)
-                    } label: {
-                        HStack {
-                            Label(tool.name, systemImage: tool.icon)
-                            if selectedConnectors.contains(tool.id) {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !connectedConnectors.isEmpty {
-                Divider()
-                Section("Connected Services") {
-                    ForEach(connectedConnectors) { connector in
-                        Button {
-                            toggleConnector(connector.id)
-                        } label: {
-                            HStack {
-                                Text(connector.label)
-                                if selectedConnectors.contains(connector.id) {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "network")
-                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
-                Text(selectedConnectors.isEmpty ? "Connectors" : "Connectors (\(selectedConnectors.count))")
-                    .font(.caption)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundStyle(selectedConnectors.isEmpty ? Color.secondary : Color.junoAccent)
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
-            .frame(minHeight: CodeRowMetrics.minHeight)
-            .background(
-                selectedConnectors.isEmpty ? Color.junoMuted.opacity(0.4) : Color.junoAccent.opacity(0.12),
-                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-            )
-            .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Toggle developer tools and active connectors")
-        .accessibilityIdentifier("juno.code.composer.connectors-menu")
-    }
-
     private var localControls: some View {
         HStack(spacing: JunoSpace.snug) {
-            connectorsMenuButton
-
             contractMenu
 
             JunoModelSelectorButton(
@@ -2206,7 +2051,7 @@ struct DesktopCodeDraftDetail: View {
                 } label: {
                     contractMenuItem(
                         AgentBehaviorLabel.text(for: value),
-                        systemImage: AgentBehaviorLabel.glyph(for: value),
+                        icon: AgentBehaviorLabel.junoIcon(for: value),
                         selected: behavior == value
                     )
                 }
@@ -2220,7 +2065,7 @@ struct DesktopCodeDraftDetail: View {
                 } label: {
                     contractMenuItem(
                         PermissionModeLabel.text(for: value),
-                        systemImage: PermissionModeLabel.glyph(for: value),
+                        icon: PermissionModeLabel.junoIcon(for: value),
                         selected: permissionMode == value
                     )
                 }
@@ -2234,7 +2079,7 @@ struct DesktopCodeDraftDetail: View {
         } label: {
             CodeContextChipLabel(
                 contractTitle,
-                systemImage: contractSymbol,
+                icon: contractIcon,
                 // The one place this row spends hue: full access is the
                 // contract where Juno stops asking, and that is worth saying
                 // in a colour.
@@ -2273,14 +2118,14 @@ struct DesktopCodeDraftDetail: View {
     @ViewBuilder
     private func contractMenuItem(
         _ title: String,
-        systemImage: String,
+        icon: JunoIcon,
         selected: Bool
     ) -> some View {
         HStack {
-            Label(title, systemImage: systemImage)
+            JunoIconLabel(verbatim: title, icon: icon, size: 14)
             Spacer(minLength: JunoSpace.regular)
             if selected {
-                Image(systemName: "checkmark")
+                JunoIconView(.check, size: 14)
                     .accessibilityHidden(true)
             }
         }
@@ -2353,7 +2198,7 @@ struct DesktopCodeDraftDetail: View {
     private var composerAddMenu: some View {
         Menu {
             Button(action: chooseFileReference) {
-                Label("Add file context", systemImage: "doc.text")
+                JunoIconLabel(verbatim: "Add file context", icon: .file, size: 14)
             }
             .disabled(record == nil || target != .local)
 
@@ -2361,23 +2206,47 @@ struct DesktopCodeDraftDetail: View {
                 importError = nil
                 chooseImages()
             } label: {
-                Label("Add picture", systemImage: "photo")
+                JunoIconLabel(verbatim: "Add picture", icon: .photos, size: 14)
             }
             .disabled(!canAttachImages)
 
             Menu {
-                if connectorModel != nil {
-                    if connectedConnectors.isEmpty {
-                        Text("No connected apps")
+                Section("Developer tools") {
+                    ForEach(defaultDevTools) { tool in
+                        Button {
+                            toggleConnector(tool.id)
+                        } label: {
+                            HStack {
+                                JunoIconLabel(verbatim: tool.name, icon: tool.icon, size: 14)
+                                Spacer(minLength: JunoSpace.regular)
+                                if selectedConnectors.contains(tool.id) {
+                                    JunoIconView(.check, size: 14)
+                                }
+                            }
+                        }
+                        .disabled(
+                            !selectedConnectors.contains(tool.id)
+                                && selectedConnectors.count >= 5
+                        )
+                    }
+                }
+
+                Divider()
+
+                Section("Connected apps") {
+                    if connectorModel == nil || connectedConnectors.isEmpty {
+                        Text(connectorModel == nil ? "Unavailable" : "None connected")
                     } else {
                         ForEach(connectedConnectors) { connector in
                             Button {
                                 toggleConnector(connector.id)
                             } label: {
-                                if selectedConnectors.contains(connector.id) {
-                                    Label(connector.label, systemImage: "checkmark")
-                                } else {
-                                    Text(connector.label)
+                                HStack {
+                                    JunoIconLabel(verbatim: connector.label, icon: .connections, size: 14)
+                                    Spacer(minLength: JunoSpace.regular)
+                                    if selectedConnectors.contains(connector.id) {
+                                        JunoIconView(.check, size: 14)
+                                    }
                                 }
                             }
                             .disabled(
@@ -2386,8 +2255,6 @@ struct DesktopCodeDraftDetail: View {
                             )
                         }
                     }
-                } else {
-                    Text("Connectors unavailable")
                 }
             } label: {
                 JunoIconLabel(
@@ -2403,11 +2270,10 @@ struct DesktopCodeDraftDetail: View {
             Divider()
 
             Button(action: addProject) {
-                Label("Open another project…", systemImage: "folder")
+                JunoIconLabel(verbatim: "Open another project…", icon: .projects, size: 14)
             }
         } label: {
-            Image(systemName: "plus")
-                .junoFont(size: 16, relativeTo: .body, weight: .medium)
+            JunoIconView(.plus, size: 16)
                 .frame(width: 24, height: 24)
                 .contentShape(.circle)
                 .overlay(alignment: .topTrailing) {
@@ -2452,7 +2318,7 @@ struct DesktopCodeDraftDetail: View {
                                         .resizable()
                                         .aspectRatio(contentMode: .fill)
                                 } else {
-                                    Image(systemName: "photo")
+                                    JunoIconView(.photos, size: 18)
                                         .junoSecondaryInk()
                                 }
                             }
@@ -2467,10 +2333,8 @@ struct DesktopCodeDraftDetail: View {
                             Button {
                                 pendingAttachments.removeAll { $0.id == attachment.id }
                             } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
+                                JunoIconView(.close, size: 14)
+                                    .foregroundStyle(Color.junoMutedForeground)
                             }
                             .buttonStyle(.plain)
                             .offset(x: 5, y: -5)
@@ -2489,8 +2353,7 @@ struct DesktopCodeDraftDetail: View {
 
     private func fileReferenceChip(_ path: WorkspacePath) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            Image(systemName: "doc.text")
-                .junoFont(size: 15, relativeTo: .body, weight: .medium)
+            JunoIconView(.file, size: 15)
                 .junoSecondaryInk()
 
             VStack(alignment: .leading, spacing: 1) {
@@ -2508,10 +2371,8 @@ struct DesktopCodeDraftDetail: View {
             Button {
                 removeFileReference(path)
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
+                JunoIconView(.close, size: 14)
+                    .foregroundStyle(Color.junoMutedForeground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove (path.lastComponent)")
@@ -2563,20 +2424,19 @@ struct DesktopCodeDraftDetail: View {
                     Button {
                         startDictation()
                     } label: {
-                        Label("Dictate into the composer", systemImage: "mic")
+                        JunoIconLabel(verbatim: "Dictate into the composer", icon: .mic, size: 14)
                     }
                 }
                 if let beginVoice {
                     Button {
                         beginVoice(modelID)
                     } label: {
-                        Label("Start a voice conversation", systemImage: "waveform")
+                        JunoIconLabel(verbatim: "Start a voice conversation", icon: .conversation, size: 14)
                     }
                     .disabled(modelID.isEmpty)
                 }
             } label: {
-                Image(systemName: "mic")
-                    .font(.body)
+                JunoIconView(.mic, size: 17)
                     // The ramp has three rungs and no in-betweens: a hand-mixed
                     // `primary.opacity(0.76)` was a fourth ink no other control
                     // used. Secondary is the rung for a quiet neutral control.
@@ -2621,11 +2481,7 @@ struct DesktopCodeDraftDetail: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "arrow.up")
-                        // The named rung Chat's send arrow uses — callout
-                        // bold is the same 12pt at the default setting,
-                        // and it moves with Dynamic Type.
-                        .font(.callout.weight(.bold))
+                    JunoIconView(.send, size: 16)
                 }
             }
             // On-accent, not `junoForeground`: the glyph sits on the
@@ -2850,11 +2706,11 @@ struct DesktopCodeDraftDetail: View {
         return permissionMode == .fullAccess ? "Full access" : "Ask before edits"
     }
 
-    private var contractSymbol: String {
+    private var contractIcon: JunoIcon {
         guard behavior == .code, record != nil else {
-            return AgentBehaviorLabel.glyph(for: behavior)
+            return AgentBehaviorLabel.junoIcon(for: behavior)
         }
-        return permissionMode == .fullAccess ? "shield.fill" : "shield"
+        return PermissionModeLabel.junoIcon(for: permissionMode)
     }
 
     private var destinationTitle: String {
@@ -2899,21 +2755,6 @@ struct DesktopCodeDraftDetail: View {
                 return "Pictures and file context run on This Mac only."
             }
             return code.lastErrorDescription ?? code.startBlockedReason
-        }
-    }
-
-    private var footerNote: String {
-        switch target {
-        case .local:
-            record == nil
-                ? "No files, no commands — open a project when you want Juno to read or change real ones."
-                : behavior == .code
-                ? PermissionModeLabel.explanation(for: permissionMode)
-                : AgentBehaviorLabel.explanation(for: behavior)
-        case .cloud:
-            "Cloud runs work on an isolated checkout and report their pull request here."
-        case .device:
-            "The selected device works only inside the workspace it has already granted."
         }
     }
 

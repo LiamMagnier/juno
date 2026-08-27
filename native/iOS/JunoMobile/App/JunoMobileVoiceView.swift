@@ -155,7 +155,7 @@ struct JunoMobileVoiceDock: View {
                 failureBanner(message)
             }
             if let notice = controller.notice {
-                Label(notice, systemImage: "exclamationmark.circle")
+                JunoIconLabel(verbatim: notice, icon: .error, size: 14)
                     .font(.caption)
                     .foregroundStyle(Color.junoCaution)
                     .multilineTextAlignment(.center)
@@ -220,7 +220,7 @@ struct JunoMobileVoiceDock: View {
     /// appear, and offers the only fix that works for a refusal.
     private func cameraNotice(_ message: String) -> some View {
         VStack(spacing: JunoSpace.snug) {
-            Label(message, systemImage: "video.slash")
+            JunoIconLabel(verbatim: message, icon: .photos, size: 14)
                 .font(.caption)
                 .foregroundStyle(Color.junoCaution)
                 .multilineTextAlignment(.center)
@@ -242,7 +242,7 @@ struct JunoMobileVoiceDock: View {
     }
 
     private func screenShareNotice(_ message: String) -> some View {
-        Label(message, systemImage: "rectangle.dashed.badge.record")
+        JunoIconLabel(verbatim: message, icon: .artifactsTool, size: 14)
             .font(.caption)
             .foregroundStyle(Color.junoCaution)
             .multilineTextAlignment(.center)
@@ -376,7 +376,7 @@ struct JunoMobileVoiceDock: View {
     @ViewBuilder
     private func failureBanner(_ message: String) -> some View {
         VStack(spacing: JunoSpace.snug) {
-            Label(message, systemImage: "exclamationmark.triangle")
+            JunoIconLabel(verbatim: message, icon: .error, size: 14)
                 .font(.caption)
                 .foregroundStyle(Color.junoCaution)
                 .multilineTextAlignment(.center)
@@ -424,7 +424,7 @@ struct JunoMobileVoiceDock: View {
     private var controls: some View {
         if isRestartable {
             circleButton(
-                systemImage: "arrow.clockwise",
+                icon: .refresh,
                 label: "voice.start-again",
                 identifier: "juno.mobile.voice-restart",
                 tone: .prominent
@@ -434,7 +434,7 @@ struct JunoMobileVoiceDock: View {
             }
         } else {
             circleButton(
-                systemImage: controller.muted ? "mic.slash.fill" : "mic.fill",
+                icon: .mic,
                 label: controller.muted ? "voice.unmute" : "voice.mute",
                 identifier: "juno.mobile.voice-mute",
                 tone: controller.muted ? .prominent : .quiet
@@ -460,8 +460,7 @@ struct JunoMobileVoiceDock: View {
     /// and the one control on this dock a desktop has no use for.
     private var speakerButton: some View {
         circleButton(
-            systemImage: controller.speakerOutput
-                ? "speaker.wave.2.fill" : "iphone.gen3.radiowaves.left.and.right",
+            icon: .volume,
             label: controller.speakerOutput ? "voice.speaker.on" : "voice.speaker.off",
             identifier: "juno.mobile.voice-speaker",
             tone: .quiet
@@ -483,9 +482,7 @@ struct JunoMobileVoiceDock: View {
     private var cameraButton: some View {
         if canSee {
             circleButton(
-                // Camera is the OS's affordance and keeps the OS's glyph — the
-                // rule on ``JunoIcon`` names it explicitly.
-                systemImage: camera.isLive ? "video.slash.fill" : "video.fill",
+                icon: .photos,
                 label: camera.isLive ? "voice.camera.stop" : "voice.camera.start",
                 identifier: "juno.mobile.voice-camera",
                 tone: camera.isLive ? .prominent : .quiet
@@ -504,8 +501,7 @@ struct JunoMobileVoiceDock: View {
     private var screenShareButton: some View {
         if canSee {
             circleButton(
-                systemImage: screenShare.isLive
-                    ? "rectangle.inset.filled" : "rectangle.dashed.badge.record",
+                icon: .artifactsTool,
                 label: screenShare.isLive
                     ? "Stop screen sharing" : "Start screen sharing",
                 identifier: "juno.mobile.voice-screen-share",
@@ -550,7 +546,7 @@ struct JunoMobileVoiceDock: View {
             // setting, and the reason it cannot move is the useful part — and
             // the fix, switching provider, is the very next section.
             if !canSee {
-                Label("voice.camera.unsupported", systemImage: "video.slash")
+                JunoIconLabel("voice.camera.unsupported", icon: .photos)
             }
             Section("voice.provider") {
                 ForEach(JunoVoiceProvider.allCases) { provider in
@@ -558,7 +554,7 @@ struct JunoMobileVoiceDock: View {
                         controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
-                            Label(provider.displayName, systemImage: "checkmark")
+                            JunoIconLabel(verbatim: provider.displayName, icon: .check)
                         } else {
                             Text(provider.displayName)
                         }
@@ -567,8 +563,7 @@ struct JunoMobileVoiceDock: View {
                 }
             }
         } label: {
-            Image(systemName: "chevron.down")
-                .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+            JunoIconView(.chevronDown, size: 15)
                 .foregroundStyle(Color.primary.opacity(0.75))
                 .frame(width: 34, height: 34)
                 .frame(width: 44, height: 44)
@@ -595,8 +590,7 @@ struct JunoMobileVoiceDock: View {
                 if isSaving {
                     ProgressView().tint(Color.junoCanvas)
                 } else {
-                    Image(systemName: "phone.down.fill")
-                        .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                    JunoIconView(.close, size: 15)
                         .foregroundStyle(Color.junoCanvas)
                 }
             }
@@ -617,15 +611,14 @@ struct JunoMobileVoiceDock: View {
     }
 
     private func circleButton(
-        systemImage: String,
+        icon: JunoIcon,
         label: LocalizedStringKey,
         identifier: String,
         tone: ControlTone,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+            JunoIconView(icon, size: 15)
                 .foregroundStyle(
                     tone == .prominent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary)
                 )

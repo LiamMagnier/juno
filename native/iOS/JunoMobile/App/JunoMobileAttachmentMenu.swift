@@ -83,7 +83,7 @@ struct JunoMobileComposerActions: View {
                 Button {
                     open(.camera)
                 } label: {
-                    Label("attachments.camera", systemImage: "camera")
+                    JunoIconLabel("attachments.camera", icon: .photos)
                 }
                 .disabled(!canAttach)
 
@@ -158,7 +158,7 @@ struct JunoMobileComposerActions: View {
         Menu {
             toolsRows
         } label: {
-            Label(toolsLabel, systemImage: "slider.horizontal.3")
+            JunoIconLabel(verbatim: toolsLabel, icon: .sliders)
         }
         .accessibilityIdentifier("juno.mobile.composer-tools")
         .contentShape(.rect)
@@ -313,8 +313,7 @@ struct JunoMobileComposerActions: View {
     /// content, so the touch target collapses to the plus glyph — 13.3pt on a
     /// control that looks 32pt.
     private var plus: some View {
-        Image(systemName: "plus")
-            .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
+        JunoIconView(.plus, size: 16)
             .foregroundStyle(.primary)
             .frame(width: 34, height: 34)
             .modifier(JunoComposerGlassCircle())
@@ -366,7 +365,7 @@ struct JunoMobileComposerActions: View {
             Task { await setProject(id) }
         } label: {
             if selectedProjectID == id {
-                Label(name, systemImage: "checkmark")
+                JunoIconLabel(verbatim: name, icon: .check)
             } else {
                 JunoIconLabel(verbatim: name, icon: .projects)
             }

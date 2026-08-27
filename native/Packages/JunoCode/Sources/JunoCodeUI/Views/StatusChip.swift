@@ -13,18 +13,18 @@ import SwiftUI
 /// picked its own colour from its title string would be guessing.
 struct StatusChip: View {
     let title: String
-    let systemImage: String
+    let icon: JunoIcon
     let tint: Color
 
-    init(_ title: String, systemImage: String, tint: Color) {
+    init(_ title: String, icon: JunoIcon, tint: Color) {
         self.title = title
-        self.systemImage = systemImage
+        self.icon = icon
         self.tint = tint
     }
 
     var body: some View {
         HStack(spacing: JunoSpace.hairline) {
-            Image(systemName: systemImage).imageScale(.small)
+            JunoIconView(icon, size: 13)
             Text(title)
         }
         .font(.caption)

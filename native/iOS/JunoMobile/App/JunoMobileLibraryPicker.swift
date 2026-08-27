@@ -77,7 +77,7 @@ struct JunoMobileLibraryPicker: View {
             JunoMobileQuietLoading()
         } else if model.items.isEmpty {
             ContentUnavailableView {
-                Label("library.empty.title", systemImage: "books.vertical")
+                JunoIconLabel("library.empty.title", icon: .library, size: 28)
             } description: {
                 Text("library.empty.description")
             } actions: {
@@ -162,13 +162,19 @@ struct JunoMobileLibraryPicker: View {
                     .opacity(selected ? 1 : 0)
             }
             .overlay(alignment: .topTrailing) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .junoFont(size: 20, relativeTo: .title3)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(
-                        selected ? Color.junoOnAccent : Color.white,
-                        selected ? Color.junoAccent : Color.black.opacity(0.35)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(selected ? Color.junoAccent : Color.black.opacity(0.35))
+                        .frame(width: 22, height: 22)
+                    if selected {
+                        JunoIconView(.check, size: 12)
+                            .foregroundStyle(Color.junoOnAccent)
+                    } else {
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.95), lineWidth: 1.5)
+                            .frame(width: 20, height: 20)
+                    }
+                }
                     .padding(JunoSpace.cozy)
                     .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
             }

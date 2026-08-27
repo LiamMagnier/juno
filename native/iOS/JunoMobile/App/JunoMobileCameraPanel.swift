@@ -203,8 +203,7 @@ struct JunoMobileCameraPanel: View {
         HStack(spacing: 0) {
             Spacer(minLength: 0)
             Button(action: close) {
-                Image(systemName: "xmark")
-                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                JunoIconView(.close, size: 15)
                     // White over the picture, ink over the surface that stands
                     // in for it: a white glyph on the unavailable card is a
                     // close button nobody can see.
@@ -256,8 +255,7 @@ struct JunoMobileCameraPanel: View {
                         .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                         .clipShape(Circle())
                 } else {
-                    Image(systemName: "photo.on.rectangle")
-                        .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
+                    JunoIconView(.photos, size: 19)
                         .foregroundStyle(.primary)
                         .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 }
@@ -291,24 +289,23 @@ struct JunoMobileCameraPanel: View {
                         Label {
                             Text(mode.label)
                         } icon: {
-                            Image(systemName: mode.symbolName)
+                            JunoIconView(.work, size: 15)
                         }
                         .tag(mode)
                     }
                 } label: {
-                    Label("attachments.camera.flash", systemImage: camera.flashMode.symbolName)
+                    JunoIconLabel("attachments.camera.flash", icon: .work)
                 }
             }
             if camera.capabilities.canFlip {
                 Button {
                     Task { await camera.flip() }
                 } label: {
-                    Label("attachments.camera.flip", systemImage: "arrow.triangle.2.circlepath")
+                    JunoIconLabel("attachments.camera.flip", icon: .refresh)
                 }
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
+            JunoIconView(.ellipsis, size: 19)
                 .foregroundStyle(.primary)
                 .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 .junoGlass(in: Circle(), interactive: true)
@@ -360,8 +357,7 @@ struct JunoMobileCameraPanel: View {
         _ reason: JunoCameraUnavailability, _ metrics: JunoFloatingPanelMetrics
     ) -> some View {
         VStack(spacing: JunoSpace.regular) {
-            Image(systemName: "camera.fill")
-                .junoFont(size: 30, relativeTo: .largeTitle)
+            JunoIconView(.photos, size: 30)
                 .junoSecondaryInk()
             Text(reason.message)
                 .font(.callout)

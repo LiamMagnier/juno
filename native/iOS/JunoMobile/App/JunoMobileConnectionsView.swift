@@ -28,7 +28,7 @@ struct JunoMobileConnectionsView: View {
                 JunoMobileQuietLoading()
             case .failed:
                 ContentUnavailableView {
-                    Label("connections.unavailable", systemImage: "exclamationmark.triangle")
+                    JunoIconLabel("connections.unavailable", icon: .error, size: 28)
                 } description: {
                     Text(model.lastErrorDescription ?? String(localized: "connections.retry"))
                 } actions: {
@@ -220,8 +220,7 @@ struct JunoMobileConnectionsView: View {
 
     private var empty: some View {
         VStack(spacing: JunoSpace.snug) {
-            Image(systemName: "app.dashed")
-                .junoFont(size: 28, relativeTo: .title)
+            JunoIconView(.connections, size: 28)
                 .junoMetaInk()
             Text("connections.empty")
                 .font(.callout)
@@ -302,8 +301,7 @@ struct JunoMobileConnectionsView: View {
             // No button at all where Connect cannot work. A disabled control with
             // a tooltip is a desktop idiom; on a phone the reason belongs in the
             // row's own subtitle, which `blockedReason` already supplies.
-            Image(systemName: "lock")
-                .font(.caption)
+            JunoIconView(.lock, size: 14)
                 .junoMetaInk()
                 .accessibilityHidden(true)
         }

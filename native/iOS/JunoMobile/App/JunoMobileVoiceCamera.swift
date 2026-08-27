@@ -298,9 +298,7 @@ struct JunoMobileVoiceSelfView: View {
         HStack(spacing: JunoSpace.tight) {
             if camera.capabilities.canFlip {
                 cornerButton(
-                    // Front/back is the OS's own affordance and keeps the OS's
-                    // own glyph, per the rule on ``JunoIcon``.
-                    systemImage: "arrow.triangle.2.circlepath.camera",
+                    icon: .refresh,
                     label: "attachments.camera.flip",
                     identifier: "juno.mobile.voice-camera-flip"
                 ) {
@@ -308,7 +306,7 @@ struct JunoMobileVoiceSelfView: View {
                 }
             }
             cornerButton(
-                systemImage: "xmark",
+                icon: .close,
                 label: "voice.camera.stop",
                 identifier: "juno.mobile.voice-camera-stop",
                 action: stop
@@ -320,14 +318,13 @@ struct JunoMobileVoiceSelfView: View {
     /// A stop control *on* the preview as well as in the dock, because the
     /// preview is where someone looks when they want the camera to be off.
     private func cornerButton(
-        systemImage: String,
+        icon: JunoIcon,
         label: LocalizedStringKey,
         identifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+            JunoIconView(icon, size: 11)
                 .foregroundStyle(.primary)
                 .frame(width: 26, height: 26)
                 .background(.ultraThinMaterial, in: Circle())

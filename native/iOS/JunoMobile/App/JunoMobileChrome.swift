@@ -196,9 +196,8 @@ struct JunoInlineError: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            JunoIconView(.error, size: 14)
                 .foregroundStyle(Color.junoCaution)
-                .font(.caption)
             Text(message)
                 .junoCaption()
                 .frame(maxWidth: .infinity, alignment: .leading)

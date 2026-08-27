@@ -1046,6 +1046,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No citable text here"
   },
   {
+    "id": "0f3729b341767214",
+    "source": "Remote Session"
+  },
+  {
     "id": "0f50505ce224077f",
     "source": "artifacts"
   },
@@ -3572,6 +3576,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "35ac2cc97fbf8edc",
     "source": "Passage copied"
+  },
+  {
+    "id": "35b4d07b6df9287f",
+    "source": "MiniMax's live image generation variant with reference support."
   },
   {
     "id": "35db9d14d73d8743",
@@ -8966,6 +8974,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Held"
   },
   {
+    "id": "85e9d589ced86b65",
+    "source": "Lower-cost Veo 3.1 tier for quick video drafts."
+  },
+  {
     "id": "85eb00994d09e4d0",
     "source": "Content-Type"
   },
@@ -11378,6 +11390,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This design can’t be opened"
   },
   {
+    "id": "a9594968ee59df75",
+    "source": "xAI's latest image generation and editing model."
+  },
+  {
     "id": "a96856cdb34d33d8",
     "source": "Only image or video files are supported."
   },
@@ -11732,6 +11748,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ade9248e0132b411",
     "source": "Trust"
+  },
+  {
+    "id": "adebfc241bbe8ab2",
+    "source": "Lower-cost OpenAI image generation and editing."
   },
   {
     "id": "adf94bff587bee7d",

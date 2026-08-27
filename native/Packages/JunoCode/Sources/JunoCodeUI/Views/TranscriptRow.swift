@@ -149,28 +149,21 @@ struct TranscriptRow: View {
 
     // MARK: - Messages
 
-    /// The reader's own turn. Right-aligned and bounded so it reads as *sent*,
-    /// on the raised surface with a hairline rather than a coral wash — a tinted
-    /// block of body text is harder to read and spends the accent on the one
-    /// thing in the transcript that needs no emphasis.
+    /// The reader's own turn. It is an actor-labeled entry in the work log rather
+    /// than a chat bubble; the task is the subject here, not a sequence of
+    /// floating message pills.
     private func userRow(_ text: String) -> some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: JunoSpace.region)
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text("You")
+                .font(.caption.weight(.semibold))
+                .junoSecondaryInk()
             Text(text)
                 .junoBody()
                 .textSelection(.enabled)
                 .multilineTextAlignment(.leading)
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.snug + 2)
-                .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                        .fill(Color.junoRaised)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                        .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
-                )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, JunoSpace.snug)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("You said: \(text)")
     }
@@ -186,7 +179,12 @@ struct TranscriptRow: View {
     /// writes is rendered as the ordered list it is, rather than dressed up as a
     /// checklist whose boxes nothing could ever tick.
     private func assistantRow(_ text: String) -> some View {
-        JunoMarkdownText(text)
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text("Juno")
+                .font(.caption.weight(.semibold))
+                .junoSecondaryInk()
+            JunoMarkdownText(text)
+        }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel("Juno said: \(text)")
     }
@@ -196,7 +194,7 @@ struct TranscriptRow: View {
     private func resolvedApprovalRow(_ request: ApprovalRequest) -> some View {
         let approved = context.decision(forApproval: request.id) == .approved
         return ActivityRow(
-            glyph: approved ? "checkmark.shield.fill" : "xmark.shield.fill",
+            icon: approved ? .check : .close,
             tint: approved ? .junoSuccess : .junoDanger,
             title: request.summary,
             subtitle: approved ? "Approved" : "Denied",
@@ -211,7 +209,7 @@ struct TranscriptRow: View {
 
     private func testRow(_ run: TestRunCompletedEvent) -> some View {
         ActivityRow(
-            glyph: run.passed ? "checkmark.seal.fill" : "xmark.seal.fill",
+            icon: run.passed ? .check : .error,
             tint: run.passed ? .junoSuccess : .junoDanger,
             title: run.passed ? "Tests passed" : "Tests failed",
             subtitle: testDetail(run),
@@ -225,8 +223,7 @@ struct TranscriptRow: View {
     private func errorRow(_ error: ErrorEvent) -> some View {
         let tint: Color = error.isRecoverable ? .junoCaution : .junoDanger
         return HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .imageScale(.small)
+            JunoIconView(.error, size: 15)
                 .foregroundStyle(tint)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -245,7 +242,7 @@ struct TranscriptRow: View {
                 Button {
                     Task { await context.retryLastTurn() }
                 } label: {
-                    Label("Retry", systemImage: "arrow.clockwise")
+                    JunoIconLabel(verbatim: "Retry", icon: .refresh, size: 14)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -265,13 +262,12 @@ struct TranscriptRow: View {
         .accessibilityLabel("Error: \(error.message)")
     }
 
-    /// The run's closing summary. This is the only transcript element with a
-    /// heavier weight, because it is the one a reader scrolls back to find.
+    /// The run's closing summary. It closes the timeline with a rule and a
+    /// compact evidence row instead of becoming another rounded dashboard card.
     private func completionRow(_ completed: RunCompletedEvent) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "flag.checkered")
-                    .imageScale(.small)
+                JunoIconView(.check, size: 15)
                     .junoSecondaryInk()
                     .frame(width: 18)
                     .accessibilityHidden(true)
@@ -302,30 +298,29 @@ struct TranscriptRow: View {
             .junoCaption()
             .padding(.leading, 18 + JunoSpace.snug)
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug + 2)
+        .padding(.top, JunoSpace.regular)
+        .padding(.bottom, JunoSpace.snug)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoBorder)
-        )
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+        }
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
     private func completionFacts(_ completed: RunCompletedEvent) -> some View {
-        Label(
-            "\(PathDisplay.fileCount(completed.filesChanged)) changed",
-            systemImage: "doc.badge.gearshape"
+        JunoIconLabel(
+            verbatim: "\(PathDisplay.fileCount(completed.filesChanged)) changed",
+            icon: .file,
+            size: 14
         )
         if let testsPassed = completed.testsPassed {
-            Label(
-                testsPassed ? "Tests green" : "Tests failing",
-                systemImage: testsPassed ? "checkmark.seal" : "xmark.seal"
+            JunoIconLabel(
+                verbatim: testsPassed ? "Tests green" : "Tests failing",
+                icon: testsPassed ? .check : .error,
+                size: 14
             )
             .foregroundStyle(testsPassed ? Color.junoSuccess : Color.junoDanger)
         }
@@ -386,8 +381,10 @@ struct TurnContractRow: View {
     var body: some View {
         HStack(spacing: JunoSpace.hairline) {
             Spacer(minLength: JunoSpace.region)
-            Image(systemName: PermissionModeLabel.glyph(for: configuration.effectivePermissionMode))
-                .imageScale(.small)
+            JunoIconView(
+                PermissionModeLabel.junoIcon(for: configuration.effectivePermissionMode),
+                size: 13
+            )
                 .accessibilityHidden(true)
             Text(text)
                 .lineLimit(1)
@@ -433,7 +430,7 @@ extension EnvironmentValues {
 /// accessory. Nothing here paints a background — an activity row is a line in a
 /// timeline, and forty stacked cards is a worse transcript than forty lines.
 struct ActivityRow<Accessory: View>: View {
-    let glyph: String
+    let icon: JunoIcon
     var tint: Color = .junoMutedForeground
     let title: String
     var titleIsCode = false
@@ -444,8 +441,7 @@ struct ActivityRow<Accessory: View>: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: glyph)
-                .imageScale(.small)
+            JunoIconView(icon, size: 15)
                 .foregroundStyle(tint)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -483,7 +479,7 @@ struct ActivityRow<Accessory: View>: View {
 
 extension ActivityRow where Accessory == EmptyView {
     init(
-        glyph: String,
+        icon: JunoIcon,
         tint: Color = .junoMutedForeground,
         title: String,
         titleIsCode: Bool = false,
@@ -492,7 +488,7 @@ extension ActivityRow where Accessory == EmptyView {
         accessibilityLabel: String? = nil
     ) {
         self.init(
-            glyph: glyph,
+            icon: icon,
             tint: tint,
             title: title,
             titleIsCode: titleIsCode,
@@ -551,7 +547,7 @@ struct ReasoningRow: View {
     }
 
     var body: some View {
-        JunoAIcssReasoningStream(lines: lines, streaming: false)
+        JunoAIcssReasoningStream(lines: lines, streaming: false, label: "Reasoning")
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, JunoSpace.cozy)
             .accessibilityLabel("Reasoning")
@@ -689,8 +685,7 @@ struct ToolActivityRow: View {
                     .frame(width: Self.durationColumn, alignment: .trailing)
 
                     if hasDetail {
-                        Image(systemName: "chevron.right")
-                            .imageScale(.small)
+                        JunoIconView(.chevronRight, size: 11)
                             .junoMetaInk()
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
@@ -833,8 +828,7 @@ struct SubAgentTranscript: View {
                     Spacer(minLength: JunoSpace.snug)
                     SubagentElapsed(run: run)
                     if run.childSessionID != nil {
-                        Image(systemName: "chevron.right")
-                            .imageScale(.small)
+                        JunoIconView(.chevronRight, size: 11)
                             .junoMetaInk()
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
@@ -1009,12 +1003,12 @@ struct OutputWell: View {
 
 // MARK: - File changes
 
-private func glyphName(for kind: FileChangeKind) -> String {
+private func fileChangeIcon(for kind: FileChangeKind) -> JunoIcon {
     switch kind {
-    case .created: return "plus.circle.fill"
-    case .modified: return "pencil.circle.fill"
-    case .deleted: return "minus.circle.fill"
-    case .moved: return "arrow.right.circle.fill"
+    case .created: return .plus
+    case .modified: return .pencil
+    case .deleted: return .close
+    case .moved: return .external
     }
 }
 
@@ -1069,7 +1063,7 @@ private struct FileChangeRow: View {
                 }
             } label: {
                 ActivityRow(
-                    glyph: glyphName(for: change.kind),
+                    icon: fileChangeIcon(for: change.kind),
                     tint: fileChangeTint(for: change.kind),
                     title: PathDisplay.fileName(change.path.value),
                     titleIsCode: true,
@@ -1079,15 +1073,14 @@ private struct FileChangeRow: View {
                 ) {
                     HStack(spacing: JunoSpace.tight) {
                         if change.checkpointID != nil {
-                            Image(systemName: "arrow.uturn.backward.circle")
+                            JunoIconView(.refresh, size: 14)
                                 .junoMetaInk()
                                 .help("Checkpointed before this edit — this change can be reverted")
                                 .accessibilityHidden(true)
                         }
                         DiffStat(added: change.linesAdded, removed: change.linesRemoved)
                         if canOpen {
-                            Image(systemName: "chevron.right")
-                                .imageScale(.small)
+                            JunoIconView(.chevronRight, size: 11)
                                 .junoMetaInk()
                                 .rotationEffect(.degrees(expanded ? 90 : 0))
                         }

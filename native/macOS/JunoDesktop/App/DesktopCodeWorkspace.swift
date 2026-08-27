@@ -193,6 +193,28 @@ struct DesktopCodeWorkspace: View {
         return remoteModel.sessions.first { $0.sessionID == selectedRemote.sessionID }
     }
 
+    private var detailTitle: String {
+        switch selection.wrappedValue {
+        case .session(let id):
+            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code"
+        case .repository(let id):
+            return workbenchModel.workspaces.first { $0.id == id }?.descriptor.displayName
+                ?? "New task"
+        case .task(let id):
+            return codeModel.tasks.first { $0.id == id }?.title ?? "Cloud task"
+        case .remote(_, let id):
+            return remoteModel.sessions.first { $0.sessionID == id }?.title ?? "Remote session"
+        case .allProjects: return "Projects"
+        case .draft: return "New task"
+        case .pulls: return "Pull requests"
+        case .connections: return "Connections"
+        case .usage: return "Usage"
+        case .settings: return "Settings"
+        case .design: return "Design"
+        case .none: return "Code"
+        }
+    }
+
     /// The repository the next session belongs in: the one the reader is looking
     /// at, or failing that the most recently opened one. `workspaces` is ordered
     /// by last use, so `first` is a real answer rather than an arbitrary one.
@@ -238,7 +260,7 @@ struct DesktopCodeWorkspace: View {
         } detail: {
             editorCanvas
                 .junoReadingCanvas()
-                .navigationTitle("")
+                .navigationTitle(detailTitle)
                 .toolbar { detailToolbar }
         }
         .sheet(isPresented: $showingSettingsModal) {
@@ -478,7 +500,18 @@ struct DesktopCodeWorkspace: View {
             guard let workspaceID = session.workspaceID,
                   let workspace = workbenchModel.workspaces.first(where: { $0.id == workspaceID })
             else { return "Local workspace" }
-            return workspace.descriptor.displayName
+            var parts = [workspace.descriptor.displayName]
+            let path = (workspace.descriptor.localPathHint as NSString)
+                .abbreviatingWithTildeInPath
+            if !path.isEmpty, path != workspace.descriptor.displayName {
+                parts.append(path)
+            }
+            if let branch = session.gitBranch?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !branch.isEmpty
+            {
+                parts.append(branch)
+            }
+            return parts.joined(separator: " · ")
         case .task:
             return selectedTask?.whereItRuns ?? "Cloud or connected device"
         case .remote:
@@ -700,11 +733,7 @@ struct DesktopCodeWorkspace: View {
     /// would leave a reader whose scene storage still points at it looking at a
     /// blank column.
     private func accountPageUnavailable(_ title: String, _ description: String) -> some View {
-        ContentUnavailableView(
-            title,
-            systemImage: "exclamationmark.triangle",
-            description: Text(description)
-        )
+        JunoEmptyState(title: title, message: description, icon: .error)
     }
 
     private func draft(_ record: WorkspaceRecord?) -> some View {
@@ -832,24 +861,19 @@ struct DesktopCodeWorkspace: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        // The only glass in this window besides the composer: two transient
-        // status controls, grouped in one container so they refract a shared
-        // sample and blend instead of seaming where they meet.
+        // Approval is a task-level state, not a notification attached to the
+        // canvas. The sidebar's Needs attention section is the durable place to
+        // find another blocked run, while the selected run's ApprovalCard stays
+        // immediately above the composer. A floating "Show" pill here duplicated
+        // both surfaces and competed with the transcript header.
         //
-        // Grouped at the top trailing edge rather than split top and bottom: the
-        // composer already floats along the bottom edge, and a second floating
-        // control there would overlap it.
+        // Screen control is different: it is a live, dangerous capability that
+        // must remain visible while it is active. Keep that one transient signal
+        // over the canvas, but do not turn ordinary approval state into a toast.
         .overlay(alignment: .topTrailing) {
-            let waiting = sessionsWaitingForApproval(excluding: controller.sessionID)
-            // The container is only built when something actually floats: an
-            // empty `GlassEffectContainer` with padding would still reserve a box
-            // over the canvas.
-            if controller.computerUseActive || !waiting.isEmpty {
+            if controller.computerUseActive {
                 JunoDesktopGlass(spacing: JunoSpace.snug) {
-                    VStack(alignment: .trailing, spacing: JunoSpace.snug) {
-                        computerUseIndicator(controller)
-                        approvalJumpControl(waiting)
-                    }
+                    computerUseIndicator(controller)
                 }
                 .padding(JunoSpace.regular)
             }
@@ -945,7 +969,7 @@ struct DesktopCodeWorkspace: View {
                         Select a session on this Mac to see its changes, activity \
                         and repository.
                         """,
-                    symbol: "sidebar.trailing"
+                    icon: .code
                 )
             }
         }
@@ -961,7 +985,7 @@ struct DesktopCodeWorkspace: View {
     private func computerUseIndicator(_ controller: SessionController) -> some View {
         if controller.computerUseActive {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "display.trianglebadge.exclamationmark")
+                JunoIconView(.permission, size: 15)
                     .foregroundStyle(Color.junoDanger)
                 Text("Screen control active").junoRowLabel()
                 // Plain inside glass. Real glass carries its own rim light; a
@@ -982,89 +1006,16 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Every run blocked on the reader, named by the session they can actually
-    /// act in.
-    ///
-    /// A sub-agent has no sidebar row, so pointing "Show" at one would select a
-    /// session the reader cannot otherwise reach — the "it just opened another
-    /// chat" this pass removes, arrived at from the other direction. Filtering
-    /// children out instead would be worse: an approval nobody can reach is a run
-    /// that hangs forever. So a waiting child is reported as its parent, which is
-    /// where its approval is surfaced and where answering it unblocks the work.
-    /// Deduplicated, because two children of one parent are one place to go.
-    private func sessionsWaitingForApproval(
-        excluding current: CodeSessionID?
-    ) -> [CodeSession] {
-        var seen: Set<CodeSessionID> = []
-        return workbenchModel.sessions
-            .filter(\.hasPendingApproval)
-            .compactMap { waiting in
-                guard let parentID = waiting.parentSessionID else { return waiting }
-                return workbenchModel.sessions.first { $0.id == parentID } ?? waiting
-            }
-            .filter { $0.id != current && seen.insert($0.id).inserted }
-    }
-
-    /// A run blocked on the reader that is not the one on screen.
-    @ViewBuilder
-    private func approvalJumpControl(_ waiting: [CodeSession]) -> some View {
-        if let first = waiting.first {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(.permission, size: 15)
-                    .foregroundStyle(Color.junoCaution)
-                Text(
-                    waiting.count == 1
-                        ? "1 run is waiting for approval"
-                        : "\(waiting.count) runs are waiting for approval"
-                )
-                .junoRowLabel()
-                // Explicitly tinted, and tinted the accent. A borderless button
-                // with no tint resolves to the *system* accent asset — a hotter
-                // orange than the brand's, and the one thing this pass is
-                // removing — and the web draws exactly this shape, a text-only
-                // action inside a notice, as `text-primary`.
-                Button("Show") { selection.wrappedValue = .session(first.id) }
-                    .buttonStyle(.borderless)
-                    .tint(Color.junoAccent)
-                    .accessibilityIdentifier("juno.code.show-approval")
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: JunoRadius.well)
-            .accessibilityElement(children: .contain)
-        }
-    }
-
     // MARK: - Toolbar
 
-    /// **Three groups, separated by the system's own spacer.**
+    /// The toolbar is intentionally small: create, review, and one menu for the
+    /// less frequent session commands. A workbench should not make the reader
+    /// decode a row of anonymous symbols before they can read the task.
     ///
-    /// This bar used to be eight unlabelled icons in an unbroken row, then a
-    /// hand-rolled `ellipsis.circle` menu that re-listed two of them, then a
-    /// lone Stop. Nine controls with no separators is not a toolbar; it is a
-    /// strip of icons the eye has to parse one at a time, and it was the worst
-    /// single element in the window.
-    ///
-    /// What it is now:
-    ///
-    /// 1. **Make** — start a session. The only thing here that creates.
-    /// 2. **Show** — the four panes this window can put beside the transcript.
-    ///    Every one of them is a toggle, every one keeps its position and
-    ///    disables rather than vanishing, and they read as one cluster because
-    ///    `ToolbarSpacer(.fixed)` puts real air on both sides of them.
-    /// 3. **Stop** — the trailing edge, and the bar's **one** tinted control.
-    ///
-    /// Everything else — add a project, open a file by name, build to a
-    /// simulator, hand over the screen — is a *command* rather than a pane, and
-    /// commands go to `.secondaryAction`, where the system collects them into
-    /// its own overflow. That is the same set of items the `ellipsis.circle`
-    /// menu held, minus the two it duplicated, and now the platform decides
-    /// when and how to fold them rather than this file drawing a chevron.
-    ///
-    /// Every item is present in every state and disables rather than
-    /// vanishing — both because a rebuilt AppKit toolbar is the documented crash
-    /// surface here, and because a control that keeps its position is one the
-    /// pointer does not have to re-find.
+    /// The menu keeps the existing command surface, while its accessibility
+    /// representation preserves the stable semantic controls used by VoiceOver
+    /// and UI automation. They remain real buttons with the same actions; they
+    /// are simply not repeated as visible chrome.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
         // **No product switch here.** It is the first thing in the sidebar now —
@@ -1089,96 +1040,148 @@ struct DesktopCodeWorkspace: View {
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up
         // sitting inside the navigation column.
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItem(placement: .primaryAction) {
             Button(action: newSession) {
-                Label("New session", systemImage: "square.and.pencil")
+                JunoIconLabel(verbatim: "New task", icon: .new, size: 15)
             }
-            .help("Start a new session in this repository (⌘N)")
+            .help("Start a new task (⌘N)")
             .accessibilityIdentifier("juno.code.new-session")
+        }
 
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 reviewVisible.toggle()
             } label: {
-                Label(
-                    reviewVisible ? "Show Conversation" : "Review Changes",
-                    systemImage: reviewVisible ? "bubble.left" : "plusminus.circle"
+                JunoIconLabel(
+                    verbatim: reviewVisible ? "Conversation" : "Review",
+                    icon: reviewVisible ? .conversation : .code,
+                    size: 15
                 )
             }
             .disabled(controller == nil)
             .keyboardShortcut("r", modifiers: [.command, .option])
-            .help(reviewVisible ? "Return to Conversation" : "Review Changes")
+            .help(reviewVisible ? "Return to conversation" : "Review the current diff")
             .accessibilityIdentifier("juno.code.review.toggle")
+        }
 
-            Button(action: openPreview) {
-                Label(
-                    previewTarget == nil ? "Open Preview" : "Hide Preview",
-                    systemImage: "rectangle.on.rectangle"
-                )
-            }
-            .disabled(controller == nil)
-            .keyboardShortcut("p", modifiers: [.command, .option])
-            .help(previewTarget == nil ? "Open Preview" : "Hide Preview")
-            .accessibilityIdentifier("juno.code.preview.toggle")
+        ToolbarSpacer(.fixed, placement: .primaryAction)
 
-            Button {
-                inspectorPresentation.wrappedValue.toggle()
-            } label: {
-                Label(
-                    inspectorPresentation.wrappedValue ? "Hide Inspector" : "Show Inspector",
-                    systemImage: "sidebar.trailing"
-                )
-            }
-            .disabled(controller == nil)
-            .keyboardShortcut("i", modifiers: [.command, .option])
-            .help(inspectorPresentation.wrappedValue ? "Hide Inspector" : "Show Inspector")
-            .accessibilityIdentifier("juno.code.inspector.toggle")
-
-            Button {
-                withAnimation(
-                    JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
-                ) {
-                    consoleVisible.toggle()
-                }
-            } label: {
-                Label(
-                    consoleVisible ? "Hide Console" : "Show Console",
-                    systemImage: "apple.terminal"
-                )
-            }
-            .disabled(controller == nil)
-            .keyboardShortcut("c", modifiers: [.command, .option])
-            .help(consoleVisible ? "Hide Console" : "Show Console")
-            .accessibilityIdentifier("juno.code.console.toggle")
-
+        ToolbarItem(placement: .primaryAction) {
             Menu {
-                Button { isChoosingRepository = true } label: {
-                    Label("Add Project…", systemImage: "folder.badge.plus")
-                }
-                .keyboardShortcut("o", modifiers: .command)
+                Section("Session") {
+                    Button(action: openPreview) {
+                        JunoIconLabel(
+                            verbatim: previewTarget == nil ? "Preview" : "Hide preview",
+                            icon: .canvas,
+                            size: 14
+                        )
+                    }
+                    .disabled(controller == nil)
+                    .keyboardShortcut("p", modifiers: [.command, .option])
 
-                Button { isOpeningQuickly = true } label: {
-                    Label("Open Quickly…", systemImage: "magnifyingglass")
+                    Button {
+                        inspectorPresentation.wrappedValue.toggle()
+                    } label: {
+                        JunoIconLabel(
+                            verbatim: inspectorPresentation.wrappedValue ? "Hide inspector" : "Show inspector",
+                            icon: .sliders,
+                            size: 14
+                        )
+                    }
+                    .disabled(controller == nil)
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+
+                    Button {
+                        withAnimation(
+                            JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+                        ) {
+                            consoleVisible.toggle()
+                        }
+                    } label: {
+                        JunoIconLabel(
+                            verbatim: consoleVisible ? "Hide console" : "Show console",
+                            icon: .terminal,
+                            size: 14
+                        )
+                    }
+                    .disabled(controller == nil)
+                    .keyboardShortcut("c", modifiers: [.command, .option])
                 }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
-                .disabled(controller?.context == nil)
+
+                Section("Workspace") {
+                    Button(action: openSimulator) {
+                        JunoIconLabel(verbatim: "Run in Simulator", icon: .device, size: 14)
+                    }
+                    .disabled(targetRepository == nil)
+
+                    Button { isChoosingRepository = true } label: {
+                        JunoIconLabel(verbatim: "Add project…", icon: .projects, size: 14)
+                    }
+                    .keyboardShortcut("o", modifiers: .command)
+
+                    Button { isOpeningQuickly = true } label: {
+                        JunoIconLabel(verbatim: "Open file…", icon: .search, size: 14)
+                    }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+                    .disabled(controller?.context == nil)
+                }
 
                 Divider()
 
                 Button(action: toggleComputerUse) {
-                    Label(
-                        controller?.computerUseActive == true
-                            ? "Stop Screen Control" : "Start Screen Control",
-                        systemImage: controller?.computerUseActive == true
-                            ? "display.trianglebadge.exclamationmark"
-                            : "display"
+                    JunoIconLabel(
+                        verbatim: controller?.computerUseActive == true
+                            ? "Stop screen control" : "Start screen control",
+                        icon: .permission,
+                        size: 14
                     )
                 }
                 .disabled(!supportsComputerUse)
                 .help(computerUseHelp)
             } label: {
-                Label("More", systemImage: "ellipsis")
+                JunoIconLabel(verbatim: "Task actions", icon: .ellipsis, size: 15)
             }
             .accessibilityIdentifier("juno.code.more")
+            .accessibilityLabel("Task actions")
+            .accessibilityRepresentation {
+                HStack(spacing: 0) {
+                    Button(
+                        reviewVisible ? "Conversation" : "Review changes",
+                        action: { reviewVisible.toggle() }
+                    )
+                    .disabled(controller == nil)
+                    .accessibilityIdentifier("juno.code.review.toggle")
+
+                    Button(
+                        previewTarget == nil ? "Open preview" : "Hide preview",
+                        action: openPreview
+                    )
+                    .disabled(controller == nil)
+                    .accessibilityIdentifier("juno.code.preview.toggle")
+
+                    Button(
+                        inspectorPresentation.wrappedValue ? "Hide inspector" : "Show inspector",
+                        action: { inspectorPresentation.wrappedValue.toggle() }
+                    )
+                    .disabled(controller == nil)
+                    .accessibilityIdentifier("juno.code.inspector.toggle")
+
+                    Button(
+                        consoleVisible ? "Hide console" : "Show console",
+                        action: {
+                            withAnimation(
+                                JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+                            ) {
+                                consoleVisible.toggle()
+                            }
+                        }
+                    )
+                    .disabled(controller == nil)
+                    .accessibilityIdentifier("juno.code.console.toggle")
+                }
+            }
         }
     }
 
@@ -1435,6 +1438,12 @@ struct DesktopCodeWorkspace: View {
             inspectorVisible = true
         }
         if previewSessionID != nil {
+            // The preview fixture selects a session before this view's
+            // selection task is guaranteed to run. Resolve it here as well so a
+            // screenshot flag deterministically presents the inspector instead
+            // of depending on task scheduling.
+            await resolveController()
+            inspectorReady = controller != nil
             return
         }
         #endif
@@ -1581,7 +1590,7 @@ private struct DesktopCodeTaskCanvas: View {
 private struct DesktopRemoteEventPresentation {
     let title: String
     let detail: String?
-    let symbol: String
+    let icon: JunoIcon
     let tint: Color
     let usesMonoDetail: Bool
 
@@ -1603,7 +1612,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["text", "message"]) ?? "Message sent",
                 detail: nil,
-                symbol: "person.crop.circle",
+                icon: .user,
                 tint: .secondary,
                 usesMonoDetail: false
             )
@@ -1611,7 +1620,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["text", "message"]) ?? "Juno replied",
                 detail: nil,
-                symbol: "sparkles",
+                icon: .conversation,
                 tint: .junoAccent,
                 usesMonoDetail: false
             )
@@ -1619,7 +1628,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["summary", "name", "toolName"]) ?? "Running a tool",
                 detail: value(["command", "detail"]),
-                symbol: "terminal",
+                icon: .terminal,
                 tint: .secondary,
                 usesMonoDetail: true
             )
@@ -1627,7 +1636,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["summary", "name"]) ?? "Command output",
                 detail: value(["text", "output", "detail"]),
-                symbol: "chevron.left.forwardslash.chevron.right",
+                icon: .code,
                 tint: .secondary,
                 usesMonoDetail: true
             )
@@ -1643,7 +1652,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: "Changed \(path)",
                 detail: counts,
-                symbol: "doc.text",
+                icon: .file,
                 tint: .junoAccent,
                 usesMonoDetail: true
             )
@@ -1651,7 +1660,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: "Approval required",
                 detail: value(["summary", "text", "detail"]),
-                symbol: "hand.raised.fill",
+                icon: .permission,
                 tint: .junoCaution,
                 usesMonoDetail: false
             )
@@ -1662,7 +1671,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: approved ? "Approval granted" : "Approval denied",
                 detail: value(["summary", "detail"]),
-                symbol: approved ? "checkmark.circle" : "xmark.circle",
+                icon: approved ? .check : .close,
                 tint: approved ? .junoSuccess : .junoDanger,
                 usesMonoDetail: false
             )
@@ -1680,7 +1689,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: title,
                 detail: status,
-                symbol: "person.2",
+                icon: .user,
                 tint: .junoAccent,
                 usesMonoDetail: false
             )
@@ -1688,7 +1697,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["status", "title", "text"]) ?? "Session status changed",
                 detail: value(["detail", "summary"]),
-                symbol: "waveform.path.ecg",
+                icon: .refresh,
                 tint: .secondary,
                 usesMonoDetail: false
             )
@@ -1696,7 +1705,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: value(["message", "error", "text"]) ?? "Remote session error",
                 detail: value(["detail", "summary"]),
-                symbol: "exclamationmark.triangle.fill",
+                icon: .error,
                 tint: .junoDanger,
                 usesMonoDetail: false
             )
@@ -1704,7 +1713,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: "Session finished",
                 detail: value(["summary", "detail"]),
-                symbol: "checkmark.circle.fill",
+                icon: .check,
                 tint: .junoSuccess,
                 usesMonoDetail: false
             )
@@ -1714,7 +1723,7 @@ private struct DesktopRemoteEventPresentation {
             return Self(
                 title: humanize(event.kind),
                 detail: fallback,
-                symbol: "circle.dotted",
+                icon: .ellipsis,
                 tint: .secondary,
                 usesMonoDetail: true
             )
@@ -1775,14 +1784,14 @@ private struct DesktopCodeRemoteCanvas: View {
             }
             }
         }
-        .overlay {
+                .overlay {
             if remote.events.isEmpty && remote.lastErrorDescription == nil {
                 JunoEmptyState(
                     title: summary == nil ? "That session is not listed" : "Nothing yet",
                     message: summary == nil
                         ? "The computer that owns it may have gone offline."
                         : "This computer has not reported any activity for this session yet.",
-                    symbol: "laptopcomputer.and.arrow.down"
+                    icon: .device
                 )
                 .allowsHitTesting(false)
             }
@@ -1820,11 +1829,10 @@ private struct DesktopCodeRemoteCanvas: View {
     private func sessionHeader(_ summary: CodeRemoteSessionSummary) -> some View {
         let status = CodeRunStatus(summary)
         return HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: "laptopcomputer")
+            JunoIconView(.device, size: 15)
                 // Scaled against the callout title it marks, so the pair grows
                 // together under Dynamic Type instead of the glyph staying a
                 // fixed 15pt beside enlarged text.
-                .junoFont(size: 15, relativeTo: .callout, weight: .semibold)
                 .foregroundStyle(Color.junoAccent)
                 .frame(width: 28, height: 28)
                 .background(Color.junoAccent.opacity(0.12), in: Circle())
@@ -1836,10 +1844,14 @@ private struct DesktopCodeRemoteCanvas: View {
                         .lineLimit(1)
                     Spacer(minLength: JunoSpace.hairline)
                     HStack(spacing: JunoSpace.hairline) {
-                        Image(systemName: status.symbol)
+                        if let icon = status.junoIcon {
+                            JunoIconView(icon, size: 11)
+                        } else {
+                            JunoIconView(.refresh, size: 11)
+                        }
                         Text(status.label)
                     }
-                    .font(.caption)
+                    .junoCaption()
                     .foregroundStyle(status.tint)
                     .padding(.horizontal, JunoSpace.snug)
                     .padding(.vertical, 3)
@@ -1851,15 +1863,18 @@ private struct DesktopCodeRemoteCanvas: View {
                         .junoCaption()
                         .lineLimit(1)
                     if let branch = summary.activeBranch, !branch.isEmpty {
-                        Label(branch, systemImage: "arrow.triangle.branch")
-                            .junoCaption()
-                            .lineLimit(1)
+                        HStack(spacing: JunoSpace.hairline) {
+                            JunoIconView(.branch, size: 11)
+                            Text(branch)
+                        }
+                        .junoCaption()
+                        .lineLimit(1)
                     }
                     if summary.pendingChangeCount > 0 {
-                        Label(
-                            "\(summary.pendingChangeCount) change\(summary.pendingChangeCount == 1 ? "" : "s")",
-                            systemImage: "doc.badge.gearshape"
-                        )
+                        HStack(spacing: JunoSpace.hairline) {
+                            JunoIconView(.file, size: 11)
+                            Text("\(summary.pendingChangeCount) change\(summary.pendingChangeCount == 1 ? "" : "s")")
+                        }
                         .junoCaption()
                         .foregroundStyle(Color.junoAccent)
                     }
@@ -1898,11 +1913,11 @@ private struct DesktopCodeRemoteCanvas: View {
                     .accessibilityIdentifier("juno.code.remote-composer")
                 if summary?.isRunning == true {
                     Button {
-                        Task {
+                    Task {
                             await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID)
                         }
                     } label: {
-                        Image(systemName: "stop.fill")
+                        JunoIconView(.stop, size: 14)
                             .frame(width: 22, height: 22)
                     }
                     .buttonStyle(.bordered)
@@ -1912,7 +1927,7 @@ private struct DesktopCodeRemoteCanvas: View {
                     .accessibilityLabel("Stop this session")
                 }
                 Button(action: send) {
-                    Image(systemName: "arrow.up")
+                    JunoIconView(.send, size: 14)
                         .frame(width: 22, height: 22)
                 }
                 .junoProminentGlassButton()
@@ -1972,10 +1987,9 @@ private struct DesktopCodeRemoteCanvas: View {
     private func eventRow(_ event: CodeRemoteSessionEvent) -> some View {
         let presentation = DesktopRemoteEventPresentation.make(event)
         return HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: presentation.symbol)
+            JunoIconView(presentation.icon, size: 13)
                 // Scaled against the callout row title it marks, for the same
                 // reason as the session header's laptop glyph above.
-                .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
                 .foregroundStyle(presentation.tint)
                 .frame(width: 24, height: 24)
                 .background(presentation.tint.opacity(0.12), in: Circle())
@@ -2013,7 +2027,7 @@ private struct DesktopCodeRemoteCanvas: View {
 
     private func errorRow(_ message: String) -> some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: "wifi.exclamationmark")
+            JunoIconView(.error, size: 14)
                 .foregroundStyle(Color.junoDanger)
             Text(message)
                 .junoCaption()
@@ -2055,20 +2069,28 @@ private struct DesktopCodeContextStrip: View {
     let stop: () -> Void
 
     var body: some View {
-        // `CodePageHeader` owns the strip's anatomy — the mark, the 52pt, the
-        // canvas ground, the path in the code face. What used to be here was a
-        // fourth hand-built header with its own metrics and, worse, a *seventh*
-        // rendering of run status: a bare tinted `Circle` beside a label, in a
-        // card, agreeing with nothing else in the window.
-        //
-        // The "JUNO CODE" overline is gone with it. The product's name above
-        // the session's own name, inside the product, is chrome that says
-        // nothing the sidebar's product switch has not already said.
-        CodePageHeader(
-            icon: .code,
-            title: title,
-            subtitle: subtitle.isEmpty ? nil : subtitle
-        ) {
+        HStack(alignment: .center, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                if !subtitle.isEmpty {
+                    HStack(spacing: JunoSpace.tight) {
+                        JunoIconView(.projects, size: 14)
+                            .junoMetaInk()
+                            .accessibilityHidden(true)
+                        Text(subtitle)
+                            .junoCaption()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            Spacer(minLength: JunoSpace.regular)
+
             if let status {
                 HStack(spacing: JunoSpace.tight) {
                     CodeStatusGlyph(status)
@@ -2083,14 +2105,23 @@ private struct DesktopCodeContextStrip: View {
 
             if isRunning {
                 Button(action: stop) {
-                    Label("Stop", systemImage: "stop.circle")
-                        .foregroundStyle(Color.junoDanger)
-                        .contentShape(.rect)
+                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 14)
                 }
                 .buttonStyle(.bordered)
+                .tint(Color.junoDanger)
                 .keyboardShortcut(".", modifiers: .command)
                 .accessibilityIdentifier("juno.code.stop")
             }
+        }
+        .frame(maxWidth: 920, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.vertical, JunoSpace.regular)
+        .background(Color.junoCanvas)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
         }
         .accessibilityIdentifier("juno.code.context-strip")
     }

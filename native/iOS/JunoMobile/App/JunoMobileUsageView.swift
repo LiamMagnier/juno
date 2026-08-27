@@ -340,8 +340,7 @@ private struct JunoMobileUsageSurfaces: View {
                     ForEach(rows) { row in
                         VStack(alignment: .leading, spacing: JunoSpace.tight) {
                             HStack(spacing: JunoSpace.snug) {
-                                Image(systemName: row.symbol)
-                                    .junoFont(size: 13, relativeTo: .footnote)
+                                JunoIconView(usageIcon(row.surface), size: 13)
                                     .frame(width: 18)
                                     .junoSecondaryInk()
                                 Text(row.displayName)
@@ -363,6 +362,18 @@ private struct JunoMobileUsageSurfaces: View {
                     }
                 }
             }
+        }
+    }
+
+    private func usageIcon(_ surface: String) -> JunoIcon {
+        switch surface {
+        case "chat": .conversation
+        case "code": .code
+        case "task": .tasks
+        case "image": .photos
+        case "video": .artifacts
+        case "voice": .volume
+        default: .usage
         }
     }
 }

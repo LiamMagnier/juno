@@ -25,6 +25,7 @@ final class JunoBrandTests: XCTestCase {
                 // Action controls, media, and navigation glyphs.
                 "mic", "send", "stop", "plus", "chevronRight", "chevronDown", "chevronUp",
                 "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
+                "arrowDown", "volume", "thumbsUp", "thumbsDown", "eyeOff",
             ]
         )
     }

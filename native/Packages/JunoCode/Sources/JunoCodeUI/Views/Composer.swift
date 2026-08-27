@@ -38,6 +38,19 @@ public enum PermissionModeLabel {
         }
     }
 
+    /// The native mark for this policy, generated from the same Lucide source
+    /// as the website. Keep `glyph(for:)` above for legacy transcript clients,
+    /// but new controls should use this value rather than importing an SF
+    /// Symbol into the product vocabulary.
+    public static func junoIcon(for mode: PermissionMode) -> JunoIcon {
+        switch mode {
+        case .readOnly: .lock
+        case .askBeforeChanges: .permission
+        case .workspaceWrite: .pencil
+        case .fullAccess: .lock
+        }
+    }
+
     /// What the mode allows, stated in the menu so the choice is not four nouns
     /// the reader has to infer a policy from.
     public static func explanation(for mode: PermissionMode) -> String {
@@ -78,6 +91,19 @@ public enum AgentBehaviorLabel {
         }
     }
 
+    /// The website-aligned mark for the mode. Ask and Survey intentionally use
+    /// conversation/research vocabulary instead of the nearest Apple glyph;
+    /// the distinction is what keeps the native composer legible beside the
+    /// web Code surface.
+    public static func junoIcon(for behavior: AgentBehavior) -> JunoIcon {
+        switch behavior {
+        case .ask: .conversation
+        case .survey: .research
+        case .plan: .sliders
+        case .code: .code
+        }
+    }
+
     public static func explanation(for behavior: AgentBehavior) -> String {
         switch behavior {
         case .ask: "Answer questions about this project using inspection tools only."
@@ -86,29 +112,6 @@ public enum AgentBehaviorLabel {
         case .plan: "Investigate, then write an implementation plan. Nothing is changed."
         case .code: "Carry the task through, with edits checkpointed and gated."
         }
-    }
-}
-
-/// The five-bar voice mark shared by the Code composer and its first-turn
-/// launchpad. It is deliberately the same compact signal Chat uses instead of
-/// an ambiguous waveform outline that disappears inside a small toolbar row.
-public struct JunoCodeVoiceGlyph: View {
-    private let color: Color
-    private let heights: [CGFloat] = [7, 13, 18, 11, 6]
-
-    public init(color: Color = .white) {
-        self.color = color
-    }
-
-    public var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
-                Capsule()
-                    .fill(color)
-                    .frame(width: 2, height: height)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 
@@ -305,34 +308,19 @@ public struct Composer: View {
             removeAttachment: { controller.removeAttachment(id: $0) },
             addAttachment: { controller.attach($0) }
         ) {
-            attachButton
+            addMenu
 
-            TurnContractMenu(
-                behavior: Binding(
-                    get: { controller.session.configuration.behavior },
-                    set: { newBehavior in
-                        Task { await controller.setBehavior(newBehavior) }
-                    }
-                ),
-                permissionMode: Binding(
-                    get: { controller.session.configuration.permissionMode },
-                    set: { newMode in
-                        Task { await controller.setPermissionMode(newMode) }
-                    }
-                )
-            )
-
-            // No painted divider between the controls.
+            // Keep the add affordance visually separate from the Code contract
+            // without turning either control into a detached capsule.
             //
-            // There was a 1pt `Rectangle` here, and it contradicted two doc comments
-            // in this repo at once: `junoFloatingChrome` says it "deliberately draws
-            // no border" because "real glass carries its own edge — a light scatter
-            // at the rim that reads as thickness. Stroking a hairline over it
-            // flattens that back into a translucent rounded rectangle", and
-            // `ComposerSurface`'s own header calls out "the rejected build stroked a
-            // hairline over the glass". Spacing separates these groups; a drawn line
-            // only muddies the material they sit on.
-            Spacer().frame(width: JunoSpace.snug)
+            // This is an internal control divider, not a border around the glass
+            // shell; the shell itself remains undecorated and keeps its native rim.
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(width: 1, height: 19)
+                .padding(.horizontal, 2)
+
+            codeToolControl
 
             CodeModelSelector(
                 selection: Binding(
@@ -344,73 +332,38 @@ public struct Composer: View {
                 availableModels: availableModels,
                 accessibilityID: "juno.code.composer.model"
             )
-            CodeThinkingControl(
-                selection: Binding(
-                    get: { controller.session.configuration.reasoningEffort },
-                    set: { newEffort in
-                        Task { await controller.setReasoningEffort(newEffort) }
-                    }
-                ),
-                model: selectedModel,
-                accessibilityID: "juno.code.composer.reasoning"
-            )
-
             Spacer(minLength: JunoSpace.snug)
 
             contextMeter
-
-            if let beginDictation, !isRunning {
-                Button(action: beginDictation) {
-                    Image(systemName: "mic")
-                        .font(.body)
-                        // The warm muted ink, which is what a 76%-strength primary was
-                        // reaching for — except an opacity on ink cannot
-                        // participate in contrast adaptation, and this token
-                        // is already measured at the floor.
-                        .foregroundStyle(Color.junoMutedForeground)
-                        .frame(width: 30, height: 30)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .help("Dictate a message")
-                .accessibilityLabel("Dictate a message")
-                .accessibilityIdentifier("juno.code.composer.dictate")
-            }
 
             if isRunning {
                 Button {
                     Task { await controller.stop() }
                 } label: {
-                    Image(systemName: "stop.fill")
-                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
+                    JunoIconView(.stop, size: 15)
                         .foregroundStyle(Color.junoOnAccent)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 36, height: 36)
                 }
                 .accentGlassAction(active: true)
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop the agent (⌘.)")
                 .accessibilityLabel("Stop the agent")
                 .accessibilityIdentifier("juno.code.composer.stop")
-            } else if let beginVoice,
-                controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                controller.pendingAttachments.isEmpty
-            {
-                Button(action: beginVoice) {
-                    JunoCodeVoiceGlyph(color: Color.junoOnAccent)
-                        .frame(width: 30, height: 30)
-                        .contentShape(.circle)
-                }
-                .accentGlassAction(active: controller.isAgentTransportConfigured)
-                .disabled(!controller.isAgentTransportConfigured)
-                .help("Start a voice conversation")
-                .accessibilityLabel("Start voice mode")
-                .accessibilityIdentifier("juno.code.composer.voice")
             } else {
+                voiceControl
+
+                if beginDictation != nil || beginVoice != nil {
+                    Rectangle()
+                        .fill(Color.junoHairline)
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 1)
+                        .accessibilityHidden(true)
+                }
+
                 Button(action: send) {
-                    Image(systemName: "arrow.up")
-                        .junoFont(size: 12, relativeTo: .body, weight: .bold)
+                    JunoIconView(.send, size: 15)
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 36, height: 36)
                         .contentShape(.circle)
                 }
                 .accentGlassAction(active: canSend)
@@ -418,6 +371,96 @@ public struct Composer: View {
                 .help("Send")
                 .accessibilityLabel("Send")
                 .accessibilityIdentifier("juno.code.composer.send")
+            }
+        }
+    }
+
+    /// The Code tool is the only Code-specific control in the Chat composer
+    /// language. It keeps the mode and permission contract visible at rest; the
+    /// menu contains the full set of safe choices without turning the composer
+    /// into a settings bar.
+    private var codeToolControl: some View {
+        TurnContractMenu(
+            behavior: Binding(
+                get: { controller.session.configuration.behavior },
+                set: { newBehavior in
+                    Task { await controller.setBehavior(newBehavior) }
+                }
+            ),
+            permissionMode: Binding(
+                get: { controller.session.configuration.permissionMode },
+                set: { newMode in
+                    Task { await controller.setPermissionMode(newMode) }
+                }
+            )
+        )
+    }
+
+    /// Dictation and realtime voice share one quiet microphone control. Send is
+    /// intentionally independent and stays in the same place whether the field
+    /// is empty or full; changing the primary action into a voice orb made the
+    /// composer unpredictable and gave voice more visual weight than the task.
+    @ViewBuilder
+    private var voiceControl: some View {
+        let canDictate = beginDictation != nil
+        let canConverse = beginVoice != nil
+
+        if canDictate || canConverse {
+            Menu {
+                if let beginDictation {
+                    Button(action: beginDictation) {
+                        JunoIconLabel(
+                            verbatim: "Dictate into the composer",
+                            icon: .mic,
+                            size: 14
+                        )
+                    }
+                }
+                if let beginVoice {
+                    Button(action: beginVoice) {
+                        JunoIconLabel(
+                            verbatim: "Start a voice conversation",
+                            icon: .conversation,
+                            size: 14
+                        )
+                    }
+                    .disabled(!controller.isAgentTransportConfigured)
+                }
+            } label: {
+                JunoIconView(.mic, size: 15)
+                    .foregroundStyle(Color.junoForeground)
+                    .frame(width: 36, height: 36)
+                    .contentShape(.circle)
+            } primaryAction: {
+                if let beginDictation {
+                    beginDictation()
+                } else if let beginVoice {
+                    beginVoice()
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .junoGlass(in: Circle(), interactive: true)
+            .buttonStyle(.junoPress)
+            .help("Dictate, or start a voice conversation")
+            .accessibilityLabel("Voice")
+            .accessibilityIdentifier("juno.code.composer.voice")
+            // Keep the visible control quiet while exposing both semantic
+            // actions to VoiceOver and UI automation. The old composer showed
+            // two competing microphone affordances; the menu is one control,
+            // but neither action should disappear for assistive technology.
+            .accessibilityRepresentation {
+                HStack(spacing: 0) {
+                    if let beginDictation {
+                        Button("Dictate into the composer", action: beginDictation)
+                            .accessibilityIdentifier("juno.code.composer.dictate")
+                    }
+                    if let beginVoice {
+                        Button("Start a voice conversation", action: beginVoice)
+                            .accessibilityIdentifier("juno.code.composer.voice")
+                    }
+                }
             }
         }
     }
@@ -474,25 +517,34 @@ public struct Composer: View {
         }
     }
 
-    /// Attach an image to this message.
-    ///
-    /// Only offered where the model can actually see one — an attach control on a
-    /// text-only model is a control that can only ever produce an error.
+    /// Add an image through the same plus entry point Chat uses. Code currently
+    /// accepts images only, so the runtime still owns the vision capability guard
+    /// while the visible control stays in the shared composer language.
     @ViewBuilder
-    private var attachButton: some View {
+    private var addMenu: some View {
         if selectedModel?.catalog?.capabilities.contains(.vision) != false {
-            Button { isChoosingAttachment = true } label: {
-                Image(systemName: "paperclip")
-                    .imageScale(.small)
-                    .frame(width: 20, height: 20)
-                    .contentShape(.rect)
+            Menu {
+                Button { isChoosingAttachment = true } label: {
+                    JunoIconLabel(
+                        verbatim: "Attach image…",
+                        icon: .attach,
+                        size: 14
+                    )
+                }
+                .disabled(isRunning)
+                .accessibilityIdentifier("juno.code.composer.attach")
+            } label: {
+                CodeComposerAddMark(isArmed: !controller.pendingAttachments.isEmpty)
             }
-            .buttonStyle(.plain)
-            .junoSecondaryInk()
-            .disabled(isRunning)
-            .help("Attach an image")
-            .accessibilityLabel("Attach an image")
-            .accessibilityIdentifier("juno.code.composer.attach")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Add an image")
+            .accessibilityLabel("Add")
+            .accessibilityValue(
+                controller.pendingAttachments.isEmpty ? "" : "Image attached"
+            )
+            .accessibilityIdentifier("juno.code.composer.add")
             .fileImporter(
                 isPresented: $isChoosingAttachment,
                 allowedContentTypes: CodeAttachment.acceptedTypes,
@@ -660,6 +712,30 @@ public struct Composer: View {
     }
 }
 
+/// The Code composer uses Chat's plus trigger so attachments do not become a
+/// second, unrelated icon language. The small dot only communicates that an
+/// image is already staged; the menu remains the single place to add one.
+private struct CodeComposerAddMark: View {
+    let isArmed: Bool
+
+    var body: some View {
+        JunoIconView(.plus, size: 13)
+            .junoInk()
+            .frame(width: 30, height: 30)
+            .junoGlass(in: Circle(), interactive: true)
+            .overlay(alignment: .topTrailing) {
+                if isArmed {
+                    Circle()
+                        .fill(Color.junoAccent)
+                        .stroke(Color.junoSurface, lineWidth: 1.5)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 1, y: -1)
+                }
+            }
+            .contentShape(.circle)
+    }
+}
+
 /// The glass shell every composer in Code shares: the session's, and the draft
 /// one that stands in for the deleted new-session sheet.
 ///
@@ -725,14 +801,14 @@ struct ComposerSurface<Controls: View>: View {
 
     var body: some View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
-            VStack(spacing: JunoSpace.snug) {
+            VStack(spacing: 10) {
                 attachmentStrip
                 if isHugeDraft && !draftExpanded {
                     collapsedDraftCard
                 } else {
                     textField
                 }
-                HStack(spacing: JunoSpace.tight) {
+                HStack(spacing: 6) {
                     controls()
                 }
             }
@@ -799,7 +875,7 @@ struct ComposerSurface<Controls: View>: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } else {
-                    Image(systemName: "photo")
+                    JunoIconView(.photos, size: 18)
                         .junoSecondaryInk()
                 }
             }
@@ -813,9 +889,7 @@ struct ComposerSurface<Controls: View>: View {
             Button {
                 removeAttachment?(attachment.id)
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .symbolRenderingMode(.palette)
+                JunoIconView(.close, size: 14)
                     .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
             }
             .buttonStyle(.plain)
@@ -883,7 +957,7 @@ struct ComposerSurface<Controls: View>: View {
     /// refusing to show someone their own draft would be worse than the stall.
     private var collapsedDraftCard: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: "doc.plaintext")
+            JunoIconView(.file, size: 16)
                 .junoSecondaryInk()
             VStack(alignment: .leading, spacing: 1) {
                 Text("Large draft").junoRowLabel()
@@ -910,10 +984,10 @@ struct ComposerSurface<Controls: View>: View {
     private var textField: some View {
         let field = TextField(prompt, text: $text, axis: .vertical)
             .textFieldStyle(.plain)
-            .lineLimit(1...10)
+            .lineLimit(1...6)
             .font(.body)
-            .padding(.horizontal, JunoSpace.tight)
-            .padding(.top, JunoSpace.hairline)
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
             // Return sends, and accepts the highlighted suggestion when a menu is
             // open. Shift-Return breaks the line.
             //
@@ -1017,7 +1091,7 @@ struct TurnContractMenu: View {
                 } label: {
                     menuItem(
                         AgentBehaviorLabel.text(for: mode),
-                        systemImage: AgentBehaviorLabel.glyph(for: mode),
+                        icon: AgentBehaviorLabel.junoIcon(for: mode),
                         selected: behavior == mode
                     )
                 }
@@ -1033,7 +1107,7 @@ struct TurnContractMenu: View {
                 } label: {
                     menuItem(
                         PermissionModeLabel.text(for: mode),
-                        systemImage: PermissionModeLabel.glyph(for: mode),
+                        icon: PermissionModeLabel.junoIcon(for: mode),
                         selected: storedPermissionMode == mode
                     )
                 }
@@ -1043,8 +1117,7 @@ struct TurnContractMenu: View {
             Text(PermissionModeLabel.explanation(for: permissionMode))
         } label: {
             HStack(spacing: JunoSpace.hairline) {
-                Image(systemName: AgentBehaviorLabel.glyph(for: behavior))
-                    .imageScale(.small)
+                JunoIconView(AgentBehaviorLabel.junoIcon(for: behavior), size: 14)
                 Text(
                     "\(AgentBehaviorLabel.text(for: behavior)) · \(PermissionModeLabel.shortText(for: permissionMode))"
                 )
@@ -1086,14 +1159,14 @@ struct TurnContractMenu: View {
     @ViewBuilder
     private func menuItem(
         _ title: String,
-        systemImage: String,
+        icon: JunoIcon,
         selected: Bool
     ) -> some View {
         HStack {
-            Label(title, systemImage: systemImage)
+            JunoIconLabel(verbatim: title, icon: icon, size: 14)
             Spacer(minLength: JunoSpace.regular)
             if selected {
-                Image(systemName: "checkmark")
+                JunoIconView(.check, size: 14)
                     .accessibilityHidden(true)
             }
         }

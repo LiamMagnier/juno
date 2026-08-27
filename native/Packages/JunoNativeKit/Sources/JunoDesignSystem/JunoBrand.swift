@@ -114,6 +114,7 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// Action controls, media, and navigation glyphs.
     case mic, send, stop, plus, chevronRight, chevronDown, chevronUp
     case trash, pencil, copy, check, close, ellipsis, share, terminal
+    case arrowDown, volume, thumbsUp, thumbsDown, eyeOff
 
     /// The asset-catalog name, matching the generator's output.
     public var assetName: String { "nav-\(rawValue)" }

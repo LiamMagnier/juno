@@ -200,6 +200,15 @@ struct JunoMobileRootView: View {
             conversationModel?.selectedConversationID = nil
             incognito = true
           }
+          // A draft is a first-class preview state. Keep it separate from the
+          // signed-in fixture conversation so header controls can be audited
+          // in both states without relying on a prior tap or restored scene
+          // storage.
+          if CommandLine.arguments.contains("--juno-preview-chat-draft") {
+            selection = .chat
+            conversationModel?.isDraftingNewConversation = true
+            conversationModel?.selectedConversationID = nil
+          }
           if CommandLine.arguments.contains("--juno-preview-voice") {
             startVoice()
           }
@@ -527,8 +536,7 @@ struct JunoMobileRootView: View {
           Button {
             showingSettings = false
           } label: {
-            Image(systemName: "xmark")
-              .junoFont(size: 15, relativeTo: .body, weight: .semibold)
+            JunoIconView(.close, size: 15)
               // Ink: closing a sheet is chrome, not emphasis.
               .foregroundStyle(Color.primary)
           }
@@ -1014,7 +1022,7 @@ struct JunoMobileRootView: View {
 
   private var unavailable: some View {
     ContentUnavailableView {
-      Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
+      JunoIconLabel("shell.unavailable.title", icon: .error)
     } description: {
       Text("shell.unavailable.description")
     }
@@ -1189,7 +1197,6 @@ private struct JunoMobileSidebarDrawer: View {
           ForEach(JunoMobileSection.drawerDestinations) { destination in
             JunoMobileSidebarRow(
               junoIcon: destination.junoIcon,
-              icon: destination.systemImage,
               title: destination.title,
               selected: selection == destination,
               action: { openDestination(destination) }
@@ -1320,8 +1327,7 @@ private struct JunoMobileSidebarDrawer: View {
         }
 
         Spacer(minLength: 0)
-        Image(systemName: "chevron.right")
-          .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+        JunoIconView(.chevronRight, size: 12)
           .junoMetaInk()
       }
       .padding(.horizontal, 12)
@@ -1408,8 +1414,7 @@ private struct JunoMobileSidebarDrawer: View {
           .truncationMode(.tail)
         Spacer(minLength: 0)
         if project.isPending {
-          Image(systemName: "arrow.triangle.2.circlepath")
-            .junoFont(size: 11, relativeTo: .caption2)
+          JunoIconView(.refresh, size: 12)
             .junoSecondaryInk()
         }
       }
@@ -1549,20 +1554,25 @@ private struct JunoMobileSidebarDrawer: View {
   /// its own illustration of the mistake is several tinted controls at once.
   private var newChatButton: some View {
     Button(action: newChat) {
-      HStack(spacing: 8) {
-        JunoIconView(.new, size: 15)
+      HStack(spacing: 4) {
+        JunoIconView(.new, size: 13)
         Text("navigation.chat")
-          .fontWeight(.semibold)
+          .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
       }
       // Keep the visible pill compact; the outer frame below supplies the
       // full 48pt hit target shared with Profile. The previous large control
       // size added the system's own vertical insets on top of a 48pt label,
       // which made the glass read as a 70pt slab in the drawer.
-      .padding(.horizontal, 14)
-      .frame(height: 36)
+      // The tinted glass style adds its own optical insets around the label;
+      // 64pt here lands at the same visual weight as the 48pt profile control
+      // instead of reading like a second toolbar. Keep the label's measured
+      // width explicit so Dynamic Type can still negotiate the text without
+      // making the drawer's primary action sprawl.
+      .padding(.horizontal, 2)
+      .frame(width: 52, height: 26)
     }
     .junoProminentAction()
-    .controlSize(.small)
+    .controlSize(.mini)
     .frame(height: 48)
     .disabled(!canCreateChat)
     .opacity(canCreateChat ? 1 : 0.5)
@@ -1575,12 +1585,10 @@ private struct JunoMobileSidebarDrawer: View {
 /// A single destination / action row: constant icon column, 44pt tall, with a
 /// restrained accent wash only when selected.
 private struct JunoMobileSidebarRow: View {
-  /// The destination's own glyph. When it has a Juno icon that is used; the
-  /// system symbol is the fallback for destinations the web shell has no
-  /// glyph for. Neither is tinted coral — every row coral was one of the
+  /// The destination's own glyph, generated from the same Lucide source as the
+  /// web shell. Neither is tinted coral — every row coral was one of the
   /// rejected build's louder mistakes, and it left the accent meaning nothing.
-  var junoIcon: JunoIcon?
-  var icon: String
+  let junoIcon: JunoIcon
   let title: LocalizedStringKey
   var selected: Bool
   let action: () -> Void
@@ -1588,16 +1596,9 @@ private struct JunoMobileSidebarRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 12) {
-        Group {
-          if let junoIcon {
-            JunoIconView(junoIcon, size: 19)
-          } else {
-            Image(systemName: icon)
-              .junoFont(size: 19, relativeTo: .body)
-          }
-        }
-        .frame(width: 24)
-        .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
+        JunoIconView(junoIcon, size: 19)
+          .frame(width: 24)
+          .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
         Text(title)
           .junoFont(size: 16, relativeTo: .body, weight: selected ? .semibold : .regular)
           .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
@@ -1643,8 +1644,7 @@ private struct JunoMobileConversationRow: View {
           .truncationMode(.tail)
         Spacer(minLength: 0)
         if pending {
-          Image(systemName: "arrow.triangle.2.circlepath")
-            .junoFont(size: 11, relativeTo: .body)
+          JunoIconView(.refresh, size: 12)
             .junoSecondaryInk()
         }
       }
@@ -1766,7 +1766,7 @@ private struct JunoMobileOfflineBanner: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: "bolt.horizontal.circle")
+      JunoIconView(.cloud, size: 16)
       Text("auth.offline.title")
         .font(.footnote)
       Spacer(minLength: 8)

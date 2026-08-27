@@ -644,7 +644,8 @@ Flash/Pro; Mistral Medium 3.5 / Large 3 / Small 4 / Codestral / Ministral;
 xAI Grok 4.5 (+ Build 0.1, Multi-Agent); MiniMax M3 / M2.7 Highspeed;
 MiMo V2.5 Pro / V2 Flash; Qwen 3.8 Max / 3.7 Plus / 3.6 Flash / Long.
 Image/video generation models (GPT Image, Nano Banana, Grok Imagine, GLM Image,
-Veo 3.1, Seedance, Hailuo, CogVideoX) require the **MAX** plan for video.
+MiniMax Image-01, Veo 3.1, Gemini Omni, Seedance, Hailuo, CogVideoX) require the
+**MAX** plan for video.
 
 ### 6.3 Adapters & thinking
 
@@ -672,9 +673,9 @@ Veo 3.1, Seedance, Hailuo, CogVideoX) require the **MAX** plan for video.
 `POST /api/generate` streams progress over SSE. Image paths: Google native (Nano
 Banana), MiniMax, and OpenAI-compatible `/images/generations` + `/images/edits`
 (mask-based, PNG ≤8 MB). Video adapters are all async start→poll→download: Google Veo,
-MiniMax Hailuo, Zhipu CogVideoX, ByteDance Seedance (Ark). Grok Imagine video and
-Gemini Omni have no adapter yet and are filtered out. The route rejects chat-modality
-and `comingSoon` ids, checks plan/budget/quota, and records **flat** media spend
+Gemini Omni (Interactions API), MiniMax Hailuo, Zhipu CogVideoX, ByteDance Seedance
+(Ark). Grok Imagine video remains hidden until its adapter is wired. The route rejects
+chat-modality and `comingSoon` ids, checks plan/budget/quota, and records **flat** media spend
 (`recordSpend({kind:"image"|"video"})`).
 
 ### 6.5 Pricing, metrics & spend

@@ -18,6 +18,28 @@ test("model catalog fidelity: every displayed model has matching providerModel",
   }
 });
 
+test("image catalog includes every active provider image variant", () => {
+  const imageIds = new Set(GEN_MODELS.filter((model) => model.modality === "image").map((model) => model.id));
+  for (const id of [
+    "openai:gpt-image-2",
+    "openai:gpt-image-1-mini",
+    "openai:gpt-image-1.5",
+    "openai:gpt-image-1",
+    "google:gemini-3-pro-image",
+    "google:gemini-3.1-flash-image",
+    "google:gemini-3.1-flash-lite-image",
+    "google:gemini-2.5-flash-image",
+    "xai:grok-imagine-image-2.0",
+    "xai:grok-imagine-image-quality",
+    "xai:grok-imagine-image",
+    "zhipu:glm-image",
+    "minimax:image-01",
+    "minimax:image-01-live",
+  ]) {
+    assert.equal(imageIds.has(id), true, `${id} should be selectable when its provider is configured`);
+  }
+});
+
 test("displayed catalog entries send the same provider model id", () => {
   for (const model of MODEL_LIST) {
     assert.equal(providerRequestModel(model), model.providerModel, `${model.id} must invoke its displayed providerModel`);

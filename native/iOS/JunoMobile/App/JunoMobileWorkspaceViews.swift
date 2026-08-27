@@ -171,14 +171,13 @@ struct JunoMobileProjectsView: View {
   }
 
   private func projectGroup(_ projects: [NativeProject]) -> some View {
-    JunoCard(padding: 0) {
-      VStack(spacing: 0) {
-        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
-          if index > 0 {
-            Divider().padding(.leading, 66)
-          }
-          card(project)
-        }
+    // A project is a workspace, not a row in a settings list. Individual
+    // cards give each project room for its instruction preview, counts and
+    // recency, matching the website's responsive project tiles and making a
+    // pinned project feel like a destination rather than a selected line.
+    VStack(spacing: JunoSpace.snug) {
+      ForEach(projects) { project in
+        card(project)
       }
     }
   }
@@ -258,48 +257,81 @@ struct JunoMobileProjectsView: View {
     let conversations = model.conversationsByProject[project.id]?.count ?? 0
     let files = model.filesByProject[project.id]?.count ?? 0
     return NavigationLink(value: project.id) {
-      HStack(alignment: .top, spacing: JunoSpace.cozy) {
-        JunoWorkspaceGlyph(icon: .projects)
-        VStack(alignment: .leading, spacing: 3) {
-          HStack(spacing: JunoSpace.tight) {
-            Text(project.name)
-              .font(.headline)
-              .foregroundStyle(.primary)
-              .lineLimit(1)
-            if project.starred {
-              JunoIconView(.pin, size: 12)
-                .foregroundStyle(Color.junoAccent)
-                .accessibilityLabel("Pinned")
+      JunoCard(padding: 14) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+          HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            JunoWorkspaceGlyph(icon: .projects, size: 42)
+            VStack(alignment: .leading, spacing: 4) {
+              HStack(spacing: JunoSpace.tight) {
+                Text(project.name)
+                  .font(JunoSerif.cardTitle)
+                  .foregroundStyle(.primary)
+                  .lineLimit(1)
+                if project.starred {
+                  JunoIconView(.pin, size: 12)
+                    .foregroundStyle(Color.junoAccent)
+                    .accessibilityLabel("Pinned")
+                }
+                if project.isPending {
+                  JunoIconView(.refresh, size: 12)
+                    .junoSecondaryInk()
+                    .accessibilityLabel("Waiting to sync")
+                }
+              }
+              Text(project.updatedAt.formatted(.relative(presentation: .named)))
+                .junoFont(size: 11, relativeTo: .caption2)
+                .junoMetaInk()
             }
-            if project.isPending {
-              JunoIconView(.refresh, size: 12)
-                .junoSecondaryInk()
-                .accessibilityLabel("Waiting to sync")
-            }
+            Spacer(minLength: 0)
+            JunoIconView(.chevronRight, size: 12)
+              .junoMetaInk()
+              .padding(.top, JunoSpace.hairline)
           }
-          Text("^[\(conversations) conversation](inflect: true) · ^[\(files) file](inflect: true)")
-            .junoFont(size: 12, relativeTo: .caption)
-            .monospacedDigit()
-            .junoMetaInk()
-            .lineLimit(1)
+
+          HStack(spacing: JunoSpace.snug) {
+            projectCardFact(icon: .conversation, value: conversations, label: "Chats")
+            Divider().frame(height: 18)
+            projectCardFact(icon: .file, value: files, label: "Files")
+            Spacer(minLength: 0)
+          }
+
           if !project.instructions.isEmpty {
-            Text(JunoPromptPreview.text(project.instructions))
-            .font(.caption)
-            .junoSecondaryInk()
-            .lineLimit(2)
-            .multilineTextAlignment(.leading)
+            Divider()
+            VStack(alignment: .leading, spacing: 3) {
+              Text("Instructions")
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                .junoMetaInk()
+              Text(JunoPromptPreview.text(project.instructions))
+                .junoFont(size: 12, relativeTo: .caption)
+                .junoSecondaryInk()
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            }
+          } else {
+            Text("Add instructions to give every chat a shared point of view.")
+              .junoFont(size: 12, relativeTo: .caption)
+              .junoMetaInk()
+              .lineLimit(2)
           }
         }
-        Spacer(minLength: 0)
-        JunoIconView(.chevronRight, size: 12)
-          .junoMetaInk()
-          .padding(.top, JunoSpace.hairline)
       }
-      .padding(.vertical, JunoSpace.snug)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .contextMenu { projectMenu(project) }
+  }
+
+  private func projectCardFact(icon: JunoIcon, value: Int, label: String) -> some View {
+    HStack(spacing: 5) {
+      JunoIconView(icon, size: 12)
+        .junoMetaInk()
+      Text("\(value)")
+        .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+        .monospacedDigit()
+      Text(label)
+        .junoFont(size: 11, relativeTo: .caption2)
+        .junoMetaInk()
+    }
   }
 
   @ViewBuilder
@@ -783,19 +815,11 @@ struct JunoMobileArtifactsView: View {
 /// canvas is what made these lists read as unfinished; a contained glyph gives
 /// the row a left edge to align to.
 private struct JunoWorkspaceGlyph: View {
-  var icon: JunoIcon?
-  var systemName: String?
+  let icon: JunoIcon
   var size: CGFloat = 38
 
   init(icon: JunoIcon, size: CGFloat = 38) {
     self.icon = icon
-    self.systemName = nil
-    self.size = size
-  }
-
-  init(systemName: String, size: CGFloat = 38) {
-    self.icon = nil
-    self.systemName = systemName
     self.size = size
   }
 
@@ -803,14 +827,8 @@ private struct JunoWorkspaceGlyph: View {
     ZStack {
       RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
         .fill(Color.junoAccent.opacity(0.12))
-      if let icon {
-        JunoIconView(icon, size: size * 0.44)
-          .foregroundStyle(Color.junoAccent)
-      } else if let systemName {
-        Image(systemName: systemName)
-          .junoFont(size: size * 0.44, relativeTo: .body)
-          .foregroundStyle(Color.junoAccent)
-      }
+      JunoIconView(icon, size: size * 0.44)
+        .foregroundStyle(Color.junoAccent)
     }
     .frame(width: size, height: size)
     .accessibilityHidden(true)
@@ -888,43 +906,101 @@ private struct JunoMobileProjectDetail: View {
   /// two counts beneath — the same header shape the projects *list* uses for
   /// each card, so opening one does not land somewhere that looks unrelated.
   private var header: some View {
-    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-      HStack(spacing: JunoSpace.cozy) {
-        JunoWorkspaceGlyph(icon: .projects, size: 48)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(project.name)
-            .junoPageHeading(compact: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-          Text("Project workspace")
-            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-            .junoMetaInk()
-        }
-      }
-
-      // Scrollable, as the artifact header's chips are. Three chips fit an
-      // iPhone in English and do not fit one in German, and a fixed HStack
-      // answers that by squeezing every chip until the words truncate.
-      ScrollView(.horizontal) {
-        HStack(spacing: JunoSpace.tight) {
-          if project.starred {
-            JunoMobileMetaChip(title: "Pinned", icon: .pin)
+    JunoCard(padding: 16) {
+      VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+        HStack(spacing: JunoSpace.cozy) {
+          JunoWorkspaceGlyph(icon: .projects, size: 48)
+          VStack(alignment: .leading, spacing: 4) {
+            Text(project.name)
+              .junoPageHeading(compact: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .accessibilityAddTraits(.isHeader)
+            Text("Project workspace")
+              .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+              .junoMetaInk()
           }
-          JunoMobileMetaChip(
-            title: count(model.selectedConversations.count, "conversation"),
-            icon: .conversation
-          )
-          JunoMobileMetaChip(
-            title: count(model.selectedFiles.count, "file"),
-            icon: .attach
-          )
         }
-        .padding(.vertical, 1)
+
+        // Scrollable, as the artifact header's chips are. Three chips fit an
+        // iPhone in English and do not fit one in German, and a fixed HStack
+        // answers that by squeezing every chip until the words truncate.
+        ScrollView(.horizontal) {
+          HStack(spacing: JunoSpace.tight) {
+            if project.starred {
+              JunoMobileMetaChip(title: "Pinned", icon: .pin)
+            }
+            JunoMobileMetaChip(
+              title: count(model.selectedConversations.count, "conversation"),
+              icon: .conversation
+            )
+            JunoMobileMetaChip(
+              title: count(model.selectedFiles.count, "file"),
+              icon: .attach
+            )
+            JunoMobileMetaChip(
+              title: "Updated \(project.updatedAt.formatted(.relative(presentation: .named)))",
+              icon: .refresh
+            )
+          }
+          .padding(.vertical, 1)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+
+        Divider()
+
+        HStack(spacing: JunoSpace.snug) {
+          Button {
+            createProjectConversation()
+          } label: {
+            JunoIconLabel("New chat", icon: .new, size: 13)
+              .fontWeight(.semibold)
+              .frame(maxWidth: .infinity)
+          }
+          .junoProminentAction()
+          .controlSize(.small)
+          .disabled(project.isPending || conversationModel == nil)
+          .contentShape(.rect)
+
+          Button {
+            showingImporter = true
+          } label: {
+            JunoIconLabel("Add file", icon: .attach, size: 13)
+              .frame(maxWidth: .infinity)
+          }
+          .modifier(JunoMobileWorkspaceActionStyle())
+          .controlSize(.small)
+          .disabled(project.isPending || model.isPerformingFileAction)
+          .contentShape(.rect)
+
+          Button {
+            instructionsDraft = project.instructions
+            showingInstructions = true
+          } label: {
+            JunoIconLabel("Edit", icon: .pencil, size: 13)
+              .frame(maxWidth: .infinity)
+          }
+          .modifier(JunoMobileWorkspaceActionStyle())
+          .controlSize(.small)
+          .disabled(project.isPending || model.isMutating)
+          .contentShape(.rect)
+        }
+        .frame(minHeight: 44)
       }
-      .scrollBounceBehavior(.basedOnSize)
-      .scrollIndicators(.hidden)
     }
     .padding(.top, JunoSpace.tight)
+  }
+
+  private func createProjectConversation() {
+    guard !project.isPending, let conversationModel else { return }
+    Task {
+      if let id = await conversationModel.createConversation(
+        model: assistantConfiguration?.preferredModelID,
+        projectID: project.id
+      ) {
+        openConversation(id)
+      }
+    }
   }
 
   private func count(_ value: Int, _ noun: String) -> String {
@@ -962,16 +1038,7 @@ private struct JunoMobileProjectDetail: View {
       actionIcon: .new,
       action: (project.isPending || conversationModel == nil)
         ? nil
-        : {
-          Task {
-            if let id = await conversationModel?.createConversation(
-              model: assistantConfiguration?.preferredModelID,
-              projectID: project.id
-            ) {
-              openConversation(id)
-            }
-          }
-        }
+        : { createProjectConversation() }
     ) {
       JunoCard(padding: 0) {
         if model.selectedConversations.isEmpty {
@@ -1347,19 +1414,11 @@ private struct JunoMobileProjectDetail: View {
 private struct JunoMobileAssistantFact: View {
   let title: String
   let value: String
-  var icon: JunoIcon?
-  var systemImage: String?
+  let icon: JunoIcon
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Group {
-        if let icon {
-          JunoIconView(icon, size: 16)
-        } else if let systemImage {
-          Image(systemName: systemImage)
-            .junoFont(size: 14, relativeTo: .subheadline)
-        }
-      }
+      JunoIconView(icon, size: 16)
       .frame(width: 20)
       .foregroundStyle(Color.junoAccent)
       .accessibilityHidden(true)
@@ -1669,7 +1728,10 @@ struct JunoMobileArtifactDetail: View {
           selectedVersion = candidate.version
         } label: {
           if candidate.version == selectedVersion {
-            Label("Version \(candidate.version)", systemImage: "checkmark")
+            JunoIconLabel(
+              verbatim: "Version \(candidate.version)",
+              icon: .check
+            )
           } else {
             Text("Version \(candidate.version)")
           }
@@ -1705,8 +1767,7 @@ struct JunoMobileArtifactDetail: View {
       designDraftControls
 
       ShareLink(item: version?.content ?? "") {
-        Image(systemName: "square.and.arrow.up")
-          .junoFont(size: 15, relativeTo: .subheadline)
+        JunoIconView(.share, size: 16)
           .foregroundStyle(Color.primary.opacity(0.75))
           .frame(width: 44, height: 44)
           .contentShape(Rectangle())
@@ -1716,8 +1777,7 @@ struct JunoMobileArtifactDetail: View {
 
       if let exportURL {
         ShareLink(item: exportURL) {
-          Image(systemName: "doc.badge.arrow.up")
-            .junoFont(size: 15, relativeTo: .subheadline)
+          JunoIconView(.files, size: 16)
             .foregroundStyle(Color.primary.opacity(0.75))
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
@@ -1755,8 +1815,7 @@ struct JunoMobileArtifactDetail: View {
         actionsMenu
         if let close {
           Button(action: close) {
-            Image(systemName: "xmark")
-              .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+            JunoIconView(.close, size: 14)
               .foregroundStyle(Color.primary)
               .frame(width: 44, height: 44)
               .contentShape(Rectangle())
@@ -1906,7 +1965,7 @@ struct JunoMobileArtifactDetail: View {
       }
       Button("Delete", role: .destructive) { showingDelete = true }
     } label: {
-      Image(systemName: "ellipsis")
+      JunoIconView(.ellipsis, size: 16)
     }
     .tint(Color.primary)
     .disabled(model.isMutating || model.isExporting)

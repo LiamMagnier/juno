@@ -1,4 +1,5 @@
 import ImageIO
+import JunoDesignSystem
 import SwiftUI
 import UIKit
 
@@ -55,8 +56,7 @@ struct JunoAttachmentThumbnail: View {
                     .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             } else if data == nil {
-                Image(systemName: "doc")
-                    .font(.callout)
+                JunoIconView(.file, size: 16)
                     .junoSecondaryInk()
                     .frame(width: size, height: size)
             } else {

@@ -253,30 +253,13 @@ public struct CodeStatusGlyph: View {
     }
 
     public var body: some View {
-        // Always ``CodeRunState/symbol``, never ``CodeRunState/junoIcon``.
-        //
-        // This used to prefer `junoIcon` where one existed, which meant
-        // `.needsApproval` drew the web's shield and `.failed` drew its error
-        // mark while the other seven states drew circles. The rule three
-        // paragraphs up — "every mark is a circle, so a reader learns the small
-        // circle is the run once" — was therefore false for exactly the two
-        // states a reader most needs to pick out of a list, and the sidebar
-        // still showed the shield/circle mix this component was written to
-        // remove. It was caught by screenshotting the built app, not by reading
-        // the code, which is the only way this class of defect ever surfaces.
-        //
-        // `junoIcon` is deliberately kept on the state, because the web parity
-        // argument for it is real — it is just an argument about a different
-        // place. In an approval *card* the shield is correct: it names the
-        // concept "permission", the reader is being asked for a decision, and
-        // the card has room for a mark that carries meaning on its own. In a
-        // 16pt status column the same glyph is not naming a concept, it is
-        // reporting a run's state alongside eight siblings, and there
-        // consistency of shape beats fidelity to a mark. Use `junoIcon`
-        // wherever the concept is the subject; use this view wherever the run is.
-        Image(systemName: status.symbol)
-            .junoFont(size: size, relativeTo: .footnote, weight: .medium)
-            .contentTransition(.symbolEffect(.replace))
+        // Use the same generated Lucide family as the website and the phone.
+        // The old implementation rendered SF Symbols for every state, which
+        // made the desktop Code rail look like a separate product and allowed
+        // the icon weight to drift from the native Juno surfaces. States that
+        // have a semantic mark keep it; the neutral lifecycle states share the
+        // refresh/check/stop vocabulary so the mark remains legible at 13pt.
+        JunoIconView(statusIcon, size: size)
             .foregroundStyle(status.tint)
         .frame(width: CodeRowMetrics.markColumn)
         .animation(
@@ -292,6 +275,18 @@ public struct CodeStatusGlyph: View {
         // responder rather than one per glyph, and ``CodeStatusLegend`` is the
         // discoverable version of the same information.
         .accessibilityLabel(status.label)
+    }
+
+    private var statusIcon: JunoIcon {
+        if let icon = status.junoIcon { return icon }
+        switch status.state {
+        case .ready, .finished: return .check
+        case .stopped: return .stop
+        case .hostOffline: return .device
+        case .planning, .queued, .running, .waitingForProvider, .degraded, .stopping:
+            return .refresh
+        case .needsApproval, .failed: return .error
+        }
     }
 }
 

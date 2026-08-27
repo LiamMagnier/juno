@@ -3,6 +3,31 @@ import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
 
+/// Maps legacy work-state names to the same Lucide vocabulary used by the web
+/// and the rest of the native shell. The work protocol intentionally keeps its
+/// symbol strings for backwards-compatible decoding; presentation is the only
+/// place that translates them to bundled Juno artwork.
+private func junoWorkIcon(_ symbol: String) -> JunoIcon {
+    let value = symbol.lowercased()
+    if value.contains("check") { return .check }
+    if value.contains("xmark") || value.contains("slash") { return .close }
+    if value.contains("shield") || value.contains("approval") { return .permission }
+    if value.contains("question") || value.contains("bubble") { return .conversation }
+    if value.contains("laptop") || value.contains("computer") { return .device }
+    if value.contains("clock") || value.contains("hourglass") || value.contains("gauge") {
+        return .refresh
+    }
+    if value.contains("bolt") || value.contains("power") { return .work }
+    if value.contains("pause") || value.contains("stop") { return .stop }
+    if value.contains("arrow") || value.contains("link") { return .external }
+    if value.contains("doc") || value.contains("tray") || value.contains("file") {
+        return .file
+    }
+    if value.contains("pencil") || value.contains("square") { return .pencil }
+    if value.contains("exclamation") || value.contains("warning") { return .error }
+    return .tools
+}
+
 /// **Juno Work on the phone** — the tasks you have handed Juno, and the one you
 /// are reading.
 ///
@@ -61,7 +86,7 @@ struct JunoMobileWorkView: View {
         .refreshable { await model.refresh() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { isComposing = true } label: { Image(systemName: "plus") }
+                Button { isComposing = true } label: { JunoIconView(.plus, size: 17) }
                     .disabled(model.isMutating)
                     .accessibilityLabel("New task")
                     .accessibilityIdentifier("juno.mobile.work.new")
@@ -112,7 +137,7 @@ struct JunoMobileWorkView: View {
     /// Mac's access was revoked" ask for different things from the reader.
     private var unreachable: some View {
         ContentUnavailableView {
-            Label("Work unavailable", systemImage: "exclamationmark.triangle")
+            JunoIconLabel("Work unavailable", icon: .error, size: 28)
         } description: {
             Text(model.lastErrorDescription ?? "Check your connection and try again.")
         } actions: {
@@ -270,8 +295,7 @@ private struct JunoMobileWorkHostCard: View {
     private func row(_ host: WorkHostSummary) -> some View {
         let style = JunoMobileWorkHostStyle.of(host)
         return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: style.symbol)
-                .junoFont(size: 15, relativeTo: .body)
+            JunoIconView(junoWorkIcon(style.symbol), size: 15)
                 .foregroundStyle(style.tint)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
@@ -353,11 +377,13 @@ private struct JunoMobileWorkSessionCard: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(action: togglePin) {
-                Label(session.pinned ? "Unpin" : "Pin", systemImage: "pin")
+                JunoIconLabel(verbatim: session.pinned ? "Unpin" : "Pin", icon: .pin)
             }
-            Button(action: archive) { Label("Archive", systemImage: "archivebox") }
+            Button(action: archive) { JunoIconLabel("Archive", icon: .file) }
             Divider()
-            Button(role: .destructive, action: delete) { Label("Delete", systemImage: "trash") }
+            Button(role: .destructive, action: delete) {
+                JunoIconLabel("Delete", icon: .trash)
+            }
         }
         .accessibilityLabel("\(session.title). \(style.sentence)")
         .accessibilityIdentifier("juno.mobile.work.task")
@@ -429,7 +455,7 @@ private struct JunoMobileWorkThread: View {
                 thread(session)
             } else {
                 ContentUnavailableView {
-                    Label("That task is gone", systemImage: "tray")
+                    JunoIconLabel("That task is gone", icon: .file, size: 28)
                 } description: {
                     Text("It was deleted, either here or on another device.")
                 }
@@ -630,8 +656,7 @@ private struct JunoMobileWorkThread: View {
                 // note after the first.
                 ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
+                        JunoIconView(.error, size: 14)
                             .foregroundStyle(Color.junoCaution)
                         Text(note.explanation)
                             .font(.caption)
@@ -677,19 +702,19 @@ private struct JunoMobileWorkThread: View {
     private var controlMenu: some View {
         Menu {
             Button { Task { await model.pauseOpenRun() } } label: {
-                Label("Pause", systemImage: "pause")
+                JunoIconLabel("Pause", icon: .stop)
             }
             .disabled(!canPause)
             .accessibilityIdentifier("juno.mobile.work.pause")
 
             Button { Task { await model.resumeOpenRun() } } label: {
-                Label("Resume", systemImage: "play")
+                JunoIconLabel("Resume", icon: .refresh)
             }
             .disabled(!canResume)
             .accessibilityIdentifier("juno.mobile.work.resume")
 
             Button(role: .destructive) { confirmingStop = true } label: {
-                Label("Stop", systemImage: "stop")
+                JunoIconLabel("Stop", icon: .stop)
             }
             .disabled(!canStop)
             .accessibilityIdentifier("juno.mobile.work.stop")
@@ -701,16 +726,16 @@ private struct JunoMobileWorkThread: View {
             // and an item labelled "Try again" alone would leave the reader
             // looking for a second run of the task they are reading.
             Button { confirmingRetry = true } label: {
-                Label("Try again as a new task", systemImage: "arrow.clockwise")
+                JunoIconLabel("Try again as a new task", icon: .refresh)
             }
             .disabled(!canRetry)
             .accessibilityIdentifier("juno.mobile.work.retry")
 
             Button { Task { await model.refresh() } } label: {
-                Label("Refresh", systemImage: "arrow.triangle.2.circlepath")
+                JunoIconLabel("Refresh", icon: .refresh)
             }
         } label: {
-            Image(systemName: "ellipsis")
+            JunoIconView(.ellipsis, size: 17)
         }
         .disabled(model.isMutating)
         .accessibilityLabel("Task actions")
@@ -775,8 +800,7 @@ private struct JunoMobileWorkThread: View {
                 if live {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "clock.badge.questionmark")
-                        .junoFont(size: 14, relativeTo: .body)
+                    JunoIconView(.refresh, size: 14)
                         .junoSecondaryInk()
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -820,8 +844,7 @@ private struct JunoMobileWorkThread: View {
             } else {
                 ForEach(steps) { step in
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: step.symbol)
-                            .junoFont(size: 14, relativeTo: .body)
+                        JunoIconView(junoWorkIcon(step.symbol), size: 14)
                             .foregroundStyle(step.tint)
                             .frame(width: 18)
                         Text(step.title)
@@ -854,8 +877,7 @@ private struct JunoMobileWorkThread: View {
             } else {
                 ForEach(references) { reference in
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: reference.direction == .read ? "link" : "doc")
-                            .junoFont(size: 14, relativeTo: .body)
+                        JunoIconView(reference.direction == .read ? .external : .file, size: 14)
                             .foregroundStyle(Color.junoMutedForeground)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
@@ -903,8 +925,7 @@ private struct JunoMobileWorkThread: View {
                         // the same change the Mac's list needed. A column of
                         // "xlsx" / "docx" reads as a directory listing; this
                         // section is the things Juno made for you.
-                        Image(systemName: JunoWorkVocabulary.artifactSymbol(artifact.kind))
-                            .junoFont(size: 15, relativeTo: .body)
+                        JunoIconView(junoWorkIcon(JunoWorkVocabulary.artifactSymbol(artifact.kind)), size: 15)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
                         VStack(alignment: .leading, spacing: 1) {
@@ -978,8 +999,7 @@ private struct JunoMobileWorkThread: View {
             } else {
                 ForEach(entries) { entry in
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: entry.symbol)
-                            .junoFont(size: 13, relativeTo: .body)
+                        JunoIconView(junoWorkIcon(entry.symbol), size: 13)
                             .foregroundStyle(entry.tint)
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
@@ -1038,9 +1058,10 @@ private struct JunoMobileWorkApprovalCard: View {
                 // were 11pt monospaced captions before, and the middle one was
                 // the raw tool token (`apply_changes`) printed verbatim.
                 HStack(spacing: 6) {
-                    Image(systemName: risk?.alwaysRequiresApproval == true
-                        ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
-                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
+                    JunoIconView(
+                        risk?.alwaysRequiresApproval == true ? .error : .permission,
+                        size: 12
+                    )
                         .foregroundStyle(tint)
                     Text(JunoWorkVocabulary.risk(approval.risk))
                         .font(.system(.caption, design: .default, weight: .semibold))
@@ -1161,7 +1182,7 @@ private struct JunoMobileWorkQuestionCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 } icon: {
-                    Image(systemName: "questionmark.bubble")
+                    JunoIconView(.conversation, size: 16)
                         .foregroundStyle(Color.junoAccent)
                 }
 
@@ -1205,7 +1226,7 @@ private struct JunoMobileWorkAnswerSheet: View {
                     field(question)
                 } else {
                     ContentUnavailableView {
-                        Label("Already answered", systemImage: "checkmark.bubble")
+                        JunoIconLabel("Already answered", icon: .check, size: 28)
                     } description: {
                         Text("This was answered somewhere else, and Juno has carried on.")
                     }
@@ -1327,11 +1348,11 @@ private struct JunoMobileWorkThreadComposerCard: View {
         }
     }
 
-    private var symbol: String {
+    private var icon: JunoIcon {
         switch intent {
-        case .instruct: "text.bubble"
-        case .start: "play.circle"
-        case .restart: "arrow.counterclockwise.circle"
+        case .instruct: .conversation
+        case .start: .send
+        case .restart: .refresh
         }
     }
 
@@ -1351,7 +1372,7 @@ private struct JunoMobileWorkThreadComposerCard: View {
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: symbol)
+                    JunoIconView(icon, size: 16)
                         .foregroundStyle(Color.junoAccent)
                 }
 
@@ -1373,9 +1394,7 @@ private struct JunoMobileWorkThreadComposerCard: View {
 
                 if let outcome = model.lastInstructionOutcome {
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: outcome.delivered
-                            ? "checkmark.circle" : "exclamationmark.triangle.fill")
-                            .font(.caption)
+                        JunoIconView(outcome.delivered ? .check : .error, size: 14)
                             .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
                         Text(outcome.explanation)
                             .font(.caption)
@@ -1460,7 +1479,7 @@ private struct JunoMobileWorkThreadComposerSheet: View {
                     field
                 } else {
                     ContentUnavailableView {
-                        Label("Juno has stopped", systemImage: "questionmark.bubble")
+                        JunoIconLabel("Juno has stopped", icon: .conversation, size: 28)
                     } description: {
                         Text(
                             "This task is waiting on your answer, or it is closed, so a message "

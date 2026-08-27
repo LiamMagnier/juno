@@ -3,6 +3,19 @@ import JunoDesignKit
 import JunoDesignSystem
 import SwiftUI
 
+private func junoDesignIcon(_ glyph: String) -> JunoIcon {
+    let value = glyph.lowercased()
+    if value.contains("text") { return .writing }
+    if value.contains("photo") || value.contains("image") { return .photos }
+    if value.contains("grid") || value.contains("component") { return .artifactsTool }
+    if value.contains("circle") || value.contains("ellipse") { return .appearance }
+    if value.contains("line") || value.contains("path") || value.contains("scribble") {
+        return .pencil
+    }
+    if value.contains("rectangle") || value.contains("square") { return .projects }
+    return .file
+}
+
 /// Reading a Juno Design document on the phone.
 ///
 /// A design artifact used to arrive here as a label and an icon over its raw
@@ -87,7 +100,7 @@ struct JunoMobileDesignArtifactBody: View {
                 }
             case .failure(let error):
                 ContentUnavailableView {
-                    Label("This design can\u{2019}t be opened", systemImage: "exclamationmark.triangle")
+                    JunoIconLabel("This design can\u{2019}t be opened", icon: .error, size: 28)
                 } description: {
                     Text(reason(for: error))
                 } actions: {
@@ -117,7 +130,7 @@ struct JunoMobileDesignArtifactBody: View {
                     ProgressView().controlSize(.small)
                 case .unavailable(let reason), .failed(let reason):
                     ContentUnavailableView {
-                        Label("Design editor unavailable", systemImage: "exclamationmark.triangle")
+                        JunoIconLabel("Design editor unavailable", icon: .error, size: 28)
                     } description: {
                         Text(reason)
                     } actions: {
@@ -168,8 +181,7 @@ struct JunoMobileDesignArtifactBody: View {
     /// is legible in a list and illegible on a thumbnail.
     private func layer(_ row: JunoMobileDesignOutline.Row) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: row.glyph)
-                .junoFont(size: 12, relativeTo: .caption)
+            JunoIconView(junoDesignIcon(row.glyph), size: 12)
                 .junoMetaInk()
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
@@ -186,8 +198,7 @@ struct JunoMobileDesignArtifactBody: View {
             }
             Spacer(minLength: 0)
             if row.hidden {
-                Image(systemName: "eye.slash")
-                    .junoFont(size: 11, relativeTo: .caption2)
+                JunoIconView(.eyeOff, size: 12)
                     .junoMetaInk()
                     .accessibilityLabel("Hidden")
             }

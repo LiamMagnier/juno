@@ -13,14 +13,6 @@ enum JunoCameraFlashMode: CaseIterable, Sendable {
     case auto
     case on
 
-    var symbolName: String {
-        switch self {
-        case .off: "bolt.slash"
-        case .auto: "bolt.badge.a"
-        case .on: "bolt.fill"
-        }
-    }
-
     var label: LocalizedStringResource {
         switch self {
         case .off: "attachments.camera.flash.off"

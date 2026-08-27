@@ -142,8 +142,8 @@ struct JunoMobilePhotosPanel: View {
     /// Juno's absolute inks are for the warm canvas, not for glass.
     private var backButton: some View {
         Button(action: dismiss) {
-            Image(systemName: "chevron.left")
-                .junoFont(size: 19, relativeTo: .title3, weight: .semibold)
+            JunoIconView(.chevronRight, size: 19)
+                .rotationEffect(.degrees(180))
                 .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)
@@ -185,8 +185,7 @@ struct JunoMobilePhotosPanel: View {
     /// assets are handed to the attachment coordinator only at this point.
     private var confirmButton: some View {
         Button(action: confirmSelection) {
-            Image(systemName: "checkmark")
-                .junoFont(size: 19, relativeTo: .title3, weight: .bold)
+            JunoIconView(.check, size: 19)
                 .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)
