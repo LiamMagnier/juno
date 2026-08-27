@@ -218,7 +218,7 @@ struct DesktopConnectionsScreen: View {
                 Button {
                     model.query = ""
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    JunoIconView(systemImage: "xmark.circle.fill")
                         .junoMetaInk()
                 }
                 .buttonStyle(.plain)
@@ -630,7 +630,7 @@ struct DesktopConnectionsScreen: View {
                 awaitingAuthorization = nil
                 Task { await model.refresh() }
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
             }
             .keyboardShortcut("r", modifiers: .command)
             .help("Re-read this account's connections (⌘R)")
@@ -940,7 +940,7 @@ private struct DesktopConnectionsNotice: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             Text(message)

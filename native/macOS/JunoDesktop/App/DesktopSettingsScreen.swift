@@ -136,7 +136,7 @@ struct DesktopSettingsScreen: View {
                 Button {
                     isReviewingProposals = false
                 } label: {
-                    Label("Settings", systemImage: "chevron.left")
+                    JunoIconLabel("Settings", systemImage: "chevron.left")
                         .junoRowLabel()
                 }
                 .buttonStyle(.plain)
@@ -310,7 +310,7 @@ struct DesktopSettingsScreen: View {
     /// Why the preference tiles are missing, with the model's retry attached.
     private var unavailableTile: some View {
         JunoSettingsTile("Preferences") {
-            Label(settingsUnavailableMessage, systemImage: "clock.arrow.circlepath")
+            JunoIconLabel(verbatim: settingsUnavailableMessage, systemImage: "clock.arrow.circlepath")
                 .junoRowLabel()
                 .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
@@ -802,7 +802,7 @@ struct DesktopSettingsScreen: View {
     ) -> some View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: symbol)
+                JunoIconView(systemImage: symbol)
                     .junoSecondaryInk()
                     .accessibilityHidden(true)
                 Text(message)
@@ -937,7 +937,7 @@ private struct DesktopSettingsAction: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
-                Image(systemName: symbol)
+                JunoIconView(systemImage: symbol)
                     // Scaled with the row label it leads, so the glyph and the
                     // title grow together under Dynamic Type instead of the
                     // glyph staying frozen at 15pt beside growing text.
@@ -956,7 +956,7 @@ private struct DesktopSettingsAction: View {
                         .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: JunoSpace.snug)
-                Image(systemName: "chevron.right")
+                JunoIconView(systemImage: "chevron.right")
                     .font(.caption.weight(.semibold))
                     .junoMetaInk()
                     .accessibilityHidden(true)
@@ -1106,7 +1106,7 @@ private struct DesktopSettingsAppearanceTile: View {
                         isSelected: settings.theme == theme.value,
                         isEnabled: !disabled,
                         trailing: {
-                            Image(systemName: theme.symbol)
+                            JunoIconView(systemImage: theme.symbol)
                                 // Scaled with the card title beside it, not
                                 // frozen at 13pt.
                                 .junoFont(size: 13, relativeTo: .callout)
@@ -1182,7 +1182,7 @@ private struct DesktopAccentSwatch: View {
                         // On the accent, not white: amber and the lifted dark
                         // accents fail contrast under a white checkmark, which
                         // is the whole reason `onAccent` exists.
-                        Image(systemName: "checkmark")
+                        JunoIconView(systemImage: "checkmark")
                             .junoFont(size: 12, relativeTo: .caption, weight: .bold)
                             .foregroundStyle(accent.onAccent)
                     }
@@ -1279,7 +1279,7 @@ private struct DesktopSettingsModelTile: View {
                         .junoCaption()
                 }
                 Spacer(minLength: JunoSpace.snug)
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption.weight(.semibold))
                     .junoSecondaryInk()
                     .accessibilityHidden(true)
@@ -1421,7 +1421,7 @@ private struct DesktopSettingsFavoritesTile: View {
             Button {
                 setFavorite(option.id, false)
             } label: {
-                Image(systemName: "xmark.circle.fill")
+                JunoIconView(systemImage: "xmark.circle.fill")
                     .junoMetaInk()
             }
             .buttonStyle(.plain)
@@ -1631,7 +1631,7 @@ private struct DesktopSettingsAccountActions: View {
         }
 
         if let exportError {
-            Label(exportError, systemImage: "exclamationmark.circle")
+            JunoIconLabel(verbatim: exportError, systemImage: "exclamationmark.circle")
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1743,7 +1743,7 @@ private struct DesktopSettingsDangerActions: View {
                 .accessibilityLabel("Confirm your email address")
                 .accessibilityIdentifier("juno.desktop.settings.delete-confirm")
             if let deleteError {
-                Label(deleteError, systemImage: "exclamationmark.circle")
+                JunoIconLabel(verbatim: deleteError, systemImage: "exclamationmark.circle")
                     .junoCaption()
                     .foregroundStyle(Color.junoCaution)
                     .fixedSize(horizontal: false, vertical: true)

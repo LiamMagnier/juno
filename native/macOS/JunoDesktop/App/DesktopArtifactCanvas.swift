@@ -672,7 +672,7 @@ struct DesktopArtifactCanvas: View {
     /// glyph clickable across the whole 24pt square rather than only where the
     /// ink happens to be.
     private func headerGlyph(_ symbol: String) -> some View {
-        Image(systemName: symbol)
+        JunoIconView(systemImage: symbol)
             .junoFont(size: 12, relativeTo: .body, weight: .medium)
             .junoSecondaryInk()
             .frame(width: 24, height: 24)
@@ -750,7 +750,10 @@ struct DesktopArtifactCanvas: View {
                         Button(component.label) { selectedComponent = component }
                     }
                 } label: {
-                    Label(selectedComponent?.shortLabel ?? "Select component", systemImage: "scope")
+                    JunoIconLabel(
+                        verbatim: selectedComponent?.shortLabel ?? "Select component",
+                        systemImage: "scope"
+                    )
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -1014,7 +1017,7 @@ struct DesktopDesignSurface: View {
         if let editError {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(spacing: JunoSpace.snug) {
-                    Image(systemName: "exclamationmark.triangle")
+                    JunoIconView(systemImage: "exclamationmark.triangle")
                         .foregroundStyle(Color.junoCaution)
                         .accessibilityHidden(true)
                     Text("This edit can\u{2019}t be saved: \(editError)")

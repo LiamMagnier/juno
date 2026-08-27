@@ -184,6 +184,7 @@ struct JunoMobileLibraryPicker: View {
         .opacity(blocked ? 0.45 : 1)
         .accessibilityLabel("\(item.fileName), \(file.sizeLabel)")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .frame(minWidth: 44, minHeight: 44)
         .task(id: item.id) {
             await previews.load(file) { await model.accessFile(id: item.id) }
         }

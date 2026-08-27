@@ -34,7 +34,7 @@ struct DesktopSettingsModal: View {
                     .foregroundStyle(Color.junoForeground)
                 Spacer()
                 Button(action: onDismiss) {
-                    Image(systemName: "xmark")
+                    JunoIconView(systemImage: "xmark")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.junoForeground)
                         .frame(width: 24, height: 24)

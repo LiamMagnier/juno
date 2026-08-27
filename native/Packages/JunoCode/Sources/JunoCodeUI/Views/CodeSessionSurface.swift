@@ -6,8 +6,11 @@ import SwiftUI
 /// composer are one workbench, so their left and right edges should agree while
 /// the window grows around them.
 enum CodeSessionLayout {
-    static let measure: CGFloat = 900
-    static let inset: CGFloat = 28
+    /// Code and Chat share one reading measure. Review and terminal surfaces may
+    /// expand beyond it, but prose and the composer should never turn into a
+    /// full-window line of text just because the inspector is hidden.
+    static let measure: CGFloat = 768
+    static let inset: CGFloat = 24
 }
 
 /// The session surface: everything inside the detail column of a Code window.
@@ -312,13 +315,27 @@ public struct CodeSessionCanvas: View {
 public struct CodeSessionInspector: View {
     private let controller: SessionController
     private let openPreview: (() -> Void)?
+    private let openSources: (() -> Void)?
+    private let openWorkspace: (() -> Void)?
 
-    public init(controller: SessionController, openPreview: (() -> Void)? = nil) {
+    public init(
+        controller: SessionController,
+        openPreview: (() -> Void)? = nil,
+        openSources: (() -> Void)? = nil,
+        openWorkspace: (() -> Void)? = nil
+    ) {
         self.controller = controller
         self.openPreview = openPreview
+        self.openSources = openSources
+        self.openWorkspace = openWorkspace
     }
 
     public var body: some View {
-        InspectorView(controller: controller, openPreview: openPreview)
+        InspectorView(
+            controller: controller,
+            openPreview: openPreview,
+            openSources: openSources,
+            openWorkspace: openWorkspace
+        )
     }
 }

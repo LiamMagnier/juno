@@ -264,7 +264,7 @@ struct DesktopMemoryScreen: View {
             // page inside it.
             if let back {
                 Button(action: back) {
-                    Image(systemName: "chevron.left")
+                    JunoIconView(systemImage: "chevron.left")
                         // Scaled with body text, not frozen at 13pt: the glyph
                         // sits beside the page heading and should grow with the
                         // page under Dynamic Type. The 24pt frame is the hit
@@ -356,7 +356,7 @@ struct DesktopMemoryScreen: View {
                         // stop using one, and it reads as a contradiction unless
                         // it is marked.
                         if memory.kind == .suppression {
-                            Image(systemName: "hand.raised")
+                            JunoIconView(systemImage: "hand.raised")
                                 .junoSecondaryInk()
                                 .help("Juno has been told never to remember this")
                                 .accessibilityLabel("Never remember")
@@ -544,7 +544,7 @@ struct DesktopMemoryScreen: View {
         }
 
         if let exportError {
-            Label(exportError, systemImage: "exclamationmark.circle")
+            JunoIconLabel(verbatim: exportError, systemImage: "exclamationmark.circle")
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
                 .fixedSize(horizontal: false, vertical: true)

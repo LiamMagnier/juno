@@ -49,7 +49,10 @@ public struct JunoAIcssCodeBlock: View {
                         withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) { didCopy = false }
                     }
                 } label: {
-                    Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                    JunoIconLabel(
+                        verbatim: didCopy ? "Copied" : "Copy",
+                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
+                    )
                         .junoFont(size: 12, relativeTo: .footnote)
                         .labelStyle(.iconOnly)
                         .foregroundStyle(Color.junoMutedForeground)
@@ -286,7 +289,7 @@ struct JunoAIcssBlockHeader<Trailing: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: icon)
+                JunoIconView(systemImage: icon)
                     .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                 Text(label)

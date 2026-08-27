@@ -123,14 +123,14 @@ public struct JunoCostMetricsBadge: View {
             isExpanded.toggle()
         } label: {
             HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "circle.dotted.circle")
+                JunoIconView(systemImage: "circle.dotted.circle")
                     .imageScale(.small)
                 Text(JunoCostFormatting.tokens(metrics.totalTokens))
                     .monospacedDigit()
                 Text(JunoCostFormatting.cost(usd: metrics.costUsd, isPartial: metrics.isPartial))
                     .monospacedDigit()
                     .fontWeight(.medium)
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                JunoIconView(systemImage: isExpanded ? "chevron.up" : "chevron.down")
                     .imageScale(.small)
             }
             .junoCaption()

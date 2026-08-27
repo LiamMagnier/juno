@@ -444,7 +444,7 @@ struct DesktopDesignScreen: View {
             Button {
                 closeDesign()
             } label: {
-                Label("All designs", systemImage: "chevron.left")
+                JunoIconLabel("All designs", systemImage: "chevron.left")
             }
             .buttonStyle(.plain)
             .contentShape(.rect)
@@ -488,7 +488,7 @@ struct DesktopDesignScreen: View {
                     requestDelete(design)
                 }
             } label: {
-                Image(systemName: "ellipsis")
+                JunoIconView(systemImage: "ellipsis")
                     .frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)
@@ -682,7 +682,7 @@ private struct DesktopDesignRow: View {
         HStack(spacing: JunoSpace.snug) {
             Button(action: open) {
                 HStack(spacing: JunoSpace.cozy) {
-                    Image(systemName: "pencil.tip")
+                    JunoIconView(systemImage: "pencil.tip")
                         .junoFont(size: 15, relativeTo: .body)
                         .foregroundStyle(Color.junoAccent)
                         .frame(width: 34, height: 34)
@@ -706,7 +706,7 @@ private struct DesktopDesignRow: View {
 
                     Spacer(minLength: JunoSpace.snug)
 
-                    Image(systemName: "chevron.right")
+                    JunoIconView(systemImage: "chevron.right")
                         .font(.caption2)
                         .junoMetaInk()
                         .accessibilityHidden(true)
@@ -719,7 +719,7 @@ private struct DesktopDesignRow: View {
             Menu {
                 Button("Delete design", role: .destructive, action: delete)
             } label: {
-                Image(systemName: "ellipsis")
+                JunoIconView(systemImage: "ellipsis")
                     .frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)

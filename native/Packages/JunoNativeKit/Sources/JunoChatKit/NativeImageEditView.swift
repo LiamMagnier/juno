@@ -121,7 +121,7 @@ public struct NativeImageEditView: View {
                 .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             Button(action: close) {
-                Image(systemName: "xmark")
+                JunoIconView(systemImage: "xmark")
                     .junoFont(size: 11, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 26, height: 26)
@@ -252,7 +252,7 @@ public struct NativeImageEditView: View {
 
     private func unavailable(_ message: String, symbol: String) -> some View {
         VStack(spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .junoFont(size: 22, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
@@ -285,7 +285,7 @@ public struct NativeImageEditView: View {
             // claiming a selection the reader has not drawn yet.
             HStack(spacing: JunoSpace.snug) {
                 Button { region = nil } label: {
-                    Label("Whole image", systemImage: "photo")
+                    JunoIconLabel("Whole image", systemImage: "photo")
                         .junoFont(size: 12, relativeTo: .body, weight: .medium)
                         .frame(maxWidth: .infinity)
                         .frame(height: 32)

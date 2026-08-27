@@ -206,11 +206,11 @@ public struct JunoModelCapabilityChips: View {
                 ForEach(capabilities) { chip in
                     Group {
                         if compact {
-                            Image(systemName: chip.systemImage)
+                            JunoIconView(systemImage: chip.systemImage)
                                 .junoFont(size: 10, relativeTo: .caption, weight: .medium)
                                 .frame(width: 15, height: 15)
                         } else {
-                            Label(chip.label, systemImage: chip.systemImage)
+                            JunoIconLabel(verbatim: chip.label, systemImage: chip.systemImage)
                                 .junoFont(size: 10, relativeTo: .caption, weight: .medium)
                                 .labelStyle(.titleAndIcon)
                                 // A chip is one line by definition; without this

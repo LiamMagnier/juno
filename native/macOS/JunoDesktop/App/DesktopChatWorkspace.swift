@@ -327,7 +327,7 @@ struct DesktopChatWorkspace: View {
             Button {
                 beginDraft()
             } label: {
-                Label("New chat", systemImage: "square.and.pencil")
+                JunoIconLabel("New chat", systemImage: "square.and.pencil")
             }
             .help("Start a new chat (⌘N)")
             .accessibilityIdentifier("New chat")
@@ -337,7 +337,7 @@ struct DesktopChatWorkspace: View {
             Button {
                 destination.wrappedValue = .search
             } label: {
-                Label("Search", systemImage: "magnifyingglass")
+                JunoIconLabel("Search", systemImage: "magnifyingglass")
             }
             .help("Search chats, projects and files (⌘⇧F)")
             .accessibilityIdentifier("Search")
@@ -354,7 +354,7 @@ struct DesktopChatWorkspace: View {
                 Button {
                     Task { await createShare() }
                 } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
+                    JunoIconLabel("Share", systemImage: "square.and.arrow.up")
                 }
                 .disabled(sharing)
                 .help("Create a public link to this conversation")
@@ -568,7 +568,7 @@ private struct DesktopChatSidebar: View {
                 JunoIconView(icon, size: 16)
                     .foregroundStyle(ink)
             } else {
-                Image(systemName: item.symbol)
+                JunoIconView(systemImage: item.symbol)
                     .foregroundStyle(ink)
             }
         }
@@ -1742,7 +1742,7 @@ private struct DesktopMessageRow: View {
             withAnimation(JunoMotion.standard) { promptExpanded.toggle() }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: promptExpanded ? "chevron.up" : "chevron.down")
+                JunoIconView(systemImage: promptExpanded ? "chevron.up" : "chevron.down")
                     .junoFont(size: 9, relativeTo: .caption, weight: .semibold)
                 Text(
                     promptExpanded
@@ -2042,7 +2042,7 @@ private struct DesktopMessageRow: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .frame(width: 22, height: 22)
                 .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
         }
@@ -2097,7 +2097,7 @@ private struct DesktopInlineArtifactCard: View {
                 // second hairline: this is nested inside a card that already has
                 // one, which is the distinction `junoPanel` draws against
                 // `junoCard`.
-                Image(systemName: glyph)
+                JunoIconView(systemImage: glyph)
                     .font(.callout)
                     .foregroundStyle(
                         artifact.streaming ? Color.junoAccent : Color.junoMutedForeground
@@ -2130,7 +2130,7 @@ private struct DesktopInlineArtifactCard: View {
                     JunoThinkingMatrix(dot: 3, spacing: 2)
                         .junoSecondaryInk()
                 } else if open != nil {
-                    Label("Open", systemImage: "arrow.up.right")
+                    JunoIconLabel("Open", systemImage: "arrow.up.right")
                         .labelStyle(.titleAndIcon)
                         .font(.caption.weight(.medium))
                         .junoSecondaryInk()
@@ -2214,7 +2214,7 @@ private struct DesktopMessageSources: View {
                 // The web stacks each site's favicon here. This client fetches no
                 // remote images for a transcript, so it says the same thing with
                 // one glyph rather than inventing placeholder logos.
-                Image(systemName: "globe")
+                JunoIconView(systemImage: "globe")
                     .font(.caption)
                     .junoSecondaryInk()
                 Text("Sources")
@@ -2224,7 +2224,7 @@ private struct DesktopMessageSources: View {
                     .font(.system(.caption2, design: .monospaced))
                     .junoSecondaryInk()
                     .monospacedDigit()
-                Image(systemName: "chevron.down")
+                JunoIconView(systemImage: "chevron.down")
                     .font(.caption2.weight(.semibold))
                     .junoSecondaryInk()
                     .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -2266,7 +2266,7 @@ private struct DesktopMessageSources: View {
 
                 Spacer(minLength: JunoSpace.snug)
 
-                Image(systemName: "arrow.up.right")
+                JunoIconView(systemImage: "arrow.up.right")
                     .font(.caption2)
                     .junoMetaInk()
             }
@@ -2331,7 +2331,7 @@ private struct DesktopChatError: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            JunoIconView(systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color.junoDanger)
             Text(message)
                 .font(.callout)
@@ -2503,7 +2503,7 @@ struct DesktopComposer: View {
     @ViewBuilder
     private var documentContextNotice: some View {
         if let groundingNote {
-            Label(groundingNote, systemImage: "doc.text.magnifyingglass")
+            JunoIconLabel(verbatim: groundingNote, systemImage: "doc.text.magnifyingglass")
                 .junoCaption()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("juno.desktop.chat.document-context-note")
@@ -2933,7 +2933,7 @@ struct DesktopComposer: View {
                 .junoSecondaryInk()
             Spacer(minLength: JunoSpace.tight)
             Button(action: attachDraftAsFile) {
-                Label("Attach as file", systemImage: "doc.badge.arrow.up")
+                JunoIconLabel("Attach as file", systemImage: "doc.badge.arrow.up")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -2970,7 +2970,7 @@ struct DesktopComposer: View {
                     prompt = ""
                     draftExpanded = false
                 } label: {
-                    Image(systemName: "xmark")
+                    JunoIconView(systemImage: "xmark")
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.borderless)
@@ -2983,13 +2983,13 @@ struct DesktopComposer: View {
                     draftExpanded = true
                     focused = true
                 } label: {
-                    Label("Edit", systemImage: "pencil")
+                    JunoIconLabel("Edit", systemImage: "pencil")
                 }
                 .accessibilityIdentifier("juno.desktop.chat.expand-draft")
 
                 if canAttachDraft {
                     Button(action: attachDraftAsFile) {
-                        Label("Attach as file", systemImage: "doc.badge.arrow.up")
+                        JunoIconLabel("Attach as file", systemImage: "doc.badge.arrow.up")
                     }
                     .accessibilityIdentifier("juno.desktop.chat.attach-draft")
                 }
@@ -3037,14 +3037,17 @@ struct DesktopComposer: View {
             Button {
                 showingFileImporter = true
             } label: {
-                Label(voiceActive ? "Attach images…" : "Attach files…", systemImage: "paperclip")
+                JunoIconLabel(
+                    verbatim: voiceActive ? "Attach images…" : "Attach files…",
+                    systemImage: "paperclip"
+                )
             }
             .disabled(voiceActive ? !canAttachInVoice : !(attachmentModel?.hasCapacity ?? false))
 
             Button {
                 showingLibrary = true
             } label: {
-                Label("Choose from Library…", systemImage: "books.vertical")
+                JunoIconLabel("Choose from Library…", systemImage: "books.vertical")
             }
             .disabled(voiceActive || !(attachmentModel?.hasCapacity ?? false))
 
@@ -3053,7 +3056,10 @@ struct DesktopComposer: View {
                     Button {
                         selectedProjectID = nil
                     } label: {
-                        Label("No project", systemImage: selectedProjectID == nil ? "checkmark" : "folder")
+                        JunoIconLabel(
+                            "No project",
+                            systemImage: selectedProjectID == nil ? "checkmark" : "folder"
+                        )
                     }
                     ForEach(projectModel.projects) { project in
                         Button {
@@ -3066,7 +3072,10 @@ struct DesktopComposer: View {
                         }
                     }
                 } label: {
-                    Label(selectedProjectName ?? "Add to project", systemImage: "folder")
+                    JunoIconLabel(
+                        verbatim: selectedProjectName ?? "Add to project",
+                        systemImage: "folder"
+                    )
                 }
                 .disabled(model.selectedConversationID != nil)
             }
@@ -3074,16 +3083,16 @@ struct DesktopComposer: View {
             Divider()
 
             Toggle(isOn: $deepResearch) {
-                Label("Deep research", systemImage: "telescope")
+                JunoIconLabel("Deep research", systemImage: "telescope")
             }
 
             Toggle(isOn: $webSearch) {
-                Label("Web search", systemImage: "globe")
+                JunoIconLabel("Web search", systemImage: "globe")
             }
             .disabled(selectedModel?.supportsWebSearch != true)
 
             Toggle(isOn: $canvasEnabled) {
-                Label("Canvas & artifacts", systemImage: "rectangle.3.group")
+                JunoIconLabel("Canvas & artifacts", systemImage: "rectangle.3.group")
             }
 
             if documentIndex != nil {
@@ -3152,7 +3161,7 @@ struct DesktopComposer: View {
                     .junoInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
                     .junoSecondaryInk()
             }
@@ -3190,7 +3199,7 @@ struct DesktopComposer: View {
     }
 
     private var thinkingSymbol: some View {
-        Image(systemName: "gauge.with.dots.needle.33percent")
+        JunoIconView(systemImage: "gauge.with.dots.needle.33percent")
             .imageScale(.small)
             .accessibilityHidden(true)
     }
@@ -3223,7 +3232,7 @@ struct DesktopComposer: View {
                     thinkingSymbol
                     Text(currentThinkingLabel(in: scale))
                         .lineLimit(1)
-                    Image(systemName: "chevron.up")
+                    JunoIconView(systemImage: "chevron.up")
                         .font(.caption2.weight(.semibold))
                         .junoSecondaryInk()
                 }
@@ -3266,7 +3275,7 @@ struct DesktopComposer: View {
                 dictating = true
             }
         } label: {
-            Image(systemName: "mic.fill")
+            JunoIconView(systemImage: "mic.fill")
                 .font(.callout.weight(.medium))
                 .frame(width: 36, height: 36)
                 // On-accent over the armed tint, primary ink otherwise — the
@@ -3331,7 +3340,7 @@ struct DesktopComposer: View {
                 Button {
                     model.stopGeneration()
                 } label: {
-                    Image(systemName: "stop.fill")
+                    JunoIconView(systemImage: "stop.fill")
                         .font(.caption.weight(.bold))
                         .frame(width: 36, height: 36)
                         .foregroundStyle(Color.junoOnAccent)
@@ -3362,7 +3371,7 @@ struct DesktopComposer: View {
                 Button {
                     send()
                 } label: {
-                    Image(systemName: "arrow.up")
+                    JunoIconView(systemImage: "arrow.up")
                         .font(.callout.weight(.bold))
                         .frame(width: 36, height: 36)
                         .foregroundStyle(
@@ -3403,7 +3412,7 @@ struct DesktopComposer: View {
     ) -> some View {
         Button(action: action) {
             if selected {
-                Label(title, systemImage: "checkmark")
+                JunoIconLabel(verbatim: title, systemImage: "checkmark")
             } else {
                 Text(title)
             }
@@ -3871,7 +3880,7 @@ struct DesktopLibraryPicker: View {
                     .opacity(selected ? 1 : 0)
             }
             .overlay(alignment: .topTrailing) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                JunoIconView(systemImage: selected ? "checkmark.circle.fill" : "circle")
                     .junoFont(size: 16, relativeTo: .body)
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(
@@ -4018,7 +4027,7 @@ private struct DesktopAttachmentChip: View {
                     .font(.caption.weight(.medium))
             }
             Button(action: remove) {
-                Image(systemName: "xmark")
+                JunoIconView(systemImage: "xmark")
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(attachment.fileName)")
@@ -4039,10 +4048,10 @@ private struct DesktopAttachmentChip: View {
             ProgressView()
                 .controlSize(.mini)
         case .uploaded:
-            Image(systemName: "checkmark.circle.fill")
+            JunoIconView(systemImage: "checkmark.circle.fill")
                 .foregroundStyle(Color.junoSuccess)
         case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
+            JunoIconView(systemImage: "exclamationmark.circle.fill")
                 .foregroundStyle(Color.junoDanger)
         }
     }
@@ -4557,7 +4566,7 @@ private struct JunoAddMenuRow: View {
         case .none:
             EmptyView()
         case .state(let on):
-            Image(systemName: "checkmark")
+            JunoIconView(systemImage: "checkmark")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(Color.junoAccent)
                 .opacity(on ? 1 : 0)
@@ -4570,7 +4579,7 @@ private struct JunoAddMenuRow: View {
             // Rotated, not swapped. `chevron.right` → `chevron.down` is a hard
             // cut dropped into the middle of a spring that is continuous either
             // side of it, and the two glyphs are not even the same width.
-            Image(systemName: "chevron.right")
+            JunoIconView(systemImage: "chevron.right")
                 .junoFont(size: 9, relativeTo: .caption, weight: .bold)
                 .junoSecondaryInk()
                 .rotationEffect(.degrees(open ? 90 : 0))
@@ -4599,7 +4608,7 @@ private struct DesktopAddMenuMark: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Image(systemName: "plus")
+        JunoIconView(systemImage: "plus")
             // Scales with Dynamic Type like the mic and send glyphs beside it,
             // whose `.callout` faces already move — a frozen 13pt here would
             // make this the one control in the bar that ignores the setting.

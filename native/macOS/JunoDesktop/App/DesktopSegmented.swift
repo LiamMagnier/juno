@@ -87,7 +87,7 @@ struct DesktopSegmented<Value: Hashable>: View {
                                 // mark tracks the 12pt text if that ever moves,
                                 // and `.medium` so a 12pt glyph does not read
                                 // thinner than the word beside it.
-                                Image(systemName: symbol)
+                                JunoIconView(systemImage: symbol)
                                     .junoFont(size: 11, relativeTo: .body, weight: .medium)
                                     .accessibilityHidden(true)
                             }

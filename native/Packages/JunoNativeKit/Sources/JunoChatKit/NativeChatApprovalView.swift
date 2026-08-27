@@ -31,7 +31,7 @@ public struct NativeChatApprovalCard: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 7) {
-                Image(systemName: riskIcon)
+                JunoIconView(systemImage: riskIcon)
                     .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(riskColor)
                 Text(riskLabel)
@@ -74,7 +74,7 @@ public struct NativeChatApprovalCard: View {
             }
 
             if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                JunoIconLabel(verbatim: errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoDanger)
                     .fixedSize(horizontal: false, vertical: true)

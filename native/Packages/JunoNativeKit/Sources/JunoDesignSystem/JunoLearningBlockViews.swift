@@ -1049,7 +1049,7 @@ public struct JunoLearningBlockView: View {
 
         return JunoLessonShell {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle")
+                JunoIconView(systemImage: "exclamationmark.triangle")
                     .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoCaution)
                 (claim + reason)

@@ -424,7 +424,7 @@ struct DesktopWorkWorkspace: View {
         // the navigation column, on the column it switches, in every product —
         ToolbarItem(placement: .primaryAction) {
             Button(action: compose) {
-                Label("New task", systemImage: "square.and.pencil")
+                JunoIconLabel("New task", systemImage: "square.and.pencil")
             }
             .junoToolbarMetrics()
             .help("Describe something for Juno to go and do (⌘N)")
@@ -440,7 +440,7 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.pauseOpenRun() }
                 } label: {
-                    Label("Pause", systemImage: "pause")
+                    JunoIconLabel("Pause", systemImage: "pause")
                 }
                 .disabled(!canPause)
                 .accessibilityIdentifier("juno.work.pause")
@@ -448,7 +448,7 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.resumeOpenRun() }
                 } label: {
-                    Label("Resume", systemImage: "play")
+                    JunoIconLabel("Resume", systemImage: "play")
                 }
                 .disabled(!canResume)
                 .accessibilityIdentifier("juno.work.resume")
@@ -456,7 +456,7 @@ struct DesktopWorkWorkspace: View {
                 Button(role: .destructive) {
                     Task { await model.stopOpenRun() }
                 } label: {
-                    Label("Stop", systemImage: "stop")
+                    JunoIconLabel("Stop", systemImage: "stop")
                 }
                 .disabled(!canStop)
                 .accessibilityIdentifier("juno.work.stop")
@@ -469,7 +469,7 @@ struct DesktopWorkWorkspace: View {
                 // menu item labelled "Try Again" would leave the reader looking
                 // for their original task's second run.
                 Button(action: retryOpenSession) {
-                    Label("Try Again as a New Task", systemImage: "arrow.clockwise")
+                    JunoIconLabel("Try Again as a New Task", systemImage: "arrow.clockwise")
                 }
                 .disabled(!canRetry)
                 .accessibilityIdentifier("juno.work.retry")
@@ -477,12 +477,12 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.refresh() }
                 } label: {
-                    Label("Refresh Tasks", systemImage: "arrow.triangle.2.circlepath")
+                    JunoIconLabel("Refresh Tasks", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .accessibilityIdentifier("juno.work.refresh")
             } label: {
-                Label("Task", systemImage: "ellipsis.circle")
+                JunoIconLabel("Task", systemImage: "ellipsis.circle")
             }
             .junoToolbarMetrics()
             .disabled(model.isMutating)
@@ -505,21 +505,21 @@ struct DesktopWorkWorkspace: View {
     @ViewBuilder
     private var statusIndicator: some View {
         if case .automations = selection.wrappedValue {
-            Label("Automations", systemImage: "clock.badge.checkmark")
+            JunoIconLabel("Automations", systemImage: "clock.badge.checkmark")
                 .labelStyle(.titleAndIcon)
                 .font(.system(.caption, design: .default, weight: .medium))
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityLabel("Automations")
         } else if let session = openSession {
             let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
-            Label(style.label, systemImage: style.symbol)
+            JunoIconLabel(verbatim: style.label, systemImage: style.symbol)
                 .labelStyle(.titleAndIcon)
                 .font(.system(.caption, design: .default, weight: .medium))
                 .foregroundStyle(style.tint)
                 .help(style.sentence)
                 .accessibilityLabel(style.sentence)
         } else {
-            Label("No task open", systemImage: "checklist")
+            JunoIconLabel("No task open", systemImage: "checklist")
                 .labelStyle(.titleAndIcon)
                 .font(.system(.caption, design: .default, weight: .medium))
                 .junoSecondaryInk()
@@ -1021,7 +1021,7 @@ private struct DesktopWorkSidebar: View {
     /// edges.
     private var overviewRow: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "square.grid.2x2")
+            JunoIconView(systemImage: "square.grid.2x2")
                 .junoSidebarMarkInk(selected: selection == .overview)
                 .frame(width: DesktopWorkStatusMark.width)
             Text("Overview")
@@ -1042,7 +1042,7 @@ private struct DesktopWorkSidebar: View {
 
     private var automationsRow: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "clock.badge.checkmark")
+            JunoIconView(systemImage: "clock.badge.checkmark")
                 .junoSidebarMarkInk(selected: selection == .automations)
                 .frame(width: DesktopWorkStatusMark.width)
             Text("Automations")
@@ -1080,7 +1080,7 @@ private struct DesktopWorkSidebar: View {
     private var newTaskRow: some View {
         Button(action: compose) {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "plus")
+                JunoIconView(systemImage: "plus")
                     .junoSidebarMarkInk()
                     .frame(width: DesktopWorkStatusMark.width)
                 Text("New task")
@@ -1423,7 +1423,7 @@ private struct DesktopWorkOverview: View {
             Button {
                 showsAllFinished = true
             } label: {
-                Label("Show all \(count)", systemImage: "chevron.down")
+                JunoIconLabel(verbatim: "Show all \(count)", systemImage: "chevron.down")
                     .junoCodeSmall()
                     .junoSecondaryInk()
             }
@@ -1552,7 +1552,7 @@ private struct DesktopWorkHomeComposer: View {
             }
 
             if let importError {
-                Label(importError, systemImage: "exclamationmark.triangle")
+                JunoIconLabel(verbatim: importError, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(Color.junoDanger)
                     .lineLimit(2)
@@ -1571,7 +1571,7 @@ private struct DesktopWorkHomeComposer: View {
                 }
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: start) {
-                    Image(systemName: "arrow.up")
+                    JunoIconView(systemImage: "arrow.up")
                         .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(canStart ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
@@ -1689,7 +1689,7 @@ private struct DesktopWorkHomeComposer: View {
                 }
             }
         } label: {
-            Label(targetLabel, systemImage: "shippingbox")
+            JunoIconLabel(verbatim: targetLabel, systemImage: "shippingbox")
                 .junoCodeSmall()
                 .junoSecondaryInk()
         }
@@ -1829,7 +1829,7 @@ private struct DesktopWorkHomeComposer: View {
                                 Text(connector.label)
                                 Spacer(minLength: JunoSpace.roomy)
                                 if selectedConnectorIDs.contains(connector.id) {
-                                    Image(systemName: "checkmark")
+                                    JunoIconView(systemImage: "checkmark")
                                 }
                             }
                         }
@@ -1846,7 +1846,7 @@ private struct DesktopWorkHomeComposer: View {
                 }
             }
         } label: {
-            Label(contextLabel, systemImage: "slider.horizontal.3")
+            JunoIconLabel(verbatim: contextLabel, systemImage: "slider.horizontal.3")
                 .junoCodeSmall()
                 .junoSecondaryInk()
         }
@@ -1932,7 +1932,7 @@ private struct DesktopWorkAttachmentChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .foregroundStyle(tint)
                 .imageScale(.small)
             Text(attachment.fileName)
@@ -1950,7 +1950,7 @@ private struct DesktopWorkAttachmentChip: View {
                 }
             }
             Button(action: remove) {
-                Image(systemName: "xmark")
+                JunoIconView(systemImage: "xmark")
                     .imageScale(.small)
             }
             .buttonStyle(.borderless)
@@ -2083,7 +2083,7 @@ private struct DesktopWorkHomeRow: View {
                         .lineLimit(1)
                         .padding(.top, 1)
                 }
-                Image(systemName: "chevron.right")
+                JunoIconView(systemImage: "chevron.right")
                     .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                     .foregroundStyle(isHovering ? Color.junoForeground : Color.junoMutedForeground)
                     .opacity(isHovering ? 1 : 0.55)
@@ -2203,7 +2203,7 @@ struct DesktopWorkBlockerRow: View {
                     if blocker.isSettling {
                         ProgressView().controlSize(.small)
                     } else {
-                        Image(systemName: blocker.symbol)
+                        JunoIconView(systemImage: blocker.symbol)
                             .foregroundStyle(Color.junoCaution)
                     }
                 }
@@ -2223,7 +2223,7 @@ struct DesktopWorkBlockerRow: View {
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: "checkmark.circle")
+                JunoIconView(systemImage: "checkmark.circle")
                     .foregroundStyle(Color.junoSuccess)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2303,7 +2303,7 @@ struct DesktopWorkStartPath: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Image(systemName: "laptopcomputer.and.arrow.down")
+            JunoIconView(systemImage: "laptopcomputer.and.arrow.down")
                 .junoFont(size: 24, relativeTo: .title2)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityHidden(true)
@@ -2394,7 +2394,7 @@ struct DesktopWorkStartPath: View {
     private func marker(number: Int, isDone: Bool, isCurrent: Bool) -> some View {
         Group {
             if isDone {
-                Image(systemName: "checkmark.circle.fill")
+                JunoIconView(systemImage: "checkmark.circle.fill")
                     .foregroundStyle(Color.junoSuccess)
             } else if isCurrent, blocker.isSettling {
                 ProgressView().controlSize(.small)
@@ -2672,7 +2672,7 @@ private struct DesktopWorkThread: View {
 
     private var surfacePicker: some View {
         HStack(spacing: JunoSpace.regular) {
-            Label("Task details", systemImage: surface.symbol)
+            JunoIconLabel("Task details", systemImage: surface.symbol)
                 .junoSidebarSection()
                 .labelStyle(.titleAndIcon)
             Spacer(minLength: JunoSpace.snug)
@@ -2767,7 +2767,7 @@ private struct DesktopWorkThread: View {
                                 .junoCaption()
                                 .fixedSize(horizontal: false, vertical: true)
                         } icon: {
-                            Image(systemName: "exclamationmark.triangle")
+                            JunoIconView(systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(Color.junoCaution)
                         }
                     }
@@ -2873,8 +2873,8 @@ private struct DesktopWorkThread: View {
                     }
                 }
             } label: {
-                Label(
-                    status == .paused ? "Resume" : "Pause",
+                JunoIconLabel(
+                    verbatim: status == .paused ? "Resume" : "Pause",
                     systemImage: status == .paused ? "play.fill" : "pause.fill"
                 )
             }
@@ -2883,7 +2883,7 @@ private struct DesktopWorkThread: View {
             Button(role: .destructive) {
                 Task { await model.stopOpenRun() }
             } label: {
-                Label("Stop", systemImage: "stop.fill")
+                JunoIconLabel("Stop", systemImage: "stop.fill")
             }
             .disabled(status.isTerminal || status == .draft)
 
@@ -2988,7 +2988,7 @@ private struct DesktopWorkThread: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(answer, forType: .string)
                 } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    JunoIconLabel("Copy", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -3018,7 +3018,7 @@ private struct DesktopWorkThread: View {
                             .strikethrough(step.state == .skipped)
                             .fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Image(systemName: step.symbol)
+                        JunoIconView(systemImage: step.symbol)
                             .foregroundStyle(step.tint)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3061,7 +3061,7 @@ private struct DesktopWorkThread: View {
                             }
                         }
                     } icon: {
-                        Image(systemName: reference.direction == .read ? "link" : "doc")
+                        JunoIconView(systemImage: reference.direction == .read ? "link" : "doc")
                             .foregroundStyle(Color.junoMutedForeground)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3128,7 +3128,7 @@ private struct DesktopWorkThread: View {
                         // A column of "xlsx" / "docx" / "pdf" set in monospace
                         // is a directory listing; this section is meant to read
                         // as the things Juno made for you.
-                        Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
+                        JunoIconView(systemImage: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
                             .junoFont(size: 15, relativeTo: .body)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
@@ -3151,7 +3151,7 @@ private struct DesktopWorkThread: View {
 
                 if let error = model.artifactErrorDescription {
                     HStack(alignment: .top, spacing: JunoSpace.tight) {
-                        Label(error, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
                             .junoCaption()
                             .foregroundStyle(Color.junoDanger)
                             .fixedSize(horizontal: false, vertical: true)
@@ -3301,7 +3301,7 @@ private struct DesktopWorkThread: View {
 
     private func contextFact(_ label: String, value: String, symbol: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
@@ -3344,7 +3344,7 @@ private struct DesktopWorkThread: View {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     ForEach(entries) { entry in
                         HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                            Image(systemName: entry.symbol)
+                            JunoIconView(systemImage: entry.symbol)
                                 .junoFont(size: 12, relativeTo: .callout)
                                 .foregroundStyle(entry.tint)
                                 .frame(width: 16, height: 16, alignment: .center)
@@ -3392,7 +3392,7 @@ private struct DesktopWorkArtifactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
+                JunoIconView(systemImage: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
                     .junoFont(size: 15, relativeTo: .body)
                     .foregroundStyle(Color.junoAccent)
                     .frame(width: 22, alignment: .center)
@@ -3425,7 +3425,7 @@ private struct DesktopWorkArtifactRow: View {
                         if isDownloading {
                             ProgressView().controlSize(.small)
                         } else {
-                            Label("Save", systemImage: "arrow.down.circle")
+                            JunoIconLabel("Save", systemImage: "arrow.down.circle")
                         }
                     }
                     .junoProminentGlassButton()
@@ -3437,8 +3437,8 @@ private struct DesktopWorkArtifactRow: View {
                     Button {
                         expand()
                     } label: {
-                        Label(
-                            isExpanded ? "Hide history" : "History",
+                        JunoIconLabel(
+                            verbatim: isExpanded ? "Hide history" : "History",
                             systemImage: isExpanded ? "chevron.up" : "clock.arrow.circlepath"
                         )
                     }
@@ -3451,7 +3451,7 @@ private struct DesktopWorkArtifactRow: View {
             if isExpanded {
                 if let detail {
                     if let warning = detail.warning {
-                        Label(warning, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: warning, systemImage: "exclamationmark.triangle")
                             .junoCaption()
                             .foregroundStyle(Color.junoCaution)
                             .fixedSize(horizontal: false, vertical: true)
@@ -3604,7 +3604,7 @@ private struct DesktopWorkContextEditor: View {
                             .junoCaption()
                             .fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Image(systemName: change.effect == "now" ? "checkmark.circle" : "clock")
+                        JunoIconView(systemImage: change.effect == "now" ? "checkmark.circle" : "clock")
                             .foregroundStyle(change.effect == "now" ? Color.junoSuccess : Color.junoAccent)
                     }
                     .padding(.top, JunoSpace.tight)
@@ -3613,7 +3613,7 @@ private struct DesktopWorkContextEditor: View {
 
                 if let error = model.contextErrorDescription {
                     HStack(alignment: .top, spacing: JunoSpace.tight) {
-                        Label(error, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
                             .junoCaption()
                             .foregroundStyle(Color.junoDanger)
                             .fixedSize(horizontal: false, vertical: true)
@@ -3626,7 +3626,7 @@ private struct DesktopWorkContextEditor: View {
                 }
             } else if let error = model.contextErrorDescription {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    Label(error, systemImage: "exclamationmark.triangle")
+                    JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
                         .junoCaption()
                         .foregroundStyle(Color.junoDanger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3724,7 +3724,7 @@ private struct DesktopWorkContextEditor: View {
             HStack(spacing: JunoSpace.tight) {
                 Text(selectedModel?.displayName ?? context?.model ?? "Automatic")
                     .lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
         }
@@ -3757,7 +3757,7 @@ private struct DesktopWorkContextEditor: View {
         } label: {
             HStack(spacing: JunoSpace.tight) {
                 Text(currentThinkingLabel(in: scale))
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
         }
@@ -3788,14 +3788,14 @@ private struct DesktopWorkContextEditor: View {
                     HStack {
                         Text(permissionTitle(policy))
                         Spacer(minLength: JunoSpace.roomy)
-                        if policy == permissionPolicy { Image(systemName: "checkmark") }
+                        if policy == permissionPolicy { JunoIconView(systemImage: "checkmark") }
                     }
                 }
             }
         } label: {
             HStack(spacing: JunoSpace.tight) {
                 Text(permissionTitle(permissionPolicy))
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
             }
         }
@@ -3808,7 +3808,7 @@ private struct DesktopWorkContextEditor: View {
     private var apps: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack {
-                Label("Connected apps", systemImage: "link")
+                JunoIconLabel("Connected apps", systemImage: "link")
                     .junoSidebarSection()
                 Spacer(minLength: JunoSpace.tight)
                 Menu {
@@ -3825,7 +3825,7 @@ private struct DesktopWorkContextEditor: View {
                                     Text(connector.label)
                                     Spacer(minLength: JunoSpace.roomy)
                                     if selectedConnectorIDs.contains(connector.id) {
-                                        Image(systemName: "checkmark")
+                                        JunoIconView(systemImage: "checkmark")
                                     }
                                 }
                             }
@@ -3833,8 +3833,8 @@ private struct DesktopWorkContextEditor: View {
                         Button("Manage connected apps…", action: openConnections)
                     }
                 } label: {
-                    Label(
-                        selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected",
+                    JunoIconLabel(
+                        verbatim: selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected",
                         systemImage: "slider.horizontal.3"
                     )
                 }
@@ -3859,7 +3859,7 @@ private struct DesktopWorkContextEditor: View {
     private func files(_ context: WorkSessionContext) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack {
-                Label("Attached files", systemImage: "paperclip")
+                JunoIconLabel("Attached files", systemImage: "paperclip")
                     .junoSidebarSection()
                 Spacer(minLength: JunoSpace.tight)
                 Menu {
@@ -3868,7 +3868,7 @@ private struct DesktopWorkContextEditor: View {
                     Button("Choose from Library…") { showingLibrary = true }
                         .disabled(libraryModel == nil || attachmentModel == nil)
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    JunoIconLabel("Add", systemImage: "plus")
                 }
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel("Add files to task")
@@ -3881,7 +3881,7 @@ private struct DesktopWorkContextEditor: View {
             } else {
                 ForEach(visibleAttachments) { attachment in
                     HStack(spacing: JunoSpace.tight) {
-                        Image(systemName: "doc")
+                        JunoIconView(systemImage: "doc")
                             .foregroundStyle(Color.junoMutedForeground)
                         Text(attachment.displayName)
                             .junoRowLabel()
@@ -3891,7 +3891,7 @@ private struct DesktopWorkContextEditor: View {
                         Button {
                             removeAttachment(attachment.attachmentID)
                         } label: {
-                            Image(systemName: "xmark")
+                            JunoIconView(systemImage: "xmark")
                         }
                         .buttonStyle(.borderless)
                         .help("Remove \(attachment.displayName) from this task")
@@ -3926,7 +3926,7 @@ private struct DesktopWorkContextEditor: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
@@ -3943,7 +3943,7 @@ private struct DesktopWorkContextEditor: View {
 
     private func contextFact(_ label: String, value: String, symbol: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
@@ -4128,7 +4128,7 @@ private struct DesktopWorkApprovalCard: View {
             // that can actually be seen, and it puts the risk label and the
             // expiry on a ground of their own instead of loose under the prose.
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: risk?.alwaysRequiresApproval == true
+                JunoIconView(systemImage: risk?.alwaysRequiresApproval == true
                     ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
                     .foregroundStyle(tint)
                 Text(DesktopWorkVocabulary.risk(approval.risk))
@@ -4308,7 +4308,7 @@ private struct DesktopWorkThreadComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Label(modeLabel, systemImage: modeSymbol)
+            JunoIconLabel(verbatim: modeLabel, systemImage: modeSymbol)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(
                     isClosed
@@ -4331,7 +4331,7 @@ private struct DesktopWorkThreadComposer: View {
                         isAnswering ? "juno.work.answer.field" : "juno.work.instruction.field"
                     )
                 Button(action: send) {
-                    Image(systemName: "arrow.up")
+                    JunoIconView(systemImage: "arrow.up")
                         .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
@@ -4368,7 +4368,7 @@ private struct DesktopWorkThreadComposer: View {
                         .junoCaption()
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: outcome.delivered
+                    JunoIconView(systemImage: outcome.delivered
                         ? "checkmark.circle" : "exclamationmark.triangle")
                         .foregroundStyle(
                             outcome.delivered ? Color.junoMutedForeground : Color.junoCaution

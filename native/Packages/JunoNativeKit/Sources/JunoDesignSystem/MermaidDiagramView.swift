@@ -113,7 +113,7 @@ public struct MermaidDiagramView: View {
                 Button {
                     resetToken += 1
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
+                    JunoIconView(systemImage: "arrow.counterclockwise")
                         .junoFont(size: 12, relativeTo: .footnote)
                         .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 22, height: 22)
@@ -131,7 +131,7 @@ public struct MermaidDiagramView: View {
                     didCopy = false
                 }
             } label: {
-                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                JunoIconView(systemImage: didCopy ? "checkmark" : "doc.on.doc")
                     .junoFont(size: 12, relativeTo: .footnote)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 22, height: 22)

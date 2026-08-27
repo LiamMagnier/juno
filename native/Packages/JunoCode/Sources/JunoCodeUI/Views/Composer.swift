@@ -343,6 +343,8 @@ public struct Composer: View {
                     JunoIconView(.stop, size: 15)
                         .foregroundStyle(Color.junoOnAccent)
                         .frame(width: 36, height: 36)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.circle)
                 }
                 .accentGlassAction(active: true)
                 .keyboardShortcut(".", modifiers: .command)
@@ -813,31 +815,16 @@ struct ComposerSurface<Controls: View>: View {
                 }
             }
             .padding(JunoSpace.snug)
-            // Drop feedback is a **tint on the glass**, never a stroke over it.
-            //
-            // A stroked `RoundedRectangle` overlay here is what turned the composer
-            // into a hard-edged rectangle the moment a drag entered the window: the
-            // border is drawn over the material, so the rim light that makes glass
-            // read as having thickness is flattened out and what is left is a
-            // translucent box with a line round it. `junoFloatingChrome`'s own
-            // documentation says exactly this — "real glass carries its own edge …
-            // stroking a hairline over it flattens that back into a translucent
-            // rounded rectangle" — and tinting is the treatment the material
-            // actually supports.
-            .junoGlass(
-                in: RoundedRectangle(
-                    cornerRadius: JunoRadius.composer,
-                    style: .continuous
-                ),
-                // Full alpha or nothing. `Glass.tint(_:)` honours the alpha it
-                // is given, so a diluted accent stops establishing a
-                // predictable luminance and the composer's text ends up
-                // reading against whatever is behind the window — the exact
-                // defect `accentGlassAction` was written to document. The 0.28
-                // that stood here was the one value the material must never be
-                // handed.
-                tint: isDropTargeted ? Color.junoAccent : nil
-            )
+            // This is deliberately the same native floating surface as Chat's
+            // composer. Code contributes tools to the lower row; it does not get
+            // a second visual language or a hand-drawn border around the glass.
+            .junoFloatingChrome(cornerRadius: JunoRadius.composer)
+            .background {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
+                        .fill(Color.junoAccent.opacity(0.10))
+                }
+            }
             // The whole composer is the drop target, not just the thumbnails —
             // there is nothing to aim at before the first image is attached.
             .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in

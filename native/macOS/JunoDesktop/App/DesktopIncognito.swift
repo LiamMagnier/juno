@@ -108,7 +108,7 @@ struct DesktopIncognitoChat: View {
     /// not happen — not a marketing line about privacy.
     private var greeting: some View {
         VStack(spacing: JunoSpace.snug) {
-            Image(systemName: "theatermasks")
+            JunoIconView(systemImage: "theatermasks")
                 // Rides the greeting title's Dynamic Type scale: the glyph and
                 // the serif line below it are one lockup and must grow together.
                 .junoFont(size: 34, relativeTo: .title)
@@ -200,12 +200,16 @@ struct DesktopIncognitoChat: View {
                 // saw a third colour again. The tint has to be stated, exactly as
                 // the approval cards in Code and Work already state it.
                 if model.isStreaming {
-                    Button("Stop", systemImage: "stop.fill") { model.stopGeneration() }
+                    Button { model.stopGeneration() } label: {
+                        JunoIconLabel("Stop", systemImage: "stop.fill")
+                    }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
                 } else {
-                    Button("Send", systemImage: "arrow.up") { send() }
+                    Button { send() } label: {
+                        JunoIconLabel("Send", systemImage: "arrow.up")
+                    }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
@@ -232,7 +236,7 @@ struct DesktopIncognitoChat: View {
                 .labelsHidden()
                 .frame(maxWidth: 240)
                 Spacer(minLength: 0)
-                Label("Not saved", systemImage: "theatermasks")
+                JunoIconLabel("Not saved", systemImage: "theatermasks")
                     .junoCaption()
             }
         }

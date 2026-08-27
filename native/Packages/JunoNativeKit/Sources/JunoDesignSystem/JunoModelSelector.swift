@@ -128,7 +128,7 @@ public struct JunoModelSelector: View {
                 if let id {
                     JunoProviderMark(providerID: id, providerName: name, size: 24)
                 } else {
-                    Image(systemName: "square.grid.2x2")
+                    JunoIconView(systemImage: "square.grid.2x2")
                         .junoFont(size: 15, relativeTo: .body, weight: .medium)
                         .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
                 }
@@ -191,7 +191,10 @@ public struct JunoModelSelector: View {
 
     private func sectionView(_ section: CatalogSection) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Label(section.modality.sectionTitle, systemImage: section.modality.systemImage)
+            JunoIconLabel(
+                verbatim: section.modality.sectionTitle,
+                systemImage: section.modality.systemImage
+            )
                 .junoFont(size: 11.5, relativeTo: .caption, weight: .semibold)
                 .junoSecondaryInk()
                 .padding(.horizontal, 3)
@@ -275,7 +278,7 @@ public struct JunoModelSelector: View {
                                 .junoMetaInk()
                         }
                         if selected {
-                            Image(systemName: "checkmark")
+                            JunoIconView(systemImage: "checkmark")
                                 .junoFont(size: 11, relativeTo: .caption, weight: .bold)
                                 .foregroundStyle(Color.junoAccent)
                         }
@@ -292,7 +295,7 @@ public struct JunoModelSelector: View {
                             compact: true
                         )
                         if let unavailable {
-                            Label(unavailable, systemImage: "lock")
+                            JunoIconLabel(verbatim: unavailable, systemImage: "lock")
                                 .junoFont(size: 9.5, relativeTo: .caption2, weight: .medium)
                                 .foregroundStyle(.orange)
                                 .lineLimit(1)
@@ -556,7 +559,7 @@ public struct JunoModelSelectorButton: View {
                     .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Image(systemName: "chevron.up.chevron.down")
+                JunoIconView(systemImage: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
                     .junoSecondaryInk()
             }
@@ -613,7 +616,7 @@ struct JunoModelSearchField: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: "magnifyingglass")
+            JunoIconView(systemImage: "magnifyingglass")
                 .junoFont(size: 12, relativeTo: .footnote)
                 .junoSecondaryInk()
             TextField("Search models", text: $query)
@@ -625,7 +628,7 @@ struct JunoModelSearchField: View {
                     query = ""
                     focused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    JunoIconView(systemImage: "xmark.circle.fill")
                         .junoMetaInk()
                 }
                 .buttonStyle(.junoPress)

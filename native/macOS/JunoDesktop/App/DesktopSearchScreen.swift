@@ -267,7 +267,7 @@ struct DesktopSearchScreen: View {
         if !researchActivity.isEmpty {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 HStack(spacing: JunoSpace.snug) {
-                    Image(systemName: "binoculars")
+                    JunoIconView(systemImage: "binoculars")
                         .junoSecondaryInk()
                     // The phase is the server's own account of where it is, never
                     // a guess one step ahead of the events — a label that runs
@@ -294,7 +294,7 @@ struct DesktopSearchScreen: View {
                 // Only the first — the rest of a warning burst says the same
                 // thing in different words and would bury the strip.
                 if let warning = run.warnings.first {
-                    Label(warning, systemImage: "exclamationmark.triangle")
+                    JunoIconLabel(verbatim: warning, systemImage: "exclamationmark.triangle")
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
                         .lineLimit(2)

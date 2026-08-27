@@ -62,10 +62,10 @@ struct DesktopCodeWorkspace: View {
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    // The inspector is secondary chrome. Opening Code into a blank “Nothing to
-    // inspect” rail made the product feel like two competing canvases; it opens
-    // on demand from the toolbar and remembers the reader's choice thereafter.
-    @SceneStorage("juno.desktop.code.inspector.v3") private var inspectorVisible = false
+    // An active Code task has repository context worth keeping in view. The
+    // native inspector opens to Environment and can still be hidden from the
+    // toolbar when the reader wants the transcript at full width.
+    @SceneStorage("juno.desktop.code.inspector.v4") private var inspectorVisible = true
     @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
     @SceneStorage("juno.desktop.code.review") private var reviewVisible = false
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
@@ -958,7 +958,15 @@ struct DesktopCodeWorkspace: View {
     private var inspector: some View {
         Group {
             if let controller {
-                CodeSessionInspector(controller: controller, openPreview: openPreview)
+                CodeSessionInspector(
+                    controller: controller,
+                    openPreview: openPreview,
+                    openSources: { isOpeningQuickly = true },
+                    openWorkspace: {
+                        guard let root = controller.context?.access.rootURL else { return }
+                        NSWorkspace.shared.activateFileViewerSelecting([root])
+                    }
+                )
             } else {
                 // Compact rather than a full-height placeholder: with no local
                 // session there is genuinely nothing to inspect, and cloud and
@@ -2113,7 +2121,7 @@ private struct DesktopCodeContextStrip: View {
                 .accessibilityIdentifier("juno.code.stop")
             }
         }
-        .frame(maxWidth: 920, alignment: .leading)
+        .frame(maxWidth: 800, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, JunoSpace.region)
         .padding(.vertical, JunoSpace.regular)

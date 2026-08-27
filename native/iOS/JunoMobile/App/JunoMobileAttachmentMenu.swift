@@ -341,8 +341,8 @@ struct JunoMobileComposerActions: View {
         Menu {
             // Buttons rather than a `Picker`: a picker in a menu infers its tag
             // type from the content, and an optional id makes that inference
-            // ambiguous. The checkmark is drawn by `Label(_:systemImage:)`, as
-            // the system's own menus do.
+            // ambiguous. The selected row uses the same trailing-check
+            // convention as a system menu, rendered with Juno's icon asset.
             menuItem(id: nil, name: String(localized: "attachments.no-project"))
             ForEach(projects) { project in
                 menuItem(id: project.id, name: project.name)

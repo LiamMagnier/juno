@@ -436,7 +436,7 @@ struct DesktopCodeSidebar: View {
                     return session.workspaceID != nil
                 }
                 .sorted { $0.updatedAt > $1.updatedAt }
-                .prefix(10)
+                .prefix(5)
         )
     }
 
@@ -455,45 +455,6 @@ struct DesktopCodeSidebar: View {
         let relayed = relayedRuns(from: allRuns)
 
         return List(selection: $selection) {
-            JunoDesktopGlass(spacing: 0) {
-                HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(.search, size: 15)
-                        .junoSecondaryInk()
-                        .accessibilityHidden(true)
-                    TextField("Search sessions…", text: $searchText)
-                        .textFieldStyle(.plain)
-                        .focused(searchFocused)
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            JunoIconView(.close, size: 15)
-                                .junoMetaInk()
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(.rect)
-                        .accessibilityLabel("Clear search")
-                    } else {
-                        Text("⌘K")
-                            .junoFont(size: 10, relativeTo: .caption2, weight: .semibold, design: .rounded)
-                            .junoMetaInk()
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Color.junoRaised.opacity(0.8), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    }
-                }
-                .padding(.horizontal, JunoSpace.snug)
-                .frame(height: 32)
-                .junoGlass(
-                    in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous),
-                    interactive: true
-                )
-            }
-            .listRowInsets(EdgeInsets(top: JunoSpace.tight, leading: JunoSpace.snug, bottom: JunoSpace.snug, trailing: JunoSpace.snug))
-            .listRowBackground(Color.clear)
-            .selectionDisabled()
-            .accessibilityIdentifier("juno.code.sidebar-search")
-
             Section("Workspace") {
                 Label {
                     HStack {
@@ -547,7 +508,7 @@ struct DesktopCodeSidebar: View {
             }
 
             if !pinned.isEmpty || !recent.isEmpty || !relayed.isEmpty {
-                Section("History") {
+                Section("Recents") {
                     ForEach(pinned) { row($0) }
                     ForEach(recent) { row($0) }
                     ForEach(relayed) { row($0) }
@@ -601,6 +562,8 @@ struct DesktopCodeSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .searchable(text: $searchText, placement: .sidebar, prompt: "Search tasks")
+        .searchFocused(searchFocused)
         .junoSidebarSelectionTint()
         // The Chat / Code switch, on the column it switches, in the strip that
         // used to be reserved and empty.

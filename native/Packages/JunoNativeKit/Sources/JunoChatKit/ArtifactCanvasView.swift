@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import JunoDesignSystem
 #if canImport(WebKit)
 import WebKit
 #endif
@@ -935,11 +936,11 @@ public struct ArtifactCanvasView: View {
     private var consoleBadges: some View {
         HStack(spacing: 8) {
             if model.errorCount > 0 {
-                Label("\(model.errorCount)", systemImage: "xmark.octagon")
+                JunoIconLabel(verbatim: "\(model.errorCount)", systemImage: "xmark.octagon")
                     .foregroundStyle(.red)
             }
             if model.warningCount > 0 {
-                Label("\(model.warningCount)", systemImage: "exclamationmark.triangle")
+                JunoIconLabel(verbatim: "\(model.warningCount)", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             Button("Clear") { model.clearConsole() }

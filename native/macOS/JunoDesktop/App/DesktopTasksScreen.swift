@@ -213,7 +213,7 @@ struct DesktopTasksScreen: View {
     /// web puts it in the flow, directly under the heading it belongs to.
     private func errorNotice(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: "exclamationmark.triangle")
+            JunoIconView(systemImage: "exclamationmark.triangle")
                 .foregroundStyle(Color.junoDanger)
             Text(message)
                 .junoCaption()
@@ -366,7 +366,7 @@ struct DesktopTasksScreen: View {
                     Text(task.modelName)
                         .lineLimit(1)
                     if task.webSearch {
-                        Image(systemName: "globe")
+                        JunoIconView(systemImage: "globe")
                             .foregroundStyle(Color.junoMutedForeground)
                             .accessibilityLabel("Web search allowed")
                     }
@@ -450,7 +450,7 @@ struct DesktopTasksScreen: View {
     private var tasksToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button(action: newTask) {
-                Label("New Task", systemImage: "plus")
+                JunoIconLabel("New Task", systemImage: "plus")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!canCreate)
@@ -464,7 +464,7 @@ struct DesktopTasksScreen: View {
                 guard let task = selectedTask else { return }
                 surface.editorRequest = DesktopTaskEditorRequest(task: task)
             } label: {
-                Label("Edit Task", systemImage: "pencil")
+                JunoIconLabel("Edit Task", systemImage: "pencil")
             }
             .keyboardShortcut("e", modifiers: [.command])
             .disabled(selectedTask == nil)
@@ -477,7 +477,7 @@ struct DesktopTasksScreen: View {
             Button {
                 Task { await model.refresh() }
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
             }
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(model.phase == .loading)
@@ -490,7 +490,7 @@ struct DesktopTasksScreen: View {
             Button {
                 isInspectorShown.toggle()
             } label: {
-                Label("Task Details", systemImage: "sidebar.trailing")
+                JunoIconLabel("Task Details", systemImage: "sidebar.trailing")
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help("Show or hide task details (⌥⌘I)")
@@ -697,7 +697,7 @@ private struct DesktopTaskStatusCell: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         } icon: {
-            Image(systemName: status.symbol)
+            JunoIconView(systemImage: status.symbol)
         }
         .foregroundStyle(status.tint)
         .help(status.help)
@@ -904,7 +904,7 @@ private struct DesktopTaskEditor: View {
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         } icon: {
-                            Image(systemName: "exclamationmark.triangle")
+                            JunoIconView(systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(Color.junoDanger)
                         }
                     }

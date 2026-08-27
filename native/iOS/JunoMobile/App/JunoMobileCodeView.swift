@@ -761,6 +761,7 @@ private struct JunoMobileCodeTargetChip: View {
         // full-height chip stacked above the destination switch and made the
         // composer feel like a settings form.
         .frame(height: 36)
+        .frame(minWidth: 44, minHeight: 44)
         .modifier(JunoGlassCapsule())
         .contentShape(Capsule())
       }

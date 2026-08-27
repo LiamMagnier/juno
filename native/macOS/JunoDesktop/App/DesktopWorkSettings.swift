@@ -309,7 +309,7 @@ struct DesktopWorkHostTile: View {
     @ViewBuilder
     private func grantRow(_ grant: WorkGrantSummary) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: Self.grantSymbol(grant))
+            JunoIconView(systemImage: Self.grantSymbol(grant))
                 .foregroundStyle(Color.junoMutedForeground)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -350,7 +350,7 @@ struct DesktopWorkHostTile: View {
                 Button {
                     actions.revoke(WorkGrantID(value: grant.grantID))
                 } label: {
-                    Image(systemName: "minus.circle")
+                    JunoIconView(systemImage: "minus.circle")
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -386,7 +386,7 @@ struct DesktopWorkHostTile: View {
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: "lock")
+                JunoIconView(systemImage: "lock")
                     .foregroundStyle(Color.junoCaution)
             }
             Spacer(minLength: JunoSpace.snug)
@@ -813,7 +813,7 @@ private struct DesktopWorkBundleList: View {
                         Button {
                             remove(identifier)
                         } label: {
-                            Image(systemName: "minus.circle")
+                            JunoIconView(systemImage: "minus.circle")
                         }
                         .buttonStyle(.plain)
                         .junoSecondaryInk()

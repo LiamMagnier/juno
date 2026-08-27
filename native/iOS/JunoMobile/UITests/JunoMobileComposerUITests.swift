@@ -513,15 +513,19 @@ final class JunoMobileComposerUITests: XCTestCase {
         require(app.descendants(matching: .any)["juno.mobile.model-provider-rail"].firstMatch, app, timeout: 5)
     }
 
-    /// Send had the identical construction, so it had the identical defect.
+    /// The primary action owns one slot. On an empty chat that slot is the
+    /// website's voice affordance; once a draft or attachment exists it
+    /// becomes Send. Both states must keep Apple's minimum hit rectangle.
     @MainActor
-    func testTheSendButtonHasARealTouchTarget() {
+    func testThePrimaryActionHasARealTouchTarget() {
         let app = launch([])
 
         let send = app.buttons["juno.mobile.chat-send"]
-        require(send, app)
-        XCTAssertGreaterThanOrEqual(send.frame.width, 32, "Send hit area collapsed to the glyph")
-        XCTAssertGreaterThanOrEqual(send.frame.height, 32, "Send hit area collapsed to the glyph")
+        let voice = app.buttons["juno.mobile.chat-voice"]
+        let action = send.waitForExistence(timeout: 5) ? send : voice
+        require(action, app)
+        XCTAssertGreaterThanOrEqual(action.frame.width, 32, "Primary action hit area collapsed to the glyph")
+        XCTAssertGreaterThanOrEqual(action.frame.height, 32, "Primary action hit area collapsed to the glyph")
     }
 
     @MainActor

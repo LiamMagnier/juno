@@ -63,7 +63,7 @@ public struct NativeImageEditSheet: View {
         case .finished(let conversationID):
             status {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                    Label("The edited image is ready.", systemImage: "checkmark.circle")
+                    JunoIconLabel("The edited image is ready.", systemImage: "checkmark.circle")
                         .junoFont(size: 14, relativeTo: .body)
                         .foregroundStyle(Color.junoSuccess)
                     Text(
@@ -87,7 +87,7 @@ public struct NativeImageEditSheet: View {
         case .failed(let message):
             status {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                    Label(message, systemImage: "exclamationmark.triangle")
+                    JunoIconLabel(verbatim: message, systemImage: "exclamationmark.triangle")
                         .junoFont(size: 13, relativeTo: .body)
                         .foregroundStyle(Color.junoDanger)
                         .fixedSize(horizontal: false, vertical: true)

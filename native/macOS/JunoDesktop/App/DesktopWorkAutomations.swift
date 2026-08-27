@@ -87,7 +87,7 @@ struct DesktopWorkAutomationsView: View {
                 Button {
                     beginNewAutomation()
                 } label: {
-                    Label("New", systemImage: "plus")
+                    JunoIconLabel("New", systemImage: "plus")
                 }
                 .junoGlassButton()
                 .help("Create an automation")
@@ -105,7 +105,7 @@ struct DesktopWorkAutomationsView: View {
                     .padding(.vertical, JunoSpace.cozy)
             } else if model.schedules.isEmpty {
                 VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    Image(systemName: "clock.badge.checkmark")
+                    JunoIconView(systemImage: "clock.badge.checkmark")
                         .font(.title2)
                         .foregroundStyle(Color.junoAccent)
                     Text("Nothing is scheduled yet")
@@ -142,7 +142,7 @@ struct DesktopWorkAutomationsView: View {
             Spacer(minLength: 0)
             if let error = model.lastErrorDescription, model.phase != .ready {
                 HStack(alignment: .top, spacing: JunoSpace.tight) {
-                    Image(systemName: "wifi.exclamationmark")
+                    JunoIconView(systemImage: "wifi.exclamationmark")
                     Text(error)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -170,7 +170,7 @@ struct DesktopWorkAutomationsView: View {
             Task { await model.loadRuns(for: schedule.id) }
         } label: {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
-                Image(systemName: schedule.enabled ? "clock.badge.checkmark" : "pause.circle")
+                JunoIconView(systemImage: schedule.enabled ? "clock.badge.checkmark" : "pause.circle")
                     .font(.body.weight(.medium))
                     .foregroundStyle(schedule.enabled ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 22)
@@ -181,7 +181,7 @@ struct DesktopWorkAutomationsView: View {
                             .font(.system(.body, design: .default, weight: .medium))
                             .lineLimit(1)
                         if schedule.hasUnknownTrigger {
-                            Image(systemName: "sparkles")
+                            JunoIconView(systemImage: "sparkles")
                                 .font(.caption2)
                                 .foregroundStyle(Color.junoCaution)
                                 .help("This automation contains a trigger from a newer Juno version.")
@@ -235,7 +235,7 @@ struct DesktopWorkAutomationsView: View {
             )
         } else {
             VStack(spacing: JunoSpace.snug) {
-                Image(systemName: "clock.badge.checkmark")
+                JunoIconView(systemImage: "clock.badge.checkmark")
                     // Through `junoFont` rather than a frozen `.system(size:)`,
                     // so the glyph scales with the text below it at
                     // accessibility sizes — nothing here pins it in a plate.
@@ -317,7 +317,7 @@ private struct DesktopWorkAutomationDetail: View {
                     header
                     if let message = model.lastMutationExplanation {
                         HStack(alignment: .top, spacing: JunoSpace.tight) {
-                            Image(systemName: "checkmark.circle.fill")
+                            JunoIconView(systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(Color.junoSuccess)
                             Text(message)
                                 .junoCaption()
@@ -325,7 +325,7 @@ private struct DesktopWorkAutomationDetail: View {
                             Button {
                                 model.clearMutationMessage()
                             } label: {
-                                Image(systemName: "xmark")
+                                JunoIconView(systemImage: "xmark")
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Dismiss message")
@@ -380,7 +380,7 @@ private struct DesktopWorkAutomationDetail: View {
                     Button("Edit Automation", action: onEdit)
                     Button("Delete Automation", role: .destructive, action: onDelete)
                 } label: {
-                    Image(systemName: "ellipsis")
+                    JunoIconView(systemImage: "ellipsis")
                         .frame(width: 28, height: 28)
                 }
                 .junoGlassButton()
@@ -388,7 +388,10 @@ private struct DesktopWorkAutomationDetail: View {
             }
 
             HStack(spacing: JunoSpace.tight) {
-                Label(schedule.enabled ? "Active" : "Paused", systemImage: schedule.enabled ? "checkmark.circle" : "pause.circle")
+                JunoIconLabel(
+                    verbatim: schedule.enabled ? "Active" : "Paused",
+                    systemImage: schedule.enabled ? "checkmark.circle" : "pause.circle"
+                )
                     .foregroundStyle(schedule.enabled ? Color.junoSuccess : Color.junoMutedForeground)
                 Text("·")
                     .junoSecondaryInk()
@@ -410,7 +413,7 @@ private struct DesktopWorkAutomationDetail: View {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 ForEach(schedule.triggers) { trigger in
                     HStack(alignment: .top, spacing: JunoSpace.snug) {
-                        Image(systemName: trigger.enabled ? "circle.fill" : "circle")
+                        JunoIconView(systemImage: trigger.enabled ? "circle.fill" : "circle")
                             .font(.caption2)
                             .foregroundStyle(trigger.enabled ? Color.junoAccent : Color.junoMutedForeground)
                             .padding(.top, 4)
@@ -428,7 +431,10 @@ private struct DesktopWorkAutomationDetail: View {
                     }
                 }
                 if schedule.hasUnknownTrigger {
-                    Label("A newer Juno version added one of these triggers. It will stay intact when you edit this automation.", systemImage: "info.circle")
+                    JunoIconLabel(
+                        "A newer Juno version added one of these triggers. It will stay intact when you edit this automation.",
+                        systemImage: "info.circle"
+                    )
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
                         .fixedSize(horizontal: false, vertical: true)
@@ -478,7 +484,7 @@ private struct DesktopWorkAutomationDetail: View {
                 VStack(spacing: 0) {
                     ForEach(runs) { run in
                         HStack(spacing: JunoSpace.snug) {
-                            Image(systemName: runSymbol(run.status))
+                            JunoIconView(systemImage: runSymbol(run.status))
                                 .foregroundStyle(runColor(run.status))
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 2) {
@@ -501,7 +507,7 @@ private struct DesktopWorkAutomationDetail: View {
 
     private func contractFact(_ title: String, _ value: String, _ symbol: String) -> some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .foregroundStyle(Color.junoAccent)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
@@ -586,7 +592,7 @@ private struct DesktopWorkAutomationSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            Label(title, systemImage: symbol)
+            JunoIconLabel(verbatim: title, systemImage: symbol)
                 .font(.headline)
             content()
         }
@@ -650,7 +656,7 @@ private struct DesktopWorkAutomationEditor: View {
                     execution
                     safety
                     if let validationMessage {
-                        Label(validationMessage, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: validationMessage, systemImage: "exclamationmark.triangle")
                             .foregroundStyle(Color.junoDanger)
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
@@ -706,7 +712,7 @@ private struct DesktopWorkAutomationEditor: View {
                         )
                     )
                 } label: {
-                    Label("Add trigger", systemImage: "plus")
+                    JunoIconLabel("Add trigger", systemImage: "plus")
                 }
                 .junoGlassButton()
             }
@@ -750,7 +756,10 @@ private struct DesktopWorkAutomationEditor: View {
                     }
                 }
                 if reachableHosts.isEmpty {
-                    Label("No reachable Mac is available. Turn on Work hosting in Settings or choose Cloud.", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+                    JunoIconLabel(
+                        "No reachable Mac is available. Turn on Work hosting in Settings or choose Cloud.",
+                        systemImage: "desktopcomputer.trianglebadge.exclamationmark"
+                    )
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
                         .fixedSize(horizontal: false, vertical: true)
@@ -838,7 +847,7 @@ private struct DesktopWorkTriggerEditor: View {
                 Spacer()
                 if canRemove {
                     Button(role: .destructive, action: onRemove) {
-                        Image(systemName: "minus.circle")
+                        JunoIconView(systemImage: "minus.circle")
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove trigger")
@@ -909,7 +918,10 @@ private struct DesktopWorkTriggerEditor: View {
             Text("This automation runs only when you press Run Now.")
                 .junoCaption()
         default:
-            Label("This trigger listens for an event from a connected source. Use Advanced configuration to edit its filters.", systemImage: "bolt.horizontal")
+            JunoIconLabel(
+                "This trigger listens for an event from a connected source. Use Advanced configuration to edit its filters.",
+                systemImage: "bolt.horizontal"
+            )
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
         }

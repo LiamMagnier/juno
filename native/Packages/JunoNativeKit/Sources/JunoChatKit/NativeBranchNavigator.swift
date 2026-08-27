@@ -73,7 +73,7 @@ public struct NativeBranchNavigator: View {
         available: Bool
     ) -> some View {
         Button { onStep(offset) } label: {
-            Image(systemName: systemName)
+            JunoIconView(systemImage: systemName)
                 .junoFont(size: 10, relativeTo: .body, weight: .semibold)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())

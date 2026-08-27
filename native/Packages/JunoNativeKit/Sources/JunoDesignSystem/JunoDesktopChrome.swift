@@ -517,7 +517,7 @@ public struct JunoEmptyState: View {
                     JunoIconView(junoIcon, size: 28)
                         .foregroundStyle(Color.junoMutedForeground)
                 } else {
-                    Image(systemName: symbol)
+                    JunoIconView(systemImage: symbol)
                         // Not scaled with Dynamic Type: this glyph is centred in
                         // a fixed 72pt plate, so growing it at AX5 would push it
                         // outside the circle. The empty state's *text* below

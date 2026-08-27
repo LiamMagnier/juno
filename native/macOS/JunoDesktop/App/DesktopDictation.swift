@@ -171,7 +171,7 @@ struct DesktopDictation: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            JunoIconView(systemImage: systemName)
                 .junoFont(size: glyphSize, relativeTo: .body, weight: .semibold)
                 .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.junoForeground)
                 .frame(width: 38, height: 38)
@@ -194,7 +194,7 @@ struct DesktopDictation: View {
 
     private func unavailable(_ message: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: "mic.slash")
+            JunoIconView(systemImage: "mic.slash")
                 .junoFont(size: 15, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)

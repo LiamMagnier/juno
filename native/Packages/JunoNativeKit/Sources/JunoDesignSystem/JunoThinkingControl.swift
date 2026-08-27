@@ -308,7 +308,7 @@ private struct JunoModeToggle: View {
             isOn.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: symbol)
+                JunoIconView(systemImage: symbol)
                     .junoFont(size: 9, relativeTo: .body, weight: .semibold)
                 Text(title)
                     .junoFont(size: 11, relativeTo: .body, weight: .medium)
@@ -382,10 +382,10 @@ public struct JunoThinkingButton: View {
                 presented = true
             } label: {
                 HStack(spacing: JunoSpace.hairline) {
-                    Image(systemName: "gauge.with.dots.needle.33percent")
+                    JunoIconView(systemImage: "gauge.with.dots.needle.33percent")
                         .imageScale(.small)
                     Text(ladder.label(for: stopID)).lineLimit(1)
-                    Image(systemName: "chevron.up")
+                    JunoIconView(systemImage: "chevron.up")
                         .font(.caption2.weight(.semibold))
                 }
                 .font(.caption)

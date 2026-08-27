@@ -397,7 +397,7 @@ struct DesktopArtifactsScreen: View {
 
             HStack(spacing: JunoSpace.cozy) {
                 HStack(spacing: JunoSpace.tight) {
-                    Image(systemName: "magnifyingglass")
+                    JunoIconView(systemImage: "magnifyingglass")
                         .junoSecondaryInk()
                         .accessibilityHidden(true)
                     TextField("Search artifacts", text: $searchText)
@@ -407,7 +407,7 @@ struct DesktopArtifactsScreen: View {
                         Button {
                             searchText = ""
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
+                            JunoIconView(systemImage: "xmark.circle.fill")
                                 .junoMetaInk()
                         }
                         .buttonStyle(.plain)
@@ -589,7 +589,7 @@ struct DesktopArtifactsScreen: View {
                     .padding(JunoSpace.snug)
                 } else {
                     VStack(spacing: JunoSpace.cozy) {
-                        Image(systemName: DesktopArtifactKindName.symbol(artifact.kind))
+                        JunoIconView(systemImage: DesktopArtifactKindName.symbol(artifact.kind))
                             .font(.system(.largeTitle, weight: .light))
                         Text(DesktopArtifactKindName.singular(artifact.kind))
                             .junoMono()
@@ -633,7 +633,7 @@ struct DesktopArtifactsScreen: View {
         ) {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                    Image(systemName: status.symbol)
+                    JunoIconView(systemImage: status.symbol)
                         .foregroundStyle(status.tint)
                         .accessibilityHidden(true)
                     Text(status.message)
@@ -1151,7 +1151,7 @@ struct DesktopArtifactsScreen: View {
                 historyVisible = false
                 libraryVisible = true
             } label: {
-                Label("All artifacts", systemImage: "chevron.left")
+                JunoIconLabel("All artifacts", systemImage: "chevron.left")
             }
             .buttonStyle(.plain)
             .contentShape(.rect)
@@ -1182,7 +1182,7 @@ struct DesktopArtifactsScreen: View {
             viewSwitch
 
             Toggle(isOn: $showingChanges) {
-                Label("Changes", systemImage: "plus.forwardslash.minus")
+                JunoIconLabel("Changes", systemImage: "plus.forwardslash.minus")
             }
             .toggleStyle(.button)
             .labelStyle(.iconOnly)
@@ -1195,7 +1195,10 @@ struct DesktopArtifactsScreen: View {
             Button {
                 copyDisplayed()
             } label: {
-                Label(showingChanges ? "Copy Changes" : "Copy Source", systemImage: "doc.on.doc")
+                JunoIconLabel(
+                    verbatim: showingChanges ? "Copy Changes" : "Copy Source",
+                    systemImage: "doc.on.doc"
+                )
             }
             .labelStyle(.iconOnly)
             .disabled(targetEntry == nil)
@@ -1211,7 +1214,7 @@ struct DesktopArtifactsScreen: View {
             Button {
                 previewReloadID = UUID()
             } label: {
-                Label("Reload preview", systemImage: "arrow.clockwise")
+                JunoIconLabel("Reload preview", systemImage: "arrow.clockwise")
             }
             .labelStyle(.iconOnly)
             // The Canvas is reloadable too, and re-running an artifact is the
@@ -1272,7 +1275,7 @@ struct DesktopArtifactsScreen: View {
                 }
                 .disabled(artifact == nil || model.isMutating)
             } label: {
-                Label("Artifact actions", systemImage: "ellipsis")
+                JunoIconLabel("Artifact actions", systemImage: "ellipsis")
             }
             .labelStyle(.iconOnly)
             .disabled(artifact == nil || model.isExporting)
@@ -1286,7 +1289,7 @@ struct DesktopArtifactsScreen: View {
             Button {
                 historyVisible.toggle()
             } label: {
-                Label("Version history", systemImage: "clock.arrow.circlepath")
+                JunoIconLabel("Version history", systemImage: "clock.arrow.circlepath")
             }
             .labelStyle(.iconOnly)
             .disabled(artifact == nil)

@@ -70,7 +70,7 @@ public struct NativeSharedLinksView: View {
             Spacer(minLength: JunoSpace.snug)
 
             ShareLink(item: share.url) {
-                Image(systemName: "square.and.arrow.up")
+                JunoIconView(systemImage: "square.and.arrow.up")
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.junoMutedForeground)
@@ -82,7 +82,7 @@ public struct NativeSharedLinksView: View {
                 if revoking.contains(share.id) {
                     ProgressView().controlSize(.small)
                 } else {
-                    Image(systemName: "trash")
+                    JunoIconView(systemImage: "trash")
                 }
             }
             .buttonStyle(.plain)

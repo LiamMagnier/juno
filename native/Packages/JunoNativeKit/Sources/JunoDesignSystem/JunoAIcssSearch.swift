@@ -81,7 +81,7 @@ public struct JunoAIcssWebSearch: View {
 
     private func labelRow(_ query: String) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
+            JunoIconView(systemImage: "magnifyingglass")
                 .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
             JunoAIcssThinkingLabel(
@@ -93,7 +93,7 @@ public struct JunoAIcssWebSearch: View {
             .truncationMode(.tail)
             if !sites.isEmpty {
                 Button { open.toggle() } label: {
-                    Image(systemName: "chevron.up")
+                    JunoIconView(systemImage: "chevron.up")
                         .junoFont(size: 9, relativeTo: .caption2, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
                         .rotationEffect(.degrees(open ? 0 : 180))
@@ -163,16 +163,16 @@ public struct JunoAIcssWebSearch: View {
     /// Dashed ring → globe → check, in one 12pt box.
     private func bullet(_ state: JunoAIcssSearchSite.State) -> some View {
         ZStack {
-            Image(systemName: "circle.dotted")
+            JunoIconView(systemImage: "circle.dotted")
                 .junoFont(size: 11, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .pending ? 1 : 0)
-            Image(systemName: "globe")
+            JunoIconView(systemImage: "globe")
                 .junoFont(size: 11, relativeTo: .caption)
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .loading ? 1 : 0)
                 .scaleEffect(state == .loading ? 1 : 0.85)
-            Image(systemName: "checkmark.circle")
+            JunoIconView(systemImage: "checkmark.circle")
                 .junoFont(size: 11, relativeTo: .caption)
                 .foregroundStyle(Color.junoSuccess)
                 .opacity(state == .done ? 1 : 0)

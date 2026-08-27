@@ -83,7 +83,7 @@ struct DesktopUsageScreen: View {
                 Button {
                     Task { await load(force: true) }
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
                 }
                 .disabled(isLoading)
                 .help("Re-read your usage from the ledger")
@@ -398,7 +398,7 @@ private struct DesktopUsageSurfacesCard: View {
             ForEach(rows) { row in
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                        Image(systemName: row.symbol)
+                        JunoIconView(systemImage: row.symbol)
                             .font(.caption)
                             .junoSecondaryInk()
                             .frame(width: 16)
@@ -709,7 +709,7 @@ private struct DesktopUsageNotice: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)

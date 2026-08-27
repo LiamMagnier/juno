@@ -250,7 +250,7 @@ public struct NativeFilePreviewTile: View {
 
     private var fallback: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: file.isImage ? "photo" : "doc.text")
+            JunoIconView(systemImage: file.isImage ? "photo" : "doc.text")
                 .junoFont(size: 26, relativeTo: .body)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)

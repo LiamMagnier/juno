@@ -2,7 +2,7 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The five things the inspector is *for*.
+/// The six things the inspector is *for*.
 ///
 /// The pane's width decides what can honestly live in it: lists can, editors and
 /// viewports cannot. So the inspector keeps exactly the list-shaped concerns and
@@ -18,6 +18,7 @@ import JunoDesignSystem
 /// happening in parallel right now" was three scroll positions from the top of a
 /// pane the reader had no reason to open.
 public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
+    case environment
     case changes
     case activity
     case subagents
@@ -28,6 +29,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 
     public var label: String {
         switch self {
+        case .environment: "Environment"
         case .changes: "Changes"
         case .activity: "Activity"
         case .subagents: "Sub-agents"
@@ -45,6 +47,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
     /// tooltip and the accessibility label.
     public var segmentLabel: String {
         switch self {
+        case .environment: "Environment"
         case .changes: "Changes"
         case .activity: "Activity"
         case .subagents: "Agents"
@@ -55,6 +58,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 
     public var symbol: String {
         switch self {
+        case .environment: "externaldrive"
         case .changes: "arrow.triangle.2.circlepath"
         case .activity: "waveform.path.ecg"
         case .subagents: "person.2"
@@ -65,6 +69,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 
     public var purpose: String {
         switch self {
+        case .environment: "Working tree, branch, changes and sources for this task"
         case .changes: "Files this session changed, and the way into the review"
         // Screen control lives here, so the help names it: a reader looking for
         // the kill switch should not have to open three panes to find it.
@@ -84,12 +89,21 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 public struct InspectorView: View {
     @Bindable private var controller: SessionController
     private let openPreview: (() -> Void)?
-    @SceneStorage("juno.code.inspector.pane") private var storedPane =
-        CodeInspectorPane.changes.rawValue
+    private let openSources: (() -> Void)?
+    private let openWorkspace: (() -> Void)?
+    @SceneStorage("juno.code.inspector.pane.v2") private var storedPane =
+        CodeInspectorPane.environment.rawValue
 
-    public init(controller: SessionController, openPreview: (() -> Void)? = nil) {
+    public init(
+        controller: SessionController,
+        openPreview: (() -> Void)? = nil,
+        openSources: (() -> Void)? = nil,
+        openWorkspace: (() -> Void)? = nil
+    ) {
         self.controller = controller
         self.openPreview = openPreview
+        self.openSources = openSources
+        self.openWorkspace = openWorkspace
     }
 
     /// The session's own review — the same object the canvas renders.
@@ -111,7 +125,7 @@ public struct InspectorView: View {
 
     private var pane: Binding<CodeInspectorPane> {
         Binding(
-            get: { CodeInspectorPane(rawValue: storedPane) ?? .changes },
+            get: { CodeInspectorPane(rawValue: storedPane) ?? .environment },
             set: { storedPane = $0.rawValue }
         )
     }
@@ -133,28 +147,41 @@ public struct InspectorView: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                Text("Inspector")
+                Text(pane.wrappedValue.label)
                     .font(.headline)
                 Spacer(minLength: 0)
-                Picker("Inspector pane", selection: pane) {
-                    ForEach(CodeInspectorPane.allCases) { candidate in
-                        Label {
-                            Text(segmentLabel(for: candidate))
-                        } icon: {
-                            JunoIconView(systemImage: candidate.symbol, size: 15)
+                Menu {
+                    Section("Inspect") {
+                        ForEach(CodeInspectorPane.allCases) { candidate in
+                            Button {
+                                pane.wrappedValue = candidate
+                            } label: {
+                                HStack {
+                                    JunoIconView(systemImage: candidate.symbol, size: 14)
+                                    Text(segmentLabel(for: candidate))
+                                    Spacer(minLength: JunoSpace.regular)
+                                    if pane.wrappedValue == candidate {
+                                        JunoIconView(.check, size: 13)
+                                    }
+                                }
+                            }
                         }
-                            .tag(candidate)
                     }
+                } label: {
+                    JunoIconView(.ellipsis, size: 15)
+                        .frame(width: 30, height: 30)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Circle())
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
+                .menuStyle(.borderlessButton)
+                .help("Choose inspector pane")
+                .accessibilityLabel("Inspector pane")
+                .accessibilityValue(paneAccessibilityValue)
+                .accessibilityIdentifier("juno.code.inspector.pane")
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
             .help(pane.wrappedValue.purpose)
-            .accessibilityValue(paneAccessibilityValue)
-            .accessibilityIdentifier("juno.code.inspector.pane")
 
             Divider().overlay(Color.junoSeparator)
 
@@ -163,6 +190,13 @@ public struct InspectorView: View {
             // the middle of the column.
             Group {
                 switch pane.wrappedValue {
+                case .environment:
+                    EnvironmentTab(
+                        controller: controller,
+                        review: review,
+                        openSources: openSources,
+                        openWorkspace: openWorkspace
+                    )
                 case .changes:
                     ChangesTab(controller: controller, review: review)
                 case .activity:

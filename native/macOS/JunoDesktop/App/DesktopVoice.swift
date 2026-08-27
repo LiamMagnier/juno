@@ -627,7 +627,7 @@ struct DesktopVoiceDock: View {
     /// thing with two severities instead of two unrelated boxes.
     private func noticeBanner(_ notice: String) -> some View {
         messageStrip(tint: Color.junoCaution) {
-            Label(notice, systemImage: "exclamationmark.circle")
+            JunoIconLabel(verbatim: notice, systemImage: "exclamationmark.circle")
                 .junoFont(size: 12, relativeTo: .callout)
                 .lineSpacing(2)
                 .multilineTextAlignment(.center)
@@ -730,7 +730,7 @@ struct DesktopVoiceDock: View {
                         controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
-                            Label(provider.displayName, systemImage: "checkmark")
+                            JunoIconLabel(verbatim: provider.displayName, systemImage: "checkmark")
                         } else {
                             Text(provider.displayName)
                         }
@@ -758,7 +758,7 @@ struct DesktopVoiceDock: View {
                 .accessibilityIdentifier("juno.desktop.voice-share-screen")
             }
         } label: {
-            Image(systemName: "chevron.down")
+            JunoIconView(systemImage: "chevron.down")
                 .junoFont(size: 13, relativeTo: .body, weight: .medium)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
@@ -789,7 +789,7 @@ struct DesktopVoiceDock: View {
                         .controlSize(.small)
                         .tint(.white)
                 } else {
-                    Image(systemName: "phone.down.fill")
+                    JunoIconView(systemImage: "phone.down.fill")
                         .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(.white)
                 }
@@ -820,7 +820,7 @@ struct DesktopVoiceDock: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            JunoIconView(systemImage: symbol)
                 .junoFont(size: 14, relativeTo: .body, weight: .medium)
                 // `Color.junoCanvas`, never the `.background` shape style: that
                 // one resolves against whatever surface the control is sitting

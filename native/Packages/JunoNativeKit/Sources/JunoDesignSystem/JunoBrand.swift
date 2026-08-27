@@ -127,10 +127,30 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     /// of native Juno.
     public static func from(systemImage: String) -> JunoIcon {
         let value = systemImage.lowercased()
-        if value.contains("chevron") || value.contains("arrow.right") { return .chevronRight }
         if value.contains("arrow.up.right") || value.contains("external") || value.contains("link") {
             return .external
         }
+        if value.contains("chevron") || value == "arrow.right" { return .chevronRight }
+        if value.contains("square.and.pencil") { return .new }
+        if value.contains("square.and.arrow.up") { return .share }
+        if value.contains("point.3") || value.contains("powerplug") || value.contains("wifi") {
+            return .connections
+        }
+        if value.contains("telescope") || value.contains("doc.text.magnifyingglass") {
+            return .research
+        }
+        if value.contains("binocular") { return .search }
+        if value.contains("books.vertical") { return .library }
+        if value.contains("list.bullet") { return .files }
+        if value.contains("square.grid") || value.contains("grid") { return .artifacts }
+        if value.contains("scope") || value.contains("rectangle.3.group") { return .artifactsTool }
+        if value.contains("slider") || value.contains("sidebar") { return .sliders }
+        if value.contains("shippingbox") || value.contains("desktopcomputer") {
+            return .device
+        }
+        if value.contains("theatermask") { return .appearance }
+        if value.contains("phone.down") || value.contains("rectangle.slash") { return .close }
+        if value.contains("mic") { return .mic }
         if value.contains("arrow.down") { return .arrowDown }
         if value.contains("arrow.up") { return .send }
         if value.contains("arrow") {
@@ -229,6 +249,21 @@ public struct JunoIconLabel: View {
     public init(verbatim title: String, icon: JunoIcon, size: CGFloat = 15) {
         self.title = Text(title)
         self.icon = icon
+        self.size = size
+    }
+
+    /// Source-compatible bridge for older menu labels. The visible glyph still
+    /// comes from Juno's generated Lucide catalog rather than SF Symbols.
+    public init(_ title: LocalizedStringKey, systemImage: String, size: CGFloat = 15) {
+        self.title = Text(title)
+        self.icon = .from(systemImage: systemImage)
+        self.size = size
+    }
+
+    /// String-title counterpart used by runtime status and error messages.
+    public init(verbatim title: String, systemImage: String, size: CGFloat = 15) {
+        self.title = Text(title)
+        self.icon = .from(systemImage: systemImage)
         self.size = size
     }
 

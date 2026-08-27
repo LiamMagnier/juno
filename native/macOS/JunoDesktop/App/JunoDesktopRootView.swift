@@ -360,7 +360,7 @@ private struct JunoDesktopLoadingView: View {
 /// That surface is one centred column on the warm canvas — dot field, the Juno
 /// mark, the mono wordmark, a white card, then fine print — not the two-pane
 /// marketing split this used to be. The split's right half was a coral rectangle
-/// holding `Image(systemName: "circle.grid.cross")`, an SF Symbol standing in for
+/// holding `JunoIconView(systemImage: "circle.grid.cross")`, an SF Symbol standing in for
 /// a brand mark Juno actually ships; and its headline asked for
 /// `Font.custom("Newsreader", …)`, which resolves nothing, because the bundled
 /// faces register under their PostScript names and not under that family. It
@@ -378,7 +378,7 @@ private struct JunoDesktopOfflineBanner: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: "bolt.horizontal.circle")
+            JunoIconView(systemImage: "bolt.horizontal.circle")
             VStack(alignment: .leading, spacing: 2) {
                 Text("Juno is unreachable — showing your local copy")
                     .font(.callout)
@@ -598,7 +598,7 @@ private struct JunoDesktopLocalStoreRecoveryNotice: View {
             Rectangle().fill(Color.junoHairline).frame(height: 1)
 
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Image(systemName: "lock.slash")
+                JunoIconView(systemImage: "lock.slash")
                     .foregroundStyle(Color.junoCaution)
                 // The error line above already says the store cannot be
                 // unlocked; this says why, rather than saying it twice.

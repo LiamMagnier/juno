@@ -64,7 +64,7 @@ public struct TranscriptView: View {
         let rowContext = context
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                     if events.isEmpty {
                         PreRunSuggestions(controller: controller, focus: focus)
                     } else {
@@ -81,9 +81,9 @@ public struct TranscriptView: View {
                         isPinnedToBottom: isPinnedToBottom
                     )
                 }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.top, JunoSpace.regular)
-                .padding(.bottom, JunoSpace.snug)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.top, JunoSpace.section)
+                .padding(.bottom, JunoSpace.regular)
                 .frame(maxWidth: Self.measure, alignment: .leading)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, CodeSessionLayout.inset)

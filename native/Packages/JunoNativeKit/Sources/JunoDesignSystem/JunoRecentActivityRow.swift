@@ -14,7 +14,7 @@ public struct JunoRecentActivityRow: View {
 
     public var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: item.kind.systemImage)
+            JunoIconView(systemImage: item.kind.systemImage)
                 .junoFont(size: 13, relativeTo: .body, weight: .medium)
                 .foregroundStyle(item.needsAttention ? Color.junoCaution : Color.junoSidebarForeground)
                 .frame(width: 18)

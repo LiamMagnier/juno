@@ -153,7 +153,7 @@ struct TranscriptRow: View {
     /// than a chat bubble; the task is the subject here, not a sequence of
     /// floating message pills.
     private func userRow(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text("You")
                 .font(.caption.weight(.semibold))
                 .junoSecondaryInk()
@@ -163,7 +163,12 @@ struct TranscriptRow: View {
                 .multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, JunoSpace.snug)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoRaised.opacity(0.72))
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("You said: \(text)")
     }
@@ -179,13 +184,9 @@ struct TranscriptRow: View {
     /// writes is rendered as the ordered list it is, rather than dressed up as a
     /// checklist whose boxes nothing could ever tick.
     private func assistantRow(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Text("Juno")
-                .font(.caption.weight(.semibold))
-                .junoSecondaryInk()
-            JunoMarkdownText(text)
-        }
+        JunoMarkdownText(text)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JunoSpace.tight)
             .accessibilityLabel("Juno said: \(text)")
     }
 
@@ -298,14 +299,12 @@ struct TranscriptRow: View {
             .junoCaption()
             .padding(.leading, 18 + JunoSpace.snug)
         }
-        .padding(.top, JunoSpace.regular)
-        .padding(.bottom, JunoSpace.snug)
+        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-        }
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoRaised.opacity(0.72))
+        )
         .accessibilityElement(children: .combine)
     }
 

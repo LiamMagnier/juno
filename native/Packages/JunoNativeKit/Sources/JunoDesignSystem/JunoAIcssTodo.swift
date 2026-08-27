@@ -114,25 +114,25 @@ public struct JunoAIcssTodoList: View {
     private var headerGlyph: some View {
         ZStack {
             if hovering || !open {
-                Image(systemName: "chevron.down")
+                JunoIconView(systemImage: "chevron.down")
                     .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
                     .rotationEffect(.degrees(open ? 0 : -90))
             } else if allDone {
-                Image(systemName: "checkmark.circle.fill")
+                JunoIconView(systemImage: "checkmark.circle.fill")
                     .junoFont(size: 14, relativeTo: .body)
                     .foregroundStyle(Color.junoSuccess)
             } else if blocked > 0, !running {
                 // The plan has stopped and cannot continue on its own. A pie here
                 // would keep implying forward motion at whatever fraction it had
                 // reached when it stalled.
-                Image(systemName: "exclamationmark.circle")
+                JunoIconView(systemImage: "exclamationmark.circle")
                     .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoCaution)
             } else if running {
                 pie
             } else {
-                Image(systemName: "list.bullet")
+                JunoIconView(systemImage: "list.bullet")
                     .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
             }
@@ -178,16 +178,16 @@ public struct JunoAIcssTodoList: View {
     /// cannot shift as a task changes hands.
     private func glyph(_ state: JunoAIcssTodoItem.State) -> some View {
         ZStack {
-            Image(systemName: "circle.dotted")
+            JunoIconView(systemImage: "circle.dotted")
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .pending ? 1 : 0)
-            Image(systemName: "arrow.right.circle")
+            JunoIconView(systemImage: "arrow.right.circle")
                 .foregroundStyle(Color.junoForeground)
                 .opacity(state == .active ? 1 : 0)
-            Image(systemName: "checkmark.circle")
+            JunoIconView(systemImage: "checkmark.circle")
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .done ? 1 : 0)
-            Image(systemName: "exclamationmark.circle")
+            JunoIconView(systemImage: "exclamationmark.circle")
                 .foregroundStyle(Color.junoCaution)
                 .opacity(state == .blocked ? 1 : 0)
         }

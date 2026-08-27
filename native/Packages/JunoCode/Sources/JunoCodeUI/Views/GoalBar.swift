@@ -64,16 +64,17 @@ struct GoalBar: View {
                 // outside click to dismiss it first.
                 .onDisappear { showsDetails = false }
             }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.snug)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(Color.junoRaised.opacity(0.55))
+            )
             .frame(maxWidth: CodeSessionLayout.measure, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, CodeSessionLayout.inset)
-            .padding(.vertical, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
             .background(Color.junoCanvas)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(height: 1)
-            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("juno.code.goal.bar")
         }
@@ -215,4 +216,3 @@ private func lifecycleTint(_ lifecycle: GoalLifecycle) -> Color {
     case .completed: Color.junoSuccess
     }
 }
-

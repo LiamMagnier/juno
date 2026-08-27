@@ -1554,25 +1554,27 @@ private struct JunoMobileSidebarDrawer: View {
   /// its own illustration of the mistake is several tinted controls at once.
   private var newChatButton: some View {
     Button(action: newChat) {
-      HStack(spacing: 4) {
-        JunoIconView(.new, size: 13)
+      HStack(spacing: 3) {
+        JunoIconView(.new, size: 12)
         Text("navigation.chat")
-          .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+          .junoFont(size: 12, relativeTo: .subheadline, weight: .semibold)
       }
       // Keep the visible pill compact; the outer frame below supplies the
       // full 48pt hit target shared with Profile. The previous large control
       // size added the system's own vertical insets on top of a 48pt label,
       // which made the glass read as a 70pt slab in the drawer.
       // The tinted glass style adds its own optical insets around the label;
-      // 64pt here lands at the same visual weight as the 48pt profile control
-      // instead of reading like a second toolbar. Keep the label's measured
-      // width explicit so Dynamic Type can still negotiate the text without
-      // making the drawer's primary action sprawl.
-      .padding(.horizontal, 2)
-      .frame(width: 52, height: 26)
+      // a 46pt content minimum keeps the pill subordinate to the profile
+      // control while still leaving room for the icon and localized label.
+      .padding(.horizontal, 1)
+      .frame(minWidth: 46, minHeight: 24)
     }
-    .junoProminentAction()
-    .controlSize(.mini)
+    // GlassProminentButtonStyle has a platform minimum that makes this small
+    // drawer action read like a toolbar slab. Keep the native Glass treatment,
+    // but use the compact accent-glass primitive so the label owns its width.
+    .buttonStyle(.plain)
+    .foregroundStyle(Color.junoOnAccent)
+    .junoAccentGlass(in: Capsule())
     .frame(height: 48)
     .disabled(!canCreateChat)
     .opacity(canCreateChat ? 1 : 0.5)
