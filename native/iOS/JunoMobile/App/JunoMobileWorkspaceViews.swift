@@ -338,8 +338,7 @@ private struct JunoMobileProjectFileRow: View {
           Divider()
           Button("Delete", role: .destructive, action: delete)
         } label: {
-          Image(systemName: "ellipsis")
-            .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+          JunoIconView(.ellipsis, size: 16)
             .junoSecondaryInk()
             .frame(width: 44, height: 44)
             .contentShape(Rectangle())
@@ -704,19 +703,17 @@ private struct JunoMobileProjectDetail: View {
       ScrollView(.horizontal) {
         HStack(spacing: JunoSpace.tight) {
           if project.starred {
-            JunoMobileMetaChip(title: "Pinned", systemImage: "pin.fill")
+            JunoMobileMetaChip(title: "Pinned", icon: .pin)
           }
           JunoMobileMetaChip(
             title: count(model.selectedConversations.count, "conversation"),
-            systemImage: "bubble.left.and.text.bubble.right"
+            icon: .conversation
           )
           JunoMobileMetaChip(
             title: count(model.selectedFiles.count, "file"),
-            systemImage: "paperclip"
+            icon: .attach
           )
         }
-        // 1pt, so the chips' own shadow-free capsules are not clipped by
-        // the scroll view's bounds on either edge.
         .padding(.vertical, 1)
       }
       .scrollBounceBehavior(.basedOnSize)
@@ -733,7 +730,7 @@ private struct JunoMobileProjectDetail: View {
     JunoMobileWorkspaceSection(
       title: "Instructions",
       actionTitle: project.instructions.isEmpty ? "Add" : "Edit",
-      actionImage: project.instructions.isEmpty ? "plus" : "pencil",
+      actionIcon: project.instructions.isEmpty ? .plus : .pencil,
       action: (project.isPending || model.isMutating)
         ? nil
         : {
@@ -757,7 +754,7 @@ private struct JunoMobileProjectDetail: View {
     JunoMobileWorkspaceSection(
       title: "Conversations",
       actionTitle: "New chat",
-      actionImage: "square.and.pencil",
+      actionIcon: .new,
       action: (project.isPending || conversationModel == nil)
         ? nil
         : {
@@ -795,7 +792,7 @@ private struct JunoMobileProjectDetail: View {
     JunoMobileWorkspaceSection(
       title: "Assistant",
       actionTitle: assistantConfiguration == nil ? "Set up" : "Edit",
-      actionImage: assistantConfiguration == nil ? "plus" : "slider.horizontal.3",
+      actionIcon: assistantConfiguration == nil ? .plus : .sliders,
       action: workspaceModel == nil || project.isPending
         ? nil : { showingAssistant = true },
       footnote: "Persona, model, tools and knowledge sync across your Juno devices.",
@@ -807,7 +804,7 @@ private struct JunoMobileProjectDetail: View {
             JunoMobileAssistantFact(
               title: "Persona",
               value: assistantConfiguration.personaName ?? project.name,
-              systemImage: "person.crop.circle"
+              icon: .user
             )
             Divider()
             JunoMobileAssistantFact(
@@ -815,21 +812,21 @@ private struct JunoMobileProjectDetail: View {
               value: conversationModel?.selectableModels.first {
                 $0.id == assistantConfiguration.preferredModelID
               }?.displayName ?? "Account default",
-              systemImage: "sparkles"
+              icon: .models
             )
             Divider()
             JunoMobileAssistantFact(
               title: "Tools",
               value: assistantConfiguration.toolAccess.isRestricted
                 ? "Restricted" : "Account defaults",
-              systemImage: "wrench.and.screwdriver"
+              icon: .tools
             )
             if !assistantConfiguration.knowledgeFileIDs.isEmpty {
               Divider()
               JunoMobileAssistantFact(
                 title: "Knowledge",
                 value: count(assistantConfiguration.knowledgeFileIDs.count, "file"),
-                systemImage: "books.vertical"
+                icon: .knowledge
               )
             }
           }
@@ -848,8 +845,7 @@ private struct JunoMobileProjectDetail: View {
     } label: {
       HStack(spacing: JunoSpace.cozy) {
         if conversation.pinned {
-          Image(systemName: "pin.fill")
-            .junoFont(size: 11, relativeTo: .caption2)
+          JunoIconView(.pin, size: 12)
             .foregroundStyle(Color.junoAccent)
         }
         VStack(alignment: .leading, spacing: 2) {
@@ -862,8 +858,7 @@ private struct JunoMobileProjectDetail: View {
             .foregroundStyle(Color.junoMutedForeground)
         }
         Spacer(minLength: 8)
-        Image(systemName: "chevron.right")
-          .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+        JunoIconView(.chevronRight, size: 12)
           .foregroundStyle(Color.junoMutedForeground)
       }
       .padding(.horizontal, JunoSpace.regular)
@@ -878,7 +873,7 @@ private struct JunoMobileProjectDetail: View {
     JunoMobileWorkspaceSection(
       title: "Files",
       actionTitle: "Add file",
-      actionImage: "paperclip",
+      actionIcon: .attach,
       action: (project.isPending || model.isPerformingFileAction)
         ? nil
         : { showingImporter = true },
@@ -1148,14 +1143,22 @@ private struct JunoMobileProjectDetail: View {
 private struct JunoMobileAssistantFact: View {
   let title: String
   let value: String
-  let systemImage: String
+  var icon: JunoIcon?
+  var systemImage: String?
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: systemImage)
-        .frame(width: 20)
-        .foregroundStyle(Color.junoAccent)
-        .accessibilityHidden(true)
+      Group {
+        if let icon {
+          JunoIconView(icon, size: 16)
+        } else if let systemImage {
+          Image(systemName: systemImage)
+            .junoFont(size: 14, relativeTo: .subheadline)
+        }
+      }
+      .frame(width: 20)
+      .foregroundStyle(Color.junoAccent)
+      .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
           .junoFont(size: 12, relativeTo: .caption)

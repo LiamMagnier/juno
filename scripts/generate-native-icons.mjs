@@ -85,6 +85,36 @@ const ICONS = {
   web: "globe",
   artifactsTool: "layout-template",
   memory: "notebook-pen",
+
+  // Settings, profile & sections
+  usage: "chart-bar",
+  appearance: "palette",
+  writing: "align-left",
+  language: "globe",
+  models: "sparkles",
+  notifications: "bell",
+  about: "info",
+  user: "user",
+  tools: "wrench",
+  knowledge: "book-open",
+  sliders: "sliders-horizontal",
+
+  // Action controls & navigation glyphs
+  mic: "mic",
+  send: "arrow-up",
+  stop: "square",
+  plus: "plus",
+  chevronRight: "chevron-right",
+  chevronDown: "chevron-down",
+  chevronUp: "chevron-up",
+  trash: "trash-2",
+  pencil: "pencil",
+  copy: "copy",
+  check: "check",
+  close: "x",
+  ellipsis: "ellipsis",
+  share: "share-2",
+  terminal: "terminal",
 };
 
 const TARGETS = [
@@ -103,7 +133,7 @@ function readIconNode(name, seen = new Set()) {
   const reexport = src.match(/export \{ default \} from '\.\/([^']+)\.mjs'/);
   if (reexport) return readIconNode(reexport[1], seen);
 
-  const body = src.match(/const __iconNode = (\[[\s\S]*?\n\]);/);
+  const body = src.match(/const __iconNode = (\[[\s\S]*?\]);/);
   if (!body) throw new Error(`no __iconNode in ${name}`);
   // The literal is plain JSON-ish JS (tag + attribute object per element).
   return new Function(`return ${body[1]}`)();

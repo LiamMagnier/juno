@@ -7,6 +7,14 @@ import { serializeSessionCommand } from "@/lib/code-remote-sessions";
 
 export const runtime = "nodejs";
 
+const enqueueSchema = z.object({
+  sessionID: z.string().min(1).max(200).optional(),
+  sessionId: z.string().min(1).max(200).optional(),
+  kind: z.string().min(1).max(100),
+  payload: z.record(z.string(), z.unknown()).optional().default({}),
+  idempotencyKey: z.string().min(1).max(200),
+});
+
 const ackSchema = z.object({
   commandId: z.string().min(1).max(200),
   status: z.enum(["completed", "failed"]),
@@ -51,7 +59,42 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
   if (!user) return error;
   const { deviceId } = await params;
   if (!(await ownedDevice(deviceId, user.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const parsed = ackSchema.safeParse(await req.json().catch(() => null));
+
+  const rawBody = await req.json().catch(() => null);
+  if (!rawBody || typeof rawBody !== "object") {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  // Client enqueue path (mobile app dispatching a command to a host machine)
+  if ("kind" in rawBody || "idempotencyKey" in rawBody) {
+    const parsed = enqueueSchema.safeParse(rawBody);
+    if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    const sid = parsed.data.sessionID || parsed.data.sessionId;
+    if (!sid) return NextResponse.json({ error: "Missing sessionID" }, { status: 400 });
+
+    const command = await prisma.codeSessionCommand.upsert({
+      where: {
+        userId_idempotencyKey: {
+          userId: user.id,
+          idempotencyKey: parsed.data.idempotencyKey,
+        },
+      },
+      update: {},
+      create: {
+        userId: user.id,
+        deviceId,
+        sessionId: sid,
+        kind: parsed.data.kind,
+        payload: (parsed.data.payload ?? {}) as Prisma.InputJsonValue,
+        idempotencyKey: parsed.data.idempotencyKey,
+        status: "pending",
+      },
+    });
+    return NextResponse.json({ command: serializeSessionCommand(command) });
+  }
+
+  // Host acknowledgment path (device completing / failing a command)
+  const parsed = ackSchema.safeParse(rawBody);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const updated = await prisma.codeSessionCommand.updateMany({
     where: { id: parsed.data.commandId, userId: user.id, deviceId, status: "claimed" },

@@ -1509,8 +1509,11 @@ private struct JunoMobileSidebarDrawer: View {
   /// its own illustration of the mistake is several tinted controls at once.
   private var newChatButton: some View {
     Button(action: newChat) {
-      Label("navigation.chat", systemImage: "square.and.pencil")
-        .fontWeight(.semibold)
+      HStack(spacing: 8) {
+        JunoIconView(.new, size: 15)
+        Text("navigation.chat")
+          .fontWeight(.semibold)
+      }
     }
     .junoProminentAction()
     .controlSize(.regular)

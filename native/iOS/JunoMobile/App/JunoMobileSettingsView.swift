@@ -236,31 +236,31 @@ struct JunoMobileSettingsView: View {
 
       Section("Account") {
         if session != nil, requestSender != nil {
-          settingsLink(.usage, title: "Plan & Usage", symbol: "chart.bar")
+          settingsLink(.usage, title: "Plan & Usage", icon: .usage)
         }
-        settingsLink(.data, title: "Account", symbol: "person.crop.circle")
+        settingsLink(.data, title: "Account", icon: .user)
       }
 
       Section("Personalization") {
-        settingsLink(.appearance, title: "Appearance", symbol: "paintpalette")
-        settingsLink(.writing, title: "Response style & Instructions", symbol: "text.alignleft")
-        settingsLink(.memory, title: "Memory", symbol: "brain")
-        settingsLink(.language, title: "Language", symbol: "globe")
+        settingsLink(.appearance, title: "Appearance", icon: .appearance)
+        settingsLink(.writing, title: "Response style & Instructions", icon: .writing)
+        settingsLink(.memory, title: "Memory", icon: .memory)
+        settingsLink(.language, title: "Language", icon: .language)
       }
 
       Section("AI") {
-        settingsLink(.models, title: "Models", symbol: "sparkles")
+        settingsLink(.models, title: "Models", icon: .models)
       }
 
       Section("General") {
-        settingsLink(.notifications, title: "Notifications", symbol: "bell")
+        settingsLink(.notifications, title: "Notifications", icon: .notifications)
         #if DEBUG
-          settingsLink(.advanced, title: "Advanced", symbol: "slider.horizontal.3")
+          settingsLink(.advanced, title: "Advanced", icon: .sliders)
         #endif
       }
 
       Section("About") {
-        settingsLink(.about, title: "About Juno", symbol: "info.circle")
+        settingsLink(.about, title: "About Juno", icon: .about)
       }
     }
     .listStyle(.insetGrouped)
@@ -274,11 +274,16 @@ struct JunoMobileSettingsView: View {
   private func settingsLink(
     _ route: JunoMobileSettingsRoute,
     title: LocalizedStringKey,
-    symbol: String
+    icon: JunoIcon
   ) -> some View {
     NavigationLink(value: route) {
-      Label(title, systemImage: symbol)
-        .junoRowLabel()
+      HStack(spacing: 12) {
+        JunoIconView(icon, size: 18)
+          .foregroundStyle(Color.junoAccent)
+          .frame(width: 24)
+        Text(title)
+          .junoRowLabel()
+      }
     }
     .accessibilityIdentifier(settingsRouteIdentifier(route))
     .contentShape(.rect)
@@ -451,9 +456,6 @@ struct JunoMobileSettingsView: View {
     }
   }
 
-  /// The switch *and* the link, as the web has it. A tile whose only control
-  /// was "go and look" could not answer the question the reader most often
-  /// opens Settings with: is memory on?
   private var memoryTile: some View {
     JunoSettingsTile("Memory") {
       JunoMobileSettingsSwitch(
@@ -468,23 +470,15 @@ struct JunoMobileSettingsView: View {
 
       JunoMobileSettingsLink(
         title: "What Juno remembers",
-        symbol: "brain",
+        icon: .memory,
         value: Text("^[\(model.memories.count) memory](inflect: true)")
       ) { showMemoryPage = true }
       .accessibilityIdentifier("juno.mobile.settings-memory-link")
 
-      // A second row rather than a badge on the first, because the two are
-      // different surfaces answering different questions. The page above is
-      // the corpus — everything Juno has already stored. This is the short
-      // queue of things it *noticed* and has deliberately not stored,
-      // waiting for a yes or a no. An extraction that filed itself and
-      // turned up later is the version of this feature people call creepy;
-      // one that asks is the version they leave switched on, and it can only
-      // ask if there is somewhere to ask from.
       if let learningModel {
         JunoMobileSettingsLink(
           title: "Review what Juno noticed",
-          symbol: "sparkles",
+          icon: .models,
           value: Text(
             learningModel.proposals.isEmpty
               ? "Nothing waiting"
@@ -494,11 +488,8 @@ struct JunoMobileSettingsView: View {
         .accessibilityIdentifier("juno.mobile.settings-memory-proposals")
       }
 
-      // Beside Memory because both answer "what does the world already have
-      // of mine?" — and a link is only safe to hand out if it can be taken
-      // back from somewhere findable.
       if shareClient != nil {
-        JunoMobileSettingsLink(title: "Shared links", symbol: "link") {
+        JunoMobileSettingsLink(title: "Shared links", icon: .external) {
           showSharedLinks = true
         }
         .accessibilityIdentifier("juno.mobile.settings-shared-links")
@@ -506,12 +497,6 @@ struct JunoMobileSettingsView: View {
 
       Divider()
 
-      // Where the work the switch above enables is allowed to send what
-      // it reads. Beside the memory switch on purpose: that switch decides
-      // *whether* Juno extracts from your chats, and this decides *who
-      // sees them* when it does. Showing the first without the second is
-      // how extraction could go to whichever provider answered fastest
-      // with nothing in the product saying so.
       if let settings = model.settings {
         Picker(
           "settings.background-provider.title",
@@ -538,8 +523,6 @@ struct JunoMobileSettingsView: View {
           .junoSecondaryInk()
           .fixedSize(horizontal: false, vertical: true)
 
-        // Only the one mode that can cross is flagged. A caution on
-        // every option would train the reader to ignore it.
         if settings.backgroundProviderMode.permitsCrossProvider {
           Label(
             "settings.background-provider.crosses",
@@ -552,9 +535,6 @@ struct JunoMobileSettingsView: View {
     }
   }
 
-  /// Memory's own switch, with the same no-op guard the settings pickers use:
-  /// a `Toggle` that re-emits its value on a layout pass would otherwise queue
-  /// a mutation that changes nothing.
   private var memoryEnabled: Binding<Bool> {
     Binding(
       get: { model.settings?.memoryEnabled ?? true },
@@ -565,21 +545,10 @@ struct JunoMobileSettingsView: View {
     )
   }
 
-  /// Whether the account's own data can be read and written from this build.
-  /// Both halves have to be there: without them the export row would be a
-  /// button with nothing behind it.
   private var canManageAccountData: Bool {
     accountDataClient != nil && session != nil
   }
 
-  /// What you can *do* with the account, in one place.
-  ///
-  /// Export lives here rather than in the Danger zone, which is where the web
-  /// puts it and where it belongs: taking a copy of your own data is not a
-  /// dangerous act, and filing it next to account deletion made it read as one.
-  ///
-  /// Absent rather than empty on a shell that can do neither — a card whose
-  /// only content is the word "Account" answers nothing.
   @ViewBuilder
   private var accountTile: some View {
     if canManageAccountData || authModel != nil {
@@ -588,7 +557,7 @@ struct JunoMobileSettingsView: View {
           JunoMobileSettingsAction(
             title: "Export your data",
             detail: "Every chat, project and memory, as JSON.",
-            symbol: "square.and.arrow.down",
+            icon: .external,
             isBusy: isExporting,
             isEnabled: !isExporting,
             action: exportAccount
@@ -602,7 +571,7 @@ struct JunoMobileSettingsView: View {
           }
           JunoMobileSettingsAction(
             title: "auth.sign-out",
-            symbol: "rectangle.portrait.and.arrow.right",
+            icon: .close,
             isDestructive: true
           ) { showingSignOut = true }
           .accessibilityIdentifier("juno.mobile.account-signout")
@@ -1442,18 +1411,25 @@ private struct JunoMobileSettingsSwitch: View {
 /// The contents of a row that leads somewhere: glyph, title, value, chevron.
 ///
 /// Split from the button so a `NavigationLink` and a `Button` can wear the same
-/// row without either of them being wrapped in the other.
 private struct JunoMobileSettingsRowLabel: View {
   let title: LocalizedStringKey
-  let symbol: String
+  var icon: JunoIcon?
+  var symbol: String?
   var value: Text?
 
   var body: some View {
     HStack(spacing: JunoSpace.cozy) {
-      Image(systemName: symbol)
-        .font(.body)
-        .foregroundStyle(Color.junoAccent)
-        .frame(width: 22)
+      Group {
+        if let icon {
+          JunoIconView(icon, size: 16)
+            .foregroundStyle(Color.junoAccent)
+        } else if let symbol {
+          Image(systemName: symbol)
+            .font(.body)
+            .foregroundStyle(Color.junoAccent)
+        }
+      }
+      .frame(width: 22)
       Text(title)
         .junoRowLabel()
         .fontWeight(.medium)
@@ -1461,26 +1437,24 @@ private struct JunoMobileSettingsRowLabel: View {
       if let value {
         value.junoCaption()
       }
-      Image(systemName: "chevron.right")
-        .font(.caption.weight(.semibold))
+      JunoIconView(.chevronRight, size: 12)
         .junoMetaInk()
     }
     .contentShape(Rectangle())
   }
 }
 
-/// A row inside a tile that pushes a subpage. Deliberately not a
-/// `NavigationLink` in a `List`: these tiles are not list rows, and the chevron
-/// has to sit at the card's own trailing edge.
+/// A row inside a tile that pushes a subpage.
 private struct JunoMobileSettingsLink: View {
   let title: LocalizedStringKey
-  let symbol: String
+  var icon: JunoIcon?
+  var symbol: String?
   var value: Text?
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      JunoMobileSettingsRowLabel(title: title, symbol: symbol, value: value)
+      JunoMobileSettingsRowLabel(title: title, icon: icon, symbol: symbol, value: value)
     }
     .buttonStyle(.plain)
     .contentShape(.rect)
@@ -1488,14 +1462,11 @@ private struct JunoMobileSettingsLink: View {
 }
 
 /// A row inside a tile that *does* something: export, sign out, delete.
-///
-/// Destructive rows tint the glyph and the title and leave the explanation in
-/// secondary ink. Tinting the whole stack dragged the sentence to a pale red that
-/// read as disabled — and it is secondary text, not a second warning.
 private struct JunoMobileSettingsAction: View {
   let title: LocalizedStringKey
   var detail: LocalizedStringKey?
-  let symbol: String
+  var icon: JunoIcon?
+  var symbol: String?
   var isDestructive = false
   var isBusy = false
   var isEnabled = true
@@ -1507,7 +1478,10 @@ private struct JunoMobileSettingsAction: View {
         Group {
           if isBusy {
             ProgressView().controlSize(.small)
-          } else {
+          } else if let icon {
+            JunoIconView(icon, size: 16)
+              .foregroundStyle(isDestructive ? Color.junoDanger : Color.junoAccent)
+          } else if let symbol {
             Image(systemName: symbol)
               .font(.body)
               .foregroundStyle(isDestructive ? Color.junoDanger : Color.junoAccent)

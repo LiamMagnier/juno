@@ -627,8 +627,7 @@ struct JunoMobileComposer: View {
         }
       }
     } label: {
-      Image(systemName: "plus")
-        .junoFont(size: 16, relativeTo: .headline, weight: .semibold)
+      JunoIconView(.new, size: 16)
         .foregroundStyle(.primary)
         .frame(width: 34, height: 34)
         .modifier(JunoComposerGlassCircle())
@@ -662,8 +661,7 @@ struct JunoMobileComposer: View {
       composerFocused.wrappedValue = false
       setDictating(true)
     } label: {
-      Image(systemName: "mic")
-        .junoFont(size: 16, relativeTo: .body)
+      JunoIconView(.mic, size: 16)
         // Was `Color.primary.opacity(0.75)`: a pure neutral, scaled down
         // by hand, sitting on the warm composer bar with no material
         // under it. The muted token is the design system's own answer
@@ -758,22 +756,6 @@ struct JunoMobileComposer: View {
   }
 
   /// The one primary action, in three states.
-  ///
-  /// The web's rule, ported exactly: **Stop** while a reply is arriving,
-  /// **Voice** when there is nothing to send, **Send** once there is. The slot,
-  /// the circle and the coral never move — only the glyph changes — so the
-  /// control reads as one thing doing the obvious next thing rather than as
-  /// three buttons taking turns.
-  ///
-  /// Voice appears only when there is somewhere for it to go. That is the same
-  /// `!!onOpenVoiceMode` guard the web applies, and it is what keeps a shell
-  /// with no voice session from offering a button that does nothing: without a
-  /// handler this falls back to the discreet disabled Send.
-  ///
-  /// Every state carries the same 44pt-tall `contentShape` as the "+": they had
-  /// the identical 32pt-frame-without-content-shape construction, so they had
-  /// the identical shrunken touch target. Stop especially must not be hard to
-  /// hit — it is the control you reach for when something is going wrong.
   @ViewBuilder
   private var composerActionButton: some View {
     if generatingHere {
@@ -781,8 +763,7 @@ struct JunoMobileComposer: View {
         model.stopGeneration()
       } label: {
         actionLabel(active: true) {
-          Image(systemName: "stop.fill")
-            .junoFont(size: 14, relativeTo: .subheadline, weight: .bold)
+          JunoIconView(.stop, size: 14)
         }
       }
       .buttonStyle(.plain)
@@ -802,8 +783,7 @@ struct JunoMobileComposer: View {
     } else {
       Button(action: send) {
         actionLabel(active: !sendDisabled) {
-          Image(systemName: "arrow.up")
-            .junoFont(size: 15, relativeTo: .subheadline, weight: .bold)
+          JunoIconView(.send, size: 15)
         }
         .scaleEffect(sendDisabled ? 0.92 : 1)
       }

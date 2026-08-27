@@ -94,14 +94,12 @@ struct JunoMobileSegmented<Value: Hashable>: View {
 /// "tappable" by its shape.
 struct JunoMobileMetaChip: View {
     let title: String
+    var icon: JunoIcon?
     var systemImage: String?
     var action: (() -> Void)?
 
     var body: some View {
         if let action {
-            // The chip draws 28pt tall; as a button it has to be tappable at 44,
-            // so the target grows around the capsule rather than the capsule
-            // growing to meet it.
             Button(action: action) {
                 label
                     .frame(minHeight: 44)
@@ -115,7 +113,9 @@ struct JunoMobileMetaChip: View {
 
     private var label: some View {
         HStack(spacing: JunoSpace.tight) {
-            if let systemImage {
+            if let icon {
+                JunoIconView(icon, size: 12)
+            } else if let systemImage {
                 Image(systemName: systemImage)
                     .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
             }
@@ -126,8 +126,15 @@ struct JunoMobileMetaChip: View {
         .foregroundStyle(Color.junoMutedForeground)
         .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 28)
-        .background(Capsule(style: .continuous).fill(Color.junoMuted))
-        .contentShape(Capsule())
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.junoSurface)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(Color.junoHairline, lineWidth: 0.5)
+                )
+        )
+        .contentShape(Capsule(style: .continuous))
     }
 }
 
@@ -251,20 +258,10 @@ struct JunoMobileClampedText: View {
 struct JunoMobileWorkspaceSection<Content: View>: View {
     let title: String
     var actionTitle: String?
+    var actionIcon: JunoIcon?
     var actionImage: String?
     var action: (() -> Void)?
     var footnote: String?
-    /// The section's test identifier, landed on the **header** rather than left
-    /// for the caller to stamp on the whole section.
-    ///
-    /// An identifier on a container is inherited by every descendant and
-    /// overwrites theirs: a section marked `juno.mobile.project-instructions`
-    /// took that identifier all the way down, so its Edit button, its body text
-    /// and the clamp's own "Show all" toggle all reported the section's
-    /// identifier and none reported its own — the toggle simply did not exist to
-    /// find. Naming the header names the section and leaves the controls inside
-    /// it their own names. Same rule as ``JunoMobileSearchView`` and
-    /// ``JunoMobileIncognitoChat``, both of which have been bitten by it.
     var identifier: String?
     @ViewBuilder var content: Content
 
@@ -279,8 +276,10 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                 Spacer(minLength: 0)
                 if let action, let actionTitle {
                     Button(action: action) {
-                        HStack(spacing: JunoSpace.hairline) {
-                            if let actionImage {
+                        HStack(spacing: JunoSpace.tight) {
+                            if let actionIcon {
+                                JunoIconView(actionIcon, size: 12)
+                            } else if let actionImage {
                                 Image(systemName: actionImage)
                                     .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                             }

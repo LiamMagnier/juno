@@ -104,14 +104,16 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case pin, error, refresh, external, file
 
     /// What the composer's "+" menu adds to a message, and the tools it arms.
-    ///
-    /// The apps had been reaching for the nearest SF Symbol for each of these —
-    /// `binoculars` for Deep research, `powerplug` for Connectors,
-    /// `brain.head.profile` for Memory. Each is a near-miss for a mark the web
-    /// already draws, and this menu is the only place a reader sees them, so the
-    /// approximation read as a different product rather than a different platform.
     case attach, photos, files, canvas
     case research, web, artifactsTool, memory
+
+    /// Settings, profile, and feature sections.
+    case usage, appearance, writing, language, models, notifications, about
+    case user, tools, knowledge, sliders
+
+    /// Action controls, media, and navigation glyphs.
+    case mic, send, stop, plus, chevronRight, chevronDown, chevronUp
+    case trash, pencil, copy, check, close, ellipsis, share, terminal
 
     /// The asset-catalog name, matching the generator's output.
     public var assetName: String { "nav-\(rawValue)" }
