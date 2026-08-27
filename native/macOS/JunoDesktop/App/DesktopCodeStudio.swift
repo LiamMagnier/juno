@@ -348,6 +348,7 @@ struct DesktopCodeSidebar: View {
     let rename: (CodeSession) -> Void
     @Binding var searchText: String
     var searchFocused: FocusState<Bool>.Binding
+    var openSettingsModal: (() -> Void)? = nil
     @State private var projectPendingDeletion: ProjectGroup?
     @State private var projectPendingRename: ProjectGroup?
     @State private var projectRenameDraft = ""
@@ -486,36 +487,38 @@ struct DesktopCodeSidebar: View {
             .selectionDisabled()
             .accessibilityIdentifier("juno.code.sidebar-search")
 
-            Label {
-                Text("New task").junoRowLabel()
-            } icon: {
-                JunoIconView(.new, size: 15)
-                    .junoSidebarMarkInk(selected: selection == .draft)
-            }
-            .junoSidebarRowInk()
-            .tag(DesktopCodeSidebarItem.draft)
-            .accessibilityIdentifier("juno.code.new-conversation")
-
-            Label {
-                Text("Pull requests").junoRowLabel()
-            } icon: {
-                JunoIconView(.pulls, size: 15)
-                    .junoSidebarMarkInk(selected: selection == .pulls)
-            }
-            .junoSidebarRowInk()
-            .tag(DesktopCodeSidebarItem.pulls)
-            .accessibilityIdentifier("juno.code.pulls")
-
-            if session != nil {
+            Section {
                 Label {
-                    Text("Connections").junoRowLabel()
+                    Text("New task").junoRowLabel()
                 } icon: {
-                    JunoIconView(.connections, size: 15)
-                        .junoSidebarMarkInk(selected: selection == .connections)
+                    JunoIconView(.new, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .draft)
                 }
                 .junoSidebarRowInk()
-                .tag(DesktopCodeSidebarItem.connections)
-                .accessibilityIdentifier("juno.code.connections")
+                .tag(DesktopCodeSidebarItem.draft)
+                .accessibilityIdentifier("juno.code.new-conversation")
+
+                Label {
+                    Text("Pull requests").junoRowLabel()
+                } icon: {
+                    JunoIconView(.pulls, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .pulls)
+                }
+                .junoSidebarRowInk()
+                .tag(DesktopCodeSidebarItem.pulls)
+                .accessibilityIdentifier("juno.code.pulls")
+
+                if session != nil {
+                    Label {
+                        Text("Connections").junoRowLabel()
+                    } icon: {
+                        JunoIconView(.connections, size: 15)
+                            .junoSidebarMarkInk(selected: selection == .connections)
+                    }
+                    .junoSidebarRowInk()
+                    .tag(DesktopCodeSidebarItem.connections)
+                    .accessibilityIdentifier("juno.code.connections")
+                }
             }
 
             if !active.isEmpty {
@@ -978,7 +981,13 @@ struct DesktopCodeSidebar: View {
                         // Settings are this column's own destinations, so they are
                         // reached the way every other row here is reached.
                         openUsage: { selection = .usage },
-                        openSettings: { selection = .settings }
+                        openSettings: {
+                            if let openSettingsModal {
+                                openSettingsModal()
+                            } else {
+                                selection = .settings
+                            }
+                        }
                     )
                 }
             }

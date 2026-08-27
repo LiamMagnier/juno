@@ -102,6 +102,7 @@ struct DesktopChatWorkspace: View {
     /// opens the index; only a concrete project row writes this value.
     @State private var requestedProjectID: String?
     @State private var sharing = false
+    @State private var showingSettingsModal = false
 
     /// One line under the toolbar after a Share, so the copy is acknowledged.
     @State private var shareNotice: String?
@@ -166,7 +167,8 @@ struct DesktopChatWorkspace: View {
                 product: $product,
                 destination: destination,
                 selection: selection,
-                requestedProjectID: $requestedProjectID
+                requestedProjectID: $requestedProjectID,
+                openSettingsModal: { showingSettingsModal = true }
             )
             .junoSidebarColumn()
         } detail: {
@@ -187,24 +189,27 @@ struct DesktopChatWorkspace: View {
             .navigationTitle("")
             .toolbar { detailToolbar }
         }
-        // `.inspector` goes on the split view, **not** on the detail column, and
-        // not on a page inside it either.
-        //
-        // Tasks and Artifacts each carried their own, presented from the content of
-        // this window's detail column. That is precisely the placement
-        // ``DesktopCodeWorkspace`` bisected to a hard crash: from a detail column
-        // the inspector makes SwiftUI's `NSHostingView` call
-        // `setNeedsUpdateConstraints:` from inside its own `updateConstraints`
-        // while the window's constraint pass is already running for that display
-        // cycle, AppKit throws from `-[NSWindow _postWindowNeedsUpdateConstraints]`
-        // and the process takes SIGTRAP. Tasks defaulted its flag to *shown*, so
-        // one click in the sidebar was the whole reproduction.
-        //
-        // Hoisted here there is one inspector for the window and the binding
-        // decides which destination owns it. Artifacts' version history did not
-        // come with it: it reads and writes the document's editing state — the
-        // displayed version, the compare base, the diff being shown — so it is a
-        // pane inside that page instead. ``DesktopArtifactsScreen`` says why.
+        .sheet(isPresented: $showingSettingsModal) {
+            if let settingsModel = configuration.memorySettingsModel {
+                DesktopSettingsModal(
+                    model: settingsModel,
+                    authModel: configuration.authModel,
+                    session: session,
+                    configuration: configuration,
+                    accountDataClient: configuration.accountDataClient,
+                    shareClient: configuration.shareClient,
+                    modelCatalog: model.selectableModels,
+                    avatarData: configuration.avatarModel?.imageData,
+                    syncModel: configuration.syncModel,
+                    outbox: configuration.outbox,
+                    openUsage: { destination.wrappedValue = .usage },
+                    codeHostModel: configuration.codeHostModel,
+                    workHostModel: configuration.workHostModel,
+                    learningModel: nil,
+                    onDismiss: { showingSettingsModal = false }
+                )
+            }
+        }
         .inspector(isPresented: inspectorPresentation) { inspector }
         .focusedSceneValue(
             \.junoWorkspaceActions,
@@ -426,6 +431,7 @@ private struct DesktopChatSidebar: View {
     @Binding var destination: DesktopDestination
     @Binding var selection: DesktopSidebarItem?
     @Binding var requestedProjectID: String?
+    var openSettingsModal: (() -> Void)? = nil
     @State private var renameProjectTarget: NativeProject?
     @State private var renameChatTarget: NativeConversation?
     @State private var renameDraft = ""
@@ -682,7 +688,13 @@ private struct DesktopChatSidebar: View {
                 syncModel: syncModel,
                 plan: nil,
                 openUsage: { destination = .usage },
-                openSettings: { destination = .settings }
+                openSettings: {
+                    if let openSettingsModal {
+                        openSettingsModal()
+                    } else {
+                        destination = .settings
+                    }
+                }
             )
         }
     }

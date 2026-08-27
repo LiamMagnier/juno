@@ -81,6 +81,7 @@ struct DesktopCodeWorkspace: View {
     @State private var renamingSession: CodeSession?
     @State private var renameText = ""
     @State private var isOpeningQuickly = false
+    @State private var showingSettingsModal = false
     /// Owns the simulator session for the selected workspace. Created lazily —
     /// discovery spawns `xcodebuild`, which is not something to do for every
     /// Code session on every Mac.
@@ -213,40 +214,56 @@ struct DesktopCodeWorkspace: View {
     // MARK: - Body
 
     var body: some View {
-        HStack(spacing: 0) {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                DesktopCodeSidebar(
-                    workbench: workbenchModel,
-                    code: codeModel,
-                    remote: remoteModel,
-                    selection: selection,
-                    remoteDeviceID: $remoteDeviceID,
-                    product: $product,
-                    isBootstrapping: isBootstrapping,
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            DesktopCodeSidebar(
+                workbench: workbenchModel,
+                code: codeModel,
+                remote: remoteModel,
+                selection: selection,
+                remoteDeviceID: $remoteDeviceID,
+                product: $product,
+                isBootstrapping: isBootstrapping,
+                session: session,
+                avatarModel: configuration?.avatarModel,
+                syncModel: configuration?.syncModel,
+                plan: plan,
+                openRepository: { isChoosingRepository = true },
+                newSession: { selection.wrappedValue = .repository($0) },
+                rename: beginRename,
+                searchText: sessionSearchText,
+                searchFocused: $sidebarSearchFocused,
+                openSettingsModal: { showingSettingsModal = true }
+            )
+            .junoSidebarColumn()
+        } detail: {
+            editorCanvas
+                .junoReadingCanvas()
+                .navigationTitle("")
+                .toolbar { detailToolbar }
+        }
+        .sheet(isPresented: $showingSettingsModal) {
+            if let configuration, let settingsModel = configuration.memorySettingsModel, let session {
+                DesktopSettingsModal(
+                    model: settingsModel,
+                    authModel: configuration.authModel,
                     session: session,
-                    avatarModel: configuration?.avatarModel,
-                    syncModel: configuration?.syncModel,
-                    plan: plan,
-                    openRepository: { isChoosingRepository = true },
-                    newSession: { selection.wrappedValue = .repository($0) },
-                    rename: beginRename,
-                    searchText: sessionSearchText,
-                    searchFocused: $sidebarSearchFocused
+                    configuration: configuration,
+                    accountDataClient: configuration.accountDataClient,
+                    shareClient: configuration.shareClient,
+                    modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+                    avatarData: configuration.avatarModel?.imageData,
+                    syncModel: configuration.syncModel,
+                    outbox: configuration.outbox,
+                    openUsage: { selection.wrappedValue = .usage },
+                    codeHostModel: configuration.codeHostModel,
+                    workHostModel: configuration.workHostModel,
+                    learningModel: nil,
+                    onDismiss: { showingSettingsModal = false }
                 )
-                .junoSidebarColumn()
-            } detail: {
-                // `CodeSessionCanvas` owns the single Output / Terminal / Tests
-                // drawer. Keeping a second shell terminal here produced two
-                // consoles, a hard black slab, and two incompatible resize models.
-                editorCanvas
-                    .junoReadingCanvas()
-                    .navigationTitle("")
-                    .toolbar { detailToolbar }
             }
-
+        }
+        .inspector(isPresented: inspectorPresentation) {
             if inspectorPresentation.wrappedValue {
-                Divider()
-                    .overlay(Color.junoSeparator)
                 inspector
                     .frame(width: DesktopCodeInspectorMetrics.ideal)
                     .background(Color.junoCanvas)
@@ -629,22 +646,25 @@ struct DesktopCodeWorkspace: View {
     @ViewBuilder
     private var settingsPage: some View {
         if let session, let configuration, let model = configuration.memorySettingsModel {
-            DesktopSettingsScreen(
+            DesktopSettingsModal(
                 model: model,
                 authModel: configuration.authModel,
                 session: session,
+                configuration: configuration,
                 accountDataClient: configuration.accountDataClient,
                 shareClient: configuration.shareClient,
                 modelCatalog: configuration.conversationModel?.selectableModels ?? [],
                 avatarData: configuration.avatarModel?.imageData,
                 syncModel: configuration.syncModel,
                 outbox: configuration.outbox,
-                // Unlike the ⌘, window, this one has a column to navigate, so the
-                // settings page's Usage tile finally has somewhere to go.
                 openUsage: { selection.wrappedValue = .usage },
                 codeHostModel: configuration.codeHostModel,
-                workHostModel: configuration.workHostModel
+                workHostModel: configuration.workHostModel,
+                learningModel: configuration.memoryLearningModel,
+                onDismiss: { selection.wrappedValue = .allProjects }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(JunoSpace.regular)
         } else {
             accountPageUnavailable("Settings", "Account settings could not be loaded.")
         }

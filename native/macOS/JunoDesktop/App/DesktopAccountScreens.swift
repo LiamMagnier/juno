@@ -125,23 +125,25 @@ struct DesktopDestinationView: View {
             )
         case .settings:
             if let model = configuration.memorySettingsModel {
-                DesktopSettingsScreen(
+                DesktopSettingsModal(
                     model: model,
                     authModel: configuration.authModel,
                     session: session,
+                    configuration: configuration,
                     accountDataClient: configuration.accountDataClient,
                     shareClient: configuration.shareClient,
                     modelCatalog: conversationModel.selectableModels,
                     avatarData: configuration.avatarModel?.imageData,
                     syncModel: configuration.syncModel,
                     outbox: configuration.outbox,
-                    // Settings links to the real Usage screen instead of drawing
-                    // its own meters off a second route. This is the link.
                     openUsage: { destination = .usage },
                     codeHostModel: configuration.codeHostModel,
                     workHostModel: configuration.workHostModel,
-                    learningModel: configuration.memoryLearningModel
+                    learningModel: configuration.memoryLearningModel,
+                    onDismiss: { destination = .chat }
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(JunoSpace.regular)
             } else {
                 unavailable("Settings", "Account settings could not be loaded.")
             }
