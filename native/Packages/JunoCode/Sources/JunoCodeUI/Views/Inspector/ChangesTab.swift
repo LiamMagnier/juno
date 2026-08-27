@@ -181,6 +181,8 @@ struct ChangesTab: View {
             confirmsRevertAll = true
         }
         .controlSize(.small)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         .disabled(revertingAll || !isEditable)
         .help(
             isEditable
@@ -195,6 +197,8 @@ struct ChangesTab: View {
         .controlSize(.small)
         .buttonStyle(.borderedProminent)
         .tint(Color.junoAccent)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         .disabled(revertingAll)
         .help("Mark every change reviewed and keep it")
         .accessibilityIdentifier("juno.code.changes.keep-all")
