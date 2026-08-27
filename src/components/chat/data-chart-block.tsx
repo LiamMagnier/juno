@@ -1,18 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import * as React from "react";
 import { Download, Maximize2, Minimize2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface DataChartBlockProps {
   chart: {
     format: "svg" | "png";
-    data: string; // base64 PNG or SVG string
+    data: string;
     title?: string;
   };
 }
 
+/** A generated visualization, kept visually inside the conversation instead of
+ * switching to a private white/neutral chart chrome. */
 export function DataChartBlock({ chart }: DataChartBlockProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = React.useState(false);
 
   const imgSrc =
     chart.format === "png"
@@ -25,44 +29,56 @@ export function DataChartBlock({ chart }: DataChartBlockProps) {
     link.download = `${(chart.title || "figure").replace(/\s+/g, "_")}.${chart.format}`;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
   };
 
   return (
-    <div className="my-3 rounded-xl border border-neutral-200 bg-white/90 dark:border-neutral-800 dark:bg-neutral-900/90 overflow-hidden shadow-sm">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50">
-        <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200">
-          {chart.title || "Generated Chart"}
+    <figure className="my-3 overflow-hidden rounded-card border border-border/60 bg-card shadow-soft">
+      <figcaption className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/35 px-4 py-2.5">
+        <span className="min-w-0 truncate text-xs font-medium text-foreground">
+          {chart.title || "Generated chart"}
         </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            title={isExpanded ? "Collapse" : "Expand"}
-            className="p-1 rounded-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500"
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setIsExpanded((expanded) => !expanded)}
+            aria-label={isExpanded ? "Collapse chart" : "Expand chart"}
           >
-            {isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-          <button
+            {isExpanded ? (
+              <Minimize2 className="size-3.5" aria-hidden="true" />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden="true" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={handleDownload}
-            title="Download image"
-            className="flex items-center gap-1 rounded-sm border border-neutral-200 bg-white px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 transition"
+            className="h-8 gap-1.5 px-2.5"
           >
-            <Download className="h-3 w-3" />
-            <span>Download</span>
-          </button>
+            <Download className="size-3.5" aria-hidden="true" />
+            Download
+          </Button>
         </div>
-      </div>
+      </figcaption>
 
-      {/* Chart Image */}
-      <div className={`p-4 flex items-center justify-center bg-white dark:bg-neutral-950 transition-all ${isExpanded ? "max-h-[800px]" : "max-h-[420px]"}`}>
+      <div
+        className={cn(
+          "flex items-center justify-center overflow-auto bg-background/70 p-4 transition-[max-height] duration-base ease-out-soft motion-reduce:transition-none",
+          isExpanded ? "max-h-[800px]" : "max-h-[420px]"
+        )}
+      >
+        {/* Generated data URIs are not compatible with next/image optimization. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgSrc}
           alt={chart.title || "Data visualization"}
-          className="max-h-full max-w-full object-contain rounded-sm"
+          className="max-h-full max-w-full rounded-control object-contain"
         />
       </div>
-    </div>
+    </figure>
   );
 }
