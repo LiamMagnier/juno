@@ -1,211 +1,269 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Plus, Search, Edit3, Trash2, Pin, ArrowRight } from "lucide-react";
+import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "lucide-react";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
+import { AppIcons } from "@/lib/app-icons";
+import { AppPageHeader } from "@/components/app/app-page-header";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
+/**
+ * Custom Juno assistants — the product's equivalent of reusable Gems / custom
+ * assistants, presented in the same editorial shell as Projects, Work and Code.
+ *
+ * This page used to be a visual island built from `neutral-*`, `coral-*`, raw
+ * inputs, private cards and browser `confirm()`. Moving it onto semantic tokens
+ * is not a palette swap: it makes appearance/accent settings, focus states,
+ * coarse-pointer targets, dark mode and future design-token changes propagate
+ * here exactly as they do everywhere else.
+ */
 export default function AssistantsPage() {
   const router = useRouter();
-  const [assistants, setAssistants] = useState<JunoAssistantConfig[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [studioOpen, setStudioOpen] = useState(false);
-  const [editingAssistant, setEditingAssistant] = useState<JunoAssistantConfig | null>(null);
+  const [assistants, setAssistants] = React.useState<JunoAssistantConfig[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [failed, setFailed] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [studioOpen, setStudioOpen] = React.useState(false);
+  const [editingAssistant, setEditingAssistant] = React.useState<JunoAssistantConfig | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<JunoAssistantConfig | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
 
-  const fetchAssistants = async () => {
+  const fetchAssistants = React.useCallback(async () => {
+    setLoading(true);
+    setFailed(false);
     try {
-      setLoading(true);
-      const res = await fetch("/api/assistants");
-      if (res.ok) {
-        const data = await res.json();
-        setAssistants(data.assistants || []);
-      }
+      const response = await fetch("/api/assistants");
+      if (!response.ok) throw new Error("assistants_unavailable");
+      const data = await response.json();
+      setAssistants(Array.isArray(data.assistants) ? data.assistants : []);
     } catch {
-      // ignore
+      setFailed(true);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAssistants();
   }, []);
 
-  const handleStartChatWithAssistant = (assistant: JunoAssistantConfig) => {
+  React.useEffect(() => {
+    void fetchAssistants();
+  }, [fetchAssistants]);
+
+  const startChat = (assistant: JunoAssistantConfig) => {
     router.push(`/chat?assistantId=${assistant.id}`);
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this assistant?")) return;
-
+  const deleteAssistant = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      const res = await fetch(`/api/assistants/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setAssistants((prev) => prev.filter((a) => a.id !== id));
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleTogglePin = async (assistant: JunoAssistantConfig, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(`/api/assistants/${assistant.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPinned: !assistant.isPinned }),
+      const response = await fetch(`/api/assistants/${deleteTarget.id}`, {
+        method: "DELETE",
       });
-      if (res.ok) {
-        const data = await res.json();
-        setAssistants((prev) => prev.map((a) => (a.id === assistant.id ? data.assistant : a)));
-      }
-    } catch {
-      // ignore
+      if (!response.ok) throw new Error("delete_failed");
+      setAssistants((current) => current.filter((assistant) => assistant.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const filteredAssistants = assistants.filter(
-    (a) =>
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const togglePin = async (assistant: JunoAssistantConfig) => {
+    const response = await fetch(`/api/assistants/${assistant.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPinned: !assistant.isPinned }),
+    }).catch(() => null);
+    if (!response?.ok) return;
+    const data = await response.json();
+    setAssistants((current) =>
+      current.map((item) => (item.id === assistant.id ? data.assistant : item))
+    );
+  };
+
+  const filteredAssistants = React.useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return assistants;
+    return assistants.filter(
+      (assistant) =>
+        assistant.name.toLowerCase().includes(query) ||
+        assistant.description.toLowerCase().includes(query)
+    );
+  }, [assistants, searchQuery]);
+
+  const AssistantIcon = AppIcons.assistants;
+  const SearchIcon = AppIcons.search;
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-8 sm:px-8 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 flex items-center gap-2.5">
-            <Bot className="h-6 w-6 text-coral-500" />
-            <span>Juno Assistants</span>
-          </h1>
-          <p className="text-sm text-neutral-500 mt-1">
-            Specialized AI assistants with dedicated knowledge, custom instructions, and configured tools.
-          </p>
-        </div>
-
-        <button
-          onClick={() => {
-            setEditingAssistant(null);
-            setStudioOpen(true);
-          }}
-          className="flex items-center gap-2 rounded-xl bg-coral-500 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-coral-600 transition"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New Assistant</span>
-        </button>
-      </div>
-
-      {/* Search & Filter */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
-        <input
-          type="text"
-          placeholder="Search assistants..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full h-10 rounded-xl border border-neutral-200 bg-white/80 pl-9 pr-4 text-xs text-neutral-900 placeholder:text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900/80 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-coral-500/20 focus:border-coral-500 transition"
-        />
-      </div>
-
-      {/* Gallery Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-40 rounded-2xl border border-neutral-200/60 bg-neutral-100/50 dark:border-neutral-800 dark:bg-neutral-900/40 animate-pulse" />
-          ))}
-        </div>
-      ) : filteredAssistants.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-800 p-8">
-          <Bot className="h-10 w-10 text-neutral-400 mb-3 opacity-60" />
-          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
-            {searchQuery ? "No matching assistants" : "No assistants created yet"}
-          </h3>
-          <p className="text-xs text-neutral-500 mt-1 max-w-sm">
-            {searchQuery
-              ? "Try adjusting your search query."
-              : "Create custom assistants tailored to your specific workflows, datasets, and tasks."}
-          </p>
-          {!searchQuery && (
-            <button
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-6xl">
+        <AppPageHeader
+          eyebrow="Assistants"
+          heading="Specialists you can reuse"
+          icon={AssistantIcon}
+          lede="Create focused Juno personalities with their own instructions, starter prompts and model preference, then start them from the same Chat surface as everything else."
+          actions={
+            <Button
               onClick={() => {
                 setEditingAssistant(null);
                 setStudioOpen(true);
               }}
-              className="mt-4 flex items-center gap-1.5 rounded-lg bg-coral-500 px-3.5 py-2 text-xs font-medium text-white hover:bg-coral-600 transition"
+              className="gap-1.5"
             >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Create your first assistant</span>
-            </button>
-          )}
+              <Plus className="size-4" aria-hidden="true" />
+              New assistant
+            </Button>
+          }
+        />
+
+        <div className="mb-6 max-w-md">
+          <div className="relative">
+            <SearchIcon
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              placeholder="Search assistants"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="pl-9"
+              aria-label="Search assistants"
+            />
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredAssistants.map((assistant) => (
-            <div
-              key={assistant.id}
-              onClick={() => handleStartChatWithAssistant(assistant)}
-              className="group relative flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-5 hover:border-coral-500/40 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900/80 dark:hover:border-coral-500/40 transition cursor-pointer"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-coral-500/10 text-coral-600 dark:text-coral-400">
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                    <button
-                      onClick={(e) => handleTogglePin(assistant, e)}
-                      title={assistant.isPinned ? "Unpin" : "Pin"}
-                      className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-800 dark:hover:text-neutral-200"
+
+        {failed ? (
+          <EmptyState
+            icon={AssistantIcon}
+            title="Assistants are unavailable"
+            description="Juno could not read your assistant library. Nothing was deleted; retry the request."
+            action={<Button onClick={() => void fetchAssistants()}>Retry</Button>}
+          />
+        ) : loading ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <div
+                key={index}
+                className="h-44 animate-pulse rounded-card border border-border/50 bg-muted/55 motion-reduce:animate-none"
+              />
+            ))}
+          </div>
+        ) : filteredAssistants.length === 0 ? (
+          <EmptyState
+            icon={AssistantIcon}
+            title={searchQuery ? "No matching assistants" : "No assistants yet"}
+            description={
+              searchQuery
+                ? "Try a different name or description."
+                : "Create a reusable specialist for a workflow, domain, class, project or writing style."
+            }
+            action={
+              searchQuery ? undefined : (
+                <Button
+                  onClick={() => {
+                    setEditingAssistant(null);
+                    setStudioOpen(true);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                  Create assistant
+                </Button>
+              )
+            }
+          />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredAssistants.map((assistant) => (
+              <article
+                key={assistant.id}
+                className="group relative flex min-h-44 flex-col rounded-card border border-border/60 bg-card p-5 shadow-soft transition-[border-color,box-shadow,transform] duration-fast ease-out-soft hover:border-border hover:shadow-pop motion-reduce:transition-none"
+              >
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => startChat(assistant)}
+                    className="flex min-w-0 flex-1 items-start gap-3 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    aria-label={`Start a chat with ${assistant.name}`}
+                  >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-accent text-accent-foreground">
+                      <AssistantIcon className="size-5" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 pt-0.5">
+                      <span className="flex items-center gap-2 font-medium text-foreground">
+                        <span className="truncate">{assistant.name}</span>
+                        {assistant.isPinned && (
+                          <Pin className="size-3 fill-current text-primary" aria-label="Pinned" />
+                        )}
+                      </span>
+                      <span className="mt-1 block line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                        {assistant.description || "Custom Juno assistant"}
+                      </span>
+                    </span>
+                  </button>
+
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => void togglePin(assistant)}
+                      aria-label={assistant.isPinned ? `Unpin ${assistant.name}` : `Pin ${assistant.name}`}
                     >
-                      <Pin className={`h-3.5 w-3.5 ${assistant.isPinned ? "fill-coral-500 text-coral-500" : ""}`} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
+                      <Pin className={cn("size-3.5", assistant.isPinned && "fill-current")} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => {
                         setEditingAssistant(assistant);
                         setStudioOpen(true);
                       }}
-                      title="Edit"
-                      className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      aria-label={`Edit ${assistant.name}`}
                     >
-                      <Edit3 className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(assistant.id, e)}
-                      title="Delete"
-                      className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-rose-500"
+                      <Edit3 className="size-3.5" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setDeleteTarget(assistant)}
+                      aria-label={`Delete ${assistant.name}`}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                    </Button>
                   </div>
                 </div>
 
-                <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-                  {assistant.name}
-                  {assistant.isPinned && <span className="h-1.5 w-1.5 rounded-full bg-coral-500" />}
-                </h3>
-                <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
-                  {assistant.description || "Custom assistant"}
-                </p>
-              </div>
+                <button
+                  type="button"
+                  onClick={() => startChat(assistant)}
+                  className="mt-auto flex min-h-11 items-center justify-between gap-3 border-t border-border/50 pt-3 text-left text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span>Start chat</span>
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <span className="font-mono text-micro">v{assistant.version}</span>
+                    <ArrowRight className="size-3.5 transition-transform duration-fast group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+                  </span>
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
 
-              <div className="mt-4 pt-3 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between text-xs text-neutral-400">
-                <span className="text-caption font-medium text-coral-600 dark:text-coral-400 flex items-center gap-1 group-hover:translate-x-0.5 transition">
-                  Start chat <ArrowRight className="h-3 w-3" />
-                </span>
-                <span className="text-micro">v{assistant.version}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Studio Modal */}
       <AssistantStudio
         isOpen={studioOpen}
         initialAssistant={editingAssistant}
@@ -214,13 +272,35 @@ export default function AssistantsPage() {
           setEditingAssistant(null);
         }}
         onSave={(saved) => {
-          if (editingAssistant) {
-            setAssistants((prev) => prev.map((a) => (a.id === saved.id ? saved : a)));
-          } else {
-            setAssistants((prev) => [saved, ...prev]);
-          }
+          setAssistants((current) => {
+            const exists = current.some((assistant) => assistant.id === saved.id);
+            return exists
+              ? current.map((assistant) => (assistant.id === saved.id ? saved : assistant))
+              : [saved, ...current];
+          });
         }}
       />
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete assistant?</DialogTitle>
+            <DialogDescription>
+              {deleteTarget
+                ? `${deleteTarget.name} will be removed from your assistant library. Existing chats are not deleted.`
+                : "This assistant will be removed from your library."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void deleteAssistant()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete assistant"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
