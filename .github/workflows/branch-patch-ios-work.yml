@@ -1,0 +1,40 @@
+name: Branch patch iOS Work hub
+
+on:
+  push:
+    branches:
+      - agent/ios-work-automations-production-2026-08-28
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'wire Work Automations hub') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/ios-work-automations-production-2026-08-28
+      - name: Patch mobile Work destination
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('native/iOS/JunoMobile/App/JunoMobileRootView.swift')
+          text = path.read_text()
+          old = '        JunoMobileWorkView(model: workModel)'
+          new = '''        JunoMobileWorkHubView(
+          model: workModel,
+          requestSender: requestSender,
+          accountID: currentSession?.profile.id
+        )'''
+          if old not in text:
+              raise SystemExit('expected Work destination call not found')
+          path.write_text(text.replace(old, new, 1))
+      - name: Commit integration
+        run: |
+          git config user.name "juno-ci"
+          git config user.email "juno-ci@users.noreply.github.com"
+          git add native/iOS/JunoMobile/App/JunoMobileRootView.swift
+          git commit -m "feat(ios): wire Work Automations hub"
+          git push origin HEAD:agent/ios-work-automations-production-2026-08-28
