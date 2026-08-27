@@ -38,6 +38,16 @@ export function toGeminiFunctionDeclarations(toolset: McpToolset) {
   }));
 }
 
+export function getGoogleApiKeys(): string[] {
+  const keys = [
+    providerApiKey("google"),
+    process.env.GOOGLE_API_KEY,
+    process.env.GEMINI_LIVE_API_KEY,
+    process.env.GEMINI_API_KEY,
+  ].filter((k): k is string => typeof k === "string" && k.trim().length > 0);
+  return [...new Set(keys)];
+}
+
 /**
  * Stream chat completions from Google Generative Language API (Gemini).
  * Supports turns, multimodality (images, PDFs), thinking / reasoning, tool loops,
@@ -55,8 +65,9 @@ export async function* streamGemini(
   dynamicContext?: string,
   requestContext?: Partial<GeminiRequestContext>,
 ): AsyncGenerator<LlmEvent> {
-  const key = providerApiKey("google") || process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!key) throw new Error("Google API key is not configured.");
+  const apiKeys = getGoogleApiKeys();
+  if (apiKeys.length === 0) throw new Error("Google API key is not configured.");
+  const key = apiKeys[0];
 
   const contents = await toGeminiContents(history, model.vision);
   if (dynamicContext) {
@@ -108,9 +119,11 @@ export async function* streamGemini(
     const isFinalRound = round === maxRounds - 1;
     const requestBody: Record<string, unknown> = {
       contents,
-      systemInstruction: { parts: [{ text: system }] },
       generationConfig,
     };
+    if (system?.trim()) {
+      requestBody.systemInstruction = { parts: [{ text: system }] };
+    }
     if (toolsPayload.length > 0 && !isFinalRound) {
       requestBody.tools = toolsPayload;
     }
@@ -124,6 +137,7 @@ export async function* streamGemini(
       },
       signal,
       context: geminiContext,
+      apiKeys,
     });
 
     // requestGeminiStream rejects successful responses without a body.

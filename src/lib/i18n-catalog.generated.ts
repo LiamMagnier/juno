@@ -4754,10 +4754,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn't load users"
   },
   {
-    "id": "47c6addbf1cc699a",
-    "source": "Transcribing…"
-  },
-  {
     "id": "47f3fe5373204acc",
     "source": "Write one"
   },
@@ -7598,6 +7594,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your open pull requests"
   },
   {
+    "id": "711325fe014af588",
+    "source": "Refining transcription…"
+  },
+  {
     "id": "711cbf1f88f3190e",
     "source": "Close the timeline"
   },
@@ -10410,6 +10410,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Wherever it fits"
   },
   {
+    "id": "9ba1519a41fb4681",
+    "source": "Transcribing with precision…"
+  },
+  {
     "id": "9bba835ef9ce8a36",
     "source": "Do the cloud part"
   },
@@ -10644,6 +10648,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9ea1fed5d2c1a18d",
     "source": "Copy source"
+  },
+  {
+    "id": "9ec2e0305e0af406",
+    "source": "Speak now, Juno is listening…"
   },
   {
     "id": "9ec4dba88d52bd0a",

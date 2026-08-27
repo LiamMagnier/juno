@@ -47,7 +47,7 @@ export class GeminiProviderError extends Error {
 }
 
 export function isRetryableGeminiStatus(status: number): boolean {
-  return status === 500 || status === 502 || status === 503 || status === 504 || status === 529;
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || status === 529;
 }
 
 export function geminiErrorFromResponse(
@@ -71,13 +71,22 @@ export function geminiErrorFromResponse(
   });
 }
 
-function retryDelayMs(response: Response, attempt: number): number {
+function retryDelayMs(response: Response, attempt: number, bodyMessage?: string): number {
+  if (bodyMessage) {
+    const match = bodyMessage.match(/Please retry (?:in|after) ([0-9.]+)\s*s/i);
+    if (match && match[1]) {
+      const sec = parseFloat(match[1]);
+      if (Number.isFinite(sec) && sec > 0) {
+        return Math.min(8_000, Math.max(500, Math.ceil(sec * 1000)));
+      }
+    }
+  }
   const raw = response.headers.get("retry-after");
   if (raw) {
     const seconds = Number(raw);
-    if (Number.isFinite(seconds)) return Math.min(10_000, Math.max(0, seconds * 1_000));
+    if (Number.isFinite(seconds)) return Math.min(8_000, Math.max(0, seconds * 1_000));
     const date = Date.parse(raw);
-    if (Number.isFinite(date)) return Math.min(10_000, Math.max(0, date - Date.now()));
+    if (Number.isFinite(date)) return Math.min(8_000, Math.max(0, date - Date.now()));
   }
   return [750, 2_000, 4_000][attempt - 1] ?? 4_000;
 }
@@ -100,6 +109,7 @@ export async function requestGeminiStream(
     init: RequestInit;
     signal?: AbortSignal;
     context: GeminiRequestContext;
+    apiKeys?: string[];
   },
   dependencies: {
     fetchImpl?: typeof fetch;
@@ -109,11 +119,20 @@ export async function requestGeminiStream(
 ): Promise<Response> {
   const fetchImpl = dependencies.fetchImpl ?? fetch;
   const sleep = dependencies.sleep ?? abortableDelay;
+  const keys = input.apiKeys && input.apiKeys.length > 0 ? input.apiKeys : [];
   const maxAttempts = Math.max(1, Math.min(4, dependencies.maxAttempts ?? 4));
   const startedAt = Date.now();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const response = await fetchImpl(input.url, { ...input.init, signal: input.signal });
+    const activeKey = keys.length > 0 ? keys[(attempt - 1) % keys.length] : undefined;
+    const reqInit = { ...input.init };
+    if (activeKey) {
+      reqInit.headers = {
+        ...(typeof reqInit.headers === "object" && reqInit.headers !== null ? reqInit.headers : {}),
+        "x-goog-api-key": activeKey,
+      };
+    }
+    const response = await fetchImpl(input.url, { ...reqInit, signal: input.signal });
     if (response.ok && response.body) return response;
 
     const body = await response.text().catch(() => "");
@@ -144,7 +163,7 @@ export async function requestGeminiStream(
     }));
 
     if (!error.retryable || attempt >= maxAttempts) throw error;
-    await sleep(retryDelayMs(response, attempt), input.signal);
+    await sleep(retryDelayMs(response, attempt, error.error.message), input.signal);
   }
 
   throw new Error("Unreachable Gemini retry state");

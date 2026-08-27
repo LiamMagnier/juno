@@ -21,13 +21,39 @@ struct DesktopDictation: View {
 
     private var transcript: String { speech.transcript }
 
+    private var averageLevel: Double {
+        guard !speech.levelHistory.isEmpty else { return 0 }
+        let sum = speech.levelHistory.reduce(0.0, +)
+        return min(1.0, max(0.0, sum / Double(speech.levelHistory.count)))
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             if let startFailure {
                 unavailable(startFailure)
             } else {
                 transcriptPreview
-                capsule
+                ZStack {
+                    if !accessibility.prefersReducedMotion {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.junoAccent.opacity(0.32 + averageLevel * 0.45),
+                                        Color.junoAccent.opacity(0.08),
+                                        Color.clear,
+                                    ],
+                                    center: .center,
+                                    startRadius: 8,
+                                    endRadius: 90
+                                )
+                            )
+                            .frame(width: 260, height: 100)
+                            .scaleEffect(1.0 + averageLevel * 0.32)
+                            .animation(.easeOut(duration: 0.12), value: averageLevel)
+                    }
+                    capsule
+                }
             }
         }
         .task { await begin() }
@@ -35,23 +61,32 @@ struct DesktopDictation: View {
     }
 
     private var transcriptPreview: some View {
-        ScrollView {
-            Text(previewText)
-                // One point above body, deliberately: this is the sentence the
-                // reader is dictating right now, and it should sit a shade
-                // larger than the composer text it will land in.
-                .junoFont(size: 14, relativeTo: .body)
-                .lineSpacing(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.junoAccent)
+                    .frame(width: 7, height: 7)
+                    .opacity(speech.isListening ? 1 : 0.4)
+                Text("Listening…")
+                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
+                    .foregroundStyle(Color.junoAccent)
+                    .textCase(.uppercase)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+
+            ScrollView {
+                Text(previewText)
+                    .junoFont(size: 14, relativeTo: .body)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+            }
+            .frame(maxHeight: 100)
         }
-        .frame(maxHeight: 112)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                // A whisper of the surface behind the preview — and none at
-                // all under Reduce Transparency, the switch the system cannot
-                // apply to a hand-drawn fill.
                 .fill(Color.junoPopover.opacity(
                     accessibility.usesOpaqueTransientSurfaces ? 1 : 0.94
                 ))
@@ -60,17 +95,14 @@ struct DesktopDictation: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 0.75)
         )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
         .accessibilityLabel(transcript.isEmpty ? "Listening" : transcript)
         .accessibilityIdentifier("juno.desktop.dictation-preview")
     }
 
     private var previewText: AttributedString {
         guard !transcript.isEmpty else {
-            var listening = AttributedString("Listening…")
-            // Secondary ink at full alpha — the token is already the ramp's
-            // floor, so the `opacity(0.65)` this replaces was below AA, not
-            // quieter. The placeholder reads as provisional by sharing the
-            // hypothesis text's ink below, not by fading past it.
+            var listening = AttributedString("Speak now, Juno is listening…")
             listening.foregroundColor = Color.junoMutedForeground
             return listening
         }
@@ -166,9 +198,6 @@ struct DesktopDictation: View {
                 .junoFont(size: 15, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
-                // 13pt is exactly the body rung on the Mac, so the named rung
-                // fits — a sentence read in full deserves body treatment, not
-                // a bespoke size.
                 .junoBody()
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -226,16 +255,25 @@ private struct DesktopDictationMeter: View {
     let levels: [Double]
 
     private static let barCount = 38
-    private static let barWidth: CGFloat = 2.5
+    private static let barWidth: CGFloat = 3
     private static let spacing: CGFloat = 3
     private static let restingHeight: CGFloat = 4
-    private static let maximumHeight: CGFloat = 24
+    private static let maximumHeight: CGFloat = 26
 
     var body: some View {
         HStack(alignment: .center, spacing: Self.spacing) {
             ForEach(0..<Self.barCount, id: \.self) { index in
                 Capsule()
-                    .fill(Color.primary.opacity(0.35 + level(at: index) * 0.5))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.junoAccent.opacity(0.7 + level(at: index) * 0.3),
+                                Color.primary.opacity(0.35 + level(at: index) * 0.5),
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
                     .frame(width: Self.barWidth, height: height(at: index))
             }
         }

@@ -31,13 +31,39 @@ struct JunoMobileDictation: View {
 
     private var transcript: String { speech.transcript }
 
+    private var averageLevel: Double {
+        guard !speech.levelHistory.isEmpty else { return 0 }
+        let sum = speech.levelHistory.reduce(0.0, +)
+        return min(1.0, max(0.0, sum / Double(speech.levelHistory.count)))
+    }
+
     var body: some View {
         VStack(spacing: JunoSpace.cozy) {
             if let startFailure {
                 unavailable(startFailure)
             } else {
                 preview
-                capsule
+                ZStack {
+                    if !reduceMotion {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.junoAccent.opacity(0.35 + averageLevel * 0.45),
+                                        Color.junoAccent.opacity(0.1),
+                                        Color.clear,
+                                    ],
+                                    center: .center,
+                                    startRadius: 8,
+                                    endRadius: 90
+                                )
+                            )
+                            .frame(width: 220, height: 110)
+                            .scaleEffect(1.0 + averageLevel * 0.35)
+                            .animation(.easeOut(duration: 0.12), value: averageLevel)
+                    }
+                    capsule
+                }
             }
         }
         .task { await begin() }
@@ -49,31 +75,47 @@ struct JunoMobileDictation: View {
     /// Committed words in full contrast, the live hypothesis dimmed — so the
     /// reader can see which part of the sentence is still being revised.
     private var preview: some View {
-        ScrollView {
-            Text(previewText)
-                .junoFont(size: 15, relativeTo: .subheadline)
-                .lineSpacing(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.cozy)
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.junoAccent)
+                    .frame(width: 7, height: 7)
+                    .opacity(speech.isListening ? 1 : 0.4)
+                Text("Listening…")
+                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
+                    .foregroundStyle(Color.junoAccent)
+                    .textCase(.uppercase)
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.cozy)
+
+            ScrollView {
+                Text(previewText)
+                    .junoFont(size: 15, relativeTo: .subheadline)
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.bottom, JunoSpace.cozy)
+            }
+            .frame(maxHeight: 120)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxHeight: 132)
-        .scrollBounceBehavior(.basedOnSize)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.junoPopover.opacity(0.92))
+                .fill(Color.junoPopover.opacity(0.94))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
         .accessibilityLabel(transcript.isEmpty ? "Listening" : transcript)
         .accessibilityIdentifier("juno.mobile.dictation-preview")
     }
 
     private var previewText: AttributedString {
         guard !transcript.isEmpty else {
-            var listening = AttributedString("Listening…")
+            var listening = AttributedString("Speak now, Juno is listening…")
             listening.foregroundColor = Color.junoMutedForeground
             return listening
         }
@@ -107,8 +149,6 @@ struct JunoMobileDictation: View {
                 label: "Stop and edit",
                 identifier: "juno.mobile.dictation-stop",
                 style: .neutral,
-                // A filled square reads heavier than an arrow or a cross at the
-                // same point size; two points smaller evens the row out.
                 glyphSize: 13,
                 action: stop
             )
@@ -139,13 +179,14 @@ struct JunoMobileDictation: View {
         glyphSize: Double = 15,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        Button(action: {
+            #if os(iOS)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            #endif
+            action()
+        }) {
             Image(systemName: systemName)
                 .junoFont(size: glyphSize, relativeTo: .subheadline, weight: .semibold)
-                // `junoOnAccent`, not a literal white: the accent is an account
-                // setting, and white fails contrast on the amber and sage
-                // palettes. Off the accent the glyph is on a hairline outline or
-                // the muted fill, where the platform label colour is right.
                 .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.primary)
                 .frame(width: 40, height: 40)
                 .background {
@@ -158,8 +199,6 @@ struct JunoMobileDictation: View {
                         Circle().fill(Color.junoAccent)
                     }
                 }
-                // The circle stays 40; the finger gets 44, in the same
-                // round shape the control visibly is.
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
@@ -171,8 +210,6 @@ struct JunoMobileDictation: View {
 
     // MARK: - Unavailable
 
-    /// Names the fix rather than apologising, and keeps the one control that gets
-    /// the reader back to typing.
     private func unavailable(_ message: String) -> some View {
         HStack(spacing: JunoSpace.cozy) {
             Image(systemName: "mic.slash")
@@ -234,27 +271,29 @@ struct JunoMobileDictation: View {
     }
 }
 
-/// The listening meter: a fixed row of bars whose heights are the recent
-/// microphone levels, newest on the right.
-///
-/// A fixed bar count is the point — the row's width never changes, so the capsule
-/// cannot resize while someone is speaking into it. Bars with no reading yet sit
-/// at their resting height rather than at zero, so silence reads as *ready*
-/// instead of as broken.
 struct JunoMobileDictationMeter: View {
     let levels: [Double]
 
     private static let barCount = 32
-    private static let barWidth: Double = 3
+    private static let barWidth: Double = 3.5
     private static let spacing: Double = 3
     private static let restingHeight: Double = 4
-    private static let maximumHeight: Double = 26
+    private static let maximumHeight: Double = 28
 
     var body: some View {
         HStack(alignment: .center, spacing: Self.spacing) {
             ForEach(0..<Self.barCount, id: \.self) { index in
                 Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(0.35 + level(at: index) * 0.5))
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.junoAccent.opacity(0.7 + level(at: index) * 0.3),
+                                Color.primary.opacity(0.4 + level(at: index) * 0.5),
+                            ],
+                            startPoint: .bottom,
+                            endPoint: .top
+                        )
+                    )
                     .frame(width: Self.barWidth, height: height(at: index))
             }
         }
@@ -263,8 +302,6 @@ struct JunoMobileDictationMeter: View {
         .accessibilityHidden(true)
     }
 
-    /// Reads the history right-aligned: the newest sample is the rightmost bar,
-    /// so the row scrolls the way speech arrives.
     private func level(at index: Int) -> Double {
         let offset = Self.barCount - 1 - index
         let position = levels.count - 1 - offset
@@ -275,7 +312,6 @@ struct JunoMobileDictationMeter: View {
     private func height(at index: Int) -> Double {
         Self.restingHeight
             + level(at: index) * (Self.maximumHeight - Self.restingHeight)
-    }
 }
 
 #if DEBUG
