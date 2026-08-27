@@ -95,24 +95,24 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
     const memoryEnabled = !nextPaused;
     try {
       await setSettings({ memoryEnabled });
-      toast.success(memoryEnabled ? "Memory enabled — Juno will learn from conversations." : "Memory paused — Juno won't save new details.");
+      toast.success(
+        memoryEnabled
+          ? "Memory enabled — Juno will learn from conversations."
+          : "Memory paused — Juno won't save new details."
+      );
     } catch {
       toast.error("Couldn’t update memory preference.");
     }
   };
 
   const exportMemory = () => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      summary,
-      memories,
-    };
+    const payload = { exportedAt: new Date().toISOString(), summary, memories };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `juno-memory-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `juno-memory-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
     URL.revokeObjectURL(url);
     toast.success("Memory exported.");
   };
@@ -144,7 +144,7 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
         )}
 
         {loadError ? (
-          <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-2.5 rounded-card border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
               <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your memory. Check your connection and try again.</p>
@@ -155,13 +155,14 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
               onClick={() => void load()}
               className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <ActionIcons.refresh className="size-3.5" /> Retry
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              Retry
             </Button>
           </div>
         ) : memories === null ? (
-          <div className="space-y-3">
-            <Skeleton style={stagger(0)} className="h-64 w-full rounded-2xl" />
-            <Skeleton style={stagger(1)} className="h-20 w-full rounded-2xl" />
+          <div className="space-y-3" aria-hidden="true">
+            <Skeleton style={stagger(0)} className="h-64 w-full rounded-card" />
+            <Skeleton style={stagger(1)} className="h-20 w-full rounded-card" />
           </div>
         ) : (
           <div className="space-y-4">
@@ -177,10 +178,13 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
               <div
                 role="status"
                 aria-live="polite"
-                className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-2xl border border-white/10 bg-[#161616] px-4 py-3 text-sm"
+                className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-muted/55 px-4 py-3 text-sm text-foreground"
               >
-                <StatusIcons.info className="mt-0.5 size-4 shrink-0 text-neutral-400" aria-hidden="true" />
-                <p className="min-w-0 flex-1 text-neutral-300">{policyNotice}</p>
+                <StatusIcons.info
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>
                 <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
                   Open settings
                 </Button>
