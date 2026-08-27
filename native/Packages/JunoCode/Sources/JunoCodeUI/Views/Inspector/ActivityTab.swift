@@ -2,34 +2,31 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The shape of the run: what is happening now, and what the session has
-/// actually been allowed to do to the machine.
+/// The selected run's command-center overview.
 ///
-/// Nothing here is inferred. There are no token or cost figures because the
-/// local runtime does not report `Usage`, and no progress bars because no tool
-/// reports progress — the running row's spinner is indeterminate for exactly
-/// that reason, and says only that something is executing.
+/// A coding agent should answer four questions without making someone hunt
+/// through a diagnostic rail: what state is the run in, does it need me, what
+/// is it doing now, and what evidence has it produced? Deeper Changes, Agents,
+/// Environment and Repository panes remain available for inspection.
+///
+/// Nothing here invents progress. The runtime reports lifecycle events,
+/// elapsed time, concrete file changes, checkpoints, approvals, test results
+/// and sub-agent states, but not a trustworthy percentage complete. This view
+/// therefore uses real counts and evidence instead of a decorative progress bar.
 struct ActivityTab: View {
     @Bindable var controller: SessionController
 
-    /// The tool that has actually started and not finished.
-    ///
-    /// Derived from `toolStarted` minus `toolCompleted` — the same reading
-    /// `CodeToolDigest` gives the transcript's working row — rather than from
-    /// `toolProposed`. The orchestrator appends the proposal *before* it suspends
-    /// in `authorizeInvocation` and only appends `toolStarted` once the call is
-    /// authorized, so counting proposals reported a run blocked on the reader as
-    /// executing. It also reported one forever after a hard quit: the store's
-    /// crash repair appends `statusChanged` and `errorOccurred` and never a
-    /// `toolCompleted`, so the interrupted call stayed open in the transcript.
-    /// Nothing can be executing outside a live run, which is what closes that
-    /// second case whatever the transcript ends on.
+    private var status: CodeRunStatus {
+        CodeRunStatus(
+            controller.session.status,
+            hasPendingApproval: !controller.pendingApprovals.isEmpty
+        )
+    }
+
     private var runningTool: (name: String, summary: String)? {
         guard controller.isRunning else { return nil }
         let open = CodeToolDigest.runningToolCallIDs(in: controller.events)
         guard !open.isEmpty else { return nil }
-        // `ToolStartedEvent` carries only an identifier, so the name and the
-        // summary come from the proposal that opened the same call.
         for event in controller.events.reversed() {
             if case let .toolProposed(proposed) = event.payload,
                open.contains(proposed.toolCallID)
@@ -40,154 +37,285 @@ struct ActivityTab: View {
         return nil
     }
 
-    /// The decision the run is blocked on, and how many are queued behind it.
-    /// Read from the approval queue rather than from the transcript so this pane
-    /// and the card above the composer name the same request.
     private var blockingApproval: (request: ApprovalRequest, others: Int)? {
         guard let first = controller.pendingApprovals.first else { return nil }
         return (first, controller.pendingApprovals.count - 1)
     }
 
-    var body: some View {
-        // The Computer Use stop sits outside the list, so it cannot scroll away
-        // while the agent is driving the pointer. It renders nothing at all
-        // unless the coordinator reports capture as live.
-        VStack(spacing: 0) {
-            ComputerUseStopBar(controller: controller)
-            list
+    private var activeAgents: Int { controller.subagents.filter(\.isActive).count }
+    private var finishedAgents: Int { controller.subagents.count - activeAgents }
+
+    private var statusDetail: String {
+        if let blockingApproval {
+            return blockingApproval.others > 0
+                ? "Waiting for \(blockingApproval.request.toolName) and \(blockingApproval.others) more approval request\(blockingApproval.others == 1 ? "" : "s")"
+                : "Waiting for approval to use \(blockingApproval.request.toolName)"
+        }
+        if let runningTool {
+            let summary = runningTool.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            return summary.isEmpty ? "Using \(runningTool.name)" : summary
+        }
+        if activeAgents > 0 {
+            return "\(activeAgents) delegated agent\(activeAgents == 1 ? " is" : "s are") still working"
+        }
+        switch status.state {
+        case .ready: return "Ready for your next instruction"
+        case .planning: return "Building the implementation approach"
+        case .queued: return "Waiting for execution capacity"
+        case .running: return "Working through the task"
+        case .waitingForProvider: return "Waiting for the model provider"
+        case .degraded: return "Continuing with reduced capability"
+        case .needsApproval: return "A decision is required before work can continue"
+        case .stopping: return "Finishing the current operation before stopping"
+        case .finished: return "Task completed"
+        case .failed: return "The run stopped because something went wrong"
+        case .stopped: return "The run was stopped"
+        case .hostOffline: return "The computer running this session is offline"
         }
     }
 
-    private var list: some View {
+    var body: some View {
+        VStack(spacing: 0) {
+            runHeader
+            Divider().overlay(Color.junoSeparator)
+            ComputerUseStopBar(controller: controller)
+            overview
+        }
+        .computerUseWatch(controller)
+    }
+
+    private var runHeader: some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            CodeStatusGlyph(status, size: 15)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.tight) {
+                    Text(status.label)
+                        .font(.headline)
+                    if controller.isRunning {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityLabel("Run in progress")
+                    }
+                }
+                Text(statusDetail)
+                    .junoCaption()
+                    .junoSecondaryInk()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(status.label). \(statusDetail)")
+        .accessibilityIdentifier("juno.code.activity.summary")
+    }
+
+    private var overview: some View {
         List {
-            Section("Run") {
-                // Above the running row because a run waiting on the reader is
-                // the more urgent fact, and because the two are independent: a
-                // parallel turn can have one call executing while another waits.
-                approvalRow
-                runningRow
-                if controller.isRunning, controller.runStartedAt != nil {
+            if let blockingApproval {
+                Section("Needs you") {
+                    approvalRow(blockingApproval)
+                }
+            }
+
+            Section("Now") {
+                currentWorkRow
+                if controller.runStartedAt != nil {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         LabeledContent("Elapsed", value: elapsedLabel)
                     }
                 }
-                // Read from the checkpoint store, not counted off the transcript:
-                // a checkpoint is one file's content from before one change, and
-                // there is no run-level snapshot for a session to rewind to.
+            }
+
+            if let test = controller.lastTestRun {
+                Section("Verification") {
+                    verificationRow(test)
+                }
+            }
+
+            Section("Work produced") {
+                metricRow(label: "Changed files", value: "\(controller.changes.count)", symbol: "doc.badge.ellipsis")
+                metricRow(label: "Restorable versions", value: "\(controller.checkpointCount)", symbol: "clock.arrow.circlepath")
+            }
+
+            if !controller.subagents.isEmpty {
+                Section("Delegation") {
+                    metricRow(label: "Agents running", value: "\(activeAgents)", symbol: "person.2")
+                    metricRow(label: "Agents finished", value: "\(finishedAgents)", symbol: "checkmark.circle")
+                }
+            }
+
+            Section("Session") {
+                LabeledContent("Model", value: controller.session.configuration.modelID)
+                    .accessibilityIdentifier("juno.code.activity.model")
                 LabeledContent(
-                    "Restorable file versions",
-                    value: "\(controller.checkpointCount)"
+                    "Mode",
+                    value: AgentBehaviorLabel.text(for: controller.session.configuration.behavior)
+                )
+                .accessibilityIdentifier("juno.code.activity.mode")
+                LabeledContent(
+                    "Permission",
+                    value: PermissionModeLabel.text(
+                        for: controller.session.configuration.behavior == .code
+                            ? controller.session.configuration.permissionMode
+                            : .readOnly
+                    )
                 )
             }
 
-            delegationSummary
-
-            // Consent, the two TCC grants, the captured display, the latest
-            // capture and the action record — see `ComputerUsePane.swift` for
-            // why the safety surface lives in this pane rather than its own.
             ComputerUseSections(controller: controller)
         }
         .listStyle(.inset)
-        .computerUseWatch(controller)
+        .accessibilityIdentifier("juno.code.activity")
     }
 
-    // MARK: - What the run is doing
-
-    /// A run blocked on the reader, drawn as blocked.
-    ///
-    /// It carries the approval mark and the caution tint the card above the
-    /// composer uses, so the two surfaces agree at a glance, and it is worded as
-    /// waiting rather than as progress: a pane that reports a blocked run as
-    /// working is a pane that stops the reader looking for the card.
     @ViewBuilder
-    private var approvalRow: some View {
-        if let blockingApproval {
-            LabeledContent {
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(blockingApproval.request.toolName).junoCode()
-                    Text(blockingApproval.request.summary)
-                        .junoCaption()
-                        .lineLimit(2)
-                        .multilineTextAlignment(.trailing)
-                    if blockingApproval.others > 0 {
-                        Text("\(blockingApproval.others) more waiting")
-                            .junoCaption()
-                            .junoMetaInk()
-                    }
-                }
-            } label: {
-                JunoIconLabel("Waiting for approval", icon: .permission)
-                    .foregroundStyle(Color.junoCaution)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "Waiting for approval: \(blockingApproval.request.toolName), \(blockingApproval.request.summary)"
-            )
-            .accessibilityIdentifier("juno.code.activity.awaiting-approval")
-        }
-    }
-
-    /// The session's own status belongs to the toolbar and the transcript; this
-    /// row answers the narrower question of what tool is executing right now, and
-    /// "No tool" is a real answer to it.
-    @ViewBuilder
-    private var runningRow: some View {
+    private var currentWorkRow: some View {
         if let runningTool {
             LabeledContent {
-                VStack(alignment: .trailing, spacing: 1) {
+                VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
                     Text(runningTool.name).junoCode()
-                    Text(runningTool.summary)
-                        .junoCaption()
-                        .lineLimit(2)
-                        .multilineTextAlignment(.trailing)
+                    if !runningTool.summary.isEmpty {
+                        Text(runningTool.summary)
+                            .junoCaption()
+                            .lineLimit(3)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
             } label: {
                 HStack(spacing: JunoSpace.tight) {
                     ProgressView().controlSize(.small)
-                    Text("Running")
+                    Text("Current tool")
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Running \(runningTool.name), \(runningTool.summary)")
+            .accessibilityLabel("Current tool: \(runningTool.name), \(runningTool.summary)")
             .accessibilityIdentifier("juno.code.activity.running")
+        } else if activeAgents > 0 {
+            LabeledContent("Current work", value: "Delegated to \(activeAgents) agent\(activeAgents == 1 ? "" : "s")")
+                .accessibilityIdentifier("juno.code.activity.running")
         } else {
-            LabeledContent("Running", value: "No tool")
+            LabeledContent("Current work", value: status.label)
                 .accessibilityIdentifier("juno.code.activity.running")
         }
     }
 
-    // MARK: - Sub-agents
+    private func verificationRow(_ test: TestRunCompletedEvent) -> some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
+                Text(test.passed ? "Passed" : "Failed")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(test.passed ? Color.junoSuccess : Color.junoDanger)
+                Text(test.command)
+                    .junoCodeSmall()
+                    .junoMetaInk()
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                if let testsRun = test.testsRun {
+                    let failures = test.failures ?? 0
+                    Text("\(testsRun) test\(testsRun == 1 ? "" : "s") · \(failures) failure\(failures == 1 ? "" : "s") · \(durationLabel(test.durationSeconds))")
+                        .junoCaption()
+                        .junoSecondaryInk()
+                } else {
+                    Text(durationLabel(test.durationSeconds))
+                        .junoCaption()
+                        .junoSecondaryInk()
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(test.passed ? .check : .error, size: 14)
+                    .foregroundStyle(test.passed ? Color.junoSuccess : Color.junoDanger)
+                Text("Latest tests")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Latest tests \(test.passed ? "passed" : "failed"). \(test.command)")
+        .accessibilityIdentifier("juno.code.activity.tests")
+    }
 
-    /// How much of this run is happening in parallel, and nothing more.
-    ///
-    /// The agents themselves moved to their own pane. What belongs here is the
-    /// same question this pane already answers about tools — *what is the run
-    /// doing right now* — for which the count of live agents is the answer and a
-    /// second list of them would be a duplicate. It is drawn only while a
-    /// delegation exists, so a session that never delegated carries no row about
-    /// delegation.
-    @ViewBuilder
-    private var delegationSummary: some View {
-        let runs = controller.subagents
-        let active = runs.filter(\.isActive).count
-        if !runs.isEmpty {
-            Section("Delegation") {
-                LabeledContent(
-                    "Sub-agents",
-                    value: active > 0
-                        ? "\(active) of \(runs.count) running"
-                        : "\(runs.count) finished"
-                )
-                .help("Open the Sub-agents pane to read each one")
+    private func approvalRow(_ blockingApproval: (request: ApprovalRequest, others: Int)) -> some View {
+        let request = blockingApproval.request
+        let tint = request.risk == .destructive ? Color.junoDanger : Color.junoCaution
+
+        return VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                JunoIconView(.permission, size: 14)
+                    .foregroundStyle(tint)
+                Text(request.toolName)
+                    .junoCode()
+                    .lineLimit(1)
+                Spacer(minLength: JunoSpace.tight)
+                ApprovalCountdown(expiresAt: request.expiresAt)
+            }
+
+            Text(request.summary)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: JunoSpace.snug) {
+                Text("\(request.risk.rawValue.capitalized) risk")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
+                if blockingApproval.others > 0 {
+                    Text("+\(blockingApproval.others) more waiting")
+                        .junoCaption()
+                        .junoMetaInk()
+                }
+                Spacer(minLength: 0)
+
+                Button("Deny") {
+                    Task { await controller.deny(request.id) }
+                }
+                .controlSize(.small)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+                .help("Deny this action")
+                .accessibilityIdentifier("juno.code.activity.approval.deny")
+
+                Button("Approve") {
+                    Task { await controller.approve(request.id) }
+                }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+                .help("Approve this action")
+                .accessibilityIdentifier("juno.code.activity.approval.approve")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Approval required: \(request.toolName), \(request.summary)")
+        .accessibilityIdentifier("juno.code.activity.awaiting-approval")
+    }
+
+    private func metricRow(label: String, value: String, symbol: String) -> some View {
+        LabeledContent {
+            Text(value).monospacedDigit()
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(systemImage: symbol, size: 13)
+                    .junoSecondaryInk()
+                    .frame(width: 16)
+                Text(label)
             }
         }
     }
 
     private var elapsedLabel: String {
         guard let seconds = controller.elapsedSeconds else { return "—" }
-        let whole = Int(seconds)
-        return whole < 60
-            ? "\(whole)s"
-            : "\(whole / 60)m \(whole % 60)s"
+        return durationLabel(seconds)
+    }
+
+    private func durationLabel(_ seconds: Double) -> String {
+        let whole = max(0, Int(seconds))
+        if whole < 60 { return "\(whole)s" }
+        if whole < 3_600 { return "\(whole / 60)m \(whole % 60)s" }
+        return "\(whole / 3_600)h \((whole % 3_600) / 60)m"
     }
 }
