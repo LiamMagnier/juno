@@ -41,6 +41,8 @@ struct PreviewTab: View {
                     Button("Open Live Preview", action: { openPreview?() })
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                         .disabled(openPreview == nil)
                         .accessibilityIdentifier("juno.code.preview.open")
 
