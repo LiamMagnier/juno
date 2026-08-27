@@ -154,13 +154,21 @@ struct RepositoryTab: View {
                 }
                 Spacer(minLength: JunoSpace.tight)
                 if status.ahead > 0 {
-                    Label("\(status.ahead)", systemImage: "arrow.up")
+                    Label {
+                        Text("\(status.ahead)")
+                    } icon: {
+                        JunoIconView(.send, size: 13)
+                    }
                         .junoCaption()
                         .monospacedDigit()
                         .help("\(status.ahead) commits not yet pushed")
                 }
                 if status.behind > 0 {
-                    Label("\(status.behind)", systemImage: "arrow.down")
+                    Label {
+                        Text("\(status.behind)")
+                    } icon: {
+                        JunoIconView(.arrowDown, size: 13)
+                    }
                         .junoCaption()
                         .monospacedDigit()
                         .help("\(status.behind) commits on the upstream you do not have")
@@ -191,9 +199,9 @@ struct RepositoryTab: View {
                     if preparingPush || pushing {
                         ProgressView().controlSize(.small)
                     } else {
-                        Label(
+                        JunoIconLabel(
                             status.upstream == nil ? "Publish…" : "Push…",
-                            systemImage: "arrow.up.circle"
+                            icon: .send
                         )
                     }
                 }
@@ -280,7 +288,7 @@ struct RepositoryTab: View {
     private func workingTreeSection(_ status: GitStatusSummary) -> some View {
         Section("Working tree") {
             if status.isClean {
-                Label("Working tree clean", systemImage: "checkmark.circle")
+                JunoIconLabel("Working tree clean", icon: .check)
                     .junoCaption()
                     .foregroundStyle(Color.junoSuccess)
             } else {
@@ -310,7 +318,7 @@ struct RepositoryTab: View {
                         .accessibilityIdentifier("juno.code.repository.commit-message")
                     HStack(spacing: JunoSpace.snug) {
                         if status.hasConflicts {
-                            Label("Resolve conflicts first", systemImage: "exclamationmark.triangle")
+                            JunoIconLabel("Resolve conflicts first", icon: .error)
                                 .junoCaption()
                                 .foregroundStyle(Color.junoCaution)
                         }
@@ -503,14 +511,14 @@ struct RepositoryTab: View {
     private var extensibilitySection: some View {
         Section("Extensions") {
             HStack {
-                Label("Skills", systemImage: "wand.and.stars")
+                JunoIconLabel("Skills", icon: .knowledge)
                 Spacer()
                 Text("\(controller.skillDiscoveryResult.skills.count)")
                     .junoCaption()
                     .monospacedDigit()
             }
             HStack {
-                Label("Hooks", systemImage: "bolt.badge.clock")
+                JunoIconLabel("Hooks", icon: .work)
                 Spacer()
                 Text(
                     controller.hookDiscoveryResult.hooks.isEmpty
@@ -521,14 +529,18 @@ struct RepositoryTab: View {
                 .junoSecondaryInk()
             }
             HStack {
-                Label("MCP servers", systemImage: "puzzlepiece.extension")
+                JunoIconLabel("MCP servers", icon: .tools)
                 Spacer()
                 Text("\(controller.mcpServerConfigurations.count)")
                     .junoCaption()
                     .monospacedDigit()
             }
             ForEach(controller.mcpServerConfigurations, id: \.name) { server in
-                Label(server.name, systemImage: server.enabled ? "checkmark.circle" : "pause.circle")
+                Label {
+                    Text(server.name)
+                } icon: {
+                    JunoIconView(server.enabled ? .check : .stop, size: 14)
+                }
                     .junoCaption()
                     .junoSecondaryInk()
             }
@@ -541,7 +553,7 @@ struct RepositoryTab: View {
             if !controller.hookDiscoveryResult.hooks.isEmpty {
                 if controller.hooksAreEnabled {
                     HStack {
-                        Label("Hooks enabled", systemImage: "checkmark.shield.fill")
+                        JunoIconLabel("Hooks enabled", icon: .permission)
                             .junoCaption()
                             .foregroundStyle(Color.junoSuccess)
                         Spacer()
@@ -565,9 +577,9 @@ struct RepositoryTab: View {
             if !controller.hookDiscoveryResult.diagnostics.isEmpty
                 || !controller.skillDiscoveryResult.diagnostics.isEmpty
             {
-                Label(
-                    "\(controller.hookDiscoveryResult.diagnostics.count + controller.skillDiscoveryResult.diagnostics.count) configuration issue(s)",
-                    systemImage: "exclamationmark.triangle"
+                JunoIconLabel(
+                    verbatim: "\(controller.hookDiscoveryResult.diagnostics.count + controller.skillDiscoveryResult.diagnostics.count) configuration issue(s)",
+                    icon: .error
                 )
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
@@ -581,7 +593,7 @@ struct RepositoryTab: View {
                 Text("No repository instruction files found.").junoCaption()
             } else {
                 ForEach(controller.instructionFiles) { file in
-                    Label(file.path.value, systemImage: "doc.text")
+                    JunoIconLabel(verbatim: file.path.value, icon: .file)
                         .junoCode()
                         .lineLimit(1)
                         .truncationMode(.head)

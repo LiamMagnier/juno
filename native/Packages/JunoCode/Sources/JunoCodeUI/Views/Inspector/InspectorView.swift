@@ -138,7 +138,11 @@ public struct InspectorView: View {
                 Spacer(minLength: 0)
                 Picker("Inspector pane", selection: pane) {
                     ForEach(CodeInspectorPane.allCases) { candidate in
-                        Label(segmentLabel(for: candidate), systemImage: candidate.symbol)
+                        Label {
+                            Text(segmentLabel(for: candidate))
+                        } icon: {
+                            JunoIconView(systemImage: candidate.symbol, size: 15)
+                        }
                             .tag(candidate)
                     }
                 }
@@ -484,7 +488,7 @@ struct PreviewTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Label("Live preview", systemImage: "rectangle.on.rectangle")
+                JunoIconLabel("Live preview", icon: .artifactsTool)
                     .font(.headline)
                 Text("Open the workspace preview beside the Code session. It uses the current project files and refreshes as the agent changes them.")
                     .junoCaption()

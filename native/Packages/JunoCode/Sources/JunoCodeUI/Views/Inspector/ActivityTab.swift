@@ -116,7 +116,7 @@ struct ActivityTab: View {
                     }
                 }
             } label: {
-                Label("Waiting for approval", systemImage: "hand.raised.fill")
+                JunoIconLabel("Waiting for approval", icon: .permission)
                     .foregroundStyle(Color.junoCaution)
             }
             .accessibilityElement(children: .combine)

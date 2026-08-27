@@ -550,7 +550,12 @@ private struct SubagentDetailPane: View {
     /// the elapsed time do not share a line without the title truncating.
     private var backControl: some View {
         Button(action: back) {
-            Label("All sub-agents", systemImage: "chevron.backward")
+            Label {
+                Text("All sub-agents")
+            } icon: {
+                JunoIconView(.chevronRight, size: 15)
+                    .rotationEffect(.degrees(180))
+            }
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, JunoSpace.snug)
                 .padding(.vertical, JunoSpace.tight)
@@ -570,7 +575,7 @@ private struct SubagentDetailPane: View {
     private var liveControls: some View {
         if let child = run.childSessionID, !pendingApprovals.isEmpty {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Label("Waiting for approval", systemImage: "hand.raised.fill")
+                JunoIconLabel("Waiting for approval", icon: .permission)
                     .junoSidebarSection()
                     .foregroundStyle(Color.junoCaution)
                 ForEach(pendingApprovals, id: \.id) { request in
@@ -589,11 +594,11 @@ private struct SubagentDetailPane: View {
         if run.isActive, let child = run.childSessionID {
             HStack(spacing: JunoSpace.tight) {
                 if detailIsWaitingForApproval {
-                    Label("Agent is paused", systemImage: "pause.fill")
+                    JunoIconLabel("Agent is paused", icon: .stop)
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
                 } else {
-                    Label("Agent is working", systemImage: "bolt.horizontal.fill")
+                    JunoIconLabel("Agent is working", icon: .work)
                         .junoCaption()
                         .junoSecondaryInk()
                 }
@@ -608,7 +613,7 @@ private struct SubagentDetailPane: View {
                     if isStopping {
                         ProgressView().controlSize(.small)
                     } else {
-                        Label("Stop", systemImage: "stop.fill")
+                        JunoIconLabel("Stop", icon: .stop)
                     }
                 }
                 .buttonStyle(.bordered)
@@ -630,7 +635,7 @@ private struct SubagentDetailPane: View {
             detailCard {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     HStack(spacing: JunoSpace.tight) {
-                        Label("Isolated worktree", systemImage: "arrow.triangle.branch")
+                        JunoIconLabel("Isolated worktree", icon: .branch)
                             .junoSidebarSection()
                         Spacer(minLength: 0)
                         Text(worktreeLifecycleLabel)
@@ -687,7 +692,11 @@ private struct SubagentDetailPane: View {
     }
 
     private var worktreeStatusLabel: some View {
-        Label("Worktree \(worktreeLifecycleLabel)", systemImage: "arrow.triangle.branch")
+        Label {
+            Text("Worktree \(worktreeLifecycleLabel)")
+        } icon: {
+            JunoIconView(.branch, size: 14)
+        }
             .junoCaption()
             .foregroundStyle(worktreeLifecycleTint)
             .lineLimit(1)
@@ -702,7 +711,7 @@ private struct SubagentDetailPane: View {
             } else if compact {
                 JunoIconView(systemImage: "arrow.down.to.line.compact")
             } else {
-                Label("Apply", systemImage: "arrow.down.to.line.compact")
+                JunoIconLabel("Apply", icon: .arrowDown)
             }
         }
         .buttonStyle(.borderedProminent)
@@ -722,7 +731,7 @@ private struct SubagentDetailPane: View {
             } else if compact {
                 JunoIconView(systemImage: "trash")
             } else {
-                Label("Discard", systemImage: "trash")
+                JunoIconLabel("Discard", icon: .trash)
             }
         }
         .buttonStyle(.bordered)
@@ -859,10 +868,18 @@ private struct SubagentDetailPane: View {
                     Text("Tokens").junoSidebarSection()
                     HStack(spacing: JunoSpace.cozy) {
                         if let input = run.inputTokens {
-                            Label("\(input) in", systemImage: "arrow.down")
+                            Label {
+                                Text("\(input) in")
+                            } icon: {
+                                JunoIconView(.arrowDown, size: 13)
+                            }
                         }
                         if let output = run.outputTokens {
-                            Label("\(output) out", systemImage: "arrow.up")
+                            Label {
+                                Text("\(output) out")
+                            } icon: {
+                                JunoIconView(.send, size: 13)
+                            }
                         }
                         Spacer(minLength: 0)
                     }
@@ -998,7 +1015,7 @@ private struct SubagentApprovalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(spacing: JunoSpace.tight) {
-                JunoIconView(systemImage: "hand.raised.fill")
+                JunoIconView(.permission, size: 15)
                     .foregroundStyle(tint)
                 Text("Approval required")
                     .font(.caption.weight(.semibold))

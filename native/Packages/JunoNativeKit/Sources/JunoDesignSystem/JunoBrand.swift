@@ -128,9 +128,12 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     public static func from(systemImage: String) -> JunoIcon {
         let value = systemImage.lowercased()
         if value.contains("chevron") || value.contains("arrow.right") { return .chevronRight }
+        if value.contains("arrow.up.right") || value.contains("external") || value.contains("link") {
+            return .external
+        }
         if value.contains("arrow.down") { return .arrowDown }
         if value.contains("arrow.up") { return .send }
-        if value.contains("arrow") || value.contains("external") || value.contains("link") {
+        if value.contains("arrow") {
             return .external
         }
         if value.contains("xmark") || value.contains("trash") || value.contains("minus") {
