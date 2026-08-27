@@ -13,32 +13,19 @@ import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { EmptyState } from "@/components/ui/empty-state";
 
 /**
- * Everything that starts without being asked.
+ * Everything that starts without the reader typing a fresh prompt.
  *
- * WHAT THIS PAGE NOW SAYS THAT IT DID NOT. A Juno schedule points at ONE
- * session — `WorkSchedule.sessionId` is a real column and the scheduler has
- * always re-run the same task rather than spawning a fresh orphan per fire — so
- * a weekly report keeps its transcript and its deliverables across every run it
- * has ever had. That is genuinely unusual; the ordinary shape in this category
- * is N disconnected runs you have to correlate by hand. Nothing in the UI said
- * so, and a capability nobody is told about reads as a missing feature. The lede
- * says it, the rows link to the living task, and the inbox files that task under
- * Scheduled rather than pretending it is a one-shot that keeps finishing.
+ * This route is still `/work/schedules` for compatibility, but the product name
+ * is **Automations**. A schedule is only one trigger family: Juno can also start
+ * Work from email filters, calendar windows, topic monitors, connector events,
+ * folder changes and manual one-click runs. "Recurring work" hid those event
+ * triggers and made a capability that already existed look missing next to
+ * ChatGPT Work, Claude Cowork and Gemini/Antigravity.
  *
- * UPCOMING AND PAUSED ARE SPLIT. Both were in one list ordered by next fire, and
- * because a paused schedule keeps its `nextRunAt` — the scheduler skips it
- * rather than clearing the column — a paused row could sort above a live one and
- * appear to promise a run that was not coming. Splitting them is what makes the
- * order mean what it looks like it means.
- *
- * Within each group the route's order is kept: soonest fire first, with the ones
- * that will never fire again last (Postgres sorts NULLs last on an ascending
- * order). Re-sorting here would disagree with the paging the route is built for
- * the moment there are more than fifty.
- *
- * There is no poll. A schedule changes when somebody changes it, and the two
- * things that change one from this page — pause and run-now — hand back the row
- * they wrote.
+ * Each automation points at one durable Work session, so repeated executions
+ * add to one transcript and one deliverable history instead of producing a pile
+ * of disconnected jobs. Live and paused automations stay split so `nextRunAt`
+ * never makes a paused row look like it is about to fire.
  */
 export default function WorkSchedulesPage() {
   const [schedules, setSchedules] = React.useState<ClientWorkSchedule[] | null>(null);
@@ -52,9 +39,6 @@ export default function WorkSchedulesPage() {
       return;
     }
     setFailed(true);
-    // An empty list and a failed request look identical on screen unless the
-    // page says which it is, so the list is left null and the note below is
-    // what gets rendered.
     setSchedules(null);
   }, []);
 
@@ -70,61 +54,50 @@ export default function WorkSchedulesPage() {
     );
   }, []);
 
-  /*
-   * Live first, paused second, and the route's order kept inside each.
-   *
-   * A stable partition rather than a sort, so the "soonest fire first" the route
-   * built its index for survives. See the note at the top for why the two cannot
-   * share a list: a paused schedule keeps its `nextRunAt`, so mixing them puts a
-   * row that is not going to run above one that is.
-   */
-  const upcoming = (schedules ?? []).filter((schedule) => schedule.enabled);
+  const active = (schedules ?? []).filter((schedule) => schedule.enabled);
   const paused = (schedules ?? []).filter((schedule) => !schedule.enabled);
 
   return (
     <WorkPageFrame
-      title="Recurring work"
-      description="Work that starts on its own — on a clock, or when something happens. Each one keeps a single task: every run adds to the same transcript and the same set of files, so you can see what changed since last time rather than hunting through separate runs."
+      title="Automations"
+      description="Let Work start itself — at a time you choose or when something changes. Automations can react to email, meetings, monitored topics, connected-app events and granted folders, and every run stays attached to the same task so context compounds instead of resetting."
       action={
         <Button asChild size="sm" className="gap-1.5">
           <Link href="/work/schedules/new">
-            <Plus className="size-3.5" aria-hidden="true" /> New schedule
+            <Plus className="size-3.5" aria-hidden="true" /> New automation
           </Link>
         </Button>
       }
     >
       {failed ? (
         <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your schedules. This page is empty because the request failed, not because
-          you have none — anything already set up is still running to its own clock.
+          Couldn’t load your automations. Existing automations keep their server-side state; this
+          page is empty because the read failed, not because they were removed.
         </WorkLoadError>
       ) : schedules === null ? (
         <WorkRowSkeletons />
       ) : schedules.length === 0 ? (
         <EmptyState
           icon={AppIcons.tasks}
-          title="Nothing scheduled"
-          description="A schedule is a task with a trigger on it: every weekday at eight, when an invoice arrives, when a folder changes. Juno runs it while you are elsewhere and asks before anything it cannot undo."
+          title="No automations yet"
+          description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
           action={
             <Button asChild size="sm" className="gap-1.5">
               <Link href="/work/schedules/new">
-                <Plus className="size-3.5" aria-hidden="true" /> New schedule
+                <Plus className="size-3.5" aria-hidden="true" /> New automation
               </Link>
             </Button>
           }
         />
       ) : (
         <>
-          {/* Headings only when both groups exist. A single heading over the
-              only list on the page is a label for something with nothing to be
-              distinguished from. */}
-          {upcoming.length > 0 && (
+          {active.length > 0 && (
             <section>
               {paused.length > 0 && (
-                <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Upcoming</h2>
+                <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Active</h2>
               )}
               <div className="space-y-2.5">
-                {upcoming.map((schedule, index) => (
+                {active.map((schedule, index) => (
                   <WorkScheduleRow
                     key={schedule.id}
                     schedule={schedule}
@@ -136,18 +109,15 @@ export default function WorkSchedulesPage() {
             </section>
           )}
           {paused.length > 0 && (
-            <section className={upcoming.length > 0 ? "mt-9" : undefined}>
-              {upcoming.length > 0 && (
+            <section className={active.length > 0 ? "mt-9" : undefined}>
+              {active.length > 0 && (
                 <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Paused</h2>
               )}
               <div className="space-y-2.5">
                 {paused.map((schedule, index) => (
                   <WorkScheduleRow
                     key={schedule.id}
-                    // The stagger continues across the two groups rather than
-                    // restarting, so the page deals one hand of cards instead of
-                    // two that visibly collide in the middle.
-                    index={upcoming.length + index}
+                    index={active.length + index}
                     schedule={schedule}
                     onChanged={replace}
                   />
