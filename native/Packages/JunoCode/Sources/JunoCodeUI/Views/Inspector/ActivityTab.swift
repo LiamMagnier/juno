@@ -4,17 +4,15 @@ import JunoDesignSystem
 
 /// The selected run's command-center overview.
 ///
-/// This is intentionally the first inspector surface a reader sees. A coding
-/// agent should answer four questions without making someone hunt through a
-/// diagnostic rail: what state is the run in, does it need me, what is it doing
-/// now, and how much work has it produced or delegated? The deeper Changes,
-/// Agents, Environment and Repository panes remain the places to inspect those
-/// facts in detail.
+/// A coding agent should answer four questions without making someone hunt
+/// through a diagnostic rail: what state is the run in, does it need me, what
+/// is it doing now, and what evidence has it produced? Deeper Changes, Agents,
+/// Environment and Repository panes remain available for inspection.
 ///
-/// Nothing here invents progress. The local runtime reports lifecycle events,
-/// elapsed time, concrete file changes, checkpoints, approvals and sub-agent
-/// states, but it does not report a trustworthy percentage complete. The view
-/// therefore uses counts and status text rather than a decorative progress bar.
+/// Nothing here invents progress. The runtime reports lifecycle events,
+/// elapsed time, concrete file changes, checkpoints, approvals, test results
+/// and sub-agent states, but not a trustworthy percentage complete. This view
+/// therefore uses real counts and evidence instead of a decorative progress bar.
 struct ActivityTab: View {
     @Bindable var controller: SessionController
 
@@ -44,13 +42,8 @@ struct ActivityTab: View {
         return (first, controller.pendingApprovals.count - 1)
     }
 
-    private var activeAgents: Int {
-        controller.subagents.filter(\.isActive).count
-    }
-
-    private var finishedAgents: Int {
-        controller.subagents.count - activeAgents
-    }
+    private var activeAgents: Int { controller.subagents.filter(\.isActive).count }
+    private var finishedAgents: Int { controller.subagents.count - activeAgents }
 
     private var statusDetail: String {
         if let blockingApproval {
@@ -138,6 +131,12 @@ struct ActivityTab: View {
                 }
             }
 
+            if let test = controller.lastTestRun {
+                Section("Verification") {
+                    verificationRow(test)
+                }
+            }
+
             Section("Work produced") {
                 metricRow(label: "Changed files", value: "\(controller.changes.count)", symbol: "doc.badge.ellipsis")
                 metricRow(label: "Restorable versions", value: "\(controller.checkpointCount)", symbol: "clock.arrow.circlepath")
@@ -158,6 +157,14 @@ struct ActivityTab: View {
                     value: AgentBehaviorLabel.text(for: controller.session.configuration.behavior)
                 )
                 .accessibilityIdentifier("juno.code.activity.mode")
+                LabeledContent(
+                    "Permission",
+                    value: PermissionModeLabel.text(
+                        for: controller.session.configuration.behavior == .code
+                            ? controller.session.configuration.permissionMode
+                            : .readOnly
+                    )
+                )
             }
 
             ComputerUseSections(controller: controller)
@@ -171,8 +178,7 @@ struct ActivityTab: View {
         if let runningTool {
             LabeledContent {
                 VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                    Text(runningTool.name)
-                        .junoCode()
+                    Text(runningTool.name).junoCode()
                     if !runningTool.summary.isEmpty {
                         Text(runningTool.summary)
                             .junoCaption()
@@ -198,11 +204,44 @@ struct ActivityTab: View {
         }
     }
 
+    private func verificationRow(_ test: TestRunCompletedEvent) -> some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
+                Text(test.passed ? "Passed" : "Failed")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(test.passed ? Color.junoSuccess : Color.junoDanger)
+                Text(test.command)
+                    .junoCodeSmall()
+                    .junoMetaInk()
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                if let testsRun = test.testsRun {
+                    let failures = test.failures ?? 0
+                    Text("\(testsRun) test\(testsRun == 1 ? "" : "s") · \(failures) failure\(failures == 1 ? "" : "s") · \(durationLabel(test.durationSeconds))")
+                        .junoCaption()
+                        .junoSecondaryInk()
+                } else {
+                    Text(durationLabel(test.durationSeconds))
+                        .junoCaption()
+                        .junoSecondaryInk()
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(test.passed ? .check : .warning, size: 14)
+                    .foregroundStyle(test.passed ? Color.junoSuccess : Color.junoDanger)
+                Text("Latest tests")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Latest tests \(test.passed ? "passed" : "failed"). \(test.command)")
+        .accessibilityIdentifier("juno.code.activity.tests")
+    }
+
     private func approvalRow(_ blockingApproval: (request: ApprovalRequest, others: Int)) -> some View {
         LabeledContent {
             VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                Text(blockingApproval.request.toolName)
-                    .junoCode()
+                Text(blockingApproval.request.toolName).junoCode()
                 Text(blockingApproval.request.summary)
                     .junoCaption()
                     .lineLimit(3)
@@ -224,8 +263,7 @@ struct ActivityTab: View {
 
     private func metricRow(label: String, value: String, symbol: String) -> some View {
         LabeledContent {
-            Text(value)
-                .monospacedDigit()
+            Text(value).monospacedDigit()
         } label: {
             HStack(spacing: JunoSpace.tight) {
                 JunoIconView(systemImage: symbol, size: 13)
@@ -238,7 +276,11 @@ struct ActivityTab: View {
 
     private var elapsedLabel: String {
         guard let seconds = controller.elapsedSeconds else { return "—" }
-        let whole = Int(seconds)
+        return durationLabel(seconds)
+    }
+
+    private func durationLabel(_ seconds: Double) -> String {
+        let whole = max(0, Int(seconds))
         if whole < 60 { return "\(whole)s" }
         if whole < 3_600 { return "\(whole / 60)m \(whole % 60)s" }
         return "\(whole / 3_600)h \((whole % 3_600) / 60)m"
