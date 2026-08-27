@@ -1303,7 +1303,7 @@ public struct CodePreviewWindowView: View {
             Divider().frame(height: JunoSpace.regular).overlay(Color.junoSeparator)
 
             Button { model.reload() } label: {
-                Image(systemName: "arrow.clockwise")
+                JunoIconView(systemImage: "arrow.clockwise")
             }
             .buttonStyle(.borderless)
             .disabled(model.address == nil)
@@ -1328,7 +1328,7 @@ public struct CodePreviewWindowView: View {
                 .accessibilityIdentifier("juno.code.preview.open")
 
             Button { model.openInBrowser() } label: {
-                Image(systemName: "safari")
+                JunoIconView(systemImage: "safari")
             }
             .buttonStyle(.borderless)
             .disabled(model.address == nil)
@@ -1338,7 +1338,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 isLogVisible.toggle()
             } label: {
-                Image(systemName: "text.alignleft")
+                JunoIconView(systemImage: "text.alignleft")
             }
             .buttonStyle(.borderless)
             .background(
@@ -1359,7 +1359,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 model.stop()
             } label: {
-                Label("Stop", systemImage: "stop.fill")
+                JunoIconLabel("Stop", icon: .stop)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -1369,7 +1369,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 model.start()
             } label: {
-                Label("Start", systemImage: "play.fill")
+                JunoIconLabel("Start", icon: .work)
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
@@ -1481,7 +1481,7 @@ public struct CodePreviewWindowView: View {
                     title: "Start the development server",
                     message:
                         "Juno runs \(command.commandLine) in \(command.workspaceDisplayName) and opens the address it prints.",
-                    symbol: "macwindow",
+                    icon: .device,
                     actionLabel: "Start",
                     action: { model.start() }
                 )
@@ -1490,7 +1490,7 @@ public struct CodePreviewWindowView: View {
                     title: "No development server command",
                     message: model.startUnavailableReason
                         ?? "Type the address of a server you have already started.",
-                    symbol: "macwindow"
+                    icon: .device
                 )
             }
             capabilityNote
@@ -1499,7 +1499,7 @@ public struct CodePreviewWindowView: View {
 
     private func failureState(title: String, reason: String) -> some View {
         VStack(spacing: JunoSpace.regular) {
-            Label(title, systemImage: "exclamationmark.triangle")
+            JunoIconLabel(verbatim: title, icon: .error)
                 .junoEmptyTitle()
                 .foregroundStyle(Color.junoDanger)
 
@@ -1625,7 +1625,7 @@ public struct CodePreviewWindowView: View {
                 Button {
                     model.stop()
                 } label: {
-                    Image(systemName: "stop.fill")
+                    JunoIconView(systemImage: "stop.fill")
                         .imageScale(.small)
                 }
                 .buttonStyle(.borderless)
@@ -1720,7 +1720,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 copyLog()
             } label: {
-                Image(systemName: "doc.on.doc")
+                JunoIconView(systemImage: "doc.on.doc")
             }
             .buttonStyle(.borderless)
             .disabled(model.log.isEmpty)
@@ -1730,7 +1730,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 isLogVisible = false
             } label: {
-                Image(systemName: "chevron.down")
+                JunoIconView(systemImage: "chevron.down")
             }
             .buttonStyle(.borderless)
             .help("Hide the server log")
@@ -1857,7 +1857,7 @@ public struct CodePreviewDock: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(spacing: JunoSpace.tight) {
-                Label("Preview", systemImage: "rectangle.on.rectangle")
+                JunoIconLabel("Preview", icon: .artifactsTool)
                     .junoRowLabel()
                 status
                 Spacer(minLength: JunoSpace.tight)
@@ -1865,14 +1865,14 @@ public struct CodePreviewDock: View {
                     Button {
                         openInWindow()
                     } label: {
-                        Image(systemName: "macwindow.on.rectangle")
+                        JunoIconView(systemImage: "macwindow.on.rectangle")
                     }
                     .buttonStyle(.borderless)
                     .help("Open the preview in a separate window")
                     .accessibilityLabel("Open preview in separate window")
                 }
                 Button(action: close) {
-                    Image(systemName: "xmark")
+                    JunoIconView(systemImage: "xmark")
                 }
                 .buttonStyle(.borderless)
                 .help("Close the preview pane")
@@ -1886,7 +1886,7 @@ public struct CodePreviewDock: View {
                 Button {
                     model.reload()
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    JunoIconView(systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderless)
                 .disabled(model.address == nil)
@@ -1898,7 +1898,7 @@ public struct CodePreviewDock: View {
                 Button {
                     isLogVisible.toggle()
                 } label: {
-                    Image(systemName: "text.alignleft")
+                    JunoIconView(systemImage: "text.alignleft")
                 }
                 .buttonStyle(.borderless)
                 .background(
@@ -1945,7 +1945,7 @@ public struct CodePreviewDock: View {
             Button {
                 model.stop()
             } label: {
-                Label("Stop", systemImage: "stop.fill")
+                JunoIconLabel("Stop", icon: .stop)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -1955,7 +1955,7 @@ public struct CodePreviewDock: View {
             Button {
                 model.start()
             } label: {
-                Label("Start", systemImage: "play.fill")
+                JunoIconLabel("Start", icon: .work)
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
@@ -2016,7 +2016,7 @@ public struct CodePreviewDock: View {
                     )
                     .junoRowLabel()
                 } else if case .failed(let reason) = model.serverState {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                    JunoIconView(.error, size: 24)
                         .font(.title2)
                         .foregroundStyle(Color.junoDanger)
                     Text("Preview server failed")
@@ -2028,7 +2028,7 @@ public struct CodePreviewDock: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 340)
                 } else {
-                    Image(systemName: "macwindow")
+                    JunoIconView(.device, size: 24)
                         .font(.title2)
                         .junoSecondaryInk()
                     Text(
@@ -2069,12 +2069,12 @@ public struct CodePreviewDock: View {
                .lineLimit(1)
                .truncationMode(.middle)
             if model.isServerContained {
-                Image(systemName: "lock.shield.fill")
+                JunoIconView(.permission, size: 15)
                     .foregroundStyle(Color.junoSuccess)
                     .help("The preview server is contained to this workspace with network access disabled")
                     .accessibilityLabel("Preview server sandboxed")
             } else if model.workspaceRoot != nil {
-                Image(systemName: "exclamationmark.shield.fill")
+                JunoIconView(.error, size: 15)
                     .foregroundStyle(Color.junoCaution)
                     .help("Kernel containment is unavailable on this Mac; the preview still uses a scrubbed environment")
                     .accessibilityLabel("Preview server containment unavailable")

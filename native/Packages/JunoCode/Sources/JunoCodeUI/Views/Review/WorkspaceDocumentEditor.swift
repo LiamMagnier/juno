@@ -86,10 +86,11 @@ struct WorkspaceDocumentEditor: View {
                     .disabled(isSaving)
                     .help("Read this file again from disk")
             } else {
-                Label(
-                    "\(controller.session.configuration.behavior.rawValue.capitalized) sessions are read-only",
-                    systemImage: "lock"
-                )
+                Label {
+                    Text("\(controller.session.configuration.behavior.rawValue.capitalized) sessions are read-only")
+                } icon: {
+                    JunoIconView(.lock, size: 14)
+                }
                 .junoCaption()
             }
 

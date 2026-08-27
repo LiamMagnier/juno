@@ -493,7 +493,7 @@ struct PreviewTab: View {
 
             if let root = controller.context?.access.rootURL {
                 HStack(spacing: JunoSpace.snug) {
-                    Image(systemName: "folder")
+                    JunoIconView(systemImage: "folder")
                         .junoSecondaryInk()
                     Text(root.lastPathComponent.isEmpty ? root.path : root.lastPathComponent)
                         .junoCode()

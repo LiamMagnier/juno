@@ -43,7 +43,7 @@ public struct ReviewCanvasView: View {
                 JunoEmptyState(
                     title: "Nothing to review",
                     message: "Files Juno edits appear here as a diff you can keep or revert hunk by hunk.",
-                    symbol: "plusminus.circle"
+                    icon: .branch
                 )
             } else {
                 fileScroll
@@ -225,7 +225,7 @@ public struct ReviewLayoutPicker: View {
     public var body: some View {
         Picker("Diff layout", selection: $review.layout) {
             ForEach(ReviewModel.Layout.allCases) { layout in
-                Image(systemName: layout.systemImage)
+                JunoIconView(systemImage: layout.systemImage)
                     .accessibilityLabel(layout.label)
                     .tag(layout)
             }

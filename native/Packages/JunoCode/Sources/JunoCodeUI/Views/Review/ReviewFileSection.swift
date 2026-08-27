@@ -159,7 +159,7 @@ struct ReviewFileHeader: View {
                 }
             }
         } label: {
-            Image(systemName: "clock.arrow.circlepath")
+            JunoIconView(systemImage: "clock.arrow.circlepath")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -293,7 +293,7 @@ struct ReviewFileBody: View {
             .padding(.vertical, JunoSpace.cozy)
         } else if review.unavailablePaths.contains(change.path) {
             ReviewNotice(
-                symbol: "exclamationmark.triangle",
+                icon: .error,
                 text: "No checkpoint is available for this file, so its diff cannot be reconstructed."
             )
         } else if let diff, !diff.isEmpty {
@@ -309,12 +309,12 @@ struct ReviewFileBody: View {
             }
         } else if change.reviewState == .rejected {
             ReviewNotice(
-                symbol: "arrow.uturn.backward.circle",
+                icon: .refresh,
                 text: "Reverted — this file matches the content it had before the session."
             )
         } else {
             ReviewNotice(
-                symbol: "equal.circle",
+                icon: .check,
                 text: "This file now matches its original content."
             )
         }
@@ -350,7 +350,7 @@ struct ReviewFileBody: View {
 
             if let failure = review.revertFailures[hunk.reviewIdentifier] {
                 HStack(spacing: JunoSpace.tight) {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                    JunoIconView(systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Color.junoCaution)
                     Text(failure).junoCaption()
                     Spacer(minLength: JunoSpace.snug)
@@ -438,7 +438,7 @@ private struct HunkActionRow: View {
                 .junoMetaInk()
             Spacer(minLength: JunoSpace.cozy)
             if isAccepted {
-                Label("Kept", systemImage: "checkmark")
+                JunoIconLabel("Kept", icon: .check)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(Color.junoSuccess)
             } else {
@@ -544,7 +544,7 @@ private struct ReviewNoteRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            Image(systemName: "text.bubble")
+            JunoIconView(systemImage: "text.bubble")
                 .foregroundStyle(Color.junoAccent)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
@@ -557,7 +557,7 @@ private struct ReviewNoteRow: View {
             }
             Spacer(minLength: JunoSpace.snug)
             Button(role: .destructive, action: onDelete) {
-                Image(systemName: "trash")
+                JunoIconView(systemImage: "trash")
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
@@ -577,12 +577,12 @@ private struct ReviewNoteRow: View {
 }
 
 private struct ReviewNotice: View {
-    let symbol: String
+    let icon: JunoIcon
     let text: String
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
+            JunoIconView(icon, size: 15)
                 .junoSecondaryInk()
             Text(text).junoCaption()
         }
@@ -598,17 +598,17 @@ struct ReviewStateGlyph: View {
     var body: some View {
         switch state {
         case .pending:
-            Image(systemName: "circle.dotted")
+            JunoIconView(.refresh, size: 15)
                 .junoSecondaryInk()
                 .help("Not reviewed")
                 .accessibilityLabel("Not reviewed")
         case .accepted:
-            Image(systemName: "checkmark.circle.fill")
+            JunoIconView(.check, size: 15)
                 .foregroundStyle(Color.junoSuccess)
                 .help("Kept")
                 .accessibilityLabel("Kept")
         case .rejected:
-            Image(systemName: "arrow.uturn.backward.circle")
+            JunoIconView(.refresh, size: 15)
                 .junoSecondaryInk()
                 .help("Reverted")
                 .accessibilityLabel("Reverted")

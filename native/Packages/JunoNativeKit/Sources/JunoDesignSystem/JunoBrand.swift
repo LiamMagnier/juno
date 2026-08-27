@@ -118,6 +118,60 @@ public enum JunoIcon: String, CaseIterable, Sendable {
 
     /// The asset-catalog name, matching the generator's output.
     public var assetName: String { "nav-\(rawValue)" }
+
+    /// Maps a legacy SF Symbol name to the closest website/Lucide mark.
+    ///
+    /// A few package boundaries still receive a string from older models. The
+    /// mapping keeps those boundaries source-compatible while ensuring the
+    /// rendered control uses the same generated asset as the web and the rest
+    /// of native Juno.
+    public static func from(systemImage: String) -> JunoIcon {
+        let value = systemImage.lowercased()
+        if value.contains("chevron") || value.contains("arrow.right") { return .chevronRight }
+        if value.contains("arrow.down") { return .arrowDown }
+        if value.contains("arrow.up") { return .send }
+        if value.contains("arrow") || value.contains("external") || value.contains("link") {
+            return .external
+        }
+        if value.contains("xmark") || value.contains("trash") || value.contains("minus") {
+            return value.contains("trash") ? .trash : .close
+        }
+        if value.contains("check") { return .check }
+        if value.contains("exclamation") || value.contains("warning") || value.contains("error") {
+            return .error
+        }
+        if value.contains("lock") || value.contains("shield") || value.contains("hand.raised") {
+            return .permission
+        }
+        if value.contains("pause") || value.contains("stop") { return .stop }
+        if value.contains("play") || value.contains("bolt") || value.contains("power") {
+            return .work
+        }
+        if value.contains("clock") || value.contains("refresh") || value.contains("rotate") {
+            return .refresh
+        }
+        if value.contains("magnifyingglass") || value.contains("search") { return .search }
+        if value.contains("doc") || value.contains("file") || value.contains("folder") {
+            return value.contains("folder") ? .projects : .file
+        }
+        if value.contains("photo") || value.contains("camera") || value.contains("image") {
+            return .photos
+        }
+        if value.contains("person") || value.contains("user") { return .user }
+        if value.contains("paperclip") { return .attach }
+        if value.contains("ellipsis") || value.contains("more") { return .ellipsis }
+        if value.contains("plus") { return .plus }
+        if value.contains("copy") { return .copy }
+        if value.contains("pencil") || value.contains("edit") { return .pencil }
+        if value.contains("terminal") || value.contains("cpu") { return .terminal }
+        if value.contains("globe") || value.contains("safari") { return .web }
+        if value.contains("eye") { return .eyeOff }
+        if value.contains("branch") || value.contains("git") { return .branch }
+        if value.contains("sparkle") || value.contains("brain") { return .models }
+        if value.contains("grid") || value.contains("rectangle") { return .artifactsTool }
+        if value.contains("bubble") || value.contains("message") { return .conversation }
+        return .tools
+    }
 }
 
 /// Renders a ``JunoIcon`` at a weight that sits correctly beside SF Symbols.
@@ -132,6 +186,13 @@ public struct JunoIconView: View {
 
     public init(_ icon: JunoIcon, size: CGFloat = 19) {
         self.icon = icon
+        self.size = size
+    }
+
+    /// Compatibility initializer for older symbol-backed call sites. It is
+    /// intentionally rendered through the website icon mapping above.
+    public init(systemImage: String, size: CGFloat = 19) {
+        self.icon = .from(systemImage: systemImage)
         self.size = size
     }
 

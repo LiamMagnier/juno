@@ -76,7 +76,7 @@ struct FileContextMenu: View {
             choose(entry)
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: entry.isDirectory ? "folder" : "doc")
+                JunoIconView(systemImage: entry.isDirectory ? "folder" : "doc")
                     .foregroundStyle(entry.isDirectory ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 16)
 
@@ -100,7 +100,7 @@ struct FileContextMenu: View {
 
                 Spacer(minLength: JunoSpace.snug)
                 if isHighlighted {
-                    Image(systemName: "return")
+                    JunoIconView(systemImage: "return")
                         .font(.caption2)
                         .junoMetaInk()
                         .accessibilityHidden(true)

@@ -84,7 +84,7 @@ struct SidebarView: View {
                             .truncationMode(.head)
                     }
                 } icon: {
-                    Image(systemName: record.descriptor.isGitRepository
+                    JunoIconView(systemImage: record.descriptor.isGitRepository
                         ? "arrow.triangle.branch"
                         : "folder")
                 }
@@ -140,7 +140,7 @@ struct SidebarView: View {
                     Text(model.workspaceName(for: session.workspaceID))
                     if let branch = session.gitBranch {
                         Text("·")
-                        Image(systemName: "arrow.triangle.branch")
+                        JunoIconView(systemImage: "arrow.triangle.branch")
                             .imageScale(.small)
                         Text(branch)
                     }
@@ -153,7 +153,7 @@ struct SidebarView: View {
             }
             Spacer()
             if session.isFavorite {
-                Image(systemName: "star.fill")
+                JunoIconView(systemImage: "star.fill")
                     .imageScale(.small)
                     .foregroundStyle(JunoCodeTheme.caution)
             }
@@ -185,23 +185,23 @@ struct SidebarView: View {
                 .tint(JunoCodeTheme.accent)
                 .accessibilityLabel(session.status == .planning ? "Planning" : (session.status == .waitingForProvider ? "Waiting for model" : "Running"))
         case .waitingForApproval, .degraded:
-            Image(systemName: session.status == .degraded ? "exclamationmark.triangle.fill" : "hand.raised.fill")
+            JunoIconView(systemImage: session.status == .degraded ? "exclamationmark.triangle.fill" : "hand.raised.fill")
                 .foregroundStyle(JunoCodeTheme.caution)
                 .accessibilityLabel(session.status == .degraded ? "Degraded" : "Waiting for approval")
         case .failed:
-            Image(systemName: "exclamationmark.circle.fill")
+            JunoIconView(systemImage: "exclamationmark.circle.fill")
                 .foregroundStyle(JunoCodeTheme.failure)
                 .accessibilityLabel("Failed")
         case .completed:
-            Image(systemName: "checkmark.circle")
+            JunoIconView(systemImage: "checkmark.circle")
                 .foregroundStyle(JunoCodeTheme.success)
                 .accessibilityLabel("Completed")
         case .cancelled:
-            Image(systemName: "stop.circle")
+            JunoIconView(systemImage: "stop.circle")
                 .junoSecondaryInk()
                 .accessibilityLabel("Stopped")
         case .idle:
-            Image(systemName: "circle.dotted")
+            JunoIconView(systemImage: "circle.dotted")
                 .junoMetaInk()
                 .accessibilityLabel("Idle")
         }
@@ -230,7 +230,7 @@ struct SidebarView: View {
                 Label {
                     Text("New session").junoRowLabel()
                 } icon: {
-                    Image(systemName: "plus")
+                    JunoIconView(systemImage: "plus")
                         .junoFont(size: 12, relativeTo: .body, weight: .semibold)
                         .frame(width: 16)
                 }

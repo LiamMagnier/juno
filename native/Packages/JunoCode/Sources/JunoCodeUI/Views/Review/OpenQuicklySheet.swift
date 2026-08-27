@@ -30,7 +30,7 @@ public struct OpenQuicklySheet: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "magnifyingglass")
+                JunoIconView(systemImage: "magnifyingglass")
                     .junoSecondaryInk()
                 TextField("Open a file by name", text: $query)
                     .textFieldStyle(.plain)
@@ -60,7 +60,7 @@ public struct OpenQuicklySheet: View {
                 JunoEmptyState(
                     title: "No matching files",
                     message: "Nothing in this workspace has “\(query)” in its name.",
-                    symbol: "magnifyingglass"
+                    icon: .search
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -69,7 +69,7 @@ public struct OpenQuicklySheet: View {
                         open(entry)
                     } label: {
                         HStack(spacing: JunoSpace.snug) {
-                            Image(systemName: "doc")
+                            JunoIconView(systemImage: "doc")
                                 .junoSecondaryInk()
                             Text(entry.path.value)
                                 .junoCode()
@@ -134,7 +134,7 @@ struct WorkspaceTreeRows: View {
                 Button {
                     openFile(entry)
                 } label: {
-                    Label(entry.path.lastComponent, systemImage: "doc")
+                    JunoIconLabel(verbatim: entry.path.lastComponent, icon: .file)
                         .junoRowLabel()
                 }
                 .buttonStyle(.plain)
@@ -158,7 +158,7 @@ struct WorkspaceTreeDirectory: View {
                 openFile: openFile
             )
         } label: {
-            Label(entry.path.lastComponent, systemImage: "folder")
+            JunoIconLabel(verbatim: entry.path.lastComponent, icon: .projects)
                 .junoRowLabel()
         }
         .task(id: expanded) {

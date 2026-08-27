@@ -87,7 +87,7 @@ struct SubagentPane: View {
         if !runs.isEmpty {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 HStack(spacing: JunoSpace.tight) {
-                    Image(systemName: symbol)
+                    JunoIconView(systemImage: symbol)
                         .imageScale(.small)
                         .foregroundStyle(tint)
                     Text(title)
@@ -144,7 +144,7 @@ struct SubagentPane: View {
 private struct SubagentEmptyState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Image(systemName: "person.2")
+            JunoIconView(systemImage: "person.2")
                 .junoFont(size: 18, relativeTo: .body, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 36, height: 36)
@@ -193,7 +193,7 @@ private struct SubagentListRow: View {
                             .layoutPriority(1)
                         Spacer(minLength: JunoSpace.tight)
                         SubagentElapsed(run: run)
-                        Image(systemName: "chevron.right")
+                        JunoIconView(systemImage: "chevron.right")
                             .imageScale(.small)
                             .junoMetaInk()
                     }
@@ -239,7 +239,7 @@ private struct SubagentStatusBadge: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.hairline) {
-            Image(systemName: statusSymbol)
+            JunoIconView(systemImage: statusSymbol)
                 .imageScale(.small)
             Text(SubagentFormatting.listLabel(status))
                 .lineLimit(1)
@@ -471,11 +471,11 @@ private struct SubagentDetailPane: View {
                                 .controlSize(.small)
                                 .tint(Color.junoAccent)
                         } else if pendingApprovals.isEmpty {
-                            Image(systemName: "clock")
+                            JunoIconView(systemImage: "clock")
                                 .imageScale(.small)
                                 .junoSecondaryInk()
                         } else {
-                            Image(systemName: "hand.raised.fill")
+                            JunoIconView(systemImage: "hand.raised.fill")
                                 .imageScale(.small)
                                 .foregroundStyle(Color.junoCaution)
                         }
@@ -700,7 +700,7 @@ private struct SubagentDetailPane: View {
             if isApplying {
                 ProgressView().controlSize(.small)
             } else if compact {
-                Image(systemName: "arrow.down.to.line.compact")
+                JunoIconView(systemImage: "arrow.down.to.line.compact")
             } else {
                 Label("Apply", systemImage: "arrow.down.to.line.compact")
             }
@@ -720,7 +720,7 @@ private struct SubagentDetailPane: View {
             if isDiscarding {
                 ProgressView().controlSize(.small)
             } else if compact {
-                Image(systemName: "trash")
+                JunoIconView(systemImage: "trash")
             } else {
                 Label("Discard", systemImage: "trash")
             }
@@ -829,7 +829,7 @@ private struct SubagentDetailPane: View {
                     } else {
                         ForEach(detail.steps) { step in
                             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                                Image(systemName: SubagentFormatting.glyph(step.status))
+                                JunoIconView(systemImage: SubagentFormatting.glyph(step.status))
                                     .imageScale(.small)
                                     .foregroundStyle(SubagentFormatting.tint(step.status))
                                 Text(step.summary)
@@ -890,7 +890,7 @@ private struct SubagentDetailPane: View {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(child.value, forType: .string)
                         } label: {
-                            Image(systemName: "doc.on.doc")
+                            JunoIconView(systemImage: "doc.on.doc")
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
@@ -938,7 +938,7 @@ private struct SubagentInspectorStateCard: View {
                     .controlSize(.small)
                     .tint(tint)
             } else {
-                Image(systemName: symbol)
+                JunoIconView(systemImage: symbol)
                     .imageScale(.small)
                     .foregroundStyle(tint)
                     .frame(width: 16)
@@ -998,7 +998,7 @@ private struct SubagentApprovalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "hand.raised.fill")
+                JunoIconView(systemImage: "hand.raised.fill")
                     .foregroundStyle(tint)
                 Text("Approval required")
                     .font(.caption.weight(.semibold))

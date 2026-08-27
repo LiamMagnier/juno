@@ -139,7 +139,7 @@ struct RepositoryTab: View {
     private func branchSection(_ status: GitStatusSummary) -> some View {
         Section("Branch") {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "arrow.triangle.branch")
+                JunoIconView(systemImage: "arrow.triangle.branch")
                     .junoSecondaryInk()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.branch ?? "detached HEAD")
@@ -221,7 +221,7 @@ struct RepositoryTab: View {
                 ForEach(controller.managedWorktrees) { worktree in
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         HStack(spacing: JunoSpace.snug) {
-                            Image(systemName: "square.split.2x1")
+                            JunoIconView(systemImage: "square.split.2x1")
                                 .foregroundStyle(Color.junoAccent)
                             Text(worktree.branch)
                                 .junoRowLabel()
@@ -230,7 +230,7 @@ struct RepositoryTab: View {
                             Button {
                                 NSWorkspace.shared.open(worktree.rootURL)
                             } label: {
-                                Image(systemName: "arrow.up.right.square")
+                                JunoIconView(systemImage: "arrow.up.right.square")
                             }
                             .buttonStyle(.borderless)
                             .help("Open isolated worktree")
@@ -238,7 +238,7 @@ struct RepositoryTab: View {
                             Button(role: .destructive) {
                                 Task { await controller.removeIsolatedWorktree(worktree) }
                             } label: {
-                                Image(systemName: "trash")
+                                JunoIconView(systemImage: "trash")
                             }
                             .buttonStyle(.borderless)
                             .help("Remove this isolated worktree")
@@ -261,7 +261,7 @@ struct RepositoryTab: View {
                 Button {
                     creatingWorktree = true
                 } label: {
-                    Image(systemName: "plus")
+                    JunoIconView(systemImage: "plus")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
@@ -394,7 +394,7 @@ struct RepositoryTab: View {
                     Button {
                         Task { await controller.refreshGitHubPullRequest() }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
+                        JunoIconView(systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
@@ -417,7 +417,7 @@ struct RepositoryTab: View {
                 Spacer(minLength: JunoSpace.tight)
                 if let url = safeWebURL(pullRequest.url) {
                     Link(destination: url) {
-                        Image(systemName: "arrow.up.right.square")
+                        JunoIconView(systemImage: "arrow.up.right.square")
                     }
                     .help("Open the pull request on GitHub")
                     .accessibilityLabel("Open pull request in browser")
@@ -443,7 +443,7 @@ struct RepositoryTab: View {
 
     private func checkRow(_ check: GitHubCheckStatus) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: checkSymbol(check.bucket))
+            JunoIconView(systemImage: checkSymbol(check.bucket))
                 .foregroundStyle(checkColor(check.bucket))
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 1) {
@@ -462,7 +462,7 @@ struct RepositoryTab: View {
                 .junoCaption()
             if let link = check.link, let url = safeWebURL(link) {
                 Link(destination: url) {
-                    Image(systemName: "arrow.up.right")
+                    JunoIconView(systemImage: "arrow.up.right")
                         .imageScale(.small)
                 }
                 .accessibilityLabel("Open \(check.name) check")
