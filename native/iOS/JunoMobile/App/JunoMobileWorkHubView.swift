@@ -5,9 +5,9 @@ import JunoDesignSystem
 import JunoWorkKit
 import SwiftUI
 
-/// The mobile Work product is one destination with two related control planes:
-/// live tasks and durable automations. Keeping them under one Work destination
-/// mirrors the desktop product without adding another top-level tab to a phone.
+/// One Work destination with two related control planes: live tasks and durable
+/// automations. The server/native models remain authoritative; this view only
+/// composes them for a phone-sized surface.
 struct JunoMobileWorkHubView: View {
     private enum Section: String, CaseIterable, Identifiable {
         case tasks = "Tasks"
@@ -74,11 +74,14 @@ struct JunoMobileWorkHubView: View {
             guard let accountID, let automationModel else { return }
             await automationModel.start(for: accountID)
         }
-        .onDisappear {
-            automationModel?.stop()
-        }
+        .onDisappear { automationModel?.stop() }
         .accessibilityIdentifier("juno.mobile.work.hub")
     }
+}
+
+private struct AutomationEditorRoute: Identifiable {
+    let schedule: NativeWorkSchedule?
+    let id = UUID()
 }
 
 private struct JunoMobileWorkAutomationsView: View {
@@ -89,22 +92,16 @@ private struct JunoMobileWorkAutomationsView: View {
     @State private var deleteCandidate: NativeWorkSchedule?
     @State private var openScheduleID: String?
 
-    private var active: [NativeWorkSchedule] {
-        model.schedules.filter(\.enabled)
-    }
-
-    private var paused: [NativeWorkSchedule] {
-        model.schedules.filter { !$0.enabled }
-    }
+    private var active: [NativeWorkSchedule] { model.schedules.filter(\.enabled) }
+    private var paused: [NativeWorkSchedule] { model.schedules.filter { !$0.enabled } }
 
     var body: some View {
         Group {
-            switch model.phase {
-            case .idle, .loading where model.schedules.isEmpty:
+            if (model.phase == .idle || model.phase == .loading) && model.schedules.isEmpty {
                 JunoMobileQuietLoading()
-            case .offline, .failed where model.schedules.isEmpty:
+            } else if (model.phase == .offline || model.phase == .failed) && model.schedules.isEmpty {
                 unreachable
-            default:
+            } else {
                 content
             }
         }
@@ -158,7 +155,9 @@ private struct JunoMobileWorkAutomationsView: View {
                     if openScheduleID == schedule.id { openScheduleID = nil }
                 }
             }
+            .contentShape(.rect)
             Button("Cancel", role: .cancel) { deleteCandidate = nil }
+                .contentShape(.rect)
         } message: {
             Text("Future fires stop immediately. Runs already under way continue.")
         }
@@ -167,7 +166,10 @@ private struct JunoMobileWorkAutomationsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { editor = AutomationEditorRoute(schedule: nil) } label: {
                     JunoIconView(.plus, size: 17)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .contentShape(.rect)
                 .disabled(model.isMutating)
                 .accessibilityLabel("New automation")
                 .accessibilityIdentifier("juno.mobile.work.automation.new")
@@ -184,6 +186,8 @@ private struct JunoMobileWorkAutomationsView: View {
         } actions: {
             Button("Retry") { Task { await model.refresh() } }
                 .buttonStyle(.borderedProminent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
     }
 
@@ -200,16 +204,17 @@ private struct JunoMobileWorkAutomationsView: View {
                     HStack(alignment: .top, spacing: 8) {
                         JunoIconView(.check, size: 15)
                             .foregroundStyle(Color.junoSuccess)
-                        Text(message)
-                            .font(.caption)
+                        Text(message).font(.caption)
                         Spacer(minLength: 0)
                         Button {
                             model.clearMutationMessage()
                         } label: {
                             JunoIconView(.close, size: 13)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                         .accessibilityLabel("Dismiss message")
                     }
                     .padding(12)
@@ -245,8 +250,7 @@ private struct JunoMobileWorkAutomationsView: View {
                 JunoIconView(systemImage: "clock.badge.checkmark")
                     .font(.title2)
                     .foregroundStyle(Color.junoAccent)
-                Text("No automations yet")
-                    .junoEmptyTitle()
+                Text("No automations yet").junoEmptyTitle()
                 Text("Create a recurring or event-driven task. Juno can run it in the cloud or on an opted-in Mac, then keep its run history here.")
                     .font(.callout)
                     .junoSecondaryInk()
@@ -256,7 +260,8 @@ private struct JunoMobileWorkAutomationsView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color.junoAccent)
                 .controlSize(.large)
-                .frame(minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
             }
         }
     }
@@ -312,6 +317,7 @@ private struct JunoMobileWorkAutomationsView: View {
         }
         .buttonStyle(.plain)
         .frame(minHeight: 44)
+        .contentShape(.rect)
         .contextMenu {
             Button("Run Now") { Task { await model.runNow(id: schedule.id) } }
             Button(schedule.enabled ? "Pause" : "Resume") {
@@ -327,10 +333,10 @@ private struct JunoMobileWorkAutomationsView: View {
     }
 
     private func triggerSummary(_ schedule: NativeWorkSchedule) -> String {
-        schedule.triggers
+        let values = schedule.triggers
             .filter(\.enabled)
             .map { NativeWorkScheduleVocabulary.trigger($0.kind) }
-            .joined(separator: " · ")
+        return values.isEmpty ? "No enabled trigger" : values.joined(separator: " · ")
     }
 
     private func targetSummary(_ schedule: NativeWorkSchedule) -> String {
@@ -348,11 +354,6 @@ private struct JunoMobileWorkAutomationsView: View {
     }
 }
 
-private struct AutomationEditorRoute: Identifiable {
-    let schedule: NativeWorkSchedule?
-    let id = UUID()
-}
-
 private struct JunoMobileWorkAutomationDetail: View {
     let schedule: NativeWorkSchedule
     let model: NativeWorkAutomationModel
@@ -367,37 +368,7 @@ private struct JunoMobileWorkAutomationDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("AUTOMATION")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.junoAccent)
-                    Text(schedule.name)
-                        .junoPageHeading()
-                    Text(schedule.instructions)
-                        .font(.body)
-                        .junoSecondaryInk()
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 7) {
-                        JunoStatusPill(
-                            text: schedule.enabled ? "Active" : "Paused",
-                            tint: schedule.enabled ? Color.junoSuccess : Color.junoMutedForeground,
-                            filled: schedule.enabled
-                        )
-                        Text(targetText)
-                            .font(.caption)
-                            .junoSecondaryInk()
-                        if let next = schedule.nextRunAt, schedule.enabled {
-                            Text("·")
-                                .junoMetaInk()
-                            Text("Next \(next.formatted(.relative(presentation: .named)))")
-                                .font(.caption)
-                                .junoSecondaryInk()
-                        }
-                    }
-                }
-
+                header
                 actionBar
                 triggerCard
                 contractCard
@@ -427,8 +398,39 @@ private struct JunoMobileWorkAutomationDetail: View {
                     Button("Delete", role: .destructive, action: delete)
                 } label: {
                     JunoIconView(systemImage: "ellipsis", size: 17)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .contentShape(.rect)
                 .accessibilityLabel("Automation actions")
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("AUTOMATION")
+                .font(.caption.weight(.semibold))
+                .tracking(1.0)
+                .foregroundStyle(Color.junoAccent)
+            Text(schedule.name).junoPageHeading()
+            Text(schedule.instructions)
+                .font(.body)
+                .junoSecondaryInk()
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 7) {
+                JunoStatusPill(
+                    text: schedule.enabled ? "Active" : "Paused",
+                    tint: schedule.enabled ? Color.junoSuccess : Color.junoMutedForeground,
+                    filled: schedule.enabled
+                )
+                Text(targetText).font(.caption).junoSecondaryInk()
+                if let next = schedule.nextRunAt, schedule.enabled {
+                    Text("·").junoMetaInk()
+                    Text("Next \(next.formatted(.relative(presentation: .named)))")
+                        .font(.caption)
+                        .junoSecondaryInk()
+                }
             }
         }
     }
@@ -439,19 +441,21 @@ private struct JunoMobileWorkAutomationDetail: View {
                 Task { await model.runNow(id: schedule.id) }
             } label: {
                 Label("Run now", systemImage: "play.fill")
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
             .disabled(model.isMutating)
-            .frame(minHeight: 44)
+            .contentShape(.rect)
 
             Button(schedule.enabled ? "Pause" : "Resume") {
                 Task { await model.setEnabled(id: schedule.id, enabled: !schedule.enabled) }
             }
             .buttonStyle(.bordered)
             .disabled(model.isMutating)
-            .frame(minHeight: 44)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
     }
 
@@ -623,11 +627,6 @@ private struct JunoMobileWorkAutomationEditor: View {
     @State private var validationMessage: String?
     @Environment(\.dismiss) private var dismiss
 
-    private let triggerKinds = [
-        "once", "hourly", "daily", "weekdays", "weekly", "monthly", "yearly", "cron",
-        "email_filter", "calendar_window", "topic_monitor", "connector_event", "folder_change", "manual",
-    ]
-
     init(
         initialDraft: NativeWorkScheduleDraft,
         isNew: Bool,
@@ -643,105 +642,14 @@ private struct JunoMobileWorkAutomationEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("What should Juno do?") {
-                    TextField("Name", text: $draft.name)
-                    TextField(
-                        "Instructions",
-                        text: $draft.instructions,
-                        axis: .vertical
-                    )
-                    .lineLimit(4...10)
-                }
-
-                Section("Starts when") {
-                    ForEach($draft.triggers) { $trigger in
-                        MobileAutomationTriggerEditor(
-                            trigger: $trigger,
-                            canRemove: draft.triggers.count > 1,
-                            remove: {
-                                draft.triggers.removeAll { $0.id == trigger.id }
-                            }
-                        )
-                    }
-                    Button {
-                        draft.triggers.append(
-                            NativeWorkScheduleTriggerDraft(
-                                kind: "daily",
-                                config: ["hour": .number(9), "minute": .number(0)]
-                            )
-                        )
-                    } label: {
-                        Label("Add trigger", systemImage: "plus.circle")
-                    }
-                }
-
-                Section("Where it runs") {
-                    Picker("Target", selection: $draft.target) {
-                        Text("Automatic").tag(JunoWorkTarget.automatic)
-                        Text("Cloud").tag(JunoWorkTarget.cloud)
-                        Text("Mac").tag(JunoWorkTarget.local)
-                    }
-                    if draft.target == .local {
-                        Picker("Mac", selection: hostBinding) {
-                            Text("Choose a Mac").tag("")
-                            ForEach(hosts.filter(\.canServeWork)) { host in
-                                Text(host.displayName).tag(host.hostID)
-                            }
-                        }
-                        if hosts.filter(\.canServeWork).isEmpty {
-                            Text("No opted-in Mac is currently able to serve Work.")
-                                .font(.caption)
-                                .foregroundStyle(Color.junoCaution)
-                        }
-                    }
-                    TextField("Model override (optional)", text: modelBinding)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-
-                Section("Safety and delivery") {
-                    Picker("If approval is needed", selection: $draft.unattendedPolicy) {
-                        Text("Stop and ask").tag("pause_for_approval")
-                        Text("Skip irreversible work").tag("skip_irreversible")
-                        Text("End before irreversible work").tag("disallow_irreversible")
-                    }
-                    Picker("If Mac is offline", selection: $draft.hostOfflinePolicy) {
-                        Text("Skip this fire").tag("skip")
-                        Text("Wait for Mac").tag("wait")
-                        Text("Do cloud subset").tag("cloud_subset")
-                    }
-                    Picker("If a fire was missed", selection: $draft.missedRunPolicy) {
-                        Text("Catch up once").tag("run_once")
-                        Text("Catch up every fire").tag("run_all")
-                        Text("Skip").tag("skip")
-                    }
-                    Picker("Notify", selection: $draft.notifyPolicy) {
-                        Text("When it needs you").tag("on_attention")
-                        Text("When it finishes").tag("on_finish")
-                        Text("Everything").tag("all")
-                        Text("Never").tag("none")
-                    }
-                    Stepper(
-                        "Maximum concurrent runs: \(draft.maxConcurrentRuns)",
-                        value: $draft.maxConcurrentRuns,
-                        in: 1...5
-                    )
-                    Toggle("Enabled", isOn: $draft.enabled)
-                }
-
-                Section("Limits") {
-                    TextField("Token ceiling (0 = default)", value: $draft.budget.maxTokens, format: .number)
-                        .keyboardType(.numberPad)
-                    TextField("Runtime ms (0 = default)", value: $draft.budget.maxRuntimeMilliseconds, format: .number)
-                        .keyboardType(.numberPad)
-                    TextField("Cost micro-USD (0 = default)", value: $draft.budget.maxCostMicroUSD, format: .number)
-                        .keyboardType(.numberPad)
-                }
-
+                basics
+                triggers
+                execution
+                safety
+                limits
                 if let validationMessage {
                     Section {
-                        Text(validationMessage)
-                            .foregroundStyle(Color.junoDanger)
+                        Text(validationMessage).foregroundStyle(Color.junoDanger)
                     }
                 }
             }
@@ -751,10 +659,14 @@ private struct JunoMobileWorkAutomationEditor: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .disabled(isSaving)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { submit() }
                         .disabled(!draft.isValid || isSaving)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
             }
             .overlay {
@@ -768,6 +680,108 @@ private struct JunoMobileWorkAutomationEditor: View {
         .junoSheetSurface(.page)
     }
 
+    private var basics: some View {
+        Section("What should Juno do?") {
+            TextField("Name", text: $draft.name)
+            TextField("Instructions", text: $draft.instructions, axis: .vertical)
+                .lineLimit(4...10)
+        }
+    }
+
+    private var triggers: some View {
+        Section("Starts when") {
+            ForEach($draft.triggers) { $trigger in
+                MobileAutomationTriggerEditor(
+                    trigger: $trigger,
+                    canRemove: draft.triggers.count > 1,
+                    remove: { draft.triggers.removeAll { $0.id == trigger.id } }
+                )
+            }
+            Button {
+                draft.triggers.append(
+                    NativeWorkScheduleTriggerDraft(
+                        kind: "daily",
+                        config: ["hour": .number(9), "minute": .number(0)]
+                    )
+                )
+            } label: {
+                Label("Add trigger", systemImage: "plus.circle")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .contentShape(.rect)
+        }
+    }
+
+    private var execution: some View {
+        Section("Where it runs") {
+            Picker("Target", selection: $draft.target) {
+                Text("Automatic").tag(JunoWorkTarget.automatic)
+                Text("Cloud").tag(JunoWorkTarget.cloud)
+                Text("Mac").tag(JunoWorkTarget.local)
+            }
+            if draft.target == .local {
+                Picker("Mac", selection: hostBinding) {
+                    Text("Choose a Mac").tag("")
+                    ForEach(hosts.filter(\.canServeWork)) { host in
+                        Text(host.displayName).tag(host.hostID)
+                    }
+                }
+                if hosts.filter(\.canServeWork).isEmpty {
+                    Text("No opted-in Mac is currently able to serve Work.")
+                        .font(.caption)
+                        .foregroundStyle(Color.junoCaution)
+                }
+            }
+            TextField("Model override (optional)", text: modelBinding)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+        }
+    }
+
+    private var safety: some View {
+        Section("Safety and delivery") {
+            Picker("If approval is needed", selection: $draft.unattendedPolicy) {
+                Text("Stop and ask").tag("pause_for_approval")
+                Text("Skip irreversible work").tag("skip_irreversible")
+                Text("End before irreversible work").tag("disallow_irreversible")
+            }
+            Picker("If Mac is offline", selection: $draft.hostOfflinePolicy) {
+                Text("Skip this fire").tag("skip")
+                Text("Wait for Mac").tag("wait")
+                Text("Do cloud subset").tag("cloud_subset")
+            }
+            Picker("If a fire was missed", selection: $draft.missedRunPolicy) {
+                Text("Catch up once").tag("run_once")
+                Text("Catch up every fire").tag("run_all")
+                Text("Skip").tag("skip")
+            }
+            Picker("Notify", selection: $draft.notifyPolicy) {
+                Text("When it needs you").tag("on_attention")
+                Text("When it finishes").tag("on_finish")
+                Text("Everything").tag("all")
+                Text("Never").tag("none")
+            }
+            Stepper(
+                "Maximum concurrent runs: \(draft.maxConcurrentRuns)",
+                value: $draft.maxConcurrentRuns,
+                in: 1...5
+            )
+            Toggle("Enabled", isOn: $draft.enabled)
+        }
+    }
+
+    private var limits: some View {
+        Section("Limits") {
+            TextField("Token ceiling (0 = default)", value: $draft.budget.maxTokens, format: .number)
+                .keyboardType(.numberPad)
+            TextField("Runtime ms (0 = default)", value: $draft.budget.maxRuntimeMilliseconds, format: .number)
+                .keyboardType(.numberPad)
+            TextField("Cost micro-USD (0 = default)", value: $draft.budget.maxCostMicroUSD, format: .number)
+                .keyboardType(.numberPad)
+        }
+    }
+
     private var hostBinding: Binding<String> {
         Binding(
             get: { draft.hostID ?? "" },
@@ -778,7 +792,10 @@ private struct JunoMobileWorkAutomationEditor: View {
     private var modelBinding: Binding<String> {
         Binding(
             get: { draft.model ?? "" },
-            set: { draft.model = $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            set: {
+                let value = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft.model = value.isEmpty ? nil : value
+            }
         )
     }
 
@@ -820,14 +837,15 @@ private struct MobileAutomationTriggerEditor: View {
                         Text(NativeWorkScheduleVocabulary.trigger(kind)).tag(kind)
                     }
                 }
-                Toggle("", isOn: $trigger.enabled)
-                    .labelsHidden()
+                Toggle("", isOn: $trigger.enabled).labelsHidden()
                 if canRemove {
                     Button(role: .destructive, action: remove) {
                         JunoIconView(systemImage: "minus.circle")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
                     .accessibilityLabel("Remove trigger")
                 }
             }
