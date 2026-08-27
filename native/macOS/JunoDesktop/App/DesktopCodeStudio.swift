@@ -455,6 +455,65 @@ struct DesktopCodeSidebar: View {
         let relayed = relayedRuns(from: allRuns)
 
         return List(selection: $selection) {
+            // Code search belongs to the source list it filters. Attaching
+            // `.searchable(placement: .sidebar)` here asks AppKit to install a
+            // titlebar search field; because this list deliberately owns a
+            // product header above its bounds, the system field lands in that
+            // header's safe area and covers the Juno lockup. Keeping the field
+            // as the first list row gives it one layout owner and the same
+            // scroll/keyboard semantics as the sessions it filters.
+            JunoDesktopGlass(spacing: 0) {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(.search, size: 15)
+                        .junoSecondaryInk()
+                        .accessibilityHidden(true)
+
+                    TextField("Search tasks", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .focused(searchFocused)
+
+                    if searchText.isEmpty {
+                        Text("⌘K")
+                            .junoFont(
+                                size: 10,
+                                relativeTo: .caption2,
+                                weight: .semibold,
+                                design: .rounded
+                            )
+                            .junoMetaInk()
+                    } else {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            JunoIconView(.close, size: 13)
+                                .junoMetaInk()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(.circle)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear search")
+                        .accessibilityLabel("Clear search")
+                    }
+                }
+                .padding(.horizontal, JunoSpace.snug)
+                .frame(height: 44)
+                .junoGlass(
+                    in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous),
+                    interactive: true
+                )
+            }
+            .listRowInsets(
+                EdgeInsets(
+                    top: JunoSpace.tight,
+                    leading: JunoSpace.snug,
+                    bottom: JunoSpace.snug,
+                    trailing: JunoSpace.snug
+                )
+            )
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
+            .accessibilityIdentifier("juno.code.sidebar-search")
+
             Section("Workspace") {
                 Label {
                     HStack {
@@ -562,8 +621,6 @@ struct DesktopCodeSidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search tasks")
-        .searchFocused(searchFocused)
         .junoSidebarSelectionTint()
         // The Chat / Code switch, on the column it switches, in the strip that
         // used to be reserved and empty.
@@ -581,6 +638,13 @@ struct DesktopCodeSidebar: View {
         // opaque bar painted behind it.
         .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
+                // A busy task list contains high-contrast titles right up to
+                // the bottom edge. The system's soft fade alone leaves those
+                // titles legible through the account footer in Dark Mode.
+                // Thick material keeps the native sidebar treatment while
+                // making the pinned account controls readable and visually
+                // separate from the scrolling history.
+                .background(.thickMaterial)
         }
         .junoSidebarScrollEdge()
         .alert(item: $projectPendingDeletion) { project in

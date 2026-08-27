@@ -35,7 +35,9 @@ requireText("native/macOS/JunoDesktop/project.yml", [
 
 requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "SessionController",
-  "CodeSessionInspector(controller: controller, openPreview: openPreview)",
+  "CodeSessionInspector(",
+  "controller: controller,",
+  "openPreview: openPreview,",
   "if inspectorPresentation.wrappedValue {",
   ".frame(width: DesktopCodeInspectorMetrics.ideal)",
   "computerUseIndicator(controller)",
