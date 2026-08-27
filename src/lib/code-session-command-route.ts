@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
+import { canonicalSessionCommand } from "@/lib/code-session-command-compat";
 import { rateLimit } from "@/lib/rate-limit";
 
 export type SessionRouteParams = Promise<{ deviceId: string; sessionId: string }>;
@@ -41,7 +42,8 @@ export async function enqueueSessionCommand(
   if (!parsed.success || !parsed.data) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const idempotencyKey = parsed.data.idempotencyKey;
   if (typeof idempotencyKey !== "string") return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-  const { idempotencyKey: _, ...payload } = parsed.data;
+  const { idempotencyKey: _, ...rawPayload } = parsed.data;
+  const canonical = canonicalSessionCommand(kind, rawPayload);
   const command = await prisma.codeSessionCommand.upsert({
     where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } },
     create: {
@@ -49,8 +51,8 @@ export async function enqueueSessionCommand(
       deviceId,
       remoteSessionId: session.id,
       sessionId,
-      kind,
-      payload: payload as Prisma.InputJsonValue,
+      kind: canonical.kind,
+      payload: canonical.payload as Prisma.InputJsonValue,
       idempotencyKey,
     },
     update: {},

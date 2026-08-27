@@ -33,6 +33,26 @@ const postSchema = z.object({
     .max(100),
 });
 
+/**
+ * Modern hosts publish an opaque workspace key, so the phone does not need the
+ * Mac's absolute filesystem path to address that folder. Keep the path only for
+ * legacy key-less hosts: their executor still needs it for compatibility.
+ *
+ * The replacement remains a non-empty string because old native task clients
+ * encode the field unconditionally. Current macOS execution resolves keyed
+ * tasks by workspaceKey first and never consults this value, so this is both a
+ * privacy boundary and backward-compatible wire behavior.
+ */
+function remoteSafeWorkspaces(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    const workspace = item as Record<string, unknown>;
+    if (typeof workspace.key !== "string" || workspace.key.length === 0) return workspace;
+    return { ...workspace, path: "Shared by Juno Code" };
+  });
+}
+
 export async function GET() {
   const { user, error } = await requireUser();
   if (!user) return error;
@@ -43,7 +63,10 @@ export async function GET() {
   });
   const now = Date.now();
   return NextResponse.json({
-    devices: devices.map((device) => serializeDevice(device, now - device.lastSeenAt.getTime() <= ONLINE_WINDOW_MS)),
+    devices: devices.map((device) => ({
+      ...serializeDevice(device, now - device.lastSeenAt.getTime() <= ONLINE_WINDOW_MS),
+      workspaces: remoteSafeWorkspaces(device.workspaces),
+    })),
   });
 }
 
