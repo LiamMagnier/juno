@@ -152,7 +152,7 @@ struct DesktopChatWorkSwitcher: View {
 enum DesktopSidebarChromeMetrics {
     /// The band the window's own chrome owns above the *sidebar*: the traffic
     /// lights, and nothing else.
-    static let trafficLightClearance: CGFloat = 52
+    static let trafficLightClearance: CGFloat = 14
 
     /// The lockup row that gives the navigation column a stable product identity.
     /// The mark is intentionally a little larger than a row icon: it is the

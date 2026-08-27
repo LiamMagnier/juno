@@ -849,12 +849,7 @@ struct DesktopSidebarDesignRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: "pencil.tip")
-                    .junoFont(size: 15, relativeTo: .body)
-                    // Stated on the mark, not inherited. A glyph in a sidebar row
-                    // resolves against the system accent unless it is told
-                    // otherwise, which is how this column used to draw coral it
-                    // was never asked for.
+                JunoIconView(.pencil, size: 16)
                     .foregroundStyle(ink)
                     .frame(width: 26, height: 26)
                     .accessibilityHidden(true)

@@ -755,18 +755,8 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: .connections
         case .tasks: .tasks
         case .settings: .settings
-        // Usage is the one destination the web draws with no glyph at all — the
-        // user menu renders the quota itself, in the dot signature. Borrowing a
-        // chart mark from another icon set to fill the hole would be native-only
-        // drift, so this keeps the SF fallback until the signature earns a place
-        // in the rail.
-        case .usage: nil
-        // Design's mark exists on the web — `AppIcons.design` is Lucide's
-        // `pen-tool` — but `scripts/generate-native-icons.mjs` has never been
-        // asked for it, so there is no `nav-design` asset to name here. Same
-        // answer as Usage above, and for the same reason: the SF fallback until
-        // the real mark is generated, rather than a near-miss from another set.
-        case .design: nil
+        case .usage: .usage
+        case .design: .pencil
         }
     }
 }

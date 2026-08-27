@@ -70,15 +70,12 @@ struct DesktopSidebarAccountRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: JunoSpace.cozy) {
-                ZStack(alignment: .bottomTrailing) {
-                    JunoAvatar(
-                        imageData: avatarModel?.imageData,
-                        imageURL: session.profile.imageURL,
-                        name: session.profile.name ?? session.profile.email,
-                        size: 26
-                    )
-                    DesktopSidebarSyncDot(syncModel: syncModel)
-                }
+                JunoAvatar(
+                    imageData: avatarModel?.imageData,
+                    imageURL: session.profile.imageURL,
+                    name: session.profile.name ?? session.profile.email,
+                    size: 26
+                )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.profile.name ?? "Juno account")
                         .font(.callout)
@@ -89,11 +86,7 @@ struct DesktopSidebarAccountRow: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.hairline)
-                // A chevron, because this row *navigates*. The update row above
-                // it deliberately has none: it performs an action, and marking
-                // the two the same way would say they behave the same way.
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
+                JunoIconView(.chevronRight, size: 11)
                     .junoMetaInk()
             }
             .padding(.horizontal, JunoSpace.snug)
