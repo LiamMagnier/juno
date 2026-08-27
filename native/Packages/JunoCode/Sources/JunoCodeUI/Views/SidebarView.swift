@@ -36,11 +36,11 @@ struct SidebarView: View {
         }
         .overlay {
             if model.sessions.isEmpty, model.sessionSearchText.isEmpty {
-                ContentUnavailableView(
-                    "No sessions yet",
-                    systemImage: "clock",
-                    description: Text("Create a code session to get started.")
-                )
+                ContentUnavailableView {
+                    JunoIconLabel("No sessions yet", icon: .refresh, size: 28)
+                } description: {
+                    Text("Create a code session to get started.")
+                }
                 .allowsHitTesting(false)
             }
         }
@@ -108,7 +108,7 @@ struct SidebarView: View {
             Button {
                 openWorkspacePanel()
             } label: {
-                Label("Open Workspace…", systemImage: "plus.rectangle.on.folder")
+                    JunoIconLabel("Open Workspace…", icon: .new)
             }
             .buttonStyle(.plain)
             .junoSecondaryInk()
@@ -153,8 +153,7 @@ struct SidebarView: View {
             }
             Spacer()
             if session.isFavorite {
-                JunoIconView(systemImage: "star.fill")
-                    .imageScale(.small)
+                JunoIconView(.pin, size: 13)
                     .foregroundStyle(JunoCodeTheme.caution)
             }
         }
@@ -185,23 +184,23 @@ struct SidebarView: View {
                 .tint(JunoCodeTheme.accent)
                 .accessibilityLabel(session.status == .planning ? "Planning" : (session.status == .waitingForProvider ? "Waiting for model" : "Running"))
         case .waitingForApproval, .degraded:
-            JunoIconView(systemImage: session.status == .degraded ? "exclamationmark.triangle.fill" : "hand.raised.fill")
+            JunoIconView(session.status == .degraded ? .error : .permission, size: 15)
                 .foregroundStyle(JunoCodeTheme.caution)
                 .accessibilityLabel(session.status == .degraded ? "Degraded" : "Waiting for approval")
         case .failed:
-            JunoIconView(systemImage: "exclamationmark.circle.fill")
+            JunoIconView(.error, size: 15)
                 .foregroundStyle(JunoCodeTheme.failure)
                 .accessibilityLabel("Failed")
         case .completed:
-            JunoIconView(systemImage: "checkmark.circle")
+            JunoIconView(.check, size: 15)
                 .foregroundStyle(JunoCodeTheme.success)
                 .accessibilityLabel("Completed")
         case .cancelled:
-            JunoIconView(systemImage: "stop.circle")
+            JunoIconView(.stop, size: 15)
                 .junoSecondaryInk()
                 .accessibilityLabel("Stopped")
         case .idle:
-            JunoIconView(systemImage: "circle.dotted")
+            JunoIconView(.refresh, size: 15)
                 .junoMetaInk()
                 .accessibilityLabel("Idle")
         }
@@ -230,8 +229,7 @@ struct SidebarView: View {
                 Label {
                     Text("New session").junoRowLabel()
                 } icon: {
-                    JunoIconView(systemImage: "plus")
-                        .junoFont(size: 12, relativeTo: .body, weight: .semibold)
+                    JunoIconView(.plus, size: 12)
                         .frame(width: 16)
                 }
                 .foregroundStyle(Color.junoAccent)

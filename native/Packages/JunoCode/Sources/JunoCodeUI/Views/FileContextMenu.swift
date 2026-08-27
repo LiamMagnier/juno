@@ -23,7 +23,7 @@ struct FileContextMenu: View {
         JunoDesktopGlass(spacing: JunoSpace.tight) {
             VStack(spacing: 0) {
                 HStack(spacing: JunoSpace.tight) {
-                    Label("Workspace files", systemImage: "doc.text.magnifyingglass")
+                    JunoIconLabel("Workspace files", icon: .search)
                         .font(.caption.weight(.medium))
                         .junoSecondaryInk()
                     Spacer(minLength: JunoSpace.snug)
@@ -100,8 +100,7 @@ struct FileContextMenu: View {
 
                 Spacer(minLength: JunoSpace.snug)
                 if isHighlighted {
-                    JunoIconView(systemImage: "return")
-                        .font(.caption2)
+                    JunoIconView(.chevronRight, size: 13)
                         .junoMetaInk()
                         .accessibilityHidden(true)
                 }
