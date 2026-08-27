@@ -1,10 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
-import { Terminal, ChevronDown, ChevronRight, CheckCircle2, XCircle, FileCode2, Download } from "lucide-react";
+import * as React from "react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FileCode2,
+  Terminal,
+  XCircle,
+} from "lucide-react";
 import type { PythonExecutionResult } from "@/lib/sandbox/python";
 import { DataTableBlock } from "@/components/chat/data-table-block";
 import { DataChartBlock } from "@/components/chat/data-chart-block";
+import { Button } from "@/components/ui/button";
 
 interface PythonExecutionBlockProps {
   code: string;
@@ -12,106 +21,119 @@ interface PythonExecutionBlockProps {
   status?: "running" | "completed" | "failed";
 }
 
-export function PythonExecutionBlock({ code, result, status = "completed" }: PythonExecutionBlockProps) {
-  const [isCodeOpen, setIsCodeOpen] = useState(false);
+/**
+ * Python execution evidence inside Chat.
+ *
+ * The execution is machine output, but the container is still Juno. The old
+ * block switched into its own neutral/coral theme and used a clickable `div`
+ * as the disclosure control. This version keeps the code/output monospaced
+ * while using the shared semantic surfaces and a real button for keyboard and
+ * assistive-technology behaviour.
+ */
+export function PythonExecutionBlock({
+  code,
+  result,
+  status = "completed",
+}: PythonExecutionBlockProps) {
+  const [isCodeOpen, setIsCodeOpen] = React.useState(false);
   const isSuccess = result ? result.success : status === "completed";
 
   return (
-    <div className="my-3 rounded-xl border border-neutral-200 bg-neutral-50/70 dark:border-neutral-800 dark:bg-neutral-900/60 overflow-hidden text-xs">
-      {/* Header bar */}
-      <div
-        onClick={() => setIsCodeOpen(!isCodeOpen)}
-        className="flex items-center justify-between px-3.5 py-2 cursor-pointer select-none hover:bg-neutral-100/60 dark:hover:bg-neutral-800/40 transition"
+    <section className="my-3 overflow-hidden rounded-card border border-border/60 bg-card text-xs shadow-soft">
+      <button
+        type="button"
+        onClick={() => setIsCodeOpen((open) => !open)}
+        className="flex min-h-11 w-full select-none items-center justify-between gap-3 bg-muted/30 px-3.5 py-2 text-left transition-colors hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+        aria-expanded={isCodeOpen}
       >
-        <div className="flex items-center gap-2">
-          <FileCode2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-          <span className="font-medium text-neutral-800 dark:text-neutral-200">
-            Python Execution
-          </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <FileCode2 className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          <span className="truncate font-medium text-foreground">Python execution</span>
           {result && (
-            <span className="text-caption text-neutral-400 font-mono">
-              ({result.durationMs}ms)
+            <span className="shrink-0 font-mono text-micro text-muted-foreground">
+              {result.durationMs} ms
             </span>
           )}
-        </div>
+        </span>
 
-        <div className="flex items-center gap-2">
+        <span className="flex shrink-0 items-center gap-2">
           {status === "running" ? (
-            <span className="flex items-center gap-1 text-caption text-amber-500 font-medium animate-pulse">
-              Running...
+            <span className="font-medium text-primary" aria-live="polite">
+              Running…
             </span>
           ) : isSuccess ? (
-            <span className="flex items-center gap-1 text-caption text-emerald-600 dark:text-emerald-400 font-medium">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Done
+            <span className="flex items-center gap-1 font-medium text-foreground">
+              <CheckCircle2 className="size-3.5" aria-hidden="true" /> Done
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-caption text-rose-500 font-medium">
-              <XCircle className="h-3.5 w-3.5" /> Failed
+            <span className="flex items-center gap-1 font-medium text-destructive">
+              <XCircle className="size-3.5" aria-hidden="true" /> Failed
             </span>
           )}
-          {isCodeOpen ? <ChevronDown className="h-3.5 w-3.5 text-neutral-400" /> : <ChevronRight className="h-3.5 w-3.5 text-neutral-400" />}
-        </div>
-      </div>
+          {isCodeOpen ? (
+            <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          )}
+        </span>
+      </button>
 
-      {/* Expandable Code */}
       {isCodeOpen && (
-        <div className="border-t border-neutral-200 dark:border-neutral-800 bg-neutral-900 text-neutral-100 p-3 font-mono text-caption overflow-x-auto">
-          <pre>{code}</pre>
+        <div className="overflow-x-auto border-t border-border/60 bg-muted/55 p-3 font-mono text-caption text-foreground">
+          <pre className="whitespace-pre">{code}</pre>
         </div>
       )}
 
-      {/* Stdout / Stderr console output if present */}
       {result && (result.stdout || result.stderr) && (
-        <div className="border-t border-neutral-200 dark:border-neutral-800 bg-neutral-950 text-neutral-300 p-3 font-mono text-caption overflow-x-auto space-y-1">
+        <div className="space-y-1 overflow-x-auto border-t border-border/60 bg-muted/35 p-3 font-mono text-caption text-foreground">
           {result.stdout && (
             <div className="flex items-start gap-2">
-              <Terminal className="h-3.5 w-3.5 text-neutral-500 shrink-0 mt-0.5" />
-              <pre className="whitespace-pre-wrap">{result.stdout}</pre>
+              <Terminal
+                className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <pre className="whitespace-pre-wrap break-words">{result.stdout}</pre>
             </div>
           )}
           {result.stderr && (
-            <div className="text-rose-400 whitespace-pre-wrap pl-5">
+            <pre className="whitespace-pre-wrap break-words pl-5 text-destructive">
               {result.stderr}
-            </div>
+            </pre>
           )}
         </div>
       )}
 
-      {/* Rendered Tables */}
       {result?.tables && result.tables.length > 0 && (
-        <div className="p-3 space-y-3">
-          {result.tables.map((tbl, i) => (
-            <DataTableBlock key={i} table={tbl} title={`Data Table ${i + 1}`} />
+        <div className="space-y-3 border-t border-border/45 p-3">
+          {result.tables.map((table, index) => (
+            <DataTableBlock key={index} table={table} title={`Data table ${index + 1}`} />
           ))}
         </div>
       )}
 
-      {/* Rendered Charts */}
       {result?.charts && result.charts.length > 0 && (
-        <div className="p-3 space-y-3">
-          {result.charts.map((chart, i) => (
-            <DataChartBlock key={i} chart={chart} />
+        <div className="space-y-3 border-t border-border/45 p-3">
+          {result.charts.map((chart, index) => (
+            <DataChartBlock key={index} chart={chart} />
           ))}
         </div>
       )}
 
-      {/* Generated downloadable files */}
       {result?.generatedFiles && result.generatedFiles.length > 0 && (
-        <div className="p-3 border-t border-neutral-200 dark:border-neutral-800 flex flex-wrap gap-2">
-          {result.generatedFiles.map((file, i) => (
-            <a
-              key={i}
-              href={file.path}
-              download={file.name}
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700 transition shadow-sm"
-            >
-              <Download className="h-3.5 w-3.5 text-coral-500" />
-              <span className="font-medium">{file.name}</span>
-              <span className="text-micro text-neutral-400">({Math.round(file.sizeBytes / 1024)} KB)</span>
-            </a>
+        <div className="flex flex-wrap gap-2 border-t border-border/60 bg-muted/20 p-3">
+          {result.generatedFiles.map((file, index) => (
+            <Button key={index} variant="outline" size="sm" asChild className="gap-1.5">
+              <a href={file.path} download={file.name}>
+                <Download className="size-3.5 text-primary" aria-hidden="true" />
+                <span className="max-w-52 truncate">{file.name}</span>
+                <span className="font-mono text-micro text-muted-foreground">
+                  {Math.round(file.sizeBytes / 1024)} KB
+                </span>
+              </a>
+            </Button>
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
