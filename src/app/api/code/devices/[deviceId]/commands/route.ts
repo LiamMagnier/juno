@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { serializeSessionCommand } from "@/lib/code-remote-sessions";
+import { canonicalSessionCommand } from "@/lib/code-session-command-route";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
-  // Client enqueue path (mobile app dispatching a command to a host machine)
+  // Client enqueue path (mobile app dispatching a command to a host machine).
+  // Canonicalize at the relay edge so old phone builds and the current Mac host
+  // speak one stable command vocabulary.
   if ("kind" in rawBody || "idempotencyKey" in rawBody) {
     const parsed = enqueueSchema.safeParse(rawBody);
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -92,6 +95,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
       })
     ).id;
 
+    const canonical = canonicalSessionCommand(parsed.data.kind, parsed.data.payload ?? {});
     const command = await prisma.codeSessionCommand.upsert({
       where: {
         userId_idempotencyKey: {
@@ -105,8 +109,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
         deviceId,
         remoteSessionId,
         sessionId: sid,
-        kind: parsed.data.kind,
-        payload: (parsed.data.payload ?? {}) as Prisma.InputJsonValue,
+        kind: canonical.kind,
+        payload: canonical.payload as Prisma.InputJsonValue,
         idempotencyKey: parsed.data.idempotencyKey,
         status: "pending",
       },
