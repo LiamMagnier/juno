@@ -12,6 +12,58 @@ export type SessionRouteParams = Promise<{ deviceId: string; sessionId: string }
  *  twice for the same logical command (the upsert path below runs regardless). */
 export const SESSION_COMMAND_RATE_LIMIT = 120;
 
+/**
+ * The first mobile Remote client and the current host runtime shipped with two
+ * vocabularies for the same actions. The phone says `message`, `stop`, and
+ * `approval`; the Workbench adapter deliberately exposes the more explicit
+ * `send_message`, `stop_agent`, and `approval_decision` verbs. Persisting the
+ * client spelling meant the command was successfully queued, claimed by the
+ * Mac, and then rejected as unsupported — exactly the kind of failure that
+ * makes Remote look flaky even though every network hop worked.
+ *
+ * Keep legacy spellings accepted at the relay boundary so existing mobile
+ * builds remain compatible, but persist only the canonical host vocabulary.
+ * Payload aliases are normalized here for the same reason: the dedicated HTTP
+ * routes historically use `prompt`/`approve`/`requestId`, while the host uses
+ * `text`/`approved`/`approvalId`.
+ */
+const LEGACY_SESSION_COMMAND_KINDS: Record<string, string> = {
+  message: "send_message",
+  stop: "stop_agent",
+  approval: "approval_decision",
+  patch: "apply_patch",
+  delete: "delete_change",
+  git: "git_action",
+};
+
+export function canonicalSessionCommand(
+  kind: string,
+  rawPayload: Record<string, unknown>,
+): { kind: string; payload: Record<string, unknown> } {
+  const canonicalKind = LEGACY_SESSION_COMMAND_KINDS[kind] ?? kind;
+  const payload = { ...rawPayload };
+
+  if (canonicalKind === "send_message") {
+    if (typeof payload.text !== "string" && typeof payload.prompt === "string") {
+      payload.text = payload.prompt;
+    }
+    delete payload.prompt;
+  }
+
+  if (canonicalKind === "approval_decision") {
+    if (typeof payload.approvalId !== "string" && typeof payload.requestId === "string") {
+      payload.approvalId = payload.requestId;
+    }
+    if (typeof payload.approved !== "boolean" && typeof payload.approve === "boolean") {
+      payload.approved = payload.approve;
+    }
+    delete payload.requestId;
+    delete payload.approve;
+  }
+
+  return { kind: canonicalKind, payload };
+}
+
 /** Shared rate-limit gate for every control command (message/stop/approval/
  *  patch/delete). Returns a 429 response to short-circuit, or null to proceed. */
 export async function sessionCommandRateLimit(userId: string): Promise<NextResponse | null> {
@@ -41,7 +93,8 @@ export async function enqueueSessionCommand(
   if (!parsed.success || !parsed.data) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   const idempotencyKey = parsed.data.idempotencyKey;
   if (typeof idempotencyKey !== "string") return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-  const { idempotencyKey: _, ...payload } = parsed.data;
+  const { idempotencyKey: _, ...rawPayload } = parsed.data;
+  const canonical = canonicalSessionCommand(kind, rawPayload);
   const command = await prisma.codeSessionCommand.upsert({
     where: { userId_idempotencyKey: { userId: user.id, idempotencyKey } },
     create: {
@@ -49,8 +102,8 @@ export async function enqueueSessionCommand(
       deviceId,
       remoteSessionId: session.id,
       sessionId,
-      kind,
-      payload: payload as Prisma.InputJsonValue,
+      kind: canonical.kind,
+      payload: canonical.payload as Prisma.InputJsonValue,
       idempotencyKey,
     },
     update: {},
