@@ -204,6 +204,8 @@ public struct InspectorView: View {
                         JunoIconView(systemImage: "chevron.left", size: 12)
                         Text("Overview")
                     }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -274,6 +276,8 @@ public struct InspectorView: View {
             pane.wrappedValue = candidate
         } label: {
             menuLabel(candidate)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
     }
 
