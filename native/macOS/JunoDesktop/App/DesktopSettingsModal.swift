@@ -41,8 +41,8 @@ enum DesktopSettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .profile: .user
         case .usage: .usage
-        case .appearance: .palette
-        case .chat: .chat
+        case .appearance: .appearance
+        case .chat: .models
         case .code: .code
         case .memory: .memory
         case .account: .connections
@@ -72,7 +72,8 @@ struct DesktopSettingsModal: View {
     let onDismiss: () -> Void
 
     @State private var activeTab: DesktopSettingsTab = .profile
-    @State private var innerSheet: DesktopSettingsSheet?
+    @State private var isShowingDiagnostics = false
+    @State private var isShowingSharedLinks = false
 
     // Code & Agent Engine Settings (Codex & Claude Code parity)
     @AppStorage("juno.code.approvalPolicy") private var approvalPolicy = "autoSafe"
@@ -104,32 +105,19 @@ struct DesktopSettingsModal: View {
                     VStack(alignment: .leading, spacing: JunoSpace.section) {
                         tabContent
                     }
-                    .padding(JunoSpace.loose)
+                    .padding(JunoSpace.regular)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color.junoCanvas)
             }
         }
         .frame(minWidth: 840, idealWidth: 880, maxWidth: 960, minHeight: 560, idealHeight: 620, maxHeight: 760)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.sheet, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.sheet, style: .continuous)
-                .strokeBorder(Color.junoGlassEdge, lineWidth: 0.5)
-        )
-        .sheet(item: $innerSheet) { sheet in
-            DesktopSettingsSheetHost(sheet: sheet) {
-                switch sheet {
-                case .sharedLinks:
-                    NativeSharedLinksView(client: shareClient, accountID: session.profile.id)
-                case .diagnostics:
-                    NativeDiagnosticsView(
-                        session: session,
-                        syncModel: syncModel,
-                        outbox: outbox,
-                        accountDataClient: accountDataClient
-                    )
-                }
-            }
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        .sheet(isPresented: $isShowingDiagnostics) {
+            diagnosticsSheet
+        }
+        .sheet(isPresented: $isShowingSharedLinks) {
+            sharedLinksSheet
         }
     }
 
@@ -155,10 +143,10 @@ struct DesktopSettingsModal: View {
                         } label: {
                             HStack(spacing: JunoSpace.snug) {
                                 JunoIconView(tab.junoIcon, size: 15)
-                                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoSidebarForeground)
+                                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoSecondaryForeground)
                                 Text(tab.label)
                                     .font(.callout.weight(isSelected ? .semibold : .regular))
-                                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoSidebarForeground)
+                                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoSecondaryForeground)
                                 Spacer(minLength: 0)
                             }
                             .padding(.horizontal, JunoSpace.snug)
@@ -279,11 +267,35 @@ struct DesktopSettingsModal: View {
             }
 
             if let settings = model.settings {
-                DesktopSettingsInstructionsTile(
-                    settings: settings,
-                    disabled: model.isMutating,
-                    update: updateHandler
-                )
+                JunoSettingsTile("Custom Instructions") {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        Text("What would you like Juno to know about you to provide better responses?")
+                            .font(.caption)
+                            .junoSecondaryInk()
+                        TextField(
+                            "About you",
+                            text: junoSettingsBinding(
+                                settings, \.userCustomInstructions, update: updateHandler
+                            ) { NativeSettingsPatch(userCustomInstructions: $0) },
+                            axis: .vertical
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...6)
+
+                        Text("How would you like Juno to respond?")
+                            .font(.caption)
+                            .junoSecondaryInk()
+                        TextField(
+                            "Response style",
+                            text: junoSettingsBinding(
+                                settings, \.assistantCustomInstructions, update: updateHandler
+                            ) { NativeSettingsPatch(assistantCustomInstructions: $0) },
+                            axis: .vertical
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...6)
+                    }
+                }
             }
         }
     }
@@ -328,16 +340,36 @@ struct DesktopSettingsModal: View {
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             if let settings = model.settings {
-                DesktopSettingsAppearanceTile(
-                    settings: settings,
-                    disabled: model.isMutating,
-                    update: updateHandler
-                )
-                DesktopSettingsStyleTile(
-                    settings: settings,
-                    disabled: model.isMutating,
-                    update: updateHandler
-                )
+                JunoSettingsTile("Theme") {
+                    Picker(
+                        "Theme",
+                        selection: junoSettingsBinding(
+                            settings, \.theme, update: updateHandler
+                        ) { NativeSettingsPatch(theme: $0) }
+                    ) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                JunoSettingsTile("Accent palette") {
+                    Picker(
+                        "Accent palette",
+                        selection: junoSettingsBinding(
+                            settings, \.accentColor, update: updateHandler
+                        ) { NativeSettingsPatch(accentColor: $0) }
+                    ) {
+                        Text("Amber (Default)").tag("amber")
+                        Text("Emerald").tag("emerald")
+                        Text("Violet").tag("violet")
+                        Text("Indigo").tag("indigo")
+                        Text("Blue").tag("blue")
+                        Text("Rose").tag("rose")
+                        Text("Slate").tag("slate")
+                    }
+                }
             }
         }
     }
@@ -345,20 +377,19 @@ struct DesktopSettingsModal: View {
     private var chatSection: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             if let settings = model.settings {
-                DesktopSettingsModelTile(
-                    settings: settings,
-                    modelCatalog: modelCatalog,
-                    disabled: model.isMutating,
-                    update: updateHandler
-                )
-
-                if !modelCatalog.isEmpty {
-                    DesktopSettingsFavoritesTile(
-                        settings: settings,
-                        modelCatalog: modelCatalog,
-                        disabled: model.isMutating,
-                        update: updateHandler
-                    )
+                JunoSettingsTile("Default Model") {
+                    Picker(
+                        "Default Model",
+                        selection: junoSettingsBinding(
+                            settings, \.defaultModel, update: updateHandler
+                        ) { NativeSettingsPatch(defaultModel: $0) }
+                    ) {
+                        Text("Auto (Smart Routing)").tag("auto")
+                        Text("Gemini 3.7 Flash Thinking").tag("gemini-3.7-flash")
+                        Text("Gemini 2.5 Flash").tag("gemini-2.5-flash")
+                        Text("Claude 3.7 Sonnet").tag("claude-3-7-sonnet")
+                        Text("GPT-4.5").tag("gpt-4.5")
+                    }
                 }
 
                 JunoSettingsTile("Thinking Budget & Reasoning Effort") {
@@ -445,48 +476,140 @@ struct DesktopSettingsModal: View {
                 }
             }
 
-            if codeHostModel != nil {
-                DesktopSettingsHostTile(model: codeHostModel)
-            }
-            if workHostModel != nil {
-                DesktopSettingsWorkHostTile(model: workHostModel)
+            if let host = codeHostModel {
+                JunoSettingsTile("Juno Code Remote Host") {
+                    Toggle(
+                        isOn: Binding(
+                            get: { host.servesQueuedTasks },
+                            set: { host.servesQueuedTasks = $0 }
+                        )
+                    ) {
+                        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                            Text("Allow remote Juno Code tasks on this Mac")
+                                .junoRowLabel()
+                            Text("Lets mobile and cloud Juno relay agent runs to this Mac.")
+                                .junoCaption()
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    .tint(Color.junoAccent)
+                }
             }
         }
     }
 
     private var memorySection: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            DesktopSettingsMemoryTile(
-                model: model,
-                openManager: {
+            JunoSettingsTile("Memory") {
+                Toggle(
+                    isOn: Binding(
+                        get: { model.settings?.memoryEnabled ?? true },
+                        set: { enabled in
+                            Task {
+                                await model.updateSettings(NativeSettingsPatch(memoryEnabled: enabled))
+                            }
+                        }
+                    )
+                ) {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        Text("Reference saved memories")
+                            .junoRowLabel()
+                        Text("Juno keeps helpful details from your chats and uses them as context.")
+                            .junoCaption()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .toggleStyle(.switch)
+                .tint(Color.junoAccent)
+                .disabled(model.isMutating || model.settings == nil)
+
+                Spacer(minLength: JunoSpace.snug)
+
+                Text("^[\(model.memories.count) saved fact](inflect: true)")
+                    .junoCaption()
+                Button {
                     let url = JunoBackend.productionURL.appendingPathComponent("memory")
                     NSWorkspace.shared.open(url)
-                },
-                reviewProposals: nil,
-                update: updateHandler
-            )
+                } label: {
+                    Text("Open memory manager").junoWideButtonLabel()
+                }
+                .contentShape(.rect)
+            }
         }
     }
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            DesktopSettingsAccountTile(
-                session: session,
-                authModel: authModel,
-                openSharedLinks: { innerSheet = .sharedLinks },
-                openDiagnostics: { innerSheet = .diagnostics }
-            )
+            JunoSettingsTile("Connected Services") {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    HStack {
+                        Text("GitHub")
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Text("Connected")
+                            .font(.caption)
+                            .junoSecondaryInk()
+                    }
+                    Divider()
+                    HStack {
+                        Text("Google Drive")
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Text("Available")
+                            .font(.caption)
+                            .junoSecondaryInk()
+                    }
+                    Divider()
+                    HStack {
+                        Text("Linear")
+                            .font(.callout.weight(.medium))
+                        Spacer()
+                        Text("Available")
+                            .font(.caption)
+                            .junoSecondaryInk()
+                    }
+                }
+            }
+
+            JunoSettingsTile("Shared Links") {
+                Text("Manage and revoke public links created from your chats.")
+                    .junoCaption()
+                Button("Manage Shared Links…") {
+                    isShowingSharedLinks = true
+                }
+                .buttonStyle(.bordered)
+                .contentShape(.rect)
+            }
         }
     }
 
     private var dangerSection: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            DesktopSettingsDangerTile(
-                authModel: authModel,
-                session: session,
-                accountDataClient: accountDataClient,
-                outbox: outbox
-            )
+            JunoSettingsTile("Danger zone") {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text("Export your data, clear cached offline conversations, or sign out.")
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button("Sign Out") {
+                        Task { await authModel.signOut() }
+                    }
+                    .buttonStyle(.bordered)
+                    .contentShape(.rect)
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        Task { await authModel.signOut() }
+                    } label: {
+                        Text("Delete Account…")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoDanger)
+                    .contentShape(.rect)
+                }
+            }
         }
     }
 
@@ -514,13 +637,57 @@ struct DesktopSettingsModal: View {
                     }
                     Divider()
                     Button("Open Diagnostics Details…") {
-                        innerSheet = .diagnostics
+                        isShowingDiagnostics = true
                     }
                     .buttonStyle(.bordered)
                     .contentShape(.rect)
                 }
             }
         }
+    }
+
+    private var diagnosticsSheet: some View {
+        VStack(spacing: JunoSpace.regular) {
+            HStack {
+                Text("Diagnostics")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { isShowingDiagnostics = false }
+                    .buttonStyle(.bordered)
+                    .contentShape(.rect)
+            }
+            .padding()
+
+            NativeDiagnosticsView(
+                session: session,
+                syncModel: syncModel,
+                outbox: outbox,
+                accountDataClient: accountDataClient
+            )
+            .padding()
+        }
+        .frame(minWidth: 500, minHeight: 400)
+    }
+
+    private var sharedLinksSheet: some View {
+        VStack(spacing: JunoSpace.regular) {
+            HStack {
+                Text("Shared Links")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { isShowingSharedLinks = false }
+                    .buttonStyle(.bordered)
+                    .contentShape(.rect)
+            }
+            .padding()
+
+            NativeSharedLinksView(
+                client: shareClient,
+                accountID: session.profile.id
+            )
+            .padding()
+        }
+        .frame(minWidth: 500, minHeight: 400)
     }
 
     private var updateHandler: @MainActor (NativeSettingsPatch) async -> Void {
