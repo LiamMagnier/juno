@@ -228,7 +228,7 @@ struct ActivityTab: View {
             }
         } label: {
             HStack(spacing: JunoSpace.tight) {
-                JunoIconView(test.passed ? .check : .warning, size: 14)
+                JunoIconView(test.passed ? .check : .error, size: 14)
                     .foregroundStyle(test.passed ? Color.junoSuccess : Color.junoDanger)
                 Text("Latest tests")
             }
