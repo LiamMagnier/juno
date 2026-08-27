@@ -422,16 +422,6 @@ struct DesktopWorkWorkspace: View {
     private var detailToolbar: some ToolbarContent {
         // The product switch is deliberately absent. It now sits at the top of
         // the navigation column, on the column it switches, in every product —
-        // see ``DesktopSidebarProductHeader``. Chat and Code moved together and
-        // this window has to move with them, because the one property that
-        // control must have is that it does not travel across the window when
-        // the product does.
-
-        ToolbarItem(placement: .principal) {
-            DesktopChatWorkSwitcher(selection: $product)
-        }
-        .sharedBackgroundVisibility(.hidden)
-
         ToolbarItem(placement: .primaryAction) {
             Button(action: compose) {
                 Label("New task", systemImage: "square.and.pencil")

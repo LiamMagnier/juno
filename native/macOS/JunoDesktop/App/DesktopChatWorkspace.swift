@@ -323,14 +323,6 @@ struct DesktopChatWorkspace: View {
     /// does not have to re-find it.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // Chat / Work is a window-level mode choice, so it stays centered in the
-        // titlebar. Chat / Code remains one level down in the sidebar because it
-        // changes the working surface without leaving the conversational mode.
-
-        ToolbarItem(placement: .principal) {
-            DesktopChatWorkSwitcher(selection: $product)
-        }
-
         ToolbarItem(placement: .primaryAction) {
             Button {
                 beginDraft()
