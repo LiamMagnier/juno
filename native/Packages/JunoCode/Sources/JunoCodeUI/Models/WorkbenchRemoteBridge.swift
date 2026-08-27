@@ -3,31 +3,13 @@ import JunoCodeBridge
 import JunoCodeCore
 import JunoCodeKit
 
-/// The production conformance for `CodeRemoteSessionBridging`.
-///
-/// `RemoteCommandAdapter` decides what a remote command is *allowed* to do;
-/// this is what actually does it, by calling the same `SessionController`
-/// methods the Mac's own UI calls. That is the whole reason Remote is an
-/// adapter rather than a second agent: there is no separate code path here that
-/// could disagree with the local one about what a "send" or an "undo" means.
-///
-/// `@MainActor` because `SessionController` and `WorkbenchModel` are, and the
-/// adapter calls in from the host's actor — so every hop is explicit rather
-/// than accidental.
+/// Production bridge from Remote commands into the exact Workbench session the
+/// Mac UI owns. Remote never creates a second local agent path: every operation
+/// is delegated to `SessionController` or `WorkbenchModel`.
 @MainActor
 public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
     private let model: WorkbenchModel
-    /// Opaque workspace ids the user has shared with Remote, by id.
-    ///
-    /// A closure rather than a stored set so the answer is read at command
-    /// time: un-sharing a workspace has to take effect on the next command,
-    /// not on the next relaunch.
     private let sharedWorkspaceIDs: @MainActor () -> Set<String>
-    /// The model a remotely-created session opens with.
-    ///
-    /// Supplied by the app rather than named in the command: model choice is a
-    /// spend decision, and it belongs to the account holder at the machine
-    /// rather than to whoever sent the command.
     private let defaultModelID: @MainActor () -> String
 
     public init(
@@ -64,8 +46,6 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
         let configuration = AgentConfiguration(
             modelID: await MainActor.run { defaultModelID() },
             behavior: .code,
-            // The adapter has already refused anything above ask-before-changes
-            // for a remotely-created session; this is the value it settled on.
             permissionMode: permissionMode,
             location: .local,
             computerUseEnabled: false
@@ -81,10 +61,18 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
         return created.id.value
     }
 
+    /// A Remote message is a direction to this same session. If the agent is
+    /// already executing, the controller performs the same interrupt-and-continue
+    /// operation the Mac's active-run composer exposes rather than rejecting the
+    /// phone with "stop first" or starting a concurrent executor.
     nonisolated public func sendMessage(sessionID: String, text: String) async throws {
         let controller = try await require(sessionID)
-        await MainActor.run { controller.composerText = text }
-        await controller.send()
+        let accepted = await controller.interruptAndSend(text)
+        guard accepted else {
+            throw CodeRemoteCommandError.invalidField(
+                "text", reason: "the session could not accept this direction"
+            )
+        }
     }
 
     nonisolated public func stopAgent(sessionID: String) async throws {
@@ -92,8 +80,6 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
     }
 
     nonisolated public func retryTurn(sessionID: String) async throws {
-        // Retry is "send the last thing again", which is what the composer
-        // already does — there is no second retry path to keep in step.
         let controller = try await require(sessionID)
         let last = await MainActor.run {
             controller.events.reversed().compactMap { event -> String? in
@@ -106,21 +92,24 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
                 "sessionId", reason: "there is no previous message to retry"
             )
         }
-        await MainActor.run { controller.composerText = last }
-        await controller.send()
+        let accepted = await controller.interruptAndSend(last)
+        guard accepted else {
+            throw CodeRemoteCommandError.invalidField(
+                "sessionId", reason: "the previous turn could not be retried"
+            )
+        }
     }
 
     nonisolated public func forkSession(sessionID: String) async throws -> String {
-        // Not yet implemented on the local surface either. Refusing explicitly
-        // is the honest answer: silently doing nothing would show the phone a
-        // fork that never appears.
         throw CodeRemoteCommandError.unsupportedKind("fork")
     }
 
     // MARK: - Approvals
 
     nonisolated public func resolveApproval(
-        sessionID: String, approvalID: String, approved: Bool
+        sessionID: String,
+        approvalID: String,
+        approved: Bool
     ) async throws {
         let controller = try await require(sessionID)
         if approved {
@@ -133,15 +122,14 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
     // MARK: - Changes
 
     nonisolated public func applyChange(
-        sessionID: String, changeID: String, accept: Bool
+        sessionID: String,
+        changeID: String,
+        accept: Bool
     ) async throws {
         let controller = try await require(sessionID)
         if accept {
             await MainActor.run { controller.acceptChange(path: changeID) }
         } else {
-            // Never force. A remote reject must not overwrite content that
-            // diverged since the change was made — forcing is a separate,
-            // explicit action and it is not reachable from a phone.
             let result = await controller.rejectChange(path: changeID, force: false)
             if case let .failed(message) = result {
                 throw CodeRemoteCommandError.invalidField("changeId", reason: message)
@@ -158,20 +146,21 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
     }
 
     nonisolated public func deleteChange(sessionID: String, changeID: String) async throws {
-        // Deleting a tracked change is rejecting it without keeping the file.
         try await applyChange(sessionID: sessionID, changeID: changeID, accept: false)
     }
 
     // MARK: - Tests and Git
 
     nonisolated public func runTests(sessionID: String, command: String?) async throws {
-        // Routed through the composer so it lands on the same tool call, and
-        // therefore the same approval gate, as a locally typed request. A
-        // direct call would bypass the pin that makes `run_tests` always ask.
         let controller = try await require(sessionID)
-        let instruction = command.map { "Run the tests with: \($0)" } ?? "Run the project's tests."
-        await MainActor.run { controller.composerText = instruction }
-        await controller.send()
+        let instruction = command.map { "Run the tests with: \($0)" }
+            ?? "Run the project's tests."
+        let accepted = await controller.interruptAndSend(instruction)
+        guard accepted else {
+            throw CodeRemoteCommandError.invalidField(
+                "sessionId", reason: "the test request could not be started"
+            )
+        }
     }
 
     nonisolated public func stopTests(sessionID: String) async throws {
@@ -179,7 +168,9 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
     }
 
     nonisolated public func performGitAction(
-        sessionID: String, action: String, message: String?
+        sessionID: String,
+        action: String,
+        message: String?
     ) async throws {
         let controller = try await require(sessionID)
         switch action {
@@ -189,8 +180,6 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
             }
             _ = await controller.commit(message: message)
         default:
-            // Push, branch and the rest are not reachable from a phone yet.
-            // Naming the refusal beats a no-op the phone reports as success.
             throw CodeRemoteCommandError.invalidField(
                 "action", reason: "\"\(action)\" is not available remotely"
             )
