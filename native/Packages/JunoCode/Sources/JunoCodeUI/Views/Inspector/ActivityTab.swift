@@ -239,25 +239,58 @@ struct ActivityTab: View {
     }
 
     private func approvalRow(_ blockingApproval: (request: ApprovalRequest, others: Int)) -> some View {
-        LabeledContent {
-            VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                Text(blockingApproval.request.toolName).junoCode()
-                Text(blockingApproval.request.summary)
-                    .junoCaption()
-                    .lineLimit(3)
-                    .multilineTextAlignment(.trailing)
+        let request = blockingApproval.request
+        let tint = request.risk == .destructive ? Color.junoDanger : Color.junoCaution
+
+        return VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                JunoIconView(.permission, size: 14)
+                    .foregroundStyle(tint)
+                Text(request.toolName)
+                    .junoCode()
+                    .lineLimit(1)
+                Spacer(minLength: JunoSpace.tight)
+                ApprovalCountdown(expiresAt: request.expiresAt)
+            }
+
+            Text(request.summary)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: JunoSpace.snug) {
+                Text("\(request.risk.rawValue.capitalized) risk")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tint)
                 if blockingApproval.others > 0 {
-                    Text("+\(blockingApproval.others) more")
+                    Text("+\(blockingApproval.others) more waiting")
                         .junoCaption()
                         .junoMetaInk()
                 }
+                Spacer(minLength: 0)
+
+                Button("Deny") {
+                    Task { await controller.deny(request.id) }
+                }
+                .controlSize(.small)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+                .help("Deny this action")
+                .accessibilityIdentifier("juno.code.activity.approval.deny")
+
+                Button("Approve") {
+                    Task { await controller.approve(request.id) }
+                }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+                .help("Approve this action")
+                .accessibilityIdentifier("juno.code.activity.approval.approve")
             }
-        } label: {
-            JunoIconLabel("Approval", icon: .permission)
-                .foregroundStyle(Color.junoCaution)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Approval required: \(blockingApproval.request.toolName), \(blockingApproval.request.summary)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Approval required: \(request.toolName), \(request.summary)")
         .accessibilityIdentifier("juno.code.activity.awaiting-approval")
     }
 
