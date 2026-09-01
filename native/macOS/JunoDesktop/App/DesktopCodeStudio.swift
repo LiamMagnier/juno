@@ -1548,7 +1548,7 @@ struct DesktopCodeDraftDetail: View {
             }
 
             Text(record == nil ? "What would you like to build?" : "Juno Code")
-                .junoFont(size: 26, relativeTo: .title1, weight: .semibold)
+                .junoFont(size: 26, relativeTo: .title, weight: .semibold)
                 .junoInk()
                 .multilineTextAlignment(.center)
 
@@ -2394,45 +2394,8 @@ struct DesktopCodeDraftDetail: View {
 
     /// **One microphone.**
     ///
-    /// The composer used to end in two of them: a quiet `mic` for dictation and,
-    /// immediately to its right, a coral `waveform` orb for voice mode. Two
-    /// adjacent microphone glyphs, one of them the loudest thing in the window,
-    /// and nothing on either saying which one talks to Juno and which one types
-    /// for you.
-    ///
-    /// So there is one mark for speaking, and it owns both ways of doing it.
-    /// Pressing it dictates — the common case, and the one that leaves the
-    /// reader's words in the composer where they can still edit them. The menu
-    /// beside it starts a voice conversation, which is a different thing and is
-    /// now named as one instead of being inferred from an orb. `primaryAction:`
-    /// is the platform's own control for exactly this shape: a button that also
-    /// has a menu.
-    ///
-    /// The accent circle to its right no longer morphs. It is Send, always —
-    /// see ``sendButton``.
-    @ViewBuilder
-    private var voiceButton: some View {
-        let canDictate = JunoSpeechService.isSupported
-        let canConverse = beginVoice != nil && !modelID.isEmpty
-
-        if canDictate || canConverse {
-            Menu {
-                if canDictate {
-                    Button {
-                        startDictation()
-                    } label: {
-                        JunoIconLabel(verbatim: "Dictate into the composer", icon: .mic, size: 14)
-                    }
-                }
-                if let beginVoice {
-                    Button {
-                        beginVoice(modelID)
-                    } label: {
-                        JunoIconLabel(verbatim: "Start a voice conversation", icon: .conversation, size: 14)
-                    }
-                    .disabled(modelID.isEmpty)
-                }
-            } label: {
+    /// Dictation-only: the composer's send button now morphs to show voice mode
+    /// when the prompt is empty, so this is purely for the dictation shortcut.
     @ViewBuilder
     private var voiceButton: some View {
         if JunoSpeechService.isSupported {
