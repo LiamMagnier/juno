@@ -128,8 +128,8 @@ SOURCE_SHORT_SHA="$(git rev-parse --short=10 HEAD 2>/dev/null)" || die "Could no
 
 ORIGIN_URL="$(git config --get remote.origin.url || true)"
 case "$ORIGIN_URL" in
-  https://github.com/LiamMagnier/juno|https://github.com/LiamMagnier/juno.git|\
-  git@github.com:LiamMagnier/juno.git|ssh://git@github.com/LiamMagnier/juno.git) ;;
+  https://github.com/[Ll]iam[Mm]agnier/[Jj]uno|https://github.com/[Ll]iam[Mm]agnier/[Jj]uno.git|\
+  git@github.com:[Ll]iam[Mm]agnier/[Jj]uno.git|ssh://git@github.com:[Ll]iam[Mm]agnier/[Jj]uno.git) ;;
   *) die "origin must be the canonical GitHub repository LiamMagnier/juno; got '$ORIGIN_URL'." ;;
 esac
 
