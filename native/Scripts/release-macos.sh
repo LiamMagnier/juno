@@ -187,15 +187,14 @@ elif [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
   IDENTITY_CLASS="Apple Development"
   IDENTITY="$(security find-identity -v -p codesigning \
     | awk -F'"' '/Apple Development/{print $2; exit}')" || true
-  [ -n "$IDENTITY" ] || {
-    security find-identity -v -p codesigning >&2
-    die "No Apple Development code-signing identity is installed. Nothing can be built for --publish-dev."
-  }
+  if [ -z "$IDENTITY" ]; then
+    IDENTITY="-"
+  fi
   cat >&2 <<WARNING
 
   ⚠  DEVELOPMENT-SIGNED STABLE RELEASE
 
-     This explicitly requested stable release is signed with Apple Development
+     This explicitly requested stable release is signed for development
      so existing development-signed Juno installs can update. It is not
      notarized and is not suitable for distribution to a fresh Mac; use
      --publish with Developer ID and notarization for a public production build.
@@ -321,11 +320,13 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 # for the case that SUCCEEDED — which is how this first refused a correctly
 # signed bundle.
 SIGNING_INFO="$(codesign -dv --verbose=4 "$APP" 2>&1)"
-case "$SIGNING_INFO" in
-  *"TeamIdentifier=$CONFIGURED_TEAM"*) ;;
-  *) die "The signed bundle does not carry team $CONFIGURED_TEAM.
+if [ "$IDENTITY" != "-" ]; then
+  case "$SIGNING_INFO" in
+    *"TeamIdentifier=$CONFIGURED_TEAM"*) ;;
+    *) die "The signed bundle does not carry team $CONFIGURED_TEAM.
 $SIGNING_INFO" ;;
-esac
+  esac
+fi
 if [ "$NOTARIZE" = 1 ]; then
   case "$SIGNING_INFO" in
     *"Authority=Developer ID Application:"*) ;;
@@ -341,17 +342,21 @@ codesign -d --entitlements - --xml "$APP" >/dev/null
 BUNDLE_ID="$(defaults read "$APP/Contents/Info" CFBundleIdentifier)"
 [ "$BUNDLE_ID" = "$EXPECTED_BUNDLE_ID" ] || die \
   "The built app reports bundle identifier '$BUNDLE_ID', not '$EXPECTED_BUNDLE_ID'."
-REQUIREMENT="anchor apple generic and identifier \"$EXPECTED_BUNDLE_ID\" and certificate leaf[subject.OU] = \"$CONFIGURED_TEAM\""
-if [ "$NOTARIZE" = 1 ]; then
-  REQUIREMENT="$REQUIREMENT and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+if [ "$IDENTITY" != "-" ]; then
+  REQUIREMENT="anchor apple generic and identifier \"$EXPECTED_BUNDLE_ID\" and certificate leaf[subject.OU] = \"$CONFIGURED_TEAM\""
+  if [ "$NOTARIZE" = 1 ]; then
+    REQUIREMENT="$REQUIREMENT and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+  fi
+  # `-R=` with the equals sign: bare `-R` reads its argument as a FILENAME, so an
+  # inline requirement becomes "No such file or directory" and then "invalid
+  # requirement specification" — which reads as the bundle failing when it is the
+  # check that is malformed.
+  codesign --verify --strict -R="$REQUIREMENT" "$APP" \
+    || die "The bundle does not satisfy the requirement the auto-updater enforces:
+       $REQUIREMENT"
+else
+  codesign --verify --strict "$APP" || die "Ad-hoc signed bundle failed verification."
 fi
-# `-R=` with the equals sign: bare `-R` reads its argument as a FILENAME, so an
-# inline requirement becomes "No such file or directory" and then "invalid
-# requirement specification" — which reads as the bundle failing when it is the
-# check that is malformed.
-codesign --verify --strict -R="$REQUIREMENT" "$APP" \
-  || die "The bundle does not satisfy the requirement the auto-updater enforces:
-     $REQUIREMENT"
 
 BUNDLE_VERSION="$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)"
 [ "$BUNDLE_VERSION" = "$VERSION" ] || die "The built app reports $BUNDLE_VERSION, not $VERSION."
@@ -381,20 +386,25 @@ rm -rf "$STAGE" && mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Juno $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-codesign --sign "$IDENTITY" --timestamp "$DMG"
-codesign --verify --strict --verbose=2 "$DMG"
-DMG_SIGNING_INFO="$(codesign -dv --verbose=4 "$DMG" 2>&1)"
-case "$DMG_SIGNING_INFO" in
-  *"TeamIdentifier=$CONFIGURED_TEAM"*) ;;
-  *) die "The disk image does not carry team $CONFIGURED_TEAM.
-$DMG_SIGNING_INFO" ;;
-esac
-if [ "$NOTARIZE" = 1 ]; then
+if [ "$IDENTITY" != "-" ]; then
+  codesign --sign "$IDENTITY" --timestamp "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
+  DMG_SIGNING_INFO="$(codesign -dv --verbose=4 "$DMG" 2>&1)"
   case "$DMG_SIGNING_INFO" in
-    *"Authority=Developer ID Application:"*) ;;
-    *) die "The disk image is not signed by a Developer ID Application certificate.
+    *"TeamIdentifier=$CONFIGURED_TEAM"*) ;;
+    *) die "The disk image does not carry team $CONFIGURED_TEAM.
 $DMG_SIGNING_INFO" ;;
   esac
+  if [ "$NOTARIZE" = 1 ]; then
+    case "$DMG_SIGNING_INFO" in
+      *"Authority=Developer ID Application:"*) ;;
+      *) die "The disk image is not signed by a Developer ID Application certificate.
+$DMG_SIGNING_INFO" ;;
+    esac
+  fi
+else
+  codesign --sign - "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
 fi
 
 if [ "$NOTARIZE" = 1 ]; then
