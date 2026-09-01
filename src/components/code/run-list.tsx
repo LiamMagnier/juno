@@ -281,12 +281,13 @@ export function RunList() {
             <label htmlFor="run-search" className="sr-only">
               Search runs
             </label>
+            <AppIcons.search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
             <Input
               id="run-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search runs, repos, branches"
-              className="pr-8"
+              placeholder="Search runs, repos, branches…"
+              className="h-8 rounded-field border-border/60 bg-card/80 pl-8.5 pr-8 text-ui placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-primary/40"
             />
             {query && (
               <Button
@@ -294,9 +295,9 @@ export function RunList() {
                 size="icon-sm"
                 onClick={() => setQuery("")}
                 aria-label="Clear search"
-                className="absolute right-1 top-1/2 size-7 -translate-y-1/2"
+                className="absolute right-1 top-1/2 size-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
+                <ActionIcons.dismiss className="size-3" aria-hidden="true" />
               </Button>
             )}
           </div>
@@ -320,10 +321,10 @@ export function RunList() {
                 aria-pressed={machine === option.id}
                 onClick={() => setMachine(option.id)}
                 className={cn(
-                  "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3.5 text-label transition-colors duration-fast ease-out-soft coarse:h-11",
+                  "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-control px-3 font-mono text-micro font-medium transition-colors duration-fast ease-out-soft coarse:h-11",
                   machine === option.id
                     ? "bg-foreground text-background"
-                    : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
+                    : "border border-border/50 bg-secondary/40 text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
                 {option.label}

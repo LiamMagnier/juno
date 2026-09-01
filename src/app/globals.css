@@ -729,6 +729,84 @@
     box-shadow: 0 1px 2px hsl(var(--shadow-ink) / .04);
   }
 
+  /* ---- Modern Neumorphic Surface System ---------------------------------
+     Tactile soft elevation with dual light/dark ambient shadows in light mode,
+     and deep specular rim illumination with soft drop shadows in dark mode. */
+
+  .neumorphic-raised {
+    border: 1px solid hsl(var(--border) / 0.6);
+    background-color: hsl(var(--card));
+    box-shadow:
+      -3px -3px 8px hsl(0 0% 100% / 0.75),
+      3px 4px 12px hsl(var(--shadow-ink) / 0.08);
+    transition: transform var(--dur-fast) var(--ease-out-soft), box-shadow var(--dur-fast) var(--ease-out-soft);
+  }
+  .dark .neumorphic-raised {
+    border: 1px solid hsl(var(--border) / 0.8);
+    background-color: hsl(var(--card));
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen)),
+      -1px -1px 4px hsl(0 0% 100% / 0.02),
+      3px 6px 16px hsl(0 0% 0% / 0.6);
+  }
+
+  .neumorphic-inset {
+    border: 1px solid hsl(var(--border) / 0.5);
+    background-color: hsl(var(--background));
+    box-shadow:
+      inset 2px 2px 5px hsl(var(--shadow-ink) / 0.08),
+      inset -2px -2px 5px hsl(0 0% 100% / 0.7);
+  }
+  .dark .neumorphic-inset {
+    border: 1px solid hsl(var(--border) / 0.6);
+    background-color: hsl(var(--secondary) / 0.5);
+    box-shadow:
+      inset 2px 2px 6px hsl(0 0% 0% / 0.65),
+      inset -1px -1px 3px hsl(0 0% 100% / 0.03);
+  }
+
+  .neumorphic-card {
+    border: 1px solid hsl(var(--border) / 0.7);
+    border-radius: var(--radius-xl);
+    background-color: hsl(var(--card));
+    box-shadow:
+      -2px -2px 6px hsl(0 0% 100% / 0.6),
+      2px 4px 10px hsl(var(--shadow-ink) / 0.06);
+    transition: all var(--dur-fast) var(--ease-out-soft);
+  }
+  .dark .neumorphic-card {
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--card));
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen)),
+      2px 5px 14px hsl(0 0% 0% / 0.5);
+  }
+  .neumorphic-card:hover {
+    box-shadow:
+      -3px -3px 9px hsl(0 0% 100% / 0.8),
+      3px 6px 14px hsl(var(--shadow-ink) / 0.1);
+  }
+  .dark .neumorphic-card:hover {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen-strong)),
+      3px 8px 20px hsl(0 0% 0% / 0.7);
+  }
+
+  .neumorphic-pill {
+    border: 1px solid hsl(var(--border) / 0.6);
+    background-color: hsl(var(--secondary) / 0.6);
+    box-shadow:
+      inset 1px 1px 3px hsl(var(--shadow-ink) / 0.06),
+      inset -1px -1px 3px hsl(0 0% 100% / 0.6);
+  }
+  .dark .neumorphic-pill {
+    border: 1px solid hsl(var(--border) / 0.7);
+    background-color: hsl(var(--secondary));
+    box-shadow:
+      inset 1px 1px 4px hsl(0 0% 0% / 0.5),
+      inset -1px -1px 2px hsl(0 0% 100% / 0.02);
+  }
+
   /* Glossy fill for the primary action — a specular top highlight over the accent
      fill. Pair with `.halo-primary` for the colored ambient glow.
 

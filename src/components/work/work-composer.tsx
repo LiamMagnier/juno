@@ -897,16 +897,6 @@ export function WorkComposer({
     [submitting]
   );
 
-  /**
-   * When the primary button is the voice launcher instead of Start.
-   *
-   * Chat's rule in chat's shape — nothing to send, voice available — with one
-   * deliberate difference. Chat reads `!canSend`; this reads the DRAFT rather
-   * than `canStart`, because `canStart` is also false while the host list is in
-   * flight and while no executor can serve the task. Keyed off `canStart`, a
-   * reader with a written task and a slow `/api/work/hosts` would watch the
-   * Start button they were reaching for turn into a phone call.
-   */
   const showVoiceButton =
     !submitting && goal.trim().length === 0 && !!voice.onOpenVoiceMode;
 
@@ -1095,18 +1085,7 @@ export function WorkComposer({
                     </Tooltip>
                   )}
 
-                  {/* One primary button, morphing in place: with nothing
-                      written and a voice session available it IS the launcher,
-                      and the first character typed turns it back into Start.
-                      Chat's `showVoiceButton` rule, in chat's shape.
-
-                      Gated on the DRAFT rather than on `canStart`, which is the
-                      one place this surface cannot copy chat verbatim: Work
-                      also refuses to start without an executor, so keying the
-                      morph off `canStart` would put wave bars on a composer
-                      with a written task in it the moment the host list was
-                      slow — offering a phone call in place of the Start button
-                      the reader was reaching for. */}
+                  {/* Primary Action Button: Morphs seamlessly between Voice (empty), Start (has text/target) */}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="shrink-0">
@@ -1126,11 +1105,6 @@ export function WorkComposer({
                           }
                           className={cn(
                             "composer-primary-action size-9 rounded-composer-action coarse:size-11",
-                            // The same property list and easing chat morphs on.
-                            // `width` and `border-radius` are in it even though
-                            // this composer holds both fixed: dropping them
-                            // here is how the lists drift and a later shape
-                            // change animates on one surface only.
                             "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                           )}
                         >

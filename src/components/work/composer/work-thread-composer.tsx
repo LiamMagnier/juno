@@ -287,11 +287,6 @@ export function WorkThreadComposer({
   );
 
   const canSend = draft.trim().length > 0 && !sending;
-  // Chat's rule, verbatim in shape: with nothing to send and voice available the
-  // primary button becomes the voice-conversation launcher; the moment there is
-  // sendable content it morphs back into Send. Keeping the two expressions the
-  // same is what stops the two composers behaving differently on the same
-  // keystroke.
   const showVoiceButton = !sending && !canSend && !!onOpenVoiceMode;
 
   return (
@@ -576,26 +571,11 @@ export function WorkThreadComposer({
                       disabled={showVoiceButton ? false : !canSend}
                       aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
                       className={cn(
-                        // The same property list and easing chat transitions on,
-                        // so the two buttons morph identically. `width` and
-                        // `border-radius` are in it even though this composer
-                        // holds both fixed: dropping them here is how the lists
-                        // drift and a later shape change animates on one surface
-                        // only.
-                        // 36px on `rounded-composer-action`, 44px on touch — the
-                        // same as the home composer's send. `composer-action` is the
-                        // radius the token file reserves for the primary at its 36px
-                        // rest size, and the button reached only 32px before, which
-                        // is under the touch floor its neighbours already clear.
                         "composer-primary-action size-9 shrink-0 rounded-composer-action coarse:size-11",
                         "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                       )}
                     >
                       {sending ? (
-                        // Work's busy state is a send in flight, not a stream
-                        // being generated — the composer has no stop path, that
-                        // control is in the page header. So this maps to chat's
-                        // `checking` spinner rather than to its Square.
                         <Loader2
                           key="sending"
                           className="size-3.5 animate-spin motion-safe:animate-fade-in"

@@ -180,7 +180,6 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             href="/admin"
             icon={<ShieldCheck className="size-4" />}
             label="Admin Panel"
-            accent
           />
         )}
 

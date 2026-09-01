@@ -686,6 +686,7 @@ export default function NewCodeSessionPage() {
                             </>
                           )}
 
+                          {/* Primary Action Button: Morphs seamlessly between Voice (empty), Start (has text/target) */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button

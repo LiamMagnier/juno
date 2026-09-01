@@ -96,14 +96,13 @@ type ConfirmState = {
  * panel ends up feeling unconsidered — no one row looks wrong and the column
  * does.
  */
-type SidebarMode = "home" | "work" | "code" | "projects";
+type SidebarMode = "home" | "work" | "code";
 
 /** Landing route per mode — what switching the toggle actually navigates to. */
 const MODE_HOME: Record<SidebarMode, string> = {
   home: "/chat",
   work: "/work",
   code: "/code/new",
-  projects: "/projects",
 };
 
 type SidebarProject = {
@@ -226,8 +225,7 @@ export function AppSidebar({
     if (!pathname) return;
     if (pathname.startsWith("/work")) setMode("work");
     else if (pathname.startsWith("/code")) setMode("code");
-    else if (pathname.startsWith("/projects")) setMode("projects");
-    else if (pathname.startsWith("/chat") || pathname === "/") setMode("home");
+    else if (pathname.startsWith("/chat") || pathname.startsWith("/projects") || pathname === "/") setMode("home");
   }, [pathname]);
 
   // Work mode data: the user's Work tasks, polled like the Code lists below.
@@ -463,7 +461,7 @@ export function AppSidebar({
     // Conversation, so there is no `kind` to filter on and nothing here to
     // show. Giving Work a conversation kind purely to reuse this list would
     // put every Work task into the chat sidebar of anyone on an older client.
-    if (mode === "work" || mode === "projects") return [];
+    if (mode === "work") return [];
     return conversations.filter((c) =>
       mode === "code" ? c.kind === "code" : c.kind !== "code",
     );
@@ -825,21 +823,6 @@ export function AppSidebar({
                 <SidebarMotionIcon kind="pulls" />
               </RailIcon>
             </>
-          ) : mode === "projects" ? (
-            <>
-              <RailIcon onClick={() => router.push("/projects")} label="New project">
-                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="size-4" />
-                </span>
-              </RailIcon>
-              <RailIcon
-                href="/projects"
-                active={pathname === "/projects"}
-                label="All projects"
-              >
-                <SidebarMotionIcon kind="projects" />
-              </RailIcon>
-            </>
           ) : (
             <>
               <RailIcon onClick={newChat} label="New chat">
@@ -1033,28 +1016,6 @@ export function AppSidebar({
               onClick={() => setSidebarOpen(false)}
               icon={<SidebarMotionIcon kind="pulls" />}
               label="Pull requests"
-            />
-          </>
-        ) : mode === "projects" ? (
-          <>
-            <NavRow
-              onClick={() => {
-                router.push("/projects");
-                setSidebarOpen(false);
-              }}
-              icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-                </span>
-              }
-              label="New project"
-            />
-            <NavRow
-              href="/projects"
-              active={pathname === "/projects"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="projects" />}
-              label="All projects"
             />
           </>
         ) : (
@@ -1295,89 +1256,6 @@ export function AppSidebar({
               Start one above.
             </p>
           </>
-        ) : mode === "projects" ? (
-          <>
-            {projectsError && (
-              <InlineErrorRow
-                message="Couldn’t load your projects."
-                onRetry={loadProjects}
-              />
-            )}
-            {!projectsError && (
-              <>
-                {sidebarProjects.length > 0 && (
-                  <Section
-                    label="Pinned"
-                    collapsible
-                    isCollapsed={starredCollapsed}
-                    onToggleCollapse={toggleStarredCollapsed}
-                  >
-                    <div className="mt-1 space-y-0.5">
-                      {sidebarProjects.map((p) => (
-                        <ProjectRow
-                          key={p.id}
-                          project={p}
-                          chats={conversations.filter((c) => c.projectId === p.id)}
-                          active={pathname === `/projects/${p.id}`}
-                          activePath={pathname}
-                          starred={p.starred}
-                          onNavigate={() => setSidebarOpen(false)}
-                          onNewChat={() => {
-                            router.push(`/chat?project=${p.id}`);
-                            setSidebarOpen(false);
-                          }}
-                          onToggleStar={() => toggleProjectStar(p)}
-                          onRename={() => {
-                            setRenameDraft(p.name);
-                            setRenameTarget(p);
-                          }}
-                          onDelete={() => deleteProject(p)}
-                        />
-                      ))}
-                    </div>
-                  </Section>
-                )}
-                <Section
-                  label="All projects"
-                  collapsible
-                  isCollapsed={recentsCollapsed}
-                  onToggleCollapse={toggleRecentsCollapsed}
-                >
-                  <div className="mt-1 space-y-0.5">
-                    {projects.length > 0 ? (
-                      projects.map((p) => (
-                        <ProjectRow
-                          key={p.id}
-                          project={p}
-                          chats={conversations.filter((c) => c.projectId === p.id)}
-                          active={pathname === `/projects/${p.id}`}
-                          activePath={pathname}
-                          starred={p.starred}
-                          onNavigate={() => setSidebarOpen(false)}
-                          onNewChat={() => {
-                            router.push(`/chat?project=${p.id}`);
-                            setSidebarOpen(false);
-                          }}
-                          onToggleStar={() => toggleProjectStar(p)}
-                          onRename={() => {
-                            setRenameDraft(p.name);
-                            setRenameTarget(p);
-                          }}
-                          onDelete={() => deleteProject(p)}
-                        />
-                      ))
-                    ) : (
-                      <p className="px-3 py-6 text-center text-caption text-muted-foreground">
-                        No projects yet.
-                        <br />
-                        Create one above.
-                      </p>
-                    )}
-                  </div>
-                </Section>
-              </>
-            )}
-          </>
         ) : (
           <>
             {projectsError && (
@@ -1599,14 +1477,15 @@ function ModeToggle({
   onChange: (mode: SidebarMode) => void;
   compact?: boolean;
 }) {
+  const toggleValue = mode === "code" ? "code" : "home";
   return (
-    <SegmentedControl<SidebarMode>
-      value={mode}
-      onChange={onChange}
+    <SegmentedControl<"home" | "code">
+      value={toggleValue}
+      onChange={(v) => onChange(v as SidebarMode)}
       ariaLabel="Product mode"
       orientation={compact ? "vertical" : "horizontal"}
       labelHidden={compact}
-      optionClassName={compact ? undefined : "gap-1 px-1.5 py-1 text-caption"}
+      optionClassName={compact ? undefined : "gap-1.5 px-3 py-1.5 text-ui font-medium"}
       options={[
         {
           value: "home",
@@ -1614,19 +1493,9 @@ function ModeToggle({
           icon: <SidebarMotionIcon kind="home" className="size-3.5" />,
         },
         {
-          value: "work",
-          label: "Work",
-          icon: <SidebarMotionIcon kind="work" className="size-3.5" />,
-        },
-        {
           value: "code",
           label: "Code",
           icon: <SidebarMotionIcon kind="code" className="size-3.5" />,
-        },
-        {
-          value: "projects",
-          label: "Projects",
-          icon: <SidebarMotionIcon kind="projects" className="size-3.5" />,
         },
       ]}
     />

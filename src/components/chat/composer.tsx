@@ -758,15 +758,13 @@ export function Composer({
         sendAttachments.length > 0 ||
         clarificationAnswers.length > 0) &&
       !controlsLocked;
+
   // With nothing to send and voice available, the primary button becomes the
-  // voice-conversation launcher; the moment there's sendable content it morphs
+  // voice-conversation launcher; the moment there is sendable content it morphs
   // back into Send.
   const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
-  // The primary button's four faces, derived once so the stacked glyphs, the
-  // tooltip and the busy ring cannot disagree about which state is showing.
-  // While steering, a draft flips the face back to Send — the button follows
-  // what the field is holding, so Stop is never the only thing a typed
-  // constraint can be handed to.
+
+  // The primary button's faces: checking, stop (when busy), voice (when empty), or send.
   const primaryFace: "checking" | "stop" | "voice" | "send" =
     status === "checking"
       ? "checking"
@@ -2403,24 +2401,15 @@ export function Composer({
                           }
                           disabled={controlsLocked}
                           className={cn(
-                            "composer-chip group relative size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
+                            "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
                             plusOpen &&
                               "bg-accent border-border text-foreground ring-1 ring-border/50",
-                            activeToolCount > 0 && "border-primary/40 bg-primary/10 text-primary",
                           )}
                         >
                           <Plus
                             aria-hidden="true"
-                            className={cn(
-                              "size-4 text-muted-foreground transition-colors group-hover:text-foreground",
-                              activeToolCount > 0 && "text-primary",
-                            )}
+                            className="size-4 text-muted-foreground transition-colors group-hover:text-foreground"
                           />
-                          {activeToolCount > 0 && (
-                            <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground shadow-xs">
-                              {activeToolCount}
-                            </span>
-                          )}
                         </Button>
                       </DropdownMenuTrigger>
                     </TooltipTrigger>
@@ -2892,7 +2881,7 @@ export function Composer({
                   />
                 )}
 
-                {/* Primary action morphs in place: Voice (empty) → Send (has text) → Stop (busy). */}
+                {/* Primary Action Button: Morphs seamlessly between Voice (empty), Send (has text), Stop (when generating) */}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button

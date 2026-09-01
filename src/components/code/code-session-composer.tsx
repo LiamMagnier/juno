@@ -110,7 +110,7 @@ export function CodeSessionComposer({
   textareaRef,
   blockedReason,
   canSend,
-  hasPayload,
+  hasPayload: _hasPayload,
   onSubmit,
   status,
   isBusy,
@@ -134,7 +134,7 @@ export function CodeSessionComposer({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  const showVoiceButton = !isBusy && !hasPayload && !!voice.onOpen;
+  const showVoiceButton = !isBusy && !_hasPayload && !!voice.onOpen;
   const dropEnabled = attachments.enabled && !isBusy && !dictation.active;
 
   const modelInfo = React.useMemo(() => resolveModel(model), [model]);
@@ -372,13 +372,18 @@ export function CodeSessionComposer({
                       </>
                     )}
 
+                    {/* Primary Action Button: Morphs seamlessly between Voice (empty), Send/Stop (busy/has text) */}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           type="button"
                           size="icon"
                           onClick={
-                            isBusy ? onCancel : showVoiceButton && voice.onOpen ? voice.onOpen : onSubmit
+                            isBusy
+                              ? onCancel
+                              : showVoiceButton && voice.onOpen
+                                ? voice.onOpen
+                                : onSubmit
                           }
                           disabled={
                             isBusy
