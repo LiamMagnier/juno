@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
@@ -523,6 +524,24 @@ export function AppSidebar({
         </div>
       </div>
 
+      {/* ── Chat / Code product-level switcher ─────────────────────────── */}
+      <div className="px-3 pb-1 pt-1">
+        <SegmentedControl<"chat" | "code">
+          value={pathname?.startsWith("/code") ? "code" : "chat"}
+          onChange={(next) => {
+            setSidebarOpen(false);
+            router.push(next === "code" ? "/code" : "/chat");
+          }}
+          ariaLabel="Chat or Code"
+          className="w-full"
+          optionClassName="gap-1.5 px-3 py-1.5 text-ui font-medium"
+          options={[
+            { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="new" className="size-3.5" /> },
+            { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
+          ]}
+        />
+      </div>
+
       {/* Primary destinations under New chat */}
       <nav className="space-y-0.5 px-2 pt-1">
         <NavRow
@@ -575,13 +594,6 @@ export function AppSidebar({
           onClick={() => setSidebarOpen(false)}
           icon={<SidebarMotionIcon kind="tasks" />}
           label="Tasks"
-        />
-        <NavRow
-          href="/code"
-          active={pathname?.startsWith("/code")}
-          onClick={() => setSidebarOpen(false)}
-          icon={<SidebarMotionIcon kind="code" />}
-          label="Code"
         />
       </nav>
 
