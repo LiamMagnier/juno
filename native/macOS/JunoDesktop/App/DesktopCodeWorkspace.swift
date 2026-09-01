@@ -435,8 +435,6 @@ struct DesktopCodeWorkspace: View {
                     isRunning: isRunning,
                     stop: stop
                 )
-                Divider()
-                    .overlay(Color.junoSeparator)
             }
 
             DesktopCodePreviewDock(
@@ -2074,19 +2072,21 @@ private struct DesktopCodeContextStrip: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
+                    .junoInk()
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 if !subtitle.isEmpty {
                     HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(.projects, size: 14)
+                        JunoIconView(.projects, size: 12)
                             .junoMetaInk()
                             .accessibilityHidden(true)
                         Text(subtitle)
-                            .junoCaption()
+                            .junoFont(size: 11, relativeTo: .caption2)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -2109,7 +2109,7 @@ private struct DesktopCodeContextStrip: View {
 
             if isRunning {
                 Button(action: stop) {
-                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 14)
+                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 13)
                 }
                 .buttonStyle(.bordered)
                 .tint(Color.junoDanger)
@@ -2119,9 +2119,8 @@ private struct DesktopCodeContextStrip: View {
         }
         .frame(maxWidth: 800, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.vertical, JunoSpace.regular)
-        .background(Color.junoCanvas)
+        .padding(.horizontal, JunoSpace.roomy)
+        .padding(.vertical, JunoSpace.snug)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.junoHairline)

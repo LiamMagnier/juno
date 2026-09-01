@@ -371,12 +371,18 @@ struct PreRunSuggestions: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text(controller.workspaceDisplayName)
-                    .font(.system(.title2, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.head)
+        VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(controller.isGitRepository ? .branch : .projects, size: 14)
+                        .foregroundStyle(Color.junoAccent)
+                    Text(controller.workspaceDisplayName)
+                        .junoFont(size: 18, relativeTo: .title3, weight: .semibold)
+                        .junoInk()
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+
                 Text(description)
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
@@ -388,6 +394,7 @@ struct PreRunSuggestions: View {
             }
         }
         .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -441,37 +448,40 @@ struct StarterPrompt: Identifiable {
     }
 }
 
-/// The starters as one grouped panel — a plain list of real actions rather than a
-/// grid of decorative cards.
+/// The starters as refined glass items.
 struct StarterPromptList: View {
     let starters: [StarterPrompt]
     let select: (String) -> Void
 
     var body: some View {
-        VStack(spacing: 1) {
+        VStack(spacing: JunoSpace.snug) {
             ForEach(starters) { starter in
                 Button {
                     select(starter.prompt)
                 } label: {
                     HStack(spacing: JunoSpace.snug) {
-                        JunoIconView(starter.icon, size: 16)
-                            .foregroundStyle(Color.junoAccent)
-                            .frame(width: 16)
-                        Text(starter.title).junoRowLabel()
+                        JunoIconView(starter.icon, size: 15)
+                            .junoSecondaryInk()
+                            .frame(width: 20)
+                        Text(starter.title)
+                            .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                            .junoInk()
                         Spacer(minLength: 0)
+                        JunoIconView(.external, size: 12)
+                            .junoMetaInk()
                     }
                     .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug + 1)
-                    .contentShape(.rect)
+                    .padding(.vertical, JunoSpace.snug)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .junoPanel(cornerRadius: JunoRadius.well)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                            .strokeBorder(Color.junoBorder.opacity(0.5))
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Puts this prompt in the composer")
             }
         }
-        .junoPanel()
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoBorder)
-        )
     }
 }

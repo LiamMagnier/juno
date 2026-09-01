@@ -1489,38 +1489,34 @@ struct DesktopCodeDraftDetail: View {
         VStack(spacing: 0) {
             if record != nil {
                 repositoryContextBar
-                Divider()
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: JunoSpace.section) {
-                    startHeader
+                VStack(spacing: JunoSpace.roomy) {
+                    Spacer(minLength: JunoSpace.snug)
 
-                    if trimmedPrompt.isEmpty {
-                        starterTaskList
-                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    startHero
+
+                    VStack(spacing: JunoSpace.snug) {
+                        if let voiceDock {
+                            voiceDock
+                        }
+                        composer
                     }
 
-                    Spacer(minLength: JunoSpace.region)
+                    if trimmedPrompt.isEmpty {
+                        starterGrid
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    }
+
+                    Spacer(minLength: JunoSpace.roomy)
                 }
-                .frame(maxWidth: 760, alignment: .leading)
-                .padding(.horizontal, JunoSpace.region)
-                .padding(.top, JunoSpace.region)
-                .padding(.bottom, JunoSpace.region)
+                .frame(maxWidth: 720)
+                .padding(.horizontal, JunoSpace.roomy)
+                .padding(.vertical, JunoSpace.regular)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
             .scrollIndicators(.hidden)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: JunoSpace.snug) {
-                if let voiceDock {
-                    voiceDock
-                }
-                composer
-            }
-            .padding(.top, JunoSpace.snug)
-            .padding(.bottom, JunoSpace.regular)
-            .background(Color.junoCanvas)
         }
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
@@ -1536,31 +1532,36 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
-    private var startHeader: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Text(record == nil ? "Start a task" : "Start work")
-                    .junoFont(size: 24, relativeTo: .title2, weight: .semibold)
-                    .junoInk()
-
-                Spacer(minLength: JunoSpace.regular)
-
-                Text("⌘↵ to run")
-                    .junoCaption()
-                    .monospacedDigit()
+    private var startHero: some View {
+        VStack(spacing: JunoSpace.snug) {
+            if let record {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(record.descriptor.isGitRepository ? .branch : .projects, size: 13)
+                        .foregroundStyle(Color.junoAccent)
+                    Text(record.descriptor.displayName)
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                        .junoInk()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .junoGlass(in: Capsule(), interactive: false)
             }
+
+            Text(record == nil ? "What would you like to build?" : "Juno Code")
+                .junoFont(size: 26, relativeTo: .title1, weight: .semibold)
+                .junoInk()
+                .multilineTextAlignment(.center)
 
             Text(
                 record == nil
-                    ? "Ask a question, make a plan, or choose a project when you are ready for file work."
-                    : "Describe the outcome. Juno will inspect the repository before it changes anything."
+                    ? "Ask questions, plan changes, or select a project to inspect and edit real files."
+                    : "Describe the outcome. Juno inspects the repository, plans edits, and validates tests."
             )
             .junoCaption()
+            .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 520)
         }
-        .frame(maxWidth: 640, alignment: .leading)
-        .accessibilityIdentifier("juno.code.start-header")
-    }
         .accessibilityIdentifier("juno.code.start-header")
     }
 
@@ -1571,62 +1572,57 @@ struct DesktopCodeDraftDetail: View {
         return AgentBehaviorLabel.text(for: behavior)
     }
 
-    private var starterTaskList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(record == nil ? "Good starting points" : "Common tasks")
+    private var starterGrid: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack {
+                Text("Suggestions")
                     .junoSidebarSection()
                 Spacer(minLength: JunoSpace.regular)
-                Text("Select to edit")
+                Text("⌘↵ to run")
                     .junoMetaInk()
+                    .junoFont(size: 11, relativeTo: .caption2)
             }
-            .padding(.bottom, JunoSpace.snug)
+            .padding(.horizontal, 4)
 
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-
-            ForEach(Array(starterTasks.prefix(4).enumerated()), id: \.element.id) { index, task in
-                Button {
-                    apply(task)
-                } label: {
-                    HStack(spacing: JunoSpace.cozy) {
-                        JunoIconView(task.icon, size: 15)
-                            .junoSecondaryInk()
-                            .frame(width: 24)
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(task.title)
-                                .font(.subheadline.weight(.semibold))
-                                .junoInk()
-                            Text(task.detail)
-                                .font(.caption)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 140, maximum: 360), spacing: JunoSpace.snug),
+                    GridItem(.flexible(minimum: 140, maximum: 360), spacing: JunoSpace.snug)
+                ],
+                spacing: JunoSpace.snug
+            ) {
+                ForEach(starterTasks) { task in
+                    Button {
+                        apply(task)
+                    } label: {
+                        HStack(spacing: JunoSpace.snug) {
+                            JunoIconView(task.icon, size: 15)
                                 .junoSecondaryInk()
-                                .lineLimit(2)
+                                .frame(width: 22)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(task.title)
+                                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                                    .junoInk()
+                                Text(task.detail)
+                                    .junoFont(size: 11, relativeTo: .caption2)
+                                    .junoMetaInk()
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
                         }
-
-                        Spacer(minLength: 0)
-
-                        JunoIconView(.external, size: 13)
-                            .junoMetaInk()
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.vertical, JunoSpace.snug)
+                        .frame(minWidth: 44, minHeight: 48)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .junoGlass(in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous), interactive: true)
                     }
-                    .padding(.vertical, JunoSpace.cozy)
-                    .frame(minWidth: 44, minHeight: 52)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("juno.code.launch-intent.\(task.id)")
-
-                if index < min(starterTasks.count, 4) - 1 {
-                    Rectangle()
-                        .fill(Color.junoHairline)
-                        .frame(height: 1)
-                        .padding(.leading, 36)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("juno.code.launch-intent.\(task.id)")
                 }
             }
         }
-        .frame(maxWidth: 640, alignment: .leading)
+        .frame(maxWidth: 720)
         .accessibilityIdentifier("juno.code.starter-tasks")
     }
 
