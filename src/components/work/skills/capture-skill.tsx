@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Sparkles } from "lucide-react";
+import { BookmarkPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -144,7 +144,7 @@ export function CaptureSkillButton({
         onClick={() => setOpen(true)}
         className="h-8 w-full gap-1.5"
       >
-        <Sparkles className="size-3.5" aria-hidden="true" />
+        <BookmarkPlus className="size-3.5" aria-hidden="true" />
         Save this as a skill
       </Button>
       {/* Mounted only while open, so the draft is rebuilt from the run as it

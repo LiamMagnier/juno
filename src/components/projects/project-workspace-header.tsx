@@ -6,7 +6,7 @@ import {
   ArrowLeft,
   Pin,
   NotebookPen,
-  Sparkles,
+  SlidersHorizontal,
   MessageCircle,
   Zap,
   Code2,
@@ -99,8 +99,8 @@ export function ProjectWorkspaceHeader({
           <div className="flex items-center gap-2">
             <CardEyebrow>Project Workspace</CardEyebrow>
             {project.instructions && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 font-mono text-micro text-primary">
-                <Sparkles className="size-2.5" /> Custom Instructions
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 font-mono text-micro text-muted-foreground">
+                <SlidersHorizontal className="size-2.5" /> Custom Instructions
               </span>
             )}
           </div>
@@ -142,33 +142,33 @@ export function ProjectWorkspaceHeader({
 
           {/* Context Pillars Badges */}
           <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-micro text-muted-foreground">
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2.5 py-1 text-foreground/85">
-              <MessageCircle className="size-3 text-primary" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
+              <MessageCircle className="size-3 text-muted-foreground" />
               {stats.chatCount} {stats.chatCount === 1 ? "chat" : "chats"}
             </span>
 
             {stats.workCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2.5 py-1 text-foreground/85">
-                <Zap className="size-3 text-primary" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
+                <Zap className="size-3 text-muted-foreground" />
                 {stats.workCount} {stats.workCount === 1 ? "work run" : "work runs"}
               </span>
             )}
 
             {stats.codeCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2.5 py-1 text-foreground/85">
-                <Code2 className="size-3 text-primary" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
+                <Code2 className="size-3 text-muted-foreground" />
                 {stats.codeCount} {stats.codeCount === 1 ? "code session" : "code sessions"}
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2.5 py-1 text-foreground/85">
-              <FileText className="size-3 text-primary" />
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
+              <FileText className="size-3 text-muted-foreground" />
               {stats.fileCount} {stats.fileCount === 1 ? "file" : "files"}
             </span>
 
             {stats.artifactCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2.5 py-1 text-foreground/85">
-                <Boxes className="size-3 text-primary" />
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
+                <Boxes className="size-3 text-muted-foreground" />
                 {stats.artifactCount} {stats.artifactCount === 1 ? "artifact" : "artifacts"}
               </span>
             )}

@@ -12,7 +12,8 @@ import {
   Minus,
   PauseCircle,
   PlayCircle,
-  Sparkles,
+  ListTodo,
+  Bot,
   Wrench,
   X,
 } from "lucide-react";
@@ -1407,13 +1408,13 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
       return { title: "Started", detail: model, tone: "quiet", icon: PlayCircle };
     }
     case "plan_created":
-      return { title: "Wrote a plan", detail: null, tone: "quiet", icon: Sparkles };
+      return { title: "Wrote a plan", detail: null, tone: "quiet", icon: ListTodo };
     case "plan_updated":
       return {
         title: "Revised the plan",
         detail: str(payload, "reason"),
         tone: "quiet",
-        icon: Sparkles,
+        icon: ListTodo,
       };
     case "step_started":
       return {
@@ -1561,7 +1562,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: str(payload, "title", "agentId") ?? "A sub-agent reported in",
         detail: str(payload, "status", "summary"),
         tone: "quiet",
-        icon: Sparkles,
+        icon: Bot,
       };
     case "degraded":
       return {

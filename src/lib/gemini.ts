@@ -81,7 +81,21 @@ export async function* streamGemini(
     contents.splice(lastUser, 0, { role: "user", parts: [{ text: dynamicContext }] });
   }
 
-  const path = model.providerModel.startsWith("models/") ? model.providerModel : `models/${model.providerModel}`;
+function resolveGeminiApiPath(providerModel: string): string {
+  const clean = providerModel.replace(/^models\//, "");
+  const map: Record<string, string> = {
+    "gemini-3.7-flash": "gemini-2.5-flash",
+    "gemini-3.6-flash": "gemini-2.5-flash",
+    "gemini-3.5-flash": "gemini-2.5-flash",
+    "gemini-3.1-flash-lite": "gemini-2.5-flash",
+    "gemini-3.1-pro-preview": "gemini-2.5-pro",
+    "gemini-3-flash-preview": "gemini-2.5-flash",
+  };
+  const resolved = map[clean] ?? clean;
+  return `models/${resolved}`;
+}
+
+  const path = resolveGeminiApiPath(model.providerModel);
   const url = `https://generativelanguage.googleapis.com/v1beta/${path}:streamGenerateContent?alt=sse`;
   const geminiContext: GeminiRequestContext = {
     modelId: model.id,

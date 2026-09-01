@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { FileUp, Loader2, Sparkles } from "lucide-react";
+import { FileUp, Loader2, Wrench } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -356,7 +356,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
                   aria-pressed={active}
                   onClick={() => context.change({ skillSlug: active ? null : skill.slug })}
                 >
-                  <Sparkles
+                  <Wrench
                     className={cn(
                       "size-3.5 shrink-0",
                       active ? "text-primary" : "text-muted-foreground"

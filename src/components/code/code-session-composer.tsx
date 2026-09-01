@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, ChevronDown, Loader2, Mic, Sparkles, Square } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Mic, Cpu, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ComposerShell } from "@/components/ui/composer-shell";
@@ -286,7 +286,7 @@ export function CodeSessionComposer({
                               aria-disabled
                               className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent"
                             >
-                              <Sparkles className="size-3 text-primary/70" />
+                              <Cpu className="size-3 text-muted-foreground" />
                               <span>Auto</span>
                             </Button>
                           </TooltipTrigger>

@@ -11,7 +11,6 @@ import {
   Search,
   SidebarClose,
   SidebarOpen,
-  Sparkles,
   Table,
   Terminal,
 } from "lucide-react";
@@ -136,7 +135,7 @@ export function ContextInspector({
         >
           <header className="border-b border-border/60 bg-muted/30 px-3 py-2.5">
             <div className="mb-2 flex items-center gap-1.5 font-medium capitalize text-foreground">
-              <Sparkles className="size-3.5 text-primary" aria-hidden="true" />
+              <Layers className="size-3.5 text-muted-foreground" aria-hidden="true" />
               <span>{mode} context</span>
             </div>
 

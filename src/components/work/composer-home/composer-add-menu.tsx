@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { FileUp, Plus, Sparkles } from "lucide-react";
+import { FileUp, Plus, Wrench } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -173,7 +173,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <Sparkles className={cn(chosen ? "text-primary" : "text-muted-foreground")} />
+        <Wrench className={cn(chosen ? "text-primary" : "text-muted-foreground")} />
         <span className="flex-1">Skill</span>
         {chosen && (
           <span className="mr-1 max-w-[7rem] truncate font-mono text-caption text-primary">
@@ -203,7 +203,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                   key={skill.id}
                   onSelect={() => onInvoke(active ? null : skill.slug)}
                 >
-                  <Sparkles className={cn(active ? "text-primary" : "text-muted-foreground")} />
+                  <Wrench className={cn(active ? "text-primary" : "text-muted-foreground")} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{skill.name}</span>
                     <span className="block truncate font-mono text-micro text-muted-foreground">

@@ -10,7 +10,6 @@ import {
   Eye,
   Bot,
   Clock,
-  Sparkles,
 } from "lucide-react";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { Button } from "@/components/ui/button";
@@ -137,7 +136,7 @@ export function SubagentTree({
         <div className="p-3 space-y-2 motion-safe:animate-rise-in">
           {/* Main Parent Agent */}
           <div className="flex items-center gap-2 px-1 text-caption font-mono text-muted-foreground">
-            <Sparkles className="size-3 text-primary" />
+            <Bot className="size-3 text-muted-foreground" />
             <span className="font-semibold text-foreground">{mainAgentTitle}</span>
             <span>(orchestrator)</span>
           </div>

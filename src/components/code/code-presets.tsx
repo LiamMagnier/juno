@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bug, Layers, Search, Sparkles, Zap } from "lucide-react";
+import { Bug, Layers, Search, FileCode, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface CodePreset {
@@ -14,7 +14,7 @@ export interface CodePreset {
 export const CODE_PRESETS: CodePreset[] = [
   {
     id: "feature",
-    icon: Sparkles,
+    icon: FileCode,
     title: "Scaffold Feature",
     prompt: "Implement a new feature with clean architecture, types, API endpoint, and unit tests.",
   },

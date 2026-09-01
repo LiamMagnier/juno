@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { Wrench } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -107,7 +107,7 @@ export function WorkToolbox() {
                   <ToolboxRow
                     key={skill.id}
                     href={`/work/skills/${skill.id}`}
-                    icon={<Sparkles className="size-3 text-primary" aria-hidden="true" />}
+                    icon={<Wrench className="size-3 text-muted-foreground" aria-hidden="true" />}
                     label={skill.name}
                     note="Juno may apply this on its own"
                   />
@@ -120,7 +120,7 @@ export function WorkToolbox() {
                   <ToolboxRow
                     key={skill.id}
                     href={`/work/skills/${skill.id}`}
-                    icon={<Sparkles className="size-3 text-muted-foreground" aria-hidden="true" />}
+                    icon={<Wrench className="size-3 text-muted-foreground" aria-hidden="true" />}
                     label={skill.name}
                     note={`Only when you type /${skill.slug}`}
                   />

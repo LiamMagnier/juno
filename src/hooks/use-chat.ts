@@ -545,29 +545,6 @@ export function useChat(opts: UseChatOptions) {
               );
               break;
             }
-            case "approval": {
-              // The generation is genuinely blocked on this answer, so the status
-              // must stop claiming Juno is thinking or writing — nothing will
-              // move until the person decides or the receipt expires.
-              setStatus("thinking");
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantTempId
-                    ? {
-                        ...m,
-                        // Replace by id rather than append: the same receipt is
-                        // re-sent as its status changes, and two cards for one
-                        // action would let the person answer the stale one.
-                        approvals: [
-                          ...(m.approvals ?? []).filter((a) => a.id !== chunk.approval.id),
-                          chunk.approval,
-                        ],
-                      }
-                    : m
-                )
-              );
-              break;
-            }
             case "sources": {
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantTempId ? { ...m, sources: chunk.sources } : m))

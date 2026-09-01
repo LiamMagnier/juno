@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Sparkles } from "lucide-react";
+import { ChevronRight, Wrench } from "lucide-react";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import { WorkTag, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
@@ -54,7 +54,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
           </span>
           <span className="shrink-0 font-mono text-micro text-muted-foreground">/{skill.slug}</span>
           {!skill.enabled && <WorkTag>Off</WorkTag>}
-          {auto && <WorkTag icon={Sparkles}>Chosen for you</WorkTag>}
+          {auto && <WorkTag icon={Wrench}>Chosen for you</WorkTag>}
         </span>
         {skill.description.length > 0 && (
           <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">

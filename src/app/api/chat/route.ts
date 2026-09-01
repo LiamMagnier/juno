@@ -702,9 +702,9 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: msg }, { status: 503 });
   }
   const modelId = modelInfo.id;
-  // Persist the user's *selection* on the conversation (keep Auto sticky). The
+  // Persist the user's *selection* on the conversation (keep requested model sticky). The
   // concrete `modelId` is what every generation / message version records.
-  const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : modelId;
+  const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : requestedId;
 
   // Linked tool connectors (GitHub/Figma…) the user enabled for this message.
   // Never honored in private mode — they'd send the message to a third party.

@@ -34,22 +34,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Pressable, pressableVariants } from "@/components/ui/pressable";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
-import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
-import {
-  WORK_POLL_MS,
-  WORK_SYNC_EVENT,
-  fetchWorkSessions,
-} from "@/components/work/work-transport";
-import { WorkStatusDot } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
-import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientConversation } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
 
@@ -59,51 +50,6 @@ type ConfirmState = {
   confirmLabel: string;
   onConfirm: () => void;
 } | null;
-
-/** The product mode the whole sidebar is threaded through.
- *
- *  Design is deliberately not one of these. A mode owns the whole sidebar —
- *  its own nav rows, its own list, its own rail — and Design never had any of
- *  that, so being the fourth segment only ever meant "route away and leave
- *  Home's sidebar standing". It is a destination, and it lives in the footer
- *  next to the account row where a destination belongs. */
-/**
- * The sidebar has exactly two row scales, and every row is one of them.
- *
- *   L1  rounded-control · px-2.5 py-1.5 · text-sm · font-medium
- *       Destinations and section toggles — things that own a list.
- *   L2  rounded-xs      · pl-6|pl-9 pr-2 py-1 · text-ui
- *       Items inside one — a chat under a project, a run under a task.
- *
- * L2 was `rounded-md`, which is Tailwind's generic 8px step and the one rung in
- * this panel that is not on the product's radius ladder (…xs 6 · control 9 ·
- * field 10 · menu 12…). 6px is the rung below L1's 9, so the two tiers still
- * step, and the column stops carrying a radius no other surface can name.
- *
- * L2's size was `text-[12.5px]` — nine restatements of the half-pixel value
- * `text-ui` exists to retire (tailwind.config.ts: no 1x display can honour the
- * .5, and nobody chose it). The token is the same rung to the eye and the one
- * every other dense list in the product reads at, so the sidebar stops carrying
- * a private size. L1's `text-[14px]` is `text-sm` under an arbitrary alias.
- *
- * The indent (pl-6 vs pl-9) is the only thing that varies within L2, and it
- * encodes real nesting depth rather than taste.
- *
- * Three rows had drifted off this when it was written down: the Work session
- * row carried px-2 where every other L1 has px-2.5, the project-chat row used
- * L1's radius at L2's size, and "View all" was the single text-[12px] in a
- * 12.5px tier. None of the three was visible on its own, which is exactly how a
- * panel ends up feeling unconsidered — no one row looks wrong and the column
- * does.
- */
-type SidebarMode = "home" | "work" | "code";
-
-/** Landing route per mode — what switching the toggle actually navigates to. */
-const MODE_HOME: Record<SidebarMode, string> = {
-  home: "/chat",
-  work: "/work",
-  code: "/code/new",
-};
 
 type SidebarProject = {
   id: string;
@@ -116,43 +62,7 @@ type SidebarProject = {
   coverUrl?: string | null;
 };
 
-/** `key` is the stable server-synced workspace identity (nullable for rows
- *  mirrored by pre-key clients); `path` is device metadata. */
-type CodeWorkspace = {
-  id: string;
-  name: string;
-  path: string;
-  key?: string | null;
-  lastOpenedAt: string;
-};
-
-/** Remote Juno Code task (from /api/code/tasks) — status rides on these rows.
- *  Tasks started from a web session carry its conversationId and show as a
- *  status dot on that session's row; unlinked tasks (started from the app)
- *  attach to their workspace group as plain status rows. */
-type CodeTaskRow = {
-  id: string;
-  conversationId: string | null;
-  workspacePath: string;
-  workspaceName: string;
-  workspaceKey: string | null;
-  title: string;
-  status: string;
-  createdAt: string;
-};
-
-const CODE_EXPANDED_KEY = "juno:sidebar:code:expanded";
 const LEGACY_STARRED_KEY = "starredProjects";
-// Matches the session view's presence poll: frequent enough that a status dot
-// settles on its own, gentle enough to sit behind an idle Code tab all day.
-const CODE_POLL_MS = 30_000;
-// A failed task stays visible for a day; after that it's stale noise.
-const FAILED_TASK_TTL_MS = 24 * 60 * 60 * 1000;
-const ACTIVE_TASK_STATUSES = new Set([
-  "queued",
-  "running",
-  "awaiting_approval",
-]);
 
 /**
  * The row kebab, once.
@@ -206,46 +116,8 @@ export function AppSidebar({
   const [projectsError, setProjectsError] = React.useState(false);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
-  // Home shows web + app chats; Work shows Juno Work tasks (their own model,
-  // not conversations); Code shows Juno Code sessions synced from the app
-  // (conversations with kind "code"). Persisted like the collapse prefs.
-  const [mode, setMode] = React.useState<SidebarMode>("home");
 
-  /**
-   * Work mode follows the ROUTE, because it is no longer a segment anyone can
-   * click here — it moved to the Chat/Work slider above the composer.
-   *
-   * Scoped to `/work` on purpose. The other two modes stay user-chosen and
-   * persisted: making all three route-derived would mean landing on /settings
-   * or /projects (which match nothing) silently kept whatever mode was last
-   * set, while /chat would forcibly overrule a restored `code` preference on
-   * every cold load. One new rule, for the one mode that gained a new door.
-   */
-  React.useEffect(() => {
-    if (!pathname) return;
-    if (pathname.startsWith("/work")) setMode("work");
-    else if (pathname.startsWith("/code")) setMode("code");
-    else if (pathname.startsWith("/chat") || pathname.startsWith("/projects") || pathname === "/") setMode("home");
-  }, [pathname]);
 
-  // Work mode data: the user's Work tasks, polled like the Code lists below.
-  const [workSessions, setWorkSessions] = React.useState<ClientWorkSession[]>(
-    [],
-  );
-  const [workLoaded, setWorkLoaded] = React.useState(false);
-  const [workError, setWorkError] = React.useState(false);
-  // Code mode data: the app's workspaces (project folders) mirrored from
-  // /api/code/workspaces, and remote code tasks for status rows.
-  const [codeWorkspaces, setCodeWorkspaces] = React.useState<CodeWorkspace[]>(
-    [],
-  );
-  const [codeTasks, setCodeTasks] = React.useState<CodeTaskRow[]>([]);
-  const [codeLoaded, setCodeLoaded] = React.useState(false);
-  const [codeError, setCodeError] = React.useState(false);
-  // Per-workspace disclosure, persisted; unlisted paths default to open.
-  const [codeExpanded, setCodeExpanded] = React.useState<
-    Record<string, boolean>
-  >({});
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(
     null,
   );
@@ -317,12 +189,6 @@ export function AppSidebar({
       if (starred) setStarredCollapsed(JSON.parse(starred));
       const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
       if (recents) setRecentsCollapsed(JSON.parse(recents));
-      const modePref = localStorage.getItem("juno:sidebar:mode");
-      if (modePref === "code" || modePref === "work") setMode(modePref);
-      const expanded = JSON.parse(
-        localStorage.getItem(CODE_EXPANDED_KEY) || "{}",
-      );
-      if (expanded && typeof expanded === "object") setCodeExpanded(expanded);
     } catch {}
 
     const handleSync = () => {
@@ -433,318 +299,22 @@ export function AppSidebar({
     });
   };
 
-  const switchMode = React.useCallback(
-    (next: SidebarMode) => {
-      setMode(next);
-      try {
-        localStorage.setItem("juno:sidebar:mode", next);
-      } catch {}
-      // Switching the toggle should change the MAIN view too, not just the
-      // sidebar — otherwise the composer only updates after a separate New
-      // chat / New session click. Land on the mode's home composer directly.
-      router.push(MODE_HOME[next]);
-      if (next === "home") {
-        // A no-op push when already on /chat won't remount, so also reset any
-        // stale chat state (mirrors newChat()).
-        window.dispatchEvent(new CustomEvent("juno:new-chat"));
-      }
-      setSidebarOpen(false);
-    },
-    [router, setSidebarOpen],
-  );
-
   const filtered = React.useMemo(() => {
-    // Home shows every web/app chat; Code shows the synced Juno Code sessions.
-    // Grouping now lives in Projects, so there's no folder scoping here.
-    //
-    // Work is deliberately absent: a Work task is a WorkSession, not a
-    // Conversation, so there is no `kind` to filter on and nothing here to
-    // show. Giving Work a conversation kind purely to reuse this list would
-    // put every Work task into the chat sidebar of anyone on an older client.
-    if (mode === "work") return [];
-    return conversations.filter((c) =>
-      mode === "code" ? c.kind === "code" : c.kind !== "code",
-    );
-  }, [conversations, mode]);
-
-  const loadWork = React.useCallback(async () => {
-    const result = await fetchWorkSessions(30);
-    if (result.kind !== "ok") {
-      setWorkError(true);
-      return;
-    }
-    setWorkError(false);
-    setWorkSessions(result.value);
-    setWorkLoaded(true);
-  }, []);
-
-  // The same interval + visibility + event trio the Code lists use, and for the
-  // same reason: the sidebar mounts once in the persistent shell, so a task that
-  // starts running (or stops to ask a question) would otherwise keep the status
-  // it had when the mode was first opened.
-  React.useEffect(() => {
-    if (mode !== "work") return;
-    void loadWork();
-    const tick = () => {
-      if (!document.hidden) void loadWork();
-    };
-    const interval = window.setInterval(tick, WORK_POLL_MS);
-    window.addEventListener(WORK_SYNC_EVENT, tick);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener(WORK_SYNC_EVENT, tick);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [mode, loadWork]);
-
-  const workAttention = React.useMemo(
-    () => workSessions.filter((session) => session.needsAttention),
-    [workSessions],
-  );
-  const workRecent = React.useMemo(
-    () =>
-      workSessions.filter(
-        (session) => !session.needsAttention && !session.archived,
-      ),
-    [workSessions],
-  );
-
-  const loadCode = React.useCallback(async () => {
-    setCodeError(false);
-    try {
-      const [w, t] = await Promise.all([
-        fetch("/api/code/workspaces"),
-        fetch("/api/code/tasks?limit=100"),
-      ]);
-      if (!w.ok || !t.ok) throw new Error();
-      const wd = await w.json();
-      const td = await t.json();
-      setCodeWorkspaces(Array.isArray(wd.workspaces) ? wd.workspaces : []);
-      setCodeTasks(
-        (Array.isArray(td.tasks) ? td.tasks : []).map(
-          (x: Record<string, unknown>): CodeTaskRow => ({
-            id: String(x.id ?? ""),
-            conversationId:
-              typeof x.conversationId === "string" && x.conversationId
-                ? x.conversationId
-                : null,
-            workspacePath: String(x.workspacePath ?? ""),
-            workspaceName: String(x.workspaceName ?? ""),
-            workspaceKey:
-              typeof x.workspaceKey === "string" && x.workspaceKey
-                ? x.workspaceKey
-                : null,
-            title: String(x.title ?? ""),
-            status: String(x.status ?? ""),
-            createdAt: String(x.createdAt ?? ""),
-          }),
-        ),
-      );
-      setCodeLoaded(true);
-    } catch {
-      setCodeError(true);
-    }
-  }, []);
-
-  // The sidebar mounts once in the persistent shell, so a single load on mode
-  // flip left status dots frozen ("Running" forever). Poll gently while Code
-  // mode is on screen and the tab is visible, refresh on refocus, and react
-  // immediately when a session hook reports a task start/finish.
-  React.useEffect(() => {
-    if (mode !== "code") return;
-    void loadCode();
-    const tick = () => {
-      if (!document.hidden) void loadCode();
-    };
-    const interval = window.setInterval(tick, CODE_POLL_MS);
-    window.addEventListener(CODE_SYNC_EVENT, tick);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener(CODE_SYNC_EVENT, tick);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [mode, loadCode]);
-
-  // `id` is the group's stable identity: workspace key when synced, else path.
-  // `current` is the resolved on-screen state (includes the legacy path-keyed
-  // fallback), so the first toggle after an id migration still flips visibly.
-  const toggleWorkspaceExpanded = (id: string, current: boolean) => {
-    setCodeExpanded((prev) => {
-      const next = { ...prev, [id]: !current };
-      try {
-        localStorage.setItem(CODE_EXPANDED_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  // Code mode: group synced Juno Code sessions by their app-side workspace
-  // (project folder), mirroring the app's own sidebar. Attribution is by the
-  // stable workspace key when both sides carry one (a moved folder keeps its
-  // sessions grouped); path, then name, remain the fallback for pre-key rows.
-  // Sessions without a workspace fall through to the flat Sessions list below.
-  const codeProjects = React.useMemo(() => {
-    if (mode !== "code")
-      return [] as {
-        id: string;
-        key: string | null;
-        name: string;
-        path: string;
-        sessions: ClientConversation[];
-      }[];
-    const sessionsFor = (w: {
-      key: string | null;
-      name: string;
-      path: string;
-    }) =>
-      filtered.filter((c) => {
-        // Both sides keyed → identity decides, path/name are just metadata.
-        if (c.codeWorkspaceKey && w.key) return c.codeWorkspaceKey === w.key;
-        return (
-          c.codeWorkspacePath === w.path ||
-          (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name)
-        );
-      });
-    const projects = codeWorkspaces.map((w) => {
-      const key = w.key ?? null;
-      return {
-        id: key ?? w.path,
-        key,
-        name: w.name,
-        path: w.path,
-        sessions: sessionsFor({ key, name: w.name, path: w.path }),
-      };
-    });
-    // Sessions naming a workspace the mirror doesn't know yet still group.
-    const knownKeys = new Set(
-      projects.map((p) => p.key).filter((k): k is string => k != null),
-    );
-    const known = new Set(projects.map((p) => p.path));
-    const knownNames = new Set(projects.map((p) => p.name));
-    const orphans = new Map<string, ClientConversation[]>();
-    for (const c of filtered) {
-      const name = c.codeWorkspaceName?.trim();
-      if (!name || knownNames.has(name)) continue;
-      if (c.codeWorkspaceKey && knownKeys.has(c.codeWorkspaceKey)) continue;
-      if (c.codeWorkspacePath && known.has(c.codeWorkspacePath)) continue;
-      if (!orphans.has(name)) orphans.set(name, []);
-      orphans.get(name)!.push(c);
-    }
-    return [
-      ...projects,
-      ...[...orphans.entries()].map(([name, sessions]) => ({
-        id: name,
-        key: null,
-        name,
-        path: name,
-        sessions,
-      })),
-    ];
-  }, [filtered, mode, codeWorkspaces]);
-
-  // A grouped session lives ONLY in its workspace group — never duplicated in
-  // Pinned or the flat Sessions list (pinning still floats it inside its group,
-  // since the server sorts pinned-first).
-  const groupedSessionIds = React.useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of codeProjects) for (const c of p.sessions) ids.add(c.id);
-    return ids;
-  }, [codeProjects]);
-
-  // Session ids currently listed in Code mode — a task linked to one of these
-  // shows as a status dot ON the session row, never as a duplicate status row.
-  const codeSessionIds = React.useMemo(
-    () => new Set(filtered.map((c) => c.id)),
-    [filtered],
-  );
-
-  // The latest still-relevant task per linked session, for the row status dots.
-  const taskByConversation = React.useMemo(() => {
-    const map = new Map<string, CodeTaskRow>();
-    const now = Date.now();
-    for (const t of codeTasks) {
-      if (!t.conversationId) continue;
-      const relevant =
-        ACTIVE_TASK_STATUSES.has(t.status) ||
-        (t.status === "failed" &&
-          now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
-      if (!relevant) continue;
-      const existing = map.get(t.conversationId);
-      if (
-        !existing ||
-        new Date(t.createdAt).getTime() > new Date(existing.createdAt).getTime()
-      ) {
-        map.set(t.conversationId, t);
-      }
-    }
-    return map;
-  }, [codeTasks]);
-
-  // Active/recent-failed remote tasks per workspace key, path AND name — key
-  // wins when present (survives folder moves); orphan groups (name only)
-  // still pick up their tasks.
-  const codeTasksByWorkspace = React.useMemo(() => {
-    const byKey = new Map<string, CodeTaskRow[]>();
-    const byPath = new Map<string, CodeTaskRow[]>();
-    const byName = new Map<string, CodeTaskRow[]>();
-    const now = Date.now();
-    for (const t of codeTasks) {
-      const active =
-        ACTIVE_TASK_STATUSES.has(t.status) ||
-        (t.status === "failed" &&
-          now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
-      if (!active) continue;
-      // Attributed to a listed session — its row carries the dot instead.
-      if (t.conversationId && codeSessionIds.has(t.conversationId)) continue;
-      if (t.workspaceKey) {
-        if (!byKey.has(t.workspaceKey)) byKey.set(t.workspaceKey, []);
-        byKey.get(t.workspaceKey)!.push(t);
-      }
-      if (t.workspacePath) {
-        if (!byPath.has(t.workspacePath)) byPath.set(t.workspacePath, []);
-        byPath.get(t.workspacePath)!.push(t);
-      }
-      const name = t.workspaceName.trim();
-      if (name) {
-        if (!byName.has(name)) byName.set(name, []);
-        byName.get(name)!.push(t);
-      }
-    }
-    return { byKey, byPath, byName };
-  }, [codeTasks, codeSessionIds]);
+    return conversations;
+  }, [conversations]);
 
   const pinned = React.useMemo(
-    () =>
-      filtered.filter(
-        (c) => c.pinned && !(mode === "code" && groupedSessionIds.has(c.id)),
-      ),
-    [filtered, mode, groupedSessionIds],
+    () => filtered.filter((c) => c.pinned),
+    [filtered],
   );
   const recents = React.useMemo(
-    () =>
-      filtered.filter(
-        (c) => !c.pinned && !(mode === "code" && groupedSessionIds.has(c.id)),
-      ),
-    [filtered, mode, groupedSessionIds],
+    () => filtered.filter((c) => !c.pinned),
+    [filtered],
   );
 
   const newChat = () => {
     router.push("/chat");
-    // If we're already on /chat the router.push is a no-op, so also
-    // dispatch a reset event so ChatView clears any stale state.
     window.dispatchEvent(new CustomEvent("juno:new-chat"));
-    setSidebarOpen(false);
-  };
-
-  const newCodeSession = () => {
-    router.push("/code/new");
-    setSidebarOpen(false);
-  };
-
-  const newWorkTask = () => {
-    router.push("/work");
     setSidebarOpen(false);
   };
 
@@ -779,66 +349,61 @@ export function AppSidebar({
           </TooltipTrigger>
           <TooltipContent side="right">Expand sidebar</TooltipContent>
         </Tooltip>
-        <div className="mt-3">
-          <ModeToggle mode={mode} onChange={switchMode} compact />
-        </div>
         <div className="mt-3 flex flex-col items-center gap-1">
-          {mode === "work" ? (
-            <>
-              <RailIcon onClick={newWorkTask} label="New task">
-                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="size-4" />
-                </span>
-              </RailIcon>
-              <RailIcon
-                href="/tasks"
-                active={pathname === "/tasks"}
-                label="Scheduled"
-              >
-                <SidebarMotionIcon kind="tasks" />
-              </RailIcon>
-              <RailIcon
-                href="/connections"
-                active={pathname === "/connections"}
-                label="Connected apps"
-              >
-                <SidebarMotionIcon kind="connections" />
-              </RailIcon>
-            </>
-          ) : mode === "code" ? (
-            <>
-              <RailIcon onClick={newCodeSession} label="New session">
-                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="size-4" />
-                </span>
-              </RailIcon>
-              <RailIcon href="/code" active={pathname === "/code"} label="Runs">
-                <SidebarMotionIcon kind="code" />
-              </RailIcon>
-              <RailIcon
-                href="/code/pulls"
-                active={pathname === "/code/pulls"}
-                label="Pull requests"
-              >
-                <SidebarMotionIcon kind="pulls" />
-              </RailIcon>
-            </>
-          ) : (
-            <>
-              <RailIcon onClick={newChat} label="New chat">
-                <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="size-4" />
-                </span>
-              </RailIcon>
-              <RailIcon
-                href="/assistants"
-                active={pathname === "/assistants"}
-                label="Assistants"
-              >
-                <SidebarMotionIcon kind="assistants" />
-              </RailIcon>
-            </>
-          )}
+          <RailIcon onClick={newChat} label="New chat">
+            <span className="flex size-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+              <SidebarMotionIcon kind="new" className="size-4" />
+            </span>
+          </RailIcon>
+          <RailIcon
+            href="/assistants"
+            active={pathname === "/assistants"}
+            label="Assistants"
+          >
+            <SidebarMotionIcon kind="assistants" />
+          </RailIcon>
+          <RailIcon
+            href="/projects"
+            active={!!pathname?.startsWith("/projects")}
+            label="Projects"
+          >
+            <SidebarMotionIcon kind="projects" />
+          </RailIcon>
+          <RailIcon
+            href="/library"
+            active={pathname === "/library"}
+            label="Library"
+          >
+            <SidebarMotionIcon kind="library" />
+          </RailIcon>
+          <RailIcon
+            href="/artifacts"
+            active={pathname === "/artifacts"}
+            label="Artifacts"
+          >
+            <SidebarMotionIcon kind="artifacts" />
+          </RailIcon>
+          <RailIcon
+            href="/connections"
+            active={pathname === "/connections"}
+            label="Connected apps"
+          >
+            <SidebarMotionIcon kind="connections" />
+          </RailIcon>
+          <RailIcon
+            href="/tasks"
+            active={pathname === "/tasks"}
+            label="Tasks"
+          >
+            <SidebarMotionIcon kind="tasks" />
+          </RailIcon>
+          <RailIcon
+            href="/code"
+            active={pathname?.startsWith("/code")}
+            label="Code"
+          >
+            <SidebarMotionIcon kind="code" />
+          </RailIcon>
           <RailIcon
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             label="Search chats and projects"
@@ -958,86 +523,66 @@ export function AppSidebar({
         </div>
       </div>
 
-      {/* Home / Code — the same two surfaces as the Juno app. Code lists the
-          Juno Code sessions synced from the Mac app. */}
-      <div className="px-3 pb-2 pt-1">
-        <ModeToggle mode={mode} onChange={switchMode} />
-      </div>
-
-      {/* Primary destinations for the active mode */}
+      {/* Primary destinations under New chat */}
       <nav className="space-y-0.5 px-2 pt-1">
-        {mode === "work" ? (
-          <>
-            <NavRow
-              onClick={newWorkTask}
-              icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-                </span>
-              }
-              label="New task"
-            />
-            <NavRow
-              href="/tasks"
-              active={pathname === "/tasks"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="tasks" />}
-              label="Scheduled"
-            />
-            <NavRow
-              href="/connections"
-              active={pathname === "/connections"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="connections" />}
-              label="Connected apps"
-            />
-          </>
-        ) : mode === "code" ? (
-          <>
-            <NavRow
-              onClick={newCodeSession}
-              icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-                </span>
-              }
-              label="New session"
-            />
-            <NavRow
-              href="/code"
-              active={pathname === "/code"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="code" />}
-              label="Runs"
-            />
-            <NavRow
-              href="/code/pulls"
-              active={pathname === "/code/pulls"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="pulls" />}
-              label="Pull requests"
-            />
-          </>
-        ) : (
-          <>
-            <NavRow
-              onClick={newChat}
-              icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-                </span>
-              }
-              label="New chat"
-            />
-            <NavRow
-              href="/assistants"
-              active={pathname === "/assistants"}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="assistants" />}
-              label="Assistants"
-            />
-          </>
-        )}
+        <NavRow
+          onClick={newChat}
+          icon={
+            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+              <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
+            </span>
+          }
+          label="New chat"
+        />
+        <NavRow
+          href="/assistants"
+          active={pathname === "/assistants"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="assistants" />}
+          label="Assistants"
+        />
+        <NavRow
+          href="/projects"
+          active={!!pathname?.startsWith("/projects")}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="projects" />}
+          label="Projects"
+        />
+        <NavRow
+          href="/library"
+          active={pathname === "/library"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="library" />}
+          label="Library"
+        />
+        <NavRow
+          href="/artifacts"
+          active={pathname === "/artifacts"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="artifacts" />}
+          label="Artifacts"
+        />
+        <NavRow
+          href="/connections"
+          active={pathname === "/connections"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="connections" />}
+          label="Connections"
+        />
+        <NavRow
+          href="/tasks"
+          active={pathname === "/tasks"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="tasks" />}
+          label="Tasks"
+        />
+        <NavRow
+          href="/code"
+          active={pathname?.startsWith("/code")}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="code" />}
+          label="Code"
+        />
       </nav>
 
       <div className="pt-2" />
@@ -1053,192 +598,6 @@ export function AppSidebar({
               />
             ))}
           </div>
-        ) : mode === "work" ? (
-          <>
-            {workError && (
-              <InlineErrorRow
-                message="Couldn’t load your Work tasks."
-                onRetry={loadWork}
-              />
-            )}
-            {!workLoaded && !workError ? (
-              <div className="space-y-1 px-1 pt-1">
-                {[...Array(4)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="skeleton h-8 rounded-control"
-                    style={staggerDelay(i, "tight")}
-                  />
-                ))}
-              </div>
-            ) : (
-              <>
-                {/* Attention first and always disclosed. A task that has stopped
-                    to ask something is the one row a user must not have to go
-                    looking for, so this section is never collapsible. */}
-                {workAttention.length > 0 && (
-                  <Section label="Needs you">
-                    {workAttention.map((session) => (
-                      <WorkSessionRow
-                        key={session.id}
-                        session={session}
-                        active={pathname === `/work/${session.id}`}
-                        onNavigate={() => setSidebarOpen(false)}
-                      />
-                    ))}
-                  </Section>
-                )}
-                {workRecent.length > 0 ? (
-                  <Section
-                    label="Tasks"
-                    collapsible
-                    isCollapsed={recentsCollapsed}
-                    onToggleCollapse={toggleRecentsCollapsed}
-                  >
-                    <div className="mt-1 space-y-0.5">
-                      {workRecent.map((session) => (
-                        <WorkSessionRow
-                          key={session.id}
-                          session={session}
-                          active={pathname === `/work/${session.id}`}
-                          onNavigate={() => setSidebarOpen(false)}
-                        />
-                      ))}
-                    </div>
-                  </Section>
-                ) : (
-                  workAttention.length === 0 &&
-                  !workError && (
-                    <p
-                      className="px-3 py-8 text-center text-sm text-muted-foreground"
-                      aria-live="polite"
-                    >
-                      No tasks yet.
-                      <br />
-                      Start one above.
-                    </p>
-                  )
-                )}
-              </>
-            )}
-          </>
-        ) : mode === "code" ? (
-          <>
-            {/* Projects always renders in Code mode — a mirror with zero
-                sessions still has workspaces worth showing (commit 4364b90). */}
-            <Section label="Projects">
-              {codeError ? (
-                <InlineErrorRow
-                  message="Couldn’t load your Code projects."
-                  onRetry={loadCode}
-                />
-              ) : !codeLoaded ? (
-                <div className="space-y-1 px-1 pt-1">
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="skeleton h-8 rounded-control"
-                      style={staggerDelay(i, "tight")}
-                    />
-                  ))}
-                </div>
-              ) : codeProjects.length === 0 ? (
-                <p className="px-2.5 py-1 text-ui text-muted-foreground">
-                  Your Juno Code projects appear here once the app syncs them.
-                </p>
-              ) : (
-                codeProjects.map((p) => (
-                  <CodeWorkspaceGroup
-                    key={p.id}
-                    name={p.name}
-                    sessions={p.sessions}
-                    tasks={
-                      (p.key
-                        ? codeTasksByWorkspace.byKey.get(p.key)
-                        : undefined) ??
-                      codeTasksByWorkspace.byPath.get(p.path) ??
-                      codeTasksByWorkspace.byName.get(p.name) ??
-                      []
-                    }
-                    taskStatusFor={(id) => taskByConversation.get(id)?.status}
-                    // Legacy prefs were keyed by path; fall back so an upgrade
-                    // (path → key ids) doesn't reset anyone's disclosure state.
-                    expanded={
-                      codeExpanded[p.id] ?? codeExpanded[p.path] ?? true
-                    }
-                    onToggle={() =>
-                      toggleWorkspaceExpanded(
-                        p.id,
-                        codeExpanded[p.id] ?? codeExpanded[p.path] ?? true,
-                      )
-                    }
-                    activeConversationId={activeConversationId}
-                    activePath={pathname}
-                    renamingId={renamingId}
-                    setRenaming={setRenamingId}
-                    onUpdate={updateConversation}
-                    onRemove={removeConversation}
-                    onNavigate={() => setSidebarOpen(false)}
-                    onRequestConfirm={setConfirm}
-                  />
-                ))
-              )}
-            </Section>
-            {pinned.length > 0 && (
-              <Section
-                label="Pinned"
-                collapsible
-                isCollapsed={starredCollapsed}
-                onToggleCollapse={toggleStarredCollapsed}
-              >
-                {pinned.map((c) => (
-                  <ConversationRow
-                    key={c.id}
-                    conversation={c}
-                    variant="code"
-                    taskStatus={taskByConversation.get(c.id)?.status}
-                    active={c.id === activeConversationId}
-                    renaming={renamingId === c.id}
-                    setRenaming={setRenamingId}
-                    projects={projects}
-                    onUpdate={updateConversation}
-                    onRemove={removeConversation}
-                    onNavigate={() => setSidebarOpen(false)}
-                    onRequestConfirm={setConfirm}
-                  />
-                ))}
-              </Section>
-            )}
-            {recents.length > 0 && (
-              <Section
-                label="Sessions"
-                collapsible
-                isCollapsed={recentsCollapsed}
-                onToggleCollapse={toggleRecentsCollapsed}
-              >
-                {/* One flat list, newest first — sessions the app hasn't tied
-                    to a workspace. */}
-                <div className="mt-1 space-y-0.5">
-                  {recents.map((c) => (
-                    <ConversationRow
-                      key={c.id}
-                      conversation={c}
-                      variant="code"
-                      taskStatus={taskByConversation.get(c.id)?.status}
-                      active={c.id === activeConversationId}
-                      renaming={renamingId === c.id}
-                      setRenaming={setRenamingId}
-                      projects={projects}
-                      onUpdate={updateConversation}
-                      onRemove={removeConversation}
-                      onNavigate={() => setSidebarOpen(false)}
-                      onRequestConfirm={setConfirm}
-                    />
-                  ))}
-                </div>
-              </Section>
-            )}
-          </>
         ) : filtered.length === 0 && sidebarProjects.length === 0 ? (
           <>
             {projectsError && (
@@ -1338,48 +697,18 @@ export function AppSidebar({
         )}
       </div>
 
-      {/* Secondary Resources & Destinations: Library, Artifacts, Connections, Design */}
-      <div className="space-y-0.5 px-2 pb-1 border-t border-sidebar-border/60 pt-1.5">
-        <div className="grid grid-cols-2 gap-1">
-          <NavRow
-            href="/library"
-            active={pathname === "/library"}
-            onClick={() => setSidebarOpen(false)}
-            icon={<SidebarMotionIcon kind="library" />}
-            label="Library"
-            className="text-caption py-1 pl-2"
-          />
-          <NavRow
-            href="/artifacts"
-            active={pathname === "/artifacts"}
-            onClick={() => setSidebarOpen(false)}
-            icon={<SidebarMotionIcon kind="artifacts" />}
-            label="Artifacts"
-            className="text-caption py-1 pl-2"
-          />
-          <NavRow
-            href="/connections"
-            active={pathname === "/connections"}
-            onClick={() => setSidebarOpen(false)}
-            icon={<SidebarMotionIcon kind="connections" />}
-            label="Connectors"
-            className="text-caption py-1 pl-2"
-          />
-          <NavRow
-            href="/design"
-            active={pathname === "/design"}
-            onClick={() => setSidebarOpen(false)}
-            icon={<SidebarMotionIcon kind="design" />}
-            label="Design"
-            className="text-caption py-1 pl-2"
-          />
-        </div>
+      {/* Design destination alone at the bottom */}
+      <div className="px-2 pb-1 pt-1.5 border-t border-sidebar-border/60">
+        <NavRow
+          href="/design"
+          active={pathname === "/design"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="design" />}
+          label="Design"
+        />
       </div>
 
-      {/* The account row and, beside it, the way to get the app. A separate
-          control rather than a row inside the account menu: downloading Juno is
-          not an account setting, and a person looking for it is looking at the
-          bottom-left corner where every app puts "get the desktop version". */}
+      {/* The account row and download menu */}
       <div className="flex items-center gap-1 border-t border-sidebar-border p-2">
         <div className="min-w-0 flex-1">
           <UserMenu />
@@ -1468,76 +797,7 @@ export function AppSidebar({
  *  its list — but it now reads that from the route rather than from this
  *  toggle. And at 240px the labels get their padding back, because two segments
  *  fit where three had to be squeezed to `px-2`. */
-function ModeToggle({
-  mode,
-  onChange,
-  compact,
-}: {
-  mode: SidebarMode;
-  onChange: (mode: SidebarMode) => void;
-  compact?: boolean;
-}) {
-  const toggleValue = mode === "code" ? "code" : "home";
-  return (
-    <SegmentedControl<"home" | "code">
-      value={toggleValue}
-      onChange={(v) => onChange(v as SidebarMode)}
-      ariaLabel="Product mode"
-      orientation={compact ? "vertical" : "horizontal"}
-      labelHidden={compact}
-      optionClassName={compact ? undefined : "gap-1.5 px-3 py-1.5 text-ui font-medium"}
-      options={[
-        {
-          value: "home",
-          label: "Chat",
-          icon: <SidebarMotionIcon kind="home" className="size-3.5" />,
-        },
-        {
-          value: "code",
-          label: "Code",
-          icon: <SidebarMotionIcon kind="code" className="size-3.5" />,
-        },
-      ]}
-    />
-  );
-}
 
-/** A Juno Work task in the sidebar: title, and the one fact that decides
- *  whether the user needs to open it. The status is a dot rather than a word
- *  because the row is 14px of type in a 240px column, and the word for
- *  `waiting_approval` does not fit beside a real task title. */
-function WorkSessionRow({
-  session,
-  active,
-  onNavigate,
-}: {
-  session: ClientWorkSession;
-  active: boolean;
-  onNavigate: () => void;
-}) {
-  return (
-    <Link
-      href={`/work/${session.id}`}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      title={session.title || session.goal}
-      className={cn(
-        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-sm font-medium transition-[background-color,color] duration-fast ease-out-soft",
-        active
-          ? "bg-sidebar-accent font-semibold text-foreground"
-          : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
-      )}
-    >
-      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-        <SidebarMotionIcon kind="work" className="h-[15px] w-[15px]" />
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        {session.title || "Untitled task"}
-      </span>
-      <WorkStatusDot status={session.status} />
-    </Link>
-  );
-}
 
 /** Compact in-list failure row + retry — the sidebar-density version of the
  *  tasks page's error card, so a failed fetch never masquerades as empty. */
@@ -1814,102 +1074,10 @@ function Disclosure({
   );
 }
 
-/** A Code-mode workspace (project folder) with its sessions and any remote
- *  tasks nested under a real disclosure. */
-function CodeWorkspaceGroup({
-  name,
-  sessions,
-  tasks,
-  taskStatusFor,
-  expanded,
-  onToggle,
-  activeConversationId,
-  activePath,
-  renamingId,
-  setRenaming,
-  onUpdate,
-  onRemove,
-  onNavigate,
-  onRequestConfirm,
-}: {
-  name: string;
-  sessions: ClientConversation[];
-  tasks: CodeTaskRow[];
-  /** Latest relevant remote-task status for a session id (row status dot). */
-  taskStatusFor: (id: string) => string | undefined;
-  expanded: boolean;
-  onToggle: () => void;
-  activeConversationId: string | null;
-  activePath: string;
-  renamingId: string | null;
-  setRenaming: (id: string | null) => void;
-  onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
-  onRemove: (id: string) => void;
-  onNavigate: () => void;
-  onRequestConfirm: (c: ConfirmState) => void;
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
-      >
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-          <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
-        </span>
-        <span dir="auto" className="min-w-0 flex-1 truncate">
-          {name}
-        </span>
-        <ChevronRight
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
-            expanded && "rotate-90",
-          )}
-        />
-      </button>
-      <Disclosure open={expanded}>
-        <div className="mt-0.5 flex flex-col gap-0.5">
-          {sessions.length === 0 && tasks.length === 0 && (
-            <p className="py-1 pl-6 pr-2 text-ui text-muted-foreground">
-              No sessions yet.
-            </p>
-          )}
-          {sessions.map((c) => (
-            <ConversationRow
-              key={c.id}
-              conversation={c}
-              variant="code"
-              nested
-              taskStatus={taskStatusFor(c.id)}
-              active={
-                c.id === activeConversationId || activePath === `/chat/${c.id}`
-              }
-              renaming={renamingId === c.id}
-              setRenaming={setRenaming}
-              onUpdate={onUpdate}
-              onRemove={onRemove}
-              onNavigate={onNavigate}
-              onRequestConfirm={onRequestConfirm}
-            />
-          ))}
-          {tasks.map((t) => (
-            <CodeTaskStatusRow key={t.id} task={t} onNavigate={onNavigate} />
-          ))}
-        </div>
-      </Disclosure>
-    </div>
-  );
-}
+
 
 const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
   queued: { label: "Queued", dot: "bg-muted-foreground/50" },
-  // icon-breathe, not Tailwind's stock `animate-pulse`: that is a 2s
-  // cubic-bezier(0.4,0,0.6,1) loop which appears nowhere in the motion tokens,
-  // and an ease-OUT curve run as a loop visibly stutters at its seam — the exact
-  // failure --ease-breathe was added to fix.
   running: {
     label: "Running",
     dot: "bg-success motion-safe:animate-icon-breathe",
@@ -1917,62 +1085,6 @@ const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
   awaiting_approval: { label: "Approval", dot: "bg-warning" },
   failed: { label: "Failed", dot: "bg-destructive" },
 };
-
-/** A remote Juno Code task shown standalone (its session row, if any, isn't in
- *  the list). Linked tasks deep-link to their session; app-started tasks have
- *  no session to open, so their row stays a plain, non-interactive readout —
- *  a row that went nowhere would be a dead button. */
-function CodeTaskStatusRow({
-  task,
-  onNavigate,
-}: {
-  task: CodeTaskRow;
-  onNavigate?: () => void;
-}) {
-  const meta = TASK_STATUS_META[task.status];
-  if (!meta) return null;
-  const inner = (
-    <>
-      <span
-        className={cn("size-1.5 shrink-0 rounded-full", meta.dot)}
-        aria-hidden="true"
-      />
-      <span dir="auto" className="min-w-0 flex-1 truncate">
-        {task.title}
-      </span>
-      {/* text-micro is the mono metadata floor (tailwind.config.ts) — the
-          text-[10px] it replaces sat under it, losing hairline strokes on 1x
-          displays in exactly the muted ink this label is set in. */}
-      <span className="shrink-0 font-mono text-micro text-muted-foreground">
-        {meta.label}
-      </span>
-    </>
-  );
-  if (task.conversationId) {
-    return (
-      <Link
-        href={`/chat/${task.conversationId}`}
-        onClick={onNavigate}
-        title={task.title}
-        // Fill and ink only — no hover:translate-x nudge. Every other L2 row in
-        // the column (project chats, nested sessions, "View all") answers the
-        // pointer with the flat sidebar-accent fill; this was the single row
-        // that also slid, which made one tier carry two hover grammars.
-        className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70 transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
-      >
-        {inner}
-      </Link>
-    );
-  }
-  return (
-    <div
-      className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70"
-      title={task.title}
-    >
-      {inner}
-    </div>
-  );
-}
 
 function ConversationRow({
   conversation,
