@@ -1487,8 +1487,10 @@ struct DesktopCodeDraftDetail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            repositoryContextBar
-            Divider()
+            if record != nil {
+                repositoryContextBar
+                Divider()
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.section) {
@@ -1538,7 +1540,7 @@ struct DesktopCodeDraftDetail: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Text(record == nil ? "Start a task" : "Start work")
-                    .junoFont(size: 26, relativeTo: .title2, weight: .semibold)
+                    .junoFont(size: 24, relativeTo: .title2, weight: .semibold)
                     .junoInk()
 
                 Spacer(minLength: JunoSpace.regular)
@@ -1550,29 +1552,15 @@ struct DesktopCodeDraftDetail: View {
 
             Text(
                 record == nil
-                    ? "Ask a question, make a plan, or open a project when you are ready for file work."
+                    ? "Ask a question, make a plan, or choose a project when you are ready for file work."
                     : "Describe the outcome. Juno will inspect the repository before it changes anything."
             )
             .junoCaption()
             .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: JunoSpace.tight) {
-                JunoIconView(target.junoIcon, size: 14)
-                Text(record == nil ? "No project" : destinationTitle)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("·")
-                Text(startContractSummary)
-                    .lineLimit(1)
-            }
-            .font(.caption)
-            .junoSecondaryInk()
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "\(record == nil ? "No project" : destinationTitle), \(startContractSummary)"
-            )
         }
         .frame(maxWidth: 640, alignment: .leading)
+        .accessibilityIdentifier("juno.code.start-header")
+    }
         .accessibilityIdentifier("juno.code.start-header")
     }
 
@@ -1666,7 +1654,7 @@ struct DesktopCodeDraftDetail: View {
                         URL(fileURLWithPath: record.descriptor.localPathHint)
                     ])
                 } label: {
-                    JunoIconView(.external, size: 15)
+                    JunoIconView(.external, size: 14)
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
@@ -1675,20 +1663,6 @@ struct DesktopCodeDraftDetail: View {
                 .accessibilityIdentifier("juno.code.show-in-finder")
             }
             .accessibilityIdentifier("juno.code.repository-context")
-        } else {
-            CodePageHeader(
-                icon: .projects,
-                title: "No project",
-                subtitle: "Juno can answer and plan here, but cannot read or change files."
-            ) {
-                Button(action: addProject) {
-                    JunoIconLabel(verbatim: "Open a Project…", icon: .projects, size: 13)
-                }
-                .buttonStyle(.borderless)
-                .keyboardShortcut("o", modifiers: [.command])
-                .accessibilityIdentifier("juno.code.draft-open-project")
-            }
-            .accessibilityIdentifier("juno.code.no-project-context")
         }
     }
 
@@ -2463,28 +2437,19 @@ struct DesktopCodeDraftDetail: View {
                     .disabled(modelID.isEmpty)
                 }
             } label: {
-                JunoIconView(.mic, size: 17)
-                    // The ramp has three rungs and no in-betweens: a hand-mixed
-                    // `primary.opacity(0.76)` was a fourth ink no other control
-                    // used. Secondary is the rung for a quiet neutral control.
+    @ViewBuilder
+    private var voiceButton: some View {
+        if JunoSpeechService.isSupported {
+            Button(action: startDictation) {
+                JunoIconView(.mic, size: 16)
                     .junoSecondaryInk()
-                    // 44pt of target under a 34pt mark, because a control this
-                    // small beside the send button is one the pointer misses.
                     .frame(width: 44, height: 44)
                     .contentShape(.circle)
-            } primaryAction: {
-                if canDictate {
-                    startDictation()
-                } else if let beginVoice {
-                    beginVoice(modelID)
-                }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(canDictate ? "Dictate, or start a voice conversation" : "Start a voice conversation")
-            .accessibilityLabel("Voice")
-            .accessibilityIdentifier("juno.code.composer.voice")
+            .buttonStyle(.plain)
+            .help("Dictate into the composer")
+            .accessibilityLabel("Dictate")
+            .accessibilityIdentifier("juno.code.composer.dictate")
         }
     }
 
@@ -2493,40 +2458,48 @@ struct DesktopCodeDraftDetail: View {
         withAnimation(JunoMotion.fast) { dictating = true }
     }
 
-    /// The composer's one primary action, and the only tinted thing in it.
-    ///
-    /// It used to morph into a voice orb whenever the prompt was empty, which
-    /// meant the single most emphatic control in the window changed what it did
-    /// depending on whether the reader had typed anything — and put a second
-    /// microphone next to the first. Send is now Send: present in every state,
-    /// tinted only when there is something to send, in one position the pointer
-    /// never has to re-find.
+    /// The composer's primary action: morphs between Voice on empty prompt and Send/Run.
     private var sendButton: some View {
-        Button(action: send) {
-            Group {
-                if isStartingLocal || code.isMutating {
+        Group {
+            if isStartingLocal || code.isMutating {
+                Button(action: {}) {
                     ProgressView()
                         .controlSize(.small)
-                } else {
-                    JunoIconView(.send, size: 16)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
                 }
+                .accentGlassAction(active: true)
+                .disabled(true)
+            } else if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    if let beginVoice, !modelID.isEmpty {
+                        beginVoice(modelID)
+                    }
+                } label: {
+                    DesktopCodeVoiceGlyph()
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(Color.junoOnAccent)
+                        .contentShape(.circle)
+                }
+                .accentGlassAction(active: beginVoice != nil && !modelID.isEmpty)
+                .disabled(beginVoice == nil || modelID.isEmpty)
+                .help("Start a voice conversation")
+                .accessibilityLabel("Start voice conversation")
+                .accessibilityIdentifier("juno.code.launch-voice")
+            } else {
+                Button(action: send) {
+                    JunoIconView(.send, size: 16)
+                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .accentGlassAction(active: canSend)
+                .disabled(!canSend)
+                .help("Start this task (Return)")
+                .accessibilityLabel("Start task")
+                .accessibilityIdentifier("juno.code.launch-send")
             }
-            // On-accent, not `junoForeground`: the glyph sits on the
-            // accent-tinted glass, and canvas ink there is the contrast
-            // failure the on-accent token exists to prevent.
-            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-            // 44, not the 30 it shipped at. `accentGlassAction` puts the glass
-            // on the button itself, so the label's frame *is* the target: a
-            // 30pt circle is below the minimum in a row where the two controls
-            // beside it are menus.
-            .frame(width: 44, height: 44)
-            .contentShape(.circle)
         }
-        .accentGlassAction(active: canSend)
-        .disabled(!canSend)
-        .help("Start this task (Return)")
-        .accessibilityLabel("Start task")
-        .accessibilityIdentifier("juno.code.launch-send")
     }
 
     private func appendDictated(_ transcript: String) {
@@ -3037,5 +3010,20 @@ struct DesktopCodeAllProjects: View {
             )
         }
         return parts.joined(separator: " · ")
+    }
+}
+
+private struct DesktopCodeVoiceGlyph: View {
+    private let heights: [CGFloat] = [7, 13, 18, 11, 6]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
+                Capsule()
+                    .fill(.foreground)
+                    .frame(width: 2, height: height)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
