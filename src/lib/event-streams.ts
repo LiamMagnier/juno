@@ -164,6 +164,7 @@ export const CODE_EVENT_VISIBILITY: Readonly<Record<string, EventVisibility>> = 
   error: "user",
   completed: "user",
   heartbeat: "internal",
+  canonical_session_event: "user",
 };
 
 export function codeEventVisibility(kind: string): EventVisibility {

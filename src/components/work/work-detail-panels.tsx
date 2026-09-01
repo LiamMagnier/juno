@@ -19,15 +19,9 @@ import type {
 } from "@/lib/work/serializers";
 import type { PerformedActions } from "@/components/work/work-timeline";
 import { num, prose, readEvent, records, str } from "@/components/work/work-payload";
-import {
-  CapabilityChip,
-  DegradationNotes,
-  WorkTargetLabel,
-  formatDuration,
-  formatMicroUsd,
-  workTimeAgo,
-} from "@/components/work/work-vocabulary";
-import { cn, formatBytes, formatTokens } from "@/lib/utils";
+import { CapabilityChip, DegradationNotes, WorkTargetLabel, formatDuration, formatMicroUsd, workTimeAgo } from "@/components/work/work-vocabulary";
+import { UsageMeter } from "@/components/ui/usage-meter";
+import { formatBytes, formatTokens } from "@/lib/utils";
 
 /*
  * The right-hand column's reference panels: what went in, what came out, what
@@ -533,40 +527,40 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
 
   return (
     <div>
-      <p className="mb-1.5 font-mono text-label text-muted-foreground">Budget</p>
-      <div className="space-y-1.5">
-        <BudgetBar
+      <p className="mb-2 font-mono text-label text-muted-foreground">Budget & Resource Limits</p>
+      <div className="space-y-2.5">
+        <UsageMeter
           label="Cost"
-          used={formatMicroUsd(run.usage.costMicroUsd)}
-          limit={run.budget.maxCostMicroUsd === 0 ? null : formatMicroUsd(run.budget.maxCostMicroUsd)}
-          fraction={
-            run.budget.maxCostMicroUsd === 0
-              ? null
-              : run.usage.costMicroUsd / run.budget.maxCostMicroUsd
-          }
+          used={run.usage.costMicroUsd}
+          total={run.budget.maxCostMicroUsd === 0 ? undefined : run.budget.maxCostMicroUsd}
+          formattedUsed={formatMicroUsd(run.usage.costMicroUsd)}
+          formattedTotal={run.budget.maxCostMicroUsd === 0 ? undefined : formatMicroUsd(run.budget.maxCostMicroUsd)}
+          warningThreshold={0.8}
         />
-        <BudgetBar
+        <UsageMeter
           label="Tokens"
-          used={formatTokens(tokens)}
-          limit={run.budget.maxTokens === 0 ? null : formatTokens(run.budget.maxTokens)}
-          fraction={run.budget.maxTokens === 0 ? null : tokens / run.budget.maxTokens}
+          used={tokens}
+          total={run.budget.maxTokens === 0 ? undefined : run.budget.maxTokens}
+          formattedUsed={formatTokens(tokens)}
+          formattedTotal={run.budget.maxTokens === 0 ? undefined : formatTokens(run.budget.maxTokens)}
+          warningThreshold={0.8}
         />
-        <BudgetBar
-          label="Time"
-          used={formatDuration(elapsedMs)}
-          limit={run.budget.maxRuntimeMs === 0 ? null : formatDuration(run.budget.maxRuntimeMs)}
-          fraction={run.budget.maxRuntimeMs === 0 ? null : elapsedMs / run.budget.maxRuntimeMs}
+        <UsageMeter
+          label="Execution Time"
+          used={elapsedMs}
+          total={run.budget.maxRuntimeMs === 0 ? undefined : run.budget.maxRuntimeMs}
+          formattedUsed={formatDuration(elapsedMs)}
+          formattedTotal={run.budget.maxRuntimeMs === 0 ? undefined : formatDuration(run.budget.maxRuntimeMs)}
+          warningThreshold={0.8}
         />
       </div>
       {unlimited && (
-        // Zero is "no explicit ceiling", not "zero allowed" — see NO_BUDGET in
-        // domain.ts. Rendering it as a full bar would say the opposite.
-        <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-          No ceiling was set for this run, so the plan’s own default applies.
+        <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
+          No custom ceiling was set for this run, so the plan’s default limits apply.
         </p>
       )}
       {ceiling.exceeded && (
-        <p className="mt-1.5 text-caption leading-relaxed text-warning-foreground">{ceiling.detail}</p>
+        <p className="mt-2 text-caption leading-relaxed text-warning-foreground">{ceiling.detail}</p>
       )}
     </div>
   );
@@ -612,47 +606,6 @@ function Meter({
       <Icon className="size-3 text-muted-foreground/70" aria-hidden="true" />
       <dt className="sr-only">{label}</dt>
       <dd>{value}</dd>
-    </div>
-  );
-}
-
-function BudgetBar({
-  label,
-  used,
-  limit,
-  fraction,
-}: {
-  label: string;
-  used: string;
-  limit: string | null;
-  /** Null when no ceiling was set, so the track renders empty rather than full. */
-  fraction: number | null;
-}) {
-  const filled = fraction === null ? 0 : Math.max(0, Math.min(1, fraction));
-  const near = fraction !== null && filled >= 0.8;
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 font-mono text-micro tabular-nums">
-        <span className="text-muted-foreground">{label}</span>
-        <span className={cn(near ? "text-warning-foreground" : "text-muted-foreground")}>
-          {used}
-          {limit !== null && ` / ${limit}`}
-        </span>
-      </div>
-      <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={cn(
-            // `motion-reduce:transition-none`: the bar is the one element in the
-            // rail that animates a LAYOUT property, and under the preference it
-            // was still sweeping for `duration-slow` with nothing to opt out
-            // through — the reduce tiers in globals.css shorten `--dur-slow` but
-            // do not stop a transition a utility declared.
-            "h-full rounded-full transition-[width] duration-slow ease-out-soft motion-reduce:transition-none",
-            near ? "bg-warning" : "bg-foreground/30"
-          )}
-          style={{ width: `${filled * 100}%` }}
-        />
-      </div>
     </div>
   );
 }

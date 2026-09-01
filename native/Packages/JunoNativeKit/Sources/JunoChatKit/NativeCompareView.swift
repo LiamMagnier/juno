@@ -114,6 +114,8 @@ public struct NativeCompareView: View {
                 Button(action: addPane) {
                     JunoIconLabel("Add model", systemImage: "plus")
                         .junoFont(size: 13, relativeTo: .body)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(model.canAddPane ? Color.primary.opacity(0.8) : Color.junoMutedForeground)
@@ -153,6 +155,8 @@ public struct NativeCompareView: View {
                                 .fill(sendEnabled ? Color.junoAccent : Color.junoMuted)
                         )
                         .foregroundStyle(sendEnabled ? Color.junoOnAccent : Color.junoMutedForeground)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .disabled(!sendEnabled)

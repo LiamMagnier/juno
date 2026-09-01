@@ -48,6 +48,9 @@ public struct NativePullsView: View {
                 } actions: {
                     if let openConnections {
                         Button("Open Connections", action: openConnections)
+                            .buttonStyle(.borderedProminent)
+                            .contentShape(.rect)
+                            .frame(minHeight: 44)
                     }
                 }
             } else if case .failed(let message) = unavailable {
@@ -57,6 +60,9 @@ public struct NativePullsView: View {
                     Text(message)
                 } actions: {
                     Button("Try again") { Task { await load() } }
+                        .buttonStyle(.bordered)
+                        .contentShape(.rect)
+                        .frame(minHeight: 44)
                 }
             } else if pulls.isEmpty {
                 ContentUnavailableView(

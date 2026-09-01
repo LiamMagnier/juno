@@ -45,6 +45,16 @@ public actor SubagentControlRegistry {
         return await entry.permissions.pendingApprovals
     }
 
+    /// Read controls only through the parent that delegated the child. Session
+    /// ids are not authority: this prevents a stale inspector or future remote
+    /// client from resolving an unrelated child's approval by guessing its id.
+    public func pendingApprovals(
+        for childSessionID: CodeSessionID, ownedBy parentSessionID: CodeSessionID
+    ) async -> [ApprovalRequest] {
+        guard let entry = entries[childSessionID], entry.parentSessionID == parentSessionID else { return [] }
+        return await entry.permissions.pendingApprovals
+    }
+
     public func resolve(
         childSessionID: CodeSessionID,
         approvalID: String,
@@ -65,6 +75,15 @@ public actor SubagentControlRegistry {
     public func stop(childSessionID: CodeSessionID) async {
         guard let entry = entries[childSessionID] else { return }
         await entry.orchestrator.stop()
+    }
+
+    @discardableResult
+    public func stop(
+        childSessionID: CodeSessionID, ownedBy parentSessionID: CodeSessionID
+    ) async -> Bool {
+        guard let entry = entries[childSessionID], entry.parentSessionID == parentSessionID else { return false }
+        await entry.orchestrator.stop()
+        return true
     }
 
     public func hasControl(for childSessionID: CodeSessionID) -> Bool {

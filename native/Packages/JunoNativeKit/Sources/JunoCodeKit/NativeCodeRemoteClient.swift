@@ -101,6 +101,8 @@ public enum CodeRemoteError: Error, Equatable, LocalizedError, Sendable {
     case invalidIdentifier
     case unsupportedCommand(String)
     case malformedResponse
+    case invalidEventStream
+    case eventStreamUnavailable
     case server(statusCode: Int, message: String, retryable: Bool)
 
     public var errorDescription: String? {
@@ -108,6 +110,8 @@ public enum CodeRemoteError: Error, Equatable, LocalizedError, Sendable {
         case .invalidIdentifier: "Juno could not safely address that device or session."
         case .unsupportedCommand(let kind): "This build cannot send a \"\(kind)\" command."
         case .malformedResponse: "Juno returned invalid remote session data."
+        case .invalidEventStream: "Juno returned an invalid Code event stream."
+        case .eventStreamUnavailable: "This Juno build cannot open a live Code event stream."
         case .server(_, let message, _): message
         }
     }
@@ -129,15 +133,24 @@ public struct NativeCodeRemoteClient: Sendable {
     /// refused here rather than sent, so an unsupported command fails
     /// immediately and locally instead of as an opaque 400.
     public static let supportedCommandKinds: Set<String> = [
-        "message", "stop", "approval", "patch", "delete", "fork", "retry",
+        "create_session", "message", "stop", "approval", "patch", "delete", "fork", "retry",
         "accept_change", "reject_change", "undo_change", "run_tests",
         "stop_tests", "git", "stop_agent",
     ]
 
     private let sender: any NativeAuthenticatedRequestSending
+    /// Optional only while older host integrations are being migrated. New
+    /// production clients provide this and use the relay's resumable SSE feed;
+    /// `events` remains a bounded compatibility read for previews and legacy
+    /// callers that cannot yet open a byte stream.
+    private let streamer: (any NativeAuthenticatedByteStreaming)?
 
-    public init(sender: any NativeAuthenticatedRequestSending) {
+    public init(
+        sender: any NativeAuthenticatedRequestSending,
+        streamer: (any NativeAuthenticatedByteStreaming)? = nil
+    ) {
         self.sender = sender
+        self.streamer = streamer
     }
 
     // MARK: - Mobile side
@@ -204,12 +217,70 @@ public struct NativeCodeRemoteClient: Sendable {
     ) async throws -> [CodeRemoteSessionEvent] {
         try validate(deviceID)
         try validate(sessionID)
-        let path = "/api/code/devices/\(deviceID)/sessions/\(sessionID)/events?after=\(afterSequence)"
+        // The server's resumable event endpoint reads `afterSeq`. `after` was
+        // silently ignored, causing every reconnect to fetch from zero and
+        // making a long-running mobile session increasingly expensive.
+        let path = "/api/code/devices/\(deviceID)/sessions/\(sessionID)/events?afterSeq=\(afterSequence)"
         let response = try await get(path, for: accountID)
         guard let root = try decodeObject(response),
             case .array(let items)? = root["events"]
         else { throw CodeRemoteError.malformedResponse }
         return try items.map(decodeEvent)
+    }
+
+    /// Opens the relay's authenticated, resumable Server-Sent Event feed.
+    ///
+    /// Every yielded page contains events strictly after the supplied cursor.
+    /// The caller owns durable folding because it is the only layer that knows
+    /// whether a newly selected session invalidated its old cursor. A stream
+    /// ending normally is expected: the relay deliberately rotates connections
+    /// before platform request limits, and callers reconnect from their cursor.
+    public func eventStream(
+        deviceID: String,
+        sessionID: String,
+        afterSequence: Int,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<[CodeRemoteSessionEvent], any Error> {
+        try validate(deviceID)
+        try validate(sessionID)
+        guard afterSequence >= 0, let streamer else {
+            throw CodeRemoteError.eventStreamUnavailable
+        }
+        let response = try await streamer.stream(
+            try NativeBearerRequest(
+                path: "/api/code/devices/\(deviceID)/sessions/\(sessionID)/events?afterSeq=\(afterSequence)",
+                headers: try HTTPHeaders(["accept": "text/event-stream"])
+            ),
+            for: accountID
+        )
+        try await require2xx(response)
+        guard response.headers["content-type"]?.lowercased()
+            .hasPrefix("text/event-stream") == true
+        else { throw CodeRemoteError.invalidEventStream }
+
+        return AsyncThrowingStream { continuation in
+            let relay = Task {
+                do {
+                    var parser = CodeRemoteSSEParser()
+                    for try await byte in response.bytes {
+                        for frame in try parser.consume(byte) {
+                            if let events = try decodeEventFrame(frame) {
+                                continuation.yield(events)
+                            }
+                        }
+                    }
+                    for frame in try parser.finish() {
+                        if let events = try decodeEventFrame(frame) {
+                            continuation.yield(events)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { @Sendable _ in relay.cancel() }
+        }
     }
 
     // MARK: - Host side
@@ -321,6 +392,27 @@ public struct NativeCodeRemoteClient: Sendable {
         )
     }
 
+    private func require2xx(_ response: HTTPByteStreamResponse) async throws {
+        guard !(200...299).contains(response.statusCode) else { return }
+        var body = Data()
+        for try await byte in response.bytes {
+            guard body.count < 64 * 1_024 else { break }
+            body.append(byte)
+        }
+        let message = (try? JSONDecoder().decode(JunoJSONValue.self, from: body))
+            .flatMap { value -> String? in
+                guard case .object(let object) = value,
+                    case .string(let message)? = object["error"]
+                else { return nil }
+                return message
+            }
+        throw CodeRemoteError.server(
+            statusCode: response.statusCode,
+            message: message ?? "Juno could not reach that Code session (\(response.statusCode)).",
+            retryable: (500...599).contains(response.statusCode)
+        )
+    }
+
     /// Identifiers go straight into a URL path, so anything that could change
     /// the path's meaning is refused before it gets there. A `..` segment or an
     /// encoded slash would address a different route entirely.
@@ -398,5 +490,87 @@ public struct NativeCodeRemoteClient: Sendable {
         return CodeRemoteSessionEvent(
             seq: Int(seq), kind: kind, payload: payload, createdAt: createdAt
         )
+    }
+
+    private func decodeEventFrame(_ frame: CodeRemoteSSEParser.Frame) throws
+        -> [CodeRemoteSessionEvent]?
+    {
+        // The route originally used an unnamed `data:` frame. Accept that
+        // transition shape as well as the explicit `events` name so clients
+        // do not become coupled to an incidental SSE presentation detail.
+        guard frame.name == "events" || frame.name == "message" else { return nil }
+        guard let value = try? JSONDecoder().decode(JunoJSONValue.self, from: Data(frame.data.utf8)),
+            case .object(let root) = value,
+            case .string(let type)? = root["type"], type == "events",
+            case .array(let rawEvents)? = root["events"]
+        else { throw CodeRemoteError.invalidEventStream }
+        let events = try rawEvents.map(decodeEvent)
+        if let lastSeq = root["lastSeq"]?.numberValue,
+            Int(lastSeq) != events.last?.seq
+        {
+            throw CodeRemoteError.invalidEventStream
+        }
+        return events
+    }
+}
+
+/// Small, bounded SSE framing parser kept private to the Code relay contract.
+/// It intentionally ignores comments/unknown fields but rejects malformed UTF-8
+/// and unbounded lines before they can enter a rendered transcript.
+private struct CodeRemoteSSEParser {
+    struct Frame {
+        let name: String
+        let data: String
+    }
+
+    private var line = Data()
+    private var eventName: String?
+    private var dataLines: [String] = []
+
+    mutating func consume(_ byte: UInt8) throws -> [Frame] {
+        guard byte == 0x0A else {
+            guard line.count < 8_192 else { throw CodeRemoteError.invalidEventStream }
+            line.append(byte)
+            return []
+        }
+        return try finishLine()
+    }
+
+    mutating func finish() throws -> [Frame] {
+        var result: [Frame] = []
+        if !line.isEmpty { result.append(contentsOf: try finishLine()) }
+        if eventName != nil || !dataLines.isEmpty { result.append(try dispatch()) }
+        return result
+    }
+
+    private mutating func finishLine() throws -> [Frame] {
+        if line.last == 0x0D { line.removeLast() }
+        guard let value = String(data: line, encoding: .utf8) else {
+            throw CodeRemoteError.invalidEventStream
+        }
+        line.removeAll(keepingCapacity: true)
+        if value.isEmpty {
+            guard eventName != nil || !dataLines.isEmpty else { return [] }
+            return [try dispatch()]
+        }
+        if value.hasPrefix(":") { return [] }
+        let pieces = value.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let field = String(pieces[0])
+        var fieldValue = pieces.count == 2 ? String(pieces[1]) : ""
+        if fieldValue.first == " " { fieldValue.removeFirst() }
+        switch field {
+        case "event": eventName = fieldValue
+        case "data": dataLines.append(fieldValue)
+        default: break
+        }
+        return []
+    }
+
+    private mutating func dispatch() throws -> Frame {
+        guard !dataLines.isEmpty else { throw CodeRemoteError.invalidEventStream }
+        let result = Frame(name: eventName ?? "message", data: dataLines.joined(separator: "\n"))
+        eventName = nil
+        dataLines.removeAll(keepingCapacity: true)
+        return result
     }
 }

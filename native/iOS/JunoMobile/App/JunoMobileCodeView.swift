@@ -17,6 +17,10 @@ import SwiftUI
 /// buried in a setting.
 struct JunoMobileCodeView: View {
   @Bindable var model: NativeCodeModel
+  /// The phone's trusted-host session coordinator. The initial integration
+  /// keeps it architectural; a remote browser surface consumes this instead of
+  /// creating another relay client when the mobile Code flow is expanded.
+  var remoteModel: CodeRemoteBrowserModel? = nil
   /// Starts a Juno Code conversation that has no project, sends the reader's
   /// first message into it, and opens it.
   ///
@@ -235,6 +239,20 @@ struct JunoMobileCodeView: View {
       // safe area; keeping the composer in the vertical layout guarantees the
       // last Code card can never render underneath it on iOS 26/27.
       composer
+    }
+    .task(id: accountID) {
+      // Remote state is account-scoped. Starting it here rather than at app
+      // launch avoids retaining another account's trusted-host inventory after
+      // sign-out/sign-in, while the model itself owns clearing on `stop()`.
+      if let accountID {
+        remoteModel?.start(for: accountID)
+        remoteModel?.updateHosts(from: model.devices)
+      } else {
+        remoteModel?.stop()
+      }
+    }
+    .onChange(of: model.devices) { _, devices in
+      remoteModel?.updateHosts(from: devices)
     }
   }
 

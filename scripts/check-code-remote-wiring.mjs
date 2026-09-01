@@ -86,6 +86,9 @@ const sidebar = read("native/macOS/JunoDesktop/App/DesktopCodeStudio.swift");
 const remoteBrowser = read(
   "native/Packages/JunoNativeKit/Sources/JunoCodeKit/CodeRemoteBrowserModel.swift",
 );
+const remoteClient = read(
+  "native/Packages/JunoNativeKit/Sources/JunoCodeKit/NativeCodeRemoteClient.swift",
+);
 
 const required = [
   // The live start path, end to end: one entry point that chooses a target,
@@ -106,7 +109,7 @@ const required = [
   [monitor, "respondToApproval"],
   [monitor, "cancelOpenTask"],
   [desktopWorkspace, "DesktopCodeRemoteCanvas"],
-  [desktopWorkspace, "await remoteModel.pollEvents("],
+  [desktopWorkspace, "await remoteModel.watchEvents("],
   [desktopWorkspace, "await remote.respondToApproval("],
   [desktopWorkspace, "await remote.send("],
   [desktopWorkspace, "CodeRemoteTaskDetailView("],
@@ -114,7 +117,9 @@ const required = [
   [desktopConfiguration, "CodeRemoteBrowserModel("],
   [sidebar, "matchingRemoteSessions"],
   [sidebar, ".remote(deviceID: summary.deviceID, sessionID: summary.sessionID)"],
-  [remoteBrowser, "public func pollEvents("],
+  [remoteBrowser, "public func watchEvents("],
+  [remoteBrowser, "client.eventStream("],
+  [remoteClient, "public func eventStream("],
   [remoteBrowser, "public func respondToApproval("],
   [remoteBrowser, "public func send("],
 ];

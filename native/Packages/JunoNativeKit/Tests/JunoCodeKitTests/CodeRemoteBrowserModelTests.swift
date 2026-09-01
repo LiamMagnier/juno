@@ -50,12 +50,12 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
     /// under a different session's title.
     func testOpeningASessionClearsTheTranscriptAndCursor() async throws {
         let transport = BrowserTransport(responses: [
-            .ok(#"{"events":[{"seq":5,"kind":"text_delta","payload":{},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#)
+            .ok(#"{"events":[{"seq":1,"kind":"text_delta","payload":{},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#)
         ])
         let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
         model.start(for: account)
         await model.pollEvents(deviceID: "d1", sessionID: "s1")
-        XCTAssertEqual(model.cursor, 5)
+        XCTAssertEqual(model.cursor, 1)
 
         model.openSession("s2")
 
@@ -83,6 +83,50 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         let payload = try XCTUnwrap(object["payload"] as? [String: Any])
         XCTAssertEqual(payload["requestId"] as? String, "req-7")
         XCTAssertEqual(payload["approved"] as? Bool, true)
+    }
+
+    func testEventGapDoesNotAdvanceTheCursor() async throws {
+        let transport = BrowserTransport(responses: [
+            .ok(#"{"events":[{"seq":2,"kind":"text_delta","payload":{},"createdAt":"2026-07-22T10:00:00.000Z"}]}"#)
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+
+        await model.pollEvents(deviceID: "d1", sessionID: "s1")
+
+        XCTAssertTrue(model.events.isEmpty)
+        XCTAssertEqual(model.cursor, 0)
+        XCTAssertEqual(model.phase, .failed)
+    }
+
+    func testWatchEventsFoldsTheLiveStreamInOrder() async throws {
+        let transport = StreamingBrowserTransport(body:
+            "event: events\ndata: {\"type\":\"events\",\"events\":[{\"seq\":1,\"kind\":\"user_message\",\"payload\":{},\"createdAt\":\"2026-07-22T10:00:00.000Z\"},{\"seq\":2,\"kind\":\"completed\",\"payload\":{},\"createdAt\":\"2026-07-22T10:00:01.000Z\"}],\"lastSeq\":2}\n\n"
+        )
+        let model = CodeRemoteBrowserModel(
+            client: NativeCodeRemoteClient(sender: transport, streamer: transport)
+        )
+        model.start(for: account)
+
+        await model.watchEvents(deviceID: "d1", sessionID: "s1")
+
+        XCTAssertEqual(model.events.map(\.seq), [1, 2])
+        XCTAssertEqual(model.cursor, 2)
+        XCTAssertEqual(model.phase, .ready)
+    }
+
+    func testHostDiscoveryStripsWorkspacePaths() async throws {
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: BrowserTransport(responses: [])))
+        model.updateHosts(from: [NativeCodeDevice(
+            id: "device-a", name: "Liam's Mac", platform: "macos", appVersion: "1",
+            workspaces: [.init(name: "Juno", path: "/Users/liam/Developer/Juno", key: "workspace-a")],
+            activeCount: 0, lastSeenAt: Date(timeIntervalSince1970: 1), online: true,
+            servesQueuedTasks: true
+        )])
+
+        let host = try XCTUnwrap(model.hosts.first)
+        XCTAssertEqual(host.workspaceNames, ["Juno"])
+        XCTAssertFalse(String(describing: host).contains("/Users/"))
     }
 
     /// Two actions must never share a key — the relay would silently drop the
@@ -188,5 +232,31 @@ private actor BrowserTransport: NativeAuthenticatedRequestSending {
         case .throwing(let error):
             throw error
         }
+    }
+}
+
+private actor StreamingBrowserTransport: NativeAuthenticatedRequestSending,
+    NativeAuthenticatedByteStreaming
+{
+    private let body: String
+
+    init(body: String) { self.body = body }
+
+    func send(_ request: NativeBearerRequest, for _: AccountID) async throws -> HTTPResponse {
+        HTTPResponse(statusCode: 500, headers: HTTPHeaders(), body: Data())
+    }
+
+    func stream(
+        _ request: NativeBearerRequest, for _: AccountID
+    ) async throws -> HTTPByteStreamResponse {
+        let bytes = AsyncThrowingStream<UInt8, any Error> { continuation in
+            for byte in body.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+        return HTTPByteStreamResponse(
+            statusCode: 200,
+            headers: try! HTTPHeaders(["content-type": "text/event-stream"]),
+            bytes: bytes
+        )
     }
 }

@@ -49,6 +49,9 @@ struct JunoMobileRootView: View {
   var connectorModel: NativeConnectorModel?
   var scheduledTaskModel: NativeScheduledTaskModel?
   var codeModel: NativeCodeModel?
+  /// Trusted-device remote state. This is distinct from server Code tasks: it
+  /// follows sessions running on a paired host and never exposes host paths.
+  var remoteCodeModel: CodeRemoteBrowserModel? = nil
   /// Juno Work: the tasks the account has handed Juno, and the Macs that can
   /// run them. Server-backed like the three above, and started at sign-in
   /// rather than when the screen opens — the model polls the task list so the
@@ -895,6 +898,7 @@ struct JunoMobileRootView: View {
       if let codeModel {
         JunoMobileCodeView(
           model: codeModel,
+          remoteModel: remoteCodeModel,
           startConversation: startProjectlessCodeConversation,
           pullsClient: pullsClient,
           accountID: currentSession?.profile.id,

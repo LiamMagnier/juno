@@ -4,6 +4,7 @@ import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
 import { readEvent, str } from "@/components/work/work-payload";
+import { AgentStatusBadge } from "@/components/ui/agent-status-badge";
 import {
   WorkThreadComposer,
   type WorkComposerMode,
@@ -151,7 +152,29 @@ export function WorkConversation({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-5">
         <div>
-          <p className="mb-1.5 font-mono text-label text-muted-foreground">What you asked for</p>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="font-mono text-label text-muted-foreground">What you asked for</p>
+            {session.status && (
+              <AgentStatusBadge
+                status={
+                  session.status === "running" || session.status === "preparing"
+                    ? "running"
+                    : session.status === "waiting_approval"
+                      ? "waiting_approval"
+                      : session.status === "waiting_input"
+                        ? "waiting_for_input"
+                        : session.status === "completed"
+                          ? "completed"
+                          : session.status === "failed"
+                            ? "failed"
+                            : session.status === "cancelled" || session.status === "paused"
+                              ? "cancelled"
+                              : "idle"
+                }
+                size="sm"
+              />
+            )}
+          </div>
           <div className="flex justify-end">
             <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3.5 py-2.5 text-body text-secondary-foreground">
               {session.goal}

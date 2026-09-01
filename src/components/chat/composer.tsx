@@ -2403,15 +2403,24 @@ export function Composer({
                           }
                           disabled={controlsLocked}
                           className={cn(
-                            "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
+                            "composer-chip group relative size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
                             plusOpen &&
                               "bg-accent border-border text-foreground ring-1 ring-border/50",
+                            activeToolCount > 0 && "border-primary/40 bg-primary/10 text-primary",
                           )}
                         >
                           <Plus
                             aria-hidden="true"
-                            className="size-4 text-muted-foreground transition-colors group-hover:text-foreground"
+                            className={cn(
+                              "size-4 text-muted-foreground transition-colors group-hover:text-foreground",
+                              activeToolCount > 0 && "text-primary",
+                            )}
                           />
+                          {activeToolCount > 0 && (
+                            <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground shadow-xs">
+                              {activeToolCount}
+                            </span>
+                          )}
                         </Button>
                       </DropdownMenuTrigger>
                     </TooltipTrigger>

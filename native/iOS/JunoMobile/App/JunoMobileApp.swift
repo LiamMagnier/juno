@@ -29,6 +29,7 @@ struct JunoMobileApp: App {
     @State private var connectorModel: NativeConnectorModel?
     @State private var scheduledTaskModel: NativeScheduledTaskModel?
     @State private var codeModel: NativeCodeModel?
+    @State private var remoteCodeModel: CodeRemoteBrowserModel?
     @State private var workModel: NativeWorkModel?
     @State private var libraryModel: NativeLibraryModel?
     private let localStore: SQLiteAccountRepository?
@@ -65,6 +66,7 @@ struct JunoMobileApp: App {
         _connectorModel = State(initialValue: configuration.connectorModel)
         _scheduledTaskModel = State(initialValue: configuration.scheduledTaskModel)
         _codeModel = State(initialValue: configuration.codeModel)
+        _remoteCodeModel = State(initialValue: configuration.remoteCodeModel)
         _workModel = State(initialValue: configuration.workModel)
         _libraryModel = State(initialValue: configuration.libraryModel)
         requestSender = configuration.requestSender
@@ -152,6 +154,7 @@ struct JunoMobileApp: App {
             connectorModel: connectorModel,
             scheduledTaskModel: scheduledTaskModel,
             codeModel: codeModel,
+            remoteCodeModel: remoteCodeModel,
             workModel: workModel,
             libraryModel: libraryModel,
             requestSender: requestSender,
@@ -297,6 +300,9 @@ struct JunoMobileApp: App {
                 codeModel: NativeCodeModel(
                     client: NativeCodeTaskClient(sender: runtime, streamer: runtime)
                 ),
+                remoteCodeModel: CodeRemoteBrowserModel(
+                    client: NativeCodeRemoteClient(sender: runtime, streamer: runtime)
+                ),
                 // Both halves come from the one runtime: Work sends unary
                 // requests and follows a task's log over SSE, and giving it two
                 // transports would be two places for the bearer token to be
@@ -395,6 +401,7 @@ private struct JunoMobileConfiguration {
     let connectorModel: NativeConnectorModel?
     let scheduledTaskModel: NativeScheduledTaskModel?
     let codeModel: NativeCodeModel?
+    var remoteCodeModel: CodeRemoteBrowserModel? = nil
     let workModel: NativeWorkModel?
     let libraryModel: NativeLibraryModel?
     let requestSender: (any NativeAuthenticatedRequestSending)?

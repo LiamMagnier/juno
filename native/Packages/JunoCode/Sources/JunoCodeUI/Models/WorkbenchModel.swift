@@ -470,6 +470,13 @@ public final class WorkbenchModel {
         }
     }
 
+    /// Returns the durable transcript sequence without constructing or attaching
+    /// a presentation controller. Hosts use this for inventory summaries, so a
+    /// CLI session listing cannot wake screen capture or other UI-only work.
+    public func eventCount(for sessionID: CodeSessionID) async -> Int {
+        await sessionStore.events(for: sessionID).count
+    }
+
     /// The live controller for a session, created on first use.
     public func controller(for sessionID: CodeSessionID) async -> SessionController? {
         #if DEBUG

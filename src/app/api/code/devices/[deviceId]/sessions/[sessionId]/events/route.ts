@@ -80,10 +80,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ deviceId
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
   const raw = Number(new URL(req.url).searchParams.get("afterSeq") ?? "0");
   let cursor = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+  // A bounded snapshot remains the compatibility/recovery path for clients
+  // that cannot hold an SSE connection (including previews). It uses the same
+  // strict `afterSeq` cursor and serialized payload as the stream, never a
+  // separate transcript vocabulary.
+  if (req.headers.get("accept")?.includes("application/json")) {
+    const events = await prisma.codeRemoteSessionEvent.findMany({
+      where: { userId: user.id, remoteSessionId: session.id, seq: { gt: cursor } },
+      orderBy: { seq: "asc" },
+      take: 500,
+    });
+    return NextResponse.json({
+      events: events.map(serializeSessionEvent),
+      lastSeq: events.at(-1)?.seq ?? cursor,
+    });
+  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (frame: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+      const send = (frame: unknown) => controller.enqueue(encoder.encode(`event: events\ndata: ${JSON.stringify(frame)}\n\n`));
       const deadline = Date.now() + 4 * 60_000;
       let lastHeartbeat = 0;
       try {

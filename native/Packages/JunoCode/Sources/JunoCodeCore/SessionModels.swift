@@ -96,6 +96,11 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     public var role: AgentRole
     public var permissionMode: PermissionMode
     public var location: SessionLocation
+    /// The explicit target selected for the session. `location` remains in the
+    /// persisted shape for backward compatibility with existing sessions; new
+    /// clients route through this value instead of making local/cloud/remote
+    /// three unrelated runtime architectures.
+    public var executionTarget: ExecutionTarget
     public var computerUseEnabled: Bool
 
     public init(
@@ -105,6 +110,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         role: AgentRole = .engineer,
         permissionMode: PermissionMode = .askBeforeChanges,
         location: SessionLocation = .local,
+        executionTarget: ExecutionTarget? = nil,
         computerUseEnabled: Bool = false
     ) {
         self.modelID = modelID
@@ -112,12 +118,17 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         self.behavior = behavior
         self.role = role
         self.permissionMode = permissionMode
-        self.location = location
+        self.executionTarget = executionTarget ?? .legacy(for: location)
+        // `executionTarget` is the canonical routing value. Keep writing the
+        // legacy location field so older stores stay readable, but never allow
+        // the two fields to describe different runtimes in a newly written
+        // session.
+        self.location = self.executionTarget.kind.sessionLocation
         self.computerUseEnabled = computerUseEnabled
     }
 
     private enum CodingKeys: String, CodingKey {
-        case modelID, reasoningEffort, behavior, role, permissionMode, location
+        case modelID, reasoningEffort, behavior, role, permissionMode, location, executionTarget
         case computerUseEnabled
     }
 
@@ -134,7 +145,15 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         behavior = try container.decodeIfPresent(AgentBehavior.self, forKey: .behavior) ?? .code
         role = try container.decode(AgentRole.self, forKey: .role)
         permissionMode = try container.decode(PermissionMode.self, forKey: .permissionMode)
-        location = try container.decode(SessionLocation.self, forKey: .location)
+        let legacyLocation = try container.decode(SessionLocation.self, forKey: .location)
+        executionTarget = try container.decodeIfPresent(
+            ExecutionTarget.self,
+            forKey: .executionTarget
+        ) ?? .legacy(for: legacyLocation)
+        // Prefer the explicit target if both values are present but stale. The
+        // target carries host/workspace identity; the old location is only a
+        // compatibility mirror and cannot safely override it.
+        location = executionTarget.kind.sessionLocation
         computerUseEnabled =
             try container.decodeIfPresent(Bool.self, forKey: .computerUseEnabled) ?? false
     }
@@ -149,6 +168,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         try container.encode(role, forKey: .role)
         try container.encode(permissionMode, forKey: .permissionMode)
         try container.encode(location, forKey: .location)
+        try container.encode(executionTarget, forKey: .executionTarget)
         try container.encode(computerUseEnabled, forKey: .computerUseEnabled)
     }
 }

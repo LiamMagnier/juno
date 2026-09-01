@@ -5,22 +5,15 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
-  FileCode,
   FileText,
-  MessagesSquare,
-  Image as ImageIcon,
+  FolderClosed,
   Loader2,
   Maximize2,
   Plus,
-  Table,
-  Pin,
-  FolderClosed,
-  FolderInput,
   NotebookPen,
   FileUp,
 } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
@@ -34,21 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { formatBytes, formatTokens, cn } from "@/lib/utils";
-import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
+import { formatBytes } from "@/lib/utils";
+import type { KnowledgeIndexState } from "@/components/library/index-status";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
-import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -63,6 +48,11 @@ import {
   type WorkspaceConfig,
   type WorkspaceTool,
 } from "@/lib/projects/workspace-config";
+import { ProjectWorkspaceHeader } from "@/components/projects/project-workspace-header";
+import { ProjectChatList } from "@/components/projects/project-chat-list";
+import { ProjectWorkList, type ProjectWorkItem } from "@/components/projects/project-work-list";
+import { ProjectCodeList } from "@/components/projects/project-code-list";
+import { ProjectSourcesList, type ProjectArtifactItem } from "@/components/projects/project-sources-list";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -101,8 +91,6 @@ export default function ProjectDetailPage() {
   const [instructionsOpen, setInstructionsOpen] = React.useState(false);
   /** Guards an unsaved instructions draft against Escape / X / backdrop. */
   const [confirmDiscard, setConfirmDiscard] = React.useState(false);
-  const [editingName, setEditingName] = React.useState(false);
-  const [nameDraft, setNameDraft] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
@@ -111,8 +99,6 @@ export default function ProjectDetailPage() {
   // Workspace tab state
   const [tab, setTab] = React.useState("overview");
   const [savingInstructions, setSavingInstructions] = React.useState(false);
-  const [dragging, setDragging] = React.useState(false);
-  const dragDepth = React.useRef(0);
 
   // Server-backed project star (Project.starred), toggled optimistically.
   const [isStarred, setIsStarred] = React.useState(false);
@@ -124,6 +110,8 @@ export default function ProjectDetailPage() {
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
   const [workspace, setWorkspace] = React.useState<WorkspaceConfig>({});
   const [savingWorkspace, setSavingWorkspace] = React.useState(false);
+  const [workRuns, setWorkRuns] = React.useState<ProjectWorkItem[]>([]);
+  const [projectArtifacts, setProjectArtifacts] = React.useState<ProjectArtifactItem[]>([]);
 
   // Composer states. `null` model = not chosen yet → fall back to account default
   // without overwriting a pick the user already made (that overwrite was sending
@@ -137,7 +125,9 @@ export default function ProjectDetailPage() {
   // Deep-link: /projects/{id}?tab=workspace
   React.useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "workspace" || t === "assistant") setTab(t);
+    if (t === "workspace" || t === "assistant" || t === "work" || t === "code" || t === "sources" || t === "settings") {
+      setTab(t === "workspace" || t === "assistant" ? "settings" : t);
+    }
   }, []);
 
   const coverFile = data?.files.find((f) => f.fileName === "__cover__");
@@ -185,7 +175,45 @@ export default function ProjectDetailPage() {
         if (p && Array.isArray(p.projects)) setAllProjects(p.projects);
       })
       .catch(() => {});
-  }, [load]);
+
+    // Fetch work runs
+    fetch("/api/work?limit=50")
+      .then((res) => res.json())
+      .then((res) => {
+        if (res && Array.isArray(res.sessions)) {
+          const matching = res.sessions
+            .filter((s: Record<string, unknown>) => s.projectId === id)
+            .map((s: Record<string, unknown>) => ({
+              id: String(s.id),
+              title: String(s.title || ""),
+              goal: String(s.goal || ""),
+              status: s.status,
+              updatedAt: String(s.updatedAt || ""),
+              createdAt: String(s.createdAt || ""),
+            }));
+          setWorkRuns(matching);
+        }
+      })
+      .catch(() => {});
+
+    // Fetch artifacts
+    fetch("/api/artifacts")
+      .then((res) => res.json())
+      .then((res) => {
+        if (res && Array.isArray(res.artifacts)) {
+          setProjectArtifacts(
+            res.artifacts.map((a: Record<string, unknown>) => ({
+              id: String(a.id),
+              identifier: String(a.identifier || a.id),
+              title: String(a.title || "Untitled Artifact"),
+              type: String(a.type || "document"),
+              updatedAt: String(a.updatedAt || ""),
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, [load, id]);
 
   React.useEffect(() => {
     const refresh = () => void load();
@@ -307,17 +335,6 @@ export default function ProjectDetailPage() {
     discardInstructions();
   };
 
-  const saveName = () => {
-    const name = nameDraft.trim();
-    setEditingName(false);
-    if (data && name && name !== data.project.name) {
-      patch({ name });
-      setData({ ...data, project: { ...data.project, name } });
-      toast.success("Project renamed.");
-      window.dispatchEvent(new CustomEvent("projects:sync"));
-    }
-  };
-
   const handleSend = (text: string, options?: { deepResearch?: boolean }) => {
     const q = text.trim();
     if (!q) return;
@@ -413,27 +430,7 @@ export default function ProjectDetailPage() {
     }
   };
 
-  // Drag-and-drop upload over the workspace files card.
-  const onFilesDragEnter = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
-    e.preventDefault();
-    dragDepth.current += 1;
-    setDragging(true);
-  };
-  const onFilesDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
-    e.preventDefault();
-  };
-  const onFilesDragLeave = () => {
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) setDragging(false);
-  };
-  const onFilesDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragging(false);
-    for (const f of Array.from(e.dataTransfer.files)) await uploadFile(f);
-  };
+
 
   const deleteFile = async (fileId: string) => {
     const r = await fetch(`/api/attachments/${fileId}`, { method: "DELETE" });
@@ -582,10 +579,6 @@ export default function ProjectDetailPage() {
   const instructionsDirty = instructions !== data.project.instructions;
   const instructionLines = instructions ? instructions.split("\n").length : 0;
   const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
-  const totalTokenEstimate = workspaceFiles.reduce(
-    (sum, f) => sum + (isTextExtractable(f.mimeType) ? Math.round(f.size / 4) : 0),
-    0
-  );
 
   return (
     <div className="app-page-scroll">
@@ -593,132 +586,42 @@ export default function ProjectDetailPage() {
         {/* A real link, not router.push on a button: this one is not cmd- or
             middle-clickable and announces itself as a button. Same defect
             AppPageHeader's docblock item 2 exists to kill. */}
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="-ml-3 mb-6 gap-1.5 text-muted-foreground hover:text-foreground"
-        >
-          <Link href="/projects">
-            <ArrowLeft className="size-4" /> All projects
-          </Link>
-        </Button>
-
-        {/* Header — eyebrow · compact title · supporting meta. The old single 22px title had no
-            supporting hierarchy, so it read as a form label on a 1152px page. */}
-        <header className="mb-8 flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <CardEyebrow>Project</CardEyebrow>
-            {/* `text-page-title` on both branches, so the rename input and the heading it
-                replaces render from one named rung and the swap stays metrically silent.
-                This site used to hand-write clamp(1.7rem, 1.45rem + 0.8vw, 2.15rem) at
-                -0.025em — the third of the three drift variants tailwind.config.ts's
-                fontSize comment names — and hung it on this wrapper so the Input could
-                inherit it through `text-[length:inherit]`. That indirection only existed
-                because twMerge read custom type tokens as colour classes and kept Input's
-                own `text-sm`; utils.ts registers the fontSize keys now, so the token wins
-                outright and the wrapper is back to just laying the row out. */}
-            <div className="mt-2 flex items-center gap-2">
-              {editingName ? (
-                <Input
-                  value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  autoFocus
-                  onBlur={saveName}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveName();
-                    if (e.key === "Escape") setEditingName(false);
-                  }}
-                  aria-label="Project name"
-                  // No radius override. Input already sets rounded-field, and until
-                  // cn() learned the ladder both classes survived the merge — the
-                  // emit order handed the win to rounded-field, so the 8px written
-                  // here never rendered and everything around it was tuned at 10px.
-                  // Now the last class wins, which would have silently squared this
-                  // field off against every other input in the product.
-                  className="h-auto max-w-xl px-2 py-0.5 text-page-title"
-                />
-              ) : (
-                <>
-                  <h1 className="truncate text-page-title">{data.project.name}</h1>
-                  {/* A bare glyph you press, which is exactly `kind="icon"`. It
-                      used to hand-roll the recipe — pressable, rounded-control,
-                      p-1.5, muted ink, an accent hover — one of four copies of it
-                      on this page, and the only radius among them that the house
-                      idiom for a pressable glyph does not use (a circle). The
-                      variant also grows the target to 40px on coarse pointers,
-                      which the padded version never did. `shrink-0` stays: it sits
-                      in a flex row beside a truncating h1. */}
-                  <Pressable
-                    kind="icon"
-                    size="md"
-                    onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
-                    className="shrink-0"
-                    aria-label="Rename project"
-                  >
-                    <ActionIcons.edit className="size-4" />
-                  </Pressable>
-                </>
-              )}
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {plural(data.conversations.length, "chat")} · {plural(workspaceFiles.length, "file")} · Updated{" "}
-              {timeAgo(data.project.updatedAt)}
-            </p>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={toggleProjectStar}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label={isStarred ? "Unpin project" : "Pin project"}
-              aria-pressed={isStarred}
-            >
-              <Pin className={cn("size-4", isStarred && "fill-primary text-primary")} />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Project actions"
-                >
-                  <ActionIcons.more className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onSelect={() => { setNameDraft(data.project.name); setEditingName(true); }}>
-                  <ActionIcons.edit className="mr-2 size-4" />
-                  <span>Rename project</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setInstructionsOpen(true)}>
-                  <NotebookPen className="mr-2 size-4" />
-                  <span>Edit instructions</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {/* Tint, not an inverted fill: DropdownMenuItem has no destructive
-                    variant yet, and the tint is the one of the three treatments in
-                    use that keeps the destructive text legible on focus. */}
-                <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                  <ActionIcons.delete className="mr-2 size-4" />
-                  <span>Delete project</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
+        <ProjectWorkspaceHeader
+          project={data.project}
+          stats={{
+            chatCount: data.conversations.length,
+            workCount: workRuns.length,
+            codeCount: 0,
+            fileCount: workspaceFiles.length,
+            artifactCount: projectArtifacts.length,
+          }}
+          isStarred={isStarred}
+          onToggleStar={toggleProjectStar}
+          onEditInstructions={() => setInstructionsOpen(true)}
+          onRename={async (name) => {
+            await patch({ name });
+            setData({ ...data, project: { ...data.project, name } });
+            toast.success("Project renamed.");
+            window.dispatchEvent(new CustomEvent("projects:sync"));
+          }}
+          onDelete={() => setDeleteOpen(true)}
+        />
 
         <Tabs value={tab} onValueChange={setTab}>
-          {/* Radius/padding left to the primitive — its 14px track / 10px trigger pair is
-              already concentric; the old rounded-card + rounded-field override broke that. */}
           <TabsList className="mb-6">
             <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
-            <TabsTrigger value="workspace" className="px-4">Workspace</TabsTrigger>
-            <TabsTrigger value="assistant" className="px-4">Assistant</TabsTrigger>
+            <TabsTrigger value="work" className="px-4">
+              Work {workRuns.length > 0 && `(${workRuns.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="code" className="px-4">
+              Code
+            </TabsTrigger>
+            <TabsTrigger value="sources" className="px-4">
+              Sources ({workspaceFiles.length + projectArtifacts.length})
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="px-4">
+              Settings
+            </TabsTrigger>
           </TabsList>
 
           {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
@@ -743,112 +646,28 @@ export default function ProjectDetailPage() {
                   />
                 </div>
 
-                {/* Conversations list */}
+                {/* Chats List in Project */}
                 <section>
                   <CardEyebrow className="mb-3 block">Chats in this project</CardEyebrow>
-                  {data.conversations.length === 0 ? (
-                    <EmptyState
-                      size="panel"
-                      className="motion-safe:animate-rise-in"
-                      icon={MessagesSquare}
-                      title="No chats yet"
-                      description="Ask a question in the composer above to start a conversation."
-                    />
-                  ) : (
-                    <ul className="space-y-2">
-                      {data.conversations.map((c) => (
-                        // relative + hover:z-10 — without it the next row's opaque bg-card
-                        // paints straight over this row's lift shadow.
-                        <li
-                          key={c.id}
-                          className="group relative flex items-center gap-2 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
-                        >
-                          <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs">
-                            <span className="truncate text-body font-medium text-foreground">{c.title}</span>
-                            <span className="font-mono text-caption text-muted-foreground">
-                              Last message {timeAgo(c.lastMessageAt)}
-                            </span>
-                          </Link>
-
-                          {/* opacity-0 alone leaves invisible-but-clickable controls in the
-                              row; pointer-events follows visibility. Focus still reaches them. */}
-                          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none">
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => togglePin(c.id, c.pinned)}
-                              aria-label={c.pinned ? "Unpin chat" : "Pin chat"}
-                              aria-pressed={c.pinned}
-                              className="size-7 text-muted-foreground hover:text-foreground"
-                            >
-                              <Pin className={cn("size-4", c.pinned && "fill-primary text-primary")} />
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label="Move chat to another project"
-                                  className="size-7 text-muted-foreground hover:text-foreground"
-                                >
-                                  <FolderInput className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56">
-                                <p className="px-2 py-1.5 font-mono text-caption text-muted-foreground">
-                                  Move to project
-                                </p>
-                                <DropdownMenuSeparator />
-                                {allProjects.filter((p) => p.id !== data.project.id).map((p) => (
-                                  <DropdownMenuItem key={p.id} onSelect={() => moveChat(c.id, p.id)}>
-                                    <FolderClosed className="mr-2 size-4" />
-                                    <span className="truncate">{p.name}</span>
-                                  </DropdownMenuItem>
-                                ))}
-                                <DropdownMenuItem onSelect={() => moveChat(c.id, null)}>
-                                  <ActionIcons.dismiss className="mr-2 size-4" />
-                                  <span>Remove from project</span>
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={() => setChatToDelete({ id: c.id, title: c.title })}
-                              aria-label="Delete chat"
-                              className="size-7 text-muted-foreground danger-hover"
-                            >
-                              <ActionIcons.delete className="size-4" />
-                            </Button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <ProjectChatList
+                    projectId={data.project.id}
+                    conversations={data.conversations}
+                    allProjects={allProjects}
+                    onTogglePin={togglePin}
+                    onMoveChat={moveChat}
+                    onNewChat={() => {
+                      router.push(`/chat?project=${id}`);
+                    }}
+                  />
                 </section>
               </div>
 
-              {/* Unified Project Sidebar (Right Column).
-                  The old note here derived "radius 24 − p-4 (16) = 8" for every
-                  inner surface, but Card is rounded-card (14) on the ladder, so the
-                  subtraction goes negative and concentricity constrains nothing at
-                  this inset. Inner surfaces take the rung that names what they are:
-                  rounded-field for wells and rows, rounded-control for the icon
-                  buttons. The transient <EmptyState>s keep the primitive's own
-                  radius rather than re-deciding it per call site. */}
+              {/* Unified Project Sidebar (Right Column) */}
               <div>
                 <Card className="overflow-hidden">
                   {coverUrl ? (
                     <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
                       <img src={coverUrl} className="size-full object-cover" alt="" />
-                      {/* bg-scrim — the one dim value every backdrop in the product
-                          shares. A hardcoded bg-black/40 here made a fifth treatment. */}
-                      {/* coarse:opacity-100 — this overlay is the ONLY way to change
-                          or remove a project image, and it was gated on hover, which
-                          a touch device does not have. Every other hover-revealed
-                          control on this page already pins itself on coarse pointers. */}
                       <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
                         <Button variant="secondary" size="sm" onClick={() => coverRef.current?.click()}>
                           Change
@@ -862,10 +681,6 @@ export default function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => coverRef.current?.click()}
-                      // The drop zone is the one thing on this Card that has to
-                      // announce itself as empty-and-fillable, and bg-muted/40 →
-                      // /60 was 1.2 points of fill moving to 1.8 over the card
-                      // behind it. Named rungs give it a plate and a real hover.
                       className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-secondary transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
                       <Plus className="mb-1 size-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
@@ -898,12 +713,6 @@ export default function ProjectDetailPage() {
                           <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption text-muted-foreground">
                             Only you
                           </span>
-                          {/* The section affordances in this sidebar Card — this
-                              one, Instructions' pencil below, and Files' plus —
-                              were three copies of the same hand-written string,
-                              two of them byte-identical. `kind="icon" size="sm"`
-                              is that shape as a primitive: a 28px circle with the
-                              house hover fill, 36px on coarse pointers. */}
                           <Pressable
                             kind="icon"
                             size="sm"
@@ -921,8 +730,6 @@ export default function ProjectDetailPage() {
                       ) : (
                         <ul className="max-h-[7.5rem] list-disc space-y-1.5 overflow-y-auto pl-4 pr-1 marker:text-muted-foreground/50">
                           {memories.slice(0, 3).map((m) => (
-                            // truncate lives on the span: `overflow:hidden` on the li itself
-                            // would clip the outside list marker away.
                             <li key={m.id} className="text-caption leading-relaxed text-muted-foreground">
                               <span className="block truncate">{m.content}</span>
                             </li>
@@ -932,12 +739,10 @@ export default function ProjectDetailPage() {
                       <p className="mt-2.5 font-mono text-caption text-muted-foreground/70">Automatically updated</p>
                     </section>
 
-                    {/* Instructions */}
+                    {/* Instructions Preview */}
                     <section className="py-5">
                       <div className="mb-2.5 flex items-center justify-between gap-2">
                         <CardEyebrow>Instructions</CardEyebrow>
-                        {/* Same glyph, same job, same primitive as Memory's above
-                            — the two were byte-identical hand-rolled strings. */}
                         <Pressable
                           kind="icon"
                           size="sm"
@@ -951,14 +756,8 @@ export default function ProjectDetailPage() {
                         <button
                           type="button"
                           onClick={() => setInstructionsOpen(true)}
-                          // bg-secondary → hover bg-accent. Inside the sidebar Card
-                          // (6.5% on dark), bg-muted/30 resolved 0.9 points above
-                          // its own parent and the hover moved it 0.6 further, so
-                          // the prompt preview had no well and hovering it changed
-                          // only the border. The two rungs above card are the step.
                           className="block w-full rounded-field border border-border/60 bg-secondary p-2.5 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-accent motion-reduce:transition-none"
                         >
-                          {/* Mono preview — it's a prompt, and the structure is the point. */}
                           <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
                             {instructions}
                           </p>
@@ -967,10 +766,6 @@ export default function ProjectDetailPage() {
                           </p>
                         </button>
                       ) : (
-                        // The action lives INSIDE the state rather than the whole
-                        // block being one giant button — that shape gave the three
-                        // empty panels on this page three different paddings and no
-                        // named control to tab to.
                         <EmptyState
                           size="panel"
                           title="No instructions yet"
@@ -984,15 +779,10 @@ export default function ProjectDetailPage() {
                       )}
                     </section>
 
-                    {/* Files */}
+                    {/* Quick Files */}
                     <section className="pt-5">
                       <div className="mb-2.5 flex items-center justify-between gap-2">
-                        <CardEyebrow>Files</CardEyebrow>
-                        {/* The third copy of that string, plus a `disabled:opacity-50`
-                            it had to spell out. The primitive already dims AND
-                            un-hits a disabled control, so the upload affordance
-                            stops accepting clicks while a file is in flight
-                            rather than merely looking like it doesn't. */}
+                        <CardEyebrow>Sources</CardEyebrow>
                         <Pressable
                           kind="icon"
                           size="sm"
@@ -1008,7 +798,7 @@ export default function ProjectDetailPage() {
                           size="panel"
                           icon={FileUp}
                           title="No files yet"
-                          description="Add PDFs, documents, or other text to reference in this project."
+                          description="Add PDFs, documents, or data to ground answers."
                           action={
                             <Button
                               variant="outline"
@@ -1021,17 +811,10 @@ export default function ProjectDetailPage() {
                           }
                         />
                       ) : (
-                        // -m-1 p-1: the scroll box clips at its padding box, so the inset
-                        // gives each row's lift shadow room instead of shearing it flat.
                         <ul className="-m-1 max-h-[15rem] space-y-1.5 overflow-y-auto p-1">
-                          {workspaceFiles.map((f) => (
+                          {workspaceFiles.slice(0, 5).map((f) => (
                             <li
                               key={f.id}
-                              // bg-secondary, not bg-background/40: --background is
-                              // the PAGE's token, and 40% of #000 over the Card these
-                              // rows sit in painted them 2.6 points DARKER than their
-                              // own container — a row that lifts on hover was punched
-                              // into the panel at rest.
                               className="group/file relative flex items-center gap-2 rounded-field border border-border/60 bg-secondary p-2 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-soft motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
                             >
                               <a
@@ -1066,47 +849,69 @@ export default function ProjectDetailPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="workspace" forceMount className="data-[state=inactive]:hidden">
-            <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
-              {/* System instructions — inline editor */}
-              <Card className="p-4">
+          {/* Work Tab: Delegated Tasks */}
+          <TabsContent value="work" forceMount className="data-[state=inactive]:hidden">
+            <ProjectWorkList
+              projectId={data.project.id}
+              workRuns={workRuns}
+              onNewWork={() => {
+                router.push(`/work?project=${data.project.id}`);
+              }}
+            />
+          </TabsContent>
+
+          {/* Code Tab: Code Sessions */}
+          <TabsContent value="code" forceMount className="data-[state=inactive]:hidden">
+            <ProjectCodeList
+              projectId={data.project.id}
+              sessions={data.conversations
+                .filter((c) => c.title.toLowerCase().includes("code") || c.title.toLowerCase().includes("repo"))
+                .map((c) => ({
+                  id: c.id,
+                  title: c.title,
+                  lastMessageAt: c.lastMessageAt,
+                }))}
+              onNewCodeSession={() => {
+                router.push(`/code/new?project=${data.project.id}`);
+              }}
+            />
+          </TabsContent>
+
+          {/* Sources Tab: Files & Artifacts */}
+          <TabsContent value="sources" forceMount className="data-[state=inactive]:hidden">
+            <ProjectSourcesList
+              projectId={data.project.id}
+              files={data.files}
+              artifacts={projectArtifacts}
+              onUploadClick={() => fileRef.current?.click()}
+              onDeleteFile={deleteFile}
+              uploading={uploading}
+            />
+          </TabsContent>
+
+          {/* Settings Tab: Instructions & Assistant Configuration */}
+          <TabsContent value="settings" forceMount className="data-[state=inactive]:hidden">
+            <div className="space-y-6">
+              {/* Instructions Editor */}
+              <Card className="p-5">
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <CardEyebrow>System instructions</CardEyebrow>
-                    <h2 className="mt-1.5 font-serif text-heading">How Juno behaves in this project</h2>
+                    <h2 className="mt-1 font-serif text-heading text-foreground">How Juno behaves in this project</h2>
+                    <p className="mt-1 text-body text-muted-foreground">
+                      Prepended to every chat, work run, and code session in this project.
+                    </p>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setInstructionsOpen(true)}
-                    className="shrink-0 gap-1.5"
-                  >
-                    <Maximize2 className="size-3.5" />
-                    Full editor
-                  </Button>
-                </div>
-
-                <Textarea
-                  value={instructions}
-                  onChange={(e) => setInstructions(e.target.value)}
-                  placeholder="How should Juno behave? (role, tone, constraints…)"
-                  spellCheck={false}
-                  aria-label="Project instructions"
-                  // Textarea's own rounded-field, for the same reason as the name
-                  // field above: the 8px here was dead until cn() started resolving
-                  // the ladder, and letting it wake up now would square one prompt
-                  // well against the other in the dialog below.
-                  className="min-h-[18rem] font-mono text-sm leading-relaxed"
-                />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
-                  {/* Colour set on a bare span: cn() would treat `text-caption` as a colour
-                      class and drop it next to text-warning/text-muted-foreground. */}
-                  <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                    {instructions.length.toLocaleString()} chars
-                    {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-muted-foreground/80">Updated {timeAgo(data.project.updatedAt)}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInstructionsOpen(true)}
+                      className="gap-1.5"
+                    >
+                      <Maximize2 className="size-3.5" />
+                      Full editor
+                    </Button>
                     <Button
                       size="sm"
                       onClick={saveInstructions}
@@ -1119,118 +924,38 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
 
-                {/* Same rung as the prompt preview in the sidebar: bg-muted/40 over
-                    the Card this note sits in was 1.2 points of fill, which on the
-                    black ground is an unfenced paragraph. */}
-                <div className="mt-4 flex items-start gap-2 rounded-field bg-secondary p-3 text-caption leading-relaxed text-muted-foreground">
-                  <StatusIcons.info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/70" />
-                  <p>
-                    These instructions are prepended to every chat in this project — Juno reads them
-                    before your first message, alongside the referenced files.
-                  </p>
+                <Textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  placeholder="How should Juno behave? (role, tone, constraints…)"
+                  spellCheck={false}
+                  aria-label="Project instructions"
+                  className="min-h-[16rem] font-mono text-sm leading-relaxed"
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
+                  <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
+                    {instructions.length.toLocaleString()} chars
+                    {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
+                  </span>
+                  <span className="text-muted-foreground/80">Updated {timeAgo(data.project.updatedAt)}</span>
                 </div>
               </Card>
 
-              {/* Referenced files — upload, extraction status, token estimates */}
-              <Card
-                className={cn(
-                  "p-4 transition-[transform,border-color,background-color,box-shadow] duration-base ease-out-soft",
-                  // Coral is the active/selected voice — a live drop target qualifies.
-                  dragging && "border-primary/60 ring-2 ring-primary/20"
-                )}
-                onDragEnter={onFilesDragEnter}
-                onDragOver={onFilesDragOver}
-                onDragLeave={onFilesDragLeave}
-                onDrop={onFilesDrop}
-              >
-                <div className="mb-4 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <CardEyebrow>Referenced files</CardEyebrow>
-                    <p className="mt-1.5 font-mono text-caption text-muted-foreground">
-                      ~{formatTokens(totalTokenEstimate)} tokens · {plural(workspaceFiles.length, "file")}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileRef.current?.click()}
-                    disabled={uploading}
-                    className="shrink-0 gap-1.5"
-                  >
-                    {uploading ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <FileUp className="size-3.5" />
-                    )}
-                    Add file
-                  </Button>
-                </div>
-
-                {workspaceFiles.length === 0 ? (
-                  <EmptyState
-                    size="panel"
-                    className="motion-safe:animate-rise-in"
-                    icon={FileUp}
-                    title="No files yet"
-                    description="Drop files anywhere on this card, or browse — Juno references them in every chat."
-                    action={
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => fileRef.current?.click()}
-                        disabled={uploading}
-                      >
-                        Add file
-                      </Button>
-                    }
-                  />
-                ) : (
-                  <ul className="space-y-2">
-                    {workspaceFiles.map((f, i) => (
-                      <WorkspaceFileRow
-                        key={f.id}
-                        file={f}
-                        index={i}
-                        onDelete={() => deleteFile(f.id)}
-                      />
-                    ))}
-                  </ul>
-                )}
-
-                <p className="mt-3 font-mono text-caption text-muted-foreground/70">
-                  Drag &amp; drop anywhere on this card to add files.
-                </p>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="assistant" forceMount className="data-[state=inactive]:hidden">
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="font-serif text-heading text-foreground">Project assistant</h2>
-                <p className="mt-1 max-w-2xl text-body text-muted-foreground">
-                  These defaults and restrictions follow this project on web, iPhone, iPad and Mac.
-                </p>
-              </div>
-              <Button onClick={saveWorkspace} disabled={savingWorkspace} className="gap-2">
-                {savingWorkspace && <Loader2 className="size-4 animate-spin" />}
-                Save assistant
-              </Button>
-            </div>
-
-            <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
-              <div className="space-y-6">
+              {/* Assistant Configuration */}
+              <div className="grid items-start gap-6 lg:grid-cols-2">
                 <Card className="p-5">
-                  <CardEyebrow>Identity</CardEyebrow>
+                  <CardEyebrow>Identity & Model</CardEyebrow>
                   <div className="mt-4 space-y-4">
                     <label className="block space-y-2">
                       <span className="text-body font-medium text-foreground">Persona name</span>
                       <Input
                         value={workspace.personaName ?? ""}
-                        onChange={(event) => setWorkspace((current) => ({
-                          ...current,
-                          personaName: event.target.value || undefined,
-                        }))}
+                        onChange={(event) =>
+                          setWorkspace((current) => ({
+                            ...current,
+                            personaName: event.target.value || undefined,
+                          }))
+                        }
                         placeholder={data.project.name}
                       />
                     </label>
@@ -1238,72 +963,58 @@ export default function ProjectDetailPage() {
                       <span className="text-body font-medium text-foreground">Preferred model</span>
                       <Select
                         value={workspace.preferredModelId ?? "account-default"}
-                        onValueChange={(value) => setWorkspace((current) => ({
-                          ...current,
-                          preferredModelId: value === "account-default" ? undefined : value,
-                        }))}
+                        onValueChange={(value) =>
+                          setWorkspace((current) => ({
+                            ...current,
+                            preferredModelId: value === "account-default" ? undefined : value,
+                          }))
+                        }
                       >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="account-default">Account default</SelectItem>
-                          {models.filter((model) => model.modality === "chat").map((model) => (
-                            <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
-                          ))}
+                          {models
+                            .filter((model) => model.modality === "chat")
+                            .map((model) => (
+                              <SelectItem key={model.id} value={model.id}>
+                                {model.name}
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </label>
-                  </div>
-                </Card>
-
-                <Card className="p-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <CardEyebrow>Instructions</CardEyebrow>
-                      <p className="mt-1 text-body font-medium text-foreground">Replace project instructions</p>
+                    <div className="pt-2">
+                      <Button onClick={saveWorkspace} disabled={savingWorkspace} size="sm" className="gap-2">
+                        {savingWorkspace && <Loader2 className="size-3.5 animate-spin" />}
+                        Save assistant defaults
+                      </Button>
                     </div>
-                    <Switch
-                      checked={workspace.instructionsOverride !== undefined}
-                      onCheckedChange={(checked) => setWorkspace((current) => ({
-                        ...current,
-                        instructionsOverride: checked ? data.project.instructions : undefined,
-                      }))}
-                      aria-label="Replace project instructions"
-                    />
                   </div>
-                  {workspace.instructionsOverride !== undefined && (
-                    <Textarea
-                      className="mt-4 min-h-56 font-mono text-sm leading-relaxed"
-                      value={workspace.instructionsOverride}
-                      onChange={(event) => setWorkspace((current) => ({
-                        ...current,
-                        instructionsOverride: event.target.value,
-                      }))}
-                      placeholder="Assistant-specific instructions"
-                    />
-                  )}
                 </Card>
-              </div>
 
-              <div className="space-y-6">
                 <Card className="p-5">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <CardEyebrow>Tools</CardEyebrow>
-                      <p className="mt-1 text-body font-medium text-foreground">Restrict this assistant</p>
+                      <p className="mt-1 text-body font-medium text-foreground">Restrict tools in this project</p>
                     </div>
                     <Switch
                       checked={workspace.allowedTools !== undefined}
-                      onCheckedChange={(checked) => setWorkspace((current) => ({
-                        ...current,
-                        allowedTools: checked ? [...WORKSPACE_TOOLS] : undefined,
-                      }))}
+                      onCheckedChange={(checked) =>
+                        setWorkspace((current) => ({
+                          ...current,
+                          allowedTools: checked ? [...WORKSPACE_TOOLS] : undefined,
+                        }))
+                      }
                       aria-label="Restrict assistant tools"
                     />
                   </div>
                   {workspace.allowedTools !== undefined && (
                     <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
                       {WORKSPACE_TOOLS.map((tool) => (
-                        <label key={tool} className="flex min-h-12 items-center justify-between gap-4 py-2.5">
+                        <label key={tool} className="flex min-h-11 items-center justify-between gap-4 py-2">
                           <span className="text-body text-foreground">{WORKSPACE_TOOL_LABELS[tool]}</span>
                           <Switch
                             checked={workspace.allowedTools?.includes(tool) ?? false}
@@ -1315,34 +1026,8 @@ export default function ProjectDetailPage() {
                     </div>
                   )}
                   <p className="mt-3 text-caption leading-relaxed text-muted-foreground">
-                    Restrictions only narrow your account and model permissions; they never grant new access.
+                    Restrictions only narrow tools available during generation in this project context.
                   </p>
-                </Card>
-
-                <Card className="p-5">
-                  <CardEyebrow>Knowledge</CardEyebrow>
-                  <p className="mt-1 text-body font-medium text-foreground">Standing reference files</p>
-                  {workspaceFiles.length === 0 ? (
-                    <p className="mt-4 text-body text-muted-foreground">Add files in Workspace before selecting reference material.</p>
-                  ) : (
-                    <div className="mt-4 divide-y divide-border/70 border-y border-border/70">
-                      {workspaceFiles.map((file) => (
-                        <label key={file.id} className="flex min-h-12 items-center justify-between gap-4 py-2.5">
-                          <span className="min-w-0 truncate text-body text-foreground">{file.fileName}</span>
-                          <Switch
-                            checked={workspace.knowledgeFileIds?.includes(file.id) ?? false}
-                            onCheckedChange={(checked) => setWorkspace((current) => {
-                              const ids = new Set(current.knowledgeFileIds ?? []);
-                              if (checked) ids.add(file.id); else ids.delete(file.id);
-                              return { ...current, knowledgeFileIds: workspaceFiles
-                                .map((item) => item.id).filter((item) => ids.has(item)) };
-                            })}
-                            aria-label={`Use ${file.fileName} as knowledge`}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  )}
                 </Card>
               </div>
             </div>
@@ -1523,100 +1208,4 @@ function plural(n: number, noun: string) {
   return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-// Mirrors the upload route's extraction rules: text-likes are inlined as tokens,
-// PDFs are skipped (no text extraction), images are passed to the model as vision.
-const CODE_MIMES = new Set([
-  "application/json",
-  "application/javascript",
-  "application/typescript",
-  "application/xml",
-  "application/x-yaml",
-  "application/x-sh",
-]);
-const SHEET_MIMES = new Set([
-  "text/csv",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
 
-function isTextExtractable(mime: string): boolean {
-  return mime.startsWith("text/") || CODE_MIMES.has(mime);
-}
-
-function fileIconFor(mime: string) {
-  if (mime.startsWith("image/")) return ImageIcon;
-  if (SHEET_MIMES.has(mime)) return Table;
-  if (CODE_MIMES.has(mime) || mime === "text/markdown" || mime.startsWith("text/x-")) return FileCode;
-  return FileText;
-}
-
-function WorkspaceFileRow({
-  file,
-  index,
-  onDelete,
-}: {
-  file: Detail["files"][number];
-  index: number;
-  onDelete: () => void;
-}) {
-  const isImage = file.mimeType.startsWith("image/");
-  const extractable = isTextExtractable(file.mimeType);
-  const Icon = fileIconFor(file.mimeType);
-
-  return (
-    <li
-      // rounded-field + bg-card, exactly the chat rows above it. These two lists
-      // are the same object on the same page and disagreed about both: 8px against
-      // 10px, and a bg-background/40 fill that resolved to the page itself while
-      // the chat rows carried a real surface — so a file row was an outline and a
-      // chat row was a card.
-      className="group relative flex items-center gap-3 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
-      style={staggerDelay(index)}
-    >
-      <Icon className={cn("size-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
-
-      <div className="min-w-0 flex-1">
-        <a
-          href={file.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block truncate rounded-xs text-body font-medium text-foreground"
-        >
-          {file.fileName}
-        </a>
-        <p className="mt-0.5 font-mono text-caption text-muted-foreground">{formatBytes(file.size)}</p>
-      </div>
-
-      {/* ONE status column. The same four branches were also rendered inline under
-          the filename, so an image read "Visual · Visual" side by side and an
-          extractable file read "Waiting for indexing…" next to "Queued". */}
-      {file.knowledge ? (
-        <IndexStatus status={file.knowledge} className="max-w-[14rem] shrink-0" />
-      ) : extractable ? (
-        // Neutral, not success: queued means the extractor has not run, let alone
-        // succeeded — green chrome here promised a result that did not exist.
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-caption font-medium text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-border" /> Queued
-        </span>
-      ) : isImage ? (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 font-mono text-caption font-medium text-source">
-          <span className="size-1.5 rounded-full bg-source" /> Visual
-        </span>
-      ) : (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/30 px-2 py-0.5 font-mono text-caption font-medium text-warning">
-          <span className="size-1.5 rounded-full bg-warning" /> Skipped
-        </span>
-      )}
-
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={onDelete}
-        aria-label={`Remove ${file.fileName}`}
-        className="danger-hover size-7 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:size-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
-      >
-        <ActionIcons.delete className="size-3.5" />
-      </Button>
-    </li>
-  );
-}

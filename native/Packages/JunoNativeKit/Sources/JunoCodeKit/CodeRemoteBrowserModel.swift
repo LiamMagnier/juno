@@ -73,6 +73,25 @@ public final class CodeRemoteBrowserModel {
         self.accountID = accountID
     }
 
+    /// Adapts the already-authenticated Code device inventory into the remote
+    /// session browser. A device's local workspace path is intentionally
+    /// discarded here: mobile may name a granted workspace but never learns
+    /// where it lives on the host.
+    public func updateHosts(from devices: [NativeCodeDevice]) {
+        hosts = devices.map { device in
+            CodeRemoteHostSummary(
+                id: device.id,
+                name: device.name,
+                platform: device.platform,
+                workspaceNames: device.workspaces.map(\.name),
+                online: device.online,
+                lastSeenAt: device.lastSeenAt
+            )
+        }.sorted { lhs, rhs in
+            lhs.online != rhs.online ? lhs.online && !rhs.online : lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
     public func stop() {
         accountID = nil
         hosts = []
@@ -106,12 +125,33 @@ public final class CodeRemoteBrowserModel {
                 deviceID: deviceID, sessionID: sessionID,
                 afterSequence: cursor, for: accountID
             )
-            let fresh = page.filter { $0.seq > cursor }
-            guard !fresh.isEmpty else { return }
-            events.append(contentsOf: fresh.sorted { $0.seq < $1.seq })
-            cursor = events.last?.seq ?? cursor
+            try apply(page)
             lastErrorDescription = nil
             phase = .ready
+        } catch {
+            record(error)
+        }
+    }
+
+    /// Follows the authenticated relay SSE feed until cancellation or its
+    /// deliberate server-side connection rotation. The enclosing SwiftUI task
+    /// is selection-scoped, so moving to another session cancels the stream
+    /// before any of its events can be applied to the new transcript.
+    public func watchEvents(deviceID: String, sessionID: String) async {
+        guard let accountID else { return }
+        do {
+            let stream = try await client.eventStream(
+                deviceID: deviceID, sessionID: sessionID,
+                afterSequence: cursor, for: accountID
+            )
+            for try await page in stream {
+                try Task.checkCancellation()
+                try apply(page)
+                lastErrorDescription = nil
+                phase = .ready
+            }
+        } catch is CancellationError {
+            // Selection changes and sign-out are normal stream terminations.
         } catch {
             record(error)
         }
@@ -172,6 +212,22 @@ public final class CodeRemoteBrowserModel {
         } catch {
             record(error)
         }
+    }
+
+    private func apply(_ page: [CodeRemoteSessionEvent]) throws {
+        let fresh = page.filter { $0.seq > cursor }.sorted { $0.seq < $1.seq }
+        guard !fresh.isEmpty else { return }
+        var expected = cursor + 1
+        for event in fresh {
+            // A missing event is not an aesthetic issue: it can separate an
+            // approval from the tool action it authorises. Refuse to advance
+            // across a hole; the caller can reload a durable detail snapshot
+            // instead of rendering fiction.
+            guard event.seq == expected else { throw CodeRemoteError.malformedResponse }
+            expected += 1
+        }
+        events.append(contentsOf: fresh)
+        cursor = events.last?.seq ?? cursor
     }
 
     private func record(_ error: any Error) {

@@ -106,7 +106,7 @@ final class NativeCodeRemoteClientTests: XCTestCase {
 
         let requests = await transport.requests
         let path = try XCTUnwrap(requests.first?.path)
-        XCTAssertTrue(path.hasSuffix("/events?after=41"), path)
+        XCTAssertTrue(path.hasSuffix("/events?afterSeq=41"), path)
     }
 
     func testEventsDecodeWithTheirSequenceAndPayload() async throws {
@@ -126,6 +126,43 @@ final class NativeCodeRemoteClientTests: XCTestCase {
         XCTAssertEqual(events[0].kind, "file_change")
         XCTAssertEqual(events[0].payload["path"], .string("src/main.swift"))
         XCTAssertEqual(events[1].payload["requestId"], .string("r1"))
+    }
+
+    func testEventStreamDecodesAResumableEventsFrame() async throws {
+        let transport = StreamingRemoteTransport(body:
+            ": relay heartbeat\n\nevent: events\ndata: {\"type\":\"events\",\"events\":[{\"seq\":42,\"kind\":\"file_change\",\"payload\":{\"path\":\"src/main.swift\"},\"createdAt\":\"2026-07-22T10:00:00.000Z\"}],\"lastSeq\":42}\n\n"
+        )
+        let client = NativeCodeRemoteClient(sender: transport, streamer: transport)
+
+        let stream = try await client.eventStream(
+            deviceID: "device-1", sessionID: "session-1", afterSequence: 41, for: account
+        )
+        var pages: [[CodeRemoteSessionEvent]] = []
+        for try await page in stream { pages.append(page) }
+
+        XCTAssertEqual(pages.count, 1)
+        XCTAssertEqual(pages[0].map(\.seq), [42])
+        XCTAssertEqual(pages[0].first?.payload["path"], .string("src/main.swift"))
+        let requests = await transport.requests
+        XCTAssertTrue(requests.first?.path.hasSuffix("/events?afterSeq=41") == true)
+        XCTAssertEqual(requests.first?.headers["accept"], "text/event-stream")
+    }
+
+    func testEventStreamRejectsAnInconsistentLastSequence() async throws {
+        let transport = StreamingRemoteTransport(body:
+            "event: events\ndata: {\"type\":\"events\",\"events\":[{\"seq\":42,\"kind\":\"file_change\",\"payload\":{},\"createdAt\":\"2026-07-22T10:00:00.000Z\"}],\"lastSeq\":43}\n\n"
+        )
+        let client = NativeCodeRemoteClient(sender: transport, streamer: transport)
+        let stream = try await client.eventStream(
+            deviceID: "device-1", sessionID: "session-1", afterSequence: 41, for: account
+        )
+
+        do {
+            for try await _ in stream {}
+            XCTFail("inconsistent event sequence should fail the stream")
+        } catch let error as CodeRemoteError {
+            XCTAssertEqual(error, .invalidEventStream)
+        }
     }
 
     // MARK: - Host side
@@ -250,5 +287,34 @@ private actor RemoteTransport: NativeAuthenticatedRequestSending {
             )
         }
         return responses.removeFirst()
+    }
+}
+
+private actor StreamingRemoteTransport: NativeAuthenticatedRequestSending,
+    NativeAuthenticatedByteStreaming
+{
+    private let body: String
+    private(set) var requests: [NativeBearerRequest] = []
+
+    init(body: String) { self.body = body }
+
+    func send(_ request: NativeBearerRequest, for _: AccountID) async throws -> HTTPResponse {
+        requests.append(request)
+        return HTTPResponse(statusCode: 500, headers: HTTPHeaders(), body: Data())
+    }
+
+    func stream(
+        _ request: NativeBearerRequest, for _: AccountID
+    ) async throws -> HTTPByteStreamResponse {
+        requests.append(request)
+        let bytes = AsyncThrowingStream<UInt8, any Error> { continuation in
+            for byte in body.utf8 { continuation.yield(byte) }
+            continuation.finish()
+        }
+        return HTTPByteStreamResponse(
+            statusCode: 200,
+            headers: try! HTTPHeaders(["content-type": "text/event-stream; charset=utf-8"]),
+            bytes: bytes
+        )
     }
 }

@@ -13,7 +13,7 @@ import JunoCore
 final class RemoteCommandAdapterTests: XCTestCase {
     /// Records what the runtime was asked to do, so a test can assert that a
     /// refused command reached it *not at all*.
-    private actor Bridge: CodeRemoteSessionBridging {
+    private actor Bridge: CodeRemoteSessionConfigurationBridging {
         var sharedWorkspaces: Set<String>
         var modes: [String: PermissionMode]
         private(set) var calls: [String] = []
@@ -38,6 +38,14 @@ final class RemoteCommandAdapterTests: XCTestCase {
             workspaceID: String, title: String?, permissionMode: PermissionMode
         ) async throws -> String {
             calls.append("createSession(\(workspaceID),\(permissionMode.rawValue))")
+            return "s-new"
+        }
+
+        func createSession(
+            workspaceID: String, title: String?, permissionMode: PermissionMode,
+            modelID: String?, reasoningEffort: ReasoningEffort?
+        ) async throws -> String {
+            calls.append("configuredSession(\(workspaceID),\(modelID ?? "-"),\(reasoningEffort?.rawValue ?? "-"))")
             return "s-new"
         }
 
@@ -83,6 +91,35 @@ final class RemoteCommandAdapterTests: XCTestCase {
 
     // MARK: - Unknown commands
 
+    func testConfiguredSessionCreationReachesTheHostConfigurationBoundary() async throws {
+        let bridge = Bridge()
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+        _ = try await adapter.execute(command("create_session", session: "new", payload: [
+            "workspaceId": .string("ws-granted"),
+            "modelId": .string("openai:gpt-5"),
+            "reasoning": .string("high"),
+        ]))
+        let calls = await bridge.calls
+        XCTAssertEqual(calls, ["configuredSession(ws-granted,openai:gpt-5,high)"])
+    }
+
+    func testInitialPromptRunsOnlyAfterTheNewSessionExists() async throws {
+        let bridge = Bridge()
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+
+        let result = try await adapter.execute(command("create_session", payload: [
+            "workspaceId": .string("ws-granted"),
+            "initialMessage": .string("Fix the failing tests"),
+        ]))
+
+        XCTAssertEqual(result["sessionId"]?.stringValue, "s-new")
+        let calls = await bridge.calls
+        XCTAssertEqual(calls, [
+            "createSession(ws-granted,askBeforeChanges)",
+            "sendMessage(s-new,Fix the failing tests)",
+        ])
+    }
+
     func testAnUnknownCommandIsRefusedBeforeItReachesTheRuntime() async throws {
         let bridge = Bridge()
         let adapter = RemoteCommandAdapter(bridge: bridge)
@@ -105,6 +142,45 @@ final class RemoteCommandAdapterTests: XCTestCase {
                 "\(kind.rawValue) should parse"
             )
         }
+    }
+
+    func testCanonicalCommandUsesTheExistingAuthorisedRuntimePath() async throws {
+        let bridge = Bridge()
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+        let receipt = try await adapter.execute(
+            CodeSessionCommandEnvelope(
+                id: "canonical-1",
+                idempotencyKey: "canonical-retry-key",
+                targetID: ExecutionTargetID(value: "host-1"),
+                sessionID: CodeSessionID(value: "s-1"),
+                kind: .sendMessage,
+                payload: ["text": .string("same permission path")]
+            )
+        )
+
+        XCTAssertEqual(receipt.disposition, .completed)
+        XCTAssertEqual(receipt.idempotencyKey, "canonical-retry-key")
+        let calls = await bridge.calls
+        XCTAssertEqual(calls, ["sendMessage(s-1,same permission path)"])
+    }
+
+    func testExpiredCanonicalCommandNeverTouchesTheRuntime() async throws {
+        let bridge = Bridge()
+        let adapter = RemoteCommandAdapter(bridge: bridge)
+        let receipt = try await adapter.execute(
+            CodeSessionCommandEnvelope(
+                targetID: ExecutionTargetID(value: "host-1"),
+                sessionID: CodeSessionID(value: "s-1"),
+                kind: .cancel,
+                issuedAt: Date(timeIntervalSince1970: 0),
+                expiresAt: Date(timeIntervalSince1970: 1)
+            ),
+            at: Date(timeIntervalSince1970: 2)
+        )
+
+        XCTAssertEqual(receipt.disposition, .expired)
+        let calls = await bridge.calls
+        XCTAssertTrue(calls.isEmpty)
     }
 
     // MARK: - Host activation

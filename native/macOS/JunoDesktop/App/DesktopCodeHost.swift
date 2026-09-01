@@ -5,6 +5,7 @@ import JunoCodeCore
 import JunoCore
 import JunoCodeKit
 import JunoCodeUI
+import JunoCodeRuntime
 import JunoSync
 import Observation
 
@@ -617,8 +618,32 @@ final class DesktopCodeHostModel {
                     ?? "anthropic:claude-sonnet-5"
             }
         )
+        let targetID = ExecutionTargetID(value: "desktop-local-host")
+        let target = ExecutionTarget(
+            id: targetID,
+            kind: .local,
+            displayName: "This Mac",
+            hostID: targetID.value,
+            capabilities: [.workspaceAccess, .shell, .git, .worktrees, .tests, .devServers,
+                           .previews, .screenshots, .computerUse, .subagents, .approvals, .sessionResume],
+            connectionState: .online,
+            supportedModelIDs: workbench.availableModels.map(\.modelID),
+            protocolVersion: .current
+        )
+        let runtimeHost = RuntimeCodeHost(
+            targets: { [target] },
+            sessions: { await bridge.protocolSessions(defaultTargetID: targetID) },
+            events: { cursor in await bridge.protocolEvents(after: cursor) },
+            execute: { command in
+                try await RemoteCommandAdapter(bridge: bridge).execute(command)
+            }
+        )
         remoteExecutorProvider = {
-            RemoteCommandAdapter(bridge: bridge)
+            // The relay still delivers its deployed DTO while clients roll
+            // forward, but execution now crosses the canonical command
+            // envelope before reaching the existing permission-authoritative
+            // runtime adapter.
+            CanonicalRelayHostExecutor(host: runtimeHost, targetID: targetID)
         }
         queuedExecutor = DesktopQueuedCodeExecutor(workbench: workbench)
         syncRemoteHost()

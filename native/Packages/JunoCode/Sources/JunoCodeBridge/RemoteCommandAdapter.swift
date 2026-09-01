@@ -129,6 +129,16 @@ public protocol CodeRemoteSessionBridging: Sendable {
     func performGitAction(sessionID: String, action: String, message: String?) async throws
 }
 
+/// Optional capability for clients that can select a model and reasoning level
+/// at session creation. Keeping it separate preserves older hosts while making
+/// the choice host-validated rather than a CLI-only hint.
+public protocol CodeRemoteSessionConfigurationBridging: CodeRemoteSessionBridging {
+    func createSession(
+        workspaceID: String, title: String?, permissionMode: PermissionMode,
+        modelID: String?, reasoningEffort: ReasoningEffort?
+    ) async throws -> String
+}
+
 // MARK: - The adapter
 
 public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
@@ -178,11 +188,34 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
                 throw CodeRemoteCommandError.workspaceNotGranted(workspaceID)
             }
             let mode = try requestedMode(validated, ceiling: nil)
-            let id = try await bridge.createSession(
-                workspaceID: workspaceID,
-                title: validated.optionalString("title"),
-                permissionMode: mode
-            )
+            let modelID = validated.optionalString("modelId")
+            let reasoningRaw = validated.optionalString("reasoning")
+            guard modelID != nil || reasoningRaw != nil else {
+                let id = try await bridge.createSession(workspaceID: workspaceID,
+                                                        title: validated.optionalString("title"), permissionMode: mode)
+                if let initialMessage = validated.optionalString("initialMessage") {
+                    try await bridge.sendMessage(sessionID: id, text: initialMessage)
+                }
+                return ["sessionId": .string(id)]
+            }
+            let reasoning: ReasoningEffort?
+            if let reasoningRaw {
+                guard let parsed = ReasoningEffort(rawValue: reasoningRaw) else {
+                    throw CodeRemoteCommandError.invalidField("reasoning", reason: "unknown reasoning effort")
+                }
+                reasoning = parsed
+            } else {
+                reasoning = nil
+            }
+            guard let configured = bridge as? any CodeRemoteSessionConfigurationBridging else {
+                throw CodeRemoteCommandError.invalidField("modelId", reason: "this host cannot select models")
+            }
+            let id = try await configured.createSession(workspaceID: workspaceID,
+                                                        title: validated.optionalString("title"), permissionMode: mode,
+                                                        modelID: modelID, reasoningEffort: reasoning)
+            if let initialMessage = validated.optionalString("initialMessage") {
+                try await bridge.sendMessage(sessionID: id, text: initialMessage)
+            }
             return ["sessionId": .string(id)]
 
         case .sendMessage:
@@ -272,6 +305,86 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
                 message: validated.optionalString("message")
             )
             return ["performed": .bool(true)]
+        }
+    }
+
+    /// Canonical-protocol entry point used by new host clients (CLI, XPC and
+    /// relay vNext). It deliberately routes back through the established
+    /// parser/authoriser above, so introducing the protocol cannot create a
+    /// second permission path for the same local runtime.
+    public func execute(
+        _ command: CodeSessionCommandEnvelope,
+        at date: Date = Date()
+    ) async throws -> CodeSessionCommandReceipt {
+        guard command.protocolVersion.isCompatible(with: .current) else {
+            throw CodeRemoteCommandError.invalidField(
+                "protocolVersion", reason: "this host cannot safely interpret the command"
+            )
+        }
+        guard !command.isExpired(at: date) else {
+            return CodeSessionCommandReceipt(
+                commandID: command.id,
+                idempotencyKey: command.idempotencyKey,
+                disposition: .expired,
+                errorCode: "expired",
+                completedAt: date
+            )
+        }
+        let legacy = CodeRemoteCommand(
+            id: command.id,
+            // `create_session` does not read the legacy session id. A stable
+            // sentinel keeps the DTO valid without granting it any meaning.
+            sessionID: command.sessionID?.value ?? "new-session",
+            kind: Self.legacyKind(for: command.kind),
+            payload: command.payload.mapValues(Self.relayValue),
+            status: "claimed"
+        )
+        let result = try await execute(legacy)
+        return CodeSessionCommandReceipt(
+            commandID: command.id,
+            idempotencyKey: command.idempotencyKey,
+            disposition: .completed,
+            result: result.mapValues(Self.coreValue),
+            completedAt: date
+        )
+    }
+
+    private static func legacyKind(for kind: CodeSessionCommandKind) -> String {
+        switch kind {
+        case .createSession: "create_session"
+        case .sendMessage: "send_message"
+        case .cancel: "stop_agent"
+        case .approvalDecision: "approval_decision"
+        case .retry: "retry"
+        case .fork: "fork"
+        case .runTests: "run_tests"
+        case .stopTests: "stop_tests"
+        case .gitAction: "git_action"
+        case .inspectDiff: "inspect_diff"
+        case .inspectFiles: "inspect_files"
+        case .inspectSubagents: "inspect_subagents"
+        }
+    }
+
+    private static func relayValue(_ value: JSONValue) -> JunoJSONValue {
+        switch value {
+        case .null: .null
+        case .bool(let value): .bool(value)
+        case .number(let value): .number(value)
+        case .string(let value): .string(value)
+        case .array(let values): .array(values.map(relayValue))
+        case .object(let values): .object(values.mapValues(relayValue))
+        }
+    }
+
+    private static func coreValue(_ value: JunoJSONValue) -> JSONValue {
+        switch value {
+        case .null: .null
+        case .bool(let value): .bool(value)
+        case .number(let value): .number(value)
+        case .string(let value): .string(value)
+        case .array(let values): .array(values.map(coreValue))
+        case .object(let values): .object(values.mapValues(coreValue))
         }
     }
 

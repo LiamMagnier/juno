@@ -1,6 +1,7 @@
 import Foundation
 import JunoCodeBridge
 import JunoCodeCore
+import JunoCodeRuntime
 import JunoCodeKit
 
 /// The production conformance for `CodeRemoteSessionBridging`.
@@ -15,7 +16,7 @@ import JunoCodeKit
 /// adapter calls in from the host's actor — so every hop is explicit rather
 /// than accidental.
 @MainActor
-public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
+public final class WorkbenchRemoteBridge: CodeRemoteSessionConfigurationBridging {
     private let model: WorkbenchModel
     /// Opaque workspace ids the user has shared with Remote, by id.
     ///
@@ -50,6 +51,48 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
         await controller(sessionID)?.session.configuration.permissionMode
     }
 
+    /// Read-only transcript access for `RuntimeCodeHost`. The UI remains a
+    /// source of presentation state, but the host owns cursor validation and
+    /// replay behaviour.
+    nonisolated public func protocolEvents(
+        after cursor: CodeSessionEventCursor
+    ) async -> [CodeSessionEventEnvelope] {
+        guard let controller = await controller(cursor.sessionID.value) else { return [] }
+        return await MainActor.run {
+            controller.events
+                .map(CodeSessionStoreProtocolAdapter.envelope)
+                .filter { $0.sequence > cursor.afterSequence }
+        }
+    }
+
+    /// Host-owned session inventory for thin clients such as the CLI. The
+    /// workbench is only the legacy persistence adapter here; clients receive
+    /// the canonical, bounded summary rather than reaching into SwiftUI state.
+    nonisolated public func protocolSessions(
+        defaultTargetID: ExecutionTargetID
+    ) async -> [CodeSessionSummary] {
+        let sessions = await MainActor.run { model.sessions }
+        var summaries: [CodeSessionSummary] = []
+        summaries.reserveCapacity(sessions.count)
+        for session in sessions {
+            let eventCount = await model.eventCount(for: session.id)
+            summaries.append(
+                CodeSessionSummary(
+                    id: session.id,
+                    targetID: session.configuration.executionTarget.isLegacy
+                        ? defaultTargetID : session.configuration.executionTarget.id,
+                    title: session.title,
+                    status: session.status,
+                    modelID: session.configuration.modelID,
+                    reasoningEffort: session.configuration.reasoningEffort,
+                    lastEventSequence: eventCount,
+                    updatedAt: session.updatedAt
+                )
+            )
+        }
+        return summaries
+    }
+
     // MARK: - Session lifecycle
 
     nonisolated public func createSession(
@@ -57,12 +100,29 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionBridging {
         title: String?,
         permissionMode: PermissionMode
     ) async throws -> String {
+        try await createSession(workspaceID: workspaceID, title: title, permissionMode: permissionMode,
+                                modelID: nil, reasoningEffort: nil)
+    }
+
+    nonisolated public func createSession(
+        workspaceID: String, title: String?, permissionMode: PermissionMode,
+        modelID: String?, reasoningEffort: ReasoningEffort?
+    ) async throws -> String {
         let id = WorkspaceID(value: workspaceID)
         guard !workspaceID.isEmpty else {
             throw CodeRemoteCommandError.invalidField("workspaceId", reason: "not an identifier")
         }
+        let selectedModel = try await MainActor.run {
+            let fallback = defaultModelID()
+            guard let modelID else { return fallback }
+            guard model.availableModels.contains(where: { $0.modelID == modelID }) else {
+                throw CodeRemoteCommandError.invalidField("modelId", reason: "model is unavailable on this host")
+            }
+            return modelID
+        }
         let configuration = AgentConfiguration(
-            modelID: await MainActor.run { defaultModelID() },
+            modelID: selectedModel,
+            reasoningEffort: reasoningEffort ?? .medium,
             behavior: .code,
             // The adapter has already refused anything above ask-before-changes
             // for a remotely-created session; this is the value it settled on.

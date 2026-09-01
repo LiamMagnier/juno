@@ -1500,19 +1500,15 @@ struct DesktopCodeWorkspace: View {
         await remoteModel.loadSessions(deviceID: remoteDeviceID)
     }
 
-    /// The relay has no push channel, so a watched session is polled. The loop is
-    /// bound to the selection through `.task(id:)`, which cancels it the moment
-    /// the reader looks at something else.
+    /// The relay is a resumable SSE stream. This task is bound to the selection,
+    /// so changing sessions cancels the stream before it can affect a new one.
     private func followSelectedRemoteSession() async {
         guard let selectedRemote else { return }
         remoteModel.openSession(selectedRemote.sessionID)
-        while !Task.isCancelled {
-            await remoteModel.pollEvents(
-                deviceID: selectedRemote.deviceID,
-                sessionID: selectedRemote.sessionID
-            )
-            try? await Task.sleep(for: .seconds(2))
-        }
+        await remoteModel.watchEvents(
+            deviceID: selectedRemote.deviceID,
+            sessionID: selectedRemote.sessionID
+        )
     }
 
     // MARK: - Plan meters

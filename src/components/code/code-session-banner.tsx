@@ -4,6 +4,7 @@ import * as React from "react";
 import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
+import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { AppIcons, CodeIcons } from "@/lib/app-icons";
 import { transition, variants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -175,23 +176,32 @@ export function CodeSessionBanner({
               whose width is its own label.
             */}
             <AnimatePresence initial={false} mode="wait">
-              {taskChip && (
-                <motion.span
-                  key={status}
-                  // `variants.pop` carries its own transitions — a spring in,
-                  // the accelerate curve out — so no `transition` prop here: a
-                  // component-level one would be shadowed by the variants and
-                  // read as the source of a timing it does not set.
-                  variants={variants.pop}
-                  initial="hidden"
-                  animate="visible"
-                  exit="exit"
-                  className={BANNER_CHIP}
-                >
-                  <span className={cn(BANNER_DOT, taskChip.dot)} aria-hidden="true" />
-                  <ChipLabel>{taskChip.label}</ChipLabel>
-                </motion.span>
-              )}
+              {(() => {
+                let agentStatus: AgentRunStatus | null = null;
+                if (status === "running") agentStatus = "running";
+                else if (status === "awaiting_approval") agentStatus = "waiting_approval";
+                else if (status === "queued") agentStatus = "running";
+                else if (status === "stopping") agentStatus = "cancelled";
+
+                if (!agentStatus) return null;
+
+                return (
+                  <motion.div
+                    key={status}
+                    variants={variants.pop}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <AgentStatusBadge
+                      status={agentStatus}
+                      label={taskChip?.label}
+                      pulsing={status === "running" || status === "queued"}
+                      size="sm"
+                    />
+                  </motion.div>
+                );
+              })()}
             </AnimatePresence>
 
             {resolving ? (

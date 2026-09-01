@@ -86,7 +86,8 @@ public struct NativeChatApprovalCard: View {
                         decide(.allowOnce)
                     } label: {
                         Text("Allow once")
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(.rect)
                     }
                     .junoProminentAction()
                     .controlSize(.large)
@@ -98,7 +99,8 @@ public struct NativeChatApprovalCard: View {
                                 decide(.allowScope)
                             } label: {
                                 Text("Allow for this action")
-                                    .frame(maxWidth: .infinity)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(.rect)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.large)
@@ -109,7 +111,8 @@ public struct NativeChatApprovalCard: View {
                             decide(.deny)
                         } label: {
                             Text("Deny")
-                                .frame(maxWidth: .infinity)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(.rect)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)

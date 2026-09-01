@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
+import { SubagentTree, type SubagentItem } from "@/components/ui/subagent-tree";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -999,89 +1000,37 @@ function RowAction({
   );
 }
 
-/** The tone each reported agent state reads in. Unknown states stay neutral
- *  rather than guessing — the runner owns this vocabulary, not this file. */
-const AGENT_TONE: Record<string, string> = {
-  completed: "text-success",
-  failed: "text-destructive",
-  cancelled: "text-muted-foreground",
-  interrupted: "text-muted-foreground",
-  waiting_approval: "text-warning",
-};
-const AGENT_SETTLED = ["completed", "failed", "cancelled", "interrupted"];
-
 /** Live cards for delegated child agents (multi-agent cloud runs): role, task,
- *  real state, current activity, files, and conflict warnings. No fake
- *  progress — only what the runner actually reported. */
+ *  real state, current activity, files, and conflict warnings rendered as a coherent tree. */
 function AgentsCard({ agents }: { agents: CodeAgentState[] }) {
-  const active = agents.some((a) => !AGENT_SETTLED.includes(a.status));
+  const mappedSubagents: SubagentItem[] = agents.map((agent) => {
+    let normalizedStatus: SubagentItem["status"] = "running";
+    if (agent.status === "completed") normalizedStatus = "completed";
+    else if (agent.status === "failed") normalizedStatus = "failed";
+    else if (agent.status === "cancelled" || agent.status === "interrupted") normalizedStatus = "cancelled";
+    else if (agent.status === "waiting_approval") normalizedStatus = "waiting_approval";
+    else if (agent.status === "streaming") normalizedStatus = "streaming";
+    else if (agent.status === "thinking") normalizedStatus = "thinking";
+
+    return {
+      id: agent.id,
+      name: agent.title || agent.role || "Subagent",
+      role: agent.role,
+      mission: agent.title,
+      status: normalizedStatus,
+      filesTouched: agent.filesChanged,
+      errorMessage: agent.error || undefined,
+      currentActivity: agent.currentActivity || undefined,
+    };
+  });
+
   return (
-    <section
-      aria-label="Helper agents"
-      className={cn(RUN_CARD, RUN_CARD_INSET, "motion-safe:animate-rise-in")}
-    >
-      <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            active ? "bg-primary motion-safe:animate-pulse" : "bg-muted-foreground",
-          )}
-          aria-hidden="true"
-        />
-        Agents
-        <span className="ml-auto tabular-nums">
-          {agents.filter((a) => AGENT_SETTLED.includes(a.status)).length}/{agents.length} done
-        </span>
-      </p>
-      <ul className="flex flex-col gap-1.5">
-        {agents.map((agent, i) => {
-          const status = typeof agent.status === "string" ? agent.status : "unknown";
-          const tone = AGENT_TONE[status] ?? "text-foreground/80";
-          const tokens =
-            agent.usage && Number.isFinite(agent.usage.inputTokens + agent.usage.outputTokens)
-              ? agent.usage.inputTokens + agent.usage.outputTokens
-              : 0;
-          return (
-            <li
-              key={agent.id}
-              className="flex flex-col gap-0.5 text-xs [animation-fill-mode:backwards] motion-safe:animate-fade-in-up"
-              style={staggerDelay(i, "tight")}
-            >
-              <span className="flex items-baseline gap-2">
-                <span className="font-medium capitalize text-foreground">{agent.role}</span>
-                <span className="truncate text-foreground/80">{agent.title}</span>
-                <span className={cn("ml-auto shrink-0 font-mono text-caption", tone)}>
-                  {status.replace("_", " ")}
-                </span>
-              </span>
-              <span className="flex items-baseline gap-2 text-caption text-muted-foreground">
-                <span className="truncate">
-                  {agent.status === "failed" && agent.error ? agent.error : agent.currentActivity ?? ""}
-                </span>
-                {tokens > 0 && (
-                  // tabular-nums: this counter ticks up in place while the agent
-                  // runs, and proportional digits make the row jitter sideways.
-                  <span className="ml-auto shrink-0 font-mono tabular-nums">
-                    {tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tok
-                  </span>
-                )}
-              </span>
-              {agent.filesChanged && agent.filesChanged.length > 0 && (
-                <span className="text-caption text-muted-foreground">
-                  {agent.applied ? "applied" : "proposed"}: {agent.filesChanged.join(", ")}
-                </span>
-              )}
-              {agent.conflictedFiles && agent.conflictedFiles.length > 0 && (
-                <span className="flex items-start gap-1.5 text-caption text-warning">
-                  <StatusIcons.warning className="mt-px size-3 shrink-0" aria-hidden="true" />
-                  conflicts with your checkout: {agent.conflictedFiles.join(", ")}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+    <div className="mx-1 mb-2">
+      <SubagentTree
+        mainAgentTitle="Juno Code"
+        subagents={mappedSubagents}
+      />
+    </div>
   );
 }
 

@@ -39,6 +39,10 @@ export const SESSION_EVENT_KINDS = [
   "error",
   "completed",
   "heartbeat",
+  // A versioned Core envelope. Legacy event kinds remain accepted while hosts
+  // and clients migrate; this lets the relay preserve the full semantic event
+  // instead of flattening it into presentation-specific strings.
+  "canonical_session_event",
 ] as const;
 
 export type RemoteSessionSummaryInput = {
