@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
+import { serverTranscriptRevision, settleClientMessage } from "@/lib/chat-client-state";
 import {
   clearPendingGeneration,
   getPendingGeneration,
@@ -139,6 +140,12 @@ export function useChat(opts: UseChatOptions) {
   const generationSeqRef = React.useRef(0);
   // Live snapshot of the message list, for the recovery poll's id matching.
   const messagesRef = React.useRef<ChatMessage[]>(opts.initialMessages);
+  // Hash only when the server prop changes, never for each streamed token.
+  const initialMessagesRevision = React.useMemo(
+    () => serverTranscriptRevision(opts.initialMessages),
+    [opts.initialMessages]
+  );
+  const appliedInitialRevisionRef = React.useRef(initialMessagesRevision);
   React.useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
@@ -171,6 +178,7 @@ export function useChat(opts: UseChatOptions) {
     generationIdRef.current = null;
     assistantIdRef.current = null;
     locallyRemovedRef.current = new Map();
+    appliedInitialRevisionRef.current = serverTranscriptRevision(opts.initialMessages);
     setMessages(opts.initialMessages);
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
@@ -186,17 +194,21 @@ export function useChat(opts: UseChatOptions) {
   React.useEffect(() => {
     if (status !== "idle") return;
     if (convoIdRef.current !== opts.conversationId) return;
-    if (opts.initialMessages.length === 0 && messages.length === 0) return;
-    if (
-      opts.initialMessages.length !== messages.length ||
-      opts.initialMessages.some(
-        (m, idx) => m.id !== messages[idx]?.id || m.content !== messages[idx]?.content
-      )
-    ) {
-      setMessages(opts.initialMessages);
-      setArtifacts(opts.initialArtifacts);
-    }
-  }, [opts.initialMessages, opts.initialArtifacts, opts.conversationId, status, messages]);
+    // A local generation changing `messages` is not a server refresh. Before
+    // this revision guard, the transition back to idle compared the new local
+    // answer with the OLD initial props and restored those props, making Retry
+    // appear to think briefly and then erase its own result.
+    if (appliedInitialRevisionRef.current === initialMessagesRevision) return;
+    appliedInitialRevisionRef.current = initialMessagesRevision;
+    setMessages(opts.initialMessages);
+    setArtifacts(opts.initialArtifacts);
+  }, [
+    initialMessagesRevision,
+    opts.initialMessages,
+    opts.initialArtifacts,
+    opts.conversationId,
+    status,
+  ]);
 
   const mergeArtifacts = React.useCallback(
     (incoming: ClientArtifact[]) => {
@@ -605,7 +617,7 @@ export function useChat(opts: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantTempId
-                    ? { ...chunk.message, finishReason: chunk.finishReason ?? chunk.message.finishReason, streaming: false }
+                    ? settleClientMessage(chunk.message, chunk.finishReason)
                     : m
                 )
               );
