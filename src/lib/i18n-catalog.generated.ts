@@ -1434,6 +1434,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Apps and sites"
   },
   {
+    "id": "149e65745bc3e61d",
+    "source": "The selected model is temporarily unavailable because Juno reached its daily provider budget. Choose Auto or try again later."
+  },
+  {
     "id": "14bb43e1aa46e05c",
     "source": "Previous flagship reasoning Grok."
   },
@@ -8068,10 +8072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "76a6d9f3d7a7172c",
     "source": "Corner radius"
-  },
-  {
-    "id": "76a7bcc18f1d320d",
-    "source": "(no key)"
   },
   {
     "id": "76b361ee62b62303",

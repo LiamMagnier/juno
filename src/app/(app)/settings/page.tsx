@@ -35,7 +35,7 @@ import { Tile, TileSaveStatus, type TileSaveState } from "@/components/settings/
 import { SettingsGroup, SettingsSectionNav, type SettingsSection } from "@/components/settings/section-nav";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { resolveModel } from "@/lib/models";
-import { PROVIDERS, type Provider } from "@/lib/providers";
+import { PROVIDERS } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS, swatchInk } from "@/lib/accents";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
@@ -905,13 +905,11 @@ function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; fi
                 {models
                   .filter((m) => (m.modality ?? "chat") === "chat")
                   .map((m) => {
-                    const configured = features.providers.includes(m.provider as Provider);
                     return (
-                      <SelectItem key={m.id} value={m.id} disabled={!configured || !canUseModel(quota.plan, m.id)}>
+                      <SelectItem key={m.id} value={m.id} disabled={!canUseModel(quota.plan, m.id)}>
                         {m.name}
                         <span className="ml-1.5 text-xs text-muted-foreground">
                           · {(PROVIDERS[m.provider]?.label ?? m.provider).split(" · ")[0]}
-                          {!configured ? " (no key)" : ""}
                         </span>
                       </SelectItem>
                     );

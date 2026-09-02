@@ -71,8 +71,9 @@ export interface ComposerPrefs {
 const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false, proMode: false };
 
 /** The bundled catalog, marked the same way /api/models marks it a moment
- *  later, so the picker's "Past models" section does not appear, disappear and
- *  reappear across the first fetch. */
+ *  later. It is filtered against the server bootstrap before becoming visible:
+ *  showing every bundled model while the live request loads let users select an
+ *  unconfigured provider, which the server then silently replaced. */
 const INITIAL_MODELS = withSupersededMarked(MODEL_LIST);
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
@@ -143,9 +144,13 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // Start from defaults so SSR and first client render match; load the persisted
   // values right after mount to avoid a hydration mismatch.
   const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(DEFAULT_COMPOSER_PREFS);
-  // Live list of models from each configured provider's API (curated set until
-  // loaded).
-  const [models, setModels] = React.useState<ModelInfo[]>(INITIAL_MODELS);
+  // Live list of models from each configured provider's API. The lazy initial
+  // value uses the authoritative bootstrap provider set, so SSR/hydration never
+  // exposes models whose API key is absent.
+  const [models, setModels] = React.useState<ModelInfo[]>(() => {
+    const configured = new Set(bootstrap.features.providers);
+    return INITIAL_MODELS.filter((model) => configured.has(model.provider));
+  });
   const { resolvedTheme } = useTheme();
 
   // A server-component refresh delivers a new bootstrap object. Mirror that
@@ -237,7 +242,9 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
     fetch("/api/models")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (!cancelled && d?.models?.length) {
+        // An empty array is authoritative too (no provider configured). Keeping
+        // the bundled fallback in that case was the selector half of the bug.
+        if (!cancelled && Array.isArray(d?.models)) {
           React.startTransition(() => setModels(d.models));
         }
       })

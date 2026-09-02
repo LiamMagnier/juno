@@ -43,26 +43,27 @@ test("fallback takes the CHEAPEST eligible model, not the first in registry orde
   // fallback on the failure path silently bills ~40x the cheapest capable one.
   const result = selectModel({
     requestedId: "unknown", requested: null, catalogue: CATALOGUE,
-    isEligible: allEligible, isProviderHealthy: allHealthy,
+    isEligible: allEligible, isProviderHealthy: allHealthy, allowSubstitution: true,
   });
   assert.equal(result.model?.id, "cheap");
   assert.equal(result.reason, "fallback");
 });
 
-test("an ineligible request falls back rather than being honoured", () => {
+test("an explicit ineligible request is refused rather than sent to another provider", () => {
   const result = selectModel({
     requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
     isEligible: (m) => m.id !== "frontier", isProviderHealthy: allHealthy,
   });
-  assert.equal(result.model?.id, "cheap");
+  assert.equal(result.model, null);
   assert.equal(result.reason, "fallback");
 });
 
-test("an unhealthy provider reroutes, and says so in words a user can read", () => {
+test("Auto may reroute an unhealthy provider, and says so in words a user can read", () => {
   const result = selectModel({
     requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
     isEligible: allEligible,
     isProviderHealthy: (p) => p !== "anthropic",
+    allowSubstitution: true,
   });
   assert.equal(result.model?.id, "cheap");
   assert.equal(result.reason, "rerouted_unhealthy_provider");
@@ -81,12 +82,22 @@ test("with nowhere healthy to go, the request is kept rather than pointlessly do
   assert.equal(result.warning, null);
 });
 
+test("an explicit unhealthy model stays on its selected provider", () => {
+  const result = selectModel({
+    requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
+    isEligible: allEligible, isProviderHealthy: (p) => p !== "anthropic",
+  });
+  assert.equal(result.model?.id, "frontier");
+  assert.equal(result.reason, "requested");
+  assert.equal(result.warning, null);
+});
+
 test("a dead-provider fallback still beats no model at all", () => {
   // Nothing healthy, and the request was ineligible: a configured-but-failing
   // model is a worse answer than a working one and a better answer than none.
   const result = selectModel({
     requestedId: "unknown", requested: null, catalogue: CATALOGUE,
-    isEligible: allEligible, isProviderHealthy: () => false,
+    isEligible: allEligible, isProviderHealthy: () => false, allowSubstitution: true,
   });
   assert.equal(result.model?.id, "cheap");
   assert.equal(result.reason, "fallback");
@@ -104,7 +115,7 @@ test("a spend ceiling degrades to the cheapest rather than refusing the turn", (
   const result = selectModel({
     requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
     isEligible: allEligible, isProviderHealthy: allHealthy,
-    budgetExhausted: true,
+    budgetExhausted: true, allowSubstitution: true,
   });
   assert.equal(result.model?.id, "cheap");
   assert.equal(result.reason, "budget_degraded");
@@ -115,9 +126,20 @@ test("a spend ceiling does not 'degrade' a model that is already cheapest", () =
   const result = selectModel({
     requestedId: "cheap", requested: cheap, catalogue: CATALOGUE,
     isEligible: allEligible, isProviderHealthy: allHealthy,
-    budgetExhausted: true,
+    budgetExhausted: true, allowSubstitution: true,
   });
   assert.equal(result.model?.id, "cheap");
+  assert.equal(result.reason, "requested");
+  assert.equal(result.warning, null);
+});
+
+test("a spend ceiling never changes an explicit model choice", () => {
+  const result = selectModel({
+    requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
+    isEligible: allEligible, isProviderHealthy: allHealthy,
+    budgetExhausted: true,
+  });
+  assert.equal(result.model?.id, "frontier");
   assert.equal(result.reason, "requested");
   assert.equal(result.warning, null);
 });
@@ -129,7 +151,7 @@ test("a reroute warning is not overwritten by a later budget degrade", () => {
     requestedId: "frontier", requested: frontier, catalogue: CATALOGUE,
     isEligible: allEligible,
     isProviderHealthy: (p) => p !== "anthropic",
-    budgetExhausted: true,
+    budgetExhausted: true, allowSubstitution: true,
   });
   assert.match(String(result.warning), /unavailable right now/);
 });
@@ -137,7 +159,7 @@ test("a reroute warning is not overwritten by a later budget degrade", () => {
 test("the requested id is carried through for the requested-vs-effective record", () => {
   const result = selectModel({
     requestedId: "frontier", requested: null, catalogue: CATALOGUE,
-    isEligible: allEligible, isProviderHealthy: allHealthy,
+    isEligible: allEligible, isProviderHealthy: allHealthy, allowSubstitution: true,
   });
   assert.equal(result.requestedId, "frontier");
   assert.notEqual(result.model?.id, "frontier");
