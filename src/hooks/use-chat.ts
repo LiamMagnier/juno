@@ -55,6 +55,10 @@ function upsertActivity(
 }
 
 export type ChatMessage = ClientMessage & {
+  /** Stable React identity while a temporary streaming message is replaced by
+   *  the persisted server message. This prevents the completed bubble from
+   *  unmounting and visually flashing back into the transcript. */
+  renderKey?: string;
   streaming?: boolean;
   pending?: boolean;
   error?: boolean;
@@ -200,7 +204,13 @@ export function useChat(opts: UseChatOptions) {
     // appear to think briefly and then erase its own result.
     if (appliedInitialRevisionRef.current === initialMessagesRevision) return;
     appliedInitialRevisionRef.current = initialMessagesRevision;
-    setMessages(opts.initialMessages);
+    setMessages((current) => {
+      const renderKeys = new Map(current.map((message) => [message.id, message.renderKey]));
+      return opts.initialMessages.map((message) => ({
+        ...message,
+        renderKey: renderKeys.get(message.id),
+      }));
+    });
     setArtifacts(opts.initialArtifacts);
   }, [
     initialMessagesRevision,
@@ -305,7 +315,13 @@ export function useChat(opts: UseChatOptions) {
             prev.map((m) => {
               if (m.id !== assistantTempId) return m;
               replaced = true;
-              return { ...recovered, streaming: false, error: false, errorMessage: undefined };
+              return {
+                ...recovered,
+                renderKey: m.renderKey ?? m.id,
+                streaming: false,
+                error: false,
+                errorMessage: undefined,
+              };
             })
           );
           // If the placeholder was lost (e.g. remount race), append the answer.
@@ -617,7 +633,10 @@ export function useChat(opts: UseChatOptions) {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantTempId
-                    ? settleClientMessage(chunk.message, chunk.finishReason)
+                    ? {
+                        ...settleClientMessage(chunk.message, chunk.finishReason),
+                        renderKey: m.renderKey ?? m.id,
+                      }
                     : m
                 )
               );
@@ -747,8 +766,10 @@ export function useChat(opts: UseChatOptions) {
       const visibleContent = input.preflightClarification
         ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
         : null;
+      const userTempId = tempId();
       const userMsg: ChatMessage = {
-        id: tempId(),
+        id: userTempId,
+        renderKey: userTempId,
         role: "USER",
         content: visibleContent ?? trimmed,
         createdAt: new Date().toISOString(),
@@ -758,6 +779,7 @@ export function useChat(opts: UseChatOptions) {
       const assistantTempId = tempId();
       const assistantMsg: ChatMessage = {
         id: assistantTempId,
+        renderKey: assistantTempId,
         role: "ASSISTANT",
         content: "",
         createdAt: new Date().toISOString(),
@@ -971,8 +993,10 @@ export function useChat(opts: UseChatOptions) {
         toast.error("Image editing isn't available in private chat.");
         return { accepted: false };
       }
+      const userTempId = tempId();
       const userMsg: ChatMessage = {
-        id: tempId(),
+        id: userTempId,
+        renderKey: userTempId,
         role: "USER",
         content: trimmed,
         createdAt: new Date().toISOString(),
@@ -982,6 +1006,7 @@ export function useChat(opts: UseChatOptions) {
       const assistantTempId = tempId();
       const assistantMsg: ChatMessage = {
         id: assistantTempId,
+        renderKey: assistantTempId,
         role: "ASSISTANT",
         content: "",
         createdAt: new Date().toISOString(),
@@ -1069,7 +1094,7 @@ export function useChat(opts: UseChatOptions) {
       }
       return [
         ...copy,
-        { id: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
+        { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
       ];
     });
     await runGeneration(
@@ -1116,7 +1141,7 @@ export function useChat(opts: UseChatOptions) {
         );
         return [
           ...kept,
-          { id: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
+          { id: assistantTempId, renderKey: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
         ];
       });
       await runGeneration(

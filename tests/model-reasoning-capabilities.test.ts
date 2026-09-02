@@ -4,6 +4,7 @@ import { effectiveReasoningEffort } from "@/lib/chat-responses";
 import { nativeModelCatalog } from "@/lib/native-model-manifest";
 import { defaultReasoning, reasoningCaps, reasoningOptions } from "@/lib/model-metrics";
 import { getModel } from "@/lib/models";
+import { toModelInfo } from "@/lib/model-discovery-core";
 
 const gemini = getModel("google:gemini-3.7-flash")!;
 
@@ -27,4 +28,13 @@ test("native manifest publishes the same Gemini 3.7 contract", () => {
   assert.deepEqual(entry.supportedReasoningEfforts, ["low", "medium", "high"]);
   assert.equal(entry.reasoning.canDisable, false);
   assert.equal(entry.reasoning.defaultEffort, "medium");
+});
+
+test("live-discovered Gemini 3.8 exposes its thinking levels", () => {
+  const discovered = toModelInfo("google", "models/gemini-3.8-flash");
+  assert.equal(discovered.reasoning, true);
+  assert.deepEqual(reasoningOptions(discovered).map((option) => option.label), ["Low", "Medium", "High"]);
+  assert.equal(defaultReasoning(discovered), "medium");
+  const manifestEntry = nativeModelCatalog([discovered]).models.find((model) => model.id === discovered.id);
+  assert.deepEqual(manifestEntry?.supportedReasoningEfforts, ["low", "medium", "high"]);
 });

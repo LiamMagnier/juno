@@ -96,7 +96,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 6) },
   ],
   google: [
-    { hints: ["3.7-flash"], metric: official(1.5, 9, 1_048_576, 8, 9) },
+    { hints: ["3.8-flash", "3.7-flash"], metric: official(1.5, 9, 1_048_576, 8, 9) },
     { hints: ["3.6-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) },
     { hints: ["3.5-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) }, // II 50.2 · 152 tok/s — 3x the 2.5 Flash price
     { hints: ["3.1-flash-lite"], metric: official(0.25, 1.5, 1_048_576, 10, 4) }, // II 25.0 · 251 tok/s — fastest in the lineup
@@ -657,7 +657,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // 3.x uses thinking_level on Juno's native GenerateContent transport;
       // Gemini 2.5 retains the legacy budget transport. Reasoning cannot be
       // disabled for any selectable row below.
-      if (/3\.7-flash/.test(id)) return caps(LMH, false, false, "medium");
+      // 3.8 keeps the same provider-native thinking_level contract as 3.7.
+      // Keep this explicit so a live-discovered 3.8 row does not fall through
+      // to the unknown-model branch and lose its thinking selector.
+      if (/3\.[78]-flash/.test(id)) return caps(LMH, false, false, "medium");
       if (/3\.[56]-flash/.test(id)) {
         return caps(["minimal", ...LMH], false, false, "medium");
       }
