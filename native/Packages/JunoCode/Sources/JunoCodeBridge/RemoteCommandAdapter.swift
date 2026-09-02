@@ -25,6 +25,8 @@ import JunoCore
 public enum CodeRemoteCommandKind: String, CaseIterable, Sendable {
     case createSession = "create_session"
     case sendMessage = "send_message"
+    case steer = "steer"
+    case queue = "queue"
     case stopAgent = "stop_agent"
     case retryTurn = "retry"
     case forkSession = "fork"
@@ -139,6 +141,14 @@ public protocol CodeRemoteSessionConfigurationBridging: CodeRemoteSessionBridgin
     ) async throws -> String
 }
 
+/// Additive live-input capability for hosts that implement the canonical
+/// active-session mailbox. Older hosts continue to support ordinary sends and
+/// reject these command kinds explicitly.
+public protocol CodeRemoteSessionSteeringBridging: CodeRemoteSessionBridging {
+    func steerMessage(sessionID: String, text: String) async throws
+    func queueMessage(sessionID: String, text: String) async throws
+}
+
 // MARK: - The adapter
 
 public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
@@ -224,6 +234,19 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
                 sessionID: validated.sessionID,
                 text: try validated.string("text")
             )
+            return ["accepted": .bool(true)]
+
+        case .steer, .queue:
+            try await authorize(validated)
+            guard let steering = bridge as? any CodeRemoteSessionSteeringBridging else {
+                throw CodeRemoteCommandError.unsupportedKind(validated.kind.rawValue)
+            }
+            let text = try validated.string("text")
+            if validated.kind == .steer {
+                try await steering.steerMessage(sessionID: validated.sessionID, text: text)
+            } else {
+                try await steering.queueMessage(sessionID: validated.sessionID, text: text)
+            }
             return ["accepted": .bool(true)]
 
         case .stopAgent:
@@ -353,6 +376,8 @@ public struct RemoteCommandAdapter: CodeRemoteCommandExecuting {
         switch kind {
         case .createSession: "create_session"
         case .sendMessage: "send_message"
+        case .steer: "steer"
+        case .queue: "queue"
         case .cancel: "stop_agent"
         case .approvalDecision: "approval_decision"
         case .retry: "retry"

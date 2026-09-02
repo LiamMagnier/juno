@@ -228,7 +228,6 @@ public struct Composer: View {
         // An attachment with no sentence is a message in its own right.
         (!controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !controller.pendingAttachments.isEmpty)
-            && !isRunning
             && controller.isAgentTransportConfigured
     }
 
@@ -237,9 +236,9 @@ public struct Composer: View {
             return "Sign in to Juno to run the agent"
         }
         if isRunning {
-            // The runtime refuses a second concurrent run and nothing queues the
-            // message, so the field says what will actually happen.
-            return "Juno is working — stop the run to send something else"
+            return controller.activeInstructionKind == .steer
+                ? "Steer Juno at the next safe point…"
+                : "Queue a follow-up for after this execution…"
         }
         // The slash hint rides on the placeholder rather than sitting in the bar
         // as a button. A feature addressed by typing has to be advertised where
@@ -321,6 +320,7 @@ public struct Composer: View {
                 .padding(.horizontal, 2)
 
             codeToolControl
+                .disabled(isRunning)
 
             CodeModelSelector(
                 selection: Binding(
@@ -332,11 +332,26 @@ public struct Composer: View {
                 availableModels: availableModels,
                 accessibilityID: "juno.code.composer.model"
             )
+            .disabled(isRunning)
             Spacer(minLength: JunoSpace.snug)
 
             contextMeter
 
             if isRunning {
+                instructionKindMenu
+
+                Button(action: send) {
+                    JunoIconView(.send, size: 15)
+                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                        .frame(width: 36, height: 36)
+                        .contentShape(.circle)
+                }
+                .accentGlassAction(active: canSend)
+                .disabled(!canSend)
+                .help(controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up")
+                .accessibilityLabel(controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up")
+                .accessibilityIdentifier("juno.code.composer.send")
+
                 Button {
                     Task { await controller.stop() }
                 } label: {
@@ -375,6 +390,35 @@ public struct Composer: View {
                 .accessibilityIdentifier("juno.code.composer.send")
             }
         }
+    }
+
+    /// The active composer has two explicit delivery contracts. A menu keeps
+    /// the primary action predictable while making Queue discoverable without
+    /// turning the composer into a second settings toolbar.
+    private var instructionKindMenu: some View {
+        Menu {
+            Button {
+                controller.activeInstructionKind = .steer
+            } label: {
+                Text("Steer active task")
+            }
+            Button {
+                controller.activeInstructionKind = .queue
+            } label: {
+                Text("Queue follow-up")
+            }
+        } label: {
+            Text(controller.activeInstructionKind == .steer ? "Steer" : "Queue")
+                .junoCaption()
+                .foregroundStyle(Color.junoForeground)
+                .frame(minHeight: 32)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Choose how this message joins the active task")
+        .accessibilityLabel("Active message delivery")
+        .accessibilityValue(controller.activeInstructionKind == .steer ? "Steer" : "Queue")
+        .accessibilityIdentifier("juno.code.composer.delivery")
     }
 
     /// The Code tool is the only Code-specific control in the Chat composer
@@ -533,7 +577,6 @@ public struct Composer: View {
                         size: 14
                     )
                 }
-                .disabled(isRunning)
                 .accessibilityIdentifier("juno.code.composer.attach")
             } label: {
                 CodeComposerAddMark(isArmed: !controller.pendingAttachments.isEmpty)

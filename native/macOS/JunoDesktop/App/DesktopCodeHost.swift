@@ -288,6 +288,16 @@ private actor DesktopQueuedCodeHost {
             nil
         case .userPrompt(let prompt):
             .init(kind: "user", payload: ["text": .string(prompt.text)])
+        case .userInstruction(let instruction):
+            .init(
+                kind: "user",
+                payload: [
+                    "text": .string(instruction.text),
+                    "delivery": .string(instruction.kind.rawValue),
+                ]
+            )
+        case .userInstructionApplied:
+            nil
         case .assistantMessage(let message):
             .init(kind: "text", payload: ["text": .string(message.text)])
         case .reasoningSummary(let reasoning):

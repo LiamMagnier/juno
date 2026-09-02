@@ -16,7 +16,10 @@ import JunoCodeKit
 /// adapter calls in from the host's actor — so every hop is explicit rather
 /// than accidental.
 @MainActor
-public final class WorkbenchRemoteBridge: CodeRemoteSessionConfigurationBridging {
+public final class WorkbenchRemoteBridge:
+    CodeRemoteSessionConfigurationBridging,
+    CodeRemoteSessionSteeringBridging
+{
     private let model: WorkbenchModel
     /// Opaque workspace ids the user has shared with Remote, by id.
     ///
@@ -144,6 +147,24 @@ public final class WorkbenchRemoteBridge: CodeRemoteSessionConfigurationBridging
     nonisolated public func sendMessage(sessionID: String, text: String) async throws {
         let controller = try await require(sessionID)
         await MainActor.run { controller.composerText = text }
+        await controller.send()
+    }
+
+    nonisolated public func steerMessage(sessionID: String, text: String) async throws {
+        let controller = try await require(sessionID)
+        await MainActor.run {
+            controller.activeInstructionKind = .steer
+            controller.composerText = text
+        }
+        await controller.send()
+    }
+
+    nonisolated public func queueMessage(sessionID: String, text: String) async throws {
+        let controller = try await require(sessionID)
+        await MainActor.run {
+            controller.activeInstructionKind = .queue
+            controller.composerText = text
+        }
         await controller.send()
     }
 

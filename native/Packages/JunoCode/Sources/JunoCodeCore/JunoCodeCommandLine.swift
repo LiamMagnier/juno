@@ -34,6 +34,10 @@ public struct JunoCodeCommandLine: Sendable {
             return try await run(arguments: args)
         case "cancel":
             return try await submit(kind: .cancel, arguments: args)
+        case "steer":
+            return try await instruction(kind: .steer, arguments: args)
+        case "queue":
+            return try await instruction(kind: .queue, arguments: args)
         case "approvals":
             return try await approval(arguments: args)
         default:
@@ -47,6 +51,21 @@ public struct JunoCodeCommandLine: Sendable {
         guard arguments.count == 3 else { throw JunoCodeCLIError.usage("cancel <target-id> <session-id>") }
         let receipt = try await host.submit(.init(
             targetID: .init(value: arguments[1]), sessionID: .init(value: arguments[2]), kind: kind
+        ))
+        return .receipt(receipt)
+    }
+
+    private func instruction(
+        kind: CodeSessionCommandKind, arguments: [String]
+    ) async throws -> JunoCodeCLIResult {
+        guard arguments.count == 4 else {
+            throw JunoCodeCLIError.usage("\(kind.rawValue) <target-id> <session-id> <message>")
+        }
+        let receipt = try await host.submit(.init(
+            targetID: .init(value: arguments[1]),
+            sessionID: .init(value: arguments[2]),
+            kind: kind,
+            payload: ["text": .string(arguments[3])]
         ))
         return .receipt(receipt)
     }

@@ -30,6 +30,8 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     case sessionCreated(SessionCreatedEvent)
     case turnConfiguration(TurnConfigurationEvent)
     case userPrompt(UserPromptEvent)
+    case userInstruction(UserInstructionEvent)
+    case userInstructionApplied(UserInstructionAppliedEvent)
     case assistantMessage(AssistantMessageEvent)
     case reasoningSummary(ReasoningSummaryEvent)
     case toolProposed(ToolProposedEvent)
@@ -112,6 +114,45 @@ public struct UserPromptEvent: Hashable, Codable, Sendable {
 
     public init(text: String) {
         self.text = text
+    }
+}
+
+/// How an instruction submitted while an execution is active should be
+/// delivered. This is runtime state, not presentation inferred from wording.
+public enum UserInstructionKind: String, Codable, CaseIterable, Sendable {
+    /// Amend the active execution before its next unsafe action or model turn.
+    case steer
+    /// Run after the current execution reaches a natural completion boundary.
+    case queue
+}
+
+/// A durable user instruction accepted while an execution is active.
+///
+/// Acceptance and application are separate events so a process interrupted
+/// between them can reconstruct the mailbox from the append-only transcript.
+public struct UserInstructionEvent: Hashable, Codable, Sendable, Identifiable {
+    public let id: String
+    public let text: String
+    public let kind: UserInstructionKind
+
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        text: String,
+        kind: UserInstructionKind
+    ) {
+        self.id = id
+        self.text = text
+        self.kind = kind
+    }
+}
+
+/// Marks the point at which an accepted instruction entered model context.
+/// The event sequence is therefore also the authoritative delivery order.
+public struct UserInstructionAppliedEvent: Hashable, Codable, Sendable {
+    public let instructionID: String
+
+    public init(instructionID: String) {
+        self.instructionID = instructionID
     }
 }
 

@@ -124,6 +124,8 @@ struct TranscriptRow: View {
             TurnContractRow(configuration: configuration)
         case let .userPrompt(prompt):
             userRow(prompt.text)
+        case let .userInstruction(instruction):
+            instructionRow(instruction)
         case let .assistantMessage(message):
             assistantRow(message.text)
         case let .reasoningSummary(summary):
@@ -171,6 +173,33 @@ struct TranscriptRow: View {
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("You said: \(text)")
+    }
+
+    private func instructionRow(_ instruction: UserInstructionEvent) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(spacing: JunoSpace.tight) {
+                Text("You")
+                    .font(.caption.weight(.semibold))
+                Text(instruction.kind == .steer ? "Steering" : "Queued follow-up")
+                    .junoCaption()
+                    .junoSecondaryInk()
+            }
+            Text(instruction.text)
+                .junoBody()
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoRaised.opacity(0.72))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(instruction.kind == .steer ? "Steering instruction" : "Queued follow-up"): \(instruction.text)"
+        )
     }
 
     /// The agent's prose, through the shared Markdown renderer so a fenced code

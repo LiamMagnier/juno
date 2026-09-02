@@ -187,7 +187,8 @@ public struct TranscriptView: View {
         var lastContract: TurnConfigurationEvent?
         for event in controller.events {
             switch event.payload {
-            case .sessionCreated, .statusChanged, .toolOutput, .toolStarted, .approvalResolved:
+            case .sessionCreated, .statusChanged, .toolOutput, .toolStarted,
+                 .approvalResolved, .userInstructionApplied:
                 continue
             case let .turnConfiguration(configuration):
                 // The record carries a contract for every turn so a past turn's

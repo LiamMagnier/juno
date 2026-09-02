@@ -15,6 +15,7 @@ public protocol ModelFallbackResolver: Sendable {
 
 public enum OrchestratorError: Error, Equatable, Sendable {
     case sessionAlreadyRunning
+    case sessionNotRunning
     case sessionTerminated
     case iterationLimitReached(limit: Int)
 }
@@ -73,9 +74,20 @@ public actor AgentOrchestrator {
     private let reasoningEffort: ReasoningEffort?
     private let lifecycleHooks: (any AgentLifecycleHooks)?
     private let fallbackResolver: (any ModelFallbackResolver)?
+    private let verificationEngine: VerificationEngine
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
+    private struct PendingInstruction: Sendable {
+        let event: UserInstructionEvent
+        let modelPrompt: String
+        let images: [ModelImage]
+    }
+    /// Instructions accepted while a run is active. The transcript persists
+    /// acceptance and application separately; this in-memory queue is rebuilt
+    /// from those events when a runtime is recreated after interruption.
+    private var pendingInstructions: [PendingInstruction] = []
+    private let toolScheduler = ToolScheduler()
     private var approvalObserverToken: UUID?
     private var restored = false
     private var liveTextObserver: (@Sendable (String) -> Void)?
@@ -109,6 +121,7 @@ public actor AgentOrchestrator {
         self.reasoningEffort = reasoningEffort
         self.lifecycleHooks = lifecycleHooks
         self.fallbackResolver = fallbackResolver
+        self.verificationEngine = VerificationEngine(store: store)
     }
 
     private func computeFallbackModel(for current: String) async -> String? {
@@ -209,6 +222,64 @@ public actor AgentOrchestrator {
         runTask = task
     }
 
+    /// Amends the active execution at the next safe boundary. If a model turn
+    /// has proposed tools but none have started, the proposal is discarded and
+    /// the correction is sent to the model before any side effect can begin.
+    @discardableResult
+    public func steer(
+        prompt: String,
+        modelPrompt: String? = nil,
+        images: [ModelImage] = []
+    ) async throws -> String {
+        try await acceptInstruction(
+            prompt: prompt,
+            modelPrompt: modelPrompt,
+            images: images,
+            kind: .steer
+        )
+    }
+
+    /// Adds a follow-up that starts only after the active execution reaches a
+    /// natural completion boundary.
+    @discardableResult
+    public func queue(
+        prompt: String,
+        modelPrompt: String? = nil,
+        images: [ModelImage] = []
+    ) async throws -> String {
+        try await acceptInstruction(
+            prompt: prompt,
+            modelPrompt: modelPrompt,
+            images: images,
+            kind: .queue
+        )
+    }
+
+    private func acceptInstruction(
+        prompt: String,
+        modelPrompt: String?,
+        images: [ModelImage],
+        kind: UserInstructionKind
+    ) async throws -> String {
+        guard runTask != nil else { throw OrchestratorError.sessionNotRunning }
+        let visible = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !visible.isEmpty || !images.isEmpty else { return "" }
+        try await prepare()
+        let event = UserInstructionEvent(text: prompt, kind: kind)
+        _ = try await store.appendEvent(
+            sessionID: sessionID,
+            payload: .userInstruction(event)
+        )
+        pendingInstructions.append(
+            PendingInstruction(
+                event: event,
+                modelPrompt: modelPrompt ?? prompt,
+                images: images
+            )
+        )
+        return event.id
+    }
+
     /// Requests an immediate stop: cancels the loop and denies every pending
     /// approval so suspended tools resume with a denial and exit.
     public func stop() async {
@@ -230,6 +301,23 @@ public actor AgentOrchestrator {
         if !restored {
             restored = true
             conversation = await store.loadConversation(sessionID: sessionID)
+            let events = await store.events(for: sessionID)
+            let applied = Set(events.compactMap { event -> String? in
+                guard case let .userInstructionApplied(value) = event.payload else {
+                    return nil
+                }
+                return value.instructionID
+            })
+            pendingInstructions = events.compactMap { event in
+                guard case let .userInstruction(value) = event.payload,
+                      !applied.contains(value.id)
+                else { return nil }
+                return PendingInstruction(
+                    event: value,
+                    modelPrompt: value.text,
+                    images: []
+                )
+            }
         }
         if approvalObserverToken == nil {
             let store = self.store
@@ -315,6 +403,10 @@ public actor AgentOrchestrator {
                 )
                 return
             }
+
+            // A correction accepted before the first provider request belongs
+            // in that request. Queued work still waits for a natural end-turn.
+            _ = await applyPendingInstructions(includeQueued: false)
 
             await compactConversationIfNeeded()
 
@@ -584,7 +676,43 @@ public actor AgentOrchestrator {
                 return
             }
 
+            if stopReason == .toolUse {
+                for call in toolCalls {
+                    let tool = registry.tool(named: call.name)
+                    let risk = tool?.assessRisk(input: call.input) ?? .destructive
+                    let summary = tool?.summary(input: call.input) ?? call.name
+                    _ = try? await store.appendEvent(
+                        sessionID: sessionID,
+                        payload: .toolProposed(
+                            ToolProposedEvent(
+                                toolCallID: call.id,
+                                toolName: call.name,
+                                input: call.input,
+                                risk: risk,
+                                summary: summary
+                            )
+                        )
+                    )
+                }
+            }
+
+            // This is the last boundary before a model-proposed mutation may
+            // begin. Steering wins over stale tool calls: keep the readable
+            // assistant narrative, discard the unexecuted proposal, and ask
+            // the model to revise its plan with the correction in context.
+            if stopReason == .toolUse,
+               await applyPendingInstructions(includeQueued: false)
+            {
+                continue
+            }
+
             guard stopReason == .toolUse else {
+                // End-turn is the execution boundary queued follow-ups wait
+                // for. Applying them continues the same durable session and
+                // produces one final completion record after the queue drains.
+                if await applyPendingInstructions(includeQueued: true) {
+                    continue
+                }
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 await finish(
                     status: .completed,
@@ -596,40 +724,58 @@ public actor AgentOrchestrator {
                 return
             }
 
-            var terminalGoalLifecycle: GoalLifecycle?
             for call in toolCalls {
-                if Task.isCancelled { break }
                 if let extra = call.extraContent {
                     conversation.append(.toolCallWithExtra(id: call.id, name: call.name, input: call.input, extraContent: extra))
                 } else {
                     conversation.append(.toolCall(id: call.id, name: call.name, input: call.input))
                 }
-                let execution = await executeToolCall((call.id, call.name, call.input))
+            }
+
+            let scheduledCalls = toolCalls
+            var terminalGoalLifecycle: GoalLifecycle?
+            var steeringInterruptedTools = false
+
+            let executionResults = await toolScheduler.execute(
+                calls: scheduledCalls,
+                shouldInterrupt: { [weak self, store, sessionID] in
+                    guard let self else { return true }
+                    if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
+                       lifecycle != .active {
+                        return true
+                    }
+                    return await self.applyPendingInstructions(includeQueued: false)
+                },
+                executor: { [registry, permissions, lifecycleHooks, store, sessionID, configuration] (id, name, input) in
+                    await ToolScheduler.executeCall(
+                        id: id,
+                        name: name,
+                        input: input,
+                        sessionID: sessionID,
+                        registry: registry,
+                        permissions: permissions,
+                        lifecycleHooks: lifecycleHooks,
+                        store: store,
+                        maximumToolImages: configuration.maximumToolImages,
+                        maximumToolImageBytes: configuration.maximumToolImageBytes
+                    )
+                }
+            )
+
+            for execution in executionResults {
                 for sideEffect in execution.sideEffects {
                     if case let .fileChanged(change) = sideEffect {
                         filesChanged.insert(change.path.value)
                     }
                     if case let .testRunCompleted(run) = sideEffect {
                         testsPassed = run.passed
-                        if run.passed {
-                            let summary: String
-                            if let testsRun = run.testsRun {
-                                summary =
-                                    "\(testsRun) test\(testsRun == 1 ? "" : "s") passed."
-                            } else {
-                                summary = "Verification command passed."
-                            }
-                            // Verification evidence is minted only from the
-                            // successful runtime event itself. The model-facing
-                            // goal tool cannot self-attest completion.
-                            _ = try? await store.updateGoal(
-                                sessionID: sessionID,
-                                mutation: .addVerificationEvidence(
-                                    summary: summary,
-                                    source: run.command
-                                )
-                            )
-                        }
+                        // Verification evidence is minted only from the
+                        // successful runtime event itself. The model-facing
+                        // goal tool cannot self-attest completion.
+                        await verificationEngine.recordTestVerification(
+                            sessionID: sessionID,
+                            run: run
+                        )
                     }
                 }
                 let bounded = OutputLimiter.apply(
@@ -638,12 +784,12 @@ public actor AgentOrchestrator {
                 )
                 if execution.images.isEmpty {
                     conversation.append(
-                        .toolResult(id: call.id, content: bounded.text, isError: execution.isError)
+                        .toolResult(id: execution.callID, content: bounded.text, isError: execution.isError)
                     )
                 } else {
                     conversation.append(
                         .toolResultWithImages(
-                            id: call.id,
+                            id: execution.callID,
                             content: bounded.text,
                             isError: execution.isError,
                             images: execution.images
@@ -661,6 +807,7 @@ public actor AgentOrchestrator {
                     break
                 }
             }
+
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
             if let terminalGoalLifecycle {
                 let status: SessionStatus =
@@ -685,7 +832,42 @@ public actor AgentOrchestrator {
                 )
                 return
             }
+
+            if executionResults.count < scheduledCalls.count {
+                steeringInterruptedTools = true
+            }
+            if steeringInterruptedTools { continue }
         }
+    }
+
+    /// Moves accepted instructions into model context in their durable event
+    /// order. Returning true tells the run loop to request another model turn.
+    private func applyPendingInstructions(includeQueued: Bool) async -> Bool {
+        let selected = pendingInstructions.filter {
+            includeQueued || $0.event.kind == .steer
+        }
+        guard !selected.isEmpty else { return false }
+        let selectedIDs = Set(selected.map(\.event.id))
+        pendingInstructions.removeAll { selectedIDs.contains($0.event.id) }
+
+        for instruction in selected {
+            let text = instruction.modelPrompt
+            if instruction.images.isEmpty {
+                conversation.append(.user(text))
+            } else {
+                conversation.append(.userWithImages(text, instruction.images))
+            }
+        }
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+        for instruction in selected {
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .userInstructionApplied(
+                    UserInstructionAppliedEvent(instructionID: instruction.event.id)
+                )
+            )
+        }
+        return true
     }
 
     /// Compacts before a provider request, never in the middle of a tool turn.
@@ -734,226 +916,23 @@ public actor AgentOrchestrator {
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
     }
 
-    private struct ToolExecutionRecord {
-        let content: String
-        let isError: Bool
-        let images: [ModelImage]
-        let sideEffects: [SessionEventPayload]
-    }
-
     private func executeToolCall(
         _ call: (id: String, name: String, input: JSONValue)
-    ) async -> ToolExecutionRecord {
-        let tool = registry.tool(named: call.name)
-        // A name the registry does not know gets the highest risk, not merely a
-        // high one: `critical` is now waived by full access, so defaulting there
-        // would let an unrecognised tool call through unreviewed.
-        let risk = tool?.assessRisk(input: call.input) ?? .destructive
-        let summary = tool?.summary(input: call.input) ?? call.name
-        _ = try? await store.appendEvent(
+    ) async -> ToolScheduler.ExecutionResult {
+        await ToolScheduler.executeCall(
+            id: call.id,
+            name: call.name,
+            input: call.input,
             sessionID: sessionID,
-            payload: .toolProposed(
-                ToolProposedEvent(
-                    toolCallID: call.id,
-                    toolName: call.name,
-                    input: call.input,
-                    risk: risk,
-                    summary: summary
-                )
-            )
+            registry: registry,
+            permissions: permissions,
+            lifecycleHooks: lifecycleHooks,
+            store: store,
+            maximumToolImages: configuration.maximumToolImages,
+            maximumToolImageBytes: configuration.maximumToolImageBytes
         )
-        let startedAt = Date()
-
-        let hookInvocation = AgentToolHookInvocation(
-            sessionID: sessionID,
-            toolName: call.name,
-            input: call.input
-        )
-        if let lifecycleHooks {
-            switch await lifecycleHooks.beforeTool(hookInvocation) {
-            case .allow:
-                break
-            case let .deny(reason):
-                let message = "Action blocked by hook: \(reason)"
-                _ = try? await store.appendEvent(
-                    sessionID: sessionID,
-                    payload: .toolCompleted(
-                        ToolCompletedEvent(
-                            toolCallID: call.id,
-                            status: .denied,
-                            resultSummary: message,
-                            durationSeconds: Date().timeIntervalSince(startedAt)
-                        )
-                    )
-                )
-                return ToolExecutionRecord(
-                    content: message,
-                    isError: true,
-                    images: [],
-                    sideEffects: []
-                )
-            }
-        }
-
-        do {
-            try await registry.authorizeInvocation(
-                toolName: call.name,
-                input: call.input,
-                permissions: permissions
-            )
-        } catch {
-            let reason = deniedReason(from: error)
-            _ = try? await store.appendEvent(
-                sessionID: sessionID,
-                payload: .toolCompleted(
-                    ToolCompletedEvent(
-                        toolCallID: call.id,
-                        status: .denied,
-                        resultSummary: reason,
-                        durationSeconds: Date().timeIntervalSince(startedAt)
-                    )
-                )
-            )
-            return ToolExecutionRecord(
-                content: "Action not permitted: \(reason)",
-                isError: true,
-                images: [],
-                sideEffects: []
-            )
-        }
-
-        _ = try? await store.appendEvent(
-            sessionID: sessionID,
-            payload: .toolStarted(ToolStartedEvent(toolCallID: call.id))
-        )
-
-        let store = self.store
-        let sessionID = self.sessionID
-        let callID = call.id
-        let context = ToolContext(
-            sessionID: sessionID,
-            toolCallID: callID,
-            emitOutput: { channel, text in
-                let limited = OutputLimiter.apply(.streamChunk, to: text)
-                _ = try? await store.appendEvent(
-                    sessionID: sessionID,
-                    payload: .toolOutput(
-                        ToolOutputEvent(toolCallID: callID, channel: channel, text: limited.text)
-                    )
-                )
-            }
-        )
-
-        do {
-            let result = try await registry.executeAuthorized(
-                toolName: call.name,
-                input: call.input,
-                context: context
-            )
-            let imageBytes = result.images.reduce(into: 0) { total, image in
-                total += image.data.count
-            }
-            guard result.images.count <= configuration.maximumToolImages,
-                  imageBytes <= configuration.maximumToolImageBytes
-            else {
-                let message = "Tool image output exceeded the safe request limit."
-                _ = try? await store.appendEvent(
-                    sessionID: sessionID,
-                    payload: .toolCompleted(
-                        ToolCompletedEvent(
-                            toolCallID: call.id,
-                            status: .failed,
-                            resultSummary: message,
-                            durationSeconds: Date().timeIntervalSince(startedAt)
-                        )
-                    )
-                )
-                await lifecycleHooks?.afterTool(
-                    hookInvocation,
-                    succeeded: false,
-                    summary: message
-                )
-                return ToolExecutionRecord(
-                    content: message,
-                    isError: true,
-                    images: [],
-                    sideEffects: []
-                )
-            }
-            for sideEffect in result.sideEffects {
-                _ = try? await store.appendEvent(sessionID: sessionID, payload: sideEffect)
-            }
-            _ = try? await store.appendEvent(
-                sessionID: sessionID,
-                payload: .toolCompleted(
-                    ToolCompletedEvent(
-                        toolCallID: call.id,
-                        status: result.isError ? .failed : .succeeded,
-                        resultSummary: firstLine(of: result.content),
-                        durationSeconds: Date().timeIntervalSince(startedAt)
-                    )
-                )
-            )
-            await lifecycleHooks?.afterTool(
-                hookInvocation,
-                succeeded: !result.isError,
-                summary: firstLine(of: result.content)
-            )
-            return ToolExecutionRecord(
-                content: result.content,
-                isError: result.isError,
-                images: result.images,
-                sideEffects: result.sideEffects
-            )
-        } catch is CancellationError {
-            _ = try? await store.appendEvent(
-                sessionID: sessionID,
-                payload: .toolCompleted(
-                    ToolCompletedEvent(
-                        toolCallID: call.id,
-                        status: .cancelled,
-                        resultSummary: "Cancelled",
-                        durationSeconds: Date().timeIntervalSince(startedAt)
-                    )
-                )
-            )
-            await lifecycleHooks?.afterTool(
-                hookInvocation,
-                succeeded: false,
-                summary: "Cancelled"
-            )
-            return ToolExecutionRecord(
-                content: "Cancelled.",
-                isError: true,
-                images: [],
-                sideEffects: []
-            )
-        } catch {
-            let message = shortDescription(error)
-            _ = try? await store.appendEvent(
-                sessionID: sessionID,
-                payload: .toolCompleted(
-                    ToolCompletedEvent(
-                        toolCallID: call.id,
-                        status: .failed,
-                        resultSummary: message,
-                        durationSeconds: Date().timeIntervalSince(startedAt)
-                    )
-                )
-            )
-            await lifecycleHooks?.afterTool(
-                hookInvocation,
-                succeeded: false,
-                summary: message
-            )
-            return ToolExecutionRecord(
-                content: "Tool failed: \(message)",
-                isError: true,
-                images: [],
-                sideEffects: []
-            )
-        }
     }
+
 
     private func finish(
         status: SessionStatus,

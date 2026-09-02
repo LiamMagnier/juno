@@ -63,6 +63,8 @@ public enum CodeRelayProtocolAdapter {
         switch raw {
         case "create_session": .createSession
         case "message", "send_message": .sendMessage
+        case "steer": .steer
+        case "queue": .queue
         case "stop", "stop_agent": .cancel
         case "approval", "approval_decision": .approvalDecision
         case "retry": .retry

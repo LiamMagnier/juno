@@ -3,12 +3,46 @@ import JunoCodeCore
 import JunoCodeLocal
 @testable import JunoCodeRuntime
 
+actor ScriptedModelGate {
+    private var hasArrived = false
+    private var isReleased = false
+    private var arrivalWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func arriveAndWait() async {
+        hasArrived = true
+        let waiters = arrivalWaiters
+        arrivalWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilArrived() async {
+        guard !hasArrived else { return }
+        await withCheckedContinuation { continuation in
+            arrivalWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
 /// A deterministic model: each submitted turn pops the next scripted step.
 final class ScriptedModelClient: AgentModelClient, @unchecked Sendable {
     enum Step {
         case text(String)
         case toolCalls([(id: String, name: String, input: JSONValue)], text: String)
         case events([ModelStreamEvent])
+        case gatedEvents([ModelStreamEvent], gate: ScriptedModelGate)
         case failure(Error)
         case neverFinishes
     }
@@ -49,6 +83,16 @@ final class ScriptedModelClient: AgentModelClient, @unchecked Sendable {
                     continuation.yield(event)
                 }
                 continuation.finish()
+            case let .gatedEvents(events, gate):
+                let producer = Task {
+                    await gate.arriveAndWait()
+                    guard !Task.isCancelled else { return }
+                    for event in events {
+                        continuation.yield(event)
+                    }
+                    continuation.finish()
+                }
+                continuation.onTermination = { _ in producer.cancel() }
             case let .failure(error):
                 continuation.finish(throwing: error)
             case .neverFinishes:
@@ -787,6 +831,133 @@ final class AgentOrchestratorTests: XCTestCase {
             XCTAssertEqual(error, .sessionAlreadyRunning)
         }
         await orchestrator.stop()
+    }
+
+    func testSteeringBeforeToolExecutionDiscardsStaleWriteAndReachesNextRequest() async throws {
+        let gate = ScriptedModelGate()
+        let model = ScriptedModelClient(steps: [
+            .gatedEvents(
+                [
+                    .toolCallRequested(
+                        id: "stale-write",
+                        name: "apply_patch",
+                        input: [
+                            "path": "src/main.swift",
+                            "target": "let value = 1",
+                            "replacement": "let value = 99",
+                        ]
+                    ),
+                    .turnCompleted(.toolUse),
+                ],
+                gate: gate
+            ),
+            .text("I kept the file unchanged."),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Change the value")
+        await gate.waitUntilArrived()
+        let instructionID = try await orchestrator.steer(
+            prompt: "Actually, do not change the file.",
+            modelPrompt: "Correction: do not execute the proposed write."
+        )
+        await gate.release()
+        await orchestrator.awaitCompletion()
+
+        let content = try String(
+            contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+            encoding: .utf8
+        )
+        XCTAssertEqual(content, "let value = 1\n")
+        XCTAssertEqual(model.receivedRequests.count, 2)
+        XCTAssertTrue(model.receivedRequests[1].messages.contains {
+            if case .user("Correction: do not execute the proposed write.") = $0 { return true }
+            return false
+        })
+
+        let events = await payloads()
+        XCTAssertTrue(events.contains {
+            if case let .userInstruction(event) = $0 {
+                return event.id == instructionID && event.kind == .steer
+            }
+            return false
+        })
+        XCTAssertTrue(events.contains {
+            if case let .userInstructionApplied(event) = $0 {
+                return event.instructionID == instructionID
+            }
+            return false
+        })
+        XCTAssertTrue(events.contains {
+            if case .toolProposed = $0 { return true }
+            return false
+        })
+        XCTAssertFalse(events.contains {
+            if case .toolStarted = $0 { return true }
+            return false
+        })
+    }
+
+    func testQueuedFollowUpWaitsForEndTurnAndReachesNextRequest() async throws {
+        let gate = ScriptedModelGate()
+        let model = ScriptedModelClient(steps: [
+            .gatedEvents(
+                [
+                    .textDelta("The first turn is complete."),
+                    .turnCompleted(.endTurn),
+                ],
+                gate: gate
+            ),
+            .text("The queued follow-up is complete."),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Handle the first turn")
+        await gate.waitUntilArrived()
+        let instructionID = try await orchestrator.queue(
+            prompt: "Then handle this follow-up.",
+            modelPrompt: "Queued model-only follow-up."
+        )
+
+        XCTAssertEqual(model.receivedRequests.count, 1)
+        var events = await payloads()
+        XCTAssertFalse(events.contains {
+            if case let .userInstructionApplied(event) = $0 {
+                return event.instructionID == instructionID
+            }
+            return false
+        })
+
+        await gate.release()
+        await orchestrator.awaitCompletion()
+
+        XCTAssertEqual(model.receivedRequests.count, 2)
+        XCTAssertTrue(model.receivedRequests[1].messages.contains {
+            if case .user("Queued model-only follow-up.") = $0 { return true }
+            return false
+        })
+
+        events = await payloads()
+        guard let firstTurnCompletedIndex = events.firstIndex(where: {
+            if case let .assistantMessage(event) = $0 {
+                return event.text == "The first turn is complete."
+            }
+            return false
+        }), let appliedIndex = events.firstIndex(where: {
+            if case let .userInstructionApplied(event) = $0 {
+                return event.instructionID == instructionID
+            }
+            return false
+        }) else {
+            return XCTFail("expected the first completion and queued instruction application")
+        }
+        XCTAssertLessThan(firstTurnCompletedIndex, appliedIndex)
+        XCTAssertTrue(events.contains {
+            if case let .userInstruction(event) = $0 {
+                return event.id == instructionID && event.kind == .queue
+            }
+            return false
+        })
     }
 
     func testSessionRestoreAfterRelaunch() async throws {

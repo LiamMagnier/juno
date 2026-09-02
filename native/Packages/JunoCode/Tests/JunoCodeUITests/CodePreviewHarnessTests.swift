@@ -512,6 +512,8 @@ final class CodePreviewHarnessTests: XCTestCase {
                     payloadKinds.insert("errorOccurred")
                     sawRecoverableError = sawRecoverableError || error.isRecoverable
                     sawFatalError = sawFatalError || !error.isRecoverable
+                case .userInstruction: payloadKinds.insert("userInstruction")
+                case .userInstructionApplied: payloadKinds.insert("userInstructionApplied")
                 case .runCompleted: payloadKinds.insert("runCompleted")
                 }
             }

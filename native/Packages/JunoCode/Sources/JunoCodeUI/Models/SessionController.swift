@@ -307,6 +307,9 @@ public final class SessionController {
     public private(set) var events: [SessionEvent] = []
     public private(set) var pendingApprovals: [ApprovalRequest] = []
     public private(set) var changes: [TrackedChange] = []
+    public private(set) var projection: SessionProjection
+    public var narrativeGroups: [ActivityNarrativeGroup] { projection.narrativeGroups }
+    public var executionState: TaskExecutionState { projection.executionState }
     /// Console lines, assembled by ``SessionTerminalLog``. Reading through the
     /// coordinator keeps `@Observable` tracking intact: the struct is a stored
     /// property, so a mutation publishes exactly as the five separate stored
@@ -363,6 +366,9 @@ public final class SessionController {
     /// for a sentence that is only true for four seconds.
     public var subagentActivity: [CodeSessionID: String] { subagentIndex.activity }
     public var composerText = ""
+    /// Delivery semantics for text submitted while the execution is active.
+    /// Outside an active run every message starts a normal turn.
+    public var activeInstructionKind: UserInstructionKind = .steer
     /// Files explicitly selected through the composer's `@file` typeahead.
     ///
     /// These remain ordinary visible text in the draft. The paths are retained
@@ -517,6 +523,7 @@ public final class SessionController {
             localPathHint: "",
             isGitRepository: false
         )
+        self.projection = SessionProjection()
     }
 
     // MARK: - The turn contract
@@ -945,28 +952,51 @@ public final class SessionController {
                 : "Resolve or resume the blocked goal before sending another turn."
             return
         }
-        // One run at a time, refused here rather than left to the orchestrator: a
-        // turn whose contract changed is served by a *new* orchestrator, and that
-        // one would not know the previous is still in flight. The message stays in
-        // the composer so nothing the reader typed is lost.
-        guard !session.status.isActive else {
-            transientError = "Juno is already working — stop the run before sending."
-            return
-        }
         transientError = nil
         guard let live else {
             #if DEBUG
             composerText = ""
             composerFileReferences = []
-            previewSend(prompt)
+            if session.status.isActive {
+                previewInstruction(prompt, kind: activeInstructionKind)
+            } else {
+                previewSend(prompt)
+            }
             #endif
             return
         }
-        liveAssistantText = ""
         let modelPrompt = await explicitFileContextPrompt(
             visiblePrompt: prompt,
             live: live
         )
+        if session.status.isActive {
+            do {
+                let current = await currentOrchestrator(live)
+                switch activeInstructionKind {
+                case .steer:
+                    try await current.steer(
+                        prompt: prompt,
+                        modelPrompt: modelPrompt,
+                        images: pendingAttachments.map(\.image)
+                    )
+                case .queue:
+                    try await current.queue(
+                        prompt: prompt,
+                        modelPrompt: modelPrompt,
+                        images: pendingAttachments.map(\.image)
+                    )
+                }
+                composerText = ""
+                composerFileReferences = []
+                pendingAttachments = []
+            } catch OrchestratorError.sessionNotRunning {
+                transientError = "The execution finished before the instruction was delivered. Send it again to start a new turn."
+            } catch {
+                transientError = "Could not deliver the instruction: \(error)"
+            }
+            return
+        }
+        liveAssistantText = ""
         let configuration = session.configuration
         // Written before the prompt, so the transcript reads contract-then-turn
         // and a past turn's permissions can still be read off the record long
@@ -2596,6 +2626,7 @@ public final class SessionController {
     }
 
     private func integrate(_ event: SessionEvent) {
+        projection.apply(event: event)
         switch event.payload {
         case let .approvalRequested(request):
             pendingApprovals.append(request)
@@ -2682,6 +2713,10 @@ public final class SessionController {
     /// aggregation is ``TrackedChangeProjection``; what stays here is the state
     /// that belongs to the controller rather than to the projection.
     private func rebuildDerivedState() {
+        let fresh = SessionProjection()
+        fresh.reduce(events: events)
+        self.projection = fresh
+
         changes = TrackedChangeProjection.project(
             events: events,
             reviewStates: reviewStates,
@@ -2726,6 +2761,7 @@ public final class SessionController {
             isGitRepository: fixture.isGitRepository
         )
         self.previewFixture = fixture
+        self.projection = SessionProjection()
         self.events = fixture.events
         self.pendingApprovals = fixture.pendingApprovals
         self.terminalLog.adopt(lines: fixture.terminal)
@@ -2758,6 +2794,14 @@ public final class SessionController {
         )
         appendPreviewEvent(.userPrompt(UserPromptEvent(text: prompt)))
         transientError = "Preview mode does not run the agent: no model transport is attached."
+    }
+
+    private func previewInstruction(_ prompt: String, kind: UserInstructionKind) {
+        let instruction = UserInstructionEvent(text: prompt, kind: kind)
+        appendPreviewEvent(.userInstruction(instruction))
+        transientError = kind == .steer
+            ? "Preview mode recorded the steering instruction; no model transport is attached."
+            : "Preview mode recorded the queued follow-up; no model transport is attached."
     }
 
     private func previewStop() {

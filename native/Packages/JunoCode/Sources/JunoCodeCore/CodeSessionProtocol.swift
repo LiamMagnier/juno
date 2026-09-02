@@ -16,7 +16,10 @@ public struct CodeProtocolVersion: Hashable, Codable, Sendable, Comparable {
         self.minor = minor
     }
 
-    public static let current = CodeProtocolVersion(major: 1)
+    /// Minor 1 adds active-session steer/queue commands and matching target
+    /// capabilities. The change is additive; 1.0 events and commands remain
+    /// readable and executable through the compatibility adapters.
+    public static let current = CodeProtocolVersion(major: 1, minor: 1)
 
     /// A major-version mismatch is never safe to guess through: an older
     /// client could otherwise misread an approval or cancellation command.
@@ -83,6 +86,8 @@ public enum ExecutionTargetCapability: String, Codable, CaseIterable, Sendable {
     case subagents
     case approvals
     case sessionResume
+    case liveSteering
+    case queuedFollowUps
 }
 
 /// A workspace safe to advertise outside the host. Its opaque ID is resolved
@@ -290,6 +295,8 @@ public enum CodeSessionEventAppendPlanner {
 public enum CodeSessionCommandKind: String, Codable, CaseIterable, Sendable {
     case createSession = "create_session"
     case sendMessage = "send_message"
+    case steer = "steer"
+    case queue = "queue"
     case cancel = "cancel"
     case approvalDecision = "approval_decision"
     case retry = "retry"
