@@ -25,8 +25,8 @@ import { useConversationResearch } from "@/components/research/use-conversation-
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
-import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
-import { isAutoModelId } from "@/lib/auto-model";
+import { resolveModel, type ModelId } from "@/lib/models";
+import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { providerGlow } from "@/lib/provider-colors";
 import { reasoningGlow, clampReasoningEffort, reasoningOptions } from "@/lib/model-metrics";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
@@ -201,6 +201,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     setActiveConversationId,
     composerPrefs,
     setComposerPrefs,
+    models,
   } = useApp();
   const router = useRouter();
   const tts = useTts();
@@ -218,7 +219,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // real /chat/[id] route once the first reply finishes streaming.
   const createdIdRef = React.useRef<string | null>(null);
   const [model, setModel] = React.useState<ModelId>(
-    () => resolveModel(initialModel)?.id ?? resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL
+    () => {
+      // Existing conversations keep their recorded choice and fail honestly if
+      // that provider is unavailable. A brand-new chat must not start on a stale
+      // unconfigured default that the old server path would silently replace.
+      const conversationModel = resolveModel(initialModel)?.id;
+      if (conversationModel) return conversationModel;
+      const defaultModel = resolveModel(settings.defaultModel)?.id;
+      if (defaultModel && (isAutoModelId(defaultModel) || models.some((m) => m.id === defaultModel))) {
+        return defaultModel;
+      }
+      return AUTO_MODEL_ID;
+    }
   );
   // Deep-link reasoning (project page → /chat?reasoning=…) must win on the first
   // render so the auto-sent prompt uses it. After the user moves the slider we

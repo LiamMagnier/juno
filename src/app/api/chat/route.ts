@@ -650,8 +650,10 @@ async function handleChat(req: Request) {
     // decide what a turn costs, and inline here they were reachable only by
     // standing up a request with auth, quota and a database behind it.
     //
-    // `pickAutoModel` does not consult provider health, so Auto lands in the same
-    // reroute branch as an explicit selection on a dead provider.
+    // `pickAutoModel` does not consult provider health, so Auto opts into the
+    // substitution branch below. Concrete selector choices never do: a user who
+    // picks Claude/GPT/etc. must not have that prompt silently sent to Gemini (or
+    // any other provider) just because it is the only healthy configured lab.
     eligible = (m: ModelInfo) =>
       m.modality === "chat" &&
       !m.comingSoon &&
@@ -666,6 +668,7 @@ async function handleChat(req: Request) {
       catalogue: MODEL_LIST,
       isEligible: eligible,
       isProviderHealthy: (provider) => providerHealthy(provider as Provider),
+      allowSubstitution: isAutoModelId(requestedId),
     });
     if (selection.reason === "rerouted_unhealthy_provider") {
       console.warn("[chat] rerouting off an unhealthy provider", {
@@ -678,28 +681,51 @@ async function handleChat(req: Request) {
     routingWarning = selection.warning ?? routingWarning;
   }
   // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
-  // set). Degrade to the cheapest capable model rather than refusing: a slower
-  // answer beats a 500, and it keeps the product usable while an operator
-  // decides what to do. Per-user budgets are enforced separately by checkBudget.
+  // set). Only Auto may pick a cheaper model. A concrete choice is an explicit
+  // data-routing decision, so substituting another provider would violate it.
   if (!deterministicSmokeProviderEnabled && modelInfo && (await isPlatformBudgetExceeded())) {
-    const cheapest =
-      cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
+    if (!isAutoModelId(requestedId)) {
+      return NextResponse.json(
+        {
+          error: "The selected model is temporarily unavailable because Juno reached its daily provider budget. Choose Auto or try again later.",
+          code: "PLATFORM_BUDGET_EXCEEDED",
+        },
+        { status: 503 }
+      );
+    }
+    const cheapest = cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
     if (cheapest && cheapest.cost < modelInfo.cost) {
-      console.warn("[chat] platform budget exceeded — degrading model", {
+      console.warn("[chat] platform budget exceeded — Auto is choosing a cheaper model", {
         from: modelInfo.id,
         to: cheapest.id,
       });
-      routingWarning = `Answered with ${cheapest.name} to stay within today's capacity.`;
+      routingWarning = `Auto chose ${cheapest.name} to stay within today's capacity.`;
       modelInfo = cheapest;
     }
   }
 
   if (!modelInfo) {
-    const msg =
-      configuredProviders().length === 0
+    const requested = !isAutoModelId(requestedId) ? getModel(requestedId) : undefined;
+    let msg: string;
+    let code = "MODEL_UNAVAILABLE";
+    let status = 503;
+    if (requested && !isProviderConfigured(requested.provider)) {
+      msg = `${PROVIDERS[requested.provider].label} is not configured. Add ${PROVIDERS[requested.provider].apiKeyEnv} before using ${requested.name}.`;
+      code = "PROVIDER_NOT_CONFIGURED";
+    } else if (requested && !canUseModel(plan, requested.id)) {
+      msg = `${requested.name} is not included in your current plan.`;
+      code = "MODEL_NOT_IN_PLAN";
+      status = 403;
+    } else if (requested?.comingSoon) {
+      msg = `${requested.name} is not available yet.`;
+    } else if (requested) {
+      msg = `${requested.name} cannot be reached with its provider right now. Juno did not send your prompt to a different provider.`;
+    } else {
+      msg = configuredProviders().length === 0
         ? "No AI model providers are configured. Add at least one provider API key (e.g. ANTHROPIC_API_KEY)."
-        : "No AI model is available for your plan. Upgrade, or configure a provider with a model your plan allows.";
-    return NextResponse.json({ error: msg }, { status: 503 });
+        : "No AI model is available for your plan. Configure a provider with a model your plan allows.";
+    }
+    return NextResponse.json({ error: msg, code }, { status });
   }
   const modelId = modelInfo.id;
   // Persist the user's *selection* on the conversation (keep requested model sticky). The

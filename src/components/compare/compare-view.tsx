@@ -44,12 +44,11 @@ interface PaneConfig {
 }
 
 /** Chat models the user can actually run: configured provider + plan allows. */
-function eligibleModels(models: ModelInfo[], plan: ClientQuota["plan"], providers: Provider[]): ModelInfo[] {
+function eligibleModels(models: ModelInfo[], plan: ClientQuota["plan"]): ModelInfo[] {
   return models.filter(
     (m) =>
       (m.modality ?? "chat") === "chat" &&
       !m.comingSoon &&
-      providers.includes(m.provider) &&
       planRank(plan) >= planRank(effectiveMinPlan(m.minPlan))
   );
 }
@@ -61,10 +60,9 @@ function eligibleModels(models: ModelInfo[], plan: ClientQuota["plan"], provider
 function pickContrastModel(
   models: ModelInfo[],
   plan: ClientQuota["plan"],
-  providers: Provider[],
   usedProviders: ReadonlySet<Provider>
 ): ModelId | null {
-  const eligible = eligibleModels(models, plan, providers);
+  const eligible = eligibleModels(models, plan);
   const fresh = eligible.filter((m) => !m.legacy && !usedProviders.has(m.provider));
   const pool = fresh.length ? fresh : eligible.filter((m) => !usedProviders.has(m.provider));
   const pick = (list: ModelInfo[]) => {
@@ -86,7 +84,7 @@ function pickContrastModel(
 
 export function CompareView() {
   const router = useRouter();
-  const { models, settings, quota, features, setQuota } = useApp();
+  const { models, settings, quota, setQuota } = useApp();
   const plan = quota.plan;
   const paneSeq = React.useRef(0);
   const nextPaneId = React.useCallback(() => `pane-${paneSeq.current++}`, []);
@@ -94,8 +92,8 @@ export function CompareView() {
   // Runnable ids for the current plan/providers — a pane must never claim a
   // model the server would silently swap for its plan-aware fallback.
   const eligibleIds = React.useMemo(
-    () => new Set(eligibleModels(models, plan, features.providers).map((m) => m.id)),
-    [models, plan, features.providers]
+    () => new Set(eligibleModels(models, plan).map((m) => m.id)),
+    [models, plan]
   );
 
   // Defaults: pane 1 = the user's default model; pane 2 = a contrasting good
@@ -103,10 +101,10 @@ export function CompareView() {
   const [panes, setPanes] = React.useState<PaneConfig[]>(() => {
     let first = resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL;
     if (eligibleIds.size > 0 && !eligibleIds.has(first)) {
-      first = pickContrastModel(models, plan, features.providers, new Set()) ?? first;
+      first = pickContrastModel(models, plan, new Set()) ?? first;
     }
     const firstProvider = resolveModel(first)?.provider;
-    const contrast = pickContrastModel(models, plan, features.providers, new Set(firstProvider ? [firstProvider] : []));
+    const contrast = pickContrastModel(models, plan, new Set(firstProvider ? [firstProvider] : []));
     const second =
       contrast && contrast !== first
         ? contrast
@@ -195,7 +193,7 @@ export function CompareView() {
       panes.map((p) => resolveModel(p.modelId)?.provider).filter((p): p is Provider => !!p)
     );
     const modelId =
-      pickContrastModel(models, plan, features.providers, used) ??
+      pickContrastModel(models, plan, used) ??
       models.find((m) => (m.modality ?? "chat") === "chat" && !m.comingSoon)?.id ??
       DEFAULT_MODEL;
     const pane = { id: nextPaneId(), modelId };

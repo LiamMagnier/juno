@@ -464,9 +464,14 @@ export function ModelSelector({
   const autoSelected = isAutoModelId(value);
 
   const providerFilter = filter !== "all" ? (filter as Provider) : null;
-  const filterConfigured = providerFilter
-    ? features.providers.includes(providerFilter)
-    : true;
+  // The live model endpoint is authoritative for provider availability. This
+  // also works when the UI and /api backend are split across deployments with
+  // different environment snapshots.
+  const configuredProviders = React.useMemo(
+    () => new Set(models.map((model) => model.provider)),
+    [models],
+  );
+  const filterConfigured = providerFilter ? configuredProviders.has(providerFilter) : true;
 
   const visible: ModelInfo[] = sortModelsForDisplay(
     models
@@ -691,7 +696,7 @@ export function ModelSelector({
                 <RailButton
                   key={p}
                   active={filter === p}
-                  dimmed={!features.providers.includes(p)}
+                  dimmed={!configuredProviders.has(p)}
                   title={PROVIDERS[p].label}
                   onClick={() => setFilter(p)}
                 >

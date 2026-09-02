@@ -8,6 +8,7 @@ import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
+import { providerAdapterFor } from "@/lib/provider-routing";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -121,38 +122,34 @@ export async function* streamChat(opts: {
     }
   }
   try {
-    if (model.provider === "anthropic") {
-      yield* streamAnthropic(
-        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-        toolset, dynamicContext, fastMode
-      );
-      return;
-    }
-    if (model.provider === "google") {
-      yield* streamGemini(
-        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-        toolset, dynamicContext, opts.requestContext
-      );
-      return;
-    }
-    // gpt-*-pro and Responses-only Codex snapshots aren't served on
-    // /chat/completions — they take the Responses API adapter instead.
-    //
-    // Pro mode forces the same switch on a model that would otherwise be a
-    // chat/completions model: `reasoning.mode` exists ONLY on /v1/responses, so
-    // routing is not an optimisation here — sending GPT-5.6 to the compat
-    // adapter with pro requested would silently drop the mode and bill a
-    // standard turn the user believes was a pro one.
-    if (model.provider === "openai" && (model.api === "responses" || proMode)) {
-      yield* streamOpenAIResponses(
-        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-        toolset, dynamicContext, cacheKey, fastMode, proMode
-      );
-    } else {
-      yield* streamOpenAICompat(
-        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-        toolset, dynamicContext, cacheKey, fastMode
-      );
+    const adapter = providerAdapterFor(model, proMode);
+    switch (adapter) {
+      case "anthropic-native":
+        yield* streamAnthropic(
+          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+          toolset, dynamicContext, fastMode
+        );
+        return;
+      case "gemini-native":
+        yield* streamGemini(
+          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+          toolset, dynamicContext, opts.requestContext
+        );
+        return;
+      case "openai-responses":
+        // Responses-only snapshots and GPT Pro execution cannot use
+        // /chat/completions; this branch preserves their reasoning controls.
+        yield* streamOpenAIResponses(
+          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+          toolset, dynamicContext, cacheKey, fastMode, proMode
+        );
+        return;
+      case "openai-compatible":
+        yield* streamOpenAICompat(
+          model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+          toolset, dynamicContext, cacheKey, fastMode
+        );
+        return;
     }
   } finally {
     if (toolset) await toolset.close();

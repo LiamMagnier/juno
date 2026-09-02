@@ -29,7 +29,7 @@ export function CompareModelPicker({
   disabled?: boolean;
 }) {
   const router = useRouter();
-  const { models, quota, features } = useApp();
+  const { models, quota } = useApp();
   const plan = quota.plan;
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -45,13 +45,12 @@ export function CompareModelPicker({
         (m) =>
           (m.modality ?? "chat") === "chat" &&
           !m.comingSoon &&
-          features.providers.includes(m.provider) &&
           (!q ||
             m.name.toLowerCase().includes(q) ||
             m.providerModel.toLowerCase().includes(q) ||
             (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q))
       ),
-    [features.providers, models, q]
+    [models, q]
   );
 
   const select = (m: ModelInfo) => {

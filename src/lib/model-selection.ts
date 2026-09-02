@@ -58,6 +58,15 @@ export interface SelectionInputs<M extends SelectableModel> {
   requested: M | null;
   /** True when a platform-wide daily spend ceiling has been reached. */
   budgetExhausted?: boolean;
+  /**
+   * Whether Juno may answer with a model other than `requested`.
+   *
+   * This is deliberately opt-in. An explicit selector choice is a routing
+   * contract, not a suggestion: silently replacing Claude or GPT with the only
+   * configured provider makes the UI lie about which API received the prompt.
+   * Auto mode opts in because provider/model substitution is its stated job.
+   */
+  allowSubstitution?: boolean;
 }
 
 /**
@@ -85,10 +94,10 @@ export function selectModel<M extends SelectableModel>(
   inputs: SelectionInputs<M>
 ): ModelSelection<M> {
   const { catalogue, isEligible, isProviderHealthy, requested, requestedId } = inputs;
+  const allowSubstitution = inputs.allowSubstitution === true;
 
-  // A healthy provider is preferred, but a configured-but-currently-failing one
-  // beats nothing at all — so it stays as the second choice rather than being
-  // excluded outright.
+  // Auto prefers a healthy provider, but a configured-yet-failing one beats
+  // nothing at all. Exact mode never calls this fallback.
   const fallback = () =>
     cheapestEligible(catalogue, isEligible, isProviderHealthy) ??
     cheapestEligible(catalogue, isEligible);
@@ -98,14 +107,14 @@ export function selectModel<M extends SelectableModel>(
   let warning: string | null = null;
 
   if (!requested || !isEligible(requested)) {
-    model = fallback();
+    model = allowSubstitution ? fallback() : null;
     reason = "fallback";
   } else if (!isProviderHealthy(requested.provider)) {
-    // This generation cannot succeed: the provider is failing auth or billing.
-    // Rerouting beats streaming a guaranteed failure — but only if there is
-    // somewhere healthy to go, otherwise the request keeps the model it chose
-    // and fails honestly rather than being silently downgraded for nothing.
-    const alternative = cheapestEligible(catalogue, isEligible, isProviderHealthy);
+    // Auto may reroute a provider known to be failing auth or billing. An exact
+    // choice keeps the requested model and lets its provider error surface.
+    const alternative = allowSubstitution
+      ? cheapestEligible(catalogue, isEligible, isProviderHealthy)
+      : null;
     if (alternative) {
       warning = `${requested.name} is unavailable right now — answered with ${alternative.name} instead.`;
       model = alternative;
@@ -119,11 +128,9 @@ export function selectModel<M extends SelectableModel>(
     reason = "requested";
   }
 
-  // Applied last, and to whatever survived above: the ceiling is about spend,
-  // not about the request, so it degrades the model that would actually have
-  // run. Degrading rather than refusing is deliberate — a slower answer is a
-  // better outcome than no answer.
-  if (inputs.budgetExhausted && model) {
+  // Auto may also account for the platform ceiling. Exact choices are never
+  // degraded here because that would change the provider receiving the prompt.
+  if (allowSubstitution && inputs.budgetExhausted && model) {
     const cheapest = cheapestEligible(catalogue, isEligible, isProviderHealthy)
       ?? cheapestEligible(catalogue, isEligible);
     if (cheapest && cheapest.id !== model.id && cheapest.cost < model.cost) {
