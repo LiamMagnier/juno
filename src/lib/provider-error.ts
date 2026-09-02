@@ -38,9 +38,8 @@ export interface NormalizedProviderError {
   retryable: boolean;
   /**
    * True when the fault is with *Juno's* provider account rather than with the
-   * user's request. These must never be described to a customer in terms they
-   * cannot act on — there is no BYOK, so "top up that account" is advice about
-   * an account they do not own.
+   * user's request. They are still shown honestly to the customer, but without
+   * leaking credentials, account identifiers, or a raw provider response.
    */
   accountFault: boolean;
   /** Safe to render to a customer. */
@@ -178,12 +177,10 @@ const ACCOUNT_FAULT: Record<ProviderErrorClass, boolean> = {
  * Turn a provider/SDK error into something safe to show, plus the full detail
  * for logs.
  *
- * The rule that motivates this: a Juno subscriber was being shown "Claude
- * reports no remaining balance or quota. Top up that account, or pick another
- * model." There is no BYOK — "that account" is Juno's, and "top up" is an
- * instruction the customer cannot carry out. Auth and billing therefore
- * collapse to one neutral sentence, while context-length, content-filter and
- * rate-limit stay specific because those *are* actionable.
+ * Keep errors concrete enough for someone to understand why retrying will not
+ * help. We identify the class (credits, key configuration, rate limit, context
+ * length, etc.), but never pass through the raw provider body because it can
+ * contain credentials, account identifiers, or opaque SDK envelopes.
  */
 export function normalizeProviderError(err: unknown, providerLabel?: string): NormalizedProviderError {
   const { class: klass, status, raw } = classifyProviderError(err);
@@ -193,9 +190,10 @@ export function normalizeProviderError(err: unknown, providerLabel?: string): No
   let userMessage: string;
   switch (klass) {
     case "auth":
+      userMessage = `${who} cannot be used right now because its API connection is not configured correctly. Choose another model.`;
+      break;
     case "billing":
-      // Deliberately says nothing about keys, balances or quotas.
-      userMessage = `${who} is temporarily unavailable. Try another model.`;
+      userMessage = `${who} cannot respond because its API credits or provider quota are exhausted. Choose another model while service is restored.`;
       break;
     case "rate_limit":
       userMessage = `${who} is busy or rate-limiting right now. Try again in a moment.`;

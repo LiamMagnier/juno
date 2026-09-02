@@ -69,7 +69,7 @@ test("toGeminiContents handles attachments with extracted text", async () => {
   );
 });
 
-test("Gemini 3.7 serializes its exact supported thinking budget", () => {
+test("Gemini 3.7 requests visible thoughts with provider-native thinking levels", () => {
   const model: ModelInfo = {
     id: "google:gemini-3.7-flash",
     provider: "google",
@@ -84,29 +84,29 @@ test("Gemini 3.7 serializes its exact supported thinking budget", () => {
     webSearch: true,
   };
 
-  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingBudget: 2048 });
-  assert.deepEqual(geminiThinkingConfig(model, "medium"), { thinkingBudget: 8192 });
-  assert.deepEqual(geminiThinkingConfig(model, "high"), { thinkingBudget: 16384 });
-  assert.deepEqual(geminiThinkingConfig(model, "minimal"), { thinkingBudget: 8192 });
-  assert.deepEqual(geminiThinkingConfig(model, "xhigh"), { thinkingBudget: 8192 });
-  assert.deepEqual(geminiThinkingConfig(model, "max"), { thinkingBudget: 8192 });
-  assert.deepEqual(geminiThinkingConfig(model, null), { thinkingBudget: 8192 });
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { includeThoughts: true, thinkingLevel: "LOW" });
+  assert.deepEqual(geminiThinkingConfig(model, "medium"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+  assert.deepEqual(geminiThinkingConfig(model, "high"), { includeThoughts: true, thinkingLevel: "HIGH" });
+  assert.deepEqual(geminiThinkingConfig(model, "minimal"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+  assert.deepEqual(geminiThinkingConfig(model, "xhigh"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+  assert.deepEqual(geminiThinkingConfig(model, "max"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+  assert.deepEqual(geminiThinkingConfig(model, null), { includeThoughts: true, thinkingLevel: "MEDIUM" });
   assert.deepEqual(geminiGenerationConfig(model, 4096, "high"), {
     maxOutputTokens: 4096,
-    thinkingConfig: { thinkingBudget: 16384 },
+    thinkingConfig: { includeThoughts: true, thinkingLevel: "HIGH" },
   });
   assert.equal("temperature" in geminiGenerationConfig(model, 4096, "high"), false);
   assert.equal("topP" in geminiGenerationConfig(model, 4096, "high"), false);
   assert.equal("topK" in geminiGenerationConfig(model, 4096, "high"), false);
 });
 
-test("legacy Gemini 2.5 retains the thinking budget transport", () => {
+test("legacy Gemini 2.5 retains its budget and requests visible thoughts", () => {
   const model = {
     id: "google:gemini-2.5-pro", provider: "google", providerModel: "gemini-2.5-pro",
     name: "Gemini 2.5 Pro", minPlan: "PRO", vision: true, reasoning: true,
     agenticTools: true, cost: 3, modality: "chat", webSearch: true,
   } as ModelInfo;
-  assert.deepEqual(geminiThinkingConfig(model, "low"), { thinkingBudget: 2048 });
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { includeThoughts: true, thinkingBudget: 2048 });
   assert.equal(geminiThinkingBudget(model, "high"), 16384);
 });
 

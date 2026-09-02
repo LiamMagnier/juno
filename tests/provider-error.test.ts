@@ -109,8 +109,8 @@ test("retryability matches the class", () => {
   assert.equal(normalizeProviderError(contextTooLong).retryable, false);
 });
 
-test("no user-facing message ever exposes how Juno's provider accounts are funded", () => {
-  const forbidden = /top up|balance|quota|credit|api.?key|billing/i;
+test("user-facing messages identify the problem without exposing provider secrets", () => {
+  const forbidden = /top up|balance|api.?key|sk-[a-z0-9]|bearer\s+/i;
   const errors = [
     anthropicBilling,
     openaiNoCredits,
@@ -151,11 +151,12 @@ test("the actionable classes stay specific", () => {
   assert.match(normalizeProviderError(modelGone, "Google").userMessage, /isn't available/i);
 });
 
-test("auth and billing collapse to the same neutral sentence", () => {
+test("auth and billing explain their distinct root causes", () => {
   const a = normalizeProviderError(badKey, "Anthropic · Claude").userMessage;
   const b = normalizeProviderError(anthropicBilling, "Anthropic · Claude").userMessage;
-  assert.equal(a, b);
-  assert.match(a, /temporarily unavailable/i);
+  assert.notEqual(a, b);
+  assert.match(a, /API connection/i);
+  assert.match(b, /credits|quota/i);
 });
 
 test("network faults are recognised, including a client abort", () => {
