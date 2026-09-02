@@ -52,7 +52,7 @@ test("a generated attachment counts as a visible answer", () => {
         {
           id: "image-1",
           kind: "IMAGE",
-          filename: "result.png",
+          fileName: "result.png",
           mimeType: "image/png",
           size: 42,
           url: "/api/attachments/image-1",

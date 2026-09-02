@@ -15,7 +15,7 @@ export function serverTranscriptRevision(messages: ClientMessage[]): string {
 export type SettledClientMessage = ClientMessage & {
   streaming: false;
   error?: true;
-  errorMessage?: string;
+  errorMessage?: string | null;
 };
 
 /** Never let a terminal provider response settle into an invisible bubble. */
