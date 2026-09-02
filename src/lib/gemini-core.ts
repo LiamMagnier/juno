@@ -170,15 +170,39 @@ export function geminiThinkingBudget(
   }
 }
 
+export type GeminiThinkingConfig =
+  | { includeThoughts: true; thinkingLevel: "LOW" | "MEDIUM" | "HIGH" }
+  | { includeThoughts: true; thinkingBudget: number };
+
+function isGemini3OrLater(model: ModelInfo): boolean {
+  const providerModel = model.providerModel.replace(/^models\//, "");
+  const match = /^gemini-(\d+)(?:[.\-]|$)/.exec(providerModel);
+  return match !== null && Number(match[1]) >= 3;
+}
+
 /** The provider-native Gemini thinking object for Juno's GenerateContent path. */
 export function geminiThinkingConfig(
   model: ModelInfo,
   effort?: ReasoningEffort | null,
-): { thinkingBudget: number } | undefined {
+): GeminiThinkingConfig | undefined {
   if (!model.reasoning) return undefined;
   const clamped = clampReasoningEffort(model, effort ?? null);
+
+  // Gemini 3+ accepts provider-native thinking levels. Sending the legacy
+  // token budget to these models can end a stream after thought tokens without
+  // a final answer. Thought parts are omitted unless includeThoughts is true.
+  if (isGemini3OrLater(model)) {
+    const thinkingLevel =
+      clamped === "low" || clamped === "minimal"
+        ? "LOW"
+        : clamped === "high" || clamped === "xhigh" || clamped === "max"
+          ? "HIGH"
+          : "MEDIUM";
+    return { includeThoughts: true, thinkingLevel };
+  }
+
   const thinkingBudget = geminiThinkingBudget(model, clamped);
-  return thinkingBudget === undefined ? undefined : { thinkingBudget };
+  return thinkingBudget === undefined ? undefined : { includeThoughts: true, thinkingBudget };
 }
 
 /**
