@@ -100,6 +100,17 @@ test("Gemini 3.7 requests visible thoughts with provider-native thinking levels"
   assert.equal("topK" in geminiGenerationConfig(model, 4096, "high"), false);
 });
 
+test("Gemini 3.8 sends the selected provider-native thinking level", () => {
+  const model = {
+    id: "google:gemini-3.8-flash", provider: "google", providerModel: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash", minPlan: "FREE", vision: true, reasoning: true,
+    agenticTools: true, cost: 2, modality: "chat", webSearch: true,
+  } as ModelInfo;
+  assert.deepEqual(geminiThinkingConfig(model, "low"), { includeThoughts: true, thinkingLevel: "LOW" });
+  assert.deepEqual(geminiThinkingConfig(model, "medium"), { includeThoughts: true, thinkingLevel: "MEDIUM" });
+  assert.deepEqual(geminiThinkingConfig(model, "high"), { includeThoughts: true, thinkingLevel: "HIGH" });
+});
+
 test("legacy Gemini 2.5 retains its budget and requests visible thoughts", () => {
   const model = {
     id: "google:gemini-2.5-pro", provider: "google", providerModel: "gemini-2.5-pro",

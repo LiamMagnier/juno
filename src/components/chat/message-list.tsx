@@ -251,7 +251,7 @@ export function MessageList(props: MessageListProps) {
             // prop on MessageItem: the id has to sit on a real element for
             // scrollIntoView, and MessageItem's own root differs between the
             // user and assistant branches.
-            <div key={m.id} data-message-id={m.id}>
+            <div key={m.renderKey ?? m.id} data-message-id={m.id}>
             <MessageItem
               message={m}
               isLast={i === messages.length - 1}
