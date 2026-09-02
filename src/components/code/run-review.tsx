@@ -184,17 +184,19 @@ export function RunReviewPane({
         // is an ordinary column beside the list, which stays readable. One
         // element in both cases — a second copy behind a breakpoint is two
         // panes that drift.
-        "fixed inset-0 z-modal flex flex-col overflow-hidden border-border bg-card",
+        // Full-bleed it is the page's own ground; beside the list it is a
+        // raised card, the same material as every other card in the product.
+        "surface-raised fixed inset-0 z-modal flex flex-col overflow-hidden",
         // `sticky` from lg so the pane stays put while the run list scrolls
         // past it — a review pane that scrolls away is a modal with extra
         // steps, and the whole reason it is not a modal is that both halves
         // have to stay on screen together.
-        "lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100dvh-9rem)] lg:w-[27rem] lg:shrink-0 lg:rounded-card lg:border",
+        "lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100dvh-9rem)] lg:w-[27rem] lg:shrink-0 lg:rounded-card",
       )}
     >
-      <header className="flex items-start gap-3 border-b border-border/70 px-4 py-3">
+      <header className="flex items-start gap-3 border-b border-border/60 px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-label uppercase text-muted-foreground">Review</p>
+          <p className="font-mono text-label text-muted-foreground">Review</p>
           <h2 className="mt-1 truncate text-sm font-semibold">{run.title}</h2>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
             <span className="font-mono tabular-nums">
@@ -213,7 +215,7 @@ export function RunReviewPane({
       </header>
 
       {canScope && (
-        <div className="border-b border-border/70 px-4 py-2.5">
+        <div className="border-b border-border/60 px-4 py-2.5">
           <SegmentedControl<Scope>
             value={scope}
             onChange={setScope}
@@ -253,7 +255,7 @@ export function RunReviewPane({
           {/* The risk verdict rides at the top of the pane as well as on the
               receipt, because a reader who opened the diff directly never saw
               the receipt and still deserves the reasons. */}
-          <div className="border-b border-border/70 px-4 py-2.5">
+          <div className="border-b border-border/60 px-4 py-2.5">
             <RiskLine risk={risk} />
           </div>
 
@@ -265,7 +267,7 @@ export function RunReviewPane({
             picker below lists every file at every size, and the cap lives on the
             diff body alone.
           */}
-          <div className="shrink-0 border-b border-border/70">
+          <div className="shrink-0 border-b border-border/60">
             <ScrollFade viewportClassName="max-h-40 px-2 py-2" className="min-h-0">
               <ul role="list" aria-label={`${files.length} changed files`} className="space-y-0.5">
                 {files.map((file) => (
@@ -307,7 +309,7 @@ export function RunReviewPane({
         </div>
       )}
 
-      <footer className="shrink-0 border-t border-border/70 px-4 py-3">
+      <footer className="shrink-0 border-t border-border/60 px-4 py-3">
         {run.conversationId ? (
           <>
             <Button className="w-full gap-1.5" disabled={!canSend || sending} onClick={sendNotes}>
@@ -459,7 +461,7 @@ function FileDiffBody({
         a file they can see the name and the churn of.
       */}
       {!file.patch ? (
-        <div className="rounded-field border border-dashed border-border px-3 py-4 text-center">
+        <div className="surface-inset rounded-field border-dashed border-border/80 px-3 py-4 text-center">
           <p className="text-sm font-medium">No diff was sent for this file</p>
           <p className="mt-1 text-caption text-muted-foreground">
             {file.changeKind} · +{file.added} −{file.removed}. Runs on your Mac report which files
@@ -467,8 +469,8 @@ function FileDiffBody({
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-field border border-border/70">
-          <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-muted px-2.5 py-1.5">
+        <div className="overflow-hidden rounded-field border border-border/60">
+          <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted px-2.5 py-1.5">
             <span className="truncate font-mono text-caption text-muted-foreground">{file.path}</span>
             <span className="shrink-0 font-mono text-caption tabular-nums">
               <span className="text-success">+{file.added}</span>{" "}
@@ -624,7 +626,7 @@ function DiffLine({
 function NoteChip({ note, onRemove }: { note: Note; onRemove: () => void }) {
   const meta = SEVERITIES.find((s) => s.id === note.severity)!;
   return (
-    <div className="flex items-start gap-2 rounded-field border border-border/70 bg-muted px-2.5 py-1.5">
+    <div className="flex items-start gap-2 rounded-field border border-border/60 bg-muted px-2.5 py-1.5">
       <span
         className={cn(
           "mt-px shrink-0 rounded-full border px-1.5 font-mono text-caption",
@@ -657,8 +659,8 @@ function NoteComposer({
   const id = React.useId();
 
   return (
-    <div className="space-y-2 rounded-field border border-border bg-background p-2.5">
-      <p className="font-mono text-label uppercase text-muted-foreground">Note on {anchor}</p>
+    <div className="surface-inset space-y-2 rounded-field p-2.5">
+      <p className="font-mono text-label text-muted-foreground">Note on {anchor}</p>
       <SegmentedControl<Severity>
         value={severity}
         onChange={setSeverity}
@@ -748,9 +750,9 @@ export function RunReceipt({
   const removed = detail.files.reduce((sum, f) => sum + f.removed, 0);
 
   return (
-    <div className={cn("space-y-3 rounded-field border border-border/70 bg-muted px-3 py-2.5", className)}>
+    <div className={cn("surface-inset space-y-3 rounded-field px-3 py-2.5", className)}>
       <div>
-        <p className="font-mono text-label uppercase text-muted-foreground">What changed</p>
+        <p className="font-mono text-label text-muted-foreground">What changed</p>
         <p className="mt-1 text-sm">
           {detail.files.length === 0 ? (
             "No file changes were reported."
@@ -768,7 +770,7 @@ export function RunReceipt({
       {detail.files.length > 0 && <RiskLine risk={risk} />}
 
       <div>
-        <p className="font-mono text-label uppercase text-muted-foreground">What was checked</p>
+        <p className="font-mono text-label text-muted-foreground">What was checked</p>
         {detail.checks.length > 0 ? (
           <>
             <ul className="mt-1 space-y-0.5">
@@ -794,7 +796,7 @@ export function RunReceipt({
 
       {detail.error && (
         <div>
-          <p className="font-mono text-label uppercase text-muted-foreground">Reported problem</p>
+          <p className="font-mono text-label text-muted-foreground">Reported problem</p>
           <p className="mt-1 text-caption text-destructive">{detail.error}</p>
         </div>
       )}

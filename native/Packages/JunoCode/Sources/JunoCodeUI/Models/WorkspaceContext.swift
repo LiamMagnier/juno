@@ -123,9 +123,10 @@ public final class WorkspaceContext: Sendable {
     /// Discovers and connects configured MCP servers only when a Code
     /// orchestrator is actually being built. Each discovered tool still passes
     /// through Juno's normal approval gate via ``MCPCodeTool``.
-    public func mcpTools() async -> [any CodeTool] {
+    public func mcpTools(excludingServers disabled: Set<String> = []) async -> [any CodeTool] {
         guard let mcpRegistry,
               let references = try? await mcpRegistry.allTools()
+                  .filter({ !disabled.contains($0.serverID) })
         else { return [] }
         return references.map { MCPCodeTool(registry: mcpRegistry, reference: $0) }
     }

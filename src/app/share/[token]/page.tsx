@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { AppPage } from "@/components/ui/app-page";
 import { JunoMark } from "@/components/brand/logo";
 import { SharedChatTranscript } from "@/components/share/shared-chat-transcript";
 import { SharedArtifactViewer } from "@/components/share/shared-artifact-viewer";
@@ -52,58 +53,62 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
     <div className={cn("flex flex-col bg-background text-foreground", artifact ? "h-dvh overflow-hidden" : "min-h-dvh")}>
-      {/* `bg-card/85`, not `bg-background/85`. On the true-black theme the
-          background rung IS the transcript's ground, so the sticky chrome was
-          chromatically identical to the content scrolling under it and only a
-          damped hairline said the bar existed. --card is the first rung above
-          the ground (6.5%), which is exactly what a floating bar wants. */}
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-card/85 backdrop-blur-md">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-3 px-4 sm:px-6">
+      {/* A slim bar on the card rung with a hairline — no glass, because what
+          scrolls under it is a reading surface (SOFT_UI.md §1.4). The one
+          primary action on the page lives here, where it is always reachable. */}
+      <header className="sticky top-0 z-toolbar shrink-0 border-b border-border/60 bg-card">
+        <AppPage scroll={false} measure="reading" contentClassName="flex h-12 items-center gap-3 py-0">
           <Link
             href="/"
             aria-label="Juno"
             className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
           >
-            <JunoMark className="h-6 w-6" />
+            <JunoMark className="size-6" />
           </Link>
-          {/* text-heading — this was `text-base` (16px), a Tailwind default that
-              sits between body (15px) and heading (18px) and is on no Juno rung. */}
-          <h1 className="min-w-0 flex-1 truncate font-serif text-heading">{title}</h1>
-          {/* text-caption (11px), not an arbitrary text-[10px] below the bottom of
-              the scale — on the one page a prospect sees before the marketing
-              site. */}
-          <span className="shrink-0 whitespace-nowrap font-mono text-caption text-muted-foreground">
-            Shared {sharedOn}
-          </span>
-        </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-medium">{title}</h1>
+            <p className="truncate font-mono text-caption text-muted-foreground">Shared {sharedOn}</p>
+          </div>
+          <Button size="sm" asChild>
+            <Link href="/">Open in Juno</Link>
+          </Button>
+        </AppPage>
       </header>
 
       {chat ? (
-        <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-6">
+        // The transcript stays flat prose on the page ground, at the reading measure.
+        <AppPage scroll={false} measure="reading" className="flex-1" contentClassName="py-8">
           <SharedChatTranscript messages={chat.messages} artifacts={chat.artifacts} />
-        </main>
+        </AppPage>
       ) : artifact ? (
-        <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col px-4 py-4 sm:px-6 sm:py-6">
+        <AppPage
+          scroll={false}
+          measure="reading"
+          className="flex min-h-0 flex-1 flex-col"
+          contentClassName="flex min-h-0 flex-1 flex-col py-4 sm:py-6"
+        >
           <SharedArtifactViewer
             type={artifact.type}
             language={artifact.language}
             content={artifact.content}
             version={artifact.version}
           />
-        </main>
+        </AppPage>
       ) : null}
 
-      {/* Same rung as the header above — the two bars are one piece of chrome. */}
-      <footer className="sticky bottom-0 z-20 shrink-0 border-t border-border/60 bg-card/85 backdrop-blur-md">
-        <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4 sm:px-6">
+      <footer className="shrink-0 border-t border-border/60">
+        <AppPage scroll={false} measure="reading" contentClassName="flex h-12 items-center justify-between gap-3 py-0">
           <span className="inline-flex items-center gap-2 font-mono text-caption text-muted-foreground">
-            <JunoMark className="h-4 w-4" />
+            <JunoMark className="size-4" />
             Made with Juno
           </span>
-          <Button size="sm" asChild>
-            <Link href="/">Try Juno</Link>
-          </Button>
-        </div>
+          <Link
+            href="/sign-up"
+            className="rounded-xs text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground"
+          >
+            Create your own account
+          </Link>
+        </AppPage>
       </footer>
     </div>
   );

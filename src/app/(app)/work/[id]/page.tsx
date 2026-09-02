@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, GripVertical, Pause, Play, Square } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { GripVertical, Pause, Play, Square } from "lucide-react";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { splitBounds, useSplitPane } from "@/hooks/use-split-pane";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { cn } from "@/lib/utils";
@@ -658,7 +659,7 @@ export default function WorkThreadPage() {
 
   if (loadFailure !== null) {
     return (
-      <ThreadFrame>
+      <ThreadFrame heading="Task">
         {/* No Retry on the two that answer the same way every time: a task that
             is gone stays gone, and a signed-out tab needs a sign-in rather than
             a second request. */}
@@ -681,7 +682,7 @@ export default function WorkThreadPage() {
 
   if (session === null) {
     return (
-      <ThreadFrame>
+      <ThreadFrame heading={<Skeleton className="h-8 w-2/3 max-w-full" />}>
         {/* Four short blocks rather than four task-row-shaped ones: what resolves
             here is a header and a transcript, not a list, so the placeholder is
             sized to the paragraphs it stands in for. */}
@@ -929,57 +930,34 @@ export default function WorkThreadPage() {
   const railLead = RAIL_ORDER.find((name) => Boolean(sections[name])) ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-6">
-        <div className="mx-auto w-full max-w-[80rem]">
-          <div className="mb-1 flex items-center gap-2">
-            {/* A real link, not a router.push behind a button: this is a URL
-                somebody cmd-clicks, middle-clicks and hovers to preview, and a
-                button also reports itself to assistive tech as the wrong thing.
-                `WorkPageFrame` and `AppPageHeader` both already do it this way,
-                so back behaved differently here than on every sibling page. */}
-            <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
-              <Link href="/work">
-                <ArrowLeft className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
-            {/* Identical to ThreadFrame's eyebrow below. The same word in the
-                same position was changing face, size and tracking the moment the
-                task resolved. */}
-            <span className="font-mono text-label text-muted-foreground">Work</span>
-          </div>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              {/* `text-display` and the serif face, the same pair the Work home's
-                  h1 uses. Two page titles one click apart were on two bespoke
-                  clamps, neither of them on the ladder. */}
-              <h1 className="font-serif text-display">
-                {session.title || "Untitled task"}
-              </h1>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <WorkStatusPill status={session.status} />
-                <span className="text-ui text-muted-foreground">
-                  {statusSentence(session.status)}
-                </span>
-              </div>
-              {/* What it is costing, where it can be seen without scrolling.
-                  The same three numbers appear as bars against their ceilings at
-                  the bottom of the reference column; these are the glance, those
-                  are the check. A draft has no run and therefore no numbers —
-                  showing three zeroes would imply it had started. */}
-              {run !== null && (
-                <div className="mt-2">
-                  <WorkLiveMeter run={run} />
-                </div>
-              )}
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 pt-1">
+    <AppPage
+      measure="full"
+      scroll={false}
+      className="flex h-full min-h-0 flex-col"
+      contentClassName="flex min-h-0 flex-1 flex-col pb-0"
+    >
+      <div className="mx-auto w-full max-w-[80rem] shrink-0">
+        <AppPageHeader
+          eyebrow="Work"
+          heading={session.title || "Untitled task"}
+          icon={AppIcons.work}
+          backHref="/work"
+          backLabel="Back to Work"
+          className="mb-4"
+          lede={
+            <>
+              <WorkStatusPill status={session.status} className="mr-2 align-middle" />
+              {statusSentence(session.status)}
+            </>
+          }
+          actions={
+            <>
               {notStarted && (
                 <Button
                   size="sm"
                   disabled={busyControl}
                   onClick={() => void dispatch("manual")}
-                  className="h-8 gap-1.5"
+                  className="gap-1.5"
                 >
                   <Play className="size-3.5" aria-hidden="true" /> Start
                 </Button>
@@ -989,7 +967,7 @@ export default function WorkThreadPage() {
                   size="sm"
                   disabled={busyControl}
                   onClick={() => void control("resume")}
-                  className="h-8 gap-1.5"
+                  className="gap-1.5"
                 >
                   <Play className="size-3.5" aria-hidden="true" /> Resume
                 </Button>
@@ -1015,7 +993,7 @@ export default function WorkThreadPage() {
                   disabled={busyControl}
                   onClick={() => void control("pause")}
                   title="Stops at the next clean point and keeps its progress. You can resume it."
-                  className="h-8 gap-1.5"
+                  className="gap-1.5"
                 >
                   <Pause className="size-3.5" aria-hidden="true" /> Pause
                 </Button>
@@ -1027,7 +1005,7 @@ export default function WorkThreadPage() {
                   disabled={busyControl}
                   onClick={() => void control("cancel")}
                   title="Ends this attempt now. Its progress is not kept, and running it again starts from the goal."
-                  className="h-8 gap-1.5"
+                  className="gap-1.5"
                 >
                   <Square className="size-3.5" aria-hidden="true" /> Stop
                 </Button>
@@ -1038,17 +1016,29 @@ export default function WorkThreadPage() {
                   size="sm"
                   disabled={busyControl}
                   onClick={() => void dispatch("retry")}
-                  className="h-8 gap-1.5"
+                  className="gap-1.5"
                 >
                   <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again
                 </Button>
               )}
-            </div>
-          </div>
+            </>
+          }
+        />
 
-          {/* Every reason this task is not simply proceeding, stated once, at the
-              top, where a spinner would otherwise be. */}
-          <div className="mt-3 space-y-2.5">
+        {/* What it is costing, where it can be seen without scrolling. The same
+            three numbers appear as bars against their ceilings at the bottom of
+            the reference column; these are the glance, those are the check. A
+            draft has no run and therefore no numbers — showing three zeroes
+            would imply it had started. */}
+        {run !== null && (
+          <div className="mb-4">
+            <WorkLiveMeter run={run} />
+          </div>
+        )}
+
+        {/* Every reason this task is not simply proceeding, stated once, at the
+            top, where a spinner would otherwise be. */}
+        <div className="mb-4 space-y-2.5 empty:hidden">
             {blocked !== null && (
               <WorkStateNote tone="blocked">
                 <p>{blocked.explanation}</p>
@@ -1124,12 +1114,11 @@ export default function WorkThreadPage() {
             )}
           </div>
 
-          {/* The one thing a screen reader is interrupted for. See
-              `WorkRunAnnouncer` — the activity feed deliberately is not a live
-              region, and this carries the state changes in its place. */}
-          <WorkRunAnnouncer status={session.status} detail={run?.terminalDetail ?? null} />
-        </div>
-      </header>
+        {/* The one thing a screen reader is interrupted for. See
+            `WorkRunAnnouncer` — the activity feed deliberately is not a live
+            region, and this carries the state changes in its place. */}
+        <WorkRunAnnouncer status={session.status} detail={run?.terminalDetail ?? null} />
+      </div>
 
       {/*
        * One scroll region on a phone, two on a desktop — and three grid items in
@@ -1153,7 +1142,7 @@ export default function WorkThreadPage() {
           measures `grid.right - pointerX`; with `px-4 sm:px-6` still on the grid
           that measurement was over by the padding, and the rail's edge landed a
           padding-width to the left of the pointer for the whole drag. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 lg:overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
         <div
           ref={gridRef}
           style={
@@ -1162,7 +1151,7 @@ export default function WorkThreadPage() {
               : undefined
           }
           className={cn(
-            "mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 py-6 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:py-0",
+            "mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 pb-8 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:pb-0",
             // Undragged: the ORIGINAL tracks, byte-for-byte, including the xl
             // step. A dragged width is one number at every size above lg —
             // stepping it at xl would move a column the user had just placed.
@@ -1176,7 +1165,7 @@ export default function WorkThreadPage() {
               id="work-needs-you"
               tabIndex={-1}
               aria-label="Waiting on you"
-              className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:border-l lg:border-border/60 lg:pb-7 lg:pl-8 lg:pt-6"
+              className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8 lg:pt-1"
             >
               {questions.length > 0 && (
                 <div>
@@ -1211,7 +1200,7 @@ export default function WorkThreadPage() {
             </section>
           )}
 
-          <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:py-6">
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:pb-6 lg:pt-1">
             <WorkConversation
               session={session}
               run={run}
@@ -1235,8 +1224,8 @@ export default function WorkThreadPage() {
             tabIndex={-1}
             aria-label="Run detail"
             className={cn(
-              "min-w-0 space-y-8 focus-visible:outline-none lg:col-start-2 lg:row-start-2 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8",
-              !needsYou && "lg:pt-6"
+              "min-w-0 space-y-4 focus-visible:outline-none lg:col-start-2 lg:row-start-2 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8",
+              !needsYou && "lg:pt-1"
             )}
           >
             {RAIL_ORDER.map((name) => sections[name])}
@@ -1272,7 +1261,7 @@ export default function WorkThreadPage() {
           </div>
         </div>
       </div>
-    </div>
+    </AppPage>
   );
 }
 
@@ -1292,8 +1281,8 @@ export default function WorkThreadPage() {
  */
 function NeedsYouHeading({ count, children }: { count: number; children: React.ReactNode }) {
   return (
-    <h2 className="mb-2.5 flex items-baseline gap-2">
-      <span className="font-mono text-label text-warning-foreground">{children}</span>
+    <h2 className="mb-3 flex items-baseline gap-2">
+      <span className="text-heading text-warning-foreground">{children}</span>
       {count > 1 && (
         <span className="font-mono text-caption tabular-nums text-warning-foreground/80">
           {count}
@@ -1334,26 +1323,24 @@ function uncapitalize(text: string): string {
 }
 
 /**
- * The header + centred column used by the pre-content states.
+ * The header + column used by the pre-content states.
  *
- * `mb-1` on the nav row, not `mb-4`: this row is the same row as the loaded
- * header's above and as `AppPageHeader`'s, and it was sitting at a third gap —
- * so the eyebrow visibly jumped down the page the moment the task resolved.
+ * The same `full` measure and the same capped column as the loaded page, so
+ * the eyebrow and the title stay put the moment the task resolves.
  */
-function ThreadFrame({ children }: { children: React.ReactNode }) {
+function ThreadFrame({ heading, children }: { heading: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-2xl">
-        <div className="mb-1 flex items-center gap-2">
-          <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
-            <Link href="/work">
-              <ArrowLeft className="size-4" aria-hidden="true" />
-            </Link>
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Work</span>
-        </div>
+    <AppPage measure="full">
+      <div className="mx-auto w-full max-w-[80rem]">
+        <AppPageHeader
+          eyebrow="Work"
+          heading={heading}
+          icon={AppIcons.work}
+          backHref="/work"
+          backLabel="Back to Work"
+        />
         {children}
       </div>
-    </div>
+    </AppPage>
   );
 }

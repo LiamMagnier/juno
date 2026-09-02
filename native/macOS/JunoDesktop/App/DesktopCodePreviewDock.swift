@@ -118,7 +118,7 @@ struct DesktopCodePreviewDock<Content: View>: View {
             }
             .transition(
                 .asymmetric(
-                    insertion: .offset(x: DesktopChatMotion.canvasSlide)
+                    insertion: .offset(x: DesktopChoreography.canvasSlide)
                         .combined(with: .opacity),
                     removal: .opacity
                 )

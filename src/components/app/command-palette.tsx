@@ -31,6 +31,7 @@ import {
 } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 import { Pressable } from "@/components/ui/pressable";
+import { Kbd } from "@/components/ui/kbd";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { staggerDelay } from "@/lib/motion";
 
@@ -81,12 +82,19 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   return <>{parts}</>;
 }
 
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border border-border/70 bg-muted/80 px-1 font-mono text-micro leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
-      {children}
-    </kbd>
-  );
+/** "⌘⇧O" → ["⌘", "⇧", "O"]; "Esc" → ["Esc"]. Modifier glyphs are one key each. */
+function splitKeys(hint: string): string[] {
+  const out: string[] = [];
+  let word = "";
+  for (const ch of hint) {
+    if ("⌘⇧⌥⌃↵↑↓".includes(ch)) {
+      if (word) out.push(word);
+      word = "";
+      out.push(ch);
+    } else word += ch;
+  }
+  if (word) out.push(word);
+  return out;
 }
 
 /** Compact relative time for the trailing meta ("Just now", "2d", "3mo"). */
@@ -333,7 +341,7 @@ function PaletteShell({
                         // one was 11px sans at /70, which is both off the scale and
                         // under 4.5:1 on the black ground.
                         className={cn(
-                          "px-2.5 pb-1 font-mono text-label uppercase text-muted-foreground",
+                          "px-2.5 pb-1 font-mono text-label text-muted-foreground",
                           i === 0 ? "pt-1.5" : "pt-3"
                         )}
                       >
@@ -406,7 +414,7 @@ function PaletteShell({
                       )}
                       {c.hint && (
                         <span className="flex shrink-0 items-center gap-1">
-                          {c.hint.split("").map((k, ki) => (
+                          {splitKeys(c.hint).map((k, ki) => (
                             <Kbd key={ki}>{k}</Kbd>
                           ))}
                         </span>
@@ -868,6 +876,7 @@ function CommandMenu() {
   const [open, setOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [projects, setProjects] = React.useState<PaletteProject[]>([]);
 
   const go = React.useCallback(
     (href: string) => {
@@ -907,18 +916,46 @@ function CommandMenu() {
     };
     const openMenu = () => setOpen(true);
     const openShortcuts = () => setShortcutsOpen(true);
+    // ⌘⇧L (use-global-shortcuts) lands here: this is the one place the theme
+    // toggle also writes the setting back.
+    const onToggleTheme = () => toggleTheme();
     window.addEventListener("keydown", onKey);
     window.addEventListener("juno:command-palette", openMenu);
     window.addEventListener("juno:shortcuts", openShortcuts);
+    window.addEventListener("juno:toggle-theme", onToggleTheme);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("juno:command-palette", openMenu);
       window.removeEventListener("juno:shortcuts", openShortcuts);
+      window.removeEventListener("juno:toggle-theme", onToggleTheme);
     };
-  }, [router]);
+  }, [router, toggleTheme]);
 
   React.useEffect(() => {
     if (open) setQuery("");
+  }, [open]);
+
+  // Projects are not in app context; fetched per open so the section is live.
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/projects")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { projects?: unknown }) => {
+        if (cancelled || !Array.isArray(data.projects)) return;
+        setProjects(
+          (data.projects as Array<Record<string, unknown>>).map((p) => ({
+            id: String(p.id ?? ""),
+            name: String(p.name ?? ""),
+            starred: Boolean(p.starred),
+            updatedAt: String(p.updatedAt ?? ""),
+          }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   const q = query.trim().toLowerCase();
@@ -927,10 +964,12 @@ function CommandMenu() {
     const matches = (label: string, keywords?: string) =>
       !q || label.toLowerCase().includes(q) || (keywords ? keywords.includes(q) : false);
 
-    const quick: PaletteItem[] = [
+    // Four sections: Actions (things to start and places to go), Chats,
+    // Projects, Settings. A typed query filters across all four.
+    const actions: PaletteItem[] = [
       {
         id: "new-chat",
-        group: "Quick actions",
+        group: "Actions",
         label: "New chat",
         hint: "⌘⇧O",
         icon: AppIcons.new,
@@ -940,94 +979,76 @@ function CommandMenu() {
           window.dispatchEvent(new CustomEvent("juno:new-chat"));
         },
       },
+      { id: "new-work", group: "Actions", label: "New Work task", icon: AppIcons.work, keywords: "work task do errand agent mac cloud automation", run: () => go("/work") },
+      { id: "new-code", group: "Actions", label: "New code session", icon: AppIcons.code, keywords: "code start workspace session mac", run: () => go("/code/new") },
+      { id: "new-task", group: "Actions", label: "New scheduled task", icon: AppIcons.tasks, keywords: "schedule recurring automation cron reminder", run: () => go("/tasks") },
+      { id: "new-assistant", group: "Actions", label: "New assistant", icon: AppIcons.assistants, keywords: "create custom assistant bot gem gpt instructions", run: () => go("/assistants") },
       {
-        id: "new-work",
-        group: "Quick actions",
-        label: "New Work task",
-        icon: AppIcons.work,
-        keywords: "work task do errand agent mac cloud automation",
-        run: () => go("/work"),
+        id: "search-everything",
+        group: "Actions",
+        label: "Search everything",
+        icon: AppIcons.search,
+        keywords: "find messages files artifacts memory",
+        run: () => {
+          setOpen(false);
+          window.dispatchEvent(new CustomEvent("juno:search"));
+        },
       },
-      {
-        id: "new-code",
-        group: "Quick actions",
-        label: "New code session",
-        icon: AppIcons.code,
-        keywords: "code start workspace session mac",
-        run: () => go("/code/new"),
-      },
-      {
-        id: "new-task",
-        group: "Quick actions",
-        label: "New scheduled task",
-        icon: AppIcons.tasks,
-        keywords: "schedule recurring automation cron reminder",
-        run: () => go("/tasks"),
-      },
-      {
-        id: "new-assistant",
-        group: "Quick actions",
-        label: "New assistant",
-        icon: AppIcons.assistants,
-        keywords: "create custom assistant bot gem gpt instructions",
-        run: () => go("/assistants"),
-      },
+      { id: "toggle-sidebar", group: "Actions", label: "Toggle sidebar", hint: "⌘⇧S", icon: Columns2, keywords: "collapse expand rail panel", run: () => { setOpen(false); window.dispatchEvent(new CustomEvent("juno:toggle-sidebar")); } },
+      { id: "assistants", group: "Actions", label: "Open Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
+      { id: "work", group: "Actions", label: "Open Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
+      { id: "code-runs", group: "Actions", label: "Open Code runs", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
+      { id: "code-pulls", group: "Actions", label: "Open pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
+      { id: "design", group: "Actions", label: "Open Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
+      { id: "artifacts", group: "Actions", label: "Open Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
+      { id: "library", group: "Actions", label: "Open Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
+      { id: "connections", group: "Actions", label: "Open Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
+      { id: "tasks", group: "Actions", label: "Open Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
+      { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
+      { id: "memory", group: "Actions", label: "Open Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
+      { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
     ].filter((c) => matches(c.label, c.keywords));
 
-    const chats = conversations.filter((c) => c.kind !== "code");
-    const recentChats: PaletteItem[] = (
+    const chatRows = conversations.filter((c) => c.kind !== "code" && !c.archivedAt);
+    const chats: PaletteItem[] = (
       q
-        ? chats.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
-        : [...chats]
+        ? chatRows.filter((c) => c.title.toLowerCase().includes(q)).slice(0, 6)
+        : [...chatRows]
             .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
             .slice(0, 5)
     ).map((c) => ({
       id: "recent-" + c.id,
-      group: "Recents",
+      group: "Chats",
       label: c.title || "New chat",
       meta: relativeTime(c.lastMessageAt),
       icon: MessageSquare,
       run: () => go("/chat/" + c.id),
     }));
-    const recents: PaletteItem[] = [...recentChats];
-    // "See all" hands off to the dedicated search surface (Surface A), which
-    // searches content rather than filtering the titles this menu holds.
-    if (!q && chats.length > 0) {
-      recents.push({
-        id: "see-all-chats",
-        group: "Recents",
-        label: "Search everything",
-        icon: AppIcons.search,
-        run: () => {
-          setOpen(false);
-          window.dispatchEvent(new CustomEvent("juno:search"));
-        },
-      });
+
+    const projectRows: PaletteItem[] = (
+      q
+        ? projects.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 6)
+        : [...projects].sort((a, b) => Number(b.starred) - Number(a.starred) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 4)
+    ).map((p) => ({
+      id: "project-" + p.id,
+      group: "Projects",
+      label: p.name || "Untitled project",
+      meta: p.starred ? "Pinned" : relativeTime(p.updatedAt),
+      icon: AppIcons.projects,
+      run: () => go("/projects/" + p.id),
+    }));
+    if (matches("All projects", "projects workspaces group")) {
+      projectRows.push({ id: "projects", group: "Projects", label: "All projects", icon: AppIcons.projects, run: () => go("/projects") });
     }
 
-    const actions: PaletteItem[] = [
-      { id: "assistants", group: "Actions", label: "Assistants", icon: AppIcons.assistants, keywords: "custom assistants bots gpt gems prompts", run: () => go("/assistants") },
-      { id: "projects", group: "Actions", label: "Projects", icon: AppIcons.projects, keywords: "workspaces group", run: () => go("/projects") },
-      { id: "work", group: "Actions", label: "Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
-      { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions new task composer prompt start juno code", run: () => go("/code/new") },
-      { id: "code-runs", group: "Actions", label: "Runs", icon: AppIcons.code, keywords: "sessions runs agents executions tasks juno code", run: () => go("/code") },
-      { id: "code-pulls", group: "Actions", label: "Pull requests", icon: AppIcons.pulls, keywords: "pr github review merge code", run: () => go("/code/pulls") },
-      { id: "design", group: "Actions", label: "Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
-      { id: "artifacts", group: "Actions", label: "Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
-      { id: "library", group: "Actions", label: "Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
-      { id: "connections", group: "Actions", label: "Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
-      { id: "tasks", group: "Actions", label: "Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
-      { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
-      { id: "memory", group: "Actions", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
-      { id: "settings", group: "Actions", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
-      { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
-      // Raw `Zap`, not `AppIcons.work`: this bolt is billing, and the Work row
-      // three lines up is the destination that mark belongs to.
-      { id: "upgrade", group: "Actions", label: "Plans & upgrade", icon: Zap, keywords: "billing pro max pricing", run: () => go("/upgrade") },
+    const settings: PaletteItem[] = [
+      { id: "settings", group: "Settings", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
+      { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: Zap, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
         id: "theme",
-        group: "Actions",
+        group: "Settings",
         label: `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`,
+        hint: "⌘⇧L",
         icon: resolvedTheme === "dark" ? Sun : Moon,
         keywords: "theme dark light appearance",
         run: () => {
@@ -1037,7 +1058,7 @@ function CommandMenu() {
       },
       {
         id: "shortcuts",
-        group: "Actions",
+        group: "Settings",
         label: "Keyboard shortcuts",
         hint: "⌘/",
         icon: Keyboard,
@@ -1049,8 +1070,8 @@ function CommandMenu() {
       },
     ].filter((c) => matches(c.label, c.keywords));
 
-    return [...quick, ...recents, ...actions];
-  }, [conversations, q, go, resolvedTheme, toggleTheme]);
+    return [...actions, ...chats, ...projectRows, ...settings];
+  }, [conversations, projects, q, go, resolvedTheme, toggleTheme]);
 
   const footer = (
     <>
@@ -1104,13 +1125,39 @@ export function CommandPalette() {
   );
 }
 
-const SHORTCUTS: { keys: string[]; label: string }[] = [
-  { keys: ["⌘", "K"], label: "Open command menu" },
-  { keys: ["⌘", "⇧", "O"], label: "New chat" },
-  { keys: ["⌘", "/"], label: "Keyboard shortcuts" },
-  { keys: ["↵"], label: "Send message" },
-  { keys: ["⇧", "↵"], label: "New line in composer" },
-  { keys: ["Esc"], label: "Close dialog / stop streaming" },
+/** Every shortcut the product answers to, grouped the way the hand finds
+ *  them. Kept in step with use-global-shortcuts.ts and composer.tsx. */
+const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }[] }[] = [
+  {
+    title: "Everywhere",
+    items: [
+      { keys: ["⌘", "K"], label: "Command menu" },
+      { keys: ["⌘", "⇧", "O"], label: "New chat" },
+      { keys: ["⌘", "⇧", "S"], label: "Toggle sidebar" },
+      { keys: ["⌘", "⇧", "L"], label: "Toggle theme" },
+      { keys: ["⌘", "/"], label: "Keyboard shortcuts" },
+      { keys: ["⌘", "F"], label: "Find in conversation" },
+    ],
+  },
+  {
+    title: "Composer",
+    items: [
+      { keys: ["↵"], label: "Send message" },
+      { keys: ["⇧", "↵"], label: "New line" },
+      { keys: ["↑"], label: "Edit your last message (empty field)" },
+      { keys: ["⇧", "Esc"], label: "Focus the composer" },
+      { keys: ["Esc"], label: "Stop generating · close a menu" },
+      { keys: ["/"], label: "Commands" },
+      { keys: ["@"], label: "Tools and connectors" },
+    ],
+  },
+  {
+    title: "Responses",
+    items: [
+      { keys: ["⌘", "⇧", "C"], label: "Copy the last response" },
+      { keys: ["⌘", "⇧", ";"], label: "Copy the last code block" },
+    ],
+  },
 ];
 
 function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -1118,18 +1165,25 @@ function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogTitle>Keyboard shortcuts</DialogTitle>
-        <ul className="mt-2 divide-y divide-border/60">
-          {SHORTCUTS.map((s) => (
-            <li key={s.label} className="flex items-center justify-between py-2.5 text-sm">
-              <span className="text-foreground/90">{s.label}</span>
-              <span className="flex items-center gap-1">
-                {s.keys.map((k, i) => (
-                  <Kbd key={i}>{k}</Kbd>
+        <div className="mt-1 space-y-4">
+          {SHORTCUT_GROUPS.map((group) => (
+            <section key={group.title}>
+              <p className="pb-1 font-mono text-label text-muted-foreground">{group.title}</p>
+              <ul className="divide-y divide-border/60">
+                {group.items.map((s) => (
+                  <li key={s.label} className="flex items-center justify-between gap-4 py-2 text-sm">
+                    <span className="text-foreground/90">{s.label}</span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {s.keys.map((k, i) => (
+                        <Kbd key={i}>{k}</Kbd>
+                      ))}
+                    </span>
+                  </li>
                 ))}
-              </span>
-            </li>
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
       </DialogContent>
     </Dialog>
   );

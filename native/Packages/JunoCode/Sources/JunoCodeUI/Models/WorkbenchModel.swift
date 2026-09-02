@@ -440,10 +440,14 @@ public final class WorkbenchModel {
     /// for a context and tolerating nil would conflate "this session has no
     /// project" with "this session's project could not be opened", which is the
     /// error the sidebar footer offers a recovery for.
+    /// - Parameter isolatedWorktree: create a Git worktree beside the checkout
+    ///   and root the session in it, so its edits never touch the branch the
+    ///   reader has open. Ignored for a folder that is not a repository.
     @discardableResult
     public func createSession(
         workspaceID: WorkspaceID?,
-        configuration: AgentConfiguration
+        configuration: AgentConfiguration,
+        isolatedWorktree: Bool = false
     ) async -> CodeSession? {
         var context: WorkspaceContext?
         if let workspaceID {
@@ -452,11 +456,20 @@ public final class WorkbenchModel {
         }
         do {
             var branch: String?
+            var executionRootPath: String?
             if let context, context.record.descriptor.isGitRepository {
                 branch = try? await context.git.status().branch
+                if isolatedWorktree {
+                    let worktree = try await context.worktrees.create(
+                        branch: Self.worktreeBranchName(base: branch)
+                    )
+                    executionRootPath = worktree.rootPath
+                    branch = worktree.branch
+                }
             }
             let session = try await sessionStore.createSession(
                 workspaceID: workspaceID,
+                executionRootPath: executionRootPath,
                 workspaceName: context?.record.descriptor.displayName,
                 title: workspaceID == nil ? "New conversation" : "New session",
                 configuration: configuration,
@@ -468,6 +481,63 @@ public final class WorkbenchModel {
             lastError = "Could not create the session: \(error)"
             return nil
         }
+    }
+
+    /// `juno/<base>-<stamp>`: recognisable as Juno's, unique per session, and
+    /// safe for `git worktree add`.
+    static func worktreeBranchName(base: String?, now: Date = Date()) -> String {
+        let stamp = Int(now.timeIntervalSince1970) % 1_000_000
+        let cleaned = (base ?? "task")
+            .lowercased()
+            .map { $0.isLetter || $0.isNumber ? $0 : "-" }
+        let slug = String(cleaned).split(separator: "-").joined(separator: "-")
+        return "juno/\(slug.isEmpty ? "task" : String(slug.prefix(24)))-\(stamp)"
+    }
+
+    /// Lines added, lines removed and files touched over a session's whole
+    /// record, for the sessions column's finished rows.
+    ///
+    /// Read from the transcript on demand and cached against the session's
+    /// `updatedAt`, so a column of two hundred sessions costs one event read per
+    /// row the reader actually scrolls to, and none for a row that has not
+    /// changed since it was last read.
+    public struct DiffStat: Equatable, Sendable {
+        public let added: Int
+        public let removed: Int
+        public let files: Int
+        public var isEmpty: Bool { files == 0 }
+    }
+
+    private var diffStats: [CodeSessionID: (updatedAt: Date, stat: DiffStat)] = [:]
+
+    public func diffStat(for sessionID: CodeSessionID) async -> DiffStat? {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
+        if let cached = diffStats[sessionID], cached.updatedAt == session.updatedAt {
+            return cached.stat
+        }
+        let events: [SessionEvent]
+        #if DEBUG
+        if isPreview {
+            events = previewController(for: sessionID)?.events ?? []
+        } else {
+            events = await sessionStore.events(for: sessionID)
+        }
+        #else
+        events = await sessionStore.events(for: sessionID)
+        #endif
+        var added = 0
+        var removed = 0
+        var files: Set<String> = []
+        for event in events {
+            if case let .fileChanged(change) = event.payload {
+                added += change.linesAdded
+                removed += change.linesRemoved
+                files.insert(change.path.value)
+            }
+        }
+        let stat = DiffStat(added: added, removed: removed, files: files.count)
+        diffStats[sessionID] = (session.updatedAt, stat)
+        return stat
     }
 
     /// Returns the durable transcript sequence without constructing or attaching

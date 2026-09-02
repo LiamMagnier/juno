@@ -18,6 +18,9 @@ import { cn } from "@/lib/utils";
  * Files no extractor claims (images, video) pass `null` and render nothing.
  * A photo is not a document that failed to index, and marking it as one would
  * make every screenshot look like a problem.
+ *
+ * Drawn in the metadata voice — mono caption, tabular — so it sits on the same
+ * line as "2.1 MB · 3d ago" without becoming a second sentence.
  */
 export interface KnowledgeIndexState {
   /** queued | extracting | ocr | indexing | ready | degraded | failed | stale */
@@ -39,7 +42,7 @@ export function IndexStatus({
 }) {
   if (!status) return null;
 
-  const shared = "inline-flex min-w-0 items-center gap-1.5 text-caption";
+  const shared = "inline-flex min-w-0 items-center gap-1.5 font-mono text-caption tabular-nums";
 
   if (IN_PROGRESS.has(status.state)) {
     return (
@@ -80,7 +83,7 @@ export function IndexStatus({
   if (status.state !== "ready") return null;
 
   const detail = status.pageCount
-    ? `${status.blockCount} passages across ${status.pageCount} pages`
+    ? `${status.blockCount} passages · ${status.pageCount} pages`
     : `${status.blockCount} ${status.blockCount === 1 ? "passage" : "passages"}`;
 
   return (

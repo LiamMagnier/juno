@@ -177,7 +177,7 @@ private struct ReviewBatchBar: View {
             }
             .help("Delete every note in this review")
 
-            Button(submitting ? "Submitting…" : "Submit Review") {
+            Button(submitting ? "Sending…" : "Send comments to Juno") {
                 submitting = true
                 Task {
                     await controller.submitReviewComments()
@@ -188,7 +188,7 @@ private struct ReviewBatchBar: View {
             .tint(Color.junoAccent)
             .disabled(submitting)
             .keyboardShortcut(.return, modifiers: [.command, .shift])
-            .help("Send every note as one message to Juno")
+            .help("Posts every note as one follow-up message to Juno (⇧⌘↩)")
             .accessibilityIdentifier("juno.code.review.submit")
         }
         .padding(.horizontal, JunoSpace.regular)

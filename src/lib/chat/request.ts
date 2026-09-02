@@ -80,6 +80,11 @@ export const chatBodySchema = z
     attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
     model: z.string().optional(),
     regenerate: z.boolean().optional(),
+    // One-shot steering for a regenerate ("more concise", "add details"). It
+    // rides the system prompt for THIS generation only and is never persisted,
+    // so the next turn is not silently shaped by a button pressed two answers
+    // ago. Ignored unless `regenerate` is set.
+    regenerateInstruction: z.string().trim().min(1).max(400).optional(),
     voiceMode: z.boolean().optional(),
     canvasEnabled: z.boolean().optional(),
     webSearch: z.boolean().optional(),

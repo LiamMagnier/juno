@@ -4,15 +4,17 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Link2Off, Loader2 } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { AppIcons, StatusIcons } from "@/lib/app-icons";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 import { staggerDelay } from "@/lib/motion";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -171,64 +173,60 @@ export default function ConnectionsPage() {
   const connectedCount = connectors?.filter((c) => c.connected).length ?? 0;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-5xl">
-        <AppPageHeader
-          eyebrow="Connections"
-          heading="Connect your tools"
-          lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
-          actions={
-            !loading && !error && connectedCount > 0 ? (
-              <span className="hidden rounded-full border border-border/60 bg-card px-3 py-1 text-caption font-medium text-muted-foreground sm:inline-block">
-                {connectedCount} connected
-              </span>
-            ) : null
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Connections"
+        heading="Connect your tools"
+        icon={AppIcons.connections}
+        lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+        actions={
+          !loading && !error && connectedCount > 0 ? (
+            <Badge variant="outline" className="hidden sm:inline-flex">
+              {connectedCount} connected
+            </Badge>
+          ) : null
+        }
+      />
+
+      {error ? (
+        <EmptyState
+          tone="error"
+          size="panel"
+          icon={StatusIcons.error}
+          title="Couldn’t load your connections"
+          description="The server may still be starting up, or the database isn’t reachable yet."
+          action={
+            <Button variant="outline" size="sm" onClick={load}>
+              Try again
+            </Button>
           }
         />
+      ) : loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton
+              key={i}
+              className="h-36 rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i, "tight")}
+            />
+          ))}
+        </div>
+      ) : (
+        <ConnectorDirectory
+          connectors={connectors ?? []}
+          composioConfigured={composioConfigured}
+          enabled={enabled}
+          onEnabledChange={setEnabledFor}
+          onConnectNative={connect}
+          onDisconnect={setDisconnectTarget}
+          connectingId={connectingId}
+        />
+      )}
 
-        {error ? (
-          // The shared error surface, not a fourth hand-rolled one: permissions,
-          // import-history and profile all say "that didn't load" with
-          // <EmptyState tone="error">, and this page said it with a bespoke box
-          // and a retry button that re-tinted `variant="outline"` by hand.
-          <EmptyState
-            tone="error"
-            size="panel"
-            className="mt-6"
-            icon={StatusIcons.error}
-            title="Couldn’t load your connections"
-            description="The server may still be starting up, or the database isn’t reachable yet."
-            action={
-              <Button variant="outline" size="sm" onClick={load}>
-                Try again
-              </Button>
-            }
-          />
-        ) : loading ? (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-[132px] rounded-card" style={staggerDelay(i)} />
-            ))}
-          </div>
-        ) : (
-          <ConnectorDirectory
-            connectors={connectors ?? []}
-            composioConfigured={composioConfigured}
-            enabled={enabled}
-            onEnabledChange={setEnabledFor}
-            onConnectNative={connect}
-            onDisconnect={setDisconnectTarget}
-            connectingId={connectingId}
-          />
-        )}
-
-        {/* No second knock-down on the ramp: --muted-foreground at 70% over
-            pure black measures ~4.3:1 at 11px, below AA. The ramp IS the
-            recessive voice. */}
-        <p className="mt-8 text-caption text-muted-foreground">
-          Connected tools are available to the model when you enable them in a chat. Each provider shows the exact permissions during its consent flow.
-        </p>
-      </div>
+      <p className="mt-8 text-caption text-muted-foreground">
+        Connected tools are available to the model when you enable them in a chat. Each provider shows the exact
+        permissions during its consent flow.
+      </p>
 
       <CredentialsDialog
         connector={credentialsTarget}
@@ -248,12 +246,7 @@ export default function ConnectionsPage() {
             <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={disconnect}
-              disabled={busy}
-              className="group/disconnect gap-1.5"
-            >
+            <Button variant="destructive" onClick={disconnect} disabled={busy} className="group/disconnect gap-1.5">
               {busy ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -264,6 +257,6 @@ export default function ConnectionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

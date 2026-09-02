@@ -45,10 +45,29 @@ struct JunoDesktopWorkspaceView: View {
     /// A token rather than a Bool means two consecutive requests can never be
     /// coalesced into one by SwiftUI's state batching.
     @State private var unscopedChatRequestID: UUID?
+    /// The text a quick-entry or menu bar request asked the new chat to open
+    /// with. Consumed with the request.
+    @State private var unscopedChatPrompt: String?
+    @State private var registry = DesktopWorkbenchRegistry.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         workspace
+            // Requests from the menu bar item and the quick-entry panel that
+            // need the *product* changed land here, because only this view can
+            // change it. Code's own requests are consumed by the Code window.
+            .onChange(of: registry.pendingRequest, initial: true) { _, request in
+                guard let request else { return }
+                switch request.kind {
+                case .newChat(let prompt):
+                    unscopedChatPrompt = prompt
+                    unscopedChatRequestID = UUID()
+                    product = .chat
+                    registry.consume(request)
+                case .newCodeTask, .openSession:
+                    product = .code
+                }
+            }
     }
 
     @ViewBuilder
@@ -64,8 +83,10 @@ struct JunoDesktopWorkspaceView: View {
                     initialDestination: initialDestination,
                     consumeInitialDestination: consumeInitialDestination,
                     unscopedChatRequestID: unscopedChatRequestID,
+                    unscopedChatPrompt: unscopedChatPrompt,
                     consumeUnscopedChatRequest: {
                         unscopedChatRequestID = nil
+                        unscopedChatPrompt = nil
                     }
                 )
             } else {

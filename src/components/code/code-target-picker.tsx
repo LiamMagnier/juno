@@ -138,6 +138,7 @@ export function CodeTargetPicker({
   baseRef,
   onBaseRefChange,
   disabled = false,
+  showTarget = true,
   className,
 }: {
   target: Target;
@@ -149,6 +150,14 @@ export function CodeTargetPicker({
   baseRef: string;
   onBaseRefChange: (v: string) => void;
   disabled?: boolean;
+  /**
+   * Whether this control also carries the machine choice (the Device / Cloud
+   * rows at the top of the popover and the word on the chip). A host that
+   * draws its own Device / Cloud switch beside the chip — the New session
+   * composer does, as a `SegmentedControl` — passes false, so the machine is
+   * asked once rather than twice on one row.
+   */
+  showTarget?: boolean;
   /**
    * Trigger overrides for the host. The chip used to sit in a row of its own
    * above the field and could take the composer's full 32px control height; it
@@ -344,7 +353,7 @@ export function CodeTargetPicker({
         style={{ maxHeight: "min(28rem, var(--radix-popover-content-available-height))" }}
         className="flex w-[calc(100vw-2rem)] max-w-[92vw] flex-col overflow-hidden p-0 sm:w-[23rem]"
       >
-        <TargetRows value={target} onChange={onTargetChange} />
+        {showTarget && <TargetRows value={target} onChange={onTargetChange} />}
         {target === "device" ? (
           <DeviceList
             load={wsLoad}
@@ -441,7 +450,7 @@ function TargetRows({ value, onChange }: { value: Target; onChange: (t: Target) 
        * field. `.overlay-glass` makes the same argument for the panel's outer
        * edge, and it is the same argument one level in.
        */
-      className="shrink-0 space-y-0.5 border-b border-border p-2"
+      className="shrink-0 space-y-0.5 border-b border-border/60 p-2"
     >
       {TARGETS.map((t) => (
         <PickerRow
@@ -733,7 +742,7 @@ function CloudList({
       */}
       {selected && (
         // Full-strength hairline — see the note on TargetRows' separator.
-        <div className="shrink-0 space-y-1.5 border-t border-border p-2">
+        <div className="shrink-0 space-y-1.5 border-t border-border/60 p-2">
           <label htmlFor="cloud-base-ref" className="flex items-center gap-1.5 px-0.5 text-caption text-muted-foreground">
             <CodeIcons.branch className="size-3" aria-hidden="true" />
             Base branch — optional
@@ -888,7 +897,7 @@ function PickerSearch({
   if (!show) return null;
   return (
     // Full-strength hairline — see the note on TargetRows' separator.
-    <div className="relative shrink-0 border-b border-border p-2">
+    <div className="relative shrink-0 border-b border-border/60 p-2">
       <AppIcons.search
         className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
@@ -977,7 +986,7 @@ function PickerNote({
         // banner already use. The old `/[0.04]` was off every step in the system
         // and effectively zero over pure black, so a failed fetch rendered in the
         // same flat frame as an empty one.
-        isError && "rounded-control border border-destructive/40 bg-destructive/10",
+        isError && "rounded-control border border-destructive/35 bg-destructive/[0.07]",
       )}
     >
       <span className={isError ? "text-destructive" : "text-muted-foreground"}>{icon}</span>

@@ -293,6 +293,51 @@ public final class GitService: GitServicing, Sendable {
         )
     }
 
+    /// Opens a pull request for the current branch through GitHub's CLI.
+    ///
+    /// Reader-initiated only: like ``push(_:)`` this is deliberately absent from
+    /// the agent-facing ``GitServicing`` protocol, so no tool can publish on the
+    /// reader's behalf. `gh` uses the reader's own CLI/Keychain authentication
+    /// through the scrubbed executor; no GitHub credential enters Juno. The
+    /// returned string is the URL `gh` prints, which is the only thing worth
+    /// showing afterwards.
+    public func createPullRequest(
+        title: String,
+        body: String,
+        baseBranch: String?,
+        draft: Bool
+    ) async throws -> String {
+        var arguments = ["pr", "create", "--title", title, "--body", body]
+        if let baseBranch, !baseBranch.isEmpty {
+            arguments += ["--base", baseBranch]
+        }
+        if draft {
+            arguments.append("--draft")
+        }
+        let outcome = try await runExecutable("gh", arguments: arguments)
+        guard outcome.result.exitCode == 0 else {
+            let message = outcome.stderr.isEmpty ? outcome.stdout : outcome.stderr
+            throw GitServiceError.commandFailed(message: Self.tail(message))
+        }
+        let url = outcome.stdout
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .last { $0.hasPrefix("https://") }
+        return url ?? outcome.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The repository's default branch, when `gh` knows it. Nil when the CLI is
+    /// missing or the remote is not GitHub; the sheet then leaves the base blank
+    /// and lets `gh pr create` pick.
+    public func githubDefaultBranch() async -> String? {
+        guard let outcome = try? await runExecutable(
+            "gh",
+            arguments: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"]
+        ), outcome.result.exitCode == 0 else { return nil }
+        let name = outcome.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
     // MARK: - Helpers
 
     private func remoteNames() async throws -> [String] {

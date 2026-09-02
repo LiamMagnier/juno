@@ -39,25 +39,27 @@ export function Switching() {
       heading="Move in without leaving anything behind."
       lede="Your old conversations are yours. Import a ChatGPT or Claude export and pick up where you left off — no retyping, no second tab open for the archive."
     >
-      {/* Dotted rules — the product's rule motif (DottedDivider), which the landing
-          already uses for the flagship divider and the receipt leader. */}
-      <dl className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-3">
+      {/* Three raised tiles, each opening on its step number in an inset tile —
+          the same icon-tile anatomy the app's grids use. */}
+      <dl className="mt-10 grid gap-4 sm:grid-cols-3">
         {STEPS.map((step, i) => (
           <div
             key={step.term}
             style={staggerDelay(i)}
-            className="border-t border-dotted border-border pt-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            className="surface-raised rounded-card p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           >
-            <dt className="font-serif text-heading font-medium">{step.term}</dt>
-            <dd className="mt-2 text-body text-muted-foreground">{step.body}</dd>
+            <span
+              aria-hidden
+              className="surface-inset inline-flex size-9 items-center justify-center rounded-field font-mono text-caption tabular-nums text-muted-foreground"
+            >
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <dt className="mt-4 text-heading">{step.term}</dt>
+            <dd className="mt-1.5 text-sm text-muted-foreground">{step.body}</dd>
           </div>
         ))}
       </dl>
-      {/* mt-6 max-w-2xl, matching model-lineup's closing line and PageHeader's own
-          lede measure. Unconstrained this ran the full 1152px column — ~150
-          characters a line, so the section opened on one measure and closed on
-          roughly double it. */}
-      <p className="mt-6 max-w-2xl text-body text-muted-foreground">
+      <p className="mt-6 max-w-prose text-body text-muted-foreground">
         Exports up to 100 MB. Nothing is sent to a third party — the archive is read on Juno&apos;s own server and
         discarded once its conversations are stored.
       </p>

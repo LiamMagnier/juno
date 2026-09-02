@@ -63,6 +63,9 @@ struct DesktopChatWorkspace: View {
     /// A one-shot request made from the Code sidebar to start an ordinary Chat
     /// conversation that is not scoped to any local repository.
     var unscopedChatRequestID: UUID?
+    /// Text the request asked the draft to open with — from ⌥Space, or the
+    /// menu bar item. Nil for an ordinary New Chat.
+    var unscopedChatPrompt: String? = nil
     let consumeUnscopedChatRequest: () -> Void
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
@@ -399,6 +402,9 @@ struct DesktopChatWorkspace: View {
         guard unscopedChatRequestID != nil else { return }
         overrideDestination = nil
         beginDraft()
+        if let prompt = unscopedChatPrompt, !prompt.isEmpty {
+            draftPrompt = prompt
+        }
         consumeUnscopedChatRequest()
     }
 }
@@ -710,13 +716,18 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     /// it as a row in the footer. It is also absent from ``sidebarCases`` for the
     /// same reason it is absent from the web's rail: the footer is where it goes.
     case design
+    /// What Juno remembers about the reader, as a page of its own rather than
+    /// a sheet three clicks into Settings. Memory is something a reader
+    /// *reads* — what was kept, what is proposed — and a page in the column is
+    /// where a Mac keeps things to read.
+    case memory
     case usage
     case settings
 
     var id: Self { self }
 
     static let sidebarCases: [Self] = [
-        .library, .artifacts, .connections, .projects, .tasks, .usage,
+        .library, .artifacts, .connections, .projects, .tasks, .memory, .usage,
     ]
 
     var label: String {
@@ -729,6 +740,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "Connections"
         case .tasks: "Tasks"
         case .design: "Design"
+        case .memory: "Memory"
         case .usage: "Usage"
         case .settings: "Settings"
         }
@@ -744,6 +756,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "link"
         case .tasks: "clock"
         case .design: "pencil.tip"
+        case .memory: "brain"
         case .usage: "chart.line.uptrend.xyaxis"
         case .settings: "gearshape"
         }
@@ -761,6 +774,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .settings: .settings
         case .usage: .usage
         case .design: .pencil
+        case .memory: .memory
         }
     }
 }
@@ -832,7 +846,7 @@ struct DesktopConversationView: View {
             .onChange(of: voiceSession?.id) { _, started in
                 guard started != nil, openArtifact != nil else { return }
                 withAnimation(
-                    JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)
+                    JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
                 ) {
                     openArtifact = nil
                 }
@@ -945,13 +959,13 @@ struct DesktopConversationView: View {
     }
 
     private func open(artifact: NativeMessageContent.ArtifactReference) {
-        withAnimation(JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)) {
+        withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = DesktopChatArtifact(reference: artifact)
         }
     }
 
     private func closeArtifact() {
-        withAnimation(JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)) {
+        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
             openArtifact = nil
         }
     }
@@ -1546,13 +1560,13 @@ private struct DesktopMessageRise: ViewModifier {
     func body(content: Content) -> some View {
         content
             .opacity(risen ? 1 : 0)
-            .offset(y: risen ? 0 : DesktopChatMotion.riseDistance)
+            .offset(y: risen ? 0 : DesktopChoreography.riseDistance)
             .onAppear {
                 guard rises, !reduceMotion else {
                     risen = true
                     return
                 }
-                withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+                withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)) {
                     risen = true
                 }
             }

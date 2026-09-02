@@ -99,7 +99,7 @@ export function ComposerAttachmentTray({
                 // 6.5% panel. It also takes the shell's own seated-control
                 // radius rather than a stray `rounded-md`. `shadow-soft` is
                 // gone — it is black ink on black here.
-                "group relative flex items-center gap-2 rounded-composer-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
+                "group relative flex items-center gap-2 rounded-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
                 removingIds.includes(u.localId)
                   ? "pointer-events-none motion-safe:animate-pop-out"
                   : "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
@@ -116,7 +116,7 @@ export function ComposerAttachmentTray({
                   alt={u.fileName}
                   width={32}
                   height={32}
-                  className="size-8 rounded-sm object-cover"
+                  className="size-8 rounded-xs object-cover"
                 />
               ) : (
                 <CodeIcons.file className="size-5 text-muted-foreground" aria-hidden="true" />
@@ -186,7 +186,7 @@ export function ComposerAddMenu({
           aria-label="Add an attachment"
           disabled={disabled}
           className={cn(
-            "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+            "composer-add-button group shrink-0 rounded-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
             open && "bg-accent",
           )}
         >
@@ -228,19 +228,18 @@ export function ComposerAddMenu({
 /**
  * The drag-and-drop scrim.
  *
- * `rounded-composer` alone: the `sm:rounded-lg` override this used to carry
- * restated the shell's corner in a second file, so the overlay stopped tracing
- * the shell the moment the token moved — which it did, to 26px.
- *
- * `bg-primary/15`: over the true-black ground /10 tints to roughly 2%
- * lightness, so the scrim vanished and the dashed outline was left saying "drop
- * here" on its own.
+ * `rounded-panel` — the composer shell's own rung — so the overlay traces the
+ * shell exactly. The house drop-zone recipe (dashed `border-primary/60` over
+ * a `bg-primary/5` wash) sits over an opaque card fill here, because a scrim
+ * that lets the composer's controls show through reads as a broken layer
+ * rather than as a target.
  */
 export function ComposerDropOverlay() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/15 backdrop-blur-sm motion-safe:animate-fade-in">
-      <ComposerIcons.files className="size-6 text-primary" aria-hidden="true" />
-      <span className="font-mono text-label text-primary">Drop to attach</span>
+    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-primary/60 bg-card motion-safe:animate-fade-in">
+      <div className="pointer-events-none absolute inset-0 rounded-panel bg-primary/5" aria-hidden="true" />
+      <ComposerIcons.files className="relative size-6 text-primary" aria-hidden="true" />
+      <span className="relative font-mono text-label text-primary-ink">Drop to attach</span>
     </div>
   );
 }

@@ -102,6 +102,14 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     /// three unrelated runtime architectures.
     public var executionTarget: ExecutionTarget
     public var computerUseEnabled: Bool
+    /// A workspace-authored agent (`.claude/agents/<name>.md` or
+    /// `.juno/agents/<name>.md`) whose instructions shape this session, on top
+    /// of the built-in ``role``. Nil for the three built-in roles alone.
+    ///
+    /// An identifier rather than the instructions themselves: the file is the
+    /// source of truth and is re-read when the session is opened, so an agent
+    /// edited in the repository takes effect on the next turn.
+    public var customAgentID: String?
 
     public init(
         modelID: String,
@@ -111,12 +119,14 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         permissionMode: PermissionMode = .askBeforeChanges,
         location: SessionLocation = .local,
         executionTarget: ExecutionTarget? = nil,
-        computerUseEnabled: Bool = false
+        computerUseEnabled: Bool = false,
+        customAgentID: String? = nil
     ) {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.behavior = behavior
         self.role = role
+        self.customAgentID = customAgentID
         self.permissionMode = permissionMode
         self.executionTarget = executionTarget ?? .legacy(for: location)
         // `executionTarget` is the canonical routing value. Keep writing the
@@ -130,6 +140,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case modelID, reasoningEffort, behavior, role, permissionMode, location, executionTarget
         case computerUseEnabled
+        case customAgentID
     }
 
     public init(from decoder: any Decoder) throws {
@@ -156,6 +167,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         location = executionTarget.kind.sessionLocation
         computerUseEnabled =
             try container.decodeIfPresent(Bool.self, forKey: .computerUseEnabled) ?? false
+        customAgentID = try container.decodeIfPresent(String.self, forKey: .customAgentID)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -170,6 +182,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
         try container.encode(location, forKey: .location)
         try container.encode(executionTarget, forKey: .executionTarget)
         try container.encode(computerUseEnabled, forKey: .computerUseEnabled)
+        try container.encodeIfPresent(customAgentID, forKey: .customAgentID)
     }
 }
 

@@ -906,7 +906,43 @@ public actor AgentOrchestrator {
             force: tokenTrigger
         )
         guard let result else { return }
+        await adopt(result, requestedByUser: false)
+    }
 
+    /// Folds the conversation down now, at the reader's request.
+    ///
+    /// The runtime already compacts on its own ahead of a provider limit; this
+    /// is the `/compact` the reader types when they know the early turns are
+    /// no longer worth carrying. Refused mid-run — the conversation is being
+    /// appended to by the loop that owns it — and answered with nil when there
+    /// is nothing safe to fold (a single turn has no "older" half).
+    public func compactNow() async -> CompactionEvent? {
+        guard runTask == nil else { return nil }
+        if !restored {
+            try? await prepare()
+        }
+        guard let result = ConversationCompactor.compact(
+            conversation,
+            maximumBytes: configuration.maximumConversationBytes,
+            force: true
+        ) else { return nil }
+        return await adopt(result, requestedByUser: true)
+    }
+
+    /// Installs a compaction result and records it in the transcript.
+    @discardableResult
+    private func adopt(
+        _ result: ConversationCompactionResult,
+        requestedByUser: Bool
+    ) async -> CompactionEvent {
+        let before = conversation.count
+        let event = CompactionEvent(
+            summary: result.summary,
+            beforeMessageCount: before,
+            afterMessageCount: result.messages.count,
+            beforeTokens: contextTokens,
+            requestedByUser: requestedByUser
+        )
         conversation = result.messages
         // The next request will report a new prompt size. Keeping the old
         // number visible would make the UI claim the compacted request is still
@@ -914,23 +950,167 @@ public actor AgentOrchestrator {
         contextTokens = nil
         usageObserver?(nil, lastOutputTokens)
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+        _ = try? await store.appendEvent(sessionID: sessionID, payload: .compaction(event))
+        return event
     }
 
     private func executeToolCall(
         _ call: (id: String, name: String, input: JSONValue)
     ) async -> ToolScheduler.ExecutionResult {
-        await ToolScheduler.executeCall(
-            id: call.id,
-            name: call.name,
-            input: call.input,
+        // Record start time for duration calculations
+        let startedAt = Date()
+        // 1️⃣ Authorize the tool invocation
+        do {
+            try await registry.authorizeInvocation(
+                toolName: call.name,
+                input: call.input,
+                permissions: permissions
+            )
+        } catch {
+            // Authorization denied – log and return error result
+            let reason = deniedReason(from: error)
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .toolCompleted(
+                    ToolCompletedEvent(
+                        toolCallID: call.id,
+                        status: .denied,
+                        resultSummary: reason,
+                        durationSeconds: Date().timeIntervalSince(startedAt)
+                    )
+                )
+            )
+            return ToolScheduler.ExecutionResult(
+                callID: call.id,
+                toolName: call.name,
+                input: call.input,
+                content: "Action not permitted: \(reason)",
+                isError: true
+            )
+        }
+
+        // 2️⃣ Record that the tool has started
+        _ = try? await store.appendEvent(
             sessionID: sessionID,
-            registry: registry,
-            permissions: permissions,
-            lifecycleHooks: lifecycleHooks,
-            store: store,
-            maximumToolImages: configuration.maximumToolImages,
-            maximumToolImageBytes: configuration.maximumToolImageBytes
+            payload: .toolStarted(ToolStartedEvent(toolCallID: call.id))
         )
+
+        // 3️⃣ Create tool context for output emission
+        let context = ToolContext(
+            sessionID: sessionID,
+            toolCallID: call.id,
+            emitOutput: { channel, text in
+                let limited = OutputLimiter.apply(.streamChunk, to: text)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolOutput(
+                        ToolOutputEvent(toolCallID: call.id, channel: channel, text: limited.text)
+                    )
+                )
+            }
+        )
+
+        // 4️⃣ Execute the authorized tool directly via the registry
+        do {
+            let result = try await registry.executeAuthorized(
+                toolName: call.name,
+                input: call.input,
+                context: context
+            )
+
+            // Enforce image limits (mirroring scheduler)
+            let imageBytes = result.images.reduce(into: 0) { total, image in
+                total += image.data.count
+            }
+            guard result.images.count <= configuration.maximumToolImages,
+                  imageBytes <= configuration.maximumToolImageBytes else {
+                let message = "Tool image output exceeded the safe request limit."
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolCompleted(
+                        ToolCompletedEvent(
+                            toolCallID: call.id,
+                            status: .failed,
+                            resultSummary: message,
+                            durationSeconds: Date().timeIntervalSince(startedAt)
+                        )
+                    )
+                )
+                await lifecycleHooks?.afterTool(
+                    hookInvocation,
+                    succeeded: false,
+                    summary: message
+                )
+                return ToolScheduler.ExecutionResult(
+                    callID: call.id,
+                    toolName: call.name,
+                    input: call.input,
+                    content: message,
+                    isError: true
+                )
+            }
+
+            // Record any side effects produced by the tool
+            for sideEffect in result.sideEffects {
+                _ = try? await store.appendEvent(sessionID: sessionID, payload: sideEffect)
+            }
+
+            // Summarize result for the toolCompleted event
+            let firstLineResult = result.content.components(separatedBy: "\n").first ?? result.content
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .toolCompleted(
+                    ToolCompletedEvent(
+                        toolCallID: call.id,
+                        status: result.isError ? .failed : .succeeded,
+                        resultSummary: firstLineResult,
+                        durationSeconds: Date().timeIntervalSince(startedAt)
+                    )
+                )
+            )
+            await lifecycleHooks?.afterTool(
+                hookInvocation,
+                succeeded: !result.isError,
+                summary: firstLineResult
+            )
+
+            // Return the execution result matching the scheduler's type
+            return ToolScheduler.ExecutionResult(
+                callID: call.id,
+                toolName: call.name,
+                input: call.input,
+                content: result.content,
+                isError: result.isError,
+                images: result.images,
+                sideEffects: result.sideEffects
+            )
+        } catch {
+            // Execution failed – record and return an error result
+            let message = String(describing: error)
+            _ = try? await store.appendEvent(
+                sessionID: sessionID,
+                payload: .toolCompleted(
+                    ToolCompletedEvent(
+                        toolCallID: call.id,
+                        status: .failed,
+                        resultSummary: message,
+                        durationSeconds: Date().timeIntervalSince(startedAt)
+                    )
+                )
+            )
+            await lifecycleHooks?.afterTool(
+                hookInvocation,
+                succeeded: false,
+                summary: message
+            )
+            return ToolScheduler.ExecutionResult(
+                callID: call.id,
+                toolName: call.name,
+                input: call.input,
+                content: "Tool execution failed: \(message)",
+                isError: true
+            )
+        }
     }
 
 

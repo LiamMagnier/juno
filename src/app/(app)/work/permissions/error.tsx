@@ -14,6 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 
+import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -30,33 +31,31 @@ export default function WorkPermissionsError({
   }, [error]);
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
-        <EmptyState
-          tone="error"
-          icon={StatusIcons.error}
-          title="Couldn’t load your permissions"
-          description="This page didn’t come back. Nothing has changed — every task and every Mac keeps exactly the permissions it had, and Juno still stops for everything it always stops for."
-          action={
-            <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-                Try again
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/work">Back to Work</Link>
-              </Button>
-            </>
-          }
-        />
-        {error.digest && (
-          // The digest is the only thing tying this screen to a line in the server
-          // log, so it is the one part of the failure worth putting on the page.
-          <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
-            Reference {error.digest}
-          </p>
-        )}
-      </div>
-    </div>
+    <AppPage measure="wide">
+      <EmptyState
+        tone="error"
+        icon={StatusIcons.error}
+        title="Couldn’t load your permissions"
+        description="This page didn’t come back. Nothing has changed — every task and every Mac keeps exactly the permissions it had, and Juno still stops for everything it always stops for."
+        action={
+          <>
+            <Button size="sm" onClick={reset} className="gap-1.5">
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              Try again
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/work">Back to Work</Link>
+            </Button>
+          </>
+        }
+      />
+      {error.digest && (
+        // The digest is the only thing tying this screen to a line in the server
+        // log, so it is the one part of the failure worth putting on the page.
+        <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
+          Reference {error.digest}
+        </p>
+      )}
+    </AppPage>
   );
 }

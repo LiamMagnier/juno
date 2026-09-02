@@ -52,6 +52,15 @@ struct JunoMobileChatDetailScreen: View {
   var accountID: AccountID?
   /// The account's read-aloud voice, from Settings.
   var voiceID: String?
+  /// The authenticated transport, for the transcript's pictures. Nil in an
+  /// unconfigured shell, where image rows show their placeholder.
+  var requestSender: (any NativeAuthenticatedRequestSending)?
+  /// A question handed in from outside — Siri's "Ask Juno" — to drop into the
+  /// draft composer. Cleared once taken.
+  var pendingPrompt: Binding<String?> = .constant(nil)
+
+  /// Fetches and caches the transcript's pictures for the life of the screen.
+  @State private var imageLoader: NativeChatImageLoader?
 
   /// One speaker for the whole screen. Held here rather than per row so that
   /// starting a second reading stops the first — two answers talking over each
@@ -106,7 +115,9 @@ struct JunoMobileChatDetailScreen: View {
           messageActions: messageActions,
           followUpClient: followUpClient,
           shareClient: shareClient,
-          accountID: accountID
+          accountID: accountID,
+          imageLoader: imageLoader,
+          pendingPrompt: pendingPrompt
         )
       } else {
         JunoMobileDraftChat(
@@ -123,7 +134,8 @@ struct JunoMobileChatDetailScreen: View {
           memoryEnabled: memoryEnabled,
           setMemoryEnabled: setMemoryEnabled,
           tools: tools,
-          sendSwell: sendSwell
+          sendSwell: sendSwell,
+          pendingPrompt: pendingPrompt
         )
       }
     }
@@ -145,6 +157,7 @@ struct JunoMobileChatDetailScreen: View {
     }
     .task(id: accountID?.rawValue) {
       readAloud = JunoMobileReadAloud(client: messageActions, accountID: accountID)
+      imageLoader = NativeChatImageLoader(sender: requestSender, accountID: accountID)
     }
     .onDisappear { readAloud?.stop() }
   }
@@ -172,6 +185,7 @@ private struct JunoMobileDraftChat: View {
   /// up, so it outlives this screen when the first message turns the draft
   /// into a conversation.
   let sendSwell: JunoMobileSendSwell
+  var pendingPrompt: Binding<String?> = .constant(nil)
 
   @State private var prompt = ""
   @State private var selectedModelID = ""
@@ -271,7 +285,7 @@ private struct JunoMobileDraftChat: View {
           }
         }
       }
-      .safeAreaInset(edge: .bottom) {
+      .junoComposerBar {
         JunoMobileComposer(
           model: model,
           conversation: nil,
@@ -318,6 +332,13 @@ private struct JunoMobileDraftChat: View {
       .onChange(of: selectedModelID) { _, _ in configureSelections() }
       .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
       .onChange(of: accountDefaultModelID) { _, _ in configureSelections() }
+      // "Ask Juno …" from Siri lands as the draft's text, ready to send.
+      .onChange(of: pendingPrompt.wrappedValue, initial: true) { _, text in
+        guard let text, !text.isEmpty else { return }
+        prompt = text
+        pendingPrompt.wrappedValue = nil
+        composerFocused = true
+      }
   }
 
   private func configureSelections() {
@@ -370,8 +391,13 @@ private struct JunoMobileConversationDetail: View {
   /// Publishes a conversation behind an unguessable link.
   var shareClient: NativeShareClient?
   var accountID: AccountID?
+  var imageLoader: NativeChatImageLoader?
+  var pendingPrompt: Binding<String?> = .constant(nil)
   /// The artifact the reader tapped in the transcript, presented over it.
   @State private var openArtifact: NativeArtifact?
+  /// A message's text on its way to the system share sheet.
+  @State private var sharingMessage: JunoMobileSharedText?
+  @State private var copyHaptic = JunoMobileHapticTrigger()
   /// An artifact the transcript can render from the reply's own tag, used when
   /// the stored row has not arrived. See ``openArtifact(_:)``.
   @State private var inlineArtifact: JunoMobileInlineArtifact?
@@ -564,6 +590,17 @@ private struct JunoMobileConversationDetail: View {
     }
   }
 
+  /// Puts a message's words into the composer as a quote, the way a reply
+  /// on a phone quotes what it answers.
+  private func quote(_ text: String) {
+    let quoted = text
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .map { "> " + $0 }
+      .joined(separator: "\n")
+    prompt = prompt.isEmpty ? quoted + "\n\n" : prompt + "\n\n" + quoted + "\n\n"
+    composerFocused = true
+  }
+
   /// Rating an answer. Applied to the row optimistically because the round trip
   /// is a write with no reply worth waiting for, and a thumb that fills in a
   /// second after the tap reads as a broken button.
@@ -716,7 +753,11 @@ private struct JunoMobileConversationDetail: View {
             editMessage: message.role == .user && !message.isPending
               ? { newContent in editMessage(message, newContent: newContent) }
               : nil,
-            isGenerating: model.isGenerating
+            isGenerating: model.isGenerating,
+            imageLoader: imageLoader,
+            quote: { text in quote(text) },
+            share: { text in sharingMessage = JunoMobileSharedText(text: text) },
+            onCopy: { copyHaptic.fire() }
           )
           // `rise-in`, as the web gives every new turn. Scoped to the
           // stack's `.animation(_:value: messages.count)` below, which
@@ -1029,6 +1070,17 @@ private struct JunoMobileConversationDetail: View {
 
   private var thread: some View {
     scrollArea
+      .modifier(JunoMobileSoftScrollEdges())
+      .junoHaptic(JunoMobileHaptic.copy, trigger: copyHaptic)
+      .sheet(item: $sharingMessage) { shared in
+        JunoMobileShareSheet(items: [shared.text])
+      }
+      .onChange(of: pendingPrompt.wrappedValue, initial: true) { _, text in
+        guard let text, !text.isEmpty else { return }
+        prompt = text
+        pendingPrompt.wrappedValue = nil
+        composerFocused = true
+      }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { conversationToolbar }
       .alert("Rename conversation", isPresented: $showingRename) {
@@ -1052,7 +1104,7 @@ private struct JunoMobileConversationDetail: View {
       } message: {
         Text("chat.delete.warning")
       }
-      .safeAreaInset(edge: .bottom) {
+      .junoComposerBar {
         JunoMobileComposer(
           model: model,
           conversation: conversation,
@@ -1310,8 +1362,17 @@ private struct JunoMobileMessageRow: View {
   /// rather than hiding either — a control that vanishes mid-stream reads as a
   /// revision that was lost.
   var isGenerating: Bool = false
+  /// Fetches the message's pictures. Nil renders their placeholders.
+  var imageLoader: NativeChatImageLoader?
+  /// Puts this message's words into the composer as a quote.
+  var quote: ((String) -> Void)?
+  /// Hands this message's text to the share sheet.
+  var share: ((String) -> Void)?
+  /// The screen's copy haptic, fired here because the row cannot host it.
+  var onCopy: (() -> Void)?
 
   @State private var copied = false
+  @State private var showingSelectText = false
   /// Whether this prompt is open for rewriting, and the words being written.
   ///
   /// Local to the row on purpose: an edit in progress is not conversation
@@ -1384,9 +1445,18 @@ private struct JunoMobileMessageRow: View {
     HStack(spacing: 0) {
       Spacer(minLength: 0)
       VStack(alignment: .trailing, spacing: JunoSpace.tight) {
+        if !message.imageAttachments.isEmpty, let imageLoader {
+          JunoMobileMessageImages(
+            attachments: message.imageAttachments,
+            loader: imageLoader,
+            alignment: .trailing,
+            maxWidth: rowWidth > 0 ? min(288, rowWidth * 0.85) : 288
+          )
+          .junoMessageContextMenu(menuActions)
+        }
         if editing {
           promptEditor
-        } else {
+        } else if !plainText.isEmpty || message.imageAttachments.isEmpty {
           bubbleBody
           if isLongPrompt { expandControl }
         }
@@ -1547,7 +1617,10 @@ private struct JunoMobileMessageRow: View {
       .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
       .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
       .contentShape(Self.bubbleShape)
-      .contextMenu { copyButton }
+      .junoMessageContextMenu(menuActions)
+      .sheet(isPresented: $showingSelectText) {
+        JunoMobileSelectTextSheet(title: isUser ? "Your message" : "Juno's reply", text: plainText)
+      }
       .accessibilityLabel("You said, \(plainText)")
   }
 
@@ -1633,6 +1706,25 @@ private struct JunoMobileMessageRow: View {
           .padding(.top, JunoSpace.hairline)
       }
 
+      // The generated picture — the answer itself, for an image turn.
+      if !message.imageAttachments.isEmpty, let imageLoader {
+        JunoMobileMessageImages(
+          attachments: message.imageAttachments,
+          loader: imageLoader,
+          alignment: .leading
+        )
+        .padding(.top, JunoSpace.hairline)
+      }
+
+      // While the answer has no words yet, say what is happening — the
+      // web's shimmering status line — rather than leaving a blank row.
+      if message.isPending, message.content.isEmpty, message.mediaProgress == nil,
+        (message.reasoning ?? "").isEmpty, !voice
+      {
+        JunoShimmerText("Thinking…")
+          .padding(.vertical, JunoSpace.tight)
+      }
+
       ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
         switch part {
         case .text(let text):
@@ -1682,7 +1774,10 @@ private struct JunoMobileMessageRow: View {
       if !voice { branchNavigator }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .contextMenu { copyButton }
+    .junoMessageContextMenu(menuActions)
+    .sheet(isPresented: $showingSelectText) {
+      JunoMobileSelectTextSheet(title: "Juno's reply", text: plainText)
+    }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Juno replied")
   }
@@ -1781,11 +1876,21 @@ private struct JunoMobileMessageRow: View {
     if hasAnyAction {
       HStack(spacing: 2) {
         if !plainText.isEmpty {
-          actionButton(
-            icon: copied ? .check : .copy,
-            label: copied ? "message.copied" : "message.copy",
-            identifier: "juno.mobile.message-copy"
-          ) { copy() }
+          Button {
+            copy()
+          } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+              .junoFont(size: 15, relativeTo: .body, weight: .medium)
+              .foregroundStyle(copied ? Color.junoSuccess : Color.junoMutedForeground)
+              // The web's `check-morph`: the glyph *becomes* the check.
+              .contentTransition(.symbolEffect(.replace))
+              .frame(minWidth: 34, minHeight: 34)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(copied ? "message.copied" : "message.copy")
+          .accessibilityIdentifier("juno.mobile.message-copy")
+          .frame(minWidth: 44, minHeight: 44)
         }
 
         if let readAloud, !plainText.isEmpty {
@@ -1889,6 +1994,7 @@ private struct JunoMobileMessageRow: View {
 
   private func copy() {
     UIPasteboard.general.string = plainText
+    onCopy?()
     withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
       copied = true
     }
@@ -1902,16 +2008,62 @@ private struct JunoMobileMessageRow: View {
     }
   }
 
-  /// Copies what is on screen. Copying `message.content` handed people a
-  /// `<juno:memory>` tag and an artifact's entire source — text they never saw.
-  private var copyButton: some View {
-    Button {
-      UIPasteboard.general.string = plainText
-    } label: {
-      JunoIconLabel(verbatim: "Copy", icon: .copy)
+  /// What a long press offers this message. Copy takes what is on screen —
+  /// copying `message.content` handed people a `<juno:memory>` tag and an
+  /// artifact's entire source, text they never saw.
+  private var menuActions: JunoMobileMessageMenuActions {
+    JunoMobileMessageMenuActions(
+      copy: { copy() },
+      selectText: { showingSelectText = true },
+      share: share.map { share in { share(plainText) } },
+      quote: voice || plainText.isEmpty ? nil : quote.map { quote in { quote(plainText) } },
+      readAloud: readAloud == nil || plainText.isEmpty || isUser
+        ? nil
+        : { readAloud?.toggle(messageID: message.id, text: spokenText, voiceID: voiceID) },
+      isReadingAloud: readAloud?.isSpeaking(message.id) == true,
+      regenerate: regenerate,
+      edit: editMessage == nil || editing || isGenerating
+        ? nil
+        : {
+          draft = plainText
+          editing = true
+        },
+      branch: branch.map { branch in { branch(message.id) } }
+    )
+  }
+}
+
+/// A message's text on its way to the share sheet, wrapped so `.sheet(item:)`
+/// can key on it.
+struct JunoMobileSharedText: Identifiable {
+  let id = UUID()
+  let text: String
+}
+
+/// Soft scroll-edge effects under the navigation bar and over the composer on
+/// iOS 26 — the platform's answer to content passing under floating chrome.
+struct JunoMobileSoftScrollEdges: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
+    } else {
+      content
     }
-    .disabled(plainText.isEmpty)
-    .contentShape(.rect)
+  }
+}
+
+extension View {
+  /// The composer as a bottom bar: `safeAreaBar` on iOS 26, which lets the
+  /// scroll edge effect run under it, and `safeAreaInset` before.
+  @ViewBuilder
+  func junoComposerBar<Bar: View>(@ViewBuilder _ bar: @escaping () -> Bar) -> some View {
+    if #available(iOS 26.0, *) {
+      safeAreaBar(edge: .bottom, content: bar)
+    } else {
+      safeAreaInset(edge: .bottom, content: bar)
+    }
   }
 }
 

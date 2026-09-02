@@ -67,20 +67,8 @@ export function FlagshipStrip() {
           never reaches assistive tech and this list was announced as an
           anonymous run of model names in the middle of the hero. */}
       <ul aria-label="Models in the picker today" className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
-        {/* Names, not chips. These were a pixel-copy of the composer's model
-            trigger — border, raised ground, 10px radius — while being inert
-            <li>s with no href, hover or role: the most clickable-looking thing
-            in the hero was the one thing that did nothing. ComposerPreview is
-            the same kind of depiction and can say so with aria-hidden; this one
-            cannot, because the model names are real content. So the costume
-            goes and the content stays — logo plus the registry's own mono name,
-            under a label that already says where they come from. */}
-        {/* `text-body`, not `text-[13px]`. 13px is not a rung — the ladder steps
-            caption (11) → label (12) → body (15) — so the hero's model names were
-            set at a size that appears nowhere else, half a step under the count
-            line's sibling. Body is the right rung on the merits too: these names
-            ARE the strip's content, and the mono meta line below stays at caption,
-            so the two now read as two levels instead of one blurred one. */}
+        {/* Names, not chips: these are inert, and the most clickable-looking
+            thing in the hero must not be the one thing that does nothing. */}
         {LABS.slice(0, STRIP_LABS).map(({ provider, label, flagships }) => (
           <li key={provider} className="inline-flex items-center gap-1.5 text-body font-medium text-foreground/80">
             <ProviderLogo provider={provider} label={label} className="size-4 shrink-0" />
@@ -103,26 +91,28 @@ export function ModelLineup() {
       heading={`${MODELS_FLOOR}+ models across ${TOTAL_LABS} labs.`}
       lede="Curated and synced nightly from each provider's own catalog, so new flagships appear without waiting on us. Pick per message — the conversation carries on."
     >
-      {/* Dotted rules: the product's rule motif is DottedDivider (roadmap, submit
-          dialog) and the landing already uses it for the flagship divider and the
-          receipt's leader. */}
-      <ul className="mt-10 grid gap-x-10 sm:grid-cols-2">
-        {LABS.map(({ provider, label, flagships, count }, i) => (
-          <li
-            key={provider}
-            style={staggerDelay(i)}
-            className="flex items-center gap-3 border-t border-dotted border-border py-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-          >
-            <ProviderLogo provider={provider} label={label} className="size-6" />
-            <div className="min-w-0 flex-1">
-              <span className="block text-body font-medium">{label}</span>
-              <span className="block truncate text-caption text-muted-foreground">{flagships.join(" · ")}</span>
-            </div>
-            <span className="font-mono text-caption tabular-nums text-muted-foreground">×{count}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-6 max-w-2xl text-body text-muted-foreground">
+      {/* An inset track holding raised lab chips: the picker's own idiom (a
+          well, keys standing proud of it). Concentric: the well is
+          rounded-card (16) with p-1.5 (6), so the chips sit at rounded-control (10). */}
+      <div className="surface-inset mt-10 rounded-card p-1.5">
+        <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          {LABS.map(({ provider, label, flagships, count }, i) => (
+            <li
+              key={provider}
+              style={staggerDelay(i, "tight")}
+              className="surface-raised flex items-center gap-3 rounded-control px-3 py-2.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
+              <ProviderLogo provider={provider} label={label} className="size-6 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="block truncate text-caption text-muted-foreground">{flagships.join(" · ")}</span>
+              </div>
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">×{count}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="mt-6 max-w-prose text-body text-muted-foreground">
         Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime
         voice — all under the same subscription, all metered the same way.
       </p>

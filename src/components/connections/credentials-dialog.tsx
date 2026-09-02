@@ -57,13 +57,11 @@ function loadMusicKit(): Promise<MusicKitGlobal> {
 
 function HelpSteps() {
   return (
-    // `bg-secondary` (9.5% L), opaque. This was `bg-muted/20`, which inside a
-    // dialog painted on --popover (13% L) composites DARKER than the surface it
-    // sits on — so the well that is meant to read as a recess read as a smudge,
-    // and in light mode it barely existed at all.
-    <div className="rounded-card border border-border/60 bg-secondary p-3.5 text-caption text-muted-foreground">
+    // An inset well inside the floating dialog: the recess is how the product
+    // says "read this, then act below it" everywhere else.
+    <div className="surface-inset rounded-field p-3.5 text-caption text-muted-foreground">
       <p className="flex items-start gap-1.5">
-        <KeyRound className="mt-0.5 size-3.5 shrink-0 text-primary" />
+        <KeyRound className="mt-0.5 size-3.5 shrink-0 text-primary-ink" />
         Juno signs in with an app-specific password — never your main Apple ID password.
       </p>
       <ol className="mt-2 list-decimal space-y-1 pl-4">

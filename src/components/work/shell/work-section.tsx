@@ -1,3 +1,4 @@
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -47,18 +48,13 @@ export function WorkSection({
 }) {
   const attention = tone === "attention";
   return (
-    <section className={cn("mt-9", className)}>
-      <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
+    <section className={cn("mt-8", className)}>
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
+          {/* `text-heading`, the rung every in-page section title in the app
+              sits on, with the count beside it in the metadata face. */}
           <h2 className="flex items-baseline gap-2">
-            <span
-              className={cn(
-                "font-mono text-label",
-                attention ? "text-warning-foreground" : "text-muted-foreground"
-              )}
-            >
-              {title}
-            </span>
+            <span className={cn("text-heading", attention && "text-warning-foreground")}>{title}</span>
             {meta != null && meta.length > 0 && (
               <span
                 className={cn(
@@ -70,11 +66,32 @@ export function WorkSection({
               </span>
             )}
           </h2>
-          {hint && <p className="mt-1 text-ui leading-relaxed text-muted-foreground">{hint}</p>}
+          {hint && <p className="mt-1 text-sm text-muted-foreground">{hint}</p>}
         </div>
         {action != null && <div className="shrink-0">{action}</div>}
       </div>
       {children}
     </section>
+  );
+}
+
+/**
+ * The well a list of rows sits in.
+ *
+ * Rows are hover-raised — a transparent border at rest, the raised surface on
+ * hover — and on a bare page a stack of them has no edge to read as a list.
+ * This is the inset frame the sidebar uses for the same job: a recess the rows
+ * sit in, `rounded-card` outside with `p-1.5` so the `rounded-control` rows
+ * inside are concentric with it.
+ */
+export function WorkList({
+  className,
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn("surface-inset space-y-0.5 rounded-card p-1.5", className)} {...props}>
+      {children}
+    </div>
   );
 }

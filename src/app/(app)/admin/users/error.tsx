@@ -30,33 +30,32 @@ export default function AdminUsersError({
   }, [error]);
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content flex max-w-6xl flex-col gap-6">
-        <EmptyState
-          tone="error"
-          icon={StatusIcons.error}
-          title="Couldn’t open the account list"
-          description="The directory didn’t come back. No plan, role or ban has been changed by the attempt."
-          action={
-            <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-                Try again
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/chat">Back to chat</Link>
-              </Button>
-            </>
-          }
-        />
-        {error.digest && (
-          // The digest is the only thing tying this screen to a line in the server
-          // log, so it is the one part of the failure worth putting on the page.
-          <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
-            Reference {error.digest}
-          </p>
-        )}
-      </div>
+    // The admin layout owns the page frame and header; this fills the body.
+    <div>
+      <EmptyState
+        tone="error"
+        icon={StatusIcons.error}
+        title="Couldn’t open the account list"
+        description="The directory didn’t come back. No plan, role or ban has been changed by the attempt."
+        action={
+          <>
+            <Button size="sm" onClick={reset} className="gap-1.5">
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              Try again
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/chat">Back to chat</Link>
+            </Button>
+          </>
+        }
+      />
+      {error.digest && (
+        // The digest is the only thing tying this screen to a line in the server
+        // log, so it is the one part of the failure worth putting on the page.
+        <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
+          Reference {error.digest}
+        </p>
+      )}
     </div>
   );
 }

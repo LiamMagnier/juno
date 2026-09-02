@@ -327,3 +327,28 @@ struct CodeSkillDiscoveryContractTests {
         #expect(discovered.first { $0.name == "release" }?.prompt.contains("Check the release") == true)
     }
 }
+
+/// `/compact` is a verb on the session, not a prompt for the composer.
+struct CodeSlashActionTests {
+    @Test
+    func compactIsABuiltInAction() {
+        let command = CodeSlashCommandLibrary.builtIn.command(named: "compact")
+        #expect(command?.action == .compact)
+        #expect(command?.prompt.isEmpty == true)
+        #expect(CodeSlashCommandLibrary.builtIn.matches("comp").map(\.name) == ["compact"])
+    }
+
+    @Test
+    func aWorkspaceCommandCannotBecomeAnAction() {
+        let parsed = CodeSlashCommand.parse(
+            name: "compact",
+            contents: "Summarise the conversation so far.",
+            path: ".juno/commands/compact.md"
+        )
+        #expect(parsed?.action == nil)
+        let merged = CodeSlashCommandLibrary.merged(workspace: [parsed!])
+        // The workspace file wins the name, and turns the verb back into a
+        // prompt — a repository may not silently hijack a session action.
+        #expect(merged.command(named: "compact")?.action == nil)
+    }
+}

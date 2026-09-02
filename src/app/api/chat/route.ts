@@ -230,6 +230,18 @@ function refuse(rejection: EntitlementRejection) {
  * here. It was built twice inside the branch, once for the completed turn and
  * once for a stopped one, and the two had to be kept identical by hand.
  */
+/**
+ * A regenerate's one-shot steering ("more concise", "add details"), appended
+ * to the system prompt for this generation only. Only honoured on a
+ * regenerate so a stray field on a normal send cannot shape the answer; the
+ * instruction is user-authored UI copy, not free text, but it is still fenced
+ * as an instruction block so it cannot pose as content.
+ */
+function withRegenerateInstruction(system: string, input: { regenerate?: boolean; regenerateInstruction?: string }): string {
+  if (!input.regenerate || !input.regenerateInstruction) return system;
+  return `${system}\n\n# Regeneration request\nThe user asked for this answer to be regenerated with the following adjustment: ${input.regenerateInstruction}`;
+}
+
 function privateAssistantMessage(
   acc: GenerationAccumulator,
   model: string,
@@ -781,7 +793,10 @@ async function handleChat(req: Request) {
     });
     // Same composition the saved path uses. The two used to be hand-written
     // expressions that happened to agree.
-    const system = composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false });
+    const system = withRegenerateInstruction(
+      composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false }),
+      input
+    );
     const generationId = input.generationId ?? crypto.randomUUID();
   /*
      * Hold this turn's estimated cost against the ceiling for as long as it runs.
@@ -1765,12 +1780,15 @@ async function handleChat(req: Request) {
     artifactEditTarget && input.artifactEdit
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
-  const system = composeSystemPrompt({
-    base: baseSystem,
-    webSearch: useWebSearch,
-    targetedArtifactEditPrompt,
-    canvasOn,
-  });
+  const system = withRegenerateInstruction(
+    composeSystemPrompt({
+      base: baseSystem,
+      webSearch: useWebSearch,
+      targetedArtifactEditPrompt,
+      canvasOn,
+    }),
+    input
+  );
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);

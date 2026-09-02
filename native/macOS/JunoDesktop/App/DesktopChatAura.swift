@@ -2,44 +2,25 @@ import Foundation
 import JunoDesignSystem
 import SwiftUI
 
-// MARK: - Motion
+// MARK: - Choreography
 
-/// The chat surface's motion language, in the website's own numbers.
+/// The distances and beats the chat surface's motion travels, in the website's
+/// own numbers.
 ///
-/// ``JunoMotion`` carries springs, and a spring cannot express a CSS
-/// cubic-bezier: every value here is one of `globals.css`'s named easings
-/// (`--ease-out-expo`, `--ease-out-soft`, `--ease-spring`) paired with one of its
-/// three durations (`--dur-fast` 120ms, `--dur-base` 220ms, `--dur-slow` 360ms).
-/// They live together because the four things that use them — the artifact
-/// canvas docking, a message arriving, a segmented control's thumb and the
-/// greeting's two beats — are one piece of choreography, and letting any one of
-/// them drift is what makes a surface read as assembled rather than designed.
-enum DesktopChatMotion {
-    /// `--dur-base` on `--ease-out-expo`: the artifact canvas settling in from
-    /// the edge it docks against.
-    static let canvasEnter = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.22)
-    /// `--dur-fast`: the canvas leaving while the transcript reflows underneath.
-    /// Deliberately quicker than the entrance — a panel you asked to close should
-    /// be gone before you have looked away from the button.
-    static let canvasExit = JunoMotion.fast
+/// **Not a motion ladder.** This used to be `DesktopChatMotion`, which carried
+/// four `Animation` values beside the shared ``JunoMotion`` — a second ladder
+/// with the same curves written as raw numbers, which is exactly what the
+/// motion gate exists to refuse. The curves now live on ``JunoMotion``
+/// (`canvasEnter`, `riseIn`, `exit`, `standard`); what remains here is the
+/// geometry those curves move through and the delays between beats, which are
+/// not animations and belong to this surface alone.
+enum DesktopChoreography {
     /// The web's `slide-in-from-right-4`. Sixteen points, not a full-width sweep:
     /// opening reads as the card handing off to the workspace beside it rather
     /// than as a scene change.
     static let canvasSlide: CGFloat = 16
-    /// `rise-in`: `0.32s cubic-bezier(0.32, 0.72, 0, 1)` — opacity 0→1 over an
-    /// 8pt lift. One keyframe, shared by an arriving message and the greeting.
-    static let riseIn = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.32)
-    /// `translateY(8px) → 0`.
+    /// `rise-in`'s `translateY(8px) → 0`.
     static let riseDistance: CGFloat = 8
-    /// A segmented control's knob, travelling.
-    ///
-    /// A spring rather than the web's `--ease-out-soft` curve, because the knob
-    /// is Liquid Glass now and glass is a material with mass — it stretches
-    /// toward where it is going and settles. An ease-out slides a shape; this
-    /// throws an object. The bounce is small on purpose: at more than about
-    /// 0.15 the knob visibly overshoots its segment and the label underneath it
-    /// reads as mistimed.
-    static let segmentTravel = JunoMotion.standard
     /// The greeting's first beat — the web's `[animation-delay:60ms]`.
     static let greetingPhraseBeat = Duration.milliseconds(60)
     /// Its second — `[animation-delay:180ms]` on the name.
@@ -219,7 +200,7 @@ struct DesktopDraftGreeting: View {
                 .padding(.trailing, JunoSpace.regular)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .opacity(phraseRisen ? 1 : 0)
-                .offset(y: phraseRisen ? 0 : DesktopChatMotion.riseDistance)
+                .offset(y: phraseRisen ? 0 : DesktopChoreography.riseDistance)
 
             sentence
 
@@ -263,11 +244,11 @@ struct DesktopDraftGreeting: View {
         ZStack {
             greetingText(showing: .phrase)
                 .opacity(phraseRisen ? 1 : 0)
-                .offset(y: phraseRisen ? 0 : DesktopChatMotion.riseDistance)
+                .offset(y: phraseRisen ? 0 : DesktopChoreography.riseDistance)
 
             greetingText(showing: .name)
                 .opacity(nameRisen ? 1 : 0)
-                .offset(y: nameRisen ? 0 : DesktopChatMotion.riseDistance)
+                .offset(y: nameRisen ? 0 : DesktopChoreography.riseDistance)
                 // The visible sentence is already carried whole by the copy
                 // above; announcing the second would read the name twice.
                 .accessibilityHidden(true)
@@ -349,14 +330,14 @@ struct DesktopDraftGreeting: View {
             nameRisen = true
             return
         }
-        try? await Task.sleep(for: DesktopChatMotion.greetingPhraseBeat)
-        withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+        try? await Task.sleep(for: DesktopChoreography.greetingPhraseBeat)
+        withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)) {
             phraseRisen = true
         }
         try? await Task.sleep(
-            for: DesktopChatMotion.greetingNameBeat - DesktopChatMotion.greetingPhraseBeat
+            for: DesktopChoreography.greetingNameBeat - DesktopChoreography.greetingPhraseBeat
         )
-        withAnimation(JunoMotion.reduced(DesktopChatMotion.riseIn, when: reduceMotion)) {
+        withAnimation(JunoMotion.reduced(JunoMotion.riseIn, when: reduceMotion)) {
             nameRisen = true
         }
     }

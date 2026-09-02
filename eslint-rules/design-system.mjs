@@ -41,20 +41,18 @@ const RADIUS_TOKENS = {
   "4px": "sm",
   "6px": "xs",
   "8px": "md",
-  "9px": "control",
-  "10px": "field",
-  "12px": "menu",
-  "14px": "card",
-  "16px": "surface",
-  "18px": "panel",
-  "26px": "composer",
+  "10px": "control",
+  "12px": "field",
+  "14px": "menu",
+  "16px": "card",
+  "20px": "panel",
   inherit: "inherit",
 };
 
 const SCALE_HELP =
-  "micro 2 · sm 4 · xs 6 · md 8 · control 9 · field 10 · menu 12 · composer-control 12 · " +
-  "card 14 · popover 14 · composer-action 14 · surface 16 · panel 18 · composer 26 · " +
-  "full · logo (24%)";
+  "micro 2 · sm 4 · xs 6 · md 8 · control 10 · composer-control 10 · field 12 · " +
+  "composer-action 12 · menu 14 · card 16 · popover 16 · surface 16 · lg 16 · panel 20 · " +
+  "composer 20 · full · logo (24%)";
 
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 

@@ -1,3 +1,4 @@
+import CoreSpotlight
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
@@ -77,6 +78,25 @@ struct JunoMobileRootView: View {
   @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
   @State private var sidebarOpen = false
   @State private var showingSettings = false
+  /// A link the drawer just published, waiting for the share sheet.
+  @State private var drawerShare: NativeShare?
+  /// Requests from Siri, Shortcuts, the Home Screen and notifications.
+  private var launchRequests: JunoMobileLaunchRequests { .shared }
+  /// A question from "Ask Juno", handed to the draft composer.
+  @State private var pendingAskPrompt: String?
+  /// Whether full-screen voice is up — see the note on the cover.
+  @State private var voiceFullScreenPresented = false
+  /// Local notifications and the background approval check for Juno Code.
+  private var codeNotifications: JunoMobileCodeNotifications { .shared }
+
+  /// Nil in the preview harness, where a permission prompt would sit over
+  /// every screenshot of Code.
+  private var previewNotifications: JunoMobileCodeNotifications? {
+    #if DEBUG
+      if previewSession != nil { return nil }
+    #endif
+    return codeNotifications
+  }
   @State private var incognito = false
   /// The live voice session, built when one is asked for and published to the
   /// chat column through the environment. Held here rather than in the chat
@@ -130,7 +150,11 @@ struct JunoMobileRootView: View {
   var body: some View {
     Group {
       #if DEBUG
-        if let previewSession {
+        if previewSession != nil, JunoPreviewEnvironment.signedOut {
+          // The signed-out front door, which the harness's fixture session
+          // otherwise makes unreachable.
+          JunoMobileSignInView(authModel: authModel)
+        } else if let previewSession {
           authenticatedContent(session: previewSession)
         } else {
           phaseContent
@@ -212,8 +236,13 @@ struct JunoMobileRootView: View {
             conversationModel?.isDraftingNewConversation = true
             conversationModel?.selectedConversationID = nil
           }
-          if CommandLine.arguments.contains("--juno-preview-voice") {
+          if CommandLine.arguments.contains("--juno-preview-voice")
+            || JunoPreviewEnvironment.opensVoiceFullScreen
+          {
             startVoice()
+            if JunoPreviewEnvironment.opensVoiceFullScreen {
+              voiceSession?.isFullScreen = true
+            }
           }
           return
         }
@@ -272,6 +301,8 @@ struct JunoMobileRootView: View {
         Task { await connectorModel?.start(for: session.profile.id) }
         Task { await scheduledTaskModel?.start(for: session.profile.id) }
         Task { await codeModel?.start(for: session.profile.id) }
+        remoteCodeModel?.start(for: session.profile.id)
+        codeNotifications.attach(remoteCodeModel)
         Task { await workModel?.start(for: session.profile.id) }
         libraryModel?.start(for: session.profile.id)
         documentIndex.start(for: session.profile.id)
@@ -304,6 +335,8 @@ struct JunoMobileRootView: View {
         connectorModel?.stop()
         scheduledTaskModel?.stop()
         codeModel?.stop()
+        remoteCodeModel?.stop()
+        Task { await JunoMobileSpotlight.clear() }
         // Signing out has to close the Work event stream as well as the
         // poll: it is an authenticated connection following a task on a
         // machine the signed-out reader no longer has an account for.
@@ -381,6 +414,9 @@ struct JunoMobileRootView: View {
       }
     }
     .sheet(isPresented: $showingSettings) { settingsSheet }
+    .sheet(item: $drawerShare) { share in
+      JunoMobileShareSheet(items: [share.url])
+    }
     // Voice is **not** a presentation any more. It used to be a
     // `fullScreenCover`, on the argument that a spoken conversation is the
     // whole interaction while it lasts — and that argument is what made it
@@ -394,6 +430,72 @@ struct JunoMobileRootView: View {
     // call must not end because a screen re-rendered, and because the shell
     // is where the credential that authorized it lives.
     .environment(\.junoVoiceSession, voiceSession)
+    // Full-screen voice, over everything. A cover rather than a push so the
+    // chat underneath keeps its scroll position and its composer, and so
+    // swiping down lands exactly where the reader left.
+    // Mirrored into local state rather than read through a binding getter:
+    // Observation only tracks what the *body* reads, and a presentation
+    // binding is read too late for the cover to notice the flag flipping.
+    .onChange(of: voiceSession?.isFullScreen ?? false, initial: true) { _, open in
+      voiceFullScreenPresented = open
+    }
+    .onChange(of: voiceFullScreenPresented) { _, open in
+      if !open { voiceSession?.isFullScreen = false }
+    }
+    .fullScreenCover(isPresented: $voiceFullScreenPresented) {
+      if let voiceSession {
+        JunoMobileVoiceFullScreen(session: voiceSession) {
+          voiceSession.isFullScreen = false
+        }
+        .tint(Color.junoAccent)
+      }
+    }
+    // Siri, Shortcuts, quick actions and notification taps all land here.
+    .onChange(of: launchRequests.pending, initial: true) { _, request in
+      guard let request else { return }
+      handleLaunchRequest(request)
+    }
+    // Conversation titles in Spotlight, rebuilt whenever the list changes.
+    .onChange(of: conversationModel?.conversations.map(\.id).hashValue ?? 0) { _, _ in
+      guard let conversations = conversationModel?.conversations else { return }
+      Task { await JunoMobileSpotlight.index(conversations) }
+    }
+    .onContinueUserActivity(CSSearchableItemActionType) { activity in
+      guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+      launchRequests.request(.openConversation(id))
+    }
+  }
+
+  /// Acts on one launch request once the shell can — a request that arrives
+  /// before sign-in waits for it.
+  private func handleLaunchRequest(_ request: JunoMobileLaunchRequests.Request) {
+    guard currentSession != nil else { return }
+    launchRequests.pending = nil
+    setSidebar(false)
+    switch request {
+    case .newChat:
+      showingSettings = false
+      startNewChat()
+    case .voice:
+      showingSettings = false
+      startVoice()
+      voiceSession?.isFullScreen = true
+    case .code:
+      showingSettings = false
+      selection = .code
+    case .ask(let prompt):
+      showingSettings = false
+      startNewChat()
+      pendingAskPrompt = prompt
+    case .openConversation(let id):
+      showingSettings = false
+      openConversation(id)
+    case .openRemoteSession(let deviceID, let sessionID):
+      showingSettings = false
+      selection = .code
+      remoteCodeModel?.selectedDeviceID = deviceID
+      remoteCodeModel?.openSession(sessionID)
+    }
   }
 
   /// Written as a typed property rather than an inline `cond ? method : nil`.
@@ -524,7 +626,13 @@ struct JunoMobileRootView: View {
             syncModel: syncModel,
             outbox: outbox,
             accountDataClient: accountDataClient,
-            requestSender: requestSender
+            requestSender: requestSender,
+            openConversation: { id in
+              showingSettings = false
+              openConversation(id)
+            },
+            messageActionsClient: messageActionsClient,
+            remoteCodeModel: remoteCodeModel
           )
         } else {
           unavailable
@@ -578,11 +686,13 @@ struct JunoMobileRootView: View {
         session: session,
         avatarData: avatarModel?.imageData,
         canCreateChat: conversationModel != nil,
+        requestSender: requestSender,
         openDestination: openSidebarDestination,
         openConversation: openSidebarConversation,
         openProject: openSidebarProject,
         openRecent: openRecent,
-        newChat: startNewChat
+        newChat: startNewChat,
+        shareConversation: shareAction
       )
       .frame(width: revealed, alignment: .leading)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -678,12 +788,31 @@ struct JunoMobileRootView: View {
       codeModel: codeModel,
       session: session,
       avatarData: avatarModel?.imageData,
+      requestSender: requestSender,
       openDestination: openSidebarDestination,
       openConversation: openSidebarConversation,
       openProject: openSidebarProject,
       openRecent: openRecent,
-      newChat: startNewChat
+      newChat: startNewChat,
+      shareConversation: shareAction
     )
+  }
+
+  /// Publishes a conversation from the drawer and hands the link to the
+  /// system share sheet. Nil where there is no share client, so the menu row
+  /// is absent rather than present and inert.
+  private var shareAction: ((String) -> Void)? {
+    guard let shareClient, let session = currentSession else { return nil }
+    return { conversationID in
+      Task {
+        guard
+          let share = try? await shareClient.share(
+            conversationID: conversationID, for: session.profile.id
+          )
+        else { return }
+        drawerShare = share
+      }
+    }
   }
 
   private func openSidebarProject(_ id: String) {
@@ -838,7 +967,9 @@ struct JunoMobileRootView: View {
         followUpClient: followUpClient,
         shareClient: shareClient,
         accountID: currentSession?.profile.id,
-        voiceID: memorySettingsModel?.settings?.voiceID
+        voiceID: memorySettingsModel?.settings?.voiceID,
+        requestSender: requestSender,
+        pendingPrompt: $pendingAskPrompt
       )
       .transition(.opacity)
     } else {
@@ -899,6 +1030,7 @@ struct JunoMobileRootView: View {
         JunoMobileCodeView(
           model: codeModel,
           remoteModel: remoteCodeModel,
+          notifications: previewNotifications,
           startConversation: startProjectlessCodeConversation,
           pullsClient: pullsClient,
           accountID: currentSession?.profile.id,
@@ -980,7 +1112,10 @@ struct JunoMobileRootView: View {
           syncModel: syncModel,
           outbox: outbox,
           accountDataClient: accountDataClient,
-          requestSender: requestSender
+          requestSender: requestSender,
+          openConversation: openConversation,
+          messageActionsClient: messageActionsClient,
+          remoteCodeModel: remoteCodeModel
         )
       } else {
         unavailable
@@ -1121,647 +1256,6 @@ private struct JunoMobileDrawerPlate: ViewModifier {
     } else {
       content.clipShape(Rectangle())
     }
-  }
-}
-
-/// A fully custom iPhone/iPad sidebar drawer — deliberately **not** built on
-/// `List`/`Form`/`Section`, whose grouped metrics read like a Settings page.
-/// A compact header, a scrolling `LazyVStack` of dense rows, and a fixed footer
-/// reproduce the proportions and density of a modern chat drawer.
-private struct JunoMobileSidebarDrawer: View {
-  @Binding var selection: JunoMobileSection
-  let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
-  let projectModel: NativeProjectModel<SQLiteAccountRepository>?
-  let workModel: NativeWorkModel?
-  let codeModel: NativeCodeModel?
-  let session: NativeAuthenticatedSession
-  /// The account photo's bytes, already fetched through the authenticated file
-  /// route. Nil falls back to initials.
-  var avatarData: Data?
-  var canCreateChat: Bool = true
-  let openDestination: (JunoMobileSection) -> Void
-  let openConversation: (String) -> Void
-  var openProject: (String) -> Void = { _ in }
-  let openRecent: (JunoRecentItem) -> Void
-  let newChat: () -> Void
-
-  @State private var renameTarget: NativeConversation?
-  @State private var renameValue = ""
-  @State private var deleteTarget: NativeConversation?
-  @State private var renameProjectTarget: NativeProject?
-  @State private var renameProjectValue = ""
-  @State private var deleteProjectTarget: NativeProject?
-
-  private var pinnedProjects: [NativeProject] {
-    (projectModel?.projects ?? [])
-      .filter(\.starred)
-      .sorted { $0.updatedAt > $1.updatedAt }
-  }
-
-  private var pinnedChats: [NativeConversation] {
-    (conversationModel?.conversations ?? [])
-      .filter { $0.pinned && !$0.isArchived }
-  }
-
-  private var recents: [NativeConversation] {
-    (conversationModel?.conversations ?? [])
-      .filter { !$0.pinned && !$0.isArchived }
-      .sorted { $0.lastMessageAt > $1.lastMessageAt }
-      .prefix(30)
-      .map { $0 }
-  }
-
-  private var attentionItems: [JunoRecentItem] {
-    var sources: [[JunoRecentItem]] = []
-    if let workModel {
-      sources.append(
-        workModel.sessionsNeedingAttention
-          .filter { !$0.archived }
-          .map(\.junoRecentItem)
-      )
-    }
-    if let codeModel {
-      sources.append(
-        codeModel.tasks
-          .filter { $0.status == .awaitingApproval || $0.status == .failed }
-          .map(\.junoRecentItem)
-      )
-    }
-    return JunoRecentActivity.attentionItems(
-      from: JunoRecentActivity.merge(sources, limit: 20),
-      limit: 6
-    )
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      header
-      ScrollView {
-        LazyVStack(alignment: .leading, spacing: 2) {
-          ForEach(JunoMobileSection.drawerDestinations) { destination in
-            JunoMobileSidebarRow(
-              junoIcon: destination.junoIcon,
-              title: destination.title,
-              selected: selection == destination,
-              action: { openDestination(destination) }
-            )
-          }
-
-          // Attention is a state of the workspace, not a second
-          // navigation tree. The old drawer expanded every waiting
-          // Work/Code item above the destinations, pushing the actual
-          // product navigation below the fold on iPhone and turning
-          // the iPad sidebar into a dashboard of competing cards.
-          // Keep one compact, actionable summary here; the detailed
-          // rows remain in Work and Code where their actions belong.
-          if !attentionItems.isEmpty {
-            attentionSummary
-          }
-
-          if !pinnedProjects.isEmpty || !pinnedChats.isEmpty {
-            sectionLabel("sidebar.pinned")
-            ForEach(pinnedProjects) { projectRow($0) }
-            ForEach(pinnedChats) { conversationRow($0, pinned: true) }
-          }
-
-          if !recents.isEmpty {
-            sectionLabel("sidebar.recents")
-            ForEach(recents) { conversationRow($0, pinned: false) }
-          }
-        }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 12)
-      }
-      .scrollIndicators(.hidden)
-
-      bottomBar
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    .accessibilityIdentifier("juno.mobile.sidebar")
-    .alert(
-      "Rename conversation",
-      isPresented: Binding(
-        get: { renameTarget != nil },
-        set: { if !$0 { renameTarget = nil } }
-      )
-    ) {
-      TextField("Title", text: $renameValue)
-      Button("Cancel", role: .cancel) { renameTarget = nil }
-        .contentShape(.rect)
-      Button("Save") {
-        guard let target = renameTarget else { return }
-        renameTarget = nil
-        Task { await conversationModel?.renameConversation(id: target.id, title: renameValue) }
-      }
-      .contentShape(.rect)
-    }
-    .confirmationDialog(
-      deleteTarget.map { "Delete “\($0.title)”?" } ?? "",
-      isPresented: Binding(
-        get: { deleteTarget != nil },
-        set: { if !$0 { deleteTarget = nil } }
-      ),
-      titleVisibility: .visible
-    ) {
-      Button("Delete", role: .destructive) {
-        guard let target = deleteTarget else { return }
-        deleteTarget = nil
-        Task { await conversationModel?.deleteConversation(id: target.id) }
-      }
-      .contentShape(.rect)
-      Button("Cancel", role: .cancel) { deleteTarget = nil }
-        .contentShape(.rect)
-    } message: {
-      Text("chat.delete.warning")
-    }
-    .alert(
-      "Rename project",
-      isPresented: Binding(
-        get: { renameProjectTarget != nil },
-        set: { if !$0 { renameProjectTarget = nil } }
-      )
-    ) {
-      TextField("Name", text: $renameProjectValue)
-      Button("Cancel", role: .cancel) { renameProjectTarget = nil }
-        .contentShape(.rect)
-      Button("Save") {
-        guard let target = renameProjectTarget else { return }
-        renameProjectTarget = nil
-        Task { await projectModel?.updateProject(id: target.id, name: renameProjectValue) }
-      }
-      .contentShape(.rect)
-    }
-    .confirmationDialog(
-      deleteProjectTarget.map { "Delete “\($0.name)”?" } ?? "",
-      isPresented: Binding(
-        get: { deleteProjectTarget != nil },
-        set: { if !$0 { deleteProjectTarget = nil } }
-      ),
-      titleVisibility: .visible
-    ) {
-      Button("Delete", role: .destructive) {
-        guard let target = deleteProjectTarget else { return }
-        deleteProjectTarget = nil
-        Task { await projectModel?.deleteProject(id: target.id) }
-      }
-      .contentShape(.rect)
-      Button("Cancel", role: .cancel) { deleteProjectTarget = nil }
-        .contentShape(.rect)
-    } message: {
-      Text("Conversations are kept and unlinked; project files are removed.")
-    }
-  }
-
-  private var attentionSummary: some View {
-    Button {
-      if let first = attentionItems.first { openRecent(first) }
-    } label: {
-      HStack(spacing: 10) {
-        Circle()
-          .fill(Color.junoCaution)
-          .frame(width: 7, height: 7)
-          .accessibilityHidden(true)
-
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Needs attention")
-            .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-          Text("\(attentionItems.count) item\(attentionItems.count == 1 ? "" : "s") waiting")
-            .junoFont(size: 12, relativeTo: .caption)
-            .junoSecondaryInk()
-        }
-
-        Spacer(minLength: 0)
-        JunoIconView(.chevronRight, size: 12)
-          .junoMetaInk()
-      }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-          .fill(Color.junoSurface.opacity(0.72))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-          .strokeBorder(Color.junoHairline.opacity(0.65), lineWidth: 1)
-      )
-    }
-    .buttonStyle(.plain)
-    .padding(.horizontal, 10)
-    .padding(.top, 12)
-    .accessibilityIdentifier("juno.mobile.attention-summary")
-    .accessibilityLabel(
-      "Needs attention, \(attentionItems.count) item\(attentionItems.count == 1 ? "" : "s") waiting"
-    )
-    .frame(minWidth: 44, minHeight: 44)
-    .contentShape(.rect)
-  }
-
-  /// One conversation, with the actions a long press should offer.
-  ///
-  /// The menu lives on the row rather than only in the conversation's own
-  /// toolbar because the drawer is where you *see* the list — reaching Rename
-  /// meant opening the chat you wanted to rename first, which is backwards.
-  private func conversationRow(
-    _ conversation: NativeConversation, pinned: Bool
-  ) -> some View {
-    JunoMobileConversationRow(
-      title: conversation.title,
-      pinned: pinned,
-      pending: conversation.isPending,
-      action: { openConversation(conversation.id) }
-    )
-    .contextMenu {
-      Button {
-        renameValue = conversation.title
-        renameTarget = conversation
-      } label: {
-        Label { Text("Rename") } icon: { JunoIconView(.pencil, size: 15) }
-      }
-      Button {
-        Task {
-          await conversationModel?.setPinned(
-            id: conversation.id, pinned: !conversation.pinned
-          )
-        }
-      } label: {
-        Label { Text(conversation.pinned ? "Unpin" : "Pin") } icon: {
-          JunoIconView(.pin, size: 15)
-        }
-      }
-      Divider()
-      Button(role: .destructive) {
-        deleteTarget = conversation
-      } label: {
-        Label { Text("Delete") } icon: { JunoIconView(.trash, size: 15) }
-      }
-    }
-    // A conversation still syncing cannot be renamed, pinned or deleted —
-    // the mutation would target a row the server has never seen. Gated on
-    // the conversation's own state, not on `isMutating`: that flag is true
-    // during *any* mutation anywhere, so using it here would randomly make
-    // the long press do nothing while an unrelated change was in flight.
-    .disabled(conversation.isPending)
-  }
-
-  private func projectRow(_ project: NativeProject) -> some View {
-    Button {
-      openProject(project.id)
-    } label: {
-      HStack(spacing: 7) {
-        JunoIconView(.projects, size: 14)
-          .foregroundStyle(Color.junoAccent)
-        Text(project.name)
-          .junoFont(size: 16, relativeTo: .body)
-          .foregroundStyle(.primary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-        Spacer(minLength: 0)
-        if project.isPending {
-          JunoIconView(.refresh, size: 12)
-            .junoSecondaryInk()
-        }
-      }
-      .padding(.horizontal, 10)
-      .frame(minWidth: 44, minHeight: 44)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(JunoSidebarPressStyle())
-    .contextMenu {
-      Button {
-        renameProjectValue = project.name
-        renameProjectTarget = project
-      } label: {
-        Label { Text("Rename") } icon: { JunoIconView(.pencil, size: 15) }
-      }
-      Button {
-        Task {
-          await projectModel?.updateProject(
-            id: project.id, starred: !project.starred
-          )
-        }
-      } label: {
-        Label { Text(project.starred ? "Unpin" : "Pin") } icon: {
-          JunoIconView(.pin, size: 15)
-        }
-      }
-      Divider()
-      Button(role: .destructive) {
-        deleteProjectTarget = project
-      } label: {
-        Label { Text("Delete") } icon: { JunoIconView(.trash, size: 15) }
-      }
-    }
-    .disabled(project.isPending)
-  }
-
-  // Compact brand header — Juno wordmark left, quiet search right.
-  private var header: some View {
-    HStack(spacing: 9) {
-      // The real mark from `public/juno-mark.png`, not an SF Symbol
-      // stand-in. It is ink-coloured rather than coral: on the website the
-      // mark is ink and the coral is spent on emphasis, so tinting
-      // always-present chrome would spend the accent on nothing.
-      JunoMark(size: 24)
-      Text("Juno")
-        .junoFont(size: 22, relativeTo: .body, weight: .semibold)
-        .accessibilityAddTraits(.isHeader)
-      Spacer(minLength: 0)
-      Button(action: { openDestination(.search) }) {
-        JunoIconView(.search, size: 18)
-          .foregroundStyle(Color.junoSidebarForeground)
-          .frame(width: 40, height: 40)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("navigation.search")
-      .frame(minWidth: 44, minHeight: 44)
-    }
-    .padding(.horizontal, 16)
-    // No fixed height. It was pinned to 44pt around a 46pt glass circle, so
-    // the button overflowed its own header and the first destination row sat
-    // hard against Search — the mark, the wordmark and "Projects" reading as
-    // one undifferentiated block.
-    //
-    // The bottom inset is the load-bearing half: a brand header and a list of
-    // destinations are two different things, and the gap is what says so.
-    .padding(.top, 6)
-    .padding(.bottom, 10)
-  }
-
-  private func sectionLabel(_ key: LocalizedStringKey) -> some View {
-    Text(key)
-      .junoFont(size: 14, relativeTo: .body, weight: .semibold)
-      .junoSecondaryInk()
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 10)
-      .padding(.top, 12)
-      .padding(.bottom, 4)
-  }
-
-  // MARK: Bottom bar — profile (glass circle) + New Chat (accent glass capsule)
-
-  @ViewBuilder
-  private var bottomBar: some View {
-    if #available(iOS 26.0, *) {
-      GlassEffectContainer(spacing: 10) {
-        bottomBarControls
-      }
-    } else {
-      bottomBarControls
-    }
-  }
-
-  private var bottomBarControls: some View {
-    HStack(spacing: 10) {
-      profileButton
-      Spacer(minLength: 0)
-      newChatButton
-    }
-    .padding(.horizontal, 22)
-    .padding(.top, 8)
-    .padding(.bottom, 8)
-  }
-
-  private var profileName: String { session.profile.name ?? session.profile.email }
-
-  /// The photo sits **inside** the glass, not over it.
-  ///
-  /// The avatar used to be 46pt with `JunoGlassCircle` behind it — an opaque
-  /// disc exactly covering the glass, so the button had a Liquid Glass
-  /// background that was impossible to see and read as a bare cropped photo.
-  /// A 32pt photo in a 46pt circle leaves a 7pt ring of real glass around it:
-  /// the control refracts and flexes under a finger like every other piece of
-  /// chrome, and the photo reads as mounted in it rather than as the button.
-  ///
-  /// The outer size is unchanged, so the touch target is still 46pt.
-  private var profileButton: some View {
-    Button(action: { openDestination(.settings) }) {
-      JunoAvatar(
-        imageData: avatarData,
-        imageURL: session.profile.imageURL,
-        name: profileName,
-        size: 32
-      )
-      .padding(8)
-      .modifier(JunoGlassCircle())
-    }
-    .buttonStyle(.plain)
-    .frame(width: 48, height: 48)
-    .accessibilityLabel("Open settings for \(profileName)")
-    .accessibilityIdentifier("juno.mobile.sidebar-profile")
-    .contentShape(.rect)
-  }
-
-  /// The drawer's one primary action, and therefore the one tinted surface on
-  /// it — the HIG's rule on tinted glass is that colour is for emphasis, and
-  /// its own illustration of the mistake is several tinted controls at once.
-  private var newChatButton: some View {
-    Button(action: newChat) {
-      HStack(spacing: 3) {
-        JunoIconView(.new, size: 12)
-        Text("navigation.chat")
-          .junoFont(size: 12, relativeTo: .subheadline, weight: .semibold)
-      }
-      // Keep the visible pill compact; the outer frame below supplies the
-      // full 48pt hit target shared with Profile. The previous large control
-      // size added the system's own vertical insets on top of a 48pt label,
-      // which made the glass read as a 70pt slab in the drawer.
-      // The tinted glass style adds its own optical insets around the label;
-      // a 46pt content minimum keeps the pill subordinate to the profile
-      // control while still leaving room for the icon and localized label.
-      .padding(.horizontal, 1)
-      .frame(minWidth: 46, minHeight: 24)
-    }
-    // GlassProminentButtonStyle has a platform minimum that makes this small
-    // drawer action read like a toolbar slab. Keep the native Glass treatment,
-    // but use the compact accent-glass primitive so the label owns its width.
-    .buttonStyle(.plain)
-    .foregroundStyle(Color.junoOnAccent)
-    .junoAccentGlass(in: Capsule())
-    .frame(height: 48)
-    .disabled(!canCreateChat)
-    .opacity(canCreateChat ? 1 : 0.5)
-    .accessibilityLabel("chat.new")
-    .accessibilityIdentifier("juno.mobile.sidebar-chat")
-    .contentShape(.rect)
-  }
-}
-
-/// A single destination / action row: constant icon column, 44pt tall, with a
-/// restrained accent wash only when selected.
-private struct JunoMobileSidebarRow: View {
-  /// The destination's own glyph, generated from the same Lucide source as the
-  /// web shell. Neither is tinted coral — every row coral was one of the
-  /// rejected build's louder mistakes, and it left the accent meaning nothing.
-  let junoIcon: JunoIcon
-  let title: LocalizedStringKey
-  var selected: Bool
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: 12) {
-        JunoIconView(junoIcon, size: 19)
-          .frame(width: 24)
-          .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
-        Text(title)
-          .junoFont(size: 16, relativeTo: .body, weight: selected ? .semibold : .regular)
-          .foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
-        Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 10)
-      .frame(height: 44)
-      .background(
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(selected ? Color.junoMuted : .clear)
-      )
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(JunoSidebarPressStyle())
-  }
-}
-
-/// A dense single-line conversation row (~40pt) with tail truncation and no
-/// background or separator, so many rows stay visible at once.
-private struct JunoMobileConversationRow: View {
-  let title: String
-  var pinned: Bool
-  var pending: Bool
-  let action: () -> Void
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: 7) {
-        if pinned {
-          // Juno's own pin, in the accent. This is one of exactly two
-          // places the website lets coral into the sidebar — the
-          // pinned conversation and the starred project, both
-          // `fill-primary` — and it was an SF Symbol in `.secondary`
-          // here while the Mac drew the same concept with a third
-          // glyph in a fourth colour.
-          JunoIconView(.pin, size: 12)
-            .foregroundStyle(Color.junoAccent)
-        }
-        Text(title)
-          .junoFont(size: 16, relativeTo: .body)
-          .foregroundStyle(.primary)
-          .lineLimit(1)
-          .truncationMode(.tail)
-        Spacer(minLength: 0)
-        if pending {
-          JunoIconView(.refresh, size: 12)
-            .junoSecondaryInk()
-        }
-      }
-      .padding(.horizontal, 10)
-      .frame(height: 40)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(JunoSidebarPressStyle())
-    .frame(minWidth: 44, minHeight: 44)
-  }
-}
-
-private struct JunoMobileSignInView: View {
-  let authModel: NativeAuthModel
-
-  @State private var email = ""
-  @State private var password = ""
-  @FocusState private var focusedField: Field?
-
-  private enum Field: Hashable { case email, password }
-
-  private var isBusy: Bool { authModel.phase == .signingIn }
-  private var canSubmitPassword: Bool {
-    !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && !password.isEmpty
-      && !isBusy
-  }
-
-  private func submitPassword() {
-    guard canSubmitPassword else { return }
-    let submittedPassword = password
-    // Hand the plaintext over and drop it from view state immediately.
-    password = ""
-    Task { await authModel.signIn(email: email, password: submittedPassword) }
-  }
-
-  var body: some View {
-    ScrollView {
-      VStack(spacing: 18) {
-        JunoMark(size: 44)
-        Text("auth.welcome.title")
-          .junoPageHeading()
-        Text("auth.welcome.description")
-          .junoSecondaryInk()
-          .multilineTextAlignment(.center)
-        if let error = authModel.lastErrorDescription {
-          Text(error)
-            .foregroundStyle(Color.junoDanger)
-            .multilineTextAlignment(.center)
-            .accessibilityIdentifier("juno.mobile.auth-error")
-        }
-        if authModel.phase != .unavailable {
-          credentialFields
-          Button(action: submitPassword) {
-            if isBusy {
-              ProgressView()
-                .controlSize(.small)
-            } else {
-              Text("auth.sign-in.password")
-                .frame(maxWidth: .infinity)
-            }
-          }
-          .buttonStyle(.borderedProminent)
-          .disabled(!canSubmitPassword)
-          .accessibilityIdentifier("juno.mobile.sign-in.password")
-          .contentShape(.rect)
-
-          Text("auth.divider.or")
-            .junoCaption()
-            .junoSecondaryInk()
-
-          Button {
-            Task { await authModel.signIn() }
-          } label: {
-            Text("auth.sign-in")
-              .frame(maxWidth: .infinity)
-          }
-          .buttonStyle(.bordered)
-          .disabled(isBusy)
-          .accessibilityIdentifier("juno.mobile.sign-in")
-          .contentShape(.rect)
-
-          Text("auth.password.disclaimer")
-            .junoCaption()
-            .junoSecondaryInk()
-            .multilineTextAlignment(.center)
-        }
-      }
-      .padding(32)
-    }
-    .scrollBounceBehavior(.basedOnSize)
-  }
-
-  private var credentialFields: some View {
-    VStack(spacing: 12) {
-      TextField("auth.email.placeholder", text: $email)
-        .textContentType(.username)
-        .keyboardType(.emailAddress)
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .focused($focusedField, equals: .email)
-        .onSubmit { focusedField = .password }
-        .accessibilityIdentifier("juno.mobile.email")
-      SecureField("auth.password.label", text: $password)
-        .textContentType(.password)
-        .focused($focusedField, equals: .password)
-        .onSubmit(submitPassword)
-        .accessibilityIdentifier("juno.mobile.password")
-    }
-    .textFieldStyle(.roundedBorder)
-    .disabled(isBusy)
   }
 }
 

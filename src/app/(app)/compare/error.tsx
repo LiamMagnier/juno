@@ -14,6 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 
+import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -30,10 +31,14 @@ export default function CompareError({
   }, [error]);
 
   return (
-    // This route owns a full-height shell rather than the scrolling page
-    // column, so the fallback centres in the same box instead of opening with a
-    // page gutter the surface behind it does not have.
-    <div className="flex h-full min-h-0 flex-col items-center justify-center px-4 py-10">
+    // The same full-measure frame the page uses, so the fallback sits where the
+    // panes would have been.
+    <AppPage
+      measure="full"
+      scroll={false}
+      className="flex h-full min-h-0 flex-col"
+      contentClassName="flex min-h-0 flex-1 flex-col items-center justify-center"
+    >
       <div className="w-full max-w-md">
         <EmptyState
           tone="error"
@@ -60,6 +65,6 @@ export default function CompareError({
           </p>
         )}
       </div>
-    </div>
+    </AppPage>
   );
 }

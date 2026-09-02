@@ -640,7 +640,7 @@ export default function NewCodeSessionPage() {
                                     <PopoverContent
                                       align="start"
                                       sideOffset={10}
-                                      className="w-[300px] origin-popper rounded-2xl border border-border/80 bg-popover/95 p-4 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95"
+                                      className="w-[300px] origin-popper p-4"
                                     >
                                       <ReasoningSlider
                                         options={effortOptions}

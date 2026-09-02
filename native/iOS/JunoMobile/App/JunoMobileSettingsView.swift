@@ -1,11 +1,16 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
 import UIKit
+
+#if DEBUG
+  import JunoPreviewSupport
+#endif
 
 /// **Settings**, laid out as the website lays it out: one scrolling column of
 /// tiles, in the website's order, using the website's control vocabulary.
@@ -49,6 +54,27 @@ import UIKit
 /// `.navigationDestination(isPresented:)` rather than by pushing links.
 private enum JunoMobileSettingsRoute: Hashable {
   case usage, appearance, models, writing, language, memory, notifications, data, advanced, about
+  case archived, voice, code
+
+  /// The name a preview launch uses: `--juno-preview-settings-route voice`.
+  init?(previewName: String) {
+    switch previewName {
+    case "usage": self = .usage
+    case "appearance": self = .appearance
+    case "models": self = .models
+    case "writing", "personalization": self = .writing
+    case "language": self = .language
+    case "memory": self = .memory
+    case "notifications": self = .notifications
+    case "account", "data": self = .data
+    case "advanced": self = .advanced
+    case "about": self = .about
+    case "archived": self = .archived
+    case "voice": self = .voice
+    case "code": self = .code
+    default: return nil
+    }
+  }
 }
 
 private enum JunoMobileSettingsPreferenceSection {
@@ -79,6 +105,12 @@ struct JunoMobileSettingsView: View {
   var requestSender: (any NativeAuthenticatedRequestSending)?
   /// Lists and revokes the account's public links.
   var shareClient: NativeShareClient?
+  /// Opens a chat from the Archived page. Nil where nothing can navigate.
+  var openConversation: ((String) -> Void)?
+  /// Backs the voice preview. Nil falls back to the device synthesiser.
+  var messageActionsClient: NativeMessageActionsClient?
+  /// The paired Macs, for Settings › Juno Code.
+  var remoteCodeModel: CodeRemoteBrowserModel?
 
   @State private var showingSignOut = false
   @State private var showMemoryPage = false
@@ -95,6 +127,8 @@ struct JunoMobileSettingsView: View {
   @State private var isExporting = false
   @State private var exportURL: URL?
   @State private var dangerError: String?
+  /// A page the preview harness asked to open on launch.
+  @State private var previewRoute: JunoMobileSettingsRoute?
 
   var body: some View {
     Group {
@@ -169,8 +203,17 @@ struct JunoMobileSettingsView: View {
         accountID: session.map { StorageAccountID($0.profile.id.rawValue) }
       )
     }
+    .navigationDestination(item: $previewRoute) { route in
+      settingsDestination(route)
+    }
     .task {
       #if DEBUG
+        if let raw = JunoPreviewEnvironment.initialSettingsRoute,
+          let route = JunoMobileSettingsRoute(previewName: raw)
+        {
+          try? await Task.sleep(nanoseconds: 350_000_000)
+          previewRoute = route
+        }
         if CommandLine.arguments.contains("--juno-preview-memory") {
           try? await Task.sleep(nanoseconds: 350_000_000)
           showMemoryPage = true
@@ -253,6 +296,12 @@ struct JunoMobileSettingsView: View {
 
       Section("AI") {
         settingsLink(.models, title: "Models", icon: .models)
+        settingsLink(.voice, title: "Voice", icon: .mic)
+        settingsLink(.code, title: "Juno Code", icon: .code)
+      }
+
+      Section("Chats") {
+        settingsLink(.archived, title: "Archived chats", icon: .conversation)
       }
 
       Section("General") {
@@ -306,6 +355,9 @@ struct JunoMobileSettingsView: View {
     case .data: "juno.mobile.settings-route-account"
     case .advanced: "juno.mobile.settings-route-advanced"
     case .about: "juno.mobile.settings-route-about"
+    case .archived: "juno.mobile.settings-route-archived"
+    case .voice: "juno.mobile.settings-route-voice"
+    case .code: "juno.mobile.settings-route-code"
     }
   }
 
@@ -331,15 +383,9 @@ struct JunoMobileSettingsView: View {
     case .memory:
       detailPage(title: "Memory") { memoryTile }
     case .notifications:
-      detailPage(title: "Notifications") {
-        if let settings = model.settings {
-          JunoMobileSettingsEmailTile(
-            settings: settings,
-            disabled: model.isMutating,
-            update: update
-          )
-        }
-      }
+      JunoMobileNotificationSettingsView(
+        settings: model.settings, disabled: model.isMutating, update: update
+      )
     case .data:
       accountPage
     case .advanced:
@@ -350,6 +396,22 @@ struct JunoMobileSettingsView: View {
       )
     case .about:
       detailPage(title: "About Juno") { aboutTile }
+    case .archived:
+      if let conversationModel {
+        JunoMobileArchivedView(
+          model: conversationModel,
+          openConversation: { id in openConversation?(id) }
+        )
+      } else {
+        unsyncedTile
+      }
+    case .voice:
+      JunoMobileVoiceSettingsView(
+        settings: model.settings, disabled: model.isMutating, update: update,
+        messageActions: messageActionsClient, accountID: session?.profile.id
+      )
+    case .code:
+      JunoMobileCodeSettingsView(remoteModel: remoteCodeModel)
     }
   }
 
@@ -373,18 +435,17 @@ struct JunoMobileSettingsView: View {
     }
   }
 
+  /// Every leaf is a `Form`: the platform's rows, pickers and toggles, with
+  /// the app's icons in them. The tiles this replaced were a second, hand-drawn
+  /// settings vocabulary sitting under a native root.
   private func detailPage<Content: View>(
     title: String,
     @ViewBuilder content: () -> Content
   ) -> some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: JunoSpace.section) {
-        content()
-      }
-      .padding(JunoSpace.regular)
-      .frame(maxWidth: 720)
-      .frame(maxWidth: .infinity)
+    Form {
+      content()
     }
+    .scrollContentBackground(.hidden)
     .background(Color.junoCanvas)
     .navigationTitle(title)
     .navigationBarTitleDisplayMode(.inline)
@@ -558,58 +619,74 @@ struct JunoMobileSettingsView: View {
   /// The account's settings row has not arrived yet. Stated, rather than
   /// rendering ten controls bound to defaults that would write themselves back.
   private var unsyncedTile: some View {
-    JunoSettingsTile("Preferences") {
-          Label {
-            Text("Account settings have not finished synchronizing.")
-          } icon: {
-            JunoIconView(.refresh, size: 14)
-          }
+    Section {
+      Label {
+        Text("Account settings have not finished synchronizing.")
+      } icon: {
+        JunoIconView(.refresh, size: 14)
+      }
       .junoCaption()
     }
   }
 
+  @ViewBuilder
   private var memoryTile: some View {
-    JunoSettingsTile("Memory") {
-      JunoMobileSettingsSwitch(
-        title: "Reference saved memories",
-        detail: "Juno keeps helpful details from your chats and uses them as context.",
-        isOn: memoryEnabled,
-        isEnabled: !model.isMutating && model.settings != nil
-      )
+    Section {
+      Toggle(isOn: memoryEnabled) {
+        JunoMobileSettingsFormLabel(
+          title: "Reference saved memories",
+          detail: "Juno keeps helpful details from your chats and uses them as context.",
+          icon: .memory
+        )
+      }
+      .tint(Color.junoAccent)
+      .disabled(model.isMutating || model.settings == nil)
       .accessibilityIdentifier("juno.mobile.settings-memory-toggle")
 
-      Divider()
-
-      JunoMobileSettingsLink(
-        title: "What Juno remembers",
-        icon: .memory,
-        value: Text("^[\(model.memories.count) memory](inflect: true)")
-      ) { showMemoryPage = true }
+      Button {
+        showMemoryPage = true
+      } label: {
+        JunoMobileSettingsFormLabel(
+          title: "What Juno remembers",
+          icon: .memory,
+          value: "^[\(model.memories.count) memory](inflect: true)",
+          chevron: true
+        )
+      }
       .accessibilityIdentifier("juno.mobile.settings-memory-link")
 
       if let learningModel {
-        JunoMobileSettingsLink(
-          title: "Review what Juno noticed",
-          icon: .models,
-          value: Text(
-            learningModel.proposals.isEmpty
+        Button {
+          showProposalsPage = true
+        } label: {
+          JunoMobileSettingsFormLabel(
+            title: "Review what Juno noticed",
+            icon: .models,
+            value: learningModel.proposals.isEmpty
               ? "Nothing waiting"
-              : "^[\(learningModel.proposals.count) suggestion](inflect: true)"
+              : "^[\(learningModel.proposals.count) suggestion](inflect: true)",
+            chevron: true
           )
-        ) { showProposalsPage = true }
+        }
         .accessibilityIdentifier("juno.mobile.settings-memory-proposals")
       }
+    } header: {
+      Text("Memory")
+    }
 
-      if shareClient != nil {
-        JunoMobileSettingsLink(title: "Shared links", icon: .external) {
+    if shareClient != nil {
+      Section("Sharing") {
+        Button {
           showSharedLinks = true
+        } label: {
+          JunoMobileSettingsFormLabel(title: "Shared links", icon: .external, chevron: true)
         }
         .accessibilityIdentifier("juno.mobile.settings-shared-links")
       }
+    }
 
-      Divider()
-
-      if let settings = model.settings {
+    if let settings = model.settings {
+      Section {
         Picker(
           "settings.background-provider.title",
           selection: Binding(
@@ -629,20 +706,19 @@ struct JunoMobileSettingsView: View {
         }
         .disabled(model.isMutating)
         .accessibilityIdentifier("juno.mobile.settings-background-provider")
-
-        Text(settings.backgroundProviderMode.explanation)
-          .junoFont(size: 12, relativeTo: .caption)
-          .junoSecondaryInk()
-          .fixedSize(horizontal: false, vertical: true)
-
-        if settings.backgroundProviderMode.permitsCrossProvider {
-          Label {
-            Text("settings.background-provider.crosses")
-          } icon: {
-            JunoIconView(.error, size: 14)
+      } header: {
+        Text("Background work")
+      } footer: {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+          Text(settings.backgroundProviderMode.explanation)
+          if settings.backgroundProviderMode.permitsCrossProvider {
+            Label {
+              Text("settings.background-provider.crosses")
+            } icon: {
+              JunoIconView(.error, size: 14)
+            }
+            .foregroundStyle(Color.junoCaution)
           }
-          .junoFont(size: 12, relativeTo: .caption)
-          .foregroundStyle(Color.junoCaution)
         }
       }
     }
@@ -701,28 +777,23 @@ struct JunoMobileSettingsView: View {
   }
 
   private var aboutTile: some View {
-    JunoSettingsTile("About") {
+    Section {
+      LabeledContent("settings.version", value: JunoBuildInfo.current.displayVersion)
       // Diagnostics is a developer pane — sync cursors, outbox depth,
       // contract digests. Genuinely useful while building and pure noise in
       // a shipped app, so a release build states the version and stops.
       #if DEBUG
-        JunoMobileSettingsLink(
-          title: "diagnostics.title",
-          icon: .tools,
-          value: Text(JunoBuildInfo.current.displayVersion)
-        ) { showDiagnosticsPage = true }
-        .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
-      #else
-        HStack(spacing: JunoSpace.snug) {
-          Text("settings.version")
-            .junoRowLabel()
-            .fontWeight(.medium)
-          Spacer(minLength: JunoSpace.tight)
-          Text(JunoBuildInfo.current.displayVersion)
-            .junoCaption()
-            .textSelection(.enabled)
+        Button {
+          showDiagnosticsPage = true
+        } label: {
+          JunoMobileSettingsFormLabel(title: "diagnostics.title", icon: .tools, chevron: true)
         }
+        .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
       #endif
+    } header: {
+      Text("About")
+    } footer: {
+      Text("Juno for iPhone and iPad. The same account, chats and projects as the web and the Mac.")
     }
   }
 
@@ -931,6 +1002,7 @@ private struct JunoMobileSettingsPreferences: View {
   /// draft to tell "untouched" from "half-written", so a settings push landing
   /// mid-sentence cannot erase what is being typed.
   @State private var instructionsBaseline: String?
+  @State private var selectionHaptic = JunoMobileHapticTrigger()
 
   private static let responseLanguages = [
     "auto", "English", "Spanish", "French", "German", "Portuguese",
@@ -942,53 +1014,50 @@ private struct JunoMobileSettingsPreferences: View {
   ]
 
   var body: some View {
-    switch section {
-    case .appearance:
-      appearanceTile
-    case .models:
-      defaultModelTile
-    case .writing:
-      responseStyleTile
-      instructionsTile
-    case .language:
-      responseLanguageTile
-      interfaceLanguageTile
+    Group {
+      switch section {
+      case .appearance:
+        appearanceSections
+      case .models:
+        defaultModelSections
+      case .writing:
+        responseStyleSection
+        instructionsSection
+      case .language:
+        languageSections
+      }
     }
+    .junoHaptic(JunoMobileHaptic.selection, trigger: selectionHaptic)
   }
 
   // MARK: Appearance
 
-  private var appearanceTile: some View {
+  @ViewBuilder
+  private var appearanceSections: some View {
     let theme = binding(\.theme) { NativeSettingsPatch(theme: $0) }
-    return JunoSettingsTile("Appearance") {
-      JunoMobileSettingsField(label: "Theme") {
-        // Three cards, not a segmented control and not a menu: the whole
-        // choice is three words wide, and a control that shows all of it
-        // costs one row and no taps to discover.
-        HStack(spacing: JunoSpace.snug) {
-          ForEach(NativeThemePreference.allCases, id: \.self) { option in
-            JunoChoiceCard(
-              title: Self.themeTitle(option),
-              isSelected: settings.theme == option,
-              isEnabled: !disabled
-            ) {
-              theme.wrappedValue = option
-            }
-            .accessibilityIdentifier("juno.mobile.theme-\(option.rawValue.lowercased())")
-          }
+    Section("Theme") {
+      Picker("Theme", selection: theme) {
+        ForEach(NativeThemePreference.allCases, id: \.self) { option in
+          Text(Self.themeTitle(option)).tag(option)
         }
       }
+      .pickerStyle(.segmented)
+      .disabled(disabled)
+      .accessibilityIdentifier("juno.mobile.theme-picker")
+    }
 
-      // Swatches, not a menu of words. An accent picker whose options are
-      // the strings "Coral" and "Teal" asks the reader to imagine the
-      // result; showing the five colours is the whole decision at a glance —
-      // and it is what the web does.
-      JunoMobileSettingsField(label: "Accent color") {
-        JunoMobileAccentPicker(
-          selection: binding(\.accent) { NativeSettingsPatch(accent: $0) },
-          disabled: disabled
-        )
-      }
+    // Swatches, not a menu of words: showing the five colours is the whole
+    // decision at a glance, and it is what the web does. A native grid so the
+    // row scales with the type size instead of squeezing.
+    Section {
+      JunoMobileAccentGrid(
+        selection: binding(\.accent) { NativeSettingsPatch(accent: $0) },
+        disabled: disabled
+      )
+    } header: {
+      Text("Accent color")
+    } footer: {
+      Text("Used for the one primary action on each screen, and for what is active.")
     }
   }
 
@@ -1002,23 +1071,26 @@ private struct JunoMobileSettingsPreferences: View {
 
   // MARK: Default model
 
-  private var defaultModelTile: some View {
-    JunoSettingsTile("Default model") {
-      Text("New chats start with this model. You can change it per chat from the composer.")
-        .junoCaption()
-
-      JunoMobileSettingsSelect(
-        label: "Default model",
-        options: modelOptions,
-        title: { LocalizedStringKey(self.modelTitle($0)) },
-        selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) },
-        isEnabled: !disabled && !modelCatalog.isEmpty
-      )
+  @ViewBuilder
+  private var defaultModelSections: some View {
+    Section {
+      Picker(
+        "Default model",
+        selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) }
+      ) {
+        ForEach(modelOptions, id: \.self) { id in
+          Text(modelTitle(id)).tag(id)
+        }
+      }
+      .pickerStyle(.navigationLink)
+      .disabled(disabled || modelCatalog.isEmpty)
       .accessibilityIdentifier("juno.mobile.settings-default-model")
+    } footer: {
+      Text("New chats start with this model. You can change it per chat from the composer.")
+    }
 
-      if !modelCatalog.isEmpty {
-        Divider()
-
+    if !modelCatalog.isEmpty {
+      Section {
         // A push, not a menu: favourites is a set over the whole catalog,
         // and a multi-select of thirty rows is a screen.
         NavigationLink {
@@ -1029,13 +1101,12 @@ private struct JunoMobileSettingsPreferences: View {
             update: update
           )
         } label: {
-          JunoMobileSettingsRowLabel(
+          JunoMobileSettingsFormLabel(
             title: "Favorite models",
             icon: .models,
-            value: Text("^[\(settings.favoriteModels.count) favorite](inflect: true)")
+            value: "^[\(settings.favoriteModels.count) favorite](inflect: true)"
           )
         }
-        .buttonStyle(.plain)
         .accessibilityIdentifier("juno.mobile.settings-favorite-models")
       }
     }
@@ -1055,40 +1126,39 @@ private struct JunoMobileSettingsPreferences: View {
 
   // MARK: Language
 
-  /// Two tiles, as on the web, because they are two different questions and
-  /// pairing them under one "Language" header is what made people set the wrong
-  /// one: this is the language of the *answers*.
-  private var responseLanguageTile: some View {
-    JunoSettingsTile("Response language") {
-      Text("The language Juno replies in.")
-        .junoCaption()
-      JunoMobileSettingsSelect(
-        label: "Response language",
-        options: knownOrCurrent(Self.responseLanguages, current: settings.responseLanguage),
-        title: { $0 == "auto" ? "Auto-detect" : LocalizedStringKey($0) },
-        selection: binding(\.responseLanguage) {
-          NativeSettingsPatch(responseLanguage: $0)
-        },
-        isEnabled: !disabled
-      )
+  /// Two pickers, as on the web, because they are two different questions:
+  /// this is the language of the *answers*, and that one is the interface.
+  @ViewBuilder
+  private var languageSections: some View {
+    Section {
+      Picker(
+        "Response language",
+        selection: binding(\.responseLanguage) { NativeSettingsPatch(responseLanguage: $0) }
+      ) {
+        ForEach(knownOrCurrent(Self.responseLanguages, current: settings.responseLanguage), id: \.self) {
+          Text($0 == "auto" ? "Auto-detect" : LocalizedStringKey($0)).tag($0)
+        }
+      }
+      .pickerStyle(.navigationLink)
+      .disabled(disabled)
       .accessibilityIdentifier("juno.mobile.settings-response-language")
+    } footer: {
+      Text("The language Juno replies in.")
     }
-  }
-
-  private var interfaceLanguageTile: some View {
-    JunoSettingsTile("Interface language") {
-      Text("The language Juno's buttons and menus are in.")
-        .junoCaption()
-      JunoMobileSettingsSelect(
-        label: "Interface language",
-        options: knownOrCurrent(Self.interfaceLocales, current: settings.interfaceLocale),
-        title: { LocalizedStringKey(Self.localeTitle($0)) },
-        selection: binding(\.interfaceLocale) {
-          NativeSettingsPatch(interfaceLocale: $0)
-        },
-        isEnabled: !disabled
-      )
+    Section {
+      Picker(
+        "Interface language",
+        selection: binding(\.interfaceLocale) { NativeSettingsPatch(interfaceLocale: $0) }
+      ) {
+        ForEach(knownOrCurrent(Self.interfaceLocales, current: settings.interfaceLocale), id: \.self) {
+          Text(Self.localeTitle($0)).tag($0)
+        }
+      }
+      .pickerStyle(.navigationLink)
+      .disabled(disabled)
       .accessibilityIdentifier("juno.mobile.settings-interface-language")
+    } footer: {
+      Text("The language Juno's buttons and menus are in.")
     }
   }
 
@@ -1104,70 +1174,89 @@ private struct JunoMobileSettingsPreferences: View {
 
   // MARK: Response style
 
-  /// The six styles as cards with their sentences, from the shared table.
-  ///
-  /// This is the control the rebuild existed for. It was a menu of
-  /// `id.capitalized`, so the phone offered "Socratic" and "Nerdy" as bare
-  /// words while the Mac and the web both explained them.
-  private var responseStyleTile: some View {
+  /// The six styles as rows with their sentences, from the shared table.
+  private var responseStyleSection: some View {
     let personality = binding(\.personality) { NativeSettingsPatch(personality: $0) }
-    return JunoSettingsTile("Response style") {
-      Text("How Juno writes. Your custom instructions below still take priority.")
-        .junoCaption()
-
-      VStack(spacing: JunoSpace.snug) {
-        // A style added to the web after this build shipped keeps its
-        // place at the top of the group rather than disappearing — and
-        // because nothing here writes on appearance, it stays chosen
-        // until the reader picks something else.
-        if JunoResponseStyle.named(settings.personality) == nil {
-          JunoChoiceCard(
-            title: LocalizedStringKey(settings.personality.localizedCapitalized),
-            detail: "Set on another Juno client. Choosing one below replaces it.",
-            isSelected: true,
-            isEnabled: false,
-            select: {}
-          )
+    return Section {
+      // A style added to the web after this build shipped keeps its place
+      // at the top rather than disappearing.
+      if JunoResponseStyle.named(settings.personality) == nil {
+        styleRow(
+          title: LocalizedStringKey(settings.personality.localizedCapitalized),
+          detail: "Set on another Juno client. Choosing one below replaces it.",
+          selected: true, enabled: false
+        ) {}
+      }
+      ForEach(JunoResponseStyle.all) { style in
+        styleRow(
+          title: style.localizedLabel,
+          detail: style.localizedDetail,
+          selected: style.id == settings.personality,
+          enabled: !disabled
+        ) {
+          selectionHaptic.fire()
+          personality.wrappedValue = style.id
         }
-        ForEach(JunoResponseStyle.all) { style in
-          JunoChoiceCard(
-            title: style.localizedLabel,
-            detail: style.localizedDetail,
-            isSelected: style.id == settings.personality,
-            isEnabled: !disabled
-          ) {
-            personality.wrappedValue = style.id
-          }
-          .accessibilityIdentifier("juno.mobile.personality-\(style.id)")
+        .accessibilityIdentifier("juno.mobile.personality-\(style.id)")
+      }
+    } header: {
+      Text("Response style")
+    } footer: {
+      Text("How Juno writes. Your custom instructions below still take priority.")
+    }
+  }
+
+  private func styleRow(
+    title: LocalizedStringKey, detail: LocalizedStringKey, selected: Bool, enabled: Bool,
+    select: @escaping () -> Void
+  ) -> some View {
+    Button(action: select) {
+      HStack(spacing: JunoSpace.cozy) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title).junoRowLabel().foregroundStyle(.primary)
+          Text(detail).junoCaption().fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: JunoSpace.tight)
+        if selected {
+          JunoIconView(.check, size: 15)
+            .foregroundStyle(Color.junoAccent)
         }
       }
+      .contentShape(Rectangle())
     }
+    .buttonStyle(.plain)
+    .disabled(!enabled)
+    .accessibilityAddTraits(selected ? .isSelected : [])
   }
 
   // MARK: Custom instructions
 
-  /// Editable in place, with the count inset in the field.
-  ///
-  /// The Edit button this replaces bought nothing: it hid the field behind a
-  /// tap and still needed Save. The counter is the web's, and it is not a cap —
-  /// it is the one number that tells you a long paste actually landed.
-  private var instructionsTile: some View {
-    JunoSettingsTile("Custom instructions") {
-      Text(
-        "Juno keeps these in mind in every conversation. There is no character cap — the model's context window is the only real limit."
-      )
-      .junoCaption()
-
-      instructionsEditor
-
+  /// Editable in place, with the count and Save as the row beneath.
+  private var instructionsSection: some View {
+    Section {
+      TextEditor(text: $instructionsDraft)
+        .junoBody()
+        .frame(minHeight: 140)
+        .overlay(alignment: .topLeading) {
+          if instructionsDraft.isEmpty {
+            Text("E.g. I'm a product manager. Keep answers concise and use bullet points.")
+              .junoBody()
+              .junoMetaInk()
+              .padding(.horizontal, 5)
+              .padding(.top, 8)
+              .allowsHitTesting(false)
+              .accessibilityHidden(true)
+          }
+        }
+        .accessibilityLabel("Custom instructions")
+        .accessibilityIdentifier("juno.mobile.settings-instructions")
       HStack(spacing: JunoSpace.cozy) {
-        Button("Revert") { instructionsDraft = settings.customInstructions }
-          .buttonStyle(.plain)
-          .junoRowLabel()
-          .junoSecondaryInk()
-          .disabled(instructionsDraft == settings.customInstructions)
-          .contentShape(.rect)
+        Text("\(instructionsDraft.count) chars")
+          .junoCodeSmall()
+          .junoMetaInk()
         Spacer(minLength: 0)
+        Button("Revert") { instructionsDraft = settings.customInstructions }
+          .disabled(instructionsDraft == settings.customInstructions)
         Button("Save") {
           update(NativeSettingsPatch(customInstructions: instructionsDraft))
         }
@@ -1175,8 +1264,11 @@ private struct JunoMobileSettingsPreferences: View {
         .tint(Color.junoAccent)
         .disabled(disabled || instructionsDraft == settings.customInstructions)
         .accessibilityIdentifier("juno.mobile.settings-save-instructions")
-        .contentShape(.rect)
       }
+    } header: {
+      Text("Custom instructions")
+    } footer: {
+      Text("Juno keeps these in mind in every conversation. There is no character cap — the model's context window is the only real limit.")
     }
     .task(id: settings.customInstructions) {
       let stored = settings.customInstructions
@@ -1187,48 +1279,9 @@ private struct JunoMobileSettingsPreferences: View {
     }
   }
 
-  private var instructionsEditor: some View {
-    let shape = RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-    return TextEditor(text: $instructionsDraft)
-      .junoBody()
-      .frame(minHeight: 120)
-      .scrollContentBackground(.hidden)
-      .padding(.horizontal, JunoSpace.snug)
-      .padding(.top, JunoSpace.snug)
-      // Room for the counter, so a long instruction does not run under it.
-      .padding(.bottom, JunoSpace.section)
-      .background(shape.fill(Color.junoCanvas))
-      .overlay(shape.strokeBorder(Color.junoBorder, lineWidth: 1))
-      .overlay(alignment: .topLeading) {
-        if instructionsDraft.isEmpty {
-          Text("E.g. I'm a product manager. Keep answers concise and use bullet points.")
-            .junoBody()
-            .junoMetaInk()
-            // The extra 5 points is `TextEditor`'s own text inset,
-            // which is not exposed and has to be matched by hand or
-            // the placeholder sits left of the caret.
-            .padding(.horizontal, JunoSpace.snug + 5)
-            .padding(.top, JunoSpace.snug + 8)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-      }
-      .overlay(alignment: .bottomTrailing) {
-        Text("\(instructionsDraft.count) chars")
-          .junoCodeSmall()
-          .junoMetaInk()
-          .padding(.trailing, JunoSpace.cozy)
-          .padding(.bottom, JunoSpace.snug)
-          .allowsHitTesting(false)
-      }
-      .accessibilityLabel("Custom instructions")
-      .accessibilityIdentifier("juno.mobile.settings-instructions")
-  }
-
   // MARK: Helpers
 
-  /// Keeps an unknown stored value selectable so the picker never silently
-  /// rewrites a preference this build does not recognize.
+  /// The known list, with the stored value prepended when it is not in it.
   private func knownOrCurrent(_ known: [String], current: String) -> [String] {
     known.contains(current) ? known : [current] + known
   }
@@ -1238,6 +1291,97 @@ private struct JunoMobileSettingsPreferences: View {
     patch: @escaping @Sendable (Value) -> NativeSettingsPatch
   ) -> Binding<Value> {
     junoMobileSettingsBinding(settings, keyPath, update: update, patch: patch)
+  }
+}
+
+/// A `Form` row's label: the app's own glyph, a title, an optional value and
+/// an optional chevron — the one row shape every settings page uses.
+struct JunoMobileSettingsFormLabel: View {
+  let title: LocalizedStringKey
+  var detail: LocalizedStringKey?
+  let icon: JunoIcon
+  var value: LocalizedStringKey?
+  var chevron = false
+
+  var body: some View {
+    HStack(spacing: JunoSpace.cozy) {
+      JunoIconView(icon, size: 17)
+        .foregroundStyle(Color.junoAccent)
+        .frame(width: 24)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).foregroundStyle(.primary)
+        if let detail {
+          Text(detail).junoCaption().fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      Spacer(minLength: JunoSpace.tight)
+      if let value {
+        Text(value).junoCaption()
+      }
+      if chevron {
+        JunoIconView(.chevronRight, size: 12).junoMetaInk()
+      }
+    }
+    .contentShape(Rectangle())
+  }
+}
+
+/// The five accents as a native grid of swatches.
+struct JunoMobileAccentGrid: View {
+  @Binding var selection: String
+  var disabled: Bool
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var haptic = JunoMobileHapticTrigger()
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: JunoSpace.snug)], spacing: JunoSpace.cozy) {
+      ForEach(JunoAccent.allCases) { accent in
+        let chosen = accent.rawValue == JunoAccent(setting: selection).rawValue
+        Button {
+          haptic.fire()
+          withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+            selection = accent.rawValue
+          }
+        } label: {
+          VStack(spacing: JunoSpace.tight) {
+            Circle()
+              .fill(accent.color)
+              .frame(width: 30, height: 30)
+              .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
+              .overlay {
+                Circle()
+                  .strokeBorder(accent.color, lineWidth: 2)
+                  .padding(-JunoSpace.hairline)
+                  .opacity(chosen ? 1 : 0)
+              }
+              .overlay {
+                if chosen {
+                  JunoIconView(.check, size: 13)
+                    .foregroundStyle(Color.junoOnAccent)
+                }
+              }
+            Text(accent.displayName)
+              .junoFont(size: 11, relativeTo: .caption2, weight: chosen ? .semibold : .regular)
+              .foregroundStyle(chosen ? Color.primary : Color.junoMutedForeground)
+              .lineLimit(1)
+          }
+          .frame(maxWidth: .infinity, minHeight: 60)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(accent.displayName)
+        .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
+        .accessibilityIdentifier("juno.mobile.accent-\(accent.rawValue)")
+      }
+    }
+    .padding(.vertical, JunoSpace.tight)
+    .opacity(disabled ? 0.5 : 1)
+    .junoHaptic(JunoMobileHaptic.selection, trigger: haptic)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Accent")
+    .accessibilityValue(JunoAccent(setting: selection).displayName)
   }
 }
 
@@ -1666,7 +1810,7 @@ private struct JunoMobileExportFile: Identifiable {
 
 /// The system share sheet, for the one case a `ShareLink` cannot serve: an item
 /// that does not exist until a request comes back.
-private struct JunoMobileShareSheet: UIViewControllerRepresentable {
+struct JunoMobileShareSheet: UIViewControllerRepresentable {
   let items: [Any]
 
   func makeUIViewController(context: Context) -> UIActivityViewController {

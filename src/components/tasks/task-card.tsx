@@ -3,8 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Globe } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
-import { Card } from "@/components/ui/card";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -29,28 +28,29 @@ function nextRunLabel(iso: string): string {
 /** One line summing up where the task stands (last run, or the first one ahead). */
 function StatusLine({ task }: { task: TaskItem }) {
   const run = task.latestRun;
+  const shared = "inline-flex min-w-0 items-center gap-1.5 font-mono text-caption tabular-nums";
   // A fired one-off is disabled by the runner but is not "Paused" — fall
   // through so the line reports its run (Ran / Failed / Skipped) instead.
   if (!task.enabled && !isCompletedOnce(task) && (!run || run.status !== "running")) {
-    return <span className="text-xs text-muted-foreground">Paused</span>;
+    return <span className={cn(shared, "text-muted-foreground")}>Paused</span>;
   }
   if (!run) {
-    return <span className="text-xs text-muted-foreground">First run {nextRunLabel(task.nextRunAt)}</span>;
+    return <span className={cn(shared, "text-muted-foreground")}>First run {nextRunLabel(task.nextRunAt)}</span>;
   }
   const when = timeAgo(run.finishedAt ?? run.startedAt);
   if (run.status === "running") {
-    // A live state needs a live mark. "Running now…" in the same grey as
-    // "Paused" was the only difference between a task working and one asleep.
+    // A live state needs a live mark.
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-status-glow" />
+      <span className={cn(shared, "text-muted-foreground")}>
+        <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary motion-safe:animate-status-glow" />
         Running now…
       </span>
     );
   }
   if (run.status === "done") {
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className={cn(shared, "text-muted-foreground")}>
+        <span aria-hidden className="size-2 shrink-0 rounded-full bg-success" />
         Ran {when}
         {run.costMicroUsd > 0 && <> · {formatUsd(run.costMicroUsd / 1_000_000)}</>}
       </span>
@@ -58,13 +58,19 @@ function StatusLine({ task }: { task: TaskItem }) {
   }
   // error | budget — the run didn't produce a result; say why, in destructive.
   return (
-    <span className="min-w-0 truncate text-xs text-destructive" title={run.error ?? undefined}>
+    <span className={cn(shared, "truncate text-destructive-ink")} title={run.error ?? undefined}>
+      <span aria-hidden className="size-2 shrink-0 rounded-full bg-destructive" />
       {run.status === "budget" ? "Skipped" : "Failed"} {when}
       {run.error && <> — {run.error}</>}
     </span>
   );
 }
 
+/**
+ * One scheduled task, as a hover-raised row: flat on the page at rest, a raised
+ * card under the pointer. The schedule glyph sits on an inset tile; the name and
+ * schedule read as one line each; the pause switch and menu stay on the right.
+ */
 export function TaskCard({
   task,
   onToggle,
@@ -77,66 +83,83 @@ export function TaskCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className={cn("p-5 transition-opacity duration-base", !task.enabled && "opacity-70")}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-mono text-caption text-muted-foreground">
-            {describeSchedule(task)}
-          </p>
-          <h3 className="mt-1 truncate font-serif text-heading">{task.name}</h3>
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="truncate">{task.modelName}</span>
-            {task.webSearch && (
-              <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/70">
-                · <Globe className="size-3 shrink-0" aria-hidden="true" /> web
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {/* No resume switch on a fired one-off: there is no future instant to
-              resume to — rescheduling it goes through Edit, which asks for a
-              new date. */}
-          {!isCompletedOnce(task) && (
-            <Switch
-              checked={task.enabled}
-              onCheckedChange={onToggle}
-              aria-label={task.enabled ? `Pause ${task.name}` : `Resume ${task.name}`}
-            />
+    <article
+      aria-label={task.name}
+      className={cn(
+        "group flex w-full items-start gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none",
+        !task.enabled && "opacity-70 hover:opacity-100"
+      )}
+    >
+      <span className="surface-inset mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+        <AppIcons.tasks className="size-4" aria-hidden="true" />
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-sm font-medium">{task.name}</h3>
+        <p className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+          <span className="truncate">{describeSchedule(task)}</span>
+          <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+          <span className="truncate">{task.modelName}</span>
+          {task.webSearch && (
+            <span className="inline-flex shrink-0 items-center gap-1" title="Web search on">
+              <span aria-hidden className="size-1 rounded-full bg-border" />
+              <Globe className="size-3 shrink-0" aria-hidden="true" /> web
+            </span>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="size-7 text-muted-foreground hover:text-foreground" aria-label="Task options">
-                <ActionIcons.more className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onSelect={onEdit}>
-                <ActionIcons.edit className="size-4" /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={onDelete}
-                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              >
-                <ActionIcons.delete className="size-4" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        </p>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <StatusLine task={task} />
+          {task.conversationId && (
+            <Link
+              href={`/chat/${task.conversationId}`}
+              className="group/results inline-flex shrink-0 items-center gap-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+            >
+              View results{" "}
+              <ActionIcons.external
+                className="size-3 shrink-0 transition-transform duration-fast ease-out-soft group-hover/results:-translate-y-0.5 group-hover/results:translate-x-0.5 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </Link>
+          )}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/40 pt-3">
-        <StatusLine task={task} />
-        {task.conversationId && (
-          <Link
-            href={`/chat/${task.conversationId}`}
-            className="group/results inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
-          >
-            View results <ActionIcons.external className="size-3 shrink-0 transition-transform duration-fast ease-out-soft group-hover/results:-translate-y-0.5 group-hover/results:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
-          </Link>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {/* No resume switch on a fired one-off: there is no future instant to
+            resume to — rescheduling it goes through Edit, which asks for a
+            new date. */}
+        {!isCompletedOnce(task) && (
+          <Switch
+            checked={task.enabled}
+            onCheckedChange={onToggle}
+            aria-label={task.enabled ? `Pause ${task.name}` : `Resume ${task.name}`}
+          />
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+              aria-label={`Options for ${task.name}`}
+            >
+              <ActionIcons.more className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onSelect={onEdit}>
+              <ActionIcons.edit className="size-4" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={onDelete}
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <ActionIcons.delete className="size-4" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </Card>
+    </article>
   );
 }

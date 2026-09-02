@@ -11,6 +11,9 @@ import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 
 const schema = z.object({
+  // The display name — what the sidebar and the greeting call you. Lives on
+  // User, not Settings, and is the one field here that writes there.
+  name: z.string().trim().max(80).optional(),
   theme: z.enum(["light", "dark", "system"]).optional(),
   accent: z.string().max(30).regex(/^([a-z]+|#[0-9a-fA-F]{6})$/).optional(),
   defaultModel: z.string().optional(),
@@ -118,6 +121,9 @@ export async function PATCH(req: Request) {
   }
 
   await ensureUserDefaults(user.id);
+  if (d.name !== undefined) {
+    await prisma.user.update({ where: { id: user.id }, data: { name: d.name || null } });
+  }
   await prisma.settings.update({
     where: { userId: user.id },
     data: {

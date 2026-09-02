@@ -14,18 +14,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { TaskCard } from "@/components/tasks/task-card";
 import { TaskDialog } from "@/components/tasks/task-dialog";
-import type { TaskItem } from "@/components/tasks/task-model";
+import { isCompletedOnce, type TaskItem } from "@/components/tasks/task-model";
 import { staggerDelay } from "@/lib/motion";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+
+type TaskFilter = "active" | "paused" | "all";
+
+/** A scheduled task is either running on its schedule or it is not — a fired
+ *  one-off counts with the paused ones, since nothing further will happen to it. */
+function isActive(task: TaskItem) {
+  return task.enabled && !isCompletedOnce(task);
+}
 
 export default function TasksPage() {
   const [tasks, setTasks] = React.useState<TaskItem[] | null>(null);
   const [limit, setLimit] = React.useState<number>(0);
   const [loadError, setLoadError] = React.useState(false);
+  const [filter, setFilter] = React.useState<TaskFilter>("all");
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<TaskItem | null>(null);
@@ -104,94 +114,128 @@ export default function TasksPage() {
   const empty = !loading && !locked && tasks.length === 0;
   const atLimit = !loading && tasks !== null && tasks.length >= limit;
 
-  return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-2xl">
-        <AppPageHeader
-          eyebrow="Tasks"
-          heading="Scheduled tasks"
-          lede="Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread."
-          actions={
-            !loading && !locked && !empty ? (
-              <>
-                <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                  {tasks.length} / {limit}
-                </span>
-                <Button size="sm" className="gap-1.5" onClick={openCreate} disabled={atLimit}>
-                  <Plus className="size-3.5" /> New task
-                </Button>
-              </>
-            ) : null
-          }
-        />
+  const all = tasks ?? [];
+  const activeCount = all.filter(isActive).length;
+  const visible = all.filter((task) => (filter === "all" ? true : filter === "active" ? isActive(task) : !isActive(task)));
 
-        {loadError ? (
-          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <div className="flex items-center gap-2">
-              <StatusIcons.error className="size-4 shrink-0" aria-hidden="true" />
-              <p>Couldn’t load your tasks. Check your connection and try again.</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => load()}
-              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
+  return (
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Tasks"
+        heading="Scheduled tasks"
+        icon={AppIcons.tasks}
+        lede="Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread."
+        actions={
+          !loading && !locked && !empty ? (
+            <>
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                {tasks.length} / {limit}
+              </span>
+              <Button size="sm" className="gap-1.5" onClick={openCreate} disabled={atLimit}>
+                <Plus className="size-3.5" /> New task
+              </Button>
+            </>
+          ) : null
+        }
+      />
+
+      {!loading && !locked && !empty && !loadError && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl<TaskFilter>
+            value={filter}
+            onChange={setFilter}
+            ariaLabel="Filter tasks"
+            className="h-9 w-fit max-w-full shrink-0"
+            options={[
+              { value: "active", label: "Active", count: activeCount },
+              { value: "paused", label: "Paused", count: all.length - activeCount },
+              { value: "all", label: "All", count: all.length },
+            ]}
+          />
+        </div>
+      )}
+
+      {loadError ? (
+        <EmptyState
+          tone="error"
+          icon={StatusIcons.error}
+          title="Couldn’t load your tasks"
+          description="Check your connection and try again."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => load()} className="gap-1.5">
               <ActionIcons.refresh className="size-3.5" /> Retry
             </Button>
-          </div>
-        ) : loading ? (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-[124px] w-full rounded-card" style={staggerDelay(i)} />
-            ))}
-          </div>
-        ) : locked ? (
-          <EmptyState
-            className="mt-10"
-            icon={AppIcons.tasks}
-            title="Tasks are part of Pro"
-            description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
-            action={
-              <Button asChild className="gap-1.5">
-                <Link href="/upgrade">Upgrade to Pro</Link>
-              </Button>
-            }
-          />
-        ) : empty ? (
-          <EmptyState
-            className="mt-10"
-            icon={AppIcons.tasks}
-            title="Nothing scheduled"
-            description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
-            action={
-              <Button onClick={openCreate} className="gap-1.5">
-                <Plus className="size-4" /> New task
-              </Button>
-            }
-          />
-        ) : (
-          <div className="space-y-3">
-            {/* The skeletons above stagger and the cards replacing them did not, so
-                the loading state was more choreographed than the content — the same
-                mismatch the library grid was fixed for. Same rung, same cap. */}
-            {tasks.map((task, i) => (
-              <div
-                key={task.id}
-                style={staggerDelay(i)}
-                className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-              >
-                <TaskCard
-                  task={task}
-                  onToggle={(enabled) => toggle(task, enabled)}
-                  onEdit={() => openEdit(task)}
-                  onDelete={() => setDeleting(task)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          }
+        />
+      ) : loading ? (
+        <div className="space-y-1" role="status" aria-label="Loading scheduled tasks">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="flex items-start gap-3 px-3 py-2.5" style={staggerDelay(i)}>
+              <Skeleton className="size-9 shrink-0 rounded-field" />
+              <span className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
+                <Skeleton className="block h-2.5 w-64 max-w-full rounded-xs" />
+                <Skeleton className="block h-2.5 w-24 rounded-xs" />
+              </span>
+              <Skeleton className="h-5 w-9 rounded-full" />
+            </div>
+          ))}
+        </div>
+      ) : locked ? (
+        <EmptyState
+          className="mt-4"
+          icon={AppIcons.tasks}
+          title="Tasks are part of Pro"
+          description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
+          action={
+            <Button asChild className="gap-1.5">
+              <Link href="/upgrade">Upgrade to Pro</Link>
+            </Button>
+          }
+        />
+      ) : empty ? (
+        <EmptyState
+          className="mt-4"
+          icon={AppIcons.tasks}
+          title="Nothing scheduled"
+          description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
+          action={
+            <Button onClick={openCreate} className="gap-1.5">
+              <Plus className="size-4" /> New task
+            </Button>
+          }
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          className="mt-5"
+          size="panel"
+          icon={AppIcons.tasks}
+          title={filter === "active" ? "No active tasks" : "No paused tasks"}
+          description={filter === "active" ? "Every task is paused or already done." : "Every task is running on its schedule."}
+          action={
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setFilter("all")}>
+              Show all
+            </Button>
+          }
+        />
+      ) : (
+        <div className="mt-5 space-y-1">
+          {visible.map((task, i) => (
+            <div
+              key={task.id}
+              style={staggerDelay(i)}
+              className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
+              <TaskCard
+                task={task}
+                onToggle={(enabled) => toggle(task, enabled)}
+                onEdit={() => openEdit(task)}
+                onDelete={() => setDeleting(task)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
 
       <TaskDialog open={dialogOpen} onOpenChange={setDialogOpen} task={editing} onSaved={onSaved} />
 
@@ -214,6 +258,6 @@ export default function TasksPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

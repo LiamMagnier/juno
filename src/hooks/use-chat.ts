@@ -69,6 +69,14 @@ export type ChatMessage = ClientMessage & {
 export type SendResult = { accepted: boolean; clarificationPending?: boolean };
 
 /** Per-send flags carried alongside the message (not sticky composer prefs). */
+/** A regenerate can be steered once: another model, and/or a one-line
+ *  adjustment ("more concise") that reaches the system prompt for this run
+ *  only. Both are omitted for a plain "try again". */
+export interface RegenerateOptions {
+  modelId?: string;
+  instruction?: string;
+}
+
 export type SendOptions = {
   deepResearch?: boolean;
   artifactEdit?: ArtifactEditRequest;
@@ -1069,8 +1077,12 @@ export function useChat(opts: UseChatOptions) {
     setStatus("idle");
   }, []);
 
-  const regenerate = React.useCallback(async () => {
+  const regenerate = React.useCallback(async (options?: RegenerateOptions) => {
     if (status !== "idle" && status !== "error") return;
+    // A one-shot model override rides the request only: the composer's pick is
+    // untouched, so "try this once with Claude" does not silently become the
+    // model for every turn after.
+    const modelForRun = options?.modelId ?? opts.model;
     if (!convoIdRef.current) {
       const trailingUser = messagesRef.current.filter((m) => m.role === "USER").at(-1);
       if (trailingUser?.content) {
@@ -1101,7 +1113,8 @@ export function useChat(opts: UseChatOptions) {
       {
         conversationId: convoIdRef.current,
         regenerate: true,
-        model: opts.model,
+        regenerateInstruction: options?.instruction,
+        model: modelForRun,
         voiceMode: opts.voiceMode,
         canvasEnabled: opts.canvasEnabled,
         reasoningEffort: opts.reasoningEffort,

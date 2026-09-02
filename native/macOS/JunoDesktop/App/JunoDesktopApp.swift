@@ -12,6 +12,8 @@ enum JunoDesktopWindow {
     /// Closing it is what erases the conversation, and that reads as a promise
     /// only if the thing you close is the thing that held it.
     static let incognitoID = "juno.incognito"
+    /// The ⌘/ list of every shortcut the app answers.
+    static let shortcutsID = "juno.shortcuts"
 }
 
 /// Two things only AppKit can tell us: the app finished launching, and the app
@@ -38,6 +40,9 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
             }
             #endif
             DesktopUpdateModel.shared.start()
+            // ⌥Space from anywhere. Installed at launch rather than on first
+            // use so the shortcut exists before any window does.
+            DesktopQuickEntryController.shared.installHotkey()
         }
     }
 
@@ -148,8 +153,27 @@ struct JunoDesktopApp: App {
         // application menu, where a Mac user looks for them. Reaching settings
         // only by clicking an account row in the sidebar meant ⌘, did nothing —
         // and left the settings pane unreachable from a window showing Code.
+        // The Settings window: General, Code, Usage, Connections. The account's
+        // pages live here rather than in a product's navigation column, so
+        // opening Usage never replaces the surface the reader was working in.
         Settings {
-            JunoDesktopSettingsScene(configuration: configuration)
+            DesktopSettingsWindow(configuration: configuration)
+                .junoReadingCanvas()
+                .junoAccountAppearance(configuration)
+        }
+
+        Window("Keyboard Shortcuts", id: JunoDesktopWindow.shortcutsID) {
+            DesktopShortcutsWindow()
+        }
+        .defaultSize(width: 640, height: 720)
+        .windowResizability(.contentSize)
+
+        // The menu bar item: live sessions, New task, Ask Juno. Read off the
+        // shared registry, so it is right with no window open.
+        MenuBarExtra {
+            DesktopMenuBarExtraContent()
+        } label: {
+            DesktopMenuBarExtraLabel()
         }
     }
 
@@ -172,67 +196,6 @@ struct JunoDesktopApp: App {
 
 // `JunoDesktopCommands` and the focused-value plumbing it reads live in
 // DesktopCommands.swift.
-
-/// Hosts the settings page in the `Settings` scene.
-///
-/// Settings are account data, so they need a signed-in session and the
-/// synchronized settings model. When neither exists there is genuinely nothing to
-/// configure, and saying so is better than presenting controls whose writes would
-/// be discarded.
-///
-/// **Every argument the workspace passes is passed here too.** This scene used to
-/// hand over five of them, so the ⌘, window silently shipped a degraded copy of
-/// the same screen: no model catalog (so no default model and no favourites), no
-/// avatar, and no sync model or outbox (so Diagnostics reported nothing). One
-/// screen means one set of inputs.
-private struct JunoDesktopSettingsScene: View {
-    let configuration: JunoDesktopConfiguration?
-
-    var body: some View {
-        Group {
-            if let configuration,
-                let settingsModel = configuration.memorySettingsModel,
-                case .signedIn(let session) = configuration.authModel.phase
-            {
-                DesktopSettingsScreen(
-                    model: settingsModel,
-                    authModel: configuration.authModel,
-                    session: session,
-                    accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient,
-                    modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-                    avatarData: configuration.avatarModel?.imageData,
-                    syncModel: configuration.syncModel,
-                    outbox: configuration.outbox,
-                    codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel,
-                    // Every argument the workspace passes, passed here too — the
-                    // rule this scene's own note states. Omitting it would give
-                    // ⌘, a Memory tile with no way to answer a proposal, which is
-                    // exactly the degraded second copy that note is about.
-                    learningModel: configuration.memoryLearningModel
-                    // No `openUsage`: this window has no sidebar to navigate, so
-                    // the tile is absent here rather than offering a link that
-                    // cannot go anywhere. Usage lives in the main window.
-                )
-            } else {
-                ContentUnavailableView(
-                    "Sign in to change settings",
-                    systemImage: "person.crop.circle",
-                    description: Text(
-                        "Juno's settings belong to your account and sync across your devices."
-                    )
-                )
-            }
-        }
-        .frame(minWidth: 520, minHeight: 460)
-        // Applied once, at this window's root. The workspace's detail column
-        // paints the canvas for the sidebar-hosted copy; this window has no
-        // detail column, and the page itself must never paint it a second time.
-        .junoReadingCanvas()
-        .junoAccountAppearance(configuration)
-    }
-}
 
 private extension View {
     /// The account's stored theme and accent, applied to a window that is not

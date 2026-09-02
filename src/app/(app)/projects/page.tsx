@@ -9,14 +9,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Pressable } from "@/components/ui/pressable";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { removeStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { promptPreview } from "@/lib/prompt-preview";
 
 interface ProjectItem {
@@ -30,6 +41,15 @@ interface ProjectItem {
   starred?: boolean;
 }
 
+type SortBy = "updated" | "name" | "conversations";
+type Filter = "all" | "pinned";
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: "updated", label: "Last updated" },
+  { value: "name", label: "Name" },
+  { value: "conversations", label: "Most chats" },
+];
+
 export default function ProjectsPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<ProjectItem[] | null>(null);
@@ -38,9 +58,10 @@ export default function ProjectsPage() {
   const [name, setName] = React.useState("");
   const [creating, setCreating] = React.useState(false);
 
-  // Search & Sort states
+  // Search, filter & sort
   const [query, setQuery] = React.useState("");
-  const [sortBy, setSortBy] = React.useState<"updated" | "name" | "conversations">("updated");
+  const [filter, setFilter] = React.useState<Filter>("all");
+  const [sortBy, setSortBy] = React.useState<SortBy>("updated");
 
   // Actions dialog states
   const [editingProject, setEditingProject] = React.useState<ProjectItem | null>(null);
@@ -160,10 +181,19 @@ export default function ProjectsPage() {
     }
   };
 
-  // Search and sorting filter logic
+  const openCreate = () => {
+    setName("");
+    setOpen(true);
+  };
+
+  const pinnedCount = React.useMemo(() => (items ?? []).filter((p) => p.starred).length, [items]);
+
+  // Search, filter and sort
   const filteredItems = React.useMemo(() => {
     if (!items) return [];
     let result = [...items];
+
+    if (filter === "pinned") result = result.filter((p) => p.starred);
 
     if (query.trim()) {
       const q = query.toLowerCase();
@@ -185,241 +215,155 @@ export default function ProjectsPage() {
     });
 
     return result;
-  }, [items, query, sortBy]);
+  }, [items, query, filter, sortBy]);
 
   const loading = items === null;
   const empty = !loading && items.length === 0;
+  const filtering = query.trim().length > 0 || filter !== "all";
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-5xl">
-        <AppPageHeader
-          eyebrow="Projects"
-          heading="Your projects"
-          icon={AppIcons.projects}
-          lede="A topic’s chats, instructions, and files, kept together."
-          actions={
-            <>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
-                    <ActionIcons.filter className="size-3.5" />
-                    Sort by: <span className="font-semibold text-foreground">{sortBy === "updated" ? "Last updated" : sortBy === "name" ? "Name" : "Conversations"}</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onSelect={() => setSortBy("updated")}>
-                    Last updated
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setSortBy("name")}>
-                    Name
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setSortBy("conversations")}>
-                    Conversations
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Projects"
+        heading="Projects"
+        icon={AppIcons.projects}
+        lede="A topic’s chats, instructions, and files, kept together."
+        actions={
+          <Button onClick={openCreate} size="sm" className="gap-1.5">
+            <Plus className="size-4" aria-hidden="true" /> New project
+          </Button>
+        }
+      />
 
-              <Button onClick={() => { setName(""); setOpen(true); }} size="sm" className="gap-1.5">
-                <Plus className="size-4" /> New project
-              </Button>
-            </>
-          }
-        />
-
-        {/* Search — only once there is something to filter. Rendered
-            unconditionally it sat a live "Search projects…" box directly on top of
-            "No projects yet" on a brand-new account, and on top of the error
-            message after a failed load. */}
-        {!loading && !empty && !error && (
-          <div className="relative mt-6">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      {/* Toolbar — only once there is something to filter. Rendered
+          unconditionally it sat a live "Search projects…" box directly on top of
+          "No projects yet" on a brand-new account, and on top of the error
+          message after a failed load. */}
+      {!loading && !empty && !error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-xs">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects…"
               aria-label="Search projects"
-              // No height. This was the last `h-10` on an <Input> in the product,
-              // so the Projects search stood 40px tall while the search box on
-              // roadmap, artifacts, knowledge, connections and admin stood at the
-              // base 36px — and because it out-specifies nothing but simply wins
-              // the merge, it also cancelled the base `coarse:h-11`, taking the
-              // touch growth away from the one search field most likely to be
-              // used on a phone. `pl-9` stays: that clears the search glyph.
-              className="w-full pl-9"
+              className="pl-9"
             />
           </div>
-        )}
-
-        {error ? (
-          <EmptyState
-            tone="error"
-            className="mt-10"
-            title="Couldn’t load your projects"
-            description="Check your connection and try once more."
-            action={
-              <Button variant="outline" size="sm" onClick={load}>Try again</Button>
-            }
+          <SegmentedControl
+            value={filter}
+            onChange={setFilter}
+            ariaLabel="Filter projects"
+            options={[
+              { value: "all", label: "All", count: items.length },
+              { value: "pinned", label: "Pinned", count: pinnedCount },
+            ]}
           />
-        ) : loading ? (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            {[...Array(6)].map((_, i) => (
-              <div
-                key={i}
-                // bg-card: the tile this stands in for is a <Card>, which carries the
-                // fill. Without it the placeholder was an unfilled outline on the
-                // black page and the load ended with every tile stepping up a rung.
-                className="surface-raised flex h-40 flex-col justify-between rounded-card border border-border/70 bg-card p-5"
-                style={staggerDelay(i)}
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+            <SelectTrigger className="w-44" aria-label="Sort projects">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+            {filteredItems.length} of {items.length}
+          </span>
+        </div>
+      )}
+
+      {error ? (
+        <EmptyState
+          tone="error"
+          className="mt-6"
+          title="Couldn’t load your projects"
+          description="Check your connection and try once more."
+          action={
+            <Button variant="outline" size="sm" onClick={load}>Try again</Button>
+          }
+        />
+      ) : loading ? (
+        <ProjectsGridSkeleton />
+      ) : empty ? (
+        <EmptyState
+          className="mt-6"
+          icon={AppIcons.projects}
+          title="No projects yet"
+          description="Create one to keep a topic’s chats, instructions, and files together."
+          action={
+            <Button onClick={openCreate} className="gap-1.5">
+              <Plus className="size-4" aria-hidden="true" /> New project
+            </Button>
+          }
+        />
+      ) : filteredItems.length === 0 ? (
+        // One no-results shape across projects / artifacts / library: panel size,
+        // Search mark, "No matching …", ghost Clear filters.
+        <EmptyState
+          className="mt-6"
+          size="panel"
+          icon={Search}
+          title="No matching projects"
+          description={filter === "pinned" && !query ? "Pin a project to see it here." : "Try another search term."}
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+              className="text-muted-foreground"
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Projects">
+          {filteredItems.map((p, i) => (
+            <li
+              key={p.id}
+              className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i)}
+            >
+              <ProjectTile
+                project={p}
+                onToggleStar={() => toggleStar(p)}
+                onRename={() => {
+                  setEditingProject(p);
+                  setRenameName(p.name);
+                }}
+                onDelete={() => setDeletingProject(p)}
+              />
+            </li>
+          ))}
+          {!filtering && (
+            <li
+              className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(filteredItems.length)}
+            >
+              <button
+                type="button"
+                onClick={openCreate}
+                className="surface-inset flex h-full min-h-40 w-full items-center justify-center gap-2 rounded-card border-dashed border-border/80 p-4 text-sm text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
               >
-                {/* One tempo. The card used staggerDelay(i) and its own five lines
-                    used `i * 50 + N` — a second cadence, at a step (50ms) that is on
-                    no rung, inside a card already moving on the shared one. */}
-                <div className="space-y-2.5">
-                  <div className="skeleton h-4 w-1/2 rounded-full" style={staggerDelay(i)} />
-                  <div className="skeleton h-3 w-4/5 rounded-full" style={staggerDelay(i, "base", 40)} />
-                  <div className="skeleton h-3 w-3/5 rounded-full" style={staggerDelay(i, "base", 80)} />
-                </div>
-                <div className="flex items-center justify-between border-t border-border/40 pt-3">
-                  <div className="skeleton h-2.5 w-20 rounded-full" style={staggerDelay(i, "base", 120)} />
-                  <div className="skeleton h-2.5 w-10 rounded-full" style={staggerDelay(i, "base", 160)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : empty ? (
-          <EmptyState
-            className="mt-10"
-            icon={AppIcons.projects}
-            title="No projects yet"
-            description="Create one to keep a topic’s chats, instructions, and files together."
-            action={
-              <Button onClick={() => { setName(""); setOpen(true); }} className="gap-1.5">
-                <Plus className="size-4" /> New project
-              </Button>
-            }
-          />
-        ) : filteredItems.length === 0 ? (
-          // One no-results shape across projects / artifacts / library: panel size,
-          // Search mark, "No matching …", ghost Clear filters.
-          <EmptyState
-            className="mt-6"
-            size="panel"
-            icon={Search}
-            title="No matching projects"
-            description="Try another search term."
-            action={
-              <Button variant="ghost" size="sm" onClick={() => setQuery("")} className="text-muted-foreground">
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            {filteredItems.map((p, i) => (
-              // No fixed height: an explicit one beats the grid's stretch, so a row
-              // pairing a cover card (260px) with a plain one (160px) left ~100px of
-              // dead space under the short card. Only the cover strip is sized now.
-              // `interactive` rather than a hand-rolled hover — the local version wore
-              // shadow-float (the out-of-flow rung, outranking every dropdown) and
-              // transition-all, both of which card.tsx calls out by name.
-              <Card
-                key={p.id}
-                variant="interactive"
-                style={staggerDelay(i)}
-                className="relative flex h-full min-h-40 flex-col justify-between overflow-hidden rounded-card p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-              >
-                <div className="flex-1 flex flex-col min-h-0">
-                  {/* Render Cover Image only if explicitly set */}
-                  {p.coverUrl && (
-                    <div className="relative h-28 w-full overflow-hidden bg-muted border-b shrink-0">
-                      <img src={p.coverUrl} className="size-full object-cover" alt="" />
-                    </div>
-                  )}
-
-                  {/* Card Body */}
-                  <div className="p-5 pb-0 flex-1 flex flex-col justify-between min-h-0">
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        {/* Stretched link: the whole card used to be a div with an
-                            onClick, so a keyboard user could only reach this title —
-                            the cover, the preview and the footer were all inert. The
-                            `after` overlay makes the card one real link and removes
-                            the `closest("button")` hit-test the onClick needed. */}
-                        <Link
-                          href={`/projects/${p.id}`}
-                          className="flex-1 truncate text-base font-semibold tracking-[-0.01em] outline-none transition-colors hover:text-primary after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
-                        >
-                          {p.name}
-                        </Link>
-
-                        {/* Card actions menu — above the stretched link. */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Actions for ${p.name}`}
-                              className="relative z-10 size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                            >
-                              <ActionIcons.more className="size-3.5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-40">
-                            <DropdownMenuItem onSelect={() => toggleStar(p)}>
-                              {p.starred ? (
-                                <>
-                                  <PinOff className="size-4 mr-2" />
-                                  <span>Unpin</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Pin className="size-4 mr-2" />
-                                  <span>Pin</span>
-                                </>
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => { setEditingProject(p); setRenameName(p.name); }}>
-                              <ActionIcons.edit className="size-4 mr-2" />
-                              <span>Rename</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {/* Tint, not an inverted fill — the family's one destructive
-                                focus treatment until DropdownMenuItem gains a variant. */}
-                            <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
-                              <ActionIcons.delete className="size-4 mr-2" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-
-                      {/* Preview of instructions */}
-                      <p className="mt-2 text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed">
-                        {promptPreview(p.instructions)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card Footer (Metadata) */}
-                {/* No fill: --muted at 10% over an already near-black card resolves
-                    to under 1% lightness, so the tint simply disappeared and the
-                    border-t was doing the separation alone. Let it — which is also
-                    how the artifacts card footer is drawn. */}
-                <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-5 pb-4 pt-3 font-mono text-caption text-muted-foreground">
-                  <span>Updated {timeAgo(p.updatedAt)}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-0.5" title={`${p.conversationCount} chats`}><MessageSquare className="size-3" /> {p.conversationCount}</span>
-                    <span>•</span>
-                    <span className="flex items-center gap-0.5" title={`${p.fileCount} files`}><FileText className="size-3" /> {p.fileCount - (p.coverUrl ? 1 : 0)}</span>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
+                <Plus className="size-4" aria-hidden="true" />
+                New project
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
 
       {/* Create Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -429,7 +373,7 @@ export default function ProjectsPage() {
             <DialogDescription>Name it, or leave it blank and Juno will name it from your first chat.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="proj-name">Project name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label htmlFor="proj-name">Project name <span className="font-normal text-muted-foreground">(optional)</span></Label>
             <Input
               id="proj-name"
               value={name}
@@ -490,6 +434,144 @@ export default function ProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </AppPage>
+  );
+}
+
+/**
+ * One project in the grid — the house tile: icon tile, name, two-line
+ * instructions preview, metadata footer. The whole tile is one link (the name
+ * carries a stretched `after:` overlay); the pin and the menu sit above it.
+ */
+function ProjectTile({
+  project: p,
+  onToggleStar,
+  onRename,
+  onDelete,
+}: {
+  project: ProjectItem;
+  onToggleStar: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const FolderIcon = AppIcons.projects;
+  const fileCount = Math.max(0, p.fileCount - (p.coverUrl ? 1 : 0));
+  return (
+    <Card variant="interactive" className="group relative flex h-full min-h-40 flex-col p-4">
+      <div className="flex items-start gap-3">
+        {p.coverUrl ? (
+          <span className="surface-inset flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-field">
+            <img src={p.coverUrl} className="size-full object-cover" alt="" />
+          </span>
+        ) : (
+          <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+            <FolderIcon className="size-4" aria-hidden="true" />
+          </span>
+        )}
+        <div className="min-w-0 flex-1 pt-0.5">
+          <Link
+            href={`/projects/${p.id}`}
+            className="block truncate text-sm font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+          >
+            {p.name}
+          </Link>
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+            {promptPreview(p.instructions) || "No instructions yet."}
+          </p>
+        </div>
+
+        {/* Tile actions — above the stretched link. The pin stays visible while
+            pinned; otherwise it, like the menu, arrives on hover or focus. */}
+        <div
+          className={cn(
+            "relative z-10 -mr-1 -mt-1 flex shrink-0 items-center gap-0.5 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none",
+            p.starred ? "opacity-100" : "opacity-0"
+          )}
+        >
+          <Pressable
+            kind="icon"
+            size="sm"
+            selected={!!p.starred}
+            aria-pressed={!!p.starred}
+            aria-label={p.starred ? `Unpin ${p.name}` : `Pin ${p.name}`}
+            onClick={onToggleStar}
+            className={cn(p.starred && "text-primary hover:text-primary")}
+          >
+            <Pin className={cn("size-3.5", p.starred && "fill-current")} aria-hidden="true" />
+          </Pressable>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Pressable kind="icon" size="sm" aria-label={`Actions for ${p.name}`}>
+                <ActionIcons.more className="size-3.5" aria-hidden="true" />
+              </Pressable>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onSelect={onToggleStar}>
+                {p.starred ? (
+                  <>
+                    <PinOff className="mr-2 size-4" aria-hidden="true" />
+                    <span>Unpin</span>
+                  </>
+                ) : (
+                  <>
+                    <Pin className="mr-2 size-4" aria-hidden="true" />
+                    <span>Pin</span>
+                  </>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onRename}>
+                <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
+                <span>Rename</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
+                <span>Delete</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1" title={`${p.conversationCount} chats`}>
+            <MessageSquare className="size-3" aria-hidden="true" /> {p.conversationCount}
+          </span>
+          <span className="inline-flex items-center gap-1" title={`${fileCount} files`}>
+            <FileText className="size-3" aria-hidden="true" /> {fileCount}
+          </span>
+        </div>
+        <span>Updated {timeAgo(p.updatedAt)}</span>
+      </div>
+    </Card>
+  );
+}
+
+/** The grid, in placeholder form — identical to `loading.tsx` so nothing shifts. */
+function ProjectsGridSkeleton() {
+  return (
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role="status" aria-label="Loading projects">
+      {[...Array(6)].map((_, i) => (
+        <div
+          key={i}
+          className="surface-raised flex min-h-40 flex-col rounded-card p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+          style={staggerDelay(i)}
+        >
+          <div className="flex items-start gap-3">
+            <Skeleton className="size-9 shrink-0 rounded-field" />
+            <div className="min-w-0 flex-1 space-y-2 pt-1">
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-3 w-4/5" />
+              <Skeleton className="h-3 w-3/5" />
+            </div>
+          </div>
+          <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-3">
+            <Skeleton className="h-2.5 w-16" />
+            <Skeleton className="h-2.5 w-20" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

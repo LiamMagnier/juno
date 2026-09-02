@@ -13,6 +13,23 @@ const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
+/**
+ * The floating tier — `.surface-float` + `.overlay-glass` at `rounded-popover`
+ * (16). 16px shell − p-1.5 (6px) = concentric with the 10px `rounded-control`
+ * items. Same material and radius as Popover and Select: the three open beside
+ * each other and must be one object.
+ *
+ * A menu taller than the space under its trigger has to scroll, or its last
+ * items are simply unreachable: Radix flips and shifts a popper to fit but
+ * never SHRINKS one, so the height is capped on the Radix variable and the
+ * shell scrolls. 24rem before scrolling, matching Select.
+ */
+const menuShell =
+  "surface-float overlay-glass z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain";
+
+const menuItem =
+  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-control px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
+
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
@@ -22,28 +39,7 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
-      className={cn(
-        // 12px shell − p-1.5 (6px) = concentric with the rounded-xs (6px) items.
-        // The arithmetic here read "14px shell ... concentric with the rounded-md
-        // (8px) items", but `rounded-menu` is 12 (tailwind.config.ts), so the
-        // stated sum was wrong in both terms and the items were drawn 2px too
-        // round for the shell they sit in. .overlay-glass is the same material
-        // string, deduplicated.
-        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
-        // A menu taller than the space under its trigger has to scroll, or its
-        // last items are simply unreachable.
-        //
-        // This was `overflow-hidden` with no height cap. Radix flips and shifts
-        // a menu to fit, but it never SHRINKS one, so a menu longer than the
-        // viewport was clipped at the edge with nothing to scroll — three menus
-        // in the product already carry six or more items, and any of them on a
-        // short window or a phone lost its tail silently.
-        //
-        // `select.tsx` had already solved this with the same Radix variable; the
-        // dropdown just never got the fix. 24rem before scrolling, matching it.
-        "max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain",
-        className
-      )}
+      className={cn(menuShell, className)}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>
@@ -57,7 +53,8 @@ const DropdownMenuSubTrigger = React.forwardRef<
   <DropdownMenuPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "menu-item group/menu-item flex cursor-pointer select-none items-center gap-2 rounded-xs px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+      menuItem,
+      "focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent",
       inset && "pl-8",
       className
     )}
@@ -69,6 +66,7 @@ const DropdownMenuSubTrigger = React.forwardRef<
 ));
 DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
 
+/** Identical shell to DropdownMenuContent — a submenu is the same object. */
 const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
@@ -77,20 +75,7 @@ const DropdownMenuSubContent = React.forwardRef<
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       collisionPadding={collisionPadding}
-      className={cn(
-        // Identical shell to DropdownMenuContent — a submenu is the same object.
-        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
-        // "Identical shell" was true of the material and not of the one thing a
-        // submenu is MORE exposed to than its parent. A submenu opens beside its
-        // trigger, so it starts partway down the viewport and has less room
-        // below it than the menu that spawned it — and this was `overflow-hidden`
-        // with no height cap, the exact state DropdownMenuContent was fixed out
-        // of. Radix flips and shifts a popper to fit but never shrinks one, so a
-        // long submenu was clipped at the viewport edge with nothing to scroll
-        // and its last rows simply unreachable. Same cap, same Radix variable.
-        "max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain",
-        className
-      )}
+      className={cn(menuShell, className)}
       {...props}
     />
   </DropdownMenuPrimitive.Portal>
@@ -102,14 +87,10 @@ const DropdownMenuItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
     inset?: boolean;
     /**
-     * `destructive` for a row that deletes, disconnects or revokes.
-     *
-     * A variant because five call sites had independently written the same
-     * `className="text-destructive focus:text-destructive"` — and that string is
-     * also incomplete: it reddens the label but leaves the focus fill the neutral
-     * accent, so the one row in a menu that cannot be undone highlights exactly
-     * like Rename. Keyboard users hit it hardest, since focus is the only signal
-     * they get. Here the fill tints too.
+     * `destructive` for a row that deletes, disconnects or revokes. Reddens
+     * the label AND tints the focus fill, so the one row in a menu that cannot
+     * be undone does not highlight exactly like Rename — keyboard users hit
+     * that hardest, since focus is the only signal they get.
      */
     variant?: "default" | "destructive";
   }
@@ -117,7 +98,7 @@ const DropdownMenuItem = React.forwardRef<
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-xs px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+      menuItem,
       variant === "destructive"
         ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
         : "focus:bg-accent focus:text-accent-foreground",
@@ -135,10 +116,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 >(({ className, children, checked, ...props }, ref) => (
   <DropdownMenuPrimitive.CheckboxItem
     ref={ref}
-    className={cn(
-      "menu-item group/menu-item relative flex cursor-pointer select-none items-center rounded-xs py-1.5 pl-8 pr-2 text-sm outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      className
-    )}
+    className={cn(menuItem, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
     checked={checked}
     {...props}
   >
@@ -158,10 +136,7 @@ const DropdownMenuRadioItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <DropdownMenuPrimitive.RadioItem
     ref={ref}
-    className={cn(
-      "menu-item group/menu-item relative flex cursor-pointer select-none items-center rounded-xs py-1.5 pl-8 pr-2 text-sm outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      className
-    )}
+    className={cn(menuItem, "pl-8 pr-2 focus:bg-accent focus:text-accent-foreground", className)}
     {...props}
   >
     <span className="absolute left-2 flex size-4 items-center justify-center">
@@ -192,11 +167,8 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    // `bg-foreground/12`, not `bg-border/70`. A separator inside a raised panel
-    // needs MORE contrast than one on the page ground, not less: on the
-    // .overlay-glass fill (13% on dark) a 16% border discounted to 70% composited
-    // to ~15.1%, a two-point delta against its own surface, so the rule that
-    // groups a menu's sections was effectively not drawn. Foreground at 12%
+    // Foreground at 12%, not the border token: a separator inside a raised
+    // panel needs MORE contrast than one on the page, and foreground/12
     // resolves against whatever the panel is made of in either theme.
     className={cn("-mx-1.5 my-1 h-px bg-foreground/12", className)}
     {...props}

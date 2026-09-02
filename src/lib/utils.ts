@@ -89,6 +89,19 @@ const merge = extendTailwindMerge({
           ],
         },
       ],
+      // Mirrors tailwind.config.ts `boxShadow`. Same failure as the radius
+      // ladder: stock tailwind-merge only knows t-shirt sizes, so
+      // cn("shadow-raised", "shadow-none") kept BOTH and emit order decided —
+      // which is how a hover `shadow-raised-lg` on a card that already had
+      // `shadow-none` in its base could silently never apply.
+      shadow: [
+        {
+          shadow: [
+            "raised", "raised-lg", "inset", "pressed", "float",
+            "soft", "lift", "glass", "pop", "glow-primary", "well",
+          ],
+        },
+      ],
     },
   },
 });

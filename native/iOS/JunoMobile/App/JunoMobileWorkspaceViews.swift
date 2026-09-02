@@ -23,14 +23,26 @@ struct JunoMobileProjectsView: View {
   let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
   let openConversation: (String) -> Void
   @State private var showingCreate = false
-  @State private var createName = ""
-  @State private var createInstructions = ""
   @State private var renameTarget: NativeProject?
   @State private var renameValue = ""
   @State private var deleteTarget: NativeProject?
+  @State private var query = ""
+  @State private var pinHaptic = JunoMobileHapticTrigger()
+  @State private var deleteHaptic = JunoMobileHapticTrigger()
+  @Namespace private var zoom
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
-  private var pinned: [NativeProject] { model.projects.filter(\.starred) }
-  private var others: [NativeProject] { model.projects.filter { !$0.starred } }
+  private var filtered: [NativeProject] {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return model.projects }
+    return model.projects.filter {
+      $0.name.localizedCaseInsensitiveContains(trimmed)
+        || $0.instructions.localizedCaseInsensitiveContains(trimmed)
+    }
+  }
+
+  private var pinned: [NativeProject] { filtered.filter(\.starred) }
+  private var others: [NativeProject] { filtered.filter { !$0.starred } }
 
   var body: some View {
     Group {
@@ -52,16 +64,23 @@ struct JunoMobileProjectsView: View {
             .contentShape(.rect)
         }
       default:
-        content
+        if sizeClass == .regular {
+          grid
+        } else {
+          list
+        }
       }
     }
-    .background(Color.junoCanvas)
-    .navigationTitle("")
-    .navigationBarTitleDisplayMode(.inline)
+    .junoScreenCanvas()
+    .navigationTitle("navigation.projects")
+    .navigationBarTitleDisplayMode(.large)
+    .searchable(text: $query, prompt: "Search projects")
+    .junoHaptic(JunoMobileHaptic.pin, trigger: pinHaptic)
+    .junoHaptic(JunoMobileHaptic.delete, trigger: deleteHaptic)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button {
-          startCreate()
+          showingCreate = true
         } label: {
           JunoIconView(.plus, size: 17)
         }
@@ -80,6 +99,7 @@ struct JunoMobileProjectsView: View {
           openConversation: openConversation
         )
         .onAppear { model.selectedProjectID = projectID }
+        .modifier(JunoMobileZoomTransitionSource(id: projectID, namespace: zoom))
       }
     }
     .sheet(isPresented: $showingCreate) {
@@ -117,6 +137,7 @@ struct JunoMobileProjectsView: View {
     ) {
       Button("Delete project", role: .destructive) {
         if let target = deleteTarget {
+          deleteHaptic.fire()
           Task { await model.deleteProject(id: target.id) }
         }
         deleteTarget = nil
@@ -129,13 +150,14 @@ struct JunoMobileProjectsView: View {
     }
   }
 
-  @ViewBuilder
-  private var content: some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
-        JunoPageTitle(title: "navigation.projects", subtitle: "projects.subtitle")
-          .padding(.top, JunoSpace.tight)
+  // MARK: Phone: a list
 
+  /// Native `List`, inset grouped: the hero tile leads, then Pinned, then the
+  /// rest. Rows carry swipe actions; the tile stays a custom card because it
+  /// is the one hero surface on the screen.
+  private var list: some View {
+    List {
+      Section {
         JunoMobileWorkspaceStatus(
           conflicted: model.conflictedMutationCount > 0,
           offline: model.phase == .offline,
@@ -146,74 +168,187 @@ struct JunoMobileProjectsView: View {
           keepMine: { Task { await model.resolveConflicts(keepLocalChanges: true) } },
           useServer: { Task { await model.resolveConflicts(keepLocalChanges: false) } }
         )
-
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
         if !model.projects.isEmpty {
-          projectOverview
+          overview
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
         }
+      }
 
-        if model.projects.isEmpty {
+      if model.projects.isEmpty {
+        Section {
           empty
-        } else {
-          if !pinned.isEmpty {
-            JunoGroupLabel(text: "Pinned")
-            projectGroup(pinned)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+      } else if filtered.isEmpty {
+        Section {
+          ContentUnavailableView.search(text: query)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+      } else {
+        if !pinned.isEmpty {
+          Section("Pinned") {
+            ForEach(pinned) { row($0) }
           }
-          if !others.isEmpty {
-            if !pinned.isEmpty { JunoGroupLabel(text: "All projects") }
-            projectGroup(others)
+        }
+        if !others.isEmpty {
+          Section(pinned.isEmpty ? "Projects" : "All projects") {
+            ForEach(others) { row($0) }
           }
         }
       }
-      .padding(.horizontal, JunoSpace.regular)
-      .padding(.bottom, JunoSpace.section)
     }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .refreshable { await model.reload() }
     .accessibilityIdentifier("juno.mobile.project-list")
   }
 
-  private func projectGroup(_ projects: [NativeProject]) -> some View {
-    // A project is a workspace, not a row in a settings list. Individual
-    // cards give each project room for its instruction preview, counts and
-    // recency, matching the website's responsive project tiles and making a
-    // pinned project feel like a destination rather than a selected line.
-    VStack(spacing: JunoSpace.snug) {
+  private func row(_ project: NativeProject) -> some View {
+    NavigationLink(value: project.id) {
+      JunoMobileProjectRow(
+        project: project,
+        conversations: model.conversationsByProject[project.id]?.count ?? 0,
+        files: model.filesByProject[project.id]?.count ?? 0
+      )
+    }
+    .listRowBackground(Color.junoSurface)
+    .modifier(JunoMobileZoomTransitionAnchor(id: project.id, namespace: zoom))
+    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+      Button {
+        pinHaptic.fire()
+        Task { await model.updateProject(id: project.id, starred: !project.starred) }
+      } label: {
+        Label(project.starred ? "Unpin" : "Pin", systemImage: project.starred ? "pin.slash" : "pin")
+      }
+      .tint(Color.junoAccent)
+    }
+    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+      Button(role: .destructive) {
+        deleteTarget = project
+      } label: {
+        Label("Delete", systemImage: "trash")
+      }
+      Button {
+        renameValue = project.name
+        renameTarget = project
+      } label: {
+        Label("Rename", systemImage: "pencil")
+      }
+      .tint(Color.junoMutedForeground)
+    }
+    .contextMenu { projectMenu(project) }
+    .disabled(project.isPending)
+    .accessibilityIdentifier("juno.mobile.project-row-\(project.id)")
+  }
+
+  // MARK: iPad: a grid
+
+  private var grid: some View {
+    ScrollView {
+      LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
+        JunoMobileWorkspaceStatus(
+          conflicted: model.conflictedMutationCount > 0,
+          offline: model.phase == .offline,
+          message: model.lastErrorDescription,
+          conflictMessage: "A project changed on another device.",
+          offlineMessage: "Offline — showing saved projects.",
+          retry: { Task { await model.reload() } },
+          keepMine: { Task { await model.resolveConflicts(keepLocalChanges: true) } },
+          useServer: { Task { await model.resolveConflicts(keepLocalChanges: false) } }
+        )
+        if model.projects.isEmpty {
+          empty
+        } else {
+          overview
+          if !pinned.isEmpty {
+            JunoGroupLabel(text: "Pinned")
+            tiles(pinned)
+          }
+          if !others.isEmpty {
+            JunoGroupLabel(text: pinned.isEmpty ? "Projects" : "All projects")
+            tiles(others)
+          }
+          if filtered.isEmpty {
+            ContentUnavailableView.search(text: query)
+          }
+        }
+      }
+      .padding(.horizontal, JunoSpace.section)
+      .padding(.bottom, JunoSpace.section)
+    }
+    .refreshable { await model.reload() }
+    .accessibilityIdentifier("juno.mobile.project-list")
+  }
+
+  private func tiles(_ projects: [NativeProject]) -> some View {
+    LazyVGrid(
+      columns: [GridItem(.adaptive(minimum: 260, maximum: 360), spacing: JunoSpace.cozy)],
+      alignment: .leading,
+      spacing: JunoSpace.cozy
+    ) {
       ForEach(projects) { project in
-        card(project)
+        NavigationLink(value: project.id) {
+          JunoMobileProjectTile(
+            project: project,
+            conversations: model.conversationsByProject[project.id]?.count ?? 0,
+            files: model.filesByProject[project.id]?.count ?? 0
+          )
+        }
+        .buttonStyle(.junoPress)
+        .modifier(JunoMobileZoomTransitionAnchor(id: project.id, namespace: zoom))
+        .contextMenu { projectMenu(project) }
+        .disabled(project.isPending)
       }
     }
   }
 
+  // MARK: Hero
+
   /// Orientation before the reader chooses a project. Every value comes from
-  /// the local project snapshot, so the overview remains useful offline and
-  /// never implies a server-side metric the native store cannot substantiate.
-  private var projectOverview: some View {
+  /// the local project snapshot, and the status is the store's own — never a
+  /// string that says "Synced" whatever is happening.
+  private var overview: some View {
     let conversations = model.conversationsByProject.values.reduce(0) { $0 + $1.count }
     let files = model.filesByProject.values.reduce(0) { $0 + $1.count }
-    return JunoCard(padding: 13) {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: JunoSpace.tight) {
-          JunoIconView(.projects, size: 15)
-            .foregroundStyle(Color.junoAccent)
-          Text("Workspace overview")
-            .junoFont(size: 13, relativeTo: .footnote, weight: .semibold)
-          Spacer(minLength: 4)
-          Text("Synced")
-            .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-            .junoMetaInk()
+    return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+      HStack(spacing: JunoSpace.tight) {
+        JunoWorkspaceGlyph(icon: .projects, size: 36)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Your workspace")
+            .font(JunoSerif.cardTitle)
+          Text("^[\(model.projects.count) project](inflect: true)")
+            .junoCaption()
         }
-        HStack(spacing: 0) {
-          projectMetric("Projects", value: model.projects.count, icon: .projects)
-          Divider().frame(height: 28)
-          projectMetric("Chats", value: conversations, icon: .conversation)
-          Divider().frame(height: 28)
-          projectMetric("Files", value: files, icon: .file)
-        }
+        Spacer(minLength: 4)
+        JunoMobileProjectsSyncStatus(
+          phase: model.phase,
+          pending: model.pendingMutationCount,
+          conflicted: model.conflictedMutationCount
+        )
+      }
+      HStack(spacing: 0) {
+        metric("Projects", value: model.projects.count, icon: .projects)
+        Divider().frame(height: 28)
+        metric("Chats", value: conversations, icon: .conversation)
+        Divider().frame(height: 28)
+        metric("Files", value: files, icon: .file)
       }
     }
+    .padding(JunoSpace.regular)
+    .junoCard(cornerRadius: JunoRadius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("juno.mobile.projects-overview")
   }
 
-  private func projectMetric(_ title: String, value: Int, icon: JunoIcon) -> some View {
+  private func metric(_ title: String, value: Int, icon: JunoIcon) -> some View {
     HStack(spacing: 6) {
       JunoIconView(icon, size: 12)
         .foregroundStyle(Color.junoMutedForeground)
@@ -232,111 +367,32 @@ struct JunoMobileProjectsView: View {
   }
 
   private var empty: some View {
-    JunoCard {
-      VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-        Text("No projects yet").junoEmptyTitle()
-        Text(
-          "A project groups conversations and files, and gives every chat in it the same standing instructions."
-        )
-        .font(.callout)
-        .junoSecondaryInk()
-        Button {
-          startCreate()
-        } label: {
-          Text("New project").fontWeight(.semibold)
-        }
-        .junoProminentAction()
-        .controlSize(.large)
-        .padding(.top, JunoSpace.hairline)
-        .contentShape(.rect)
+    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+      Text("No projects yet").junoEmptyTitle()
+      Text(
+        "A project groups conversations and files, and gives every chat in it the same standing instructions."
+      )
+      .font(.callout)
+      .junoSecondaryInk()
+      Button {
+        showingCreate = true
+      } label: {
+        Text("New project").fontWeight(.semibold)
       }
+      .junoProminentAction()
+      .controlSize(.large)
+      .padding(.top, JunoSpace.hairline)
+      .contentShape(.rect)
     }
-  }
-
-  private func card(_ project: NativeProject) -> some View {
-    let conversations = model.conversationsByProject[project.id]?.count ?? 0
-    let files = model.filesByProject[project.id]?.count ?? 0
-    return NavigationLink(value: project.id) {
-      JunoCard(padding: 14) {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-          HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            JunoWorkspaceGlyph(icon: .projects, size: 42)
-            VStack(alignment: .leading, spacing: 4) {
-              HStack(spacing: JunoSpace.tight) {
-                Text(project.name)
-                  .font(JunoSerif.cardTitle)
-                  .foregroundStyle(.primary)
-                  .lineLimit(1)
-                if project.starred {
-                  JunoIconView(.pin, size: 12)
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityLabel("Pinned")
-                }
-                if project.isPending {
-                  JunoIconView(.refresh, size: 12)
-                    .junoSecondaryInk()
-                    .accessibilityLabel("Waiting to sync")
-                }
-              }
-              Text(project.updatedAt.formatted(.relative(presentation: .named)))
-                .junoFont(size: 11, relativeTo: .caption2)
-                .junoMetaInk()
-            }
-            Spacer(minLength: 0)
-            JunoIconView(.chevronRight, size: 12)
-              .junoMetaInk()
-              .padding(.top, JunoSpace.hairline)
-          }
-
-          HStack(spacing: JunoSpace.snug) {
-            projectCardFact(icon: .conversation, value: conversations, label: "Chats")
-            Divider().frame(height: 18)
-            projectCardFact(icon: .file, value: files, label: "Files")
-            Spacer(minLength: 0)
-          }
-
-          if !project.instructions.isEmpty {
-            Divider()
-            VStack(alignment: .leading, spacing: 3) {
-              Text("Instructions")
-                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                .junoMetaInk()
-              Text(JunoPromptPreview.text(project.instructions))
-                .junoFont(size: 12, relativeTo: .caption)
-                .junoSecondaryInk()
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-            }
-          } else {
-            Text("Add instructions to give every chat a shared point of view.")
-              .junoFont(size: 12, relativeTo: .caption)
-              .junoMetaInk()
-              .lineLimit(2)
-          }
-        }
-      }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .contextMenu { projectMenu(project) }
-  }
-
-  private func projectCardFact(icon: JunoIcon, value: Int, label: String) -> some View {
-    HStack(spacing: 5) {
-      JunoIconView(icon, size: 12)
-        .junoMetaInk()
-      Text("\(value)")
-        .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
-        .monospacedDigit()
-      Text(label)
-        .junoFont(size: 11, relativeTo: .caption2)
-        .junoMetaInk()
-    }
+    .padding(JunoSpace.regular)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .junoCard(cornerRadius: JunoRadius.card)
   }
 
   @ViewBuilder
   private func projectMenu(_ project: NativeProject) -> some View {
     Button {
+      pinHaptic.fire()
       Task { await model.updateProject(id: project.id, starred: !project.starred) }
     } label: {
       Label {
@@ -345,7 +401,6 @@ struct JunoMobileProjectsView: View {
         JunoIconView(.pin, size: 15)
       }
     }
-    .contentShape(.rect)
     Button {
       renameValue = project.name
       renameTarget = project
@@ -356,7 +411,6 @@ struct JunoMobileProjectsView: View {
         JunoIconView(.pencil, size: 15)
       }
     }
-    .contentShape(.rect)
     Divider()
     Button(role: .destructive) {
       deleteTarget = project
@@ -367,13 +421,124 @@ struct JunoMobileProjectsView: View {
         JunoIconView(.trash, size: 15)
       }
     }
-    .contentShape(.rect)
+  }
+}
+
+/// One project as a list row: glyph, name, the two counts, recency.
+private struct JunoMobileProjectRow: View {
+  let project: NativeProject
+  let conversations: Int
+  let files: Int
+
+  var body: some View {
+    HStack(spacing: JunoSpace.cozy) {
+      JunoWorkspaceGlyph(icon: .projects, size: 38)
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: JunoSpace.tight) {
+          Text(project.name)
+            .junoFont(size: 16, relativeTo: .body, weight: .medium)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+          if project.starred {
+            JunoIconView(.pin, size: 11)
+              .foregroundStyle(Color.junoAccent)
+              .accessibilityLabel("Pinned")
+          }
+          if project.isPending {
+            JunoIconView(.refresh, size: 11)
+              .junoSecondaryInk()
+              .accessibilityLabel("Waiting to sync")
+          }
+        }
+        HStack(spacing: JunoSpace.tight) {
+          Text("^[\(conversations) chat](inflect: true)")
+          Text("·").accessibilityHidden(true)
+          Text("^[\(files) file](inflect: true)")
+          Text("·").accessibilityHidden(true)
+          Text(project.updatedAt.formatted(.relative(presentation: .named)))
+        }
+        .junoFont(size: 12, relativeTo: .caption)
+        .junoMetaInk()
+        .lineLimit(1)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, JunoSpace.hairline)
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// One project as a raised tile, for the iPad grid.
+private struct JunoMobileProjectTile: View {
+  let project: NativeProject
+  let conversations: Int
+  let files: Int
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+      HStack(alignment: .top, spacing: JunoSpace.cozy) {
+        JunoWorkspaceGlyph(icon: .projects, size: 42)
+        VStack(alignment: .leading, spacing: 3) {
+          HStack(spacing: JunoSpace.tight) {
+            Text(project.name)
+              .font(JunoSerif.cardTitle)
+              .foregroundStyle(.primary)
+              .lineLimit(1)
+            if project.starred {
+              JunoIconView(.pin, size: 12)
+                .foregroundStyle(Color.junoAccent)
+            }
+          }
+          Text(project.updatedAt.formatted(.relative(presentation: .named)))
+            .junoFont(size: 11, relativeTo: .caption2)
+            .junoMetaInk()
+        }
+        Spacer(minLength: 0)
+      }
+      Text(project.instructions.isEmpty
+        ? "Add instructions to give every chat a shared point of view."
+        : JunoPromptPreview.text(project.instructions))
+        .junoFont(size: 12, relativeTo: .caption)
+        .junoSecondaryInk()
+        .lineLimit(3)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      HStack(spacing: JunoSpace.snug) {
+        Text("^[\(conversations) chat](inflect: true)")
+        Text("·").accessibilityHidden(true)
+        Text("^[\(files) file](inflect: true)")
+      }
+      .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
+      .junoMetaInk()
+    }
+    .padding(JunoSpace.regular)
+    .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+    .junoCard(cornerRadius: JunoRadius.card)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+}
+
+/// "Synced", "Syncing…", "Offline" or "Conflict" — from the store's state.
+struct JunoMobileProjectsSyncStatus: View {
+  let phase: NativeProjectModel<SQLiteAccountRepository>.Phase
+  let pending: Int
+  let conflicted: Int
+
+  private var label: (text: String, tint: Color, filled: Bool) {
+    if conflicted > 0 { return ("Conflict", Color.junoCaution, true) }
+    switch phase {
+    case .offline: return ("Offline", Color.junoMutedForeground, false)
+    case .failed: return ("Sync failed", Color.junoDanger, true)
+    case .idle, .loading: return ("Syncing…", Color.junoAccent, false)
+    case .ready: return (pending > 0 ? "Syncing…" : "Synced", pending > 0 ? Color.junoAccent : Color.junoSuccess, false)
+    }
   }
 
-  private func startCreate() {
-    createName = ""
-    createInstructions = ""
-    showingCreate = true
+  var body: some View {
+    let state = label
+    JunoStatusPill(text: state.text, tint: state.tint, filled: state.filled)
+      .accessibilityLabel("Sync status: \(state.text)")
   }
 }
 
@@ -1007,109 +1172,21 @@ private struct JunoMobileProjectDetail: View {
     "\(value) \(noun)\(value == 1 ? "" : "s")"
   }
 
-  private var instructionsSection: some View {
-    JunoMobileWorkspaceSection(
-      title: "Instructions",
-      actionTitle: project.instructions.isEmpty ? "Add" : "Edit",
-      actionIcon: project.instructions.isEmpty ? .plus : .pencil,
-      action: (project.isPending || model.isMutating)
-        ? nil
-        : {
-          instructionsDraft = project.instructions
-          showingInstructions = true
-        },
-      footnote: "Included in every conversation linked to this project.",
-      identifier: "juno.mobile.project-instructions"
-    ) {
-      JunoCard {
-        if project.instructions.isEmpty {
-          JunoMobileEmptyLine(text: "No project instructions yet.")
-        } else {
-          JunoMobileClampedText(text: project.instructions)
-        }
+  private enum Tab: String, CaseIterable, Identifiable {
+    case chats, files, instructions
+    var id: String { rawValue }
+    var title: String {
+      switch self {
+      case .chats: "Chats"
+      case .files: "Files"
+      case .instructions: "Instructions"
       }
     }
   }
 
-  private var conversationsSection: some View {
-    JunoMobileWorkspaceSection(
-      title: "Conversations",
-      actionTitle: "New chat",
-      actionIcon: .new,
-      action: (project.isPending || conversationModel == nil)
-        ? nil
-        : { createProjectConversation() }
-    ) {
-      JunoCard(padding: 0) {
-        if model.selectedConversations.isEmpty {
-          JunoMobileEmptyLine(text: "No linked conversations yet.")
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.regular)
-        } else {
-          VStack(spacing: 0) {
-            ForEach(Array(model.selectedConversations.enumerated()), id: \.element.id) {
-              index, conversation in
-              if index > 0 {
-                Divider().padding(.leading, JunoSpace.regular)
-              }
-              conversationRow(conversation)
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private var assistantSection: some View {
-    JunoMobileWorkspaceSection(
-      title: "Assistant",
-      actionTitle: assistantConfiguration == nil ? "Set up" : "Edit",
-      actionIcon: assistantConfiguration == nil ? .plus : .sliders,
-      action: workspaceModel == nil || project.isPending
-        ? nil : { showingAssistant = true },
-      footnote: "Persona, model, tools and knowledge sync across your Juno devices.",
-      identifier: "juno.mobile.project-assistant"
-    ) {
-      JunoCard {
-        if let assistantConfiguration {
-          VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            JunoMobileAssistantFact(
-              title: "Persona",
-              value: assistantConfiguration.personaName ?? project.name,
-              icon: .user
-            )
-            Divider()
-            JunoMobileAssistantFact(
-              title: "Model",
-              value: conversationModel?.selectableModels.first {
-                $0.id == assistantConfiguration.preferredModelID
-              }?.displayName ?? "Account default",
-              icon: .models
-            )
-            Divider()
-            JunoMobileAssistantFact(
-              title: "Tools",
-              value: assistantConfiguration.toolAccess.isRestricted
-                ? "Restricted" : "Account defaults",
-              icon: .tools
-            )
-            if !assistantConfiguration.knowledgeFileIDs.isEmpty {
-              Divider()
-              JunoMobileAssistantFact(
-                title: "Knowledge",
-                value: count(assistantConfiguration.knowledgeFileIDs.count, "file"),
-                icon: .knowledge
-              )
-            }
-          }
-        } else {
-          JunoMobileEmptyLine(
-            text: "Uses the project instructions and your account defaults."
-          )
-        }
-      }
-    }
-  }
+  @State private var tab: Tab = .chats
+  @State private var pinHaptic = JunoMobileHapticTrigger()
+  @State private var deleteHaptic = JunoMobileHapticTrigger()
 
   private func conversationRow(_ conversation: NativeProjectConversation) -> some View {
     Button {
@@ -1123,6 +1200,7 @@ private struct JunoMobileProjectDetail: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(conversation.title)
             .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+            .foregroundStyle(.primary)
             .lineLimit(1)
           Text(conversation.lastMessageAt, style: .relative)
             .junoFont(size: 12, relativeTo: .caption)
@@ -1133,92 +1211,45 @@ private struct JunoMobileProjectDetail: View {
         JunoIconView(.chevronRight, size: 12)
           .foregroundStyle(Color.junoMutedForeground)
       }
-      .padding(.horizontal, JunoSpace.regular)
-      .padding(.vertical, JunoSpace.cozy)
       .contentShape(Rectangle())
     }
-    .buttonStyle(JunoSidebarPressStyle())
+    .buttonStyle(.plain)
     .accessibilityLabel(conversation.title)
   }
 
-  private var filesSection: some View {
-    JunoMobileWorkspaceSection(
-      title: "Files",
-      actionTitle: "Add file",
-      actionIcon: .attach,
-      action: (project.isPending || model.isPerformingFileAction)
-        ? nil
-        : { showingImporter = true },
-      footnote: model.selectedFiles.isEmpty
-        ? "Files added here are available to every conversation in the project."
-        : nil,
-      identifier: "juno.mobile.project-files"
-    ) {
-      JunoCard(padding: 0) {
-        if model.selectedFiles.isEmpty {
-          JunoMobileEmptyLine(text: "No project files yet.")
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.regular)
-        } else {
-          VStack(spacing: 0) {
-            ForEach(Array(model.selectedFiles.enumerated()), id: \.element.id) {
-              index, file in
-              if index > 0 {
-                Divider().padding(.leading, JunoSpace.regular)
-              }
-              // No padding here: the row owns its own, exactly as
-              // `conversationRow` does. Adding it at the call site
-              // is what produced the asymmetric inset around the
-              // nested card this replaced.
-              JunoMobileProjectFileRow(
-                file: file,
-                busy: model.isPerformingFileAction,
-                open: { openFile(file) },
-                rename: {
-                  renameValue = file.fileName
-                  renameFileID = file.id
-                },
-                delete: { Task { await model.deleteFile(id: file.id) } }
-              )
-            }
-          }
-        }
-      }
-    }
-  }
-
-  /// A scrolling stack of cards, not a `List`.
+  /// Chats · Files · Instructions, one at a time under the header.
   ///
-  /// This screen was the last `.insetGrouped` `List` in the app: a Settings page
-  /// wearing a project's name, opening on forty unbroken lines of `<role>` prompt
-  /// text that pushed the project's own conversations and files off the bottom of
-  /// the screen. Everything else in the app composes from `JunoCard` on
-  /// `junoCanvas`, and the instructions are clamped so the screen's *shape* is
-  /// legible before its longest field is.
+  /// The screen used to stack four card sections and open on forty lines of
+  /// prompt; a reader looking for a file scrolled past all of it. Segmented,
+  /// each tab is a native `List` or `Form` at full height.
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: JunoSpace.section) {
-        header
-        instructionsSection
-        assistantSection
-        conversationsSection
-        filesSection
+    VStack(spacing: 0) {
+      header
+        .padding(.horizontal, JunoSpace.regular)
+      ScrollView(.horizontal, showsIndicators: false) {
+        JunoMobileSegmented(
+          options: Tab.allCases.map { JunoMobileSegmented<Tab>.Option($0, $0.title) },
+          selection: $tab,
+          accessibilityLabel: "Project section"
+        )
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.snug)
       }
-      .padding(.horizontal, JunoSpace.regular)
-      .padding(.top, JunoSpace.hairline)
-      .padding(.bottom, JunoSpace.section)
-      .frame(maxWidth: 768)
-      .frame(maxWidth: .infinity)
+      switch tab {
+      case .chats: chatsTab
+      case .files: filesTab
+      case .instructions: instructionsTab
+      }
     }
     .junoScreenCanvas()
     .navigationTitle(project.name)
     .navigationBarTitleDisplayMode(.inline)
+    .junoHaptic(JunoMobileHaptic.pin, trigger: pinHaptic)
+    .junoHaptic(JunoMobileHaptic.delete, trigger: deleteHaptic)
     .toolbar {
-      // Adjacent items, no `ToolbarSpacer`: from OS 26 the toolbar merges
-      // them into one Liquid Glass capsule — star on the leading edge, the
-      // menu on the trailing one.
       ToolbarItem(placement: .topBarTrailing) {
         Button {
+          pinHaptic.fire()
           Task {
             await model.updateProject(
               id: project.id,
@@ -1227,8 +1258,6 @@ private struct JunoMobileProjectDetail: View {
           }
         } label: {
           JunoIconView(.pin, size: 16)
-            // Coral only when it is *on*: a pinned project is an
-            // active state, which is what the accent is for.
             .foregroundStyle(project.starred ? Color.junoAccent : Color.primary)
         }
         .disabled(project.isPending || model.isMutating)
@@ -1241,14 +1270,13 @@ private struct JunoMobileProjectDetail: View {
             editName = project.name
             showingRename = true
           }
+          if workspaceModel != nil {
+            Button("Assistant…") { showingAssistant = true }
+          }
           Button("Delete", role: .destructive) { showingDelete = true }
         } label: {
-          // `ellipsis`, not `ellipsis.circle` — the symbol's own ring
-          // sat inside the capsule the toolbar already draws.
           JunoIconView(.ellipsis, size: 17)
         }
-        // See the note on the chat header's menu: the tint has to be set
-        // on the Menu itself or the glyph takes the accent.
         .tint(Color.primary)
         .disabled(project.isPending || model.isMutating)
         .accessibilityLabel("Project actions")
@@ -1261,46 +1289,6 @@ private struct JunoMobileProjectDetail: View {
       Button("Save") {
         Task { await model.updateProject(id: project.id, name: editName) }
       }
-    }
-    .sheet(isPresented: $showingInstructions) {
-      NavigationStack {
-        // Monospaced, matching the clamped preview: this is a prompt, and
-        // editing it in a proportional face hides the indentation and the
-        // angle brackets that give it its structure.
-        TextEditor(text: $instructionsDraft)
-          .junoFont(size: 14, relativeTo: .subheadline, design: .monospaced)
-          .padding(.horizontal, JunoSpace.cozy)
-          .padding(.vertical, JunoSpace.snug)
-          .junoScreenCanvas()
-          .navigationTitle("Instructions")
-          .navigationBarTitleDisplayMode(.inline)
-          .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-              Button("Cancel") { showingInstructions = false }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-              if model.isMutating {
-                ProgressView()
-              } else {
-                Button("Save") {
-                  Task {
-                    await model.updateProject(
-                      id: project.id, instructions: instructionsDraft
-                    )
-                    showingInstructions = false
-                  }
-                }
-              }
-            }
-          }
-      }
-      // Full height, not `[.medium, .large]`. A partial detent is the
-      // switch that makes iOS draw a sheet as Liquid Glass chrome, and
-      // this is the opposite of chrome: a monospaced editor for a standing
-      // prompt, with the keyboard up. At `.medium` the field had about
-      // three visible lines above the keyboard, which is not enough of a
-      // document to edit one in.
-      .junoSheetSurface(.page)
     }
     .sheet(isPresented: $showingAssistant) {
       if let workspaceModel {
@@ -1316,6 +1304,7 @@ private struct JunoMobileProjectDetail: View {
     .alert("Delete project?", isPresented: $showingDelete) {
       Button("Cancel", role: .cancel) {}
       Button("Delete", role: .destructive) {
+        deleteHaptic.fire()
         Task { await model.deleteProject(id: project.id) }
       }
     } message: {
@@ -1363,6 +1352,186 @@ private struct JunoMobileProjectDetail: View {
       }
     }
     .quickLookPreview($previewURL)
+    .onAppear { instructionsDraft = project.instructions }
+    .onChange(of: project.instructions) { old, new in
+      // A change from another device lands unless the reader is mid-edit.
+      if instructionsDraft == old { instructionsDraft = new }
+    }
+  }
+
+  private var chatsTab: some View {
+    List {
+      if model.selectedConversations.isEmpty {
+        ContentUnavailableView {
+          Label { Text("No chats yet") } icon: { JunoIconView(.conversation, size: 28) }
+        } description: {
+          Text("Every chat started here shares this project's files and instructions.")
+        } actions: {
+          Button("New chat") { createProjectConversation() }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .disabled(project.isPending || conversationModel == nil)
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+      } else {
+        Section {
+          ForEach(model.selectedConversations) { conversation in
+            conversationRow(conversation)
+              .listRowBackground(Color.junoSurface)
+              .swipeActions(edge: .trailing) {
+                Button {
+                  Task {
+                    await conversationModel?.setProject(id: conversation.id, projectID: nil)
+                  }
+                } label: {
+                  Label("Remove", systemImage: "folder.badge.minus")
+                }
+                .tint(Color.junoMutedForeground)
+              }
+          }
+        } header: {
+          HStack {
+            Text("^[\(model.selectedConversations.count) chat](inflect: true)")
+            Spacer()
+            Button("New chat") { createProjectConversation() }
+              .textCase(nil)
+              .disabled(project.isPending || conversationModel == nil)
+          }
+        }
+      }
+    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .accessibilityIdentifier("juno.mobile.project-chats")
+  }
+
+  private var filesTab: some View {
+    List {
+      if model.selectedFiles.isEmpty {
+        ContentUnavailableView {
+          Label { Text("No files yet") } icon: { JunoIconView(.attach, size: 28) }
+        } description: {
+          Text("Files added here are available to every conversation in the project.")
+        } actions: {
+          Button("Add file") { showingImporter = true }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .disabled(project.isPending || model.isPerformingFileAction)
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+      } else {
+        Section {
+          ForEach(model.selectedFiles) { file in
+            JunoMobileProjectFileRow(
+              file: file,
+              busy: model.isPerformingFileAction,
+              open: { openFile(file) },
+              rename: {
+                renameValue = file.fileName
+                renameFileID = file.id
+              },
+              delete: { Task { await model.deleteFile(id: file.id) } }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.junoSurface)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              Button(role: .destructive) {
+                deleteHaptic.fire()
+                Task { await model.deleteFile(id: file.id) }
+              } label: {
+                Label("Delete", systemImage: "trash")
+              }
+              Button {
+                renameValue = file.fileName
+                renameFileID = file.id
+              } label: {
+                Label("Rename", systemImage: "pencil")
+              }
+              .tint(Color.junoMutedForeground)
+            }
+          }
+        } header: {
+          HStack {
+            Text("^[\(model.selectedFiles.count) file](inflect: true)")
+            Spacer()
+            Button("Add file") { showingImporter = true }
+              .textCase(nil)
+              .disabled(project.isPending || model.isPerformingFileAction)
+          }
+        }
+      }
+    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .accessibilityIdentifier("juno.mobile.project-files")
+  }
+
+  /// Instructions and the assistant, as a `Form`: the editor in place with
+  /// Save, and the assistant's facts as rows that open the editor.
+  private var instructionsTab: some View {
+    Form {
+      Section {
+        TextEditor(text: $instructionsDraft)
+          .junoFont(size: 14, relativeTo: .subheadline, design: .monospaced)
+          .frame(minHeight: 160)
+          .accessibilityIdentifier("juno.mobile.project-instructions")
+        HStack {
+          Text("\(instructionsDraft.count) chars")
+            .junoCodeSmall()
+            .junoMetaInk()
+          Spacer()
+          Button("Revert") { instructionsDraft = project.instructions }
+            .disabled(instructionsDraft == project.instructions)
+          Button("Save") {
+            Task { await model.updateProject(id: project.id, instructions: instructionsDraft) }
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(Color.junoAccent)
+          .disabled(project.isPending || model.isMutating || instructionsDraft == project.instructions)
+        }
+      } header: {
+        Text("Instructions")
+      } footer: {
+        Text("Included in every conversation linked to this project.")
+      }
+
+      Section {
+        if let assistantConfiguration {
+          LabeledContent("Persona", value: assistantConfiguration.personaName ?? project.name)
+          LabeledContent(
+            "Model",
+            value: conversationModel?.selectableModels.first {
+              $0.id == assistantConfiguration.preferredModelID
+            }?.displayName ?? "Account default"
+          )
+          LabeledContent(
+            "Tools",
+            value: assistantConfiguration.toolAccess.isRestricted ? "Restricted" : "Account defaults"
+          )
+          if !assistantConfiguration.knowledgeFileIDs.isEmpty {
+            LabeledContent("Knowledge", value: count(assistantConfiguration.knowledgeFileIDs.count, "file"))
+          }
+        } else {
+          Text("Uses the project instructions and your account defaults.")
+            .junoCaption()
+        }
+        if workspaceModel != nil {
+          Button(assistantConfiguration == nil ? "Set up assistant" : "Edit assistant") {
+            showingAssistant = true
+          }
+          .disabled(project.isPending)
+          .accessibilityIdentifier("juno.mobile.project-assistant")
+        }
+      } header: {
+        Text("Assistant")
+      } footer: {
+        Text("Persona, model, tools and knowledge sync across your Juno devices.")
+      }
+    }
+    .scrollContentBackground(.hidden)
+    .scrollDismissesKeyboard(.interactively)
   }
 
   private func importFile(_ url: URL) {

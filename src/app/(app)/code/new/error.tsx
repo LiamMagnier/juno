@@ -14,6 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 
+import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -30,36 +31,32 @@ export default function NewCodeSessionError({
   }, [error]);
 
   return (
-    // This route owns a full-height shell rather than the scrolling page
-    // column, so the fallback centres in the same box instead of opening with a
-    // page gutter the surface behind it does not have.
-    <div className="flex h-full min-h-0 flex-col items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
-        <EmptyState
-          tone="error"
-          icon={StatusIcons.error}
-          title="Couldn’t open Juno Code"
-          description="The session composer didn’t come up. No run has been started, and any session already going is unaffected."
-          action={
-            <>
-              <Button size="sm" onClick={reset} className="gap-1.5">
-                <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
-                Try again
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/code/pulls">Pull requests</Link>
-              </Button>
-            </>
-          }
-        />
-        {error.digest && (
-          // The digest is the only thing tying this screen to a line in the server
-          // log, so it is the one part of the failure worth putting on the page.
-          <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
-            Reference {error.digest}
-          </p>
-        )}
-      </div>
-    </div>
+    // Same measure as page.tsx so the column does not resize on failure.
+    <AppPage measure="wide">
+      <EmptyState
+        tone="error"
+        icon={StatusIcons.error}
+        title="Couldn’t open Juno Code"
+        description="The session composer didn’t come up. No run has been started, and any session already going is unaffected."
+        action={
+          <>
+            <Button size="sm" onClick={reset} className="gap-1.5">
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
+              Try again
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/code">Runs</Link>
+            </Button>
+          </>
+        }
+      />
+      {error.digest && (
+        // The digest is the only thing tying this screen to a line in the server
+        // log, so it is the one part of the failure worth putting on the page.
+        <p className="mt-4 text-center font-mono text-caption text-muted-foreground">
+          Reference {error.digest}
+        </p>
+      )}
+    </AppPage>
   );
 }

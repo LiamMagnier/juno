@@ -69,6 +69,12 @@ public final class PreviewWorld {
     /// wrong" placeholder without a model — which is what it had always done.
     public let codeModel: NativeCodeModel
 
+    /// The remote browser — the sessions a paired Mac holds — over the same
+    /// no-network sender. `PreviewCodeRemoteFixtures` answers the per-device
+    /// routes, so the hosts strip, the session list and the live thread can
+    /// all be looked at without a Mac.
+    public let remoteCodeModel: CodeRemoteBrowserModel
+
     private let repository: SQLiteAccountRepository
     private let outbox: InMemoryMutationOutbox
     private let sender: PreviewSender
@@ -110,6 +116,9 @@ public final class PreviewWorld {
         workModel = NativeWorkModel(client: NativeWorkClient(sender: sender, streamer: sender))
         codeModel = NativeCodeModel(
             client: NativeCodeTaskClient(sender: sender, streamer: sender)
+        )
+        remoteCodeModel = CodeRemoteBrowserModel(
+            client: NativeCodeRemoteClient(sender: sender, streamer: sender)
         )
         attachmentModel = NativeComposerAttachmentModel(
             client: NativeAttachmentAPIClient(sender: sender)
@@ -196,6 +205,14 @@ public final class PreviewWorld {
         await scheduledTaskModel.start(for: accountID)
         await workModel.start(for: accountID)
         await codeModel.start(for: accountID)
+        remoteCodeModel.start(for: accountID)
+        remoteCodeModel.updateHosts(from: codeModel.devices)
+        if let host = remoteCodeModel.hosts.first {
+            await remoteCodeModel.selectHost(host.id)
+        }
+        if let id = JunoPreviewEnvironment.initialCodeRemoteSession {
+            remoteCodeModel.openSession(id)
+        }
 
         // Juno Code opens on its session list, because that is where a reader
         // arrives. A single session is one relaunch away with

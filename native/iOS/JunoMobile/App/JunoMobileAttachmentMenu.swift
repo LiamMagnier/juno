@@ -49,6 +49,8 @@ struct JunoMobileComposerActions: View {
     var canAttach: Bool = true
     /// Whether the reader can reach the app's connected apps from here.
     var canOpenPlugins: Bool = true
+    /// The composer's glass namespace, so the `+` morphs with its siblings.
+    var glassNamespace: Namespace.ID? = nil
     /// The per-message tools. See ``JunoMobileComposerTools`` for why three of
     /// these are sticky and one is not.
     @Bindable var tools: JunoMobileComposerTools
@@ -317,6 +319,7 @@ struct JunoMobileComposerActions: View {
             .foregroundStyle(.primary)
             .frame(width: 34, height: 34)
             .modifier(JunoComposerGlassCircle())
+            .modifier(JunoMobileOptionalGlassID(id: "composer.plus", namespace: glassNamespace))
             .overlay(alignment: .topTrailing) {
                 if tools.isArmed {
                     Circle()
@@ -391,5 +394,21 @@ struct JunoMobileComposerActions: View {
         try? await Task.sleep(for: .milliseconds(400))
         open(surface)
         #endif
+    }
+}
+
+
+/// `junoGlassID` when a namespace was handed down, and nothing when not.
+struct JunoMobileOptionalGlassID: ViewModifier {
+    let id: String
+    let namespace: Namespace.ID?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.junoGlassID(id, in: namespace)
+        } else {
+            content
+        }
     }
 }

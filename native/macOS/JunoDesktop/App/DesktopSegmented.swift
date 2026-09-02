@@ -77,7 +77,7 @@ struct DesktopSegmented<Value: Hashable>: View {
                 ForEach(options) { option in
                     let selected = option.value == selection
                     Button {
-                        withAnimation(JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion)) {
+                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                             selection = option.value
                         }
                     } label: {
@@ -127,7 +127,7 @@ struct DesktopSegmented<Value: Hashable>: View {
             @unknown default: return
             }
             guard options.indices.contains(next) else { return }
-            withAnimation(JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion)) {
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                 selection = options[next].value
             }
         }
@@ -169,7 +169,7 @@ private struct DesktopSegmentStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .animation(
-                JunoMotion.reduced(DesktopChatMotion.segmentTravel, when: reduceMotion),
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
                 value: configuration.isPressed
             )
     }

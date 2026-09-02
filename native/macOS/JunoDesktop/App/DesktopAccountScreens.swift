@@ -123,6 +123,12 @@ struct DesktopDestinationView: View {
                 requestSender: configuration.requestSender,
                 modelCatalog: conversationModel.selectableModels
             )
+        case .memory:
+            if let model = configuration.memorySettingsModel {
+                DesktopMemoryScreen(model: model, back: { destination = .chat })
+            } else {
+                unavailable("Memory", "The synchronized settings store is unavailable.")
+            }
         case .settings:
             if let model = configuration.memorySettingsModel {
                 DesktopSettingsModal(

@@ -14,6 +14,7 @@
 import * as React from "react";
 import Link from "next/link";
 
+import { AppPage } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -30,8 +31,7 @@ export default function ProfileError({
   }, [error]);
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content mx-auto w-full max-w-3xl">
+    <AppPage measure="reading">
         <EmptyState
           tone="error"
           icon={StatusIcons.error}
@@ -56,7 +56,6 @@ export default function ProfileError({
             Reference {error.digest}
           </p>
         )}
-      </div>
-    </div>
+    </AppPage>
   );
 }

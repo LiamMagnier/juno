@@ -7,6 +7,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
@@ -15,9 +16,10 @@ import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
 /**
- * Compact per-pane model picker — a light popover (logo + name + search),
- * deliberately smaller than the composer's full ModelSelector. Plan gating is
- * identical: locked models show their plan and route to /upgrade on click.
+ * Compact per-pane model picker — a raised chip that opens a light popover
+ * (logo + name + search), deliberately smaller than the composer's full
+ * ModelSelector. Plan gating is identical: locked models show their plan and
+ * route to /upgrade on click.
  */
 export function CompareModelPicker({
   value,
@@ -70,20 +72,18 @@ export function CompareModelPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <Pressable
+          kind="chip"
+          size="lg"
           disabled={disabled}
-          className="group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-60 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-10"
+          selected={open}
+          aria-label={`Model: ${current?.name ?? "none"}. Change model`}
+          className="group min-w-0 max-w-full text-foreground"
         >
-          {current && (
-            <ProviderLogo
-              provider={current.provider}
-              className="size-4 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110"
-            />
-          )}
-          <span className="truncate font-mono">{current?.name ?? "Select model"}</span>
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
-        </button>
+          {current && <ProviderLogo provider={current.provider} className="size-4 shrink-0" />}
+          <span className="truncate">{current?.name ?? "Select model"}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none group-data-[state=open]:rotate-180" />
+        </Pressable>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={8} className="flex w-80 flex-col overflow-hidden p-0">
         <div className="relative border-b border-border/60 p-2">
@@ -92,7 +92,7 @@ export function CompareModelPicker({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search models…"
-            className="h-8 pl-10"
+            className="h-8 pl-9"
             autoFocus
           />
         </div>
@@ -104,31 +104,27 @@ export function CompareModelPicker({
               const locked = planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
               const active = m.id === value;
               return (
-                <button
+                <Pressable
                   key={m.id}
-                  type="button"
+                  kind="row"
+                  selected={active}
+                  aria-current={active ? "true" : undefined}
                   onClick={() => select(m)}
-                  className={cn(
-                    // rounded-md (8px), the same derivation DropdownMenuItem uses:
-                    // 14px popover shell − p-1.5 (6px) = concentric. rounded-lg was
-                    // 16px, i.e. rounder than the popover containing it.
-                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-fast hover:bg-accent focus-visible:bg-accent coarse:py-2.5",
-                    active && "bg-accent/60"
-                  )}
+                  className="coarse:py-2.5"
                 >
                   <ProviderLogo provider={m.provider} className="size-5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
-                  <span className="shrink-0 text-caption text-muted-foreground">
+                  <span className="shrink-0 font-mono text-caption text-muted-foreground">
                     {PROVIDERS[m.provider].label.split(" · ")[0]}
                   </span>
                   {locked ? (
-                    <span className="flex shrink-0 items-center gap-1 text-caption font-semibold text-primary">
+                    <span className="flex shrink-0 items-center gap-1 font-mono text-caption font-medium text-primary-ink">
                       <Lock className="size-3 shrink-0" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
                     </span>
                   ) : active ? (
-                    <StatusIcons.success className="size-3.5 shrink-0 text-primary" />
+                    <StatusIcons.success className={cn("size-3.5 shrink-0 text-primary-ink")} />
                   ) : null}
-                </button>
+                </Pressable>
               );
             })
           )}

@@ -5,7 +5,10 @@ import Link from "next/link";
 import { Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSkill } from "@/lib/work/skills";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppIcons } from "@/lib/app-icons";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { WorkNav } from "@/components/work/work-nav";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkSkillRow } from "@/components/work/work-skill-row";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSkills } from "@/components/work/work-transport";
@@ -41,56 +44,65 @@ export default function WorkSkillsPage() {
   }, [load]);
 
   return (
-    <WorkPageFrame
-      title="Skills"
-      description="Reusable instructions with a name and a line saying what they are for. Type a slash and the name in a task, or let Juno reach for one itself — which it only ever does for a skill you have said you trust. Most of these are best made by saving a task that went well rather than written from scratch."
-      action={
-        <Button asChild size="sm" className="gap-1.5">
-          <Link href="/work/skills/new">
-            <Plus className="size-3.5" aria-hidden="true" /> New skill
-          </Link>
-        </Button>
-      }
-    >
-      {failed ? (
-        <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your skills. This page is empty because the request failed, not because you
-          have none.
-        </WorkLoadError>
-      ) : skills === null ? (
-        <WorkRowSkeletons />
-      ) : skills.length === 0 ? (
-        <EmptyState
-          icon={Sparkles}
-          title="No skills yet"
-          description="The easiest way to get one is to not write it. Run a task the ordinary way, and when it finishes well, press “Save this as a skill” on it — Juno drafts the instructions from the steps it actually took and you edit them before anything is saved."
-          action={
-            <>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/work">Go and run something</Link>
-              </Button>
-              {/*
-                Authoring is still here and still second. A blank textarea asking
-                somebody to write instructions for a job they have not done yet
-                is the hardest moment to write them, and leading with it is why
-                skill libraries stay empty — but it is the right door for
-                somebody bringing instructions they already have.
-              */}
-              <Button asChild size="sm" className="gap-1.5">
-                <Link href="/work/skills/new">
-                  <Plus className="size-3.5" aria-hidden="true" /> Write one
-                </Link>
-              </Button>
-            </>
-          }
-        />
-      ) : (
-        <div className="space-y-2.5">
-          {skills.map((skill, index) => (
-            <WorkSkillRow key={skill.id} skill={skill} index={index} />
-          ))}
-        </div>
-      )}
-    </WorkPageFrame>
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="Skills"
+        lede="Reusable instructions with a name. Type a slash and the name in a task, or let Juno reach for one itself — only ever for a skill you have said you trust."
+        icon={AppIcons.work}
+        actions={
+          <Button asChild size="sm" className="gap-1.5">
+            <Link href="/work/skills/new">
+              <Plus className="size-3.5" aria-hidden="true" /> New skill
+            </Link>
+          </Button>
+        }
+      />
+      <WorkNav />
+
+      <div className="mt-8">
+        {failed ? (
+          <WorkLoadError onRetry={() => void load()}>
+            Couldn’t load your skills. This page is empty because the request failed, not because
+            you have none.
+          </WorkLoadError>
+        ) : skills === null ? (
+          <WorkList>
+            <WorkRowSkeletons />
+          </WorkList>
+        ) : skills.length === 0 ? (
+          <EmptyState
+            icon={Sparkles}
+            title="No skills yet"
+            description="The easiest way to get one is to not write it. Run a task the ordinary way, and when it finishes well, press “Save this as a skill” on it — Juno drafts the instructions from the steps it actually took and you edit them before anything is saved."
+            action={
+              <>
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/work">Go and run something</Link>
+                </Button>
+                {/*
+                  Authoring is still here and still second. A blank textarea asking
+                  somebody to write instructions for a job they have not done yet
+                  is the hardest moment to write them, and leading with it is why
+                  skill libraries stay empty — but it is the right door for
+                  somebody bringing instructions they already have.
+                */}
+                <Button asChild size="sm" className="gap-1.5">
+                  <Link href="/work/skills/new">
+                    <Plus className="size-3.5" aria-hidden="true" /> Write one
+                  </Link>
+                </Button>
+              </>
+            }
+          />
+        ) : (
+          <WorkList>
+            {skills.map((skill, index) => (
+              <WorkSkillRow key={skill.id} skill={skill} index={index} />
+            ))}
+          </WorkList>
+        )}
+      </div>
+    </AppPage>
   );
 }

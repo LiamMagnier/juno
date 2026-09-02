@@ -4,7 +4,7 @@ import * as React from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageItem } from "@/components/chat/message-item";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
+import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
@@ -15,7 +15,7 @@ interface MessageListProps {
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
   /** Chat-only turn actions — optional so non-chat surfaces (code sessions)
    *  reuse the rendering without dead buttons. See MessageItemProps. */
-  onRegenerate?: () => void;
+  onRegenerate?: (options?: RegenerateOptions) => void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
@@ -86,6 +86,9 @@ export function MessageList(props: MessageListProps) {
   React.useEffect(() => {
     seenRef.current = messages.length;
   }, [messages.length]);
+
+  // The newest user turn is the one ↑ edits from an empty composer.
+  const lastUserId = React.useMemo(() => [...messages].reverse().find((m) => m.role === "USER" && !m.pending)?.id ?? null, [messages]);
 
   const artifactsByIdentifier = React.useMemo(() => {
     const map = new Map<string, ClientArtifact>();
@@ -263,6 +266,7 @@ export function MessageList(props: MessageListProps) {
               onRegenerate={props.onRegenerate}
               onContinue={props.onContinue}
               onEdit={props.onEdit}
+              editOnRequest={m.id === lastUserId}
               onFeedback={props.onFeedback}
               canFeedback={props.canFeedback ? props.canFeedback(m) : undefined}
               onFork={props.onFork}

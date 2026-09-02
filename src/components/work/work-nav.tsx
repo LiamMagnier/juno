@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AppPageHeader } from "@/components/app/app-page-header";
 import { cn } from "@/lib/utils";
 
 /*
@@ -101,21 +100,24 @@ export function WorkNav({ className }: { className?: string }) {
   }, []);
 
   return (
+    // The same track TabsList and SegmentedControl draw — an inset well the
+    // active destination stands out of — so the four Work surfaces read as one
+    // control rather than a row of text links. The well scrolls sideways on a
+    // narrow window rather than compressing its last label into a chip.
     <nav
       className={cn(
-        // Five-character labels and localized strings can exceed a narrow Work
-        // header. Keeping the nav scrollable prevents the old failure where the
-        // last destination compressed into an unreadable chip on smaller laptop
-        // windows while preserving the single-row spatial model.
-        "relative flex max-w-full items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "surface-inset relative inline-flex h-9 max-w-full items-center gap-1 overflow-x-auto overscroll-x-contain rounded-menu p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className
       )}
       aria-label="Juno Work"
     >
+      {/* The raised key. It travels between destinations rather than
+          cross-fading, and it wears the same material the active TabsTrigger
+          wears — a surface standing proud of its slot. */}
       <span
         ref={thumbRef}
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control bg-accent opacity-0 transition-[transform,width,height] duration-base ease-out-soft motion-reduce:transition-none"
+        className="surface-raised pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control opacity-0 transition-[transform,width,height,opacity] duration-base ease-out-soft motion-reduce:transition-none"
       />
       {DESTINATIONS.map((destination) => {
         const active = destination.href === activeHref;
@@ -128,11 +130,12 @@ export function WorkNav({ className }: { className?: string }) {
             href={destination.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative z-10 shrink-0 rounded-control px-2.5 py-1 text-xs font-medium transition-[background-color,color] duration-fast ease-out-soft coarse:px-3.5 coarse:py-2.5",
+              // A transparent border on every link so the geometry the thumb
+              // measures is the geometry a raised trigger would have — the
+              // thumb's own hairline then lands exactly on the link's box.
+              "relative z-10 shrink-0 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-sm font-medium transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:py-2",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              active
-                ? "text-foreground"
-                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              active ? "text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >
             {destination.label}
@@ -140,36 +143,5 @@ export function WorkNav({ className }: { className?: string }) {
         );
       })}
     </nav>
-  );
-}
-
-export function WorkPageFrame({
-  title,
-  description,
-  action,
-  back,
-  children,
-}: {
-  title: string;
-  description?: string;
-  action?: React.ReactNode;
-  back?: { href: string; label: string };
-  children: React.ReactNode;
-}) {
-  const destination = back ?? { href: "/work", label: "Back to Work" };
-  return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
-        <AppPageHeader
-          eyebrow={<WorkNav />}
-          heading={title}
-          lede={description}
-          actions={action}
-          backHref={destination.href}
-          backLabel={destination.label}
-        />
-        {children}
-      </div>
-    </div>
   );
 }

@@ -1,4 +1,6 @@
+import Foundation
 import JunoCodeCore
+import JunoCodeUI
 import Testing
 @testable import JunoDesktop
 
@@ -225,9 +227,6 @@ struct DesktopNavigationStateTests {
             .allProjects,
             .draft,
             .pulls,
-            .connections,
-            .usage,
-            .settings,
             .design,
             .repository(WorkspaceID(value: "ws-1")),
             .session(CodeSessionID(value: "sess-1")),
@@ -248,29 +247,100 @@ struct DesktopNavigationStateTests {
         }
     }
 
-    /// The account-level pages are never invalidated by what happens locally.
+    /// The account-level pages left the Code column for the Settings window.
     ///
-    /// Usage, Settings, Connections and the pull request list name pages on the
-    /// account, not local records — so validating them against empty sessions,
-    /// tasks and repositories has to leave them alone. Dropping one would send a
-    /// reader who reopened the window on Usage back to a blank Code canvas with
-    /// no explanation.
+    /// Scene storage written by a build that still had them must decode to
+    /// *no* selection rather than strand the window on a page it no longer
+    /// draws — the window then opens on the New task screen, which is the
+    /// honest fallback.
     @Test
-    func accountLevelPagesSurviveValidationAgainstAnEmptyWorkspace() {
-        for page in [
-            DesktopCodeSidebarItem.pulls, .connections, .usage, .settings, .design, .draft,
-            .allProjects,
-        ] {
-            #expect(
-                DesktopCodeNavigationState.validate(
-                    page,
-                    sessions: [],
-                    tasks: [],
-                    repositories: []
-                ) == page,
-                "\(page) was invalidated by an empty workspace"
+    func retiredAccountPagesDecodeToNoSelection() {
+        for retired in ["usage", "settings", "connections"] {
+            #expect(DesktopCodeNavigationState.decode(retired) == nil)
+        }
+        #expect(DesktopCodeNavigationState.decode("pulls") == .pulls)
+    }
+
+    /// The column's one filter, as a pure rule over run status.
+    @Test
+    func sessionFilterAdmitsTheStatusesItNames() {
+        let running = CodeRunStatus(CodeRunState.running)
+        let blocked = CodeRunStatus(CodeRunState.needsApproval)
+        let finished = CodeRunStatus(CodeRunState.finished)
+        let failed = CodeRunStatus(CodeRunState.failed)
+
+        #expect(DesktopCodeSessionFilter.all.includes(running))
+        #expect(DesktopCodeSessionFilter.all.includes(finished))
+        #expect(DesktopCodeSessionFilter.running.includes(running))
+        #expect(!DesktopCodeSessionFilter.running.includes(blocked))
+        #expect(!DesktopCodeSessionFilter.running.includes(finished))
+        #expect(DesktopCodeSessionFilter.needsYou.includes(blocked))
+        #expect(!DesktopCodeSessionFilter.needsYou.includes(running))
+        #expect(DesktopCodeSessionFilter.done.includes(finished))
+        #expect(DesktopCodeSessionFilter.done.includes(failed))
+        #expect(!DesktopCodeSessionFilter.done.includes(running))
+    }
+
+    /// Filtering keeps blocked runs on top, then live ones, then newest first.
+    @Test
+    func filteredRunsPutBlockedWorkFirst() {
+        let now = Date()
+        func run(_ id: String, _ state: CodeRunState, minutesAgo: Double) -> DesktopCodeRun {
+            DesktopCodeRun(
+                item: .session(CodeSessionID(value: id)),
+                title: id,
+                workspace: "juno",
+                workspaceID: nil,
+                branch: nil,
+                environment: .local,
+                status: CodeRunStatus(state),
+                updatedAt: now.addingTimeInterval(-minutesAgo * 60)
             )
         }
+        let runs = [
+            run("old-done", .finished, minutesAgo: 60),
+            run("live", .running, minutesAgo: 5),
+            run("blocked", .needsApproval, minutesAgo: 30),
+            run("new-done", .finished, minutesAgo: 1),
+        ]
+        let ordered = DesktopCodeNavigationState.filtered(runs, by: .all).map(\.title)
+        #expect(ordered == ["blocked", "live", "new-done", "old-done"])
+        #expect(DesktopCodeNavigationState.filtered(runs, by: .done).map(\.title) == ["new-done", "old-done"])
+    }
+
+    /// The four honest refusals on the New task screen.
+    @Test
+    func draftReadinessNamesWhatIsMissing() {
+        #expect(
+            DesktopCodeDraftReadiness.blockingReason(
+                environment: .cloud, hasProject: false, projectIsGitRepository: false,
+                hasCloudRepository: false, hasDevice: false, hasAttachments: false
+            )?.contains("GitHub repository") == true
+        )
+        #expect(
+            DesktopCodeDraftReadiness.blockingReason(
+                environment: .device, hasProject: false, projectIsGitRepository: false,
+                hasCloudRepository: false, hasDevice: false, hasAttachments: false
+            )?.contains("computer") == true
+        )
+        #expect(
+            DesktopCodeDraftReadiness.blockingReason(
+                environment: .worktree, hasProject: true, projectIsGitRepository: false,
+                hasCloudRepository: false, hasDevice: false, hasAttachments: false
+            )?.contains("Git repository") == true
+        )
+        #expect(
+            DesktopCodeDraftReadiness.blockingReason(
+                environment: .cloud, hasProject: true, projectIsGitRepository: true,
+                hasCloudRepository: true, hasDevice: false, hasAttachments: true
+            )?.contains("this Mac") == true
+        )
+        #expect(
+            DesktopCodeDraftReadiness.blockingReason(
+                environment: .local, hasProject: false, projectIsGitRepository: false,
+                hasCloudRepository: false, hasDevice: false, hasAttachments: false
+            ) == nil
+        )
     }
 
     /// A selection naming a record that is gone is dropped rather than restored.

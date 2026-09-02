@@ -14,6 +14,7 @@ import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
@@ -21,6 +22,7 @@ const WIDTH_KEY = "juno:sidebar:width";
 const SIDEBAR_MIN = 224;
 const SIDEBAR_MAX = 336;
 const SIDEBAR_DEFAULT = 256;
+const RAIL_WIDTH = 64;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /work is the one navigation the user cannot absorb as
 // "the page is loading".
@@ -30,15 +32,39 @@ function clampWidth(w: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
 }
 
+/**
+ * A 2px line along the top of the content while a reply streams — the
+ * quietest "working" signal there is, and the one thing about a generation
+ * that is visible from any scroll position, including with the transcript
+ * scrolled away from the composer's stop button. Driven by `juno:streaming`
+ * from chat-view; `.stream-progress` (globals.css) owns the sweep.
+ */
+function StreamProgress({ active }: { active: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "stream-progress pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 transition-opacity duration-base ease-out-soft",
+        active ? "opacity-100" : "opacity-0"
+      )}
+    />
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
   const pathname = usePathname();
 
-  const showSurfaceSwitcher =
-    pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
+  const showSurfaceSwitcher = pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
 
   const [collapsed, setCollapsed] = React.useState(false);
+  // md–lg: the expanded panel FLOATS over the content instead of pushing it,
+  // with a soft dismiss. A 256px column in a 900px window leaves a transcript
+  // narrower than a phone; the rail stays in flow and the full panel becomes
+  // an overlay you summon and dismiss.
+  const [narrow, setNarrow] = React.useState(false);
+  const [streaming, setStreaming] = React.useState(false);
   // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
   // the ref mirrors it so pointermove handlers never read a stale closure.
   const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
@@ -79,6 +105,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [applyWidth]);
 
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px) and (max-width: 1023px)");
+    const sync = () => setNarrow(mq.matches);
+    mq.addEventListener("change", sync);
+    sync();
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  React.useEffect(() => {
+    const onStreaming = (e: Event) => setStreaming(Boolean((e as CustomEvent<boolean>).detail));
+    window.addEventListener("juno:streaming", onStreaming);
+    return () => window.removeEventListener("juno:streaming", onStreaming);
+  }, []);
+
   const startResize = React.useCallback(
     (e: React.PointerEvent) => {
       // Left button / primary touch only.
@@ -115,19 +155,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     persistWidth(SIDEBAR_DEFAULT);
   }, [applyWidth, persistWidth]);
 
-  React.useEffect(() => {
-    const collapseSidebar = () => {
-      setCollapsed(true);
+  const setCollapsedPersist = React.useCallback((next: boolean | ((prev: boolean) => boolean)) => {
+    setCollapsed((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
       try {
-        localStorage.setItem(COLLAPSE_KEY, "1");
+        localStorage.setItem(COLLAPSE_KEY, value ? "1" : "0");
       } catch {
         /* ignore */
       }
-    };
+      return value;
+    });
+  }, []);
 
+  React.useEffect(() => {
+    const collapseSidebar = () => setCollapsedPersist(true);
     window.addEventListener("juno:collapse-sidebar", collapseSidebar);
     return () => window.removeEventListener("juno:collapse-sidebar", collapseSidebar);
-  }, []);
+  }, [setCollapsedPersist]);
 
   React.useEffect(() => {
     for (const href of PREFETCH_ROUTES) {
@@ -141,10 +185,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    * Both the SheetContent and its scrim are `md:hidden`, so after opening the
    * drawer at phone width and rotating (or dragging the window wider) NOTHING
    * renders — but Radix keeps the Dialog open, and an open Dialog keeps its
-   * scroll lock and focus trap live. The result was a desktop app that could
-   * not be scrolled, with focus trapped inside a `display:none` panel and no
-   * visible way out. Firing the handler once on mount also covers the case
-   * where the breakpoint was already crossed before this listener attached.
+   * scroll lock and focus trap live. Firing the handler once on mount also
+   * covers the case where the breakpoint was already crossed before this
+   * listener attached.
    */
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -156,55 +199,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => mq.removeEventListener("change", sync);
   }, [setSidebarOpen]);
 
-  const toggleCollapse = React.useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, []);
+  const toggleCollapse = React.useCallback(() => setCollapsedPersist((prev) => !prev), [setCollapsedPersist]);
+
+  // ⌘⇧S at any width: below md it opens the drawer, which is the sidebar there.
+  const toggleAnySidebar = React.useCallback(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(!sidebarOpen);
+    else toggleCollapse();
+  }, [setSidebarOpen, sidebarOpen, toggleCollapse]);
+  useGlobalShortcuts({ onToggleSidebar: toggleAnySidebar });
+  React.useEffect(() => {
+    window.addEventListener("juno:toggle-sidebar", toggleAnySidebar);
+    return () => window.removeEventListener("juno:toggle-sidebar", toggleAnySidebar);
+  }, [toggleAnySidebar]);
+
+  // The floating panel dismisses on navigation, like a menu that did its job.
+  const floating = narrow && !collapsed;
+  const floatingRef = React.useRef(floating);
+  floatingRef.current = floating;
+  React.useEffect(() => {
+    if (floatingRef.current) setCollapsedPersist(true);
+    // Only the route change should dismiss it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   return (
     <div className="relative flex h-dvh overflow-hidden">
-      {/* Bypass Blocks (SC 2.4.1, Level A). The sidebar puts a mode toggle, three
-          nav destinations and the entire conversation list ahead of <main> in DOM
-          order, so without this a keyboard user tabs the whole history again on
-          every navigation. tabIndex={-1} on the target is required for Safari and
-          Firefox to actually move focus there rather than only scrolling. */}
+      {/* Bypass Blocks (SC 2.4.1, Level A). */}
       <a
         href="#juno-main"
         className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:shadow-float"
       >
         Skip to content
       </a>
-      {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
-          the content instead of reflowing it mid-animation. The expanded width is
-          user-resizable (drag handle below); --juno-sidebar-width carries it to the
-          sidebar's inner column, which must NOT track the aside mid-collapse. The
-          width transition is dropped while dragging so resize follows the pointer
-          1:1 instead of lagging through the ease.
 
-          ease-in-out, not ease-out-soft: both endpoints of a collapse are on
-          screen, so this is an A-to-B move. A decelerate curve makes the edge look
-          like it arrived from somewhere off-screen. */}
+      {/* At md–lg the rail keeps its 64px in flow and the expanded panel floats
+          over the content; a click anywhere outside it folds it back. */}
+      {floating && (
+        <>
+          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-[64px] shrink-0 bg-sidebar md:block" />
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            onClick={() => setCollapsedPersist(true)}
+            className="absolute inset-0 z-30 hidden cursor-default bg-foreground/5 motion-safe:animate-fade-in md:block"
+          />
+        </>
+      )}
+
+      {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
+          the content instead of reflowing it mid-animation. The width transition is
+          dropped while dragging so resize follows the pointer 1:1. `ease-in-out`:
+          both endpoints of a collapse are on screen, so this is an A-to-B move. */}
       <aside
+        data-floating={floating ? "" : undefined}
         className={cn(
-          // The seam is drawn ONCE, by `.app-sidebar-frame` (globals.css), which
-          // is the class written to own it: `inset -1px 0 0 hsl(--sidebar-border)`.
-          // A `border-r` in the same token on top of it stacked a second hairline
-          // immediately outside the first, so on the dark theme — where this seam
-          // is the only thing separating panel from canvas — it rendered 2px wide
-          // and also ate a pixel of the user's resized width (border-box).
-          "app-sidebar-frame relative hidden shrink-0 overflow-hidden bg-sidebar md:block",
+          "app-sidebar-frame hidden shrink-0 overflow-hidden bg-sidebar md:block",
+          floating ? "absolute inset-y-0 left-0 z-40" : "relative",
           !resizing && "transition-[width] duration-base ease-in-out"
         )}
         style={
           {
-            width: collapsed ? 64 : sidebarWidth,
+            width: collapsed ? RAIL_WIDTH : sidebarWidth,
             "--juno-sidebar-width": `${sidebarWidth}px`,
           } as React.CSSProperties
         }
@@ -234,10 +289,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }}
             className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none"
           >
-            {/* Invisible until engaged: a hairline highlight on hover/drag/focus.
-                Neutral ink, not coral — a full-height accent bar down the window
-                is the loudest thing on screen for what is only a drag affordance,
-                and the canvas/thought handles are already neutral. */}
+            {/* Invisible until engaged: a neutral hairline on hover/drag/focus. */}
             <span
               aria-hidden
               className={cn(
@@ -249,21 +301,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock).
-
-          The sidebar's rungs are re-based for the ground it lands on here. The
-          panel is IN FLOW on desktop, where --sidebar-accent (11%) and
-          --sidebar-border (14%) read against a #000 page; inside the drawer the
-          parent is --popover (13%), so both tokens resolved BELOW their own
-          surface and every row hover, every active row and the footer rule
-          turned into a 1-2 point darker patch — i.e. nothing. Lifted above the
-          popover here, and only on dark: on light the sidebar ramp is already
-          darker than the 99% popover, which is the correct direction there. */}
+      {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock),
+          sliding in on `sheet-in`. The sidebar's rungs are re-based for the
+          popover ground it lands on (see the note in sheet.tsx). */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent
-          className="p-0 dark:[--sidebar-accent:48_5%_18%] dark:[--sidebar-border:48_5%_22%] md:hidden"
-          title="Conversations"
-        >
+        <SheetContent className="p-0 dark:[--sidebar-accent:48_5%_18%] dark:[--sidebar-border:48_5%_22%] md:hidden" title="Conversations">
           <AppSidebar />
         </SheetContent>
       </Sheet>
@@ -272,14 +314,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         id="juno-main"
         tabIndex={-1}
         className="app-main-canvas relative flex min-w-0 flex-1 flex-col"
-        style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
+        style={{ "--juno-sidebar-width": collapsed || floating ? `${RAIL_WIDTH}px` : `${sidebarWidth}px` } as React.CSSProperties}
       >
-        {/* Mobile navigation stays out of a full-width toolbar. Each action is a
-            self-contained circular surface, so the page background can continue
-            through the top of the screen without sacrificing hit-area contrast.
-            They were rounded-control (9px) — three squircles the comment above
-            them called circles, and the one shape the product uses everywhere
-            else for a bare glyph you press (see pressableVariants' `icon`). */}
+        <StreamProgress active={streaming} />
+
+        {/* Mobile navigation stays out of a full-width toolbar: each action is
+            a self-contained circular surface, so the page background continues
+            through the top of the screen. */}
         <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
           <Button
             variant="ghost"
@@ -309,23 +350,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             variant="ghost"
             size="icon"
             className="group size-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:size-11"
-            onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }}
+            onClick={() => {
+              router.push("/chat");
+              window.dispatchEvent(new CustomEvent("juno:new-chat"));
+            }}
             aria-label="New chat"
           >
             <Plus className="size-5" />
           </Button>
         </div>
 
-        {/* Floating seamless Chat ⇄ Work Switcher and Top Actions (no background, no divider border) */}
+        {/* The Chat ⇄ Work switcher and the page's top actions, IN FLOW.
+
+            This row used to be absolutely positioned over the transcript with
+            no background, on the reasoning that the page should continue
+            through it. It did — and so did the first user bubble, which sat
+            underneath the toggle on every conversation that opened scrolled to
+            its top. A 56px row the content lays out below costs the transcript
+            nothing it was using, and there is no collision to manage. */}
         {showSurfaceSwitcher && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-14 items-center justify-center px-4">
-            <div className="pointer-events-auto">
-              <ChatWorkSwitcher />
-            </div>
-            <div
-              id="juno-top-actions-slot"
-              className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4"
-            />
+          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
+            <ChatWorkSwitcher />
+            <div id="juno-top-actions-slot" className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4" />
           </div>
         )}
 

@@ -83,7 +83,7 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         <>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             className="w-full"
             disabled={googleLoading || loading}
             aria-busy={googleLoading}
@@ -111,10 +111,10 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
             <div className="absolute inset-0 flex items-center" aria-hidden>
               <span className="w-full border-t border-border/60" />
             </div>
-            {/* text-label, the product's one label voice (mono, uppercase, 0.10em),
+            {/* text-label, the product's one label voice (mono, sentence case),
                 rather than a bare Tailwind text-xs that appears nowhere else. */}
             <div className="relative flex justify-center">
-              <span className="bg-card px-2 font-mono text-label uppercase text-muted-foreground">or</span>
+              <span className="bg-card px-2 font-mono text-label text-muted-foreground">or</span>
             </div>
           </div>
         </>

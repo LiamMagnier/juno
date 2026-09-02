@@ -179,7 +179,7 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     /// A fresh minimal environment. Nothing is inherited from the app
     /// process, so account tokens and provider keys can never leak into
     /// child processes.
-    static func minimalEnvironment(workspaceRoot: String) -> [String: String] {
+    public static func minimalEnvironment(workspaceRoot: String) -> [String: String] {
         var environment: [String: String] = [
             "PATH": ToolchainEnvironment.resolvedPATH(),
             "HOME": NSHomeDirectory(),

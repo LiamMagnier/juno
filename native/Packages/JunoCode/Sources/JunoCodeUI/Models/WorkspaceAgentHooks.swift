@@ -13,19 +13,24 @@ struct WorkspaceAgentHooks: AgentLifecycleHooks, Sendable {
     private let permissions: PermissionCoordinator
     private let currentPermissionMode: @Sendable () async -> PermissionMode
     private let allowUntrustedHooks: Bool
+    /// Told each hook's identifier after it has run, so Settings can show
+    /// "last ran 2 minutes ago" without the hook runner knowing about Settings.
+    private let didRun: @Sendable (String) -> Void
 
     init(
         definitions: [HookDefinition],
         executor: CommandExecutionService,
         permissions: PermissionCoordinator,
         allowUntrustedHooks: Bool,
-        currentPermissionMode: @escaping @Sendable () async -> PermissionMode
+        currentPermissionMode: @escaping @Sendable () async -> PermissionMode,
+        didRun: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.definitions = definitions
         self.executor = executor
         self.permissions = permissions
         self.allowUntrustedHooks = allowUntrustedHooks
         self.currentPermissionMode = currentPermissionMode
+        self.didRun = didRun
     }
 
     func sessionStarted(sessionID: CodeSessionID) async {
@@ -102,7 +107,12 @@ struct WorkspaceAgentHooks: AgentLifecycleHooks, Sendable {
             policy: policy,
             approvalAuthorizer: HookPermissionAuthorizer(permissions: permissions)
         )
-        return await runner.run(hooks: active, context: context)
+        let results = await runner.run(hooks: active, context: context)
+        for result in results {
+            if case .skipped = result.status { continue }
+            didRun(result.hookID)
+        }
+        return results
     }
 }
 

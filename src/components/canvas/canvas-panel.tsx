@@ -1193,7 +1193,7 @@ export function CanvasPanel({
             onPointerDown={(e) => e.preventDefault()}
             /* z-toolbar, not z-toast: a selection toolbar must clear the popper
                layer but must never cover a toast, which is the top of the product. */
-            className="fixed z-toolbar flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
+            className="surface-float overlay-glass fixed z-toolbar flex items-center gap-0.5 rounded-menu p-1 motion-safe:animate-pop-in"
           >
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
               <MessageCircleQuestion className="size-3.5 text-primary" aria-hidden />

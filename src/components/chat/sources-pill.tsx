@@ -238,14 +238,11 @@ export function SourcesPill({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls={listId}
+        // `.control-neu`: the bibliography's handle is a raised chip that goes
+        // down while open — the same object as the follow-up chips beside it.
+        data-state={open ? "on" : "off"}
         className={cn(
-          "group/pill relative z-0 inline-flex h-9 items-center gap-2 rounded-full border border-border/70 bg-card pl-1.5 pr-3 shadow-soft",
-          "transition-[transform,box-shadow,border-color] duration-base ease-out-soft motion-reduce:transition-none",
-          // A fill change, not only a shadow: this pill sits directly on
-          // --background, and on pure black a black-ink shadow casts onto black
-          // and produces no visible change at all — the hover was carried by a
-          // 2px translate alone. The shadow still does the work in light.
-          "hover:z-10 hover:border-border hover:bg-accent hover:shadow-lift motion-safe:hover:-translate-y-0.5",
+          "group/pill control-neu relative z-0 inline-flex h-9 items-center gap-2 rounded-full pl-1.5 pr-3 hover:z-10",
           // 44px touch target keeps its concentric geometry: radius 22 − 10px inset = 12.
           "coarse:h-11 coarse:pl-2.5"
         )}

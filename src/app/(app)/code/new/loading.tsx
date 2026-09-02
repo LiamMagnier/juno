@@ -1,27 +1,38 @@
+import { AppPage } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /**
- * The Code greeting over the composer, in the same centred 44rem column.
+ * `/code/new` while the composer resolves: header, view switcher, then the
+ * composer shell in its centred column.
  *
- * A skeleton rather than a spinner, because the two answer different questions:
- * a spinner says only that something is happening, while a placeholder in the
- * page's own shape says what is about to be there and reserves the room for it,
- * so nothing jumps when the data lands. The rows come up on the shared stagger
- * (see STAGGER in src/lib/motion.ts) rather than repainting as one flat block.
+ * A skeleton rather than a spinner, because a placeholder in the page's own
+ * shape says what is about to be there and reserves the room for it, so
+ * nothing jumps when the composer mounts. Same `AppPage` measure as page.tsx.
  */
 export default function NewCodeSessionLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto overflow-x-clip" role="status" aria-label="Loading Juno Code">
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-14 sm:px-6">
-        <div className="flex w-full max-w-[44rem] flex-col items-center gap-7 sm:gap-9">
-          <Skeleton className="h-9 w-64 max-w-full rounded-full" />
-          {/* Taller than the chat composer: this one carries a second tier with
-              the machine, the checkout and the branch on it. */}
-          <Skeleton className="h-[104px] w-full rounded-composer" />
+    <AppPage measure="wide" role="status" aria-label="Loading Juno Code">
+      <div className="mb-6 border-b border-border pb-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Skeleton className="size-8 shrink-0" />
+          <Skeleton className="h-3 w-12 rounded-xs" />
+        </div>
+        <Skeleton className="h-9 w-56 max-w-full" />
+        <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-xs" />
+      </div>
+      <Skeleton className="mb-5 h-9 w-72 rounded-menu" />
+      <div className="mx-auto w-full max-w-[44rem] pt-6">
+        {/* Taller than the chat composer: this one carries a second tier with
+            the machine, the checkout and the branch on it. */}
+        <Skeleton className="h-[148px] w-full rounded-panel" />
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-9 w-32 rounded-card" />
+          ))}
         </div>
       </div>
-    </div>
+    </AppPage>
   );
 }

@@ -56,6 +56,10 @@ export const ease = {
   inOut: bezier(EASING.inOut),
   /** The only symmetric LOOP curve — no seam where it turns around. */
   breathe: bezier(EASING.breathe),
+  /** The Soft UI entrance: scale .96 → 1 with a ~2% overrun, then settle. */
+  spring: bezier(EASING.spring),
+  /** Sheets and drawers — front-loaded, overshoot-free, pulled by the user. */
+  drawer: bezier(EASING.drawer),
 } satisfies Record<string, Bezier>;
 
 /** `--dur-*`, in seconds. */
@@ -127,7 +131,7 @@ export const spring = {
  * animated by framer and one animated by `animate-rise-in` travel identically.
  * Changing one without the other is the drift this file exists to prevent.
  */
-const SHIFT = { rise: 8, fadeUp: 6, pop: 4, stage: 12 } as const;
+const SHIFT = { rise: 6, fadeUp: 6, pop: 4, stage: 12 } as const;
 const POP_SCALE = 0.96;
 
 export const variants = {
@@ -152,7 +156,9 @@ export const variants = {
   /** `animate-pop-in` / `animate-pop-out` — menus, popovers, toasts. */
   pop: {
     hidden: { opacity: 0, y: SHIFT.pop, scale: POP_SCALE },
-    visible: { opacity: 1, y: 0, scale: 1, transition: spring.standard },
+    // The CSS `animate-pop-in` runs --dur-base on --ease-spring; this is the
+    // same curve, so a framer pop and a CSS pop are indistinguishable.
+    visible: { opacity: 1, y: 0, scale: 1, transition: { duration: duration.base, ease: ease.spring } },
     exit: { opacity: 0, y: SHIFT.pop, scale: POP_SCALE, transition: transition.exit },
   },
   /** `animate-stage-in` — content arriving from the side of a staged flow. */

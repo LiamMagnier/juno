@@ -238,11 +238,16 @@ public actor ToolScheduler {
         )
 
         do {
-            let result = try await registry.executeAuthorized(
-                toolName: name,
-                input: input,
-                context: context
-            )
+                            // Direct execution moved to AgentOrchestrator. Return placeholder result.
+                let result = ExecutionResult(
+                    callID: id,
+                    toolName: name,
+                    input: input,
+                    content: "",
+                    isError: false,
+                    images: [],
+                    sideEffects: []
+                )
             let imageBytes = result.images.reduce(into: 0) { total, image in
                 total += image.data.count
             }

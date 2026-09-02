@@ -22,14 +22,40 @@ struct DesktopWorkspaceActions {
     var currentProduct: DesktopProductMode
 }
 
+/// What the Code window adds to the menu bar while it is focused.
+///
+/// Published separately from ``DesktopWorkspaceActions`` because only the Code
+/// window has a session to step through, a review to toggle or a console to
+/// show; the Chat window leaves this nil and the Session menu disables.
+struct DesktopCodeActions {
+    var openPalette: () -> Void
+    var previousSession: () -> Void
+    var nextSession: () -> Void
+    var toggleReview: () -> Void
+    var toggleConsole: () -> Void
+    var toggleInspector: () -> Void
+    var openFile: () -> Void
+    var createPullRequest: (() -> Void)?
+    var hasSession: Bool
+}
+
 private struct DesktopWorkspaceActionsKey: FocusedValueKey {
     typealias Value = DesktopWorkspaceActions
+}
+
+private struct DesktopCodeActionsKey: FocusedValueKey {
+    typealias Value = DesktopCodeActions
 }
 
 extension FocusedValues {
     var junoWorkspaceActions: DesktopWorkspaceActions? {
         get { self[DesktopWorkspaceActionsKey.self] }
         set { self[DesktopWorkspaceActionsKey.self] = newValue }
+    }
+
+    var junoCodeActions: DesktopCodeActions? {
+        get { self[DesktopCodeActionsKey.self] }
+        set { self[DesktopCodeActionsKey.self] = newValue }
     }
 }
 
@@ -41,104 +67,143 @@ extension FocusedValues {
 /// settings, toggle the sidebar or find help without a pointer.
 struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoWorkspaceActions) private var actions
+    @FocusedValue(\.junoCodeActions) private var codeActions
     @Environment(\.openWindow) private var openWindow
-    /// The app-wide updater. `@State` rather than a bare reference so the menu
-    /// re-evaluates when the phase changes — otherwise "Install Update" would
-    /// only appear after something else happened to redraw the menu bar.
     @State private var updater = DesktopUpdateModel.shared
 
     var body: some Commands {
-        // Where a Mac user looks for this: the application menu, under About.
         CommandGroup(after: .appInfo) {
-            updateStatusItem
-            Button(updateActionTitle) { updateAction() }
-                .disabled(!updateActionEnabled)
-            Divider()
+            Section {
+                updateStatusItem
+                Button(updateActionTitle) { updateAction() }
+                    .disabled(!updateActionEnabled)
+            }
         }
 
         CommandGroup(replacing: .newItem) {
-            if let actions {
-                Button(Self.newItemTitle(for: actions.currentProduct)) {
-                    actions.newItem()
-                }
-                .keyboardShortcut("n", modifiers: [.command])
-            } else {
-                // A SwiftUI macOS app may relaunch with no restored windows after
-                // the reader closed its last one. The previous command was then
-                // disabled because there was no focused workspace, leaving the
-                // app alive in the menu bar with no way back to its UI.
-                Button("New Incognito Window") {
-                openWindow(id: JunoDesktopWindow.incognitoID)
-            }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
+            Section {
+                if let actions {
+                    Button(Self.newItemTitle(for: actions.currentProduct)) {
+                        actions.newItem()
+                    }
+                    .keyboardShortcut("n", modifiers: [.command])
+                } else {
+                    Button("New Incognito Window") {
+                        openWindow(id: JunoDesktopWindow.incognitoID)
+                    }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
 
-            Button("New Window") {
-                    openWindow(id: JunoDesktopWindow.mainID)
+                    Button("New Window") {
+                        openWindow(id: JunoDesktopWindow.mainID)
+                    }
+                    .keyboardShortcut("n", modifiers: [.command])
                 }
-                .keyboardShortcut("n", modifiers: [.command])
             }
         }
 
         CommandGroup(after: .newItem) {
-            // Offered from every product except Chat itself, where ⌘N already
-            // is this. Written as "not Chat" rather than "is Code" so a new
-            // product mode gets the way back to an ordinary conversation
-            // without anyone having to remember to add it here.
-            if let actions, actions.currentProduct != .chat {
+            Section {
+                // ⇧⌘O from every product, as the brief asks: a new conversation
+                // is one keystroke away whatever the window is showing.
                 Button("New Chat") {
-                    actions.newChat()
+                    actions?.newChat()
                 }
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(actions == nil)
             }
-            Divider()
-            Button("Find in Juno…") {
-                actions?.openSearch()
+            Section {
+                Button("Find in Juno…") {
+                    actions?.openSearch()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(actions == nil)
+                Button("Ask Juno…") {
+                    DesktopQuickEntryController.shared.toggle()
+                }
+                .keyboardShortcut(" ", modifiers: [.option])
             }
-            .keyboardShortcut("f", modifiers: [.command, .shift])
-            .disabled(actions == nil)
         }
 
-        // `SidebarCommands` and `ToolbarCommands` are the system's own View-menu
-        // items for a NavigationSplitView and a window toolbar. Hand-writing
-        // "Toggle Sidebar" would duplicate them and get the state wrong.
         SidebarCommands()
         ToolbarCommands()
 
-        // Driven by `allCases` rather than by a hand-written row per product.
-        //
-        // The three literals this replaces were the reason the menu could
-        // disagree with the toolbar's segmented control — that one already
-        // iterates `DesktopProductMode.allCases`, so a product added to the enum
-        // appeared in the titlebar and not in the menu bar, and the only way to
-        // reach it was with the pointer.
+        // ⌘1 · ⌘2 · ⌘3, and a checkmark against the mode the focused window
+        // is in. Driven by `allCases`, so a product added to the enum appears
+        // here without anyone remembering to add a row.
         CommandMenu("Product") {
-            Picker("Mode", selection: productSelection) {
-                ForEach(DesktopProductMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
+            Section {
+                productItems
             }
-            .pickerStyle(.inline)
-            .disabled(actions == nil)
+        }
+
+        CommandMenu("Session") {
+            Section {
+                Button("Command Palette…") { codeActions?.openPalette() }
+                    .keyboardShortcut("k", modifiers: [.command])
+                    .disabled(codeActions == nil)
+            }
+            Section {
+                Button("Previous Session") { codeActions?.previousSession() }
+                    .keyboardShortcut("[", modifiers: [.command, .shift])
+                    .disabled(codeActions == nil)
+                Button("Next Session") { codeActions?.nextSession() }
+                    .keyboardShortcut("]", modifiers: [.command, .shift])
+                    .disabled(codeActions == nil)
+            }
+            Section {
+                Button("Toggle Review") { codeActions?.toggleReview() }
+                    .keyboardShortcut("r", modifiers: [.command, .option])
+                    .disabled(codeActions?.hasSession != true)
+                Button("Toggle Console") { codeActions?.toggleConsole() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .disabled(codeActions?.hasSession != true)
+                Button("Toggle Context Rail") { codeActions?.toggleInspector() }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                    .disabled(codeActions?.hasSession != true)
+                Button("Open File…") { codeActions?.openFile() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift, .option])
+                    .disabled(codeActions?.hasSession != true)
+            }
+            Section {
+                Button("Create Pull Request…") { codeActions?.createPullRequest?() }
+                    .disabled(codeActions?.createPullRequest == nil)
+            }
         }
 
         CommandGroup(replacing: .help) {
-            Link(
-                "Juno Help",
-                destination: URL(string: "\(JunoBackend.productionURLString)/help")!
-            )
-            Link(
-                "Keyboard Shortcuts",
-                destination: URL(string: "\(JunoBackend.productionURLString)/help/shortcuts")!
-            )
+            Section {
+                Link(
+                    "Juno Help",
+                    destination: URL(string: "\(JunoBackend.productionURLString)/help")!
+                )
+                Button("Keyboard Shortcuts") {
+                    openWindow(id: JunoDesktopWindow.shortcutsID)
+                }
+                .keyboardShortcut("/", modifiers: [.command])
+            }
         }
     }
 
-    /// A disabled line stating what the updater knows.
-    ///
-    /// It is present in every state, including "nothing to say", because a menu
-    /// that only sometimes has a status line is one the reader has to *check*
-    /// for. What it must never do is imply an update exists when the check has
-    /// not run — hence the plain "Juno is up to date" only after a real check.
+    /// One row per product, with a checkmark against the focused window's.
+    @ViewBuilder
+    private var productItems: some View {
+        Section {
+            ForEach(DesktopProductMode.allCases) { mode in
+                Button {
+                    actions?.switchProduct(mode)
+                } label: {
+                    if actions?.currentProduct == mode {
+                        Label(mode.label, systemImage: "checkmark")
+                    } else {
+                        Text(mode.label)
+                    }
+                }
+                .keyboardShortcut(KeyEquivalent(mode.keyboardDigit), modifiers: [.command])
+                .disabled(actions == nil)
+            }
+        }
+    }
+
     @ViewBuilder
     private var updateStatusItem: some View {
         switch updater.phase {
@@ -184,25 +249,11 @@ struct JunoDesktopCommands: Commands {
     }
 
     /// What ⌘N makes in each product.
-    ///
-    /// A `switch` over the enum rather than a ternary, so a product added
-    /// without a name for its new object fails to compile here instead of
-    /// shipping a File menu that offers to make a chat in a window that cannot
-    /// hold one.
     private static func newItemTitle(for product: DesktopProductMode) -> String {
         switch product {
         case .chat: "New Chat"
-        case .code: "New Code Session"
+        case .code: "New Task"
         case .work: "New Task"
         }
-    }
-
-    /// Reads the focused window's product and writes back through its action, so
-    /// the menu shows a checkmark against the mode that window is actually in.
-    private var productSelection: Binding<DesktopProductMode> {
-        Binding(
-            get: { actions?.currentProduct ?? .chat },
-            set: { actions?.switchProduct($0) }
-        )
     }
 }

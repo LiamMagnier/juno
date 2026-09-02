@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import type { WorkCapability } from "@/lib/work/domain";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { Skeleton } from "@/components/ui/skeleton";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkHostStatePill, hostWorkloadSentence } from "@/components/work/work-host-row";
 import { WorkHostSettings } from "@/components/work/work-host-settings";
@@ -185,31 +186,31 @@ export default function WorkHostPage() {
 
   if (missing) {
     return (
-      <WorkPageFrame title="Mac not found" back={{ href: "/work/hosts", label: "Back to Macs" }}>
+      <HostFrame heading="Mac not found">
         <WorkStateNote tone="error">
           This Mac is no longer registered with Juno Work. Signing out of Juno on a Mac, or removing
           the app, takes it off this list.
         </WorkStateNote>
-      </WorkPageFrame>
+      </HostFrame>
     );
   }
 
   if (failed && host === null) {
     return (
-      <WorkPageFrame title="Mac" back={{ href: "/work/hosts", label: "Back to Macs" }}>
+      <HostFrame heading="Mac">
         <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this Mac. Nothing has been changed by the attempt — it still has whatever
           permissions it had, and this page not loading has not taken any of them away.
         </WorkLoadError>
-      </WorkPageFrame>
+      </HostFrame>
     );
   }
 
   if (host === null) {
     return (
-      <WorkPageFrame title="Mac" back={{ href: "/work/hosts", label: "Back to Macs" }}>
+      <HostFrame heading={<Skeleton className="h-8 w-56 max-w-full" />}>
         <WorkRowSkeletons count={4} height={64} className="space-y-3" />
-      </WorkPageFrame>
+      </HostFrame>
     );
   }
 
@@ -218,11 +219,10 @@ export default function WorkHostPage() {
   const unavailable = hostUnavailableReason(host);
 
   return (
-    <WorkPageFrame
-      title={host.displayName}
-      description={`${host.platform} · Juno ${host.appVersion} · last seen ${workTimeAgo(host.lastSeenAt)}`}
-      back={{ href: "/work/hosts", label: "Back to Macs" }}
-      action={
+    <HostFrame
+      heading={host.displayName}
+      lede={`${host.platform} · Juno ${host.appVersion} · last seen ${workTimeAgo(host.lastSeenAt)}`}
+      actions={
         revokedAt !== null ? (
           <Button
             variant="outline"
@@ -348,7 +348,37 @@ export default function WorkHostPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </WorkPageFrame>
+    </HostFrame>
+  );
+}
+
+/**
+ * The page frame every state of this route shares, so the header sits in the
+ * same place whether the Mac loaded, is loading, is gone or failed to load.
+ */
+function HostFrame({
+  heading,
+  lede,
+  actions,
+  children,
+}: {
+  heading: React.ReactNode;
+  lede?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Work"
+        heading={heading}
+        lede={lede}
+        actions={actions}
+        backHref="/work/permissions"
+        backLabel="Back to permissions"
+      />
+      {children}
+    </AppPage>
   );
 }
 

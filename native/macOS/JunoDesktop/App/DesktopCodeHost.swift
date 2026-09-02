@@ -298,6 +298,14 @@ private actor DesktopQueuedCodeHost {
             )
         case .userInstructionApplied:
             nil
+        case .compaction(let compaction):
+            .init(
+                kind: "status",
+                payload: [
+                    "status": .string("Context compacted"),
+                    "detail": .string(compaction.messageCountSummary),
+                ]
+            )
         case .assistantMessage(let message):
             .init(kind: "text", payload: ["text": .string(message.text)])
         case .reasoningSummary(let reasoning):

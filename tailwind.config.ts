@@ -7,19 +7,22 @@ import animate from "tailwindcss-animate";
  * -----------------------------------------
  * Type scale ............ text-{display,page-title,title,heading,body-lg,body,ui,label,caption,micro}
  *                         (+ legacy `hero`) · serif = human moments · sans = UI body · mono = labels/metadata
- * Motion ................ ease-{out-soft,out-strong,out-expo,in,in-out,breathe,out-back} ·
+ * Motion ................ ease-{out-soft,out-strong,out-expo,in,in-out,breathe,out-back,spring,drawer} ·
  *                         duration-{press,fast,exit,base,slow,emphasis}
  *                         (mirrored as --ease-* / --dur-* in globals.css, where the
  *                          reasoning behind each value lives — read it before adding a fifth)
- * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
- *                         (backdrops) — pair with Radix data-[state=open/closed]
+ * Overlays .............. animate-{pop-in,pop-out} (floating layers, spring) · animate-{sheet-in,sheet-out}
+ *                         (drawers) · animate-{overlay-in,overlay-out} (backdrops) — pair with
+ *                         Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
+ *                         animate-check-morph (copy → check).
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
- * Elevation ............. shadow-{soft,lift,glass,float} — theme-aware via --shadow-* CSS vars,
- *                         and monotonic in that order: an in-flow element must never
- *                         out-elevate a floating one
- *                         (names avoid the `card`/`accent`/… color keys to dodge collisions)
- * Radius ................ compact product scale: controls 9 · fields 10 · menus 12 · cards 14 ·
- *                         surfaces 16 · floating panels 18. Pills remain explicit rounded-full.
+ * Elevation ............. Soft UI depth kit (docs/design/SOFT_UI.md): shadow-{raised,raised-lg,inset,
+ *                         pressed,float} — theme-aware via --shadow-* CSS vars. Components use
+ *                         the composed .surface-{raised,raised-lg,inset,float} / .control-{neu,primary}
+ *                         classes in globals.css, not the bare shadows. shadow-{soft,lift,glass}
+ *                         are the legacy in-flow rungs, cut from the same two inks.
+ * Radius ................ control 10 · field 12 · menu 14 · card 16 (= lg = surface = popover) ·
+ *                         panel 20 (= composer). Pills remain explicit rounded-full.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
  * Thinking .............. animate-thinking-matrix (3×3 mark) · animate-status-glow ·
  *                         animate-icon-breathe + .scroll-fade-y (globals.css)
@@ -111,40 +114,43 @@ const config: Config = {
         },
       },
       borderRadius: {
-        // The generic large step follows the product surface radius.
+        // The Soft UI radius ladder (docs/design/SOFT_UI.md §2.3), single source.
+        //
+        //   control 10 · field 12 · menu 14 · card 16 · popover 16 · panel 20 · full
+        //
+        // Concentric rule: outer radius = inner radius + padding. A 16px card
+        // with p-1.5 (6px) holds 10px controls; a 20px panel with p-1 (4px)
+        // holds 16px cards; a 14px menu with p-1 holds 10px items.
+        //
+        // `lg` IS `card` (= --radius, 16px) and `panel` is 20px. The old
+        // `lg/surface` duality — two names for one 16px value, and a `lg` that
+        // was quietly a different number from `card` — is gone: `surface` and
+        // `popover` remain as ALIASES of `card` so no call site breaks, but they
+        // are the same rung and the fixer reaches for `card`.
+        //
+        // The scale is enforced: `design-system/no-arbitrary-radius` (eslint)
+        // rejects `rounded-[Npx]` and autofixes values that land on a rung. If
+        // the ladder moves, update RADIUS_TOKENS in eslint-rules/design-system.mjs
+        // in the same change, then `npm run design:tokens`.
         lg: "var(--radius)",
         md: "8px",
         sm: "4px",
-        // Floating layers stay distinct without becoming oversized capsules.
-        panel: "18px",
-        // Semantic steps, named after what they wrap. These replace the arbitrary
-        // rounded-[Npx] values 1:1, so the compiled CSS is identical — the point is
-        // that there is now somewhere to look up the right answer. Eleven different
-        // overlay radii existed before this.
-        //
-        // The ladder is a 2px step from `micro` to `surface`, then 22/24/28. It is
-        // continuous ON PURPOSE: every gap in it was previously being filled by a
-        // hand-written `rounded-[Npx]`, and a scale you cannot land on is a scale
-        // people step off. 26 distinct arbitrary radii existed across 256 call
-        // sites before this; `eslint-local/no-arbitrary-radius` now keeps it shut.
         micro: "2px", // heatmap cells, crop handles — anything under ~12px square
         xs: "6px", // chips, dots, tiny badges
-        control: "9px", // sm buttons, menu items, list rows
-        // 10px. Named for inputs because that is where it started, but it is the
-        // general small-container rung: wells, segmented thumbs, icon tiles,
-        // inline notes, the dashed box a short empty state sits in. 99 sites were
-        // reaching Tailwind's undefined `rounded-xl` for exactly this, so the
-        // scope is being written down to match the use rather than the use bent
-        // to match a narrower name.
-        field: "10px",
-        menu: "12px", // dropdown / select / tabs shells
-        card: "14px", // cards, toasts, tiles
-        popover: "14px", // popovers, transcripts
-        surface: "16px", // in-flow panels and section wells
-        // The composer is distinct through placement and material, not an
-        // oversized novelty radius. This stays one step above ordinary surfaces
-        // while sharing their geometry closely enough to feel like one product.
-        composer: "18px",
+        control: "10px", // sm buttons, menu items, list rows, tooltips, kbd
+        // The general small-container rung: inputs, textareas, wells, segmented
+        // thumbs, icon tiles, inline notes, the dashed box a short empty state
+        // sits in.
+        field: "12px",
+        menu: "14px", // dropdown / select / tabs shells
+        card: "16px", // cards, toasts, tiles, popovers
+        popover: "16px", // alias of card — popovers, transcripts
+        surface: "16px", // alias of card — in-flow panels and section wells
+        panel: "20px", // dialogs, sheets (inner edge), the composer shell
+        // The composer is a raised soft card and takes the panel rung. It is
+        // distinct through placement and material, not an oversized novelty
+        // radius.
+        composer: "20px",
         // The two composer-seated control radii. The primary action sits at
         // `composer-action` at its 36px rest size and morphs to
         // `composer-control` as it widens to 44px while busy — the corner
@@ -153,7 +159,7 @@ const config: Config = {
         // ladder, which is exactly why they need names: they are derived, not
         // chosen. They move WITH the shell — nesting reads as concentric only
         // while the inner radius stays a consistent fraction of the outer one,
-        // so a shell that got 10px rounder hands its children a share of it.
+        // so a shell that got 2px rounder hands its children a share of it.
         "composer-control": "10px",
         "composer-action": "12px",
         // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
@@ -166,18 +172,24 @@ const config: Config = {
         inherit: "inherit",
       },
       boxShadow: {
-        // Theme-aware elevation (values live in globals.css so light/dark differ).
-        soft: "var(--shadow-soft)",
-        // The rung between soft and glass. It has existed in both theme blocks
-        // since the ladder was made monotonic, but was never mapped here — so
-        // `shadow-lift` compiled to nothing and hover states on in-flow cards
-        // went on reaching for `shadow-float`, which put a hovered tile above
-        // every dropdown in the product. A scale you cannot type is not a scale.
-        lift: "var(--shadow-lift)",
+        // The Soft UI depth kit (globals.css `--shadow-*`, per theme). Prefer the
+        // composed `.surface-*` / `.control-*` classes — they carry the hairline
+        // and fill too; reach for the bare shadow only when composing a one-off
+        // that already has both.
+        raised: "var(--shadow-raised)",
+        "raised-lg": "var(--shadow-raised-lg)",
+        inset: "var(--shadow-inset)",
+        pressed: "var(--shadow-pressed)",
+        // The out-of-flow rung: popovers, dialogs, toasts, tooltips, sheets.
         float: "var(--shadow-float)",
+        // Legacy in-flow rungs, cut from the same two inks. soft < lift < glass
+        // < float stays monotonic: an in-flow element never out-elevates a
+        // floating one.
+        soft: "var(--shadow-soft)",
+        lift: "var(--shadow-lift)",
         glass: "var(--shadow-glass)",
-        // Depth kit: crisp shadow for buttons/chips, colored halo for the primary,
-        // inset well for recessed fields.
+        // Crisp shadow for small chips, the accent halo, and `well` as an alias
+        // of `inset` for the call sites that predate the kit.
         pop: "var(--shadow-pop)",
         "glow-primary": "var(--glow-primary)",
         well: "var(--well-inset)",
@@ -230,6 +242,13 @@ const config: Config = {
         // The one overshooting curve — for elements with apparent mass that
         // should settle rather than stop. See --ease-out-back in globals.css.
         "out-back": "cubic-bezier(0.34, 1.32, 0.64, 1)",
+        // Soft UI (SOFT_UI.md §2.4). `spring` is the entrance curve for
+        // anything that pops into place — a milder overshoot than out-back
+        // because entrances run on opacity too. `drawer` is the sheet curve:
+        // front-loaded, overshoot-free, named for the job. Both are mirrored
+        // as --ease-spring / --ease-drawer in globals.css.
+        spring: "cubic-bezier(0.34, 1.16, 0.64, 1)",
+        drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
       },
       transitionDuration: {
         press: "70ms",
@@ -493,12 +512,53 @@ const config: Config = {
           "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
           "50%": { transform: "scale(1.1)", opacity: "1" },
         },
+        // 6px (SOFT_UI.md §2.4), down from 8: the workhorse entrance should be
+        // felt as settling, not as arriving from somewhere. `src/lib/motion.ts`
+        // mirrors the offset (SHIFT.rise) — change both.
         "rise-in": {
           from: {
             opacity: "0",
-            transform: "translateY(calc(8px * var(--motion-shift, 1)))",
+            transform: "translateY(calc(6px * var(--motion-shift, 1)))",
           },
           to: { opacity: "1", transform: "translateY(0)" },
+        },
+        // Sheets slide in from their own edge. `--sheet-from` is set per side
+        // by sheet.tsx (-100% left, 100% right); multiplied by --motion-shift
+        // so the reduced-motion tier keeps the fade and drops the travel —
+        // which tailwindcss-animate's slide-in-from-* could never do, since its
+        // translate is a hardcoded -100% no preference can reach.
+        "sheet-in": {
+          from: {
+            opacity: "0",
+            transform: "translateX(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)))",
+          },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+        "sheet-out": {
+          from: { opacity: "1", transform: "translateX(0)" },
+          to: {
+            opacity: "0",
+            transform: "translateX(calc(var(--sheet-from, -100%) * var(--motion-shift, 1)))",
+          },
+        },
+        // The thinking-status shimmer (`.shimmer-text`, globals.css, which
+        // declares the same keyframe for its plain-CSS consumer). A gradient
+        // sized 250% pans through text-clipped copy; linear, because the band
+        // teleports from one end to the other and an eased loop pulses at the
+        // seam.
+        "shimmer-text": {
+          from: { backgroundPosition: "100% 0" },
+          to: { backgroundPosition: "-100% 0" },
+        },
+        // Copy → check (`.check-morph`). Springs in from small-and-tilted; both
+        // vars read so the reduced tier is a fade.
+        "check-morph": {
+          from: {
+            opacity: "0",
+            transform:
+              "scale(var(--motion-scale-from, 0.5)) rotate(calc(-14deg * var(--motion-shift, 1)))",
+          },
+          to: { opacity: "1", transform: "scale(1) rotate(0deg)" },
         },
         // Learning blocks (step-lab-block.tsx + quiz-block.tsx). One parametrized
         // keyframe covers both navigation directions: the caller sets --stage-dx
@@ -649,7 +709,16 @@ const config: Config = {
         // no turn to ease — an eased sweep decelerates into the seam and jumps.
         shimmer: "shimmer 1.5s linear infinite",
         blink: "blink 1.1s steps(1) infinite",
-        "rise-in": "rise-in var(--dur-slow) var(--ease-out-strong)",
+        // 6px of travel is a --dur-base move on the default decelerate; the
+        // old slow/out-strong pairing was sized for the 8px it no longer has.
+        "rise-in": "rise-in var(--dur-base) var(--ease-out-soft)",
+        // Drawers (sheet.tsx). Enter on the drawer curve at --dur-base — a
+        // 280px panel wants ~240ms — and leave faster on the accelerate, as
+        // every exit here does.
+        "sheet-in": "sheet-in var(--dur-base) var(--ease-drawer) both",
+        "sheet-out": "sheet-out var(--dur-exit) var(--ease-in) both",
+        "shimmer-text": "shimmer-text 2.2s linear infinite",
+        "check-morph": "check-morph var(--dur-base) var(--ease-spring) both",
         // Learning blocks: direction-aware step navigation (strong), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
         "stage-in": "stage-in var(--dur-base) var(--ease-out-strong) both",
@@ -670,16 +739,14 @@ const config: Config = {
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
-        // Enter on ease-out-soft — out-expo front-loaded so hard here that the
-        // pop read as an instant snap; exit reverses faster, as leaving should.
-        // 180ms is the one deliberate half-rung in this block: a popper travels
-        // 4px, so --dur-base overshoots it and --dur-fast clips the scale. Its
-        // exit is the fast rung, as every exit here is.
-        "pop-in": "pop-in 180ms var(--ease-out-soft) both",
+        // Enter on the SPRING at --dur-base (SOFT_UI.md §2.4): scale .96 → 1
+        // with a ~2% overrun, so a menu settles into place rather than stopping
+        // on it. The exit reverses faster on the accelerate, as leaving should.
+        "pop-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "pop-out": "pop-out var(--dur-fast) var(--ease-in) both",
-        // Dialogs travel further than a popper, so they get the next rung up.
-        // Replaces the tailwindcss-animate utility chain on DialogContent.
-        "modal-in": "pop-in var(--dur-base) var(--ease-out-soft) both",
+        // Dialogs: the same spring pop, one exit rung slower because a dialog
+        // is a bigger box. Replaces the tailwindcss-animate chain on DialogContent.
+        "modal-in": "pop-in var(--dur-base) var(--ease-spring) both",
         "modal-out": "pop-out var(--dur-exit) var(--ease-in) both",
         // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
         // keyframe on purpose — a transform here would create a containing block

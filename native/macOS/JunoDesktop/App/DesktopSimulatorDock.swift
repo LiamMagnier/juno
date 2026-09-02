@@ -110,7 +110,7 @@ struct DesktopSimulatorDock<Content: View>: View {
             }
             .transition(
                 .asymmetric(
-                    insertion: .offset(x: DesktopChatMotion.canvasSlide).combined(with: .opacity),
+                    insertion: .offset(x: DesktopChoreography.canvasSlide).combined(with: .opacity),
                     removal: .opacity
                 )
             )

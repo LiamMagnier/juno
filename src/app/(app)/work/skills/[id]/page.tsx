@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { History, Loader2 } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +26,9 @@ import {
   type ClientWorkSkill,
   type ClientWorkSkillVersion,
 } from "@/lib/work/skills";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { Skeleton } from "@/components/ui/skeleton";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { trustLabel } from "@/components/work/work-skill-row";
 import {
@@ -247,29 +250,29 @@ export default function WorkSkillPage() {
 
   if (missing) {
     return (
-      <WorkPageFrame title="Skill not found" back={{ href: "/work/skills", label: "Back to skills" }}>
+      <SkillFrame heading="Skill not found">
         <WorkStateNote tone="error">
           This skill no longer exists. It may have been deleted from another device.
         </WorkStateNote>
-      </WorkPageFrame>
+      </SkillFrame>
     );
   }
 
   if (failed) {
     return (
-      <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
+      <SkillFrame heading="Skill">
         <WorkLoadError onRetry={() => void load()}>
           Couldn’t load this skill. Nothing has been changed by the attempt.
         </WorkLoadError>
-      </WorkPageFrame>
+      </SkillFrame>
     );
   }
 
   if (skill === null) {
     return (
-      <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
+      <SkillFrame heading={<Skeleton className="h-8 w-56 max-w-full" />}>
         <WorkRowSkeletons count={3} height={80} className="space-y-3" />
-      </WorkPageFrame>
+      </SkillFrame>
     );
   }
 
@@ -287,11 +290,10 @@ export default function WorkSkillPage() {
   const securityFindings = securityFindingsOf(version?.securityScan);
 
   return (
-    <WorkPageFrame
-      title={skill.name}
-      description={`Typed as /${skill.slug} · v${skill.currentVersion} · ${trustLabel(skill.trust)}`}
-      back={{ href: "/work/skills", label: "Back to skills" }}
-      action={
+    <SkillFrame
+      heading={skill.name}
+      lede={`Typed as /${skill.slug} · v${skill.currentVersion} · ${trustLabel(skill.trust)}`}
+      actions={
         <Button
           variant="destructive-outline"
           size="sm"
@@ -344,9 +346,10 @@ export default function WorkSkillPage() {
           </div>
         </section>
 
-        <section className="space-y-2.5">
-          <h2 className="font-mono text-label text-muted-foreground">How Juno may use it</h2>
-          <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
+        <section>
+          <h2 className="mb-3 text-heading">How Juno may use it</h2>
+          <Card className="divide-y divide-border/60 p-0">
+          <label className="flex items-center justify-between gap-3 px-4 py-3">
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">Available</span>
               <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
@@ -363,7 +366,7 @@ export default function WorkSkillPage() {
             />
           </label>
 
-          <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
+          <label className="flex items-center justify-between gap-3 px-4 py-3">
             <span className="min-w-0">
               <span className="block text-ui font-medium text-foreground">
                 Juno may reach for it unasked
@@ -384,7 +387,7 @@ export default function WorkSkillPage() {
             />
           </label>
 
-          <div className="rounded-field border border-border/50 px-3.5 py-2.5">
+          <div className="px-4 py-3">
             <p className="text-ui font-medium text-foreground">Trust</p>
             {settableTrust !== null ? (
               <>
@@ -414,11 +417,12 @@ export default function WorkSkillPage() {
               </p>
             )}
           </div>
+          </Card>
         </section>
 
-        <section className="space-y-2.5">
+        <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-mono text-label text-muted-foreground">Security review</h2>
+            <h2 className="text-heading">Security review</h2>
             {/* `inline-flex … leading-none`, which is what `WorkStatusPill` and
                 `RiskPill` carry. Without it this chip inherited the section's
                 line-height and stood ~4px taller than every other pill in Work,
@@ -434,7 +438,7 @@ export default function WorkSkillPage() {
             asks for more permissions waits for your approval.
           </p>
           {version?.requiresConsent ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-warning/40 bg-warning/10 px-4 py-3">
               <p className="text-label leading-relaxed text-foreground">
                 This version widens the permissions requested by the previous version.
               </p>
@@ -448,10 +452,10 @@ export default function WorkSkillPage() {
             </div>
           ) : null}
           {securityFindings.length > 0 ? (
-            <ul className="space-y-1 rounded-field border border-border/60 px-3.5 py-2.5">
+            <ul className="surface-inset space-y-1 rounded-card px-4 py-3">
               {securityFindings.map((finding) => (
                 <li key={`${finding.code}-${finding.message}`} className="text-caption leading-relaxed text-muted-foreground">
-                  <span className="mr-1 font-mono text-micro uppercase text-foreground">
+                  <span className="mr-1 font-mono text-micro text-foreground">
                     {finding.severity}
                   </span>
                   {finding.message}
@@ -462,9 +466,9 @@ export default function WorkSkillPage() {
         </section>
 
         <section>
-          <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
-            <h2 className="font-mono text-label text-muted-foreground">Instructions</h2>
-            <span className="font-mono text-micro text-muted-foreground">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <h2 className="text-heading">Instructions</h2>
+            <span className="font-mono text-caption tabular-nums text-muted-foreground">
               v{skill.currentVersion}
               {version !== null && ` · saved ${workTimeAgo(version.createdAt)}`}
             </span>
@@ -507,7 +511,7 @@ export default function WorkSkillPage() {
         </section>
 
         <section>
-          <h2 className="mb-2.5 font-mono text-label text-muted-foreground">History</h2>
+          <h2 className="mb-3 text-heading">History</h2>
           {versions === null ? (
             // A failed read wears the error tone rather than the dashed
             // placeholder it was drawn as: "no history" and "the request
@@ -519,11 +523,12 @@ export default function WorkSkillPage() {
               description="This skill’s history couldn’t be read just now. Nothing about it has changed."
             />
           ) : (
-            <ul className="space-y-1.5">
+            <WorkList>
+              <ul className="space-y-0.5">
               {versions.map((entry) => (
                 <li
                   key={entry.id}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
+                  className="group flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none"
                 >
                   <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="shrink-0 font-mono text-micro text-foreground">
@@ -548,7 +553,8 @@ export default function WorkSkillPage() {
                   )}
                 </li>
               ))}
-            </ul>
+              </ul>
+            </WorkList>
           )}
         </section>
       </div>
@@ -573,6 +579,36 @@ export default function WorkSkillPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </WorkPageFrame>
+    </SkillFrame>
+  );
+}
+
+/**
+ * The page frame every state of this route shares, so the header sits in the
+ * same place whether the skill loaded, is loading, is gone or failed to load.
+ */
+function SkillFrame({
+  heading,
+  lede,
+  actions,
+  children,
+}: {
+  heading: React.ReactNode;
+  lede?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Work"
+        heading={heading}
+        lede={lede}
+        actions={actions}
+        backHref="/work/skills"
+        backLabel="Back to skills"
+      />
+      {children}
+    </AppPage>
   );
 }

@@ -16,9 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkHost, ClientWorkRun } from "@/lib/work/serializers";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import {
@@ -122,46 +124,39 @@ export default function WorkSchedulePage() {
 
   if (missing) {
     return (
-      <WorkPageFrame
-        title="Schedule not found"
-        back={{ href: "/work/schedules", label: "Back to schedules" }}
-      >
+      <ScheduleFrame heading="Automation not found">
         <WorkStateNote tone="error">
-          This schedule no longer exists. It may have been deleted from another device.
+          This automation no longer exists. It may have been deleted from another device.
         </WorkStateNote>
-      </WorkPageFrame>
+      </ScheduleFrame>
     );
   }
 
   if (failed) {
     return (
-      <WorkPageFrame
-        title="Schedule"
-        back={{ href: "/work/schedules", label: "Back to schedules" }}
-      >
+      <ScheduleFrame heading="Automation">
         <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load this schedule. Nothing has been changed by the attempt, and it is still
+          Couldn’t load this automation. Nothing has been changed by the attempt, and it is still
           running to whatever clock it was set to.
         </WorkLoadError>
-      </WorkPageFrame>
+      </ScheduleFrame>
     );
   }
 
   if (schedule === null) {
     return (
-      <WorkPageFrame title="Schedule" back={{ href: "/work/schedules", label: "Back to schedules" }}>
+      <ScheduleFrame heading={<Skeleton className="h-8 w-56 max-w-full" />}>
         <WorkRowSkeletons count={4} height={64} className="space-y-3" />
-      </WorkPageFrame>
+      </ScheduleFrame>
     );
   }
 
   return (
-    <WorkPageFrame
-      title={schedule.name}
-      description={schedule.enabled ? undefined : "Paused. Nothing new will start until you resume it."}
-      back={{ href: "/work/schedules", label: "Back to schedules" }}
-      action={
-        <div className="flex flex-wrap items-center gap-2">
+    <ScheduleFrame
+      heading={schedule.name}
+      lede={schedule.enabled ? undefined : "Paused. Nothing new will start until you resume it."}
+      actions={
+        <>
           <Button
             variant="outline"
             size="sm"
@@ -185,7 +180,7 @@ export default function WorkSchedulePage() {
           >
             <ActionIcons.delete className="size-3.5" aria-hidden="true" /> Delete
           </Button>
-        </div>
+        </>
       }
     >
       <WorkScheduleEditor
@@ -204,9 +199,9 @@ export default function WorkSchedulePage() {
         onCancel={() => router.push("/work/schedules")}
       />
 
-      <section className="mt-9">
-        <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
-          <h2 className="font-mono text-label text-muted-foreground">Recent runs</h2>
+      <section className="mt-8">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <h2 className="text-heading">Recent runs</h2>
           <Button
             variant="ghost"
             size="sm"
@@ -233,24 +228,26 @@ export default function WorkSchedulePage() {
             description="It has not run yet. Fires that were skipped — a Mac that was away, a budget that was spent — appear here too, so this staying empty means nothing has fired at all."
           />
         ) : (
-          <ul className="space-y-2">
-            {runs.map((run) => (
-              <li key={run.id}>
-                <Link
-                  href={`/work/${run.sessionId}`}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-secondary"
-                >
-                  <WorkStatusPill status={run.status} />
-                  <span className="min-w-0 flex-1 truncate text-ui text-foreground">
-                    {run.terminalDetail ?? `Attempt ${run.attempt}`}
-                  </span>
-                  <span className="shrink-0 font-mono text-micro text-muted-foreground">
-                    {run.origin} · {workTimeAgo(run.createdAt)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <WorkList>
+            <ul className="space-y-0.5">
+              {runs.map((run) => (
+                <li key={run.id}>
+                  <Link
+                    href={`/work/${run.sessionId}`}
+                    className="group flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none"
+                  >
+                    <WorkStatusPill status={run.status} />
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                      {run.terminalDetail ?? `Attempt ${run.attempt}`}
+                    </span>
+                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                      {run.origin} · {workTimeAgo(run.createdAt)}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </WorkList>
         )}
       </section>
 
@@ -274,6 +271,37 @@ export default function WorkSchedulePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </WorkPageFrame>
+    </ScheduleFrame>
+  );
+}
+
+/**
+ * The page frame every state of this route shares — loaded, loading, gone and
+ * failed — so the header is in the same place in all four and nothing steps
+ * sideways when the schedule resolves.
+ */
+function ScheduleFrame({
+  heading,
+  lede,
+  actions,
+  children,
+}: {
+  heading: React.ReactNode;
+  lede?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Work"
+        heading={heading}
+        lede={lede}
+        actions={actions}
+        backHref="/work/schedules"
+        backLabel="Back to automations"
+      />
+      {children}
+    </AppPage>
   );
 }

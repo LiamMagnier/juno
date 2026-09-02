@@ -4,18 +4,12 @@ import PackageDescription
 
 // This manifest excludes nothing on purpose.
 //
-// It used to carry 27 `exclude:` entries behind an `existingExcludes()` helper
-// that probed the filesystem, so SwiftPM would not warn on a checkout where the
-// excluded paths were absent. 26 of them named Finder-duplicate files of the
-// form `<Name> 2.swift`, and none of those files existed anywhere in the tree —
-// the helper existed solely to tolerate paths that were already gone. The 27th
-// excluded `Views/AgentCanvasView.swift`, a retired surface that was therefore
-// never compiled; it has been deleted along with the rest of the unreachable
-// Code UI (`WorkbenchView`, `NewSessionSheet`, `EmptyCanvasView`,
-// `GitAndFilesTabs` — 1,801 lines with no call sites).
-//
-// A manifest that tolerates missing files cannot tell you when a real source
-// file goes missing. If a file needs to leave a target, delete it.
+// It used to carry `exclude:` entries behind a helper that probed the
+// filesystem, so SwiftPM would not warn on a checkout where the excluded paths
+// were absent — every one of them named a file that no longer existed. A
+// manifest that tolerates missing files cannot tell you when a real source
+// file goes missing. If a file needs to leave a target, delete it; every
+// source under `Sources/` is compiled, and nothing is compiled that is not.
 
 let package = Package(
     name: "JunoCode",

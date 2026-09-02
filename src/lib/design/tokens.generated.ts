@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: f092be94595f7faa
+// tokens-digest: 055751dff0240133
 //
 
 /** `--dur-*` in milliseconds. */
@@ -20,12 +20,14 @@ export const DURATION = {
 /** `--ease-*` as cubic-bezier control points. */
 export const EASING = {
   breathe: [0.45, 0, 0.55, 1] as const,
+  drawer: [0.32, 0.72, 0, 1] as const,
   in: [0.4, 0, 1, 1] as const,
   inOut: [0.65, 0, 0.35, 1] as const,
   outBack: [0.34, 1.32, 0.64, 1] as const,
   outExpo: [0.16, 1, 0.3, 1] as const,
   outSoft: [0.33, 1, 0.68, 1] as const,
   outStrong: [0.32, 0.72, 0, 1] as const,
+  spring: [0.34, 1.16, 0.64, 1] as const,
 } as const;
 
 /** The radius ladder, in pixels. */
@@ -34,16 +36,16 @@ export const RADIUS = {
   "sm": 4,
   "xs": 6,
   "md": 8,
-  "control": 9,
-  "field": 10,
+  "control": 10,
   "composerControl": 10,
-  "menu": 12,
+  "field": 12,
   "composerAction": 12,
-  "card": 14,
-  "popover": 14,
+  "menu": 14,
+  "card": 16,
+  "popover": 16,
   "surface": 16,
-  "panel": 18,
-  "composer": 18,
+  "panel": 20,
+  "composer": 20,
 } as const;
 
 export type DurationToken = keyof typeof DURATION;
