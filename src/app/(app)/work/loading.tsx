@@ -1,10 +1,10 @@
+import { AppPage } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 
 /**
- * Work's home is centred rather than left-aligned — nav, greeting, composer,
- * then the task sections — so this is the one page skeleton that is not the
- * AppPageHeader shape.
+ * Work's home: the header, the tab row, the composer, then the task list.
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -16,26 +16,38 @@ export default function WorkLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading Juno Work">
-      <div className="app-page-content max-w-3xl">
-        <div className="mb-7 flex justify-center">
-          <div className="flex items-center gap-1">
-            <Skeleton className="h-6 w-14 rounded-control" />
-            <Skeleton className="h-6 w-20 rounded-control" />
-            <Skeleton className="h-6 w-14 rounded-control" />
-            <Skeleton className="h-6 w-12 rounded-control" />
+    <AppPage measure="wide" role="status" aria-label="Loading Juno Work">
+      {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
+          heading, its lede and the rule that closes the block. Anything looser
+          here and the whole page steps sideways at the moment the real header
+          lands on top of it. */}
+      <div className="mb-6 border-b border-border pb-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Skeleton className="size-8 shrink-0" />
+          <Skeleton className="h-3 w-10 rounded-sm" />
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-8 w-24 max-w-full" />
+            <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-sm" />
           </div>
-        </div>
-        <div className="flex flex-col items-center">
-          <Skeleton className="h-3 w-20 rounded-sm" />
-          <Skeleton className="mt-3 h-10 w-80 max-w-full" />
-        </div>
-        <Skeleton className="mt-6 h-[92px] w-full rounded-composer sm:mt-7" />
-        <div className="mt-10 space-y-2.5">
-          <Skeleton className="h-3 w-24 rounded-sm" />
-          <WorkRowSkeletons count={3} className="space-y-2.5" />
+          
         </div>
       </div>
-    </div>
+      {/* The four-destination tab track WorkNav draws under the header. */}
+      <div className="surface-inset inline-flex h-9 items-center gap-1 rounded-menu p-1" aria-hidden="true">
+        <Skeleton className="h-7 w-16 rounded-control" />
+        <Skeleton className="h-7 w-24 rounded-control" />
+        <Skeleton className="h-7 w-14 rounded-control" />
+        <Skeleton className="h-7 w-24 rounded-control" />
+      </div>
+      <Skeleton className="mt-6 h-[132px] w-full rounded-panel" />
+      <div className="mt-8">
+        <Skeleton className="mb-3 h-5 w-24 rounded-sm" />
+        <WorkList>
+          <WorkRowSkeletons count={3} />
+        </WorkList>
+      </div>
+    </AppPage>
   );
 }

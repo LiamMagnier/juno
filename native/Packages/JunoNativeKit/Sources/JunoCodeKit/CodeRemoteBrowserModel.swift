@@ -51,6 +51,36 @@ public final class CodeRemoteBrowserModel {
     /// Set while a command is in flight, so the UI can disable Stop and Approve
     /// rather than letting them be pressed twice.
     public private(set) var isSendingCommand = false
+    /// Session lists per host, kept so switching hosts shows the last known
+    /// list instantly rather than a blank screen and a spinner.
+    public private(set) var sessionsByDevice: [String: [CodeRemoteSessionSummary]] = [:]
+    /// The host whose sessions are showing. Nil until the first host loads.
+    public var selectedDeviceID: String?
+    /// The session whose events are being followed, if any.
+    public private(set) var openSessionID: String?
+    /// Prompts sent from this phone that the host has not echoed back into the
+    /// journal yet. A follow-up to a running session is *queued* — the host
+    /// reads it when it next checks in — and the thread shows it as such
+    /// instead of refusing to accept it.
+    public private(set) var queuedPrompts: [String] = []
+    /// Session ids that were awaiting approval the last time the list loaded,
+    /// so a caller can tell which approvals are new.
+    public private(set) var knownAwaitingSessionIDs: Set<String> = []
+
+    /// The open session's journal, folded for display.
+    public var thread: CodeRemoteThread {
+        CodeRemoteThread.reduce(events, queuedPrompts: queuedPrompts)
+    }
+
+    public var selectedHost: CodeRemoteHostSummary? {
+        hosts.first { $0.id == selectedDeviceID }
+    }
+
+    public var openSession: CodeRemoteSessionSummary? {
+        guard let openSessionID else { return nil }
+        return sessions.first { $0.sessionID == openSessionID }
+            ?? sessionsByDevice.values.joined().first { $0.sessionID == openSessionID }
+    }
 
     /// The highest event sequence applied. Reconnecting resumes from here
     /// instead of refetching a transcript, and a replayed page is recognised by
@@ -90,28 +120,67 @@ public final class CodeRemoteBrowserModel {
         }.sorted { lhs, rhs in
             lhs.online != rhs.online ? lhs.online && !rhs.online : lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
+        // Keep a selection valid across a refresh, and pick the first online
+        // host when nothing is selected yet.
+        if selectedDeviceID == nil || !hosts.contains(where: { $0.id == selectedDeviceID }) {
+            selectedDeviceID = hosts.first?.id
+        }
     }
 
     public func stop() {
         accountID = nil
         hosts = []
         sessions = []
+        sessionsByDevice = [:]
         events = []
         cursor = 0
         phase = .idle
         lastErrorDescription = nil
+        selectedDeviceID = nil
+        openSessionID = nil
+        queuedPrompts = []
+        knownAwaitingSessionIDs = []
     }
 
     public func loadSessions(deviceID: String) async {
         guard let accountID else { return }
-        phase = .loading
+        // Only announce a load when there is nothing to show meanwhile.
+        if sessionsByDevice[deviceID] == nil { phase = .loading }
         do {
-            sessions = try await client.sessions(deviceID: deviceID, for: accountID)
+            let loaded = try await client.sessions(deviceID: deviceID, for: accountID)
+            sessionsByDevice[deviceID] = loaded
+            if deviceID == selectedDeviceID || selectedDeviceID == nil {
+                sessions = loaded
+            }
+            knownAwaitingSessionIDs.formUnion(loaded.filter(\.isAwaitingApproval).map(\.sessionID))
             lastErrorDescription = nil
             phase = .ready
         } catch {
             record(error)
         }
+    }
+
+    /// Shows a host's sessions, from the cache when there is one and from the
+    /// relay always.
+    public func selectHost(_ deviceID: String) async {
+        selectedDeviceID = deviceID
+        sessions = sessionsByDevice[deviceID] ?? []
+        await loadSessions(deviceID: deviceID)
+    }
+
+    /// Reloads every host's sessions — the pull-to-refresh action, and what the
+    /// background fetch calls to learn about new approvals.
+    public func refreshAllSessions() async {
+        for host in hosts {
+            await loadSessions(deviceID: host.id)
+        }
+    }
+
+    /// Sessions across every host that are blocked on a yes, and were not the
+    /// last time this was asked. Used to raise a notification per new one.
+    public func newlyAwaitingSessions(before previous: Set<String>) -> [CodeRemoteSessionSummary] {
+        sessionsByDevice.values.joined()
+            .filter { $0.isAwaitingApproval && !previous.contains($0.sessionID) }
     }
 
     /// Pulls everything after the cursor and advances it.
@@ -163,15 +232,71 @@ public final class CodeRemoteBrowserModel {
         events = []
         cursor = 0
         lastErrorDescription = nil
+        openSessionID = sessionID
+        queuedPrompts = []
     }
 
+    public func closeSession() {
+        openSessionID = nil
+        events = []
+        cursor = 0
+        queuedPrompts = []
+    }
+
+    /// Sends a prompt. While the session is running this is a *steer*: the
+    /// relay queues it and the host picks it up between turns, so the phone
+    /// keeps it in `queuedPrompts` until the journal echoes it back.
     public func send(
         deviceID: String, sessionID: String, text: String
     ) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        queuedPrompts.append(trimmed)
         await command(
             deviceID: deviceID, sessionID: sessionID,
-            kind: "message", payload: ["text": .string(text)]
+            kind: "message", payload: ["text": .string(trimmed), "prompt": .string(trimmed)]
         )
+        if lastErrorDescription != nil, let index = queuedPrompts.lastIndex(of: trimmed) {
+            queuedPrompts.remove(at: index)
+        }
+    }
+
+    /// Changes the model, effort or permission mode of a session that runs on
+    /// the host's local runtime. Each is optional; only the named fields move.
+    public func patchSession(
+        deviceID: String, sessionID: String,
+        modelID: String? = nil, reasoningEffort: String? = nil, permissionMode: String? = nil
+    ) async {
+        var payload: [String: JunoJSONValue] = [:]
+        if let modelID { payload["modelID"] = .string(modelID) }
+        if let reasoningEffort { payload["reasoningEffort"] = .string(reasoningEffort) }
+        if let permissionMode { payload["permissionMode"] = .string(permissionMode) }
+        guard !payload.isEmpty else { return }
+        await command(deviceID: deviceID, sessionID: sessionID, kind: "patch", payload: payload)
+    }
+
+    /// Starts a new session on a host, in one of its shared workspaces, with a
+    /// first prompt. The session id is minted here so the phone can open the
+    /// thread immediately and follow its events from sequence zero.
+    @discardableResult
+    public func createSession(
+        deviceID: String, workspaceKey: String?, workspaceName: String?, prompt: String,
+        modelID: String? = nil, permissionMode: String? = nil
+    ) async -> String? {
+        let sessionID = "remote-\(newIdempotencyKey().lowercased())"
+        var payload: [String: JunoJSONValue] = [
+            "prompt": .string(prompt),
+            "text": .string(prompt),
+            "title": .string(String(prompt.prefix(80))),
+        ]
+        if let workspaceKey { payload["workspaceKey"] = .string(workspaceKey) }
+        if let workspaceName { payload["workspaceName"] = .string(workspaceName) }
+        if let modelID { payload["modelID"] = .string(modelID) }
+        if let permissionMode { payload["permissionMode"] = .string(permissionMode) }
+        await command(deviceID: deviceID, sessionID: sessionID, kind: "create_session", payload: payload)
+        guard lastErrorDescription == nil else { return nil }
+        await loadSessions(deviceID: deviceID)
+        return sessionID
     }
 
     public func stopGeneration(deviceID: String, sessionID: String) async {

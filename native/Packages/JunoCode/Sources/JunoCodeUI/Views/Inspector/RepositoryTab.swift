@@ -14,6 +14,8 @@ import JunoDesignSystem
 /// critical if the agent ever asks for it.
 struct RepositoryTab: View {
     @Bindable var controller: SessionController
+    /// Opens the Create pull request sheet, when the host offers one.
+    var createPullRequest: (() -> Void)? = nil
 
     @State private var commitMessage = ""
     @State private var committing = false
@@ -387,11 +389,26 @@ struct RepositoryTab: View {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     Text(controller.gitHubStatusMessage ?? "GitHub status has not been loaded.")
                         .junoCaption()
-                    Button("Check Again") {
-                        Task { await controller.refreshGitHubPullRequest() }
+                    HStack(spacing: JunoSpace.snug) {
+                        Button("Check Again") {
+                            Task { await controller.refreshGitHubPullRequest() }
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        if let createPullRequest, controller.pullRequestUnavailableReason == nil {
+                            Button("Create Pull Request…", action: createPullRequest)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("juno.code.repository.create-pull-request")
+                        }
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
+                    if let url = controller.lastPullRequestURL {
+                        Text(url)
+                            .junoCodeSmall()
+                            .junoSecondaryInk()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         } header: {

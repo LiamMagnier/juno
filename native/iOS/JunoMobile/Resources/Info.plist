@@ -40,17 +40,57 @@
         </dict>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>Juno uses the camera so you can take a photo and attach it to a message.</string>
+    <string>Juno uses the camera to take a photo for a message, and to show Juno what you are looking at during a voice conversation. Screen sharing in voice uses only what is on this screen.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Juno shows your most recent photos so you can attach one without leaving the chat.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>Juno saves images you generate to your photo library when you ask it to.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Juno uses the microphone so you can dictate a message instead of typing it.</string>
+    <string>Juno uses the microphone for voice conversations and to dictate a message instead of typing it. Audio is only captured while a call or dictation is running.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Juno turns what you say into text so you can dictate a message. Recognition runs on this device whenever the language supports it.</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <!-- `audio` keeps a voice conversation alive when the reader leaves the
+         app or locks the screen (Settings › Voice › Background conversations);
+         `fetch` lets the Code approval check run while the app is suspended. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>fetch</string>
+    </array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.liammagnier.JunoMobile.code-refresh</string>
+    </array>
+    <!-- Home Screen quick actions. Handled by `JunoMobileLaunchRequests`. -->
+    <key>UIApplicationShortcutItems</key>
+    <array>
+        <dict>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.liammagnier.JunoMobile.new-chat</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>New chat</string>
+            <key>UIApplicationShortcutItemIconSymbolName</key>
+            <string>square.and.pencil</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.liammagnier.JunoMobile.voice</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Voice</string>
+            <key>UIApplicationShortcutItemIconSymbolName</key>
+            <string>waveform</string>
+        </dict>
+        <dict>
+            <key>UIApplicationShortcutItemType</key>
+            <string>com.liammagnier.JunoMobile.code</string>
+            <key>UIApplicationShortcutItemTitle</key>
+            <string>Juno Code</string>
+            <key>UIApplicationShortcutItemIconSymbolName</key>
+            <string>chevron.left.forwardslash.chevron.right</string>
+        </dict>
+    </array>
     <!-- Newsreader, the website's editorial serif (SIL OFL 1.1; see
          Fonts/OFL.txt). The 24pt optical size is bundled because the serif is
          only ever used at display sizes here — greetings, page headings, card

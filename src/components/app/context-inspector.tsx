@@ -176,7 +176,7 @@ export function ContextInspector({
                   events.map((event) => (
                     <div
                       key={event.id}
-                      className="space-y-1 rounded-row border border-border/55 bg-card p-2.5 shadow-xs"
+                      className="space-y-1 surface-raised rounded-control p-2.5"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
@@ -215,7 +215,7 @@ export function ContextInspector({
                   artifacts.map((artifact) => (
                     <div
                       key={artifact.id}
-                      className="flex items-center justify-between gap-3 rounded-row border border-border/55 bg-card p-2.5 shadow-xs"
+                      className="flex items-center justify-between gap-3 surface-raised rounded-control p-2.5"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <ArtifactIcon type={artifact.type} />
@@ -253,7 +253,7 @@ export function ContextInspector({
                   activePlan.map((step, index) => (
                     <div
                       key={step.id}
-                      className="flex items-start gap-2 rounded-row border border-border/55 bg-card p-2.5"
+                      className="flex items-start gap-2 surface-raised rounded-control p-2.5"
                     >
                       <span className="mt-0.5 font-mono text-micro text-muted-foreground">
                         {index + 1}.

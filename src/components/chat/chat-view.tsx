@@ -1304,6 +1304,38 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return () => window.clearTimeout(t);
   }, [auraSending]);
 
+  // The shell's top progress line (app-shell.tsx) follows this one flag.
+  React.useEffect(() => {
+    window.dispatchEvent(new CustomEvent("juno:streaming", { detail: chat.isBusy }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("juno:streaming", { detail: false }));
+    };
+  }, [chat.isBusy]);
+
+  // ⌘⇧C (use-global-shortcuts) and the message row's Share glyph.
+  React.useEffect(() => {
+    const copyLast = () => {
+      const last = [...latestMessagesRef.current].reverse().find((m) => m.role === "ASSISTANT" && m.content.trim());
+      if (!last) {
+        toast.message("No response to copy yet.");
+        return;
+      }
+      navigator.clipboard
+        .writeText(last.content)
+        .then(() => toast.success("Copied the last response."))
+        .catch(() => toast.error("Could not copy."));
+    };
+    const share = () => {
+      if (!privateMode && currentConversationId) setShareOpen(true);
+    };
+    window.addEventListener("juno:copy-last-response", copyLast);
+    window.addEventListener("juno:share-chat", share);
+    return () => {
+      window.removeEventListener("juno:copy-last-response", copyLast);
+      window.removeEventListener("juno:share-chat", share);
+    };
+  }, [currentConversationId, privateMode]);
+
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
 

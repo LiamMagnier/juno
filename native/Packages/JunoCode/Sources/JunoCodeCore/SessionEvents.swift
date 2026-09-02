@@ -47,6 +47,9 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     case statusChanged(StatusChangedEvent)
     case errorOccurred(ErrorEvent)
     case runCompleted(RunCompletedEvent)
+    /// The model context was folded down. Recorded so the transcript can say,
+    /// quietly and in place, that older turns now reach the model as a summary.
+    case compaction(CompactionEvent)
 }
 
 public struct SessionCreatedEvent: Hashable, Codable, Sendable {
@@ -488,6 +491,46 @@ public struct ErrorEvent: Hashable, Codable, Sendable {
     public init(message: String, isRecoverable: Bool) {
         self.message = message
         self.isRecoverable = isRecoverable
+    }
+}
+
+/// The model-facing conversation was compacted: older turns were reduced to a
+/// bounded summary and the recent ones kept whole.
+///
+/// This is a *transcript* event, not a change to the transcript. The reader's
+/// record keeps every turn; only what the model is sent shrinks. It exists so
+/// the surface can draw one quiet row at the moment it happened — a run that
+/// suddenly forgets an early instruction is otherwise inexplicable — and so a
+/// `/compact` the reader asked for has something to show for itself.
+public struct CompactionEvent: Hashable, Codable, Sendable {
+    /// The bounded summary older turns were reduced to.
+    public let summary: String
+    /// Model messages before and after the fold.
+    public let beforeMessageCount: Int
+    public let afterMessageCount: Int
+    /// The provider-reported prompt size before the fold, when one was known.
+    public let beforeTokens: Int?
+    /// Whether the reader asked for it (`/compact`) or the runtime did it on its
+    /// own ahead of a provider limit.
+    public let requestedByUser: Bool
+
+    public init(
+        summary: String,
+        beforeMessageCount: Int,
+        afterMessageCount: Int,
+        beforeTokens: Int? = nil,
+        requestedByUser: Bool = false
+    ) {
+        self.summary = summary
+        self.beforeMessageCount = beforeMessageCount
+        self.afterMessageCount = afterMessageCount
+        self.beforeTokens = beforeTokens
+        self.requestedByUser = requestedByUser
+    }
+
+    /// `12 → 5 messages`.
+    public var messageCountSummary: String {
+        "\(beforeMessageCount) → \(afterMessageCount) messages"
     }
 }
 

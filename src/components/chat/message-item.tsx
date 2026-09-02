@@ -5,16 +5,29 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Link2, Loader2, ListMinus, ListPlus, Square, SquareDashed, TextQuote, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ProviderLogo } from "@/components/brand/provider-logo";
+import { useApp } from "@/components/app/app-provider";
+import { PROVIDERS } from "@/lib/providers";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
-import { ThinkingState } from "@/components/aicss/thinking-state";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { SourcesPill } from "@/components/chat/sources-pill";
@@ -26,7 +39,8 @@ import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
-import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
+import { USER_BUBBLE_CLASS } from "@/components/chat/user-bubble";
+import type { ChatMessage, ImageEditInput, RegenerateOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 
 function formatStreamElapsed(totalSec: number): string {
@@ -99,12 +113,15 @@ function StreamStatus({
           the two are the same moment reached by different routes (this one is
           the window before any run event has landed), so they must not breathe
           differently. */}
-      <ThinkingState key={statusCopy} className="min-w-0 truncate text-body-lg leading-6">
+      {/* `.shimmer-text` (SOFT_UI.md): the sentence is painted with a band
+          that sweeps through it, so "Thinking…" reads as live with no spinner
+          beside it. Static muted text under reduced motion. */}
+      <span key={statusCopy} className="shimmer-text min-w-0 truncate text-body-lg leading-6">
         {statusCopy}
         {showClock && (
           <span className="whitespace-nowrap tabular-nums"> · {formatStreamElapsed(elapsedSec)}</span>
         )}
-      </ThinkingState>
+      </span>
     </div>
   );
 }
@@ -449,6 +466,86 @@ function IconAction({
   );
 }
 
+/**
+ * Regenerate ▾ — Try again · Switch model ▸ · More concise · Add details.
+ *
+ * The model list is the live catalog, with the one that wrote this answer
+ * marked. A one-shot override rides `RegenerateOptions`; the composer's own
+ * pick is untouched, so trying an answer once with another model does not
+ * silently become the model for every turn after.
+ */
+function RegenerateMenu({ onRegenerate, currentModelId }: { onRegenerate: (o?: RegenerateOptions) => void; currentModelId?: string | null }) {
+  const { models } = useApp();
+  const grouped = React.useMemo(() => {
+    const chat = models.filter((m) => (m.modality ?? "chat") === "chat" && !m.comingSoon && !m.legacy);
+    const byProvider = new Map<string, typeof chat>();
+    for (const m of chat) {
+      const list = byProvider.get(m.provider) ?? [];
+      list.push(m);
+      byProvider.set(m.provider, list);
+    }
+    return [...byProvider.entries()];
+  }, [models]);
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Pressable kind="icon" size="md" aria-label="Regenerate" className="gap-0.5 data-[state=open]:control-neu data-[state=open]:text-foreground">
+              <ActionIcons.refresh className="size-4" />
+              <ChevronDownMini />
+            </Pressable>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Regenerate</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onSelect={() => onRegenerate()}>
+          <ActionIcons.refresh className="size-4" /> Try again
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <SquareDashed className="size-4" /> Switch model
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-60 max-h-[min(24rem,60vh)]">
+            {grouped.map(([provider, list]) => (
+              <React.Fragment key={provider}>
+                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-caption">
+                  <ProviderLogo provider={list[0].provider} className="size-3" />
+                  {PROVIDERS[list[0].provider]?.label.split(" · ")[0] ?? provider}
+                </DropdownMenuLabel>
+                {list.map((m) => (
+                  <DropdownMenuItem key={m.id} onSelect={() => onRegenerate({ modelId: m.id })}>
+                    <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                    {m.id === currentModelId && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+              </React.Fragment>
+            ))}
+            {grouped.length === 0 && <p className="px-2 py-3 text-center text-caption text-muted-foreground">No other models available.</p>}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => onRegenerate({ instruction: "Make the answer more concise: keep the substance, cut the length by at least half." })}>
+          <ListMinus className="size-4" /> More concise
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onRegenerate({ instruction: "Add more detail: expand the answer with the specifics, examples and caveats that were left out." })}>
+          <ListPlus className="size-4" /> Add details
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** A 10px disclosure caret that rides beside a glyph inside a circular action. */
+function ChevronDownMini() {
+  return (
+    <svg viewBox="0 0 10 10" aria-hidden className="-mr-1 size-2.5 opacity-60">
+      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 interface MessageItemProps {
   message: ChatMessage;
   isLast: boolean;
@@ -461,9 +558,12 @@ interface MessageItemProps {
   /** Chat-only turn actions. Omitted on surfaces without a chat pipeline
    *  (code sessions), which hides the corresponding buttons entirely —
    *  an action that cannot run must not render. */
-  onRegenerate?: () => void;
+  onRegenerate?: (options?: RegenerateOptions) => void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
+  /** This is the newest user turn: `juno:edit-last-user-message` (↑ in an
+   *  empty composer) opens it for editing. */
+  editOnRequest?: boolean;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   /** False for a bubble with no persisted Message row behind it (code sessions
    *  render optimistic ones): feedback is keyed by message id, so offering it
@@ -490,6 +590,7 @@ export function MessageItem({
   onRegenerate,
   onContinue,
   onEdit,
+  editOnRequest,
   onFeedback,
   canFeedback = true,
   onFork,
@@ -646,6 +747,17 @@ export function MessageItem({
   const citationAudit = useCitationAudit(message.id, isAuditableAnswer(sources, message.streaming));
 
 
+  // ↑ in an empty composer edits the newest user turn (ChatGPT's convention).
+  React.useEffect(() => {
+    if (!editOnRequest || !onEdit || busy || privateMode) return;
+    const handler = () => {
+      setDraft(view.content);
+      setEditing(true);
+    };
+    window.addEventListener("juno:edit-last-user-message", handler);
+    return () => window.removeEventListener("juno:edit-last-user-message", handler);
+  }, [editOnRequest, onEdit, busy, privateMode, view.content]);
+
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
     setCopied(true);
@@ -693,9 +805,10 @@ export function MessageItem({
                   if (e.target === e.currentTarget && e.propertyName === "max-height" && expanded) setHeightCapped(false);
                 }}
                 className={cn(
+                  USER_BUBBLE_CLASS,
                   // break-words: pre-wrap alone only wraps at whitespace, so a
                   // pasted URL/token longer than the bubble overflows on phones.
-                  "relative w-full whitespace-pre-wrap break-words rounded-card rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]",
+                  "relative w-full break-words",
                   isLong && heightCapped && "overflow-hidden transition-[max-height] duration-slow ease-out-expo",
                   isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
                 )}
@@ -704,7 +817,7 @@ export function MessageItem({
                 {isLong && (
                   <div
                     className={cn(
-                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-card bg-gradient-to-t from-secondary to-transparent transition-opacity duration-base ease-out-soft",
+                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-card bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft",
                       expanded ? "opacity-0" : "opacity-100"
                     )}
                   />
@@ -731,7 +844,7 @@ export function MessageItem({
             )}
             <div className="flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                {copied ? <StatusIcons.success className="size-4 motion-safe:animate-pop-in" /> : <ActionIcons.copy className="size-4" />}
+                {copied ? <StatusIcons.success className="check-morph size-4 text-success-ink" /> : <ActionIcons.copy className="size-4" />}
               </IconAction>
               {onEdit && !busy && !privateMode && (
                 // Prefill from the DISPLAYED version, so paging back and editing
@@ -834,7 +947,7 @@ export function MessageItem({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={onRegenerate}
+                onClick={() => onRegenerate()}
                 className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 <ActionIcons.refresh className="size-3.5" /> Try again
@@ -962,33 +1075,11 @@ export function MessageItem({
             )}
             <div className="flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               {hasTextContent && (
-                // The check POPS in (one-shot, on the motion ladder) rather
-                // than swapping silently — the confirmation is the entire
-                // feedback now that copying no longer raises a toast.
+                // The check MORPHS in (`.check-morph`: springs from small and
+                // tilted) rather than swapping silently — the confirmation is
+                // the entire feedback now that copying raises no toast.
                 <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
-                  {copied ? <StatusIcons.success className="size-4 motion-safe:animate-pop-in" /> : <ActionIcons.copy className="size-4" />}
-                </IconAction>
-              )}
-              {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
-                <IconAction label="Regenerate" onClick={onRegenerate}>
-                  <ActionIcons.refresh className="size-4" />
-                </IconAction>
-              )}
-              {message.conversationId && !busy && !privateMode && (
-                // `branching` was set and cleared but never rendered: the fork
-                // POST plus a router.push ran with no spinner, no disabled state
-                // and no dimming, so a slow fork looked like a click that never
-                // landed and only an invisible guard stopped a second one.
-                <IconAction label="Branch from here" onClick={branch} busy={branching}>
-                  {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark names a
-                      repository ref in Juno Code. This forks a CONVERSATION,
-                      and it pairs with the GitFork beside it. */}
-                  <GitBranch className="size-4" />
-                </IconAction>
-              )}
-              {onFork && !busy && !privateMode && (
-                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="size-4" />
+                  {copied ? <StatusIcons.success className="check-morph size-4 text-success-ink" /> : <ActionIcons.copy className="size-4" />}
                 </IconAction>
               )}
               {!privateMode && canFeedback && (
@@ -1009,6 +1100,72 @@ export function MessageItem({
                 >
                   {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
                 </IconAction>
+              )}
+              {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
+                <RegenerateMenu onRegenerate={onRegenerate} currentModelId={view.model ?? currentModelId} />
+              )}
+              {message.conversationId && !busy && !privateMode && (
+                // `branching` was set and cleared but never rendered: the fork
+                // POST plus a router.push ran with no spinner, no disabled state
+                // and no dimming, so a slow fork looked like a click that never
+                // landed and only an invisible guard stopped a second one.
+                <IconAction label="Branch from here" onClick={branch} busy={branching}>
+                  {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark names a
+                      repository ref in Juno Code. This forks a CONVERSATION,
+                      and it pairs with the GitFork beside it. */}
+                  <GitBranch className="size-4" />
+                </IconAction>
+              )}
+              {onFork && !busy && !privateMode && (
+                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
+                  <GitFork className="size-4" />
+                </IconAction>
+              )}
+              {message.conversationId && !privateMode && (
+                <IconAction label="Share" onClick={() => window.dispatchEvent(new CustomEvent("juno:share-chat"))}>
+                  <ActionIcons.share className="size-4" />
+                </IconAction>
+              )}
+              {hasTextContent && (
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Pressable kind="icon" size="md" aria-label="More actions" className="data-[state=open]:control-neu data-[state=open]:text-foreground">
+                          <ActionIcons.more className="size-4" />
+                        </Pressable>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>More</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="start" className="w-52">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const quoted = view.content
+                          .trim()
+                          .split("\n")
+                          .map((line) => `> ${line}`)
+                          .join("\n");
+                        window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: `${quoted}\n\n` }));
+                      }}
+                    >
+                      <TextQuote className="size-4" /> Quote in composer
+                    </DropdownMenuItem>
+                    {message.conversationId && (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          const url = `${window.location.origin}/chat/${message.conversationId}?m=${message.id}`;
+                          navigator.clipboard
+                            .writeText(url)
+                            .then(() => toast.success("Link copied."))
+                            .catch(() => toast.error("Could not copy the link."));
+                        }}
+                      >
+                        <Link2 className="size-4" /> Copy link
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           </div>

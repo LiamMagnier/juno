@@ -279,7 +279,9 @@ export function SegmentedControl<T extends string>({
         // instead. One track, two themes, two different sources of truth — and
         // the one that knows a well has to LIFT on a black ground rather than
         // recess below it was the half that kept getting overruled.
-        "relative gap-1 rounded-menu p-1 field-well",
+        // `.surface-inset` (SOFT_UI.md): the recess the thumb stands out of.
+        // TabsList shares this string — two renderings of one idiom.
+        "surface-inset relative gap-1 rounded-menu p-1",
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
       )}
@@ -306,24 +308,10 @@ export function SegmentedControl<T extends string>({
           // rounded-control (9), not rounded-xs (6): the track is 12 with p-1, so
           // 12 − 4 = 8 ≈ 9 is the concentric answer, the same one TabsTrigger
           // already uses inside the identical shell.
-          "pointer-events-none absolute left-0 top-0 z-0 rounded-control border border-border/80 bg-card",
-          // Opaque, and the fill is per-theme, because "raised" is a lightness
-          // relationship and the two themes do not agree on which direction it
-          // points from here.
-          //
-          // On paper the well is --background (97%) and the thumb is --card
-          // (99%): two points up, which is the whole read. On dark the well
-          // lifts to --secondary (9.5%) and --card would land at 6.5% — the
-          // thumb DARKER than the well it is supposed to stand out of, so the
-          // selection was carried entirely by a 1px sheen. --accent (13%)
-          // restores the same "one rung up" the light theme has.
-          //
-          // This is also why the earlier `bg-card/80 backdrop-blur-xl` glass is
-          // gone rather than restored: a translucent pane reads as a lens only
-          // when there is a lightness difference for it to sample, and on a
-          // black ground it sampled a surface identical to itself — a
-          // compositor layer per switch, for nothing visible.
-          "bg-card dark:bg-accent",
+          // The raised key: `.surface-raised` supplies fill, hairline and the
+          // dual shadow in both themes, so the thumb stands out of the well by
+          // the same mechanism every other raised object in the product does.
+          "surface-raised pointer-events-none absolute left-0 top-0 z-0 rounded-control",
           // THE SLIDE. `ease-out-back` overshoots by ~3% and comes back, so the
           // pane arrives with weight instead of stopping on the mark. This is
           // the one curve in the system that overshoots and this is what it was
@@ -363,25 +351,11 @@ export function SegmentedControl<T extends string>({
           // travel did — i.e. the exact three things the block above says are the
           // point. It is the spec now.
           "[transition:transform_var(--dur-base)_var(--ease-out-back),width_var(--dur-base)_var(--ease-out-back),height_var(--dur-base)_var(--ease-out-back),scale_var(--dur-slow)_var(--ease-out-soft),box-shadow_var(--dur-fast)_var(--ease-out-soft)]",
-          // The specular edge: a glass pane is lit along its top and shadowed
-          // where it meets the recess it floats in. This was `shadow-sm` —
-          // Tailwind's STOCK default, a raw `rgb(0 0 0 / 0.05)` that is not on
-          // the Juno ramp, is invisible on black, and drew none of the lit top
-          // edge the sentence above promises. Same recipe TabsTrigger uses, plus
-          // the --hairline bottom edge that is the "shadowed where it meets the
-          // recess" half of the sentence.
-          "[box-shadow:inset_0_1px_0_hsl(var(--sheen)),inset_0_-1px_0_hsl(var(--hairline)),var(--shadow-pop)]",
-          // Held: the pane goes down into its well and its cast shadow collapses
-          // to a single tight rung, which is what closing the gap to the ground
-          // looks like. `scale` is re-timed to --dur-press here — the slow rung
-          // above is right for relaxing a stretch and far too slow for answering
-          // a finger.
-          // --shadow-ink, not the literal `48 12% 18%` that was baked in here:
-          // that is the LIGHT theme's warm ink, and an 18%-lightness shadow on a
-          // #000 ground is a light patch under the thumb — the halo again with
-          // the saturation turned down. The token is exactly this value on light
-          // and pure black on dark, which is what the line was reaching for.
-          "data-[pressed]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),0_1px_1px_-1px_hsl(var(--shadow-ink)/0.10)]",
+          // Held: the key goes down into its well — the pressed recipe, which
+          // is the inset shadow at a tighter throw — and `scale` is re-timed
+          // to --dur-press, because the slow rung above is right for relaxing
+          // a stretch and far too slow for answering a finger.
+          "data-[pressed]:shadow-pressed",
           "data-[pressed]:[transition:scale_var(--dur-press)_var(--ease-out-strong),box-shadow_var(--dur-press)_var(--ease-out-soft)]",
           // Rest value for the independent `scale` property. Independent rather
           // than a transform utility because `place()` writes

@@ -9,12 +9,11 @@ import {
   LayoutGrid,
   List as ListIcon,
   MessageCircle,
-  Minus,
   Search,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +22,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card } from "@/components/ui/card";
 import { Pressable } from "@/components/ui/pressable";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +40,7 @@ import { IndexStatus, type KnowledgeIndexState } from "@/components/library/inde
 import { cn, formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
 interface LibItem {
@@ -73,6 +76,7 @@ interface LibVersion {
 
 type LibraryFilter = "all" | LibItem["kind"];
 type LibraryView = "list" | "grid";
+type LibrarySort = "newest" | "oldest" | "name" | "size";
 
 const LIBRARY_VIEW_STORAGE_KEY = "juno-library-view";
 
@@ -82,8 +86,21 @@ const TABS: { key: LibraryFilter; label: string }[] = [
   { key: "FILE", label: "Files" },
 ];
 
+const SORTS: { key: LibrarySort; label: string }[] = [
+  { key: "newest", label: "Newest first" },
+  { key: "oldest", label: "Oldest first" },
+  { key: "name", label: "Name" },
+  { key: "size", label: "Largest first" },
+];
+
+/** Checkbox · name · type · size · added · actions. The row and its header
+ *  share one template so the columns line up without a table. */
 const browserGrid =
-  "grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-2 sm:grid-cols-[2rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] sm:gap-3 md:grid-cols-[2rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
+  "grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-3 sm:grid-cols-[1.25rem_minmax(0,1fr)_5rem_6.5rem_6.75rem] md:grid-cols-[1.25rem_minmax(0,1fr)_5.5rem_5.5rem_7rem_6.75rem]";
+
+/** The hover-raised row, the house recipe for a row in a list. */
+const rowClass =
+  "group/row rounded-control border border-transparent px-3 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none";
 
 function typeLabel(item: LibItem) {
   const extension = item.fileName.includes(".") ? item.fileName.split(".").pop()?.trim() : "";
@@ -95,12 +112,29 @@ function countFor(items: LibItem[], filter: LibraryFilter) {
   return filter === "all" ? items.length : items.filter((item) => item.kind === filter).length;
 }
 
+function compare(sort: LibrarySort): (a: LibItem, b: LibItem) => number {
+  switch (sort) {
+    case "oldest":
+      return (a, b) => a.createdAt.localeCompare(b.createdAt);
+    case "name":
+      return (a, b) => a.fileName.localeCompare(b.fileName, undefined, { sensitivity: "base", numeric: true });
+    case "size":
+      return (a, b) => b.size - a.size;
+    default:
+      return (a, b) => b.createdAt.localeCompare(a.createdAt);
+  }
+}
+
 /** The two view modes, as the segmented control's options. */
 const VIEW_OPTIONS = [
   { value: "list" as const, label: "List", icon: <ListIcon className="size-3.5" /> },
   { value: "grid" as const, label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
 ];
 
+/**
+ * The shared Checkbox, stopped from reaching whatever it sits on: a grid tile's
+ * thumbnail link and a list row both have their own click.
+ */
 function SelectCheck({
   checked,
   onClick,
@@ -114,40 +148,13 @@ function SelectCheck({
   className?: string;
 }) {
   return (
-    // role="checkbox" + aria-checked, not aria-pressed: this is a checkbox drawn
-    // as a button, and "pressed/not pressed" is the wrong announcement for it.
-    // aria-pressed also has no third value, so the select-all read identically at
-    // 0 of 12 selected and at 3 of 12.
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onClick();
-      }}
+    <Checkbox
+      checked={checked === "mixed" ? "indeterminate" : checked}
+      onCheckedChange={onClick}
+      onClick={(event) => event.stopPropagation()}
       aria-label={label}
-      // No focus override, for the reason button.tsx states at the top of its own
-      // variants: the global `:focus-visible` rule (globals.css) is authoritative,
-      // and a `ring-offset-background` halo paints the PAGE colour into the gap —
-      // so this checkbox wore a page-coloured ring while standing on a bg-card row
-      // or a grid tile, over the top of the neutral outline the browser was already
-      // drawing. Two focus marks, one of them belonging to no surface present.
-      className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-xs border transition-[border-color,background-color,color,transform] duration-fast ease-out-soft active:scale-90 coarse:size-7",
-        checked
-          ? "border-foreground bg-foreground text-background"
-          : "border-border/80 bg-background text-transparent hover:border-foreground/50",
-        className
-      )}
-    >
-      {checked === "mixed" ? (
-        <Minus className="size-3.5" aria-hidden />
-      ) : (
-        <StatusIcons.success className="size-3.5" aria-hidden />
-      )}
-    </button>
+      className={className}
+    />
   );
 }
 
@@ -155,9 +162,9 @@ function ItemPreview({ item }: { item: LibItem }) {
   const preview = (
     <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
   );
-  // Same as SelectCheck above: the global outline, not a second ring. Nothing
-  // clips this thumbnail, so `outline-offset` has real surface to sit on.
-  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-control";
+  // An inset well for the thumbnail, so the picture reads as set into the row
+  // rather than pasted on it.
+  const className = "group/preview surface-inset relative size-11 shrink-0 overflow-hidden rounded-field";
   return item.deletedAt ? (
     <div className={className} aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
@@ -295,29 +302,27 @@ function VersionsDialog({
         </DialogHeader>
         <div className="max-h-72 space-y-2 overflow-y-auto">
           {loading ? (
-            // A skeleton in the shape of the rows, not the word "Loading" — the
-            // dialog is the one place in this page that still announced its wait
-            // in prose while every list around it drew the shape it was fetching.
+            // A skeleton in the shape of the rows, not the word "Loading".
             <div className="space-y-2" role="status" aria-label="Loading versions">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="skeleton h-14 rounded-field" style={{ animationDelay: `${i * 60}ms` }} />
+                <Skeleton key={i} className="h-14 rounded-field" style={staggerDelay(i, "tight")} />
               ))}
             </div>
           ) : versions.length === 0 ? (
             <EmptyState size="panel" icon={History} title="No saved versions yet" description="Re-uploading this file keeps the bytes it replaces." />
           ) : (
             versions.map((version) => (
-              <div key={version.version} className="flex items-center gap-3 rounded-field border border-border/60 px-3 py-2">
+              <div key={version.version} className="surface-inset flex items-center gap-3 rounded-field px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     v{version.version} {version.current ? "· current" : ""}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="truncate font-mono text-caption tabular-nums text-muted-foreground">
                     {version.fileName} · {formatBytes(version.size)} · {timeAgo(version.createdAt)}
                   </p>
                 </div>
                 {!version.current && (
-                  <Button size="sm" variant="outline" onClick={() => restore(version)} disabled={restoring !== null}>
+                  <Button size="sm" variant="secondary" onClick={() => restore(version)} disabled={restoring !== null}>
                     {restoring === version.version ? "Restoring…" : "Restore"}
                   </Button>
                 )}
@@ -344,12 +349,14 @@ function MobileItemMenu({
   onRestore: () => void;
   onVersions: () => void;
   triggerClassName?: string;
+  /** `secondary` when the trigger floats over a thumbnail and needs its own plate. */
+  triggerVariant?: "ghost" | "secondary";
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant={triggerVariant ?? "ghost"}
           size="icon-sm"
           aria-label={`Actions for ${item.fileName}`}
           className={cn("text-muted-foreground", triggerClassName ?? "sm:hidden")}
@@ -385,8 +392,6 @@ function MobileItemMenu({
         {!item.deletedAt && (
           <>
             <DropdownMenuSeparator />
-            {/* Tint on focus, matching Projects and Artifacts — this had no ground
-                at all, so arrow-keying to Delete looked different on every page. */}
             <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
               <ActionIcons.delete /> Delete
             </DropdownMenuItem>
@@ -402,12 +407,10 @@ function GridItemPreview({ item }: { item: LibItem }) {
   return item.deletedAt ? (
     <div className="group/preview block size-full" aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
-    // The one ring that stays, and the only one on this page with a reason: this
-    // link FILLS a tile that clips at rounded-card, so an outline drawn 2px
-    // outside it is cut away entirely and focus would be invisible. Inset ring,
-    // radius matched to the clip — the shape artifacts and projects use for a
-    // link that covers a card.
-    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+    // This link FILLS a well that clips at rounded-field, so an outline drawn
+    // 2px outside it is cut away entirely and focus would be invisible. Inset
+    // ring, radius matched to the clip.
+    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:rounded-field focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
       {preview}
     </a>
   );
@@ -433,45 +436,47 @@ function LibraryGridItem({
   onVersions: () => void;
 }) {
   return (
-    <article
+    <Card
+      variant="interactive"
       role="listitem"
       aria-label={item.fileName}
       style={staggerDelay(index, "base")}
-      className="group/card min-w-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+      className={cn(
+        "group/card flex min-w-0 flex-col p-3 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // Selection is a border, not a second shadow: the raised tile keeps its
+        // own depth and the hairline turns to ink.
+        selected && "border-foreground/40 hover:border-foreground/40"
+      )}
     >
-      <div
-        className={cn(
-          // rounded-card (16), the family's rung for a card in a grid — this was
-          // rounded-menu (14), one of four answers to the same question.
-          // bg-card, not bg-background: the tile was painted in the SAME token as
-          // the page under it, so on the true-black ground it had no surface at all
-          // and the hairline border was doing the entire job of separating a file
-          // from the page.
-          "relative aspect-square overflow-hidden rounded-card border border-border/60 bg-card transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
-          selected && "border-foreground/40 ring-1 ring-foreground/35 ring-offset-2 ring-offset-background"
-        )}
-      >
+      {/* The thumbnail sits on an inset well — recessed into the raised tile,
+          concentric with it (16 − 12 padding ≈ field 12). */}
+      <div className="surface-inset relative aspect-square overflow-hidden rounded-field">
         <GridItemPreview item={item} />
-        <SelectCheck
-          checked={selected}
-          onClick={onToggleSelect}
-          label={selected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
+        <div
           className={cn(
-            "absolute left-2 top-2 z-10 shadow-pop transition-opacity duration-fast focus-visible:opacity-100 coarse:size-8 coarse:opacity-100",
+            "absolute left-2 top-2 z-10 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 coarse:opacity-100",
             !selected && "opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100"
           )}
-        />
+        >
+          <SelectCheck
+            checked={selected}
+            onClick={onToggleSelect}
+            label={selected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
+            className="shadow-pop"
+          />
+        </div>
         <MobileItemMenu
           item={item}
           onRename={onRename}
           onDelete={onDelete}
           onRestore={onRestore}
           onVersions={onVersions}
-          triggerClassName="absolute right-2 top-2 z-10 bg-background/90 text-foreground opacity-0 shadow-pop backdrop-blur-sm transition-opacity duration-fast hover:bg-background group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+          triggerVariant="secondary"
+          triggerClassName="absolute right-2 top-2 z-10 opacity-0 transition-opacity duration-fast ease-out-soft group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
         />
       </div>
 
-      <div className="flex min-w-0 items-start gap-2 px-1 pb-1 pt-2.5">
+      <div className="flex min-w-0 items-start gap-2 pt-3">
         <div className="min-w-0 flex-1">
           {item.deletedAt ? (
             <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
@@ -488,28 +493,23 @@ function LibraryGridItem({
               {item.fileName}
             </a>
           )}
-          <p className="mt-0.5 truncate text-caption tabular-nums text-muted-foreground">
-            {formatBytes(item.size)} · {timeAgo(item.createdAt)}
+          <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground">
+            {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
           {item.knowledge?.documentId ? (
             <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
-              <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
+              <IndexStatus status={item.knowledge} className="mt-1 max-w-full hover:underline" />
             </Link>
           ) : (
-            <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+            <IndexStatus status={item.knowledge ?? null} className="mt-1 max-w-full" />
           )}
         </div>
         {item.conversationId && (
-          // The same icon button the list view's row actions are, rather than a
-          // hand-built restatement of it. It had Button's exact geometry
-          // (size-8 / rounded-control / coarse:size-10) with a different hover
-          // fill (bg-muted, not bg-accent), a ring of its own and no press dip —
-          // so the two halves of ONE page disagreed about what an icon button is.
           <Button
             variant="ghost"
             size="icon-sm"
             asChild
-            className="group/source shrink-0 text-muted-foreground hover:text-foreground"
+            className="group/source -mr-1 -mt-1 shrink-0 text-muted-foreground hover:text-foreground"
           >
             <Link
               href={`/chat/${item.conversationId}`}
@@ -521,7 +521,7 @@ function LibraryGridItem({
           </Button>
         )}
       </div>
-    </article>
+    </Card>
   );
 }
 
@@ -529,47 +529,34 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
   if (view === "grid") {
     return (
       <div
-        className="mt-5 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4"
+        className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4"
         aria-label="Loading files"
       >
         {[...Array(8)].map((_, index) => (
-          <div key={index}>
-            <div
-              className="skeleton aspect-square rounded-card"
-              style={staggerDelay(index, "base")}
-            />
-            <div className="px-1 pt-2.5">
-              <span className="skeleton block h-3 w-3/4 rounded-sm" />
-              <span className="skeleton mt-2 block h-2.5 w-1/2 rounded-sm" />
-            </div>
-          </div>
+          <Card key={index} className="p-3" style={staggerDelay(index, "base")}>
+            <Skeleton className="aspect-square rounded-field" />
+            <Skeleton className="mt-3 h-3 w-3/4 rounded-xs" />
+            <Skeleton className="mt-2 h-2.5 w-1/2 rounded-xs" />
+          </Card>
         ))}
       </div>
     );
   }
 
   return (
-    // bg-card, like the browser this stands in for. Without it the skeleton was
-    // an unfilled outline on the black page and the real panel arrived carrying a
-    // surface, so the load ended with the whole list stepping up a rung.
-    <div className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-card" aria-label="Loading files">
-      {/* Same rung as the loaded browser's header — a skeleton that paints a
-          different tone than the thing it stands in for is a visible swap. */}
-      <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-secondary px-3 sm:px-4")}>
-        <span className="skeleton size-4 rounded-xs" />
-        <span className="skeleton h-2.5 w-16 rounded-sm" />
+    <div className="surface-inset mt-5 rounded-card p-1.5" aria-label="Loading files">
+      <div className={cn(browserGrid, "h-9 px-3")}>
+        <Skeleton className="size-[18px] rounded-xs" />
+        <Skeleton className="h-2.5 w-16 rounded-xs" />
       </div>
       {[...Array(6)].map((_, index) => (
-        <div
-          key={index}
-          className={cn(browserGrid, "min-h-[72px] border-b border-border/40 px-3 last:border-0 sm:px-4")}
-        >
-          <span className="skeleton size-5 rounded-xs" style={staggerDelay(index, "tight")} />
+        <div key={index} className={cn(browserGrid, "min-h-[68px] px-3")}>
+          <Skeleton className="size-[18px] rounded-xs" style={staggerDelay(index, "tight")} />
           <span className="flex items-center gap-3">
-            <span className="skeleton size-11 shrink-0 rounded-control" style={staggerDelay(index, "tight")} />
+            <Skeleton className="size-11 shrink-0 rounded-field" style={staggerDelay(index, "tight")} />
             <span className="min-w-0 flex-1 space-y-2">
-              <span className="skeleton block h-3 w-32 max-w-full rounded-sm" />
-              <span className="skeleton block h-2.5 w-20 rounded-sm" />
+              <Skeleton className="block h-3 w-32 max-w-full rounded-xs" />
+              <Skeleton className="block h-2.5 w-20 rounded-xs" />
             </span>
           </span>
         </div>
@@ -583,6 +570,7 @@ export default function LibraryPage() {
   const [error, setError] = React.useState(false);
   const [tab, setTab] = React.useState<LibraryFilter>("all");
   const [query, setQuery] = React.useState("");
+  const [sort, setSort] = React.useState<LibrarySort>("newest");
   const [view, setView] = React.useState<LibraryView>("list");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [renameTarget, setRenameTarget] = React.useState<LibItem | null>(null);
@@ -630,13 +618,15 @@ export default function LibraryPage() {
 
   const libraryItems = items ?? [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filtered = libraryItems.filter(
-    (item) =>
-      (tab === "all" || item.kind === tab) &&
-      (!normalizedQuery ||
-        item.fileName.toLocaleLowerCase().includes(normalizedQuery) ||
-        item.mimeType.toLocaleLowerCase().includes(normalizedQuery))
-  );
+  const filtered = libraryItems
+    .filter(
+      (item) =>
+        (tab === "all" || item.kind === tab) &&
+        (!normalizedQuery ||
+          item.fileName.toLocaleLowerCase().includes(normalizedQuery) ||
+          item.mimeType.toLocaleLowerCase().includes(normalizedQuery))
+    )
+    .sort(compare(sort));
   const loading = items === null;
   const libraryEmpty = !loading && libraryItems.length === 0;
   const noResults = !loading && !libraryEmpty && filtered.length === 0;
@@ -766,416 +756,376 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="app-page-scroll">
-      <main className="app-page-content max-w-6xl">
-        {/* "Recently deleted" is a MODE, not a filter, so it has to be legible in
-            the heading — the h1 used to keep saying "Your files" while the list
-            showed the trash, and the only tell was the toggle's own label. */}
-        <AppPageHeader
-          eyebrow="Library"
-          heading={showDeleted ? "Recently deleted" : "Your files"}
-          icon={AppIcons.library}
-          lede={
-            showDeleted
-              ? "Files you delete land here and stay recoverable."
-              : "Images and documents shared across your conversations."
-          }
-          actions={
-            <>
-              {!loading && !error && (
-                <p className="hidden items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
-                  {/* A count that changes when you press "Load more" is worse than no
-                      count: load() asks for 100 at a time, so until the cursor is
-                      spent this is a floor, and the byte total is a partial sum that
-                      must not be presented as a total. */}
-                  <span>
-                    {nextCursor
-                      ? `${libraryItems.length}+ items`
-                      : `${libraryItems.length} ${libraryItems.length === 1 ? "item" : "items"}`}
-                  </span>
-                  {!nextCursor && (
-                    <>
-                      <span aria-hidden="true" className="size-1 rounded-full bg-border" />
-                      <span>{formatBytes(totalSize)}</span>
-                    </>
-                  )}
-                </p>
-              )}
+    <AppPage measure="wide">
+      {/* "Recently deleted" is a MODE, not a filter, so it has to be legible in
+          the heading. */}
+      <AppPageHeader
+        eyebrow="Library"
+        heading={showDeleted ? "Recently deleted" : "Your files"}
+        icon={AppIcons.library}
+        lede={
+          showDeleted
+            ? "Files you delete land here and stay recoverable."
+            : "Images and documents shared across your conversations."
+        }
+        actions={
+          <>
+            {!loading && !error && (
+              <p className="hidden items-center gap-2 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
+                {/* load() asks for 100 at a time, so until the cursor is spent
+                    this is a floor, and the byte total is a partial sum that
+                    must not be presented as a total. */}
+                <span>
+                  {nextCursor
+                    ? `${libraryItems.length}+ items`
+                    : `${libraryItems.length} ${libraryItems.length === 1 ? "item" : "items"}`}
+                </span>
+                {!nextCursor && (
+                  <>
+                    <span aria-hidden="true" className="size-1 rounded-full bg-border" />
+                    <span>{formatBytes(totalSize)}</span>
+                  </>
+                )}
+              </p>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSelected(new Set());
+                setShowDeleted((value) => !value);
+              }}
+              className="shrink-0 gap-1.5"
+            >
+              <ActionIcons.restore className="size-3.5" />
+              {showDeleted ? "Back to library" : "Recently deleted"}
+            </Button>
+          </>
+        }
+      />
+
+      {!error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
+            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <label htmlFor="library-search" className="sr-only">Search files</label>
+            <Input
+              id="library-search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search files"
+              className={cn("pl-9", query && "pr-10")}
+            />
+            {query && (
+              <div className="absolute inset-y-0 right-1 flex items-center">
+                <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search">
+                  <ActionIcons.dismiss className="size-3.5" />
+                </Pressable>
+              </div>
+            )}
+          </div>
+
+          <SegmentedControl<LibraryFilter>
+            value={tab}
+            onChange={setTab}
+            ariaLabel="Filter files"
+            className="h-9 w-fit max-w-full shrink-0"
+            options={TABS.map((filter) => ({
+              value: filter.key,
+              label: filter.label,
+              count: countFor(libraryItems, filter.key),
+            }))}
+          />
+
+          <Select value={sort} onValueChange={(value) => setSort(value as LibrarySort)}>
+            <SelectTrigger className="w-40 shrink-0" aria-label="Sort files">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORTS.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="ml-auto flex items-center gap-2">
+            {!loading && filtered.length > 0 && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setSelected(new Set());
-                  setShowDeleted((value) => !value);
-                }}
-                className="shrink-0 gap-1.5 text-muted-foreground"
+                onClick={toggleSelectAll}
+                className={cn("shrink-0 text-muted-foreground", view === "list" && "sm:hidden")}
               >
-                <ActionIcons.restore className="size-3.5" />
-                {showDeleted ? "Back to library" : "Recently deleted"}
+                {allSelected ? "Clear visible" : "Select"}
               </Button>
-            </>
+            )}
+            <SegmentedControl
+              value={view}
+              onChange={changeView}
+              options={VIEW_OPTIONS}
+              ariaLabel="File view"
+              className="h-9 shrink-0"
+            />
+          </div>
+        </div>
+      )}
+
+      {error ? (
+        <EmptyState
+          tone="error"
+          className="mt-6"
+          title="Couldn’t load your library"
+          description="Check your connection and try once more."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => load()} className="group/retry gap-2">
+              <ActionIcons.refresh className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
+              Try again
+            </Button>
           }
         />
-
-        {!error && (
-          <div className="sticky top-0 z-20 -mx-1 border-b border-border/55 bg-background/90 px-1 py-3 backdrop-blur-xl supports-[backdrop-filter]:bg-background/75">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              {/* The shared control, not a second system for the same job. This was
-                  a row of pills — and it sat in this bar a few inches from the view
-                  toggle, which is a SegmentedControl, so one mutually exclusive pick
-                  was drawn two ways within a single sticky header. Artifacts made
-                  exactly this move for exactly this reason.
-                  The counts were the stated blocker and are no longer one: they ride
-                  the segment's own `count` slot in the same mono tabular face the
-                  pills used. (Roadmap's eleven categories stay chips — a wrapping row
-                  is the right shape at that count. It was never the right shape at
-                  three.) */}
-              <SegmentedControl<LibraryFilter>
-                value={tab}
-                onChange={setTab}
-                ariaLabel="Filter files"
-                className="h-9 w-fit max-w-full shrink-0"
-                options={TABS.map((filter) => ({
-                  value: filter.key,
-                  label: filter.label,
-                  count: countFor(libraryItems, filter.key),
-                }))}
-              />
-
-              <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
-                {/* The last hand-rolled text field in the product: a <div> shell
-                    around a bare <input>, at its own radius and border. Its `bg-card`
-                    utility was also defeating Input's `.field-well` ground — utilities
-                    are emitted after the components layer — so this was the one field
-                    that never painted its per-theme ground. Composed like Artifacts
-                    now: relative wrapper, absolute magnifier, `pl-9` on the Input. No
-                    `type="search"`, because WebKit's native clear would then sit beside
-                    the one below. */}
-                <div className="relative min-w-0 flex-1 sm:max-w-[16rem]">
-                  <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <label htmlFor="library-search" className="sr-only">Search files</label>
-                  <Input
-                    id="library-search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search files"
-                    className={cn("h-9 pl-9", query && "pr-10")}
-                  />
-                  {query && (
-                    // Out of the input's flow now, on the icon primitive, which
-                    // brings the coarse-pointer target the raw button never had.
-                    // `pr-10` above keeps the value from running under it. The
-                    // centring is a flex wrapper rather than `-translate-y-1/2` on
-                    // the control: `.pressable:active` sets a bare `transform`, so
-                    // the press dip would have replaced the centring offset and the
-                    // button would jump half its height on every press.
-                    <div className="absolute inset-y-0 right-1 flex items-center">
-                      <Pressable kind="icon" size="sm" onClick={() => setQuery("")} aria-label="Clear search">
-                        <ActionIcons.dismiss className="size-3.5" />
-                      </Pressable>
-                    </div>
-                  )}
-                </div>
-                {/* Was a hand-rolled track with a flat `bg-foreground text-background`
-                    active fill — an inverted-solid selection that appears in no other
-                    toggle in the product, and with none of the thumb's travel. */}
-                <SegmentedControl
-                  value={view}
-                  onChange={changeView}
-                  options={VIEW_OPTIONS}
-                  ariaLabel="File view"
-                  className="h-9 shrink-0"
-                />
-                {!loading && filtered.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={toggleSelectAll}
-                    className={cn("shrink-0 text-muted-foreground", view === "list" && "sm:hidden")}
-                  >
-                    {allSelected ? "Clear visible" : "Select"}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedItems.length > 0 && (
+      ) : loading ? (
+        <LoadingBrowser view={view} />
+      ) : libraryEmpty && showDeleted ? (
+        // An empty TRASH is not an empty library.
+        <EmptyState
+          className="mt-6"
+          icon={AppIcons.library}
+          title="Nothing in Recently deleted"
+          description="Files you delete land here and stay recoverable."
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => {
+                setSelected(new Set());
+                setShowDeleted(false);
+              }}
+            >
+              Back to library
+            </Button>
+          }
+        />
+      ) : libraryEmpty ? (
+        <EmptyState
+          className="mt-6"
+          icon={AppIcons.library}
+          title="Your library is empty"
+          description="Files and images you share with Juno will appear here automatically."
+          action={
+            <Button variant="secondary" size="sm" asChild>
+              <Link href="/chat">Go to chat</Link>
+            </Button>
+          }
+        />
+      ) : noResults ? (
+        <EmptyState
+          className="mt-6"
+          size="panel"
+          icon={Search}
+          title="No matching files"
+          description="Try another search or remove the current filter."
+          action={
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+              Clear filters
+            </Button>
+          }
+        />
+      ) : view === "grid" ? (
+        <section className="mt-5" aria-label="Files grid">
           <div
-            className="mt-4 flex min-h-11 flex-wrap items-center gap-2 border-y border-border/60 bg-muted/50 px-2 py-1.5 motion-safe:animate-fade-in sm:px-3"
-            aria-live="polite"
+            role="list"
+            aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4"
           >
-            <span className="text-sm font-medium tabular-nums">
-              {selectedItems.length} selected
-            </span>
-            <div className="ml-auto flex items-center gap-0.5">
-              {selectedItems.length === 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="gap-1.5 text-muted-foreground hover:text-foreground"
-                  onClick={() => openRename(selectedItems[0])}
-                >
-                  <ActionIcons.edit className="size-3.5" />
-                  <span className="hidden sm:inline">Rename</span>
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="danger-hover gap-1.5 text-muted-foreground"
-                onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
-              >
-                {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
-                <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
-              </Button>
-              <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection">
-                <ActionIcons.dismiss className="size-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {error ? (
-          <EmptyState
-            tone="error"
-            className="mt-6"
-            title="Couldn’t load your library"
-            description="Check your connection and try once more."
-            action={
-              <Button variant="outline" size="sm" onClick={() => load()} className="group/retry gap-2">
-                <ActionIcons.refresh className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
-                Try again
-              </Button>
-            }
-          />
-        ) : loading ? (
-          <LoadingBrowser view={view} />
-        ) : libraryEmpty && showDeleted ? (
-          // An empty TRASH is not an empty library. This branch used to claim "Your
-          // library is empty" and offer "Go to chat", both false: the library still
-          // has files, and chatting does not put anything in Recently deleted.
-          <EmptyState
-            className="mt-6"
-            icon={AppIcons.library}
-            title="Nothing in Recently deleted"
-            description="Files you delete land here and stay recoverable."
-            action={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => {
-                  setSelected(new Set());
-                  setShowDeleted(false);
-                }}
-              >
-                Back to library
-              </Button>
-            }
-          />
-        ) : libraryEmpty ? (
-          <EmptyState
-            className="mt-6"
-            icon={AppIcons.library}
-            title="Your library is empty"
-            description="Files and images you share with Juno will appear here automatically."
-            action={
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/chat">Go to chat</Link>
-              </Button>
-            }
-          />
-        ) : noResults ? (
-          // One no-results shape across projects / artifacts / library.
-          <EmptyState
-            className="mt-6"
-            size="panel"
-            icon={Search}
-            title="No matching files"
-            description="Try another search or remove the current filter."
-            action={
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
-                Clear filters
-              </Button>
-            }
-          />
-        ) : view === "grid" ? (
-          // The container-level fade is gone: it repainted every tile at once while
-          // this page's own skeletons staggered, so the loading state was more
-          // choreographed than the content replacing it. Both siblings stagger.
-          <section className="mt-5" aria-label="Files grid">
-            <div
-              role="list"
-              aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}
-              className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 sm:gap-x-4 sm:gap-y-6 lg:grid-cols-4"
-            >
-              {filtered.map((item, i) => (
-                <LibraryGridItem
-                  key={item.id}
-                  item={item}
-                  index={i}
-                  selected={selected.has(item.id)}
-                  onToggleSelect={() => toggleSelect(item.id)}
-                  onRename={() => openRename(item)}
-                  onDelete={() => setDeleteTargets([item])}
-                  onRestore={() => void restoreItems([item])}
-                  onVersions={() => setVersionsTarget(item)}
-                />
-              ))}
-            </div>
-          </section>
-        ) : (
-          // bg-card, not bg-background/45: 45% of the page's own token over the
-          // black ground is a no-op, so the file browser had no surface and read
-          // as bare rows floating on the page.
-          <section className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-card" aria-label="Files">
-            <div
-              className={cn(
-                browserGrid,
-                // bg-secondary, not bg-muted/40. Re-based against the black ground
-                // the whole browser had collapsed into one tone: over its bg-card
-                // shell the header sat 1.2 points above it, a hovered row 1.4, and a
-                // SELECTED row 1.8 — three states inside half a rung of each other,
-                // so you could not tell a selected file from one the pointer was
-                // merely over. Header and hover take the rung above card; selection
-                // takes the one above that.
-                "h-10 border-b border-border/55 bg-secondary px-3 font-mono text-caption text-muted-foreground sm:px-4"
-              )}
-            >
-              <SelectCheck
-                checked={allSelected ? true : someSelected ? "mixed" : false}
-                onClick={toggleSelectAll}
-                label={allSelected ? "Deselect all visible files" : "Select all visible files"}
-                className="coarse:size-6"
+            {filtered.map((item, i) => (
+              <LibraryGridItem
+                key={item.id}
+                item={item}
+                index={i}
+                selected={selected.has(item.id)}
+                onToggleSelect={() => toggleSelect(item.id)}
+                onRename={() => openRename(item)}
+                onDelete={() => setDeleteTargets([item])}
+                onRestore={() => void restoreItems([item])}
+                onVersions={() => setVersionsTarget(item)}
               />
-              <span>Name</span>
-              <span className="hidden sm:block">Type</span>
-              <span className="hidden md:block">Size</span>
-              <span className="hidden sm:block">Added</span>
-              <span className="sr-only">Actions</span>
-            </div>
+            ))}
+          </div>
+        </section>
+      ) : (
+        // Rows inside an inset well: the browser is recessed into the page and
+        // each row lifts out of it on hover; a selected row stays lifted.
+        <section className="surface-inset mt-5 rounded-card p-1.5" aria-label="Files">
+          <div className={cn(browserGrid, "h-9 px-3 font-mono text-caption text-muted-foreground")}>
+            <SelectCheck
+              checked={allSelected ? true : someSelected ? "mixed" : false}
+              onClick={toggleSelectAll}
+              label={allSelected ? "Deselect all visible files" : "Select all visible files"}
+            />
+            <span>Name</span>
+            <span className="hidden sm:block">Type</span>
+            <span className="hidden md:block">Size</span>
+            <span className="hidden sm:block">Added</span>
+            <span className="sr-only">Actions</span>
+          </div>
 
-            <div role="list" aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}>
-              {filtered.map((item, i) => {
-                const isSelected = selected.has(item.id);
-                return (
-                  <article
-                    key={item.id}
-                    role="listitem"
-                    aria-label={item.fileName}
-                    style={staggerDelay(i, "tight")}
-                    className={cn(
-                      browserGrid,
-                      "group/row min-h-[72px] border-b border-border/40 px-3 transition-colors duration-fast last:border-0 hover:bg-secondary motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:px-4",
-                      // See the header note above: selection has to clear hover by a
-                      // full rung, or the two states are the same colour.
-                      isSelected && "bg-accent hover:bg-accent"
-                    )}
-                  >
-                    <SelectCheck
-                      checked={isSelected}
-                      onClick={() => toggleSelect(item.id)}
-                      label={isSelected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
-                      className="coarse:size-7"
-                    />
+          <div role="list" aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}>
+            {filtered.map((item, i) => {
+              const isSelected = selected.has(item.id);
+              return (
+                <article
+                  key={item.id}
+                  role="listitem"
+                  aria-label={item.fileName}
+                  style={staggerDelay(i, "tight")}
+                  className={cn(
+                    browserGrid,
+                    rowClass,
+                    "min-h-[68px] motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+                    isSelected && "surface-raised border-border/60 hover:border-border/60"
+                  )}
+                >
+                  <SelectCheck
+                    checked={isSelected}
+                    onClick={() => toggleSelect(item.id)}
+                    label={isSelected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
+                  />
 
-                    <div className="flex min-w-0 items-center gap-3 py-2.5">
-                      <ItemPreview item={item} />
-                      <div className="min-w-0">
-                        {item.deletedAt ? (
-                          <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
-                            {item.fileName}
-                          </p>
-                        ) : (
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                            title={item.fileName}
-                          >
-                            {item.fileName}
-                          </a>
-                        )}
-                        <p className="mt-0.5 truncate text-caption tabular-nums text-muted-foreground sm:hidden">
-                          {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
+                  <div className="flex min-w-0 items-center gap-3 py-2.5">
+                    <ItemPreview item={item} />
+                    <div className="min-w-0">
+                      {item.deletedAt ? (
+                        <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+                          {item.fileName}
                         </p>
-                        <div className="mt-0.5 hidden min-h-4 items-center text-caption text-muted-foreground sm:flex">
-                          {item.conversationId ? (
-                            <Link
-                              href={`/chat/${item.conversationId}`}
-                              className="inline-flex items-center gap-1 underline-offset-4 transition-colors hover:text-foreground hover:underline"
-                            >
-                              <MessageCircle className="size-3" />
-                              Open source chat
-                            </Link>
-                          ) : (
-                            <span className="truncate">{item.mimeType}</span>
-                          )}
-                        </div>
-                        {item.knowledge?.documentId ? (
-                          <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
-                            <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
+                      ) : (
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
+                          title={item.fileName}
+                        >
+                          {item.fileName}
+                        </a>
+                      )}
+                      <p className="mt-0.5 truncate font-mono text-caption tabular-nums text-muted-foreground sm:hidden">
+                        {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
+                      </p>
+                      <div className="mt-0.5 hidden min-h-4 items-center font-mono text-caption text-muted-foreground sm:flex">
+                        {item.conversationId ? (
+                          <Link
+                            href={`/chat/${item.conversationId}`}
+                            className="inline-flex items-center gap-1 underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
+                          >
+                            <MessageCircle className="size-3" />
+                            Open source chat
                           </Link>
                         ) : (
-                          <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+                          <span className="truncate">{item.mimeType}</span>
                         )}
                       </div>
-                    </div>
-
-                    <span className="hidden text-xs font-medium text-muted-foreground sm:block">{typeLabel(item)}</span>
-                    <span className="hidden text-xs tabular-nums text-muted-foreground md:block">{formatBytes(item.size)}</span>
-                    <time
-                      dateTime={item.createdAt}
-                      title={new Date(item.createdAt).toLocaleString()}
-                      className="hidden text-xs tabular-nums text-muted-foreground sm:block"
-                    >
-                      {timeAgo(item.createdAt)}
-                    </time>
-
-                    <div className="hidden items-center justify-end gap-0.5 sm:flex">
-                      <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
-                      {item.versionCount > 0 && (
-                        <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
+                      {item.knowledge?.documentId ? (
+                        <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
+                          <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
+                        </Link>
+                      ) : (
+                        <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
                       )}
-                      <DownloadAction item={item} />
-                      <ItemAction
-                        icon={showDeleted ? ActionIcons.restore : ActionIcons.delete}
-                        label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
-                        tone={showDeleted ? undefined : "danger"}
-                        motion={showDeleted ? "lift" : "delete"}
-                        onClick={() => (showDeleted ? void restoreItems([item]) : setDeleteTargets([item]))}
-                      />
                     </div>
-                    <MobileItemMenu
-                      item={item}
-                      onRename={() => openRename(item)}
-                      onDelete={() => setDeleteTargets([item])}
-                      onRestore={() => void restoreItems([item])}
-                      onVersions={() => setVersionsTarget(item)}
-                    />
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                  </div>
 
-        {nextCursor && !loading && !error && (
-          <div className="mt-5 flex justify-center">
+                  <span className="hidden font-mono text-caption text-muted-foreground sm:block">{typeLabel(item)}</span>
+                  <span className="hidden font-mono text-caption tabular-nums text-muted-foreground md:block">{formatBytes(item.size)}</span>
+                  <time
+                    dateTime={item.createdAt}
+                    title={new Date(item.createdAt).toLocaleString()}
+                    className="hidden font-mono text-caption tabular-nums text-muted-foreground sm:block"
+                  >
+                    {timeAgo(item.createdAt)}
+                  </time>
+
+                  <div className="hidden items-center justify-end gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover/row:opacity-100 sm:flex coarse:opacity-100">
+                    <ItemAction icon={ActionIcons.edit} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
+                    {item.versionCount > 0 && (
+                      <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
+                    )}
+                    <DownloadAction item={item} />
+                    <ItemAction
+                      icon={showDeleted ? ActionIcons.restore : ActionIcons.delete}
+                      label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
+                      tone={showDeleted ? undefined : "danger"}
+                      motion={showDeleted ? "lift" : "delete"}
+                      onClick={() => (showDeleted ? void restoreItems([item]) : setDeleteTargets([item]))}
+                    />
+                  </div>
+                  <MobileItemMenu
+                    item={item}
+                    onRename={() => openRename(item)}
+                    onDelete={() => setDeleteTargets([item])}
+                    onRestore={() => void restoreItems([item])}
+                    onVersions={() => setVersionsTarget(item)}
+                  />
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {nextCursor && !loading && !error && (
+        <div className="mt-5 flex justify-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => load(true, nextCursor)}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Loading…" : "Load more files"}
+          </Button>
+        </div>
+      )}
+
+      {selectedItems.length > 0 && (
+        // The bulk bar floats at the bottom of the scroll region while the list
+        // runs past it, and docks under the list when it does not.
+        <div
+          className="surface-float sticky bottom-4 z-toolbar mt-5 flex min-h-12 flex-wrap items-center gap-2 rounded-card px-3 py-2 motion-safe:animate-rise-in"
+          aria-live="polite"
+        >
+          <span className="font-mono text-caption tabular-nums text-muted-foreground">
+            {selectedItems.length} selected
+          </span>
+          <div className="ml-auto flex items-center gap-1">
+            {selectedItems.length === 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+                onClick={() => openRename(selectedItems[0])}
+              >
+                <ActionIcons.edit className="size-3.5" />
+                <span className="hidden sm:inline">Rename</span>
+              </Button>
+            )}
             <Button
-              variant="outline"
+              variant={showDeleted ? "secondary" : "destructive-outline"}
               size="sm"
-              onClick={() => load(true, nextCursor)}
-              disabled={loadingMore}
+              className="gap-1.5"
+              onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
             >
-              {loadingMore ? "Loading…" : "Load more files"}
+              {showDeleted ? <ActionIcons.restore className="size-3.5" /> : <ActionIcons.delete className="size-3.5" />}
+              <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
+            </Button>
+            <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection">
+              <ActionIcons.dismiss className="size-4" />
             </Button>
           </div>
-        )}
-      </main>
+        </div>
+      )}
 
       <Dialog open={!!renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
@@ -1228,6 +1178,6 @@ export default function LibraryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

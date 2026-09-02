@@ -4,27 +4,16 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
-import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
 import { Camera, Loader2, MessageSquare } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { AppPageHeader } from "@/components/app/app-page-header";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ImportHistoryCard } from "@/components/settings/import-history";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { Badge } from "@/components/ui/badge";
+import { openSettings } from "@/components/settings/settings-sections";
 import { ProviderLogo } from "@/components/brand/provider-logo";
-import { SharedLinksCard } from "@/components/share/shared-links-card";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS } from "@/lib/plans";
 import { resolveModel } from "@/lib/models";
@@ -168,140 +157,7 @@ function TokenHeatmap({ daily }: { daily: Stats["daily"] }) {
 
 
 
-function AccountCard({ email }: { email: string }) {
-  const [open, setOpen] = React.useState(false);
-  const [confirm, setConfirm] = React.useState("");
-  const [deleting, setDeleting] = React.useState(false);
-  const match = confirm.trim().toLowerCase() === email.toLowerCase() && email.length > 0;
-
-  const deleteAccount = async () => {
-    setDeleting(true);
-    try {
-      const res = await fetch("/api/account/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirmEmail: confirm.trim() }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Could not delete the account.");
-      }
-      await signOutToSignIn();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not delete the account.");
-      setDeleting(false);
-    }
-  };
-
-  return (
-    // id="account": Settings' Account tile and its Danger zone both link here,
-    // because this is the only copy of export and of account deletion.
-    <Card id="account" className="scroll-mt-6 rounded-surface p-5">
-      <CardEyebrow className="mb-4">Account</CardEyebrow>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Export your data</p>
-          <p className="text-sm text-muted-foreground">
-            Profile, settings, conversations, memories, projects, and file metadata. The Juno package also carries Library bytes and revisions when they fit the archive cap.
-          </p>
-        </div>
-        {/* flex-wrap: the parent stacks to a column below sm, so at 320–375px
-            three shrink-0 buttons with icons overflowed the card's width. */}
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href="/api/account/export" download>
-              <ActionIcons.download className="size-3.5" /> JSON
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <a href="/api/account/export?format=juno" download>
-              <ActionIcons.download className="size-3.5" /> Juno package
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <a href="/api/account/export?format=csv" download>
-              <ActionIcons.download className="size-3.5" /> CSV
-            </a>
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Delete account permanently</p>
-          <p className="text-sm text-muted-foreground">
-            Chats, memories, files, and your subscription — everything, immediately.
-          </p>
-        </div>
-        {/* destructive-outline, not outline: this is now the product's only
-            account-deletion trigger, and it was the neutral-looking one while
-            the unguarded duplicate in Settings wore the dangerous styling. */}
-        <Button variant="destructive-outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
-          Delete account…
-        </Button>
-      </div>
-
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (deleting) return;
-          setOpen(next);
-          if (!next) setConfirm("");
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete this account?</DialogTitle>
-            <DialogDescription>
-              This deletes your account and everything in it — conversations, memories, uploaded
-              files, and your subscription. It takes effect immediately, and nothing can be
-              recovered afterwards. If you want a copy, export your data first.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="delete-confirm-email" className="text-muted-foreground">
-              Type <span className="font-mono text-foreground">{email}</span> to confirm
-            </Label>
-            <Input
-              id="delete-confirm-email"
-              type="email"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={email}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              disabled={deleting}
-            />
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setOpen(false);
-                setConfirm("");
-              }}
-              disabled={deleting}
-            >
-              Cancel
-            </Button>
-            <Button variant="destructive" disabled={!match || deleting} onClick={deleteAccount}>
-              {deleting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" /> Deleting…
-                </>
-              ) : (
-                "Delete permanently"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  );
-}
-
-function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
+export default function ProfilePage() {
   const router = useRouter();
   const { user, quota } = useApp();
   const plan = PLANS[quota.plan];
@@ -347,18 +203,26 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
   };
 
   return (
-    <div className={cn(!hideHeader && "app-page-scroll")}>
-      <div className={cn("mx-auto w-full max-w-3xl", hideHeader ? "px-0 py-0" : "app-page-content")}>
-        {!hideHeader && <AppPageHeader eyebrow="Profile" heading={user.name ?? "You"} />}
+    <AppPage measure="reading">
+        <AppPageHeader
+          eyebrow="Profile"
+          heading={user.name ?? "You"}
+          lede="Your activity, model mix and lifetime ledger."
+          actions={
+            <Button variant="outline" size="sm" onClick={() => openSettings("account")}>
+              Account settings
+            </Button>
+          }
+        />
 
         {/* Identity Header */}
-        <div className="flex items-center gap-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <div className="surface-raised flex items-center gap-4 rounded-card p-5">
           <div className="group relative">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted text-xl font-bold text-foreground shadow-md disabled:cursor-default"
+              className="relative flex size-16 items-center justify-center overflow-hidden surface-raised rounded-full bg-muted text-xl font-bold text-foreground disabled:cursor-default"
               aria-label="Change profile picture"
             >
               {avatar ? (
@@ -391,9 +255,7 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 className="truncate text-base font-semibold text-foreground">{user.name || "User"}</h3>
-              <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary px-2 py-0.5 font-mono text-micro font-semibold uppercase text-secondary-foreground">
-                {plan.name}
-              </span>
+              <Badge variant="secondary">{plan.name}</Badge>
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
             <p className="mt-1 font-mono text-caption text-muted-foreground/80">
@@ -418,16 +280,16 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
           />
         ) : !stats ? (
           <div className="mt-5 space-y-4">
-            <div className="skeleton h-32 rounded-2xl" />
+            <div className="skeleton h-32 rounded-card" />
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="skeleton h-40 rounded-2xl" />
-              <div className="skeleton h-40 rounded-2xl" />
+              <div className="skeleton h-40 rounded-card" />
+              <div className="skeleton h-40 rounded-card" />
             </div>
           </div>
         ) : (
           <div className="mt-5 space-y-4">
             {/* Activity heatmap — last ~53 weeks */}
-            <Card className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+            <Card className="p-5">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Activity</CardEyebrow>
@@ -456,7 +318,7 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Most-used models — year window mix */}
-              <Card className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+              <Card className="p-5">
                 <div className="mb-3">
                   <CardEyebrow>Most-used models</CardEyebrow>
                   <p className="mt-1 text-xs text-muted-foreground">Your mix across active providers.</p>
@@ -502,36 +364,10 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
               <LifetimeCard stats={stats} planName={plan.name} />
             </div>
 
-            {/* Account & Security */}
-            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Security & Session</h4>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Sign-in & Credentials</p>
-                  <p className="text-xs text-muted-foreground">Manage active sessions across devices.</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full text-xs"
-                  onClick={() => signOutToSignIn()}
-                >
-                  Log out
-                </Button>
-              </div>
-            </div>
           </div>
         )}
 
-        {!hideHeader && (
-          <div className="mt-4 space-y-4">
-            <SharedLinksCard />
-            <ImportHistoryCard />
-            <AccountCard email={user.email ?? ""} />
-          </div>
-        )}
-      </div>
-    </div>
+    </AppPage>
   );
 }
 
@@ -741,10 +577,3 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
   );
 }
 
-function ProfilePage() {
-  return <ProfileContent />;
-}
-
-ProfilePage.Content = ProfileContent;
-
-export default ProfilePage;

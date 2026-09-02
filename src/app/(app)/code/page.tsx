@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/session";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { RunList } from "@/components/code/run-list";
@@ -30,34 +30,33 @@ export const dynamic = "force-dynamic";
  * The list is a client island because it polls, streams and takes answers. The
  * page around it stays a server component: it only needs to prove there is a
  * signed-in user and draw the frame.
+ *
+ * The frame is `AppPage measure="wide"` — the same 64rem column every other
+ * list page in the product uses, so moving between Projects, Work and Code
+ * never resizes the page. The review pane opens beside the list inside that
+ * column (see run-list.tsx), which is why the list keeps its rows short.
  */
 export default async function CodePage() {
   await requireUser();
 
   return (
-    <div className="app-page-scroll">
-      {/* Wider than the product's other list pages on purpose: the review pane
-          opens BESIDE the list rather than over it, and 72rem is what fits a
-          readable run list and a 27rem diff pane side by side without either
-          becoming a column of two-word lines. */}
-      <div className="app-page-content max-w-6xl">
-        <AppPageHeader
-          eyebrow="Code"
-          heading="Runs"
-          icon={AppIcons.code}
-          lede="Every Juno Code run, wherever you started it — this Mac, the cloud, or the app on your phone."
-          actions={
-            <Button asChild className="gap-1.5">
-              <Link href="/code/new">
-                <AppIcons.new className="size-4" aria-hidden="true" />
-                New task
-              </Link>
-            </Button>
-          }
-        />
-        <CodeSurfaceNav active="runs" />
-        <RunList />
-      </div>
-    </div>
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Code"
+        heading="Runs"
+        icon={AppIcons.code}
+        lede="Every Juno Code run, wherever you started it — this Mac, the cloud, or the app on your phone."
+        actions={
+          <Button asChild className="gap-1.5">
+            <Link href="/code/new">
+              <AppIcons.new className="size-4" aria-hidden="true" />
+              New task
+            </Link>
+          </Button>
+        }
+      />
+      <CodeSurfaceNav active="runs" />
+      <RunList />
+    </AppPage>
   );
 }

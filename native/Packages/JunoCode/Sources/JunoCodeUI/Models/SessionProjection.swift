@@ -37,11 +37,63 @@ public struct ActivityNarrativeGroup: Identifiable, Sendable, Equatable {
     public var linesRemoved: Int
     public var startedAt: Date
     public var completedAt: Date?
+    /// Every tool call the group folded, in the order it was proposed, with the
+    /// state each reached. This is the expanded view's whole content: the
+    /// collapsed row is a sentence about these records, and opening it shows
+    /// the records themselves rather than a second paraphrase.
+    public var toolCallRecords: [ToolCallRecord]
 
     public enum GroupStatus: String, Sendable, Hashable {
         case running
         case completed
         case interrupted
+    }
+
+    /// One tool call, as the work log reports it.
+    public struct ToolCallRecord: Identifiable, Sendable, Equatable {
+        public enum ToolStatus: String, Sendable, Hashable {
+            case proposed
+            case running
+            case succeeded
+            case failed
+            case denied
+            case cancelled
+        }
+
+        /// The tool call identifier the runtime assigned.
+        public let id: String
+        public let toolName: String
+        /// The proposal's one-line summary — "Read Sources/App.swift".
+        public var summary: String
+        public var status: ToolStatus
+        public var durationSeconds: Double?
+        /// The completion's result line, when the tool reported one.
+        public var resultSummary: String?
+        /// Streamed output, bounded to what a collapsed log needs to show.
+        public var outputLines: [String]
+        public var startedAt: Date
+
+        public static let maximumOutputLines = 40
+
+        public init(
+            id: String,
+            toolName: String,
+            summary: String,
+            status: ToolStatus = .proposed,
+            durationSeconds: Double? = nil,
+            resultSummary: String? = nil,
+            outputLines: [String] = [],
+            startedAt: Date
+        ) {
+            self.id = id
+            self.toolName = toolName
+            self.summary = summary
+            self.status = status
+            self.durationSeconds = durationSeconds
+            self.resultSummary = resultSummary
+            self.outputLines = outputLines
+            self.startedAt = startedAt
+        }
     }
 
     init(id: String, startedAt: Date) {
@@ -56,6 +108,15 @@ public struct ActivityNarrativeGroup: Identifiable, Sendable, Equatable {
         self.linesRemoved = 0
         self.startedAt = startedAt
         self.completedAt = nil
+        self.toolCallRecords = []
+    }
+
+    /// Whether the group has anything to show when opened.
+    public var hasDetail: Bool { !toolCallRecords.isEmpty }
+
+    /// The elapsed wall time, once the group has closed.
+    public var durationSeconds: Double? {
+        completedAt.map { $0.timeIntervalSince(startedAt) }
     }
 }
 
@@ -131,17 +192,34 @@ public final class SessionProjection {
             lastProposedToolName = proposed.toolName
             let index = openGroup(at: event)
             record(tool: proposed.toolName, in: index)
+            narrativeGroups[index].toolCallRecords.append(
+                ActivityNarrativeGroup.ToolCallRecord(
+                    id: proposed.toolCallID,
+                    toolName: proposed.toolName,
+                    summary: proposed.summary,
+                    startedAt: event.timestamp
+                )
+            )
             narrativeGroups[index].detailSummary = proposed.summary
             executionState = .executing(summary: "Preparing \(proposed.toolName)…")
 
         case let .toolStarted(started):
             let index = openGroup(at: event)
             let name = lastProposedToolName
+            updateRecord(started.toolCallID, in: index) { record in
+                record.status = .running
+                record.startedAt = event.timestamp
+            }
             narrativeGroups[index].detailSummary = "Running \(name)…"
             executionState = .executing(summary: "Running \(name)…")
 
         case let .toolCompleted(completed):
             let index = openGroup(at: event)
+            updateRecord(completed.toolCallID, in: index) { record in
+                record.status = Self.recordStatus(completed.status)
+                record.durationSeconds = completed.durationSeconds
+                record.resultSummary = completed.resultSummary.isEmpty ? nil : completed.resultSummary
+            }
             narrativeGroups[index].detailSummary = completed.resultSummary
             refreshSummary(index)
             executionState = .executing(summary: narrativeGroups[index].title)
@@ -155,10 +233,30 @@ public final class SessionProjection {
             refreshSummary(index)
             executionState = .executing(summary: narrativeGroups[index].title)
 
-        case .toolOutput:
-            // Folded into its own tool row by the transcript context; not a
-            // narrative event.
-            break
+        case let .toolOutput(output):
+            // Folded into the call's own record, bounded, so an opened group can
+            // show a command's tail without the transcript context re-walking
+            // the event list.
+            guard let index = narrativeGroups.indices.last,
+                  narrativeGroups[index].status == .running
+            else { break }
+            updateRecord(output.toolCallID, in: index) { record in
+                let lines = output.text
+                    .split(separator: "\n", omittingEmptySubsequences: true)
+                    .map(String.init)
+                record.outputLines.append(contentsOf: lines)
+                if record.outputLines.count > ActivityNarrativeGroup.ToolCallRecord.maximumOutputLines {
+                    record.outputLines.removeFirst(
+                        record.outputLines.count
+                            - ActivityNarrativeGroup.ToolCallRecord.maximumOutputLines
+                    )
+                }
+            }
+
+        case .compaction:
+            // A fold of the model context. It is a row of its own in the
+            // transcript and says nothing about what the agent is doing.
+            closeActiveGroup(status: .completed)
 
         case let .approvalRequested(request):
             closeActiveGroup(status: .completed)
@@ -302,6 +400,28 @@ public final class SessionProjection {
         return index
     }
 
+    private func updateRecord(
+        _ toolCallID: String,
+        in index: Int,
+        _ change: (inout ActivityNarrativeGroup.ToolCallRecord) -> Void
+    ) {
+        guard let position = narrativeGroups[index].toolCallRecords
+            .firstIndex(where: { $0.id == toolCallID })
+        else { return }
+        change(&narrativeGroups[index].toolCallRecords[position])
+    }
+
+    private static func recordStatus(
+        _ status: ToolCompletionStatus
+    ) -> ActivityNarrativeGroup.ToolCallRecord.ToolStatus {
+        switch status {
+        case .succeeded: .succeeded
+        case .failed: .failed
+        case .denied: .denied
+        case .cancelled: .cancelled
+        }
+    }
+
     private func record(tool name: String, in index: Int) {
         if let position = narrativeGroups[index].toolCounts.firstIndex(where: { $0.name == name }) {
             narrativeGroups[index].toolCounts[position].count += 1
@@ -317,6 +437,14 @@ public final class SessionProjection {
         else { return }
         narrativeGroups[index].status = status
         narrativeGroups[index].completedAt = Date()
+        // A call still open when the group closes was interrupted with it.
+        for position in narrativeGroups[index].toolCallRecords.indices
+        where narrativeGroups[index].toolCallRecords[position].status == .proposed
+            || narrativeGroups[index].toolCallRecords[position].status == .running
+        {
+            narrativeGroups[index].toolCallRecords[position].status =
+                status == .interrupted ? .cancelled : .succeeded
+        }
         refreshSummary(index)
     }
 
@@ -345,21 +473,35 @@ public final class SessionProjection {
     }
 
     /// Titles a group from the mix of tools it ran, using the canonical
-    /// registry names the events carry. The sentence describes the work, not
-    /// the machinery: reads and searches are investigation, writes are
-    /// modification, tests and builds are verification.
-    private static func title(for toolCounts: [ToolTally]) -> String {
-        let names = Set(toolCounts.map(\.name))
-        let writes = names.intersection(["create_file", "write_file", "apply_patch", "delete_file", "move_file"])
-        let tests = names.contains("run_tests")
-        let commands = names.contains("run_command")
-        let reads = names.intersection(["read_file", "list_directory", "glob", "grep", "find_files"])
-        let gitReads = names.intersection(["git_status", "git_diff", "git_log"])
+    /// registry names the events carry.
+    ///
+    /// The sentence describes the work, not the machinery — "Read 4 files · ran
+    /// 2 commands · edited 3 files" — and it is built from counts so the row
+    /// stays honest as calls land: a group that has read one file says so, and
+    /// grows into a longer sentence rather than starting with a vague verb.
+    static func title(for toolCounts: [ToolTally]) -> String {
+        var clauses: [String] = []
+        func count(_ names: Set<String>) -> Int {
+            toolCounts.filter { names.contains($0.name) }.reduce(0) { $0 + $1.count }
+        }
+        let reads = count(["read_file", "list_directory", "glob", "grep", "find_files", "git_status", "git_diff", "git_log", "web_search", "web_fetch"])
+        let edits = count(["create_file", "write_file", "apply_patch", "delete_file", "move_file"])
+        let commands = count(["run_command"])
+        let tests = count(["run_tests"])
+        let delegations = count(["delegate_task"])
+        let known = reads + edits + commands + tests + delegations
+        let other = toolCounts.reduce(0) { $0 + $1.count } - known
 
-        if !writes.isEmpty { return "Modified files" }
-        if tests { return "Ran verification" }
-        if commands { return "Ran commands" }
-        if !reads.isEmpty || !gitReads.isEmpty { return "Investigated workspace" }
-        return toolCounts.isEmpty ? "Working" : "Worked in workspace"
+        if reads > 0 { clauses.append("read \(reads) \(reads == 1 ? "file" : "files")") }
+        if commands > 0 { clauses.append("ran \(commands) \(commands == 1 ? "command" : "commands")") }
+        if tests > 0 { clauses.append("ran \(tests == 1 ? "the tests" : "\(tests) test runs")") }
+        if edits > 0 { clauses.append("edited \(edits) \(edits == 1 ? "file" : "files")") }
+        if delegations > 0 { clauses.append("delegated \(delegations) \(delegations == 1 ? "task" : "tasks")") }
+        if other > 0 { clauses.append("used \(other) \(other == 1 ? "tool" : "tools")") }
+
+        guard let first = clauses.first else { return "Working" }
+        let sentence = ([first.prefix(1).uppercased() + first.dropFirst()] + clauses.dropFirst())
+            .joined(separator: " · ")
+        return sentence
     }
 }

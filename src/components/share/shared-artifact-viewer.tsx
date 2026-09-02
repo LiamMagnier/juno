@@ -32,12 +32,10 @@ export function SharedArtifactViewer({
   const hasPreview = isMarkdown || rt.mode === "web";
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
 
-  // Opaque `bg-card`, not `bg-card/40`. That alpha was tuned against the old
-  // charcoal ground; over pure black it composites to ~2.6% — indistinguishable
-  // from the page, so the panel that frames a shared artifact had no frame. Its
-  // shadow-soft is black-on-black there too, hence the dark lit inset edge.
-  const panel =
-    "min-h-0 flex-1 overflow-hidden rounded-surface border border-border/60 bg-card shadow-soft dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.4)]";
+  // The framing card: the same `surface-raised-lg` panel every centred card in
+  // the unauthenticated product is cut from. The recipe carries its own
+  // hairline and per-theme throw, so nothing is hand-written for dark.
+  const panel = "surface-raised-lg min-h-0 flex-1 overflow-hidden rounded-panel";
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "code")} className="flex min-h-0 flex-1 flex-col">

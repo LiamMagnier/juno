@@ -54,7 +54,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       {voice.status === "error" && voice.error && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-full border border-border/80 bg-secondary/90 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-md"
+          className="flex items-center gap-2 surface-raised rounded-full px-3 py-1 text-xs text-muted-foreground"
         >
           <span className="size-1.5 rounded-full bg-amber-500" />
           <span>{voice.error}</span>
@@ -62,7 +62,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       )}
 
       {/* Floating Dynamic Voice Pill */}
-      <div className="flex max-w-full items-center gap-2 rounded-full border border-border/80 bg-background/95 p-1.5 shadow-xl backdrop-blur-xl transition-all duration-base">
+      <div className="flex max-w-full items-center gap-2 surface-float overlay-glass rounded-full p-1.5 transition-[box-shadow,border-color] duration-base ease-out-soft">
         {/* Status & Audio Equalizer Indicator */}
         <div className="flex min-w-0 items-center gap-2.5 pl-3 pr-2">
           {/* Subtle Dynamic Equalizer or Status Glyph */}
@@ -76,9 +76,9 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 </>
               ) : (
                 <>
-                  <span className="h-2 w-0.5 rounded-full bg-muted-foreground/60 transition-all" />
-                  <span className="h-3 w-0.5 rounded-full bg-foreground transition-all" />
-                  <span className="h-1.5 w-0.5 rounded-full bg-muted-foreground/60 transition-all" />
+                  <span className="h-2 w-0.5 rounded-full bg-muted-foreground/60 transition-[height,background-color] duration-fast ease-out-soft" />
+                  <span className="h-3 w-0.5 rounded-full bg-foreground transition-[height,background-color] duration-fast ease-out-soft" />
+                  <span className="h-1.5 w-0.5 rounded-full bg-muted-foreground/60 transition-[height,background-color] duration-fast ease-out-soft" />
                 </>
               )
             ) : voice.status === "connecting" || voice.status === "reconnecting" ? (
@@ -107,7 +107,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               type="button"
               onClick={() => void voice.start()}
               aria-label="Retry connection"
-              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-foreground px-3 text-xs font-medium text-background transition-all hover:bg-foreground/90 active:scale-95"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-foreground px-3 text-xs font-medium text-background transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-fast ease-out-soft hover:bg-foreground/90 active:scale-95"
             >
               <ActionIcons.refresh className="size-3.5" />
               <span>Retry</span>
@@ -125,9 +125,9 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                   aria-label={voice.screenSharing ? "Stop sharing screen" : "Share screen"}
                   aria-pressed={voice.screenSharing}
                   className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-all active:scale-95",
+                    "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-fast ease-out-soft active:scale-95",
                     voice.screenSharing
-                      ? "bg-primary text-primary-foreground shadow-xs"
+                      ? "bg-primary text-primary-foreground shadow-pop"
                       : "bg-secondary text-foreground hover:bg-accent"
                   )}
                 >
@@ -143,9 +143,9 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
                 aria-label={voice.muted ? "Unmute mic" : "Mute mic"}
                 aria-pressed={voice.muted}
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-all active:scale-95",
+                  "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-fast ease-out-soft active:scale-95",
                   voice.muted
-                    ? "bg-foreground text-background shadow-xs"
+                    ? "bg-foreground text-background shadow-pop"
                     : "bg-secondary text-foreground hover:bg-accent"
                 )}
               >
@@ -159,11 +159,11 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label="Voice settings"
-              className="inline-flex size-8 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-95"
+              className="inline-flex size-8 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-95"
             >
               <ChevronDown className="size-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-56 rounded-menu p-1 shadow-xl">
+            <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-56 p-1">
               <DropdownMenuLabel className="font-mono text-micro uppercase text-muted-foreground">Voice Engine</DropdownMenuLabel>
               {VOICE_PROVIDERS.map((provider) => (
                 <DropdownMenuItem
@@ -201,7 +201,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
             type="button"
             onClick={onClose}
             aria-label="End voice session"
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/80 bg-secondary/80 px-3 text-xs font-medium text-foreground transition-all hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive active:scale-95"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/80 bg-secondary/80 px-3 text-xs font-medium text-foreground transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-fast ease-out-soft hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive active:scale-95"
           >
             <PhoneOff className="size-3.5" />
             <span>End</span>

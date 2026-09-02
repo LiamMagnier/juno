@@ -14,8 +14,12 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") ?? undefined;
   const folderId = searchParams.get("folderId") ?? undefined;
+  // `archived=only` lists the archived chats (the sidebar's "Archived chats"
+  // sheet); the default excludes them, which is what the bootstrap does too.
+  const archivedParam = searchParams.get("archived");
+  const archived = archivedParam === "only" ? "only" : archivedParam === "include" ? "include" : undefined;
 
-  const conversations = await listConversations(user.id, { q, folderId });
+  const conversations = await listConversations(user.id, { q, folderId, archived });
   return NextResponse.json({ conversations });
 }
 

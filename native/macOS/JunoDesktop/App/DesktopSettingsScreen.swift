@@ -144,6 +144,7 @@ struct DesktopSettingsScreen: View {
                 .keyboardShortcut("[", modifiers: .command)
                 .help("Back to settings (⌘[)")
                 .accessibilityIdentifier("juno.desktop.memory-proposals.back")
+                .contentShape(.rect)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -316,6 +317,7 @@ struct DesktopSettingsScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Reload settings") { Task { await model.refresh() } }
                 .accessibilityIdentifier("juno.desktop.settings.reload")
+                .contentShape(.rect)
         }
     }
 
@@ -490,6 +492,7 @@ struct DesktopSettingsScreen: View {
             }
             .help("Keep or discard the details Juno picked up in your chats. Nothing here is saved until you keep it.")
             .accessibilityIdentifier("juno.desktop.settings.memory-proposals")
+            .contentShape(.rect)
         }
     }
 
@@ -524,6 +527,7 @@ struct DesktopSettingsScreen: View {
                 Text("Open memory manager").junoWideButtonLabel()
             }
             .accessibilityIdentifier("juno.desktop.settings.memory-manager")
+            .contentShape(.rect)
 
             reviewControl
 
@@ -617,6 +621,7 @@ struct DesktopSettingsScreen: View {
                         Text("Stop serving remote work now").junoWideButtonLabel()
                     }
                     .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
+                    .contentShape(.rect)
                 }
             }
         }
@@ -697,6 +702,7 @@ struct DesktopSettingsScreen: View {
                 Spacer(minLength: JunoSpace.snug)
                 Button("Diagnostics…") { sheet = .diagnostics }
                     .accessibilityIdentifier("juno.desktop.settings.diagnostics")
+                    .contentShape(.rect)
             }
         }
     }
@@ -768,6 +774,7 @@ struct DesktopSettingsScreen: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityIdentifier("juno.desktop.settings.keep-local")
+                .contentShape(.rect)
 
                 Button("Use server version") {
                     Task { await model.resolveConflicts(keepLocalChanges: false) }
@@ -775,6 +782,7 @@ struct DesktopSettingsScreen: View {
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
                 .accessibilityIdentifier("juno.desktop.settings.use-server")
+                .contentShape(.rect)
             }
         } else if model.phase == .offline || model.phase == .failed,
             let message = model.lastErrorDescription
@@ -791,6 +799,7 @@ struct DesktopSettingsScreen: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.junoAccent)
                     .accessibilityIdentifier("juno.desktop.settings.retry")
+                    .contentShape(.rect)
             }
         }
     }
@@ -862,6 +871,7 @@ private struct DesktopSettingsSheetHost<Content: View>: View {
                 Spacer(minLength: JunoSpace.regular)
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .contentShape(.rect)
             }
             .padding(.horizontal, JunoSpace.roomy)
             .padding(.vertical, JunoSpace.cozy)
@@ -1402,6 +1412,7 @@ private struct DesktopSettingsFavoritesTile: View {
                 .fixedSize()
                 .disabled(disabled)
                 .accessibilityIdentifier("juno.desktop.settings.add-favorite")
+                .contentShape(.rect)
             }
         }
     }
@@ -1428,6 +1439,7 @@ private struct DesktopSettingsFavoritesTile: View {
             .disabled(disabled)
             .help("Remove \(option.displayName) from favorites")
             .accessibilityLabel("Remove \(option.displayName) from favorites")
+            .contentShape(.rect)
         }
         .padding(.vertical, JunoSpace.snug)
     }
@@ -1544,6 +1556,7 @@ private struct DesktopSettingsInstructionsTile: View {
                 Spacer(minLength: 0)
                 Button("Revert") { draft = settings.customInstructions }
                     .disabled(draft == settings.customInstructions)
+                    .contentShape(.rect)
                 Button("Save") {
                     update(NativeSettingsPatch(customInstructions: draft))
                 }
@@ -1551,6 +1564,7 @@ private struct DesktopSettingsInstructionsTile: View {
                 .help("Save your custom instructions (⌘S)")
                 .disabled(disabled || draft == settings.customInstructions)
                 .accessibilityIdentifier("juno.desktop.settings.save-instructions")
+                .contentShape(.rect)
             }
         }
         .task(id: settings.customInstructions) {
@@ -1588,6 +1602,7 @@ private struct DesktopSettingsAccountActions: View {
             }
             .help("Every public link this account has handed out, and the way to take one back")
             .accessibilityIdentifier("juno.desktop.settings.shared-links")
+            .contentShape(.rect)
         }
 
         // Two buttons rather than one with a menu behind it. There are exactly
@@ -1614,6 +1629,7 @@ private struct DesktopSettingsAccountActions: View {
                 }
                 exportDocument = nil
             }
+            .contentShape(.rect)
 
             Button { export(.csv) } label: {
                 Text("Export your data as CSV…").junoWideButtonLabel()
@@ -1621,6 +1637,7 @@ private struct DesktopSettingsAccountActions: View {
             .disabled(isExporting)
             .help("The same export as a spreadsheet")
             .accessibilityIdentifier("juno.desktop.settings.export-csv")
+            .contentShape(.rect)
 
             if isExporting {
                 HStack(spacing: JunoSpace.snug) {
@@ -1651,6 +1668,7 @@ private struct DesktopSettingsAccountActions: View {
             } message: {
                 Text("Juno removes this Mac's local copy of your conversations and settings. Nothing is deleted on the server.")
             }
+            .contentShape(.rect)
     }
 
     /// Downloads the export, then hands it to `.fileExporter`.
@@ -1724,6 +1742,7 @@ private struct DesktopSettingsDangerActions: View {
                 }
                 .disabled(isDeleting)
                 .accessibilityIdentifier("juno.desktop.settings.delete-account")
+                .contentShape(.rect)
             }
         }
         .sheet(isPresented: $showingDelete) { confirmSheet }
@@ -1752,11 +1771,13 @@ private struct DesktopSettingsDangerActions: View {
                 Spacer()
                 Button("Cancel") { showingDelete = false }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 if isDeleting {
                     ProgressView().controlSize(.small)
                 } else {
                     Button("Delete account", role: .destructive, action: deleteAccount)
                         .disabled(!confirmationMatches)
+                        .contentShape(.rect)
                 }
             }
         }

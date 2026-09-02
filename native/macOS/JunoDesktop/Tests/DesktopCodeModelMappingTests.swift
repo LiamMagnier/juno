@@ -160,11 +160,45 @@ struct DesktopCodeModelMappingTests {
 
     // MARK: - First-turn launch contract
 
+    /// Local and Worktree stay on this Mac; Cloud and Device are dispatched
+    /// through the account's task API and can never be standing defaults.
     @Test
-    func desktopLaunchTargetsMapOnlyRelayedWorkToTheNativeTaskAPI() {
-        #expect(DesktopCodeLaunchTarget.local.nativeTarget == nil)
-        #expect(DesktopCodeLaunchTarget.cloud.nativeTarget == .cloud)
-        #expect(DesktopCodeLaunchTarget.device.nativeTarget == .device)
+    func environmentsSplitBetweenThisMacAndTheRelay() {
+        #expect(CodeEnvironmentChoice.local.isLocal)
+        #expect(CodeEnvironmentChoice.worktree.isLocal)
+        #expect(!CodeEnvironmentChoice.cloud.isLocal)
+        #expect(!CodeEnvironmentChoice.device.isLocal)
+        #expect(CodeEnvironmentChoice.defaultable == [.local, .worktree])
+    }
+
+    /// A worktree draft asks for isolation only when it has a project to
+    /// isolate; a projectless conversation has no checkout to branch.
+    @Test
+    func aWorktreeDraftIsolatesOnlyWithAProject() {
+        let isolated = DesktopLocalCodeDraft(
+            workspaceID: WorkspaceID(value: "workspace"),
+            prompt: "Refactor",
+            behavior: .code,
+            permissionMode: .workspaceWrite,
+            modelID: "anthropic:claude-sonnet-5",
+            reasoningEffort: .medium,
+            environment: .worktree,
+            customAgentID: "juno:reviewer"
+        )
+        #expect(isolated.usesIsolatedWorktree)
+        #expect(isolated.configuration.customAgentID == "juno:reviewer")
+
+        let projectless = DesktopLocalCodeDraft(
+            workspaceID: nil,
+            prompt: "Explain",
+            behavior: .ask,
+            permissionMode: .readOnly,
+            modelID: "anthropic:claude-sonnet-5",
+            reasoningEffort: nil,
+            environment: .worktree
+        )
+        #expect(!projectless.usesIsolatedWorktree)
+        #expect(projectless.configuration.reasoningEffort == nil)
     }
 
     @Test

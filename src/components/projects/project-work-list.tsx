@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Zap, Plus, ArrowUpRight, Search } from "lucide-react";
+import { Zap, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AgentStatusBadge, type AgentRunStatus } from "@/components/ui/agent-status-badge";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export interface ProjectWorkItem {
@@ -44,70 +45,81 @@ export function ProjectWorkList({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative min-w-[200px] flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter delegated work…"
-            className="pl-8 h-8 text-ui font-mono bg-secondary/50"
+            placeholder="Search work…"
+            aria-label="Search delegated work"
+            className="pl-9"
           />
         </div>
-
-        <Button
-          type="button"
-          size="sm"
-          onClick={onNewWork}
-          className="h-8 gap-1.5 font-mono text-caption"
-        >
-          <Plus className="size-3.5" />
-          <span>Delegate work in project</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          {filtered.length} of {workRuns.length}
+        </span>
+        <Button type="button" size="sm" variant="secondary" onClick={onNewWork} className="ml-auto gap-1.5">
+          <Plus className="size-3.5" aria-hidden="true" />
+          Delegate work
         </Button>
       </div>
 
       {filtered.length === 0 ? (
         <EmptyState
           size="panel"
-          className="motion-safe:animate-rise-in py-8"
-          icon={Zap}
-          title={query ? "No matching work runs" : "No delegated work in this project"}
+          className="motion-safe:animate-rise-in"
+          icon={query ? Search : Zap}
+          title={query ? "No matching work" : "No delegated work yet"}
           description={
             query
-              ? "Try adjusting your filter keyword."
-              : "Delegate long-running goals, computer use tasks, and automations with full project context."
+              ? "Try another search term."
+              : "Delegate long-running goals and automations; they run with this project’s context."
+          }
+          action={
+            query ? (
+              <Button variant="ghost" size="sm" onClick={() => setQuery("")} className="text-muted-foreground">
+                Clear search
+              </Button>
+            ) : undefined
           }
         />
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {filtered.map((work) => (
-            <Link
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Delegated work">
+          {filtered.map((work, i) => (
+            <li
               key={work.id}
-              href={`/work/${work.id}`}
-              className="group flex flex-col justify-between gap-3 rounded-card border border-border/70 bg-card p-4 transition-all duration-fast hover:border-primary/40 hover:shadow-lift hover:-translate-y-0.5"
+              className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i)}
             >
-              <div className="space-y-1.5">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="font-mono text-ui font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-1">
-                    {work.title || "Delegated task"}
+              <Link
+                href={`/work/${work.id}`}
+                className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg active:shadow-pressed motion-reduce:transition-none"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+                    <Zap className="size-4" aria-hidden="true" />
                   </span>
-                  <AgentStatusBadge status={work.status} size="sm" />
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {work.title || "Delegated task"}
+                    </span>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      {work.goal || "No goal description provided."}
+                    </p>
+                  </div>
                 </div>
-
-                <p className="text-caption text-muted-foreground line-clamp-2 leading-relaxed">
-                  {work.goal || "No goal description provided."}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-border/40 font-mono text-micro text-muted-foreground">
-                <span>Updated {timeAgo(work.updatedAt || work.createdAt)}</span>
-                <span className="inline-flex items-center gap-0.5 text-primary group-hover:translate-x-0.5 transition-transform">
-                  Open <ArrowUpRight className="size-3" />
-                </span>
-              </div>
-            </Link>
+                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+                  <AgentStatusBadge status={work.status} size="sm" />
+                  <span>Updated {timeAgo(work.updatedAt || work.createdAt)}</span>
+                </div>
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

@@ -6,8 +6,9 @@ import { ArrowRight, Edit3, Pin, Plus, Trash2 } from "lucide-react";
 import type { JunoAssistantConfig } from "@/lib/assistants";
 import { AssistantStudio } from "@/components/assistants/assistant-studio";
 import { AppIcons } from "@/lib/app-icons";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -18,17 +19,17 @@ import {
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
  * Custom Juno assistants — the product's equivalent of reusable Gems / custom
- * assistants, presented in the same editorial shell as Projects, Work and Code.
+ * assistants, presented in the same page frame as Projects, Work and Code.
  *
- * This page used to be a visual island built from `neutral-*`, `coral-*`, raw
- * inputs, private cards and browser `confirm()`. Moving it onto semantic tokens
- * is not a palette swap: it makes appearance/accent settings, focus states,
- * coarse-pointer targets, dark mode and future design-token changes propagate
- * here exactly as they do everywhere else.
+ * The gallery is a grid of raised tiles with the house anatomy (icon well,
+ * name, one-line description, metadata footer) and a dashed "New assistant"
+ * tile at the end, so creating one reads as filling the next slot.
  */
 export default function AssistantsPage() {
   const router = useRouter();
@@ -62,6 +63,11 @@ export default function AssistantsPage() {
 
   const startChat = (assistant: JunoAssistantConfig) => {
     router.push(`/chat?assistantId=${assistant.id}`);
+  };
+
+  const openStudio = (assistant: JunoAssistantConfig | null) => {
+    setEditingAssistant(assistant);
+    setStudioOpen(true);
   };
 
   const deleteAssistant = async () => {
@@ -105,58 +111,74 @@ export default function AssistantsPage() {
   const AssistantIcon = AppIcons.assistants;
   const SearchIcon = AppIcons.search;
 
+  const newTile = (
+    <button
+      type="button"
+      onClick={() => openStudio(null)}
+      className="surface-inset flex min-h-40 items-center justify-center gap-2 rounded-card border-dashed border-border/80 text-sm text-muted-foreground transition-[color,border-color] duration-fast ease-out-soft hover:border-foreground/30 hover:text-foreground motion-reduce:transition-none"
+    >
+      <Plus className="size-4" aria-hidden="true" />
+      New assistant
+    </button>
+  );
+
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-6xl">
-        <AppPageHeader
-          eyebrow="Assistants"
-          heading="Specialists you can reuse"
-          icon={AssistantIcon}
-          lede="Create focused Juno personalities with their own instructions, starter prompts and model preference, then start them from the same Chat surface as everything else."
-          actions={
-            <Button
-              onClick={() => {
-                setEditingAssistant(null);
-                setStudioOpen(true);
-              }}
-              className="gap-1.5"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              New assistant
-            </Button>
-          }
-        />
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Assistants"
+        heading="Specialists you can reuse"
+        icon={AssistantIcon}
+        lede="Focused Juno personalities with their own instructions, starter prompts and model preference."
+        actions={
+          <Button onClick={() => openStudio(null)} className="gap-1.5">
+            <Plus className="size-4" aria-hidden="true" />
+            New assistant
+          </Button>
+        }
+      />
 
-        <div className="mb-6 max-w-md">
-          <div className="relative">
-            <SearchIcon
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              type="search"
-              placeholder="Search assistants"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              className="pl-9"
-              aria-label="Search assistants"
-            />
-          </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <SearchIcon
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            type="search"
+            placeholder="Search assistants"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="pl-9"
+            aria-label="Search assistants"
+          />
         </div>
+        {!loading && !failed && (
+          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+            {filteredAssistants.length} {filteredAssistants.length === 1 ? "assistant" : "assistants"}
+          </span>
+        )}
+      </div>
 
+      <div className="mt-6">
         {failed ? (
           <EmptyState
+            tone="error"
             icon={AssistantIcon}
             title="Assistants are unavailable"
             description="Juno could not read your assistant library. Nothing was deleted; retry the request."
-            action={<Button onClick={() => void fetchAssistants()}>Retry</Button>}
+            action={
+              <Button variant="outline" size="sm" onClick={() => void fetchAssistants()}>
+                Try again
+              </Button>
+            }
           />
         ) : loading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
             {[0, 1, 2].map((index) => (
-              <div
+              <Skeleton
                 key={index}
-                className="h-44 animate-pulse rounded-card border border-border/50 bg-muted/55 motion-reduce:animate-none"
+                className="min-h-40 rounded-card [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                style={staggerDelay(index, "tight")}
               />
             ))}
           </div>
@@ -170,13 +192,12 @@ export default function AssistantsPage() {
                 : "Create a reusable specialist for a workflow, domain, class, project or writing style."
             }
             action={
-              searchQuery ? undefined : (
-                <Button
-                  onClick={() => {
-                    setEditingAssistant(null);
-                    setStudioOpen(true);
-                  }}
-                >
+              searchQuery ? (
+                <Button variant="outline" size="sm" onClick={() => setSearchQuery("")}>
+                  Clear search
+                </Button>
+              ) : (
+                <Button onClick={() => openStudio(null)} className="gap-1.5">
                   <Plus className="size-4" aria-hidden="true" />
                   Create assistant
                 </Button>
@@ -184,36 +205,38 @@ export default function AssistantsPage() {
             }
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredAssistants.map((assistant) => (
-              <article
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredAssistants.map((assistant, i) => (
+              <Card
                 key={assistant.id}
-                className="group relative flex min-h-44 flex-col rounded-card border border-border/60 bg-card p-5 shadow-soft transition-[border-color,box-shadow,transform] duration-fast ease-out-soft hover:border-border hover:shadow-pop motion-reduce:transition-none"
+                variant="interactive"
+                className="group relative flex min-h-40 flex-col gap-3 p-4 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                style={staggerDelay(i, "tight")}
               >
                 <div className="flex items-start gap-3">
                   <button
                     type="button"
                     onClick={() => startChat(assistant)}
-                    className="flex min-w-0 flex-1 items-start gap-3 rounded-control text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    className="flex min-w-0 flex-1 items-start gap-3 rounded-control text-left"
                     aria-label={`Start a chat with ${assistant.name}`}
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-accent text-accent-foreground">
-                      <AssistantIcon className="size-5" aria-hidden="true" />
+                    <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+                      <AssistantIcon className="size-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 pt-0.5">
-                      <span className="flex items-center gap-2 font-medium text-foreground">
+                      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                         <span className="truncate">{assistant.name}</span>
                         {assistant.isPinned && (
-                          <Pin className="size-3 fill-current text-primary" aria-label="Pinned" />
+                          <Pin className="size-3 shrink-0 fill-current text-primary" aria-label="Pinned" />
                         )}
                       </span>
-                      <span className="mt-1 block line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                      <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">
                         {assistant.description || "Custom Juno assistant"}
                       </span>
                     </span>
                   </button>
 
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100">
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
                     <Button
                       type="button"
                       variant="ghost"
@@ -227,10 +250,7 @@ export default function AssistantsPage() {
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => {
-                        setEditingAssistant(assistant);
-                        setStudioOpen(true);
-                      }}
+                      onClick={() => openStudio(assistant)}
                       aria-label={`Edit ${assistant.name}`}
                     >
                       <Edit3 className="size-3.5" aria-hidden="true" />
@@ -250,16 +270,20 @@ export default function AssistantsPage() {
                 <button
                   type="button"
                   onClick={() => startChat(assistant)}
-                  className="mt-auto flex min-h-11 items-center justify-between gap-3 border-t border-border/50 pt-3 text-left text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 text-left font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
                 >
-                  <span>Start chat</span>
-                  <span className="flex items-center gap-2 text-muted-foreground">
-                    <span className="font-mono text-micro">v{assistant.version}</span>
-                    <ArrowRight className="size-3.5 transition-transform duration-fast group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
+                  <span className="inline-flex items-center gap-1">
+                    Start chat
+                    <ArrowRight
+                      className="size-3 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none"
+                      aria-hidden="true"
+                    />
                   </span>
+                  <span className="tabular-nums">v{assistant.version}</span>
                 </button>
-              </article>
+              </Card>
             ))}
+            {!searchQuery && newTile}
           </div>
         )}
       </div>
@@ -301,6 +325,6 @@ export default function AssistantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

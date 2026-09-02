@@ -45,7 +45,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         <p className="rounded-field border border-warning/35 bg-warning/10 px-3.5 py-3 text-body text-foreground">
           Password recovery is temporarily unavailable. Please contact the site owner.
         </p>
-        <Button asChild variant="outline" className="w-full">
+        <Button asChild variant="secondary" className="w-full">
           <Link href="/sign-in"><ArrowLeft aria-hidden /> Back to sign in</Link>
         </Button>
       </div>
@@ -67,7 +67,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
             If an account exists for that email, we sent a link that expires in one hour.
           </p>
         </div>
-        <Button asChild variant="outline" className="w-full">
+        <Button asChild variant="secondary" className="w-full">
           <Link href="/sign-in">
             <ArrowLeft aria-hidden /> Back to sign in
           </Link>

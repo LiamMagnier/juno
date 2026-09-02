@@ -36,6 +36,16 @@ struct TranscriptContext {
     /// nests further: `DelegateTaskTool` cannot delegate, so there is nothing
     /// deeper to show, and an unbounded tree in a transcript is a maze.
     var depth = 0
+    /// Opens the review pane, optionally on one file. The completion card's
+    /// diff stat is the bridge from "the run finished" to "look at what it
+    /// did", and it lands here rather than the row reaching for the controller.
+    var openReview: @MainActor @Sendable (String?) -> Void = { _ in }
+    /// Opens the Create pull request sheet, or nil where the session cannot
+    /// open one — no repository, a read-only mode, a preview.
+    var createPullRequest: (() -> Void)?
+    /// The session's current diff totals, for the completion card's pill:
+    /// lines added, lines removed, files changed.
+    var diffTotals: (added: Int, removed: Int, files: Int) = (0, 0, 0)
 
     private let completions: [String: ToolCompletedEvent]
     private let outputs: [String: [ToolOutputEvent]]
@@ -50,7 +60,10 @@ struct TranscriptContext {
         subagents: [SubagentRun] = [],
         subagentActivity: [CodeSessionID: String] = [:],
         retryLastTurn: @escaping @MainActor @Sendable () async -> Void = {},
-        depth: Int = 0
+        depth: Int = 0,
+        openReview: @escaping @MainActor @Sendable (String?) -> Void = { _ in },
+        createPullRequest: (() -> Void)? = nil,
+        diffTotals: (added: Int, removed: Int, files: Int) = (0, 0, 0)
     ) {
         self.events = events
         self.pendingApprovalIDs = pendingApprovalIDs
@@ -60,6 +73,9 @@ struct TranscriptContext {
         self.subagentActivity = subagentActivity
         self.retryLastTurn = retryLastTurn
         self.depth = depth
+        self.openReview = openReview
+        self.createPullRequest = createPullRequest
+        self.diffTotals = diffTotals
         var completions: [String: ToolCompletedEvent] = [:]
         var outputs: [String: [ToolOutputEvent]] = [:]
         var approvalDecisions: [String: ApprovalDecision] = [:]
@@ -144,6 +160,8 @@ struct TranscriptRow: View {
             errorRow(error)
         case let .runCompleted(completed):
             completionRow(completed)
+        case let .compaction(compaction):
+            CompactionRow(event: compaction)
         default:
             EmptyView()
         }
@@ -155,24 +173,16 @@ struct TranscriptRow: View {
     /// than a chat bubble; the task is the subject here, not a sequence of
     /// floating message pills.
     private func userRow(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Text("You")
-                .font(.caption.weight(.semibold))
-                .junoSecondaryInk()
-            Text(text)
-                .junoBody()
-                .textSelection(.enabled)
-                .multilineTextAlignment(.leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised.opacity(0.72))
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You said: \(text)")
+        Text(text)
+            .junoBody()
+            .textSelection(.enabled)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .junoInsetWell()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("You said: \(text)")
     }
 
     private func instructionRow(_ instruction: UserInstructionEvent) -> some View {
@@ -192,10 +202,7 @@ struct TranscriptRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised.opacity(0.72))
-        )
+        .junoInsetWell()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(instruction.kind == .steer ? "Steering instruction" : "Queued follow-up"): \(instruction.text)"
@@ -273,6 +280,8 @@ struct TranscriptRow: View {
                     Task { await context.retryLastTurn() }
                 } label: {
                     JunoIconLabel(verbatim: "Retry", icon: .refresh, size: 14)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -292,17 +301,24 @@ struct TranscriptRow: View {
         .accessibilityLabel("Error: \(error.message)")
     }
 
-    /// The run's closing summary. It closes the timeline with a rule and a
-    /// compact evidence row instead of becoming another rounded dashboard card.
+    /// The run's closing card: the summary, the evidence, and the way into
+    /// review.
+    ///
+    /// The diff stat is a *button* — `+12 −3 · 4 files` opens the review pane
+    /// on the first changed file — because that is the moment a reader most
+    /// wants to look, and the audit's finding was that getting to a diff took
+    /// three clicks through the inspector. It is the one raised surface in the
+    /// transcript besides the reader's own prompts, so completion evidence is
+    /// distinguishable from prose at a glance.
     private func completionRow(_ completed: RunCompletedEvent) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.snug) {
                 JunoIconView(.check, size: 15)
-                    .junoSecondaryInk()
+                    .foregroundStyle(Color.junoSuccess)
                     .frame(width: 18)
                     .accessibilityHidden(true)
                 Text("Run finished")
-                    .font(.system(.callout, weight: .semibold))
+                    .font(.callout.weight(.semibold))
                 Spacer(minLength: JunoSpace.snug)
                 Text(durationText(completed.durationSeconds))
                     .junoCodeSmall()
@@ -311,46 +327,79 @@ struct TranscriptRow: View {
             }
 
             if !completed.summary.isEmpty {
-                Text(completed.summary)
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
+                JunoMarkdownText(completed.summary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 18 + JunoSpace.snug)
             }
 
             // Wraps rather than truncating: on a 900pt window with the
-            // inspector open these two facts would otherwise collide.
+            // inspector open these facts would otherwise collide.
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: JunoSpace.regular) { completionFacts(completed) }
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                HStack(spacing: JunoSpace.cozy) { completionFacts(completed) }
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
                     completionFacts(completed)
                 }
             }
-            .junoCaption()
             .padding(.leading, 18 + JunoSpace.snug)
         }
         .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised.opacity(0.72))
+                .fill(Color.junoRaised)
         )
-        .accessibilityElement(children: .combine)
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.transcript.completion")
     }
 
     @ViewBuilder
     private func completionFacts(_ completed: RunCompletedEvent) -> some View {
-        JunoIconLabel(
-            verbatim: "\(PathDisplay.fileCount(completed.filesChanged)) changed",
-            icon: .file,
-            size: 14
-        )
+        let totals = context.diffTotals
+        let files = totals.files > 0 ? totals.files : completed.filesChanged
+        if files > 0 {
+            Button {
+                context.openReview(nil)
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    DiffStatPill(added: totals.added, removed: totals.removed, files: files)
+                    JunoIconView(.chevronRight, size: 11)
+                        .junoMetaInk()
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.junoPress)
+            .help("Review the changes (⌥⌘R)")
+            .accessibilityLabel("Review \(PathDisplay.fileCount(files)), \(totals.added) added, \(totals.removed) removed")
+            .accessibilityIdentifier("juno.code.transcript.completion.review")
+        } else {
+            JunoIconLabel(verbatim: "No files changed", icon: .file, size: 14)
+                .junoCaption()
+        }
         if let testsPassed = completed.testsPassed {
             JunoIconLabel(
                 verbatim: testsPassed ? "Tests green" : "Tests failing",
                 icon: testsPassed ? .check : .error,
                 size: 14
             )
+            .junoCaption()
             .foregroundStyle(testsPassed ? Color.junoSuccess : Color.junoDanger)
+        }
+        if files > 0, let createPullRequest = context.createPullRequest {
+            Button {
+                createPullRequest()
+            } label: {
+                JunoIconLabel(verbatim: "Create pull request", icon: .pulls, size: 13)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .accessibilityIdentifier("juno.code.transcript.completion.pull-request")
         }
     }
 
@@ -550,6 +599,88 @@ struct DiffStat: View {
     }
 }
 
+/// `+12 −3 · 4 files`, as one capsule: the completion card's way into review.
+struct DiffStatPill: View {
+    let added: Int
+    let removed: Int
+    let files: Int
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Text("+\(added)")
+                .foregroundStyle(Color.junoSuccess)
+            Text("−\(removed)")
+                .foregroundStyle(Color.junoDanger)
+            Text("·").junoMetaInk()
+            Text(PathDisplay.fileCount(files))
+                .junoInk()
+        }
+        .junoCodeSmall()
+        .monospacedDigit()
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.tight)
+        .background(Color.junoMuted, in: Capsule(style: .continuous))
+        .overlay(Capsule(style: .continuous).strokeBorder(Color.junoHairline))
+        .accessibilityHidden(true)
+    }
+}
+
+/// The model's context was folded. One quiet line: it is provenance, not
+/// content, and a reader who did not ask for it only needs to know why the
+/// agent may now be working from a summary of the early turns.
+struct CompactionRow: View {
+    let event: CompactionEvent
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Button {
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                    expanded.toggle()
+                }
+            } label: {
+                HStack(spacing: JunoSpace.snug) {
+                    JunoIconView(.refresh, size: 13)
+                        .junoMetaInk()
+                        .frame(width: 18)
+                    Text(event.requestedByUser ? "Context compacted" : "Context compacted automatically")
+                    Text("· \(event.messageCountSummary)")
+                        .junoMetaInk()
+                    if let tokens = event.beforeTokens {
+                        Text("· was \(JunoModelFormatting.contextWindow(tokens))")
+                            .junoMetaInk()
+                    }
+                    Spacer(minLength: JunoSpace.snug)
+                    JunoIconView(.chevronRight, size: 11)
+                        .junoMetaInk()
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+                .junoCaption()
+                .padding(.horizontal, JunoSpace.cozy)
+                .frame(minHeight: CodeRowMetrics.minHeight)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Context compacted, \(event.messageCountSummary)")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            .accessibilityHint("Shows the summary the model now works from")
+
+            if expanded {
+                Text(event.summary)
+                    .junoCodeSmall()
+                    .junoSecondaryInk()
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, JunoSpace.cozy + 18 + JunoSpace.snug)
+                    .padding(.trailing, JunoSpace.cozy)
+                    .padding(.bottom, JunoSpace.snug)
+            }
+        }
+        .accessibilityIdentifier("juno.code.transcript.compaction")
+    }
+}
+
 // MARK: - Reasoning
 
 /// The agent's reasoning summary, collapsed by default.
@@ -720,6 +851,7 @@ struct ToolActivityRow: View {
                 }
                 .padding(.horizontal, JunoSpace.cozy)
                 .padding(.vertical, JunoSpace.tight)
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -861,6 +993,7 @@ struct SubAgentTranscript: View {
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -1114,6 +1247,7 @@ private struct FileChangeRow: View {
                         }
                     }
                 }
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -1175,5 +1309,26 @@ private struct FileChangeRow: View {
                 text: line.text
             )
         }
+    }
+}
+
+// MARK: - The inset well
+
+extension View {
+    /// The reader's own words, recessed into the page.
+    ///
+    /// The brief's one depth cue for the transcript: agent prose is flat on
+    /// the canvas, a user prompt is a gently inset well — a secondary fill with
+    /// an inner hairline, no shadow — so the two voices are told apart by
+    /// depth rather than by a coloured bubble.
+    func junoInsetWell() -> some View {
+        background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoMuted.opacity(0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
+        )
     }
 }

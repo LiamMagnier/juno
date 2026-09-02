@@ -159,6 +159,7 @@ struct JunoDesktopRootView: View {
         guard case .signedIn(let session) = phase else {
             let previousWorkbench = workbenchModel
             workbenchModel = nil
+            DesktopWorkbenchRegistry.shared.register(workbench: nil, codeModel: nil)
             configuration.codeHostModel?.disconnectWorkbench()
             stopAuthenticatedModels()
             await previousWorkbench?.shutdown()
@@ -247,6 +248,10 @@ struct JunoDesktopRootView: View {
             )
             workbenchModel = workbench
             configuration.codeHostModel?.connect(workbench: workbench)
+            DesktopWorkbenchRegistry.shared.register(
+                workbench: workbench,
+                codeModel: configuration.codeModel
+            )
         }
     }
 

@@ -138,7 +138,7 @@ public struct ApprovalCard: View {
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             Text("Approval required")
-                .font(.system(.callout, weight: .semibold))
+                .font(.callout.weight(.semibold))
             Spacer(minLength: JunoSpace.snug)
             ApprovalCountdown(expiresAt: request.expiresAt)
             StatusChip(
@@ -162,6 +162,7 @@ public struct ApprovalCard: View {
             Button(expired ? "Dismiss" : "Deny") {
                 Task { await controller.deny(request.id) }
             }
+            .contentShape(.rect)
             .keyboardShortcut(.escape, modifiers: .shift)
             .help(expired ? "Clear this request" : "Deny this action (⇧⎋)")
             .accessibilityIdentifier("juno.code.approval.deny")
@@ -170,6 +171,7 @@ public struct ApprovalCard: View {
                 Button("Always allow edits here") {
                     Task { await controller.approveAllowingFurtherEdits(request.id) }
                 }
+                .contentShape(.rect)
                 .help(
                     "Approve this edit and let Juno edit files in this folder for the rest of the session. Commands still ask."
                 )
@@ -181,6 +183,7 @@ public struct ApprovalCard: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color.junoAccent)
+            .contentShape(.rect)
             .keyboardShortcut(.return, modifiers: .shift)
             .disabled(expired)
             .help("Approve this action (⇧⏎)")
@@ -215,5 +218,66 @@ struct ApprovalCountdown: View {
                     : "Expired"
             )
         }
+    }
+}
+
+/// A pending approval behind the one being answered: one line, its own two
+/// buttons, no countdown.
+///
+/// The card above it owns the keyboard. These exist so the reader can see the
+/// whole queue and answer out of order — a `git push` they want to refuse
+/// before approving the three edits ahead of it — without the composer being
+/// pushed off a short window by three full cards.
+struct ApprovalQueueRow: View {
+    let request: ApprovalRequest
+    let controller: SessionController
+
+    private var tint: Color {
+        request.risk == .destructive ? .junoDanger : .junoCaution
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.snug) {
+            JunoIconView(.permission, size: 13)
+                .foregroundStyle(tint)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(request.summary)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(request.toolName) · \(request.risk.rawValue) risk")
+                    .junoCodeSmall()
+                    .junoMetaInk()
+                    .lineLimit(1)
+            }
+            Spacer(minLength: JunoSpace.snug)
+            Button("Deny") {
+                Task { await controller.deny(request.id) }
+            }
+            .controlSize(.small)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+            .accessibilityIdentifier("juno.code.approval.queue.deny")
+            Button("Approve") {
+                Task { await controller.approve(request.id) }
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+            .accessibilityIdentifier("juno.code.approval.queue.approve")
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(minHeight: CodeRowMetrics.minHeight)
+        .junoPanel()
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Queued approval, \(request.risk.rawValue) risk: \(request.summary)")
     }
 }

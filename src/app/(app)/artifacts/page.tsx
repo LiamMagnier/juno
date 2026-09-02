@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Code2, FileCode2, FileText, GitBranch, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import {
   Dialog,
@@ -28,7 +29,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
@@ -75,6 +76,10 @@ interface Item {
   createdAt: string;
   updatedAt: string;
 }
+
+/** The hover-raised row: flat on the page at rest, a raised card under the pointer. */
+const rowClass =
+  "group relative flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none";
 
 export default function ArtifactsPage() {
   const router = useRouter();
@@ -230,243 +235,215 @@ export default function ArtifactsPage() {
   };
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
-        <AppPageHeader
-          eyebrow="Canvas"
-          heading="Artifacts"
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Canvas"
+        heading="Artifacts"
+        icon={AppIcons.artifacts}
+        lede="Everything Juno built with you, newest first."
+        actions={
+          <>
+            {!loading && !empty && !error && (
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
+              </span>
+            )}
+            <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+              <PenTool className="size-3.5" aria-hidden />
+              {startingDesign ? "Creating…" : "New design"}
+            </Button>
+          </>
+        }
+      />
+
+      {/* Search + type filters — only once there is something to filter. */}
+      {!loading && !empty && !error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
+            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search artifacts…"
+              aria-label="Search artifacts"
+              className="pl-9"
+            />
+          </div>
+          {presentTypes.length > 1 && (
+            <SegmentedControl<ArtifactType | "ALL">
+              value={typeFilter}
+              onChange={setTypeFilter}
+              ariaLabel="Filter by type"
+              className="h-9 w-fit max-w-full shrink-0"
+              optionClassName="whitespace-nowrap"
+              options={(["ALL", ...presentTypes] as const).map((t) => ({
+                value: t,
+                label: t === "ALL" ? "All" : TYPE_LABELS[t],
+                count: t === "ALL" ? items.length : items.filter((item) => item.type === t).length,
+              }))}
+            />
+          )}
+        </div>
+      )}
+
+      {error ? (
+        <EmptyState
+          tone="error"
+          className="mt-6 motion-safe:animate-rise-in"
+          icon={error === "offline" ? WifiOff : undefined}
+          title={error === "offline" ? "You’re offline" : "Couldn’t load your artifacts"}
+          description={
+            error === "offline"
+              ? "Your artifacts will load again the moment the connection returns."
+              : "Something went wrong on the way here."
+          }
+          action={
+            <Button variant="secondary" size="sm" onClick={load}>
+              Try again
+            </Button>
+          }
+        />
+      ) : loading ? (
+        <ul className="mt-5 space-y-1" aria-label="Loading artifacts">
+          {[...Array(6)].map((_, i) => (
+            <li key={i} className="flex items-center gap-3 px-3 py-2.5" style={staggerDelay(i, "tight")}>
+              <Skeleton className="size-9 shrink-0 rounded-field" />
+              <span className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="block h-3 w-48 max-w-full rounded-xs" />
+                <Skeleton className="block h-2.5 w-28 rounded-xs" />
+              </span>
+              <Skeleton className="hidden h-2.5 w-16 rounded-xs sm:block" />
+            </li>
+          ))}
+        </ul>
+      ) : empty ? (
+        <EmptyState
+          className="mt-6 motion-safe:animate-rise-in"
           icon={AppIcons.artifacts}
-          lede="Everything Juno built with you, newest first."
-          actions={
+          title="Nothing here yet"
+          description="Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the Canvas and collects here."
+          action={
             <>
-              {!loading && !empty && !error && (
-                <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                  {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-                </span>
-              )}
-              <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+              <Button size="sm" onClick={() => router.push("/chat")}>
+                Start building
+              </Button>
+              <Button size="sm" variant="secondary" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
                 <PenTool className="size-3.5" aria-hidden />
                 {startingDesign ? "Creating…" : "New design"}
               </Button>
             </>
           }
         />
-
-        {/* Search + type filters — only once there is something to filter. */}
-        {!loading && !empty && !error && (
-          // `sm:flex-wrap` + a floor under the search field, because this row has
-          // a variable number of segments: a user with all seven artifact types
-          // gets an eight-segment filter, and without both of these the filter
-          // takes the width it needs and crushes the search box down to its
-          // magnifier. The filter drops to its own line instead.
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="relative sm:min-w-48 sm:max-w-xs sm:flex-1">
-              {/* size-4, not size-3.5. Every other search field in the product
-                  sets its magnifier at size-4 over the same left-3 offset and
-                  the same pl-9 — projects, roadmap, knowledge — so this one
-                  glyph was a half-step small in an otherwise identical field. */}
-              <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search artifacts…"
-                aria-label="Search artifacts"
-                className="h-9 pl-9"
-              />
-            </div>
-            {presentTypes.length > 1 && (
-              // The shared control, not a local restatement of it. These were
-              // `Pressable kind="chip"` in `font-mono text-caption` — 11px mono
-              // pills, a face and a shape nothing else on the page wears — so a
-              // one-of-N filter sat between an `outline` Button and the sidebar's
-              // own Home/Code toggle looking like a third system. A mutually
-              // exclusive filter is precisely what SegmentedControl is for, and it
-              // brings the radiogroup semantics, roving tabindex and arrow-key nav
-              // the hand-rolled version had to restate in a comment.
-              <SegmentedControl<ArtifactType | "ALL">
-                value={typeFilter}
-                onChange={setTypeFilter}
-                ariaLabel="Filter by type"
-                className="w-fit max-w-full shrink-0"
-                optionClassName="whitespace-nowrap"
-                options={(["ALL", ...presentTypes] as const).map((t) => ({
-                  value: t,
-                  label: t === "ALL" ? "All" : TYPE_LABELS[t],
-                }))}
-              />
-            )}
-          </div>
-        )}
-
-        {error ? (
-          // A failed fetch was the only state on this page rendered as unfenced
-          // floating text, so the failure looked lighter than the empty state 25
-          // lines below it. tone="error" also gets role="status" for free.
-          <EmptyState
-            tone="error"
-            className="mt-10 motion-safe:animate-rise-in"
-            icon={error === "offline" ? WifiOff : undefined}
-            title={error === "offline" ? "You’re offline" : "Couldn’t load your artifacts"}
-            description={
-              error === "offline"
-                ? "Your artifacts will load again the moment the connection returns."
-                : "Something went wrong on the way here."
-            }
-            action={
-              <Button variant="outline" size="sm" onClick={load}>
-                Try again
-              </Button>
-            }
-          />
-        ) : loading ? (
-          // The skeleton has to stand in for the shape it precedes. This was a
-          // single-column divided list of 8px-avatar rows in front of a
-          // three-column grid of tall cards, so the whole page reflowed the
-          // moment the data landed and the placeholder previewed nothing.
-          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[...Array(6)].map((_, i) => (
-              <li key={i} className="skeleton h-40 rounded-card" style={staggerDelay(i, "tight")} />
-            ))}
-          </ul>
-        ) : empty ? (
-          <EmptyState
-            className="mt-10 motion-safe:animate-rise-in"
-            icon={AppIcons.artifacts}
-            title="Nothing here yet"
-            description="Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the Canvas and collects here."
-            action={
-              <>
-                <Button size="sm" onClick={() => router.push("/chat")}>
-                  Start building
-                </Button>
-                <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-                  <PenTool className="size-3.5" aria-hidden />
-                  {startingDesign ? "Creating…" : "New design"}
-                </Button>
-              </>
-            }
-          />
-        ) : noResults ? (
-          // One no-results shape across projects / artifacts / library: panel size,
-          // Search mark, "No matching …", ghost Clear filters.
-          <EmptyState
-            className="mt-6"
-            size="panel"
-            icon={Search}
-            title="No matching artifacts"
-            description={`Nothing fits ${query.trim() ? `“${query.trim()}”` : "these filters"}.`}
-            action={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => {
-                  setQuery("");
-                  setTypeFilter("ALL");
-                }}
+      ) : noResults ? (
+        // One no-results shape across projects / artifacts / library.
+        <EmptyState
+          className="mt-6"
+          size="panel"
+          icon={Search}
+          title="No matching artifacts"
+          description={`Nothing fits ${query.trim() ? `“${query.trim()}”` : "these filters"}.`}
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => {
+                setQuery("");
+                setTypeFilter("ALL");
+              }}
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <ul className="mt-5 space-y-1" aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}>
+          {filtered.map((item, i) => {
+            const Icon = ICONS[item.type] ?? FileCode2;
+            const rt = runtimeFor(item.type, item.language);
+            const href = `/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`;
+            return (
+              <li
+                key={item.id}
+                style={staggerDelay(i, "tight")}
+                className={`${rowClass} motion-safe:animate-rise-in [animation-fill-mode:backwards]`}
               >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((item, i) => {
-              const Icon = ICONS[item.type] ?? FileCode2;
-              const rt = runtimeFor(item.type, item.language);
-              return (
-                <li
-                  key={item.id}
-                  style={staggerDelay(i, "tight")}
-                  // hover:bg-secondary, not hover:bg-accent/20: a fifth of a 13%
-                  // token over the tile's own 6.5% card is 1.3 points of lift, so
-                  // the hover fill was invisible and the border was carrying the
-                  // whole state on its own. The rung above card is the step.
-                  className="group relative flex flex-col rounded-card border border-border/65 bg-card transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/25 hover:bg-secondary motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-                >
-                  {/* Decorative top border based on language/type could go here, but a subtle layout is better */}
-                  <Link
-                    href={`/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`}
-                    className="flex flex-1 flex-col p-4 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      {/* bg-accent, and a primary tint strong enough to see. The
-                          tile was bg-muted/50 (1.5 points over the card it sits on)
-                          lighting up to bg-primary/5 — two fills that both resolved
-                          to within a point and a half of their own background, so
-                          the type mark had no plate and hovering it changed nothing
-                          but the icon's colour. */}
-                      <span className="flex size-10 shrink-0 items-center justify-center rounded-control border border-border/60 bg-accent text-muted-foreground transition-colors duration-base ease-out-soft group-hover:border-primary/25 group-hover:bg-primary/15 group-hover:text-primary">
-                        <Icon className="size-5" aria-hidden />
-                      </span>
-                      {/* Row actions now sit in the top right of the card, above the stretched link. */}
-                      <div className="relative z-10 flex shrink-0 items-center gap-0.5 -mr-2 -mt-1">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Actions for ${item.title || "artifact"}`}
-                              className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
-                            >
-                              {downloadingId === item.id ? (
-                                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
-                              ) : (
-                                <ActionIcons.more className="size-4" aria-hidden />
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`)}>
-                              <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
-                              <MessagesSquare className="size-4" aria-hidden /> Open conversation
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => openRename(item)}>
-                              <ActionIcons.edit className="size-4" aria-hidden /> Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => download(item)}>
-                              <ActionIcons.download className="size-4" aria-hidden /> Download source
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => setShareTarget(item)}>
-                              <ActionIcons.share className="size-4" aria-hidden /> Share
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onSelect={() => setDeleteTarget(item)}>
-                              <ActionIcons.delete className="size-4" aria-hidden /> Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-4 flex-1">
-                      <h3 className="line-clamp-2 text-base font-medium leading-tight">{item.title || "Untitled artifact"}</h3>
-                      <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">in “{item.conversationTitle}”</p>
-                    </div>
+                {/* The kind glyph on an inset tile — the row's one piece of depth at rest. */}
+                <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+                  <Icon className="size-4" aria-hidden />
+                </span>
 
-                    <div className="mt-5 flex items-center justify-between border-t border-border/40 pt-3 font-mono text-caption text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-foreground/70">{rt.label}</span>
-                        {item.version > 1 && (
-                          <>
-                            <span aria-hidden className="size-1 rounded-full bg-border" />
-                            <span>v{item.version}</span>
-                          </>
+                {/* The stretched link: the whole row opens the artifact; the
+                    actions menu sits above it (relative z-10) so it stays
+                    clickable. */}
+                <Link
+                  href={href}
+                  className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-control after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+                >
+                  <span className="block truncate text-sm font-medium">{item.title || "Untitled artifact"}</span>
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">in “{item.conversationTitle}”</span>
+                </Link>
+
+                <span className="hidden shrink-0 items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground sm:flex">
+                  <span>{rt.label}</span>
+                  {item.version > 1 && (
+                    <>
+                      <span aria-hidden className="size-1 rounded-full bg-border" />
+                      <span>v{item.version}</span>
+                    </>
+                  )}
+                  <span aria-hidden className="size-1 rounded-full bg-border" />
+                  <time dateTime={item.updatedAt} title={new Date(item.updatedAt).toLocaleString()}>
+                    {timeAgo(item.updatedAt)}
+                  </time>
+                </span>
+
+                <div className="relative z-10 flex shrink-0 items-center">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Actions for ${item.title || "artifact"}`}
+                        className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+                      >
+                        {downloadingId === item.id ? (
+                          <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
+                        ) : (
+                          <ActionIcons.more className="size-4" aria-hidden />
                         )}
-                      </div>
-                      <span>{timeAgo(item.updatedAt)}</span>
-                    </div>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuItem onSelect={() => router.push(href)}>
+                        <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
+                        <MessagesSquare className="size-4" aria-hidden /> Open conversation
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => openRename(item)}>
+                        <ActionIcons.edit className="size-4" aria-hidden /> Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => download(item)}>
+                        <ActionIcons.download className="size-4" aria-hidden /> Download source
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setShareTarget(item)}>
+                        <ActionIcons.share className="size-4" aria-hidden /> Share
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onSelect={() => setDeleteTarget(item)}>
+                        <ActionIcons.delete className="size-4" aria-hidden /> Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* Rename */}
       <Dialog open={!!renameTarget} onOpenChange={(open) => !open && !renaming && setRenameTarget(null)}>
@@ -529,6 +506,6 @@ export default function ArtifactsPage() {
           onOpenChange={(open) => !open && setShareTarget(null)}
         />
       )}
-    </div>
+    </AppPage>
   );
 }

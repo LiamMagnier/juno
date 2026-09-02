@@ -12,16 +12,8 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Code workspace rail is deliberately fixed to one readable desktop
-/// width. It is a sibling of the navigation split view rather than another
-/// AppKit split item, so opening it cannot renegotiate the window while the
-/// transcript is also replacing its loading state.
-private enum DesktopCodeInspectorMetrics {
-    static let ideal: CGFloat = 320
-}
-
-/// The Code window: one navigation split view and one optional trailing
-/// workspace rail.
+/// The Code window: one navigation split view, a thread, and one optional
+/// trailing context rail.
 ///
 /// Two stability constraints are honoured deliberately:
 ///
@@ -32,28 +24,19 @@ private enum DesktopCodeInspectorMetrics {
 ///    `NavigationSplitViewVisibility` is not `RawRepresentable` and cannot be put
 ///    in `@SceneStorage` directly.
 ///
-/// The inspector used to be a native `.inspector`, which inserts a second
-/// `NSSplitViewItem`. Restoring it while the selected session resolved caused
-/// AppKit to re-enter `_postWindowNeedsUpdateConstraints` and terminate the app.
-/// A plain SwiftUI sibling gives the pane a single layout owner, keeps the native
-/// toolbar affordance, and makes the sub-agent report reliably available.
+/// **Review is the session's, not the window's.** This shell used to keep a
+/// `@SceneStorage` flag for the review and mirror it against
+/// `ReviewModel.isPresented` in both directions; the two disagreed, and the audit
+/// found it. There is one flag now, on the review the whole session shares, and
+/// the toolbar toggle, ⌥⌘R, the Changes list, the completion card and Open
+/// Quickly all write it. The review opens *beside* the thread as a resizable
+/// pane — see ``CodeSessionCanvas`` — never in place of it.
 struct DesktopCodeWorkspace: View {
     let workbenchModel: WorkbenchModel
     let codeModel: NativeCodeModel
     let remoteModel: CodeRemoteBrowserModel
-    /// The pull request list's transport, and the account it lists for. Both are
-    /// account-level rather than workspace-level, so they arrive from the window
-    /// that already holds the configuration and the session instead of being
-    /// derived from anything in the workbench.
     let pullsClient: NativeGitHubPullsClient?
     let accountID: AccountID?
-    /// The account chrome's inputs: who is signed in, and the models the two
-    /// account pages this window now hosts are built from.
-    ///
-    /// Optional so that a composition without a signed-in session simply has no
-    /// account chrome rather than a half-drawn one — the same shape every other
-    /// model on ``JunoDesktopConfiguration`` already has. They are declared
-    /// together because they are useless apart.
     var configuration: JunoDesktopConfiguration?
     var session: NativeAuthenticatedSession?
     @Binding var product: DesktopProductMode
@@ -62,18 +45,14 @@ struct DesktopCodeWorkspace: View {
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    // An active Code task has repository context worth keeping in view. The
-    // native inspector opens to Environment and can still be hidden from the
-    // toolbar when the reader wants the transcript at full width.
     @SceneStorage("juno.desktop.code.inspector.v4") private var inspectorVisible = true
     @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
-    @SceneStorage("juno.desktop.code.review") private var reviewVisible = false
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
+    @SceneStorage("juno.desktop.code.filter") private var storedFilter =
+        DesktopCodeSessionFilter.all.rawValue
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var controller: SessionController?
-    /// A restored rail joins after the session controller resolves, so it never
-    /// flashes an unrelated empty state while Code is reopening the last run.
     @State private var inspectorReady = false
     @State private var isBootstrapping = true
     @State private var isStartingSession = false
@@ -81,42 +60,25 @@ struct DesktopCodeWorkspace: View {
     @State private var renamingSession: CodeSession?
     @State private var renameText = ""
     @State private var isOpeningQuickly = false
-    @State private var showingSettingsModal = false
-    /// Owns the simulator session for the selected workspace. Created lazily —
-    /// discovery spawns `xcodebuild`, which is not something to do for every
-    /// Code session on every Mac.
+    @State private var showingPalette = false
+    @State private var isCreatingPullRequest = false
+    /// A prompt handed in from the quick-entry panel or the menu bar item,
+    /// consumed by the next New task screen.
+    @State private var pendingPrompt: String?
     @State private var simulatorHost = DesktopSimulatorHost()
-    /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
-    /// The web preview is a sibling of the transcript, not an inspector tab.
-    /// Keeping the target here lets the dock and its optional pop-out share one
-    /// `CodePreviewModel` and one dev-server process.
     @State private var previewTarget: CodePreviewTarget?
-    /// The Code composer can host the same realtime voice dock as Chat. The
-    /// transcript is saved as a normal conversation when the call ends.
     @State private var voiceSession: DesktopVoiceSession?
     @State private var voiceUnavailable: String?
-    /// The account's plan meters, for the column's footer.
-    ///
-    /// Held by the window rather than by the sidebar so the read survives the
-    /// column being collapsed, and so there is one copy of the number rather than
-    /// one per surface that wants to show it.
     @State private var plan: DesktopUsagePlan?
     @State private var planReadAt: Date?
+    @State private var registry = DesktopWorkbenchRegistry.shared
     @FocusState private var sidebarSearchFocused: Bool
     @Environment(\.openWindow) private var openWindow
-    /// The docks' enter/exit animations are spatial travel, so they go through
-    /// ``JunoMotion/reduced(_:when:tier:)`` and collapse to a cross-fade when
-    /// the reader has asked for less motion.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// How long a plan read stays fresh. Several runs finishing within a few
-    /// seconds of each other would otherwise be several identical requests.
     private static let planReadFloor: TimeInterval = 60
 
-    /// `workbenchModel` arrives as a `let`, so there is no `$` projection to hand
-    /// to `.searchable`. It is `@Observable`, so reading and writing the property
-    /// through a plain `Binding` registers the dependency exactly the same way.
     private var sessionSearchText: Binding<String> {
         Binding(
             get: { workbenchModel.sessionSearchText },
@@ -124,18 +86,18 @@ struct DesktopCodeWorkspace: View {
         )
     }
 
+    private var filter: Binding<DesktopCodeSessionFilter> {
+        Binding(
+            get: { DesktopCodeSessionFilter(rawValue: storedFilter) ?? .all },
+            set: { storedFilter = $0.rawValue }
+        )
+    }
+
     // MARK: - Selection
 
-    /// Restored from scene storage rather than kept in `@State`, so reopening a
-    /// window returns the reader to the run they were reading.
     private var selection: Binding<DesktopCodeSidebarItem?> {
         Binding(
             get: {
-                // SceneStorage is intentionally restored for real windows, but
-                // a named DEBUG fixture must win over whatever the last manual
-                // preview selected. Otherwise `--juno-preview-code-session`
-                // intermittently opened a repository draft and the inspector
-                // fixture became impossible to verify.
                 if let previewSessionID {
                     return .session(previewSessionID)
                 }
@@ -159,9 +121,6 @@ struct DesktopCodeWorkspace: View {
     private var inspectorPresentation: Binding<Bool> {
         Binding(
             get: {
-                // The launchpad has no session-scoped evidence to inspect. Do
-                // not preserve a stale trailing pane from the last run and
-                // make a blank first screen look like missing product content.
                 guard case .session = selection.wrappedValue else {
                     return false
                 }
@@ -197,27 +156,20 @@ struct DesktopCodeWorkspace: View {
         switch selection.wrappedValue {
         case .session(let id):
             return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code"
-        case .repository(let id):
-            return workbenchModel.workspaces.first { $0.id == id }?.descriptor.displayName
-                ?? "New task"
+        case .repository, .draft, .none:
+            return "New task"
         case .task(let id):
             return codeModel.tasks.first { $0.id == id }?.title ?? "Cloud task"
         case .remote(_, let id):
             return remoteModel.sessions.first { $0.sessionID == id }?.title ?? "Remote session"
         case .allProjects: return "Projects"
-        case .draft: return "New task"
         case .pulls: return "Pull requests"
-        case .connections: return "Connections"
-        case .usage: return "Usage"
-        case .settings: return "Settings"
         case .design: return "Design"
-        case .none: return "Code"
         }
     }
 
     /// The repository the next session belongs in: the one the reader is looking
-    /// at, or failing that the most recently opened one. `workspaces` is ordered
-    /// by last use, so `first` is a real answer rather than an arbitrary one.
+    /// at, or failing that the most recently opened one.
     private var targetRepository: WorkspaceRecord? {
         switch selection.wrappedValue {
         case .repository(let id):
@@ -233,6 +185,11 @@ struct DesktopCodeWorkspace: View {
         return workbenchModel.workspaces.first
     }
 
+    /// Whether the review pane is open on the selected session.
+    private var reviewPresented: Bool {
+        controller?.review.isPresented ?? false
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -244,6 +201,7 @@ struct DesktopCodeWorkspace: View {
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
                 product: $product,
+                filter: filter,
                 isBootstrapping: isBootstrapping,
                 session: session,
                 avatarModel: configuration?.avatarModel,
@@ -253,8 +211,7 @@ struct DesktopCodeWorkspace: View {
                 newSession: { selection.wrappedValue = .repository($0) },
                 rename: beginRename,
                 searchText: sessionSearchText,
-                searchFocused: $sidebarSearchFocused,
-                openSettingsModal: { showingSettingsModal = true }
+                openPalette: { showingPalette = true }
             )
             .junoSidebarColumn()
         } detail: {
@@ -263,44 +220,28 @@ struct DesktopCodeWorkspace: View {
                 .navigationTitle(detailTitle)
                 .toolbar { detailToolbar }
         }
-        .sheet(isPresented: $showingSettingsModal) {
-            if let configuration, let settingsModel = configuration.memorySettingsModel, let session {
-                DesktopSettingsModal(
-                    model: settingsModel,
-                    authModel: configuration.authModel,
-                    session: session,
-                    configuration: configuration,
-                    accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient,
-                    modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-                    avatarData: configuration.avatarModel?.imageData,
-                    syncModel: configuration.syncModel,
-                    outbox: configuration.outbox,
-                    openUsage: { selection.wrappedValue = .usage },
-                    codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel,
-                    learningModel: nil,
-                    onDismiss: { showingSettingsModal = false }
-                )
-            }
-        }
         .inspector(isPresented: inspectorPresentation) {
             if inspectorPresentation.wrappedValue {
                 inspector
-                    .frame(width: DesktopCodeInspectorMetrics.ideal)
+                    .frame(width: JunoInspectorMetrics.ideal)
                     .background(Color.junoCanvas)
             }
         }
+        .overlay {
+            if showingPalette {
+                palette
+                    .transition(.junoOverlay)
+            }
+        }
+        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: showingPalette)
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
+        .focusedSceneValue(\.junoCodeActions, codeActions)
         .fileImporter(
             isPresented: $isChoosingRepository,
             allowedContentTypes: [.folder],
             allowsMultipleSelection: false,
             onCompletion: grantRepository
         )
-        // The panel is an NSOpenPanel, so New Folder is right there — but
-        // nothing said so, and "choose" reads as "pick one that already
-        // exists". Starting a project from nothing is a real path.
         .fileDialogMessage(
             Text(
                 "Choose the folder Juno Code may read and write in — or make a new one."
@@ -310,19 +251,15 @@ struct DesktopCodeWorkspace: View {
         .sheet(isPresented: $isOpeningQuickly) {
             if let controller {
                 OpenQuicklySheet(controller: controller) { path in
-                    // Straight into the review's document editor, and the review has
-                    // to be showing for it to be seen — `ReviewModel.open` sets its
-                    // own `isPresented`, but this window owns whether the review
-                    // occupies the detail column at all.
-                    reviewVisible = true
                     Task { await controller.review.open(path, using: controller) }
                 }
-                // Sheet contract, applied at the presentation site because the
-                // sheet's root lives in the JunoCode package. Open Quickly is a
-                // file browser over a list, so it read as the coldest of the
-                // eight groundless sheets — a grey pane over a warm workspace.
-                // The platter, its material and its radius stay the system's.
                 .junoSheetSurface(.fitted)
+            }
+        }
+        .sheet(isPresented: $isCreatingPullRequest) {
+            if let controller {
+                CreatePullRequestSheet(controller: controller)
+                    .junoSheetSurface(.fitted)
             }
         }
         .alert("Rename Session", isPresented: renameBinding) {
@@ -339,30 +276,19 @@ struct DesktopCodeWorkspace: View {
             await Task.yield()
             inspectorReady = true
         }
-        // `open_preview` is an agent action, but the selected Code workbench
-        // remains the authority that presents a pane. Bind it to both the
-        // session and the granted root so a request from another window cannot
-        // surface the wrong repository here.
         .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
             guard let target = notification.object as? CodePreviewTarget,
                   target.sessionID == controller?.sessionID,
                   target.workspaceRootPath == controller?.context?.access.rootURL.path,
                   previewTarget == nil
             else { return }
-            // The docks' insertion transition is the canvas-slide keyframe, so
-            // it runs on the beat that keyframe was designed for: the pane
-            // *arrives* on `canvasEnter`, exactly as Chat's artifact canvas
-            // does. `JunoMotion.fast` here truncated a 16pt slide into a
-            // 120ms tap-feedback blink.
             withAnimation(
-                JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+                JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
             ) {
                 simulatorHost.closePane()
                 previewTarget = target
             }
         }
-        // A simulator belongs to one workspace. Changing workspace or session ends
-        // the previous build, log stream and capture before anything new starts.
         .onChange(of: targetRepository?.id) { _, _ in
             simulatorHost.tearDown()
             closePreview()
@@ -374,6 +300,12 @@ struct DesktopCodeWorkspace: View {
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
+        // Requests from outside the window: the menu bar item, the quick-entry
+        // panel. Consumed exactly once, on the next frame after they land.
+        .onChange(of: registry.pendingRequest, initial: true) { _, request in
+            guard let request else { return }
+            consume(request)
+        }
         .alert(
             "Voice unavailable",
             isPresented: Binding(
@@ -388,9 +320,6 @@ struct DesktopCodeWorkspace: View {
         .onChange(of: codeModel.devices) { _, devices in
             selectDefaultRemoteDevice(from: devices)
         }
-        // Deleting the selected session leaves the window pointing at nothing.
-        // Without this the title stayed on a run that no longer exists, which
-        // reads as a failure rather than as "that run is gone".
         .onChange(of: workbenchModel.sessions.count) { _, _ in
             guard case .session(let id) = selection.wrappedValue,
                 !workbenchModel.sessions.contains(where: { $0.id == id })
@@ -402,18 +331,6 @@ struct DesktopCodeWorkspace: View {
                 columnVisibility = .detailOnly
             }
         }
-        // Leaving Code has to take screen control with it.
-        //
-        // Switching to Chat tears this whole view down — `JunoDesktopWorkspaceView`
-        // instantiates one product at a time — but nothing detached the controller,
-        // so an active capture kept running with both the "Screen control active"
-        // indicator and its Stop button gone from the window. The capability stayed
-        // live and unrevokable from the UI until the reader happened to come back.
-        //
-        // `detach()` is the same teardown used when moving between sessions: it
-        // deactivates this session's capture and drops the store observer.
-        // Re-entering re-attaches, because `WorkbenchModel.controller(for:)` now
-        // re-attaches a cached controller.
         .onDisappear {
             simulatorHost.tearDown()
             previewTarget = nil
@@ -427,15 +344,7 @@ struct DesktopCodeWorkspace: View {
 
     private var editorCanvas: some View {
         VStack(spacing: 0) {
-            if shouldShowContextStrip {
-                DesktopCodeContextStrip(
-                    title: contextTitle,
-                    subtitle: contextSubtitle,
-                    status: currentStatus,
-                    isRunning: isRunning,
-                    stop: stop
-                )
-            }
+            threadHeader
 
             DesktopCodePreviewDock(
                 target: previewTarget,
@@ -448,14 +357,8 @@ struct DesktopCodeWorkspace: View {
                 DesktopSimulatorDock(
                     model: simulatorHost.isOpen ? simulatorHost.model : nil,
                     close: {
-                        // The exit half of the canvas choreography Chat's
-                        // artifact canvas already runs: a pane you asked to
-                        // close should be gone before you have looked away
-                        // from the button. The ad-hoc 0.4s spring this
-                        // replaces sat on no rung of the motion ladder and
-                        // made closing the pane slower than opening it.
                         withAnimation(
-                            JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)
+                            JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)
                         ) {
                             simulatorHost.closePane()
                         }
@@ -467,55 +370,43 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    private var shouldShowContextStrip: Bool {
+    /// The compact strip above the thread: title, project · branch, status,
+    /// elapsed, context, stop. One line for every transport.
+    @ViewBuilder
+    private var threadHeader: some View {
         switch selection.wrappedValue {
-        case .session, .task, .remote:
-            true
-        default:
-            false
-        }
-    }
-
-    private var contextTitle: String {
-        switch selection.wrappedValue {
-        case .session(let id):
-            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code session"
+        case .session:
+            if let controller {
+                CodeThreadHeader(controller: controller, stop: stop)
+            }
         case .task:
-            return selectedTask?.title ?? "Remote task"
+            if let task = selectedTask {
+                CodeThreadHeader(
+                    CodeThreadHeader.Context(
+                        title: task.title,
+                        project: task.whereItRuns,
+                        branch: task.baseRef,
+                        environment: task.target == .cloud ? "Cloud" : "Device",
+                        status: CodeRunStatus(task.status)
+                    ),
+                    stop: stop
+                )
+            }
         case .remote:
-            return selectedRemoteSummary?.title ?? "Remote session"
+            if let summary = selectedRemoteSummary {
+                CodeThreadHeader(
+                    CodeThreadHeader.Context(
+                        title: summary.title,
+                        project: summary.workspaceName ?? "Connected computer",
+                        branch: summary.activeBranch,
+                        environment: "Remote",
+                        status: CodeRunStatus(summary)
+                    ),
+                    stop: stop
+                )
+            }
         default:
-            return "Juno Code"
-        }
-    }
-
-    private var contextSubtitle: String {
-        switch selection.wrappedValue {
-        case .session(let id):
-            guard let session = workbenchModel.sessions.first(where: { $0.id == id }) else {
-                return "Local workspace"
-            }
-            guard let workspaceID = session.workspaceID,
-                  let workspace = workbenchModel.workspaces.first(where: { $0.id == workspaceID })
-            else { return "Local workspace" }
-            var parts = [workspace.descriptor.displayName]
-            let path = (workspace.descriptor.localPathHint as NSString)
-                .abbreviatingWithTildeInPath
-            if !path.isEmpty, path != workspace.descriptor.displayName {
-                parts.append(path)
-            }
-            if let branch = session.gitBranch?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !branch.isEmpty
-            {
-                parts.append(branch)
-            }
-            return parts.joined(separator: " · ")
-        case .task:
-            return selectedTask?.whereItRuns ?? "Cloud or connected device"
-        case .remote:
-            return selectedRemoteSummary?.workspaceName ?? "Connected computer"
-        default:
-            return ""
+            EmptyView()
         }
     }
 
@@ -530,14 +421,12 @@ struct DesktopCodeWorkspace: View {
             } else if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // The bookmark could not be reopened, so there is genuinely no
-                // session to show. `lastError` carries the real reason.
                 JunoEmptyState(
                     title: "This session cannot be opened",
                     message: workbenchModel.lastError
                         ?? "Juno could not reopen the folder this session works in.",
                     icon: .error,
-                    actionLabel: "Open Repository…",
+                    actionLabel: "Open Folder…",
                     action: { isChoosingRepository = true }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -581,135 +470,34 @@ struct DesktopCodeWorkspace: View {
             draft(nil)
 
         case .pulls:
-            // The button is back. This used to pass no `openConnections`, because
-            // Connections was a Chat destination and switching product would have
-            // landed the reader on whatever Chat happened to be showing. Code now
-            // owns the page, so the one empty state a first-time Cloud user hits —
-            // "GitHub isn't connected" — can finally do something about it.
             NativePullsView(
                 client: pullsClient,
                 accountID: accountID,
                 openConnections: openConnections
             )
 
-        // The three account pages are one branch each, built below rather than
-        // written inline: each needs an availability ladder, and three more of
-        // those inside this `@ViewBuilder` switch is how a detail column becomes
-        // an expression the type checker gives up on.
-        //
-        // They bring toolbars of their own, and that is safe here for the same
-        // reason it is safe in Chat: `DesktopChatWorkspace` also carries
-        // `.inspector` on its split view and also swaps between destination
-        // screens that declare toolbar items (Usage, Connections, Tasks). What
-        // the crash note above forbids is *this file's* toolbar gaining and
-        // losing items while the window stays put — a page swapping wholesale
-        // for another page is a different thing, and it already ships.
-        case .connections:
-            connectionsPage
-
-        case .usage:
-            usagePage
-
-        case .settings:
-            settingsPage
-
         case .design:
             designPage
 
         case .repository(let id):
-            // A repository that is no longer granted is exactly the state a
-            // projectless conversation serves: the reader still has something
-            // to say, and now has one fewer thing to say it about.
             draft(workbenchModel.workspaces.first { $0.id == id })
 
         case nil:
             if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                // Opens on the most recent project when there is one, and on a
-                // projectless conversation when there is not — never on a wall.
                 draft(workbenchModel.workspaces.first)
             }
         }
     }
 
-    // MARK: - The account pages
-    //
-    // Usage and Settings are the same two screens Chat shows, rendered here
-    // rather than navigated to. That is not a shortcut around the product
-    // switch — `JunoDesktopWorkspaceView` instantiates one product at a time
-    // precisely so two `NavigationSplitView`s never negotiate against one
-    // window, so "go to Chat's Usage page" is not a thing this window can do.
-    // Rendering the screens themselves is what keeps there being one ledger
-    // reader and one settings page instead of a Code-flavoured second copy of
-    // each.
-
-    /// The route to the connected-accounts page, or nothing when this window has
-    /// no connector service to offer. `NativePullsView` drops its button rather
-    /// than showing one that cannot act.
+    /// Connections lives in the Settings window now; the pull request list's
+    /// "connect GitHub" button opens it there.
     private var openConnections: (() -> Void)? {
         guard configuration?.connectorModel != nil else { return nil }
-        return { selection.wrappedValue = .connections }
+        return { DesktopSettingsRouter.open(.connections) }
     }
 
-    @ViewBuilder
-    private var connectionsPage: some View {
-        if let model = configuration?.connectorModel {
-            DesktopConnectionsScreen(model: model)
-        } else {
-            accountPageUnavailable("Connections", "The connector service is unavailable.")
-        }
-    }
-
-    @ViewBuilder
-    private var usagePage: some View {
-        if let session {
-            DesktopUsageScreen(
-                session: session,
-                requestSender: configuration?.requestSender,
-                modelCatalog: configuration?.conversationModel?.selectableModels ?? []
-            )
-        } else {
-            accountPageUnavailable("Usage", "Juno is not signed in on this window.")
-        }
-    }
-
-    @ViewBuilder
-    private var settingsPage: some View {
-        if let session, let configuration, let model = configuration.memorySettingsModel {
-            DesktopSettingsModal(
-                model: model,
-                authModel: configuration.authModel,
-                session: session,
-                configuration: configuration,
-                accountDataClient: configuration.accountDataClient,
-                shareClient: configuration.shareClient,
-                modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-                avatarData: configuration.avatarModel?.imageData,
-                syncModel: configuration.syncModel,
-                outbox: configuration.outbox,
-                openUsage: { selection.wrappedValue = .usage },
-                codeHostModel: configuration.codeHostModel,
-                workHostModel: configuration.workHostModel,
-                learningModel: configuration.memoryLearningModel,
-                onDismiss: { selection.wrappedValue = .allProjects }
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(JunoSpace.regular)
-        } else {
-            accountPageUnavailable("Settings", "Account settings could not be loaded.")
-        }
-    }
-
-    /// Juno Design, the same one screen Chat's window shows.
-    ///
-    /// Rendered here rather than navigated to, exactly as Usage and Settings
-    /// above are, and for the reason stated at the top of this section: one split
-    /// view is alive at a time, so crossing to Chat to show a page is not
-    /// something this window can do. A design is also the most natural thing in
-    /// the app to want *while* looking at code — it is what the reader is about
-    /// to ask Juno Code to build — so bouncing them out of the product to see it
-    /// would be the wrong answer even if it were available.
     @ViewBuilder
     private var designPage: some View {
         if let session, let configuration, let model = configuration.artifactModel {
@@ -720,22 +508,12 @@ struct DesktopCodeWorkspace: View {
                 syncModel: configuration.syncModel
             )
         } else {
-            accountPageUnavailable("Design", "The synchronized artifact store is unavailable.")
+            JunoEmptyState(title: "Design", message: "The synchronized artifact store is unavailable.", icon: .error)
         }
     }
 
-    /// A destination this window can name but this composition cannot serve.
-    ///
-    /// Answered the same way Chat answers a missing model — by saying which
-    /// screen is unavailable and why — rather than by dropping the row, which
-    /// would leave a reader whose scene storage still points at it looking at a
-    /// blank column.
-    private func accountPageUnavailable(_ title: String, _ description: String) -> some View {
-        JunoEmptyState(title: title, message: description, icon: .error)
-    }
-
     private func draft(_ record: WorkspaceRecord?) -> some View {
-        DesktopCodeDraftDetail(
+        DesktopCodeNewTaskScreen(
             record: record,
             workbench: workbenchModel,
             code: codeModel,
@@ -746,80 +524,24 @@ struct DesktopCodeWorkspace: View {
             },
             addProject: { isChoosingRepository = true },
             selectProject: { id in
-                // The window's selection is the single source of truth for
-                // which project is open, so the menu writes there rather than
-                // holding its own copy — that is what keeps the sidebar and the
-                // composer from disagreeing about where you are.
-                reviewVisible = false
                 consoleVisible = false
                 selection.wrappedValue = id.map { .repository($0) } ?? .draft
             },
             beginVoice: { modelID in
                 startVoice(modelID: modelID, projectID: record?.id.value)
             },
-            connectorModel: configuration?.connectorModel,
-            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
+            initialPrompt: pendingPrompt
         )
-        // Applied to the draft view itself, not around it.
-        //
-        // The single reading canvas this window owns is on the detail column
-        // above, and `.junoReadingCanvas()` is an opaque `.background` — so a
-        // field mounted anywhere outside that canvas stacks behind an opaque
-        // fill and draws nothing. Here it is a descendant of the canvas rather
-        // than a sibling of it, which is the arrangement Chat gets for free.
         .junoVoiceField(voiceColumn)
     }
 
     // MARK: - The session surface
-    //
-    // Two `JunoCodeUI` views are the whole boundary between this window shell and
-    // the session surface, and they are the only cross-package view symbols this
-    // file uses:
-    //
-    //     public struct CodeSessionCanvas: View {
-    //         public init(
-    //             controller: SessionController,
-    //             model: WorkbenchModel,
-    //             showsReview: Binding<Bool>,
-    //             showsConsole: Binding<Bool>
-    //         )
-    //     }
-    //     public struct CodeSessionInspector: View {
-    //         public init(controller: SessionController)
-    //     }
-    //
-    // The shell owns the window — columns, toolbar, titles, selection, session
-    // lifecycle, repository grants — and owns nothing inside the canvas.
-    // `CodeSessionCanvas` owns the transcript, the review editor, the console
-    // drawer, the approval card and the composer, because their layout relative to
-    // one another is a property of the session surface: the approval card sits
-    // above the composer, the drawer sits between the content and the composer,
-    // and the composer stays visible in both the transcript and the review.
-    // `CodeSessionInspector` owns the three list-shaped segments.
-    //
-    // The two disclosure flags cross as bindings rather than as values so the
-    // toolbar's toggles and the canvas's own affordances — clicking a changed file
-    // opens Review — cannot disagree about what is showing.
-    //
-    // **Both halves of voice cross as erased views**, and for one reason:
-    // `JunoCodeUI` depends on neither this target nor `JunoVoiceKit`, so it
-    // cannot name a `DesktopVoiceColumn` or a `JunoRealtimeVoiceController`.
-    // The dock has always crossed that way; the field now crosses beside it.
-    //
-    // The field could not simply be wrapped around `CodeSessionCanvas(…)` from
-    // out here, which is the obvious thing and the thing that draws nothing at
-    // all: the canvas paints `junoReadingCanvas()` — an opaque background —
-    // inside its own body, and successive `.background` layers stack further
-    // back, so a field written outside it lands behind an opaque fill. Handed in
-    // through the initialiser it is mounted between that fill and the transcript,
-    // which is where the light belongs. Chat never had to solve this because its
-    // canvas sits on an ancestor of the column it lights, not on the column.
 
     private func localSession(_ controller: SessionController) -> some View {
         CodeSessionCanvas(
             controller: controller,
             model: workbenchModel,
-            showsReview: $reviewVisible,
             showsConsole: $consoleVisible,
             beginDictation: JunoSpeechService.isSupported
                 ? {
@@ -832,13 +554,6 @@ struct DesktopCodeWorkspace: View {
             voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
             voiceField: voiceColumn?.erasedField
         )
-        // The same capsule the Chat composer uses, over the Code canvas.
-        //
-        // The recording UI and the speech service both live outside `JunoCodeUI`
-        // — in this target and in `JunoVoiceKit` — and that package deliberately
-        // depends on neither, so the composer asks for dictation through a closure
-        // and the window supplies the surface. Pulling the voice stack into the
-        // Code UI package to avoid one closure would have been the worse trade.
         .overlay(alignment: .bottom) {
             if isDictating {
                 DesktopDictation(
@@ -859,15 +574,6 @@ struct DesktopCodeWorkspace: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        // Approval is a task-level state, not a notification attached to the
-        // canvas. The sidebar's Needs attention section is the durable place to
-        // find another blocked run, while the selected run's ApprovalCard stays
-        // immediately above the composer. A floating "Show" pill here duplicated
-        // both surfaces and competed with the transcript header.
-        //
-        // Screen control is different: it is a live, dangerous capability that
-        // must remain visible while it is active. Keep that one transient signal
-        // over the canvas, but do not turn ordinary approval state into a toast.
         .overlay(alignment: .topTrailing) {
             if controller.computerUseActive {
                 JunoDesktopGlass(spacing: JunoSpace.snug) {
@@ -878,9 +584,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// The Code call uses the same account-authenticated relay and transcript
-    /// route as Chat. Code has no chat thread to append to, so the server creates
-    /// a normal conversation when the call is saved.
     private var voiceColumn: DesktopVoiceColumn? {
         guard let voiceSession,
             let configuration,
@@ -916,10 +619,6 @@ struct DesktopCodeWorkspace: View {
         )
     }
 
-    /// Starts the same realtime call from either a running Code session or the
-    /// first-turn composer. A draft has no `SessionController` yet, but voice
-    /// still has the same account-authenticated relay and can be saved against
-    /// the selected project when the call ends.
     private func startVoice(modelID: String, projectID: String?) {
         guard voiceSession == nil else { return }
         guard let configuration, let session, let sender = configuration.requestSender else {
@@ -963,12 +662,10 @@ struct DesktopCodeWorkspace: View {
                     openWorkspace: {
                         guard let root = controller.context?.access.rootURL else { return }
                         NSWorkspace.shared.activateFileViewerSelecting([root])
-                    }
+                    },
+                    createPullRequest: { isCreatingPullRequest = true }
                 )
             } else {
-                // Compact rather than a full-height placeholder: with no local
-                // session there is genuinely nothing to inspect, and cloud and
-                // device runs report no structured changes at all.
                 JunoEmptyState(
                     title: "Nothing to inspect",
                     message: """
@@ -982,11 +679,158 @@ struct DesktopCodeWorkspace: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Command palette
+
+    private var palette: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .onTapGesture { showingPalette = false }
+                .accessibilityHidden(true)
+            CodeCommandPaletteView(
+                items: paletteItems,
+                perform: { item in
+                    showingPalette = false
+                    perform(item)
+                },
+                dismiss: { showingPalette = false }
+            )
+            .padding(.top, 96)
+        }
+    }
+
+    /// Everything ⌘K can reach, assembled from what the window knows.
+    private var paletteItems: [CodePaletteItem] {
+        var items: [CodePaletteItem] = []
+        items.append(CodePaletteItem(id: "action.new-task", kind: .action, title: "New task", icon: .new, shortcut: "⌘N"))
+        items.append(CodePaletteItem(id: "action.open-folder", kind: .action, title: "Open folder…", icon: .projects, shortcut: "⌘O"))
+        items.append(CodePaletteItem(id: "action.pulls", kind: .action, title: "Pull requests", icon: .pulls))
+        items.append(CodePaletteItem(id: "action.projects", kind: .action, title: "All projects", icon: .projects))
+        items.append(CodePaletteItem(id: "action.settings", kind: .action, title: "Code settings…", icon: .settings, shortcut: "⌘,"))
+        if controller != nil {
+            items.append(CodePaletteItem(id: "action.review", kind: .action, title: reviewPresented ? "Close review" : "Review changes", icon: .branch, shortcut: "⌥⌘R"))
+            items.append(CodePaletteItem(id: "action.console", kind: .action, title: consoleVisible ? "Hide console" : "Show console", icon: .terminal, shortcut: "⌥⌘C"))
+            items.append(CodePaletteItem(id: "action.inspector", kind: .action, title: inspectorVisible ? "Hide context rail" : "Show context rail", icon: .sliders, shortcut: "⌥⌘I"))
+            items.append(CodePaletteItem(id: "action.preview", kind: .action, title: previewTarget == nil ? "Open preview" : "Hide preview", icon: .canvas, shortcut: "⌥⌘P"))
+            items.append(CodePaletteItem(id: "action.open-file", kind: .action, title: "Open file…", icon: .search, shortcut: "⇧⌘O"))
+            if controller?.pullRequestUnavailableReason == nil {
+                items.append(CodePaletteItem(id: "action.pull-request", kind: .action, title: "Create pull request…", icon: .pulls))
+            }
+            if controller?.session.status.isActive == true {
+                items.append(CodePaletteItem(id: "action.stop", kind: .action, title: "Stop the run", icon: .stop, shortcut: "⌘."))
+            }
+            for mode in PermissionMode.allCases {
+                items.append(
+                    CodePaletteItem(
+                        id: "permission.\(mode.rawValue)",
+                        kind: .permission,
+                        title: PermissionModeLabel.text(for: mode),
+                        subtitle: PermissionModeLabel.explanation(for: mode),
+                        icon: PermissionModeLabel.junoIcon(for: mode)
+                    )
+                )
+            }
+            for model in workbenchModel.availableModels {
+                items.append(
+                    CodePaletteItem(
+                        id: "model.\(model.modelID)",
+                        kind: .model,
+                        title: model.displayName,
+                        subtitle: model.modelID,
+                        icon: .models
+                    )
+                )
+            }
+            for command in CodeSlashCommandLibrary.builtIn.commands {
+                items.append(
+                    CodePaletteItem(
+                        id: "slash.\(command.name)",
+                        kind: .slashCommand,
+                        title: "/\(command.name)",
+                        subtitle: command.summary,
+                        icon: .terminal
+                    )
+                )
+            }
+        }
+        for record in workbenchModel.workspaces {
+            items.append(
+                CodePaletteItem(
+                    id: "project.\(record.id.value)",
+                    kind: .project,
+                    title: record.descriptor.displayName,
+                    subtitle: (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath,
+                    icon: record.descriptor.isGitRepository ? .branch : .projects
+                )
+            )
+        }
+        for session in workbenchModel.visibleSessions.sorted(by: { $0.updatedAt > $1.updatedAt }) {
+            items.append(
+                CodePaletteItem(
+                    id: "session.\(session.id.value)",
+                    kind: .session,
+                    title: session.title,
+                    subtitle: [
+                        workbenchModel.workspaceName(for: session.workspaceID),
+                        session.gitBranch,
+                        CodeRunStatus(session.status, hasPendingApproval: session.hasPendingApproval).label,
+                    ].compactMap { $0 }.joined(separator: " · "),
+                    icon: .conversation,
+                    keywords: [session.gitBranch ?? ""]
+                )
+            )
+        }
+        return items
+    }
+
+    private func perform(_ item: CodePaletteItem) {
+        let parts = item.id.split(separator: ".", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        switch (parts[0], parts[1]) {
+        case ("action", "new-task"): newSession()
+        case ("action", "open-folder"): isChoosingRepository = true
+        case ("action", "pulls"): selection.wrappedValue = .pulls
+        case ("action", "projects"): selection.wrappedValue = .allProjects
+        case ("action", "settings"): DesktopSettingsRouter.open(.code)
+        case ("action", "review"): toggleReview()
+        case ("action", "console"): toggleConsole()
+        case ("action", "inspector"): inspectorPresentation.wrappedValue.toggle()
+        case ("action", "preview"): openPreview()
+        case ("action", "open-file"): isOpeningQuickly = true
+        case ("action", "pull-request"): isCreatingPullRequest = true
+        case ("action", "stop"): stop()
+        case ("permission", let raw):
+            guard let mode = PermissionMode(rawValue: raw), let controller else { return }
+            Task { await controller.setPermissionMode(mode) }
+        case ("model", let id):
+            guard let controller else { return }
+            Task { await controller.setModelID(id) }
+        case ("slash", let name):
+            guard let controller,
+                  let command = CodeSlashCommandLibrary.builtIn.command(named: name)
+            else { return }
+            if let action = command.action {
+                switch action {
+                case .compact: Task { await controller.compactConversation() }
+                case .review: controller.review.present()
+                }
+            } else {
+                controller.composerText = command.expanded(argument: "")
+                if let behavior = command.behavior {
+                    Task { await controller.setBehavior(behavior) }
+                }
+            }
+        case ("project", let id):
+            selection.wrappedValue = .repository(WorkspaceID(value: id))
+        case ("session", let id):
+            selection.wrappedValue = .session(CodeSessionID(value: id))
+        default:
+            break
+        }
+    }
+
     // MARK: - Floating status controls
 
-    /// Screen control is a standing, dangerous grant, so its live indicator is
-    /// read from the coordinator's own snapshot rather than assumed from the
-    /// setting that enabled it.
     @ViewBuilder
     private func computerUseIndicator(_ controller: SessionController) -> some View {
         if controller.computerUseActive {
@@ -994,9 +838,6 @@ struct DesktopCodeWorkspace: View {
                 JunoIconView(.permission, size: 15)
                     .foregroundStyle(Color.junoDanger)
                 Text("Screen control active").junoRowLabel()
-                // Plain inside glass. Real glass carries its own rim light; a
-                // second glass control inside a glass pill flattens both back
-                // into translucent rounded rectangles.
                 Button("Stop") {
                     Task { await controller.stopComputerUse() }
                 }
@@ -1014,38 +855,8 @@ struct DesktopCodeWorkspace: View {
 
     // MARK: - Toolbar
 
-    /// The toolbar is intentionally small: create, review, and one menu for the
-    /// less frequent session commands. A workbench should not make the reader
-    /// decode a row of anonymous symbols before they can read the task.
-    ///
-    /// The menu keeps the existing command surface, while its accessibility
-    /// representation preserves the stable semantic controls used by VoiceOver
-    /// and UI automation. They remain real buttons with the same actions; they
-    /// are simply not repeated as visible chrome.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // **No product switch here.** It is the first thing in the sidebar now —
-        // `DesktopSidebarProductHeader`, drawn identically by both columns.
-        //
-        // It was in the toolbar because the first sidebar version was a bare
-        // `safeAreaInset` with nothing painted behind it, so scrolled rows slid
-        // under the switch and on under the traffic lights. That failure was the
-        // missing backing, not the placement, and the header fixes it there. What
-        // the toolbar cost in exchange was real: `.principal` shares the leading
-        // half of the bar with the window's title block — the reason
-        // `.navigationSubtitle` had to go was that a two-line titlebar shoved this
-        // item off centre — and a control that changes what the *navigation*
-        // column lists is a strange thing to have to reach for at the top of the
-        // *content* column. `.navigation` was never an option: in a
-        // `NavigationSplitView` it lands in the sidebar's titlebar, beside the
-        // traffic lights.
-        //
-        // Both windows still move together: the header is one view, so the switch
-        // cannot sit in one place in Chat and another in Code.
-
-        // Trailing, not `.navigation`: that placement draws into the *sidebar's*
-        // titlebar beside the traffic lights, which is how a window action ended up
-        // sitting inside the navigation column.
         ToolbarItem(placement: .primaryAction) {
             Button(action: newSession) {
                 JunoIconLabel(verbatim: "New task", icon: .new, size: 15)
@@ -1057,19 +868,29 @@ struct DesktopCodeWorkspace: View {
         ToolbarSpacer(.fixed, placement: .primaryAction)
 
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                reviewVisible.toggle()
-            } label: {
+            Button(action: toggleReview) {
                 JunoIconLabel(
-                    verbatim: reviewVisible ? "Conversation" : "Review",
-                    icon: reviewVisible ? .conversation : .code,
+                    verbatim: "Review",
+                    icon: .branch,
                     size: 15
                 )
             }
             .disabled(controller == nil)
-            .keyboardShortcut("r", modifiers: [.command, .option])
-            .help(reviewVisible ? "Return to conversation" : "Review the current diff")
+            .help(reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)")
             .accessibilityIdentifier("juno.code.review.toggle")
+            .accessibilityValue(reviewPresented ? "Open" : "Closed")
+        }
+
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showingPalette = true
+            } label: {
+                JunoIconLabel(verbatim: "Commands", icon: .search, size: 15)
+            }
+            .help("Command palette (⌘K)")
+            .accessibilityIdentifier("juno.code.palette")
         }
 
         ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -1085,27 +906,19 @@ struct DesktopCodeWorkspace: View {
                         )
                     }
                     .disabled(controller == nil)
-                    .keyboardShortcut("p", modifiers: [.command, .option])
 
                     Button {
                         inspectorPresentation.wrappedValue.toggle()
                     } label: {
                         JunoIconLabel(
-                            verbatim: inspectorPresentation.wrappedValue ? "Hide inspector" : "Show inspector",
+                            verbatim: inspectorPresentation.wrappedValue ? "Hide context rail" : "Show context rail",
                             icon: .sliders,
                             size: 14
                         )
                     }
                     .disabled(controller == nil)
-                    .keyboardShortcut("i", modifiers: [.command, .option])
 
-                    Button {
-                        withAnimation(
-                            JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
-                        ) {
-                            consoleVisible.toggle()
-                        }
-                    } label: {
+                    Button(action: toggleConsole) {
                         JunoIconLabel(
                             verbatim: consoleVisible ? "Hide console" : "Show console",
                             icon: .terminal,
@@ -1113,7 +926,13 @@ struct DesktopCodeWorkspace: View {
                         )
                     }
                     .disabled(controller == nil)
-                    .keyboardShortcut("c", modifiers: [.command, .option])
+
+                    Button {
+                        isCreatingPullRequest = true
+                    } label: {
+                        JunoIconLabel(verbatim: "Create pull request…", icon: .pulls, size: 14)
+                    }
+                    .disabled(controller?.pullRequestUnavailableReason != nil)
                 }
 
                 Section("Workspace") {
@@ -1123,14 +942,12 @@ struct DesktopCodeWorkspace: View {
                     .disabled(targetRepository == nil)
 
                     Button { isChoosingRepository = true } label: {
-                        JunoIconLabel(verbatim: "Add project…", icon: .projects, size: 14)
+                        JunoIconLabel(verbatim: "Open folder…", icon: .projects, size: 14)
                     }
-                    .keyboardShortcut("o", modifiers: .command)
 
                     Button { isOpeningQuickly = true } label: {
                         JunoIconLabel(verbatim: "Open file…", icon: .search, size: 14)
                     }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
                     .disabled(controller?.context == nil)
                 }
 
@@ -1154,13 +971,6 @@ struct DesktopCodeWorkspace: View {
             .accessibilityRepresentation {
                 HStack(spacing: 0) {
                     Button(
-                        reviewVisible ? "Conversation" : "Review changes",
-                        action: { reviewVisible.toggle() }
-                    )
-                    .disabled(controller == nil)
-                    .accessibilityIdentifier("juno.code.review.toggle")
-
-                    Button(
                         previewTarget == nil ? "Open preview" : "Hide preview",
                         action: openPreview
                     )
@@ -1168,7 +978,7 @@ struct DesktopCodeWorkspace: View {
                     .accessibilityIdentifier("juno.code.preview.toggle")
 
                     Button(
-                        inspectorPresentation.wrappedValue ? "Hide inspector" : "Show inspector",
+                        inspectorPresentation.wrappedValue ? "Hide context rail" : "Show context rail",
                         action: { inspectorPresentation.wrappedValue.toggle() }
                     )
                     .disabled(controller == nil)
@@ -1176,13 +986,7 @@ struct DesktopCodeWorkspace: View {
 
                     Button(
                         consoleVisible ? "Hide console" : "Show console",
-                        action: {
-                            withAnimation(
-                                JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
-                            ) {
-                                consoleVisible.toggle()
-                            }
-                        }
+                        action: toggleConsole
                     )
                     .disabled(controller == nil)
                     .accessibilityIdentifier("juno.code.console.toggle")
@@ -1191,19 +995,10 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Build and run the selected repository's iOS app.
-    ///
-    /// Lifted out of the toolbar so the item holding it can be unconditional:
-    /// a `ToolbarItem` that appears and disappears makes SwiftUI rebuild the
-    /// AppKit toolbar under a live window, which is the documented crash
-    /// surface this file opens by warning about. The button is now always
-    /// present and disables when there is no project.
     private func openSimulator() {
         guard let repository = targetRepository else { return }
-        // Same beat as the preview dock opening: the pane's insertion is the
-        // canvas-slide keyframe, and that keyframe belongs on `canvasEnter`.
         withAnimation(
-            JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+            JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
         ) {
             closePreview()
             simulatorHost.open(
@@ -1213,37 +1008,10 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    private var currentStatus: CodeRunStatus? {
-        if let controller {
-            return CodeRunStatus(
-                controller.session.status,
-                hasPendingApproval: !controller.pendingApprovals.isEmpty
-            )
-        }
-        if let selectedTask { return CodeRunStatus(selectedTask.status) }
-        if let selectedRemoteSummary { return CodeRunStatus(selectedRemoteSummary) }
-        return nil
-    }
-
-    private var isRunning: Bool {
-        currentStatus?.isActive == true
-    }
-
-    /// Whether this session can control the screen at all.
-    ///
-    /// Delegates to `SessionController.computerUseUnavailableReason`, which is the
-    /// only thing that knows the full set of conditions — local session, Code
-    /// behavior, a live driver, **and a model that advertises vision**. This used
-    /// to test `behavior == .code` and nothing else, so the menu item was enabled
-    /// for a model that cannot see a screenshot; choosing it enabled the setting
-    /// and then activation failed, which reads as the feature being broken rather
-    /// than as the model being wrong for it.
     private var supportsComputerUse: Bool {
         controller?.computerUseUnavailableReason == nil
     }
 
-    /// The reason, when there is one, so the menu explains itself instead of just
-    /// being dimmed.
     private var computerUseHelp: String {
         guard let controller else {
             return "Screen control is only available for a session running on this Mac."
@@ -1256,16 +1024,8 @@ struct DesktopCodeWorkspace: View {
             : "Let this session capture and control the main display"
     }
 
-    private func elapsed(from start: Date, to now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-
     // MARK: - Menu bar
 
-    /// The focused window publishes what the menu bar may do to it. Without this
-    /// the Code window left ⌘N and ⌘⇧F permanently disabled, because only the Chat
-    /// window ever published these actions.
     private var workspaceActions: DesktopWorkspaceActions {
         DesktopWorkspaceActions(
             newItem: newSession,
@@ -1279,24 +1039,75 @@ struct DesktopCodeWorkspace: View {
         )
     }
 
+    private var codeActions: DesktopCodeActions {
+        DesktopCodeActions(
+            openPalette: { showingPalette = true },
+            previousSession: { step(-1) },
+            nextSession: { step(1) },
+            toggleReview: toggleReview,
+            toggleConsole: toggleConsole,
+            toggleInspector: { inspectorPresentation.wrappedValue.toggle() },
+            openFile: { isOpeningQuickly = true },
+            createPullRequest: controller?.pullRequestUnavailableReason == nil
+                ? { isCreatingPullRequest = true }
+                : nil,
+            hasSession: controller != nil
+        )
+    }
+
+    /// ⌘⇧[ and ⌘⇧]: the session before or after the selected one, in the
+    /// column's own order. Wraps.
+    private func step(_ delta: Int) {
+        let ordered = workbenchModel.visibleSessions.sorted { $0.updatedAt > $1.updatedAt }
+        guard !ordered.isEmpty else { return }
+        let current = ordered.firstIndex { $0.id == selectedSessionID } ?? -1
+        let next = ((current + delta) % ordered.count + ordered.count) % ordered.count
+        selection.wrappedValue = .session(ordered[next].id)
+    }
+
+    private func toggleReview() {
+        guard let controller else { return }
+        if controller.review.isPresented {
+            controller.review.dismiss()
+        } else {
+            controller.review.present()
+        }
+    }
+
+    private func toggleConsole() {
+        withAnimation(
+            JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)
+        ) {
+            consoleVisible.toggle()
+        }
+    }
+
     // MARK: - Actions
 
-    /// "New" means a new draft, as it does in Chat. Creating a persisted
-    /// session before the reader has written anything filled Projects and
-    /// Recents with abandoned "New session" rows and made ⌘N destructive to the
-    /// reader's place in the current transcript.
-    ///
-    /// With no project granted this used to open the folder picker instead —
-    /// ⌘N answered with a file dialog. It now opens the composer, and the
-    /// project is offered from inside it.
     private func newSession() {
-        reviewVisible = false
         consoleVisible = false
         if let record = targetRepository {
             selection.wrappedValue = .repository(record.id)
         } else {
             selection.wrappedValue = .draft
         }
+    }
+
+    /// A request from the menu bar item or the quick-entry panel.
+    private func consume(_ request: DesktopWorkbenchRegistry.Request) {
+        switch request.kind {
+        case .newCodeTask(let prompt):
+            pendingPrompt = prompt
+            newSession()
+        case .openSession(let id):
+            selection.wrappedValue = .session(id)
+        case .newChat:
+            // Chat's, not ours. `JunoDesktopWorkspaceView` switches product
+            // and hands the prompt across; this window only sees the request
+            // because it was on screen when it landed.
+            return
+        }
+        registry.consume(request)
     }
 
     private func openPreview() {
@@ -1320,26 +1131,22 @@ struct DesktopCodeWorkspace: View {
         openWindow(id: CodePreviewScene.windowID, value: target)
     }
 
-    /// Creates and starts the local run described by the launch composer.
-    ///
-    /// The old path hard-coded Code / Ask Before Changes / first model and made
-    /// the reader click a second composer to actually start. One draft value now
-    /// crosses the boundary intact, and its first send is the first transcript
-    /// turn—matching Juno Chat, Codex, and Claude Code.
+    /// Creates and starts the local run described by the New task screen.
     private func start(_ draft: DesktopLocalCodeDraft) {
         guard !isStartingSession else { return }
         isStartingSession = true
+        pendingPrompt = nil
         Task {
             defer { isStartingSession = false }
             guard let session = await workbenchModel.createSession(
                 workspaceID: draft.workspaceID,
-                configuration: draft.configuration
+                configuration: draft.configuration,
+                isolatedWorktree: draft.usesIsolatedWorktree
             ) else { return }
             await workbenchModel.renameSession(
                 id: session.id,
                 title: DesktopLocalCodeDraft.title(from: draft.prompt)
             )
-            reviewVisible = false
             consoleVisible = false
             selection.wrappedValue = .session(session.id)
             guard let created = await workbenchModel.controller(for: session.id) else {
@@ -1371,9 +1178,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Enabling the capability and activating capture are one gesture here, but
-    /// two steps in the coordinator: the session's stored setting is the standing
-    /// grant, and activation is the consent boundary that actually starts capture.
     private func toggleComputerUse() {
         guard let controller else { return }
         Task {
@@ -1398,10 +1202,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Appends a dictated passage to whatever is already in the composer.
-    ///
-    /// Appended rather than assigned: dictation is a way of adding to a message,
-    /// and replacing a half-typed draft with a transcript would silently discard it.
     private func appendDictated(_ transcript: String, to controller: SessionController) {
         let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !spoken.isEmpty else { return }
@@ -1433,35 +1233,21 @@ struct DesktopCodeWorkspace: View {
     private func bootstrap() async {
         await workbenchModel.bootstrap()
         isBootstrapping = false
-        // The device list may already be loaded when the reader switches product,
-        // in which case `onChange` never fires.
         selectDefaultRemoteDevice(from: codeModel.devices)
 
         #if DEBUG
-        // Responsive QA has to be able to screenshot both inspector states, and
-        // `@SceneStorage` is restored by AppKit before any of our code runs.
         if CommandLine.arguments.contains("--juno-preview-inspector") {
             inspectorVisible = true
         }
         if previewSessionID != nil {
-            // The preview fixture selects a session before this view's
-            // selection task is guaranteed to run. Resolve it here as well so a
-            // screenshot flag deterministically presents the inspector instead
-            // of depending on task scheduling.
             await resolveController()
             inspectorReady = controller != nil
             return
         }
         #endif
 
-        // Scene storage outlives the runs it names. A window that reopened onto a
-        // deleted session showed a title over an empty canvas, which reads as a
-        // failure rather than as "that run is gone".
         let validated = DesktopCodeNavigationState.validate(
             selection.wrappedValue,
-            // Visible ones only: a stored selection naming a sub-agent would
-            // otherwise validate and reopen the window onto a session that has no
-            // row to return to.
             sessions: workbenchModel.visibleSessions.map(\.id),
             tasks: codeModel.tasks.map(\.id),
             repositories: workbenchModel.workspaces.map(\.id)
@@ -1469,13 +1255,6 @@ struct DesktopCodeWorkspace: View {
         storedSelection = DesktopCodeNavigationState.encode(validated)
     }
 
-    /// Resolves the selected session's live controller.
-    ///
-    /// The previous controller is detached on the way out. That is not just
-    /// tidiness: `detach()` is what deactivates that session's screen capture, and
-    /// capture must not keep running on a session the reader has navigated away
-    /// from. The run itself continues — the orchestrator is independent of this
-    /// view — and re-selecting replays the whole transcript from the store.
     private func resolveController() async {
         if let previous = controller, previous.sessionID != selectedSessionID {
             await previous.detach()
@@ -1498,8 +1277,6 @@ struct DesktopCodeWorkspace: View {
         await remoteModel.loadSessions(deviceID: remoteDeviceID)
     }
 
-    /// The relay is a resumable SSE stream. This task is bound to the selection,
-    /// so changing sessions cancels the stream before it can affect a new one.
     private func followSelectedRemoteSession() async {
         guard let selectedRemote else { return }
         remoteModel.openSession(selectedRemote.sessionID)
@@ -1511,25 +1288,11 @@ struct DesktopCodeWorkspace: View {
 
     // MARK: - Plan meters
 
-    /// How many runs are live, across every transport this window lists.
-    ///
-    /// It is the read trigger rather than a timer: a run starting or finishing is
-    /// the only thing this window does that can move the meter, and polling the
-    /// ledger once a minute would spend a request to redraw a bar that had not
-    /// changed. The explicit Refresh lives on the Usage page the meter opens.
     private var liveRunCount: Int {
         workbenchModel.sessions.filter(\.status.isActive).count
             + codeModel.tasks.filter(\.status.isActive).count
     }
 
-    /// One read of the account's plan meters.
-    ///
-    /// `NativeUsageClient.load` fetches the meters and the ledger breakdown
-    /// together — the two routes fail independently and every screen that shows
-    /// usage shows both — so this asks for the client's shortest window and keeps
-    /// only the half the footer draws. A failed read leaves the last known plan
-    /// standing rather than blanking the meter, because a bar that disappears
-    /// reads as a quota that vanished.
     private func readPlan() async {
         guard let sender = configuration?.requestSender, let session else { return }
         if plan != nil, let planReadAt,
@@ -1760,7 +1523,7 @@ private struct DesktopCodeRemoteCanvas: View {
 
     @State private var message = ""
 
-    private static let measure: CGFloat = 720
+    private static let measure: CGFloat = JunoReadingMeasure.reading
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2055,78 +1818,6 @@ private struct DesktopCodeRemoteCanvas: View {
         guard canSend, !text.isEmpty else { return }
         message = ""
         Task { await remote.send(deviceID: deviceID, sessionID: sessionID, text: text) }
-    }
-}
-
-/// A quiet context strip for an active Code surface.
-///
-/// The toolbar owns actions; this strip owns orientation. Keeping the project,
-/// session and run state beside the transcript prevents the reader from having
-/// to infer which of several local, cloud or device rows is currently open.
-private struct DesktopCodeContextStrip: View {
-    let title: String
-    let subtitle: String
-    let status: CodeRunStatus?
-    let isRunning: Bool
-    let stop: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                    .junoInk()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                if !subtitle.isEmpty {
-                    HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(.projects, size: 12)
-                            .junoMetaInk()
-                            .accessibilityHidden(true)
-                        Text(subtitle)
-                            .junoFont(size: 11, relativeTo: .caption2)
-                            .junoSecondaryInk()
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
-
-            Spacer(minLength: JunoSpace.regular)
-
-            if let status {
-                HStack(spacing: JunoSpace.tight) {
-                    CodeStatusGlyph(status)
-                    Text(status.label)
-                        .junoCaption()
-                        .contentTransition(.identity)
-                }
-                .help(status.state.meaning)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Status: \(status.label)")
-            }
-
-            if isRunning {
-                Button(action: stop) {
-                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 13)
-                }
-                .buttonStyle(.bordered)
-                .tint(Color.junoDanger)
-                .keyboardShortcut(".", modifiers: .command)
-                .accessibilityIdentifier("juno.code.stop")
-            }
-        }
-        .frame(maxWidth: 800, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, JunoSpace.roomy)
-        .padding(.vertical, JunoSpace.snug)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(height: 1)
-        }
-        .accessibilityIdentifier("juno.code.context-strip")
     }
 }
 

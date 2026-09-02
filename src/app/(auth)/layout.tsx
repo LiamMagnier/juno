@@ -14,9 +14,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="relative isolate flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-background px-4 py-10 sm:py-12">
       {/* The same two backdrop layers the landing hero wears — a faint coral wash
           and the CSS twin of DotField's resting frame. The sign-in screen is the
-          one step between the marketing page and the app, and it was the only
-          surface in the funnel rendering on a bare, unlit ground: the visitor
-          crossed from a lit page to a flat one and back to a lit one. */}
+          one step between the marketing page and the app, so it is lit the same
+          way as both. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(50%_40%_at_50%_0%,hsl(var(--primary)/0.09),transparent_72%)]"
@@ -25,28 +24,23 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:radial-gradient(70%_60%_at_50%_35%,black,transparent)]"
       />
-      {/* Layered entrance: mark + wordmark → card → fine print → legal nav.
-          staggerDelay, not hand-written [animation-delay:60/180/240ms] — that was
-          a 60/120/60 step pattern, so the one screen every account passes through
-          did not hold a tempo, let alone the product's three-rung scale. */}
+      {/* Layered entrance: mark + wordmark → card → fine print → legal nav, on
+          the `loose` stagger rung. */}
       <Link
         href="/"
         style={staggerDelay(0, "loose")}
         className="mb-7 flex flex-col items-center gap-2.5 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-safe:animate-fade-in [animation-fill-mode:backwards] motion-reduce:transition-none motion-reduce:active:scale-100"
       >
-        <JunoMark className="h-10 w-10" />
+        <JunoMark className="size-10" />
         <AsciiWordmark />
       </Link>
-      {/* Full-strength `border-border`, plus a dark-only lit inset edge.
-          `shadow-soft` on dark is `0 1px 2px hsl(0 0% 0% / 0.28)` — black ink on
-          a black ground, i.e. nothing — so the card's whole separation collapsed
-          to a damped /75 hairline over a 6.5% ground. Depth on black comes from
-          the lightness ladder, a hairline, and a 1px INSET highlight, which is
-          exactly what `.dark .composer-surface` does in globals.css. An outer
-          light-coloured shadow here would be the halo the theme removed. */}
+      {/* The card: `surface-raised-lg` at the panel rung (20) — the same
+          material and corner as a dialog, which is what a centred card on a
+          full-screen ground is. The recipe carries its own hairline and its own
+          per-theme throw, so nothing is hand-written for the dark ground. */}
       <main
         style={staggerDelay(1, "loose")}
-        className="w-full max-w-[24rem] rounded-surface border border-border bg-card p-6 shadow-soft motion-safe:animate-rise-in [animation-fill-mode:backwards] dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.5),0_18px_44px_-30px_hsl(0_0%_0%/0.9)] sm:p-7"
+        className="surface-raised-lg w-full max-w-[24rem] rounded-panel p-6 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:p-7"
       >
         {children}
       </main>

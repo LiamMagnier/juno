@@ -395,6 +395,10 @@ enum CodePreviewData {
             builder.fileChanged("Sources/JunoCodeUI/Theme/JunoCodeTheme.swift", .modified, 12, 4)
             builder.fileChanged("Sources/JunoCodeUI/Views/Inspector/InspectorView.swift", .modified, 6, 11)
             builder.assistant("Both files now read from the shared scale. The inspector's local constants are gone.")
+            builder.compaction(
+                "Earlier turns: the reader asked for one spacing scale; two overlapping scales were found and folded.",
+                before: 11, after: 5
+            )
             builder.testRun("swift test", passed: true, tests: 179, failures: 0, duration: 42.8)
             builder.runCompleted("Unified the spacing scale", files: 2, testsPassed: true, duration: 96.4)
             fixture.lastTestRun = TestRunCompletedEvent(
@@ -866,6 +870,16 @@ enum CodePreviewData {
 
         mutating func errorOccurred(_ message: String, recoverable: Bool) {
             append(.errorOccurred(ErrorEvent(message: message, isRecoverable: recoverable)))
+        }
+
+        mutating func compaction(_ summary: String, before: Int, after: Int) {
+            append(.compaction(CompactionEvent(
+                summary: summary,
+                beforeMessageCount: before,
+                afterMessageCount: after,
+                beforeTokens: 91_000,
+                requestedByUser: false
+            )))
         }
 
         mutating func runCompleted(

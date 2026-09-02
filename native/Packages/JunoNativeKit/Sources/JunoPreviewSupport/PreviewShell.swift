@@ -59,6 +59,37 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-code-session", env: "JUNO_PREVIEW_CODE_SESSION")
     }
 
+    /// Opens one **remote** Code session's thread, from
+    /// `--juno-preview-code-remote-session <id>` or
+    /// `JUNO_PREVIEW_CODE_REMOTE_SESSION`. See ``PreviewCodeRemoteFixtures``
+    /// for the ids.
+    public static var initialCodeRemoteSession: String? {
+        value(for: "--juno-preview-code-remote-session", env: "JUNO_PREVIEW_CODE_REMOTE_SESSION")
+    }
+
+    /// Opens the phone's full-screen voice mode over the fixture call, from
+    /// `--juno-preview-voice-fullscreen` or `JUNO_PREVIEW_VOICE_FULLSCREEN=1`.
+    public static var opensVoiceFullScreen: Bool {
+        CommandLine.arguments.contains("--juno-preview-voice-fullscreen")
+            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_VOICE_FULLSCREEN"] == "1"
+    }
+
+    /// Renders the signed-out onboarding instead of the fixture account, from
+    /// `--juno-preview-signed-out` or `JUNO_PREVIEW_SIGNED_OUT=1`. The
+    /// sign-in screen is otherwise unreachable in the harness, which always
+    /// carries a session.
+    public static var signedOut: Bool {
+        CommandLine.arguments.contains("--juno-preview-signed-out")
+            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_SIGNED_OUT"] == "1"
+    }
+
+    /// Opens Settings on one of its pages, from `--juno-preview-settings-route
+    /// <name>` or `JUNO_PREVIEW_SETTINGS_ROUTE` — `voice`, `archived`,
+    /// `notifications`, `code`, `appearance`, …
+    public static var initialSettingsRoute: String? {
+        value(for: "--juno-preview-settings-route", env: "JUNO_PREVIEW_SETTINGS_ROUTE")
+    }
+
     /// Opens the densest Work thread directly on its Files & cost surface.
     /// This keeps artifact/version QA deterministic and avoids relying on
     /// screen-coordinate automation against a resizable macOS window.

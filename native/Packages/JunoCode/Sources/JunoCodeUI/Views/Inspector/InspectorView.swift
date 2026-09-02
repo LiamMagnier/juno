@@ -67,6 +67,7 @@ public struct InspectorView: View {
     private let openPreview: (() -> Void)?
     private let openSources: (() -> Void)?
     private let openWorkspace: (() -> Void)?
+    private let createPullRequest: (() -> Void)?
 
     @SceneStorage("juno.code.inspector.pane.v3") private var storedPane =
         CodeInspectorPane.activity.rawValue
@@ -75,12 +76,14 @@ public struct InspectorView: View {
         controller: SessionController,
         openPreview: (() -> Void)? = nil,
         openSources: (() -> Void)? = nil,
-        openWorkspace: (() -> Void)? = nil
+        openWorkspace: (() -> Void)? = nil,
+        createPullRequest: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.openPreview = openPreview
         self.openSources = openSources
         self.openWorkspace = openWorkspace
+        self.createPullRequest = createPullRequest
     }
 
     private var review: ReviewModel { controller.review }
@@ -270,7 +273,7 @@ public struct InspectorView: View {
         case .environment:
             EnvironmentTab(controller: controller, review: review, openSources: openSources, openWorkspace: openWorkspace)
         case .repository:
-            RepositoryTab(controller: controller)
+            RepositoryTab(controller: controller, createPullRequest: createPullRequest)
         case .preview:
             PreviewTab(controller: controller, openPreview: openPreview)
         }

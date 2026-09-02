@@ -400,7 +400,7 @@ struct DesktopVoiceDock: View {
             }
             pill
         }
-        .frame(maxWidth: 720)
+        .frame(maxWidth: JunoReadingMeasure.reading)
         .opacity(risen ? 1 : 0)
         // Under Reduce Motion the entrance keeps its fade and loses its travel,
         // exactly as the web's `rise-in` collapses its translate through
@@ -408,15 +408,9 @@ struct DesktopVoiceDock: View {
         .offset(y: risen || accessibility.reduceMotion ? 0 : 8)
         .onAppear {
             withAnimation(
-                JunoMotion.reduced(
-                    // `rise-in var(--dur-slow) var(--ease-out-strong)`: the
-                    // curve is the web's `--ease-out-strong` verbatim, and the
-                    // duration is the ladder's `slow` rung — it shipped as an
-                    // inline 0.32, exactly the kind of near-miss beside 0.36
-                    // the `Duration` doc names as the damaging one.
-                    .timingCurve(0.32, 0.72, 0, 1, duration: JunoMotion.Duration.slow),
-                    when: accessibility.reduceMotion
-                )
+                // `rise-in var(--dur-slow) var(--ease-out-strong)`, as the
+                // ladder's own rung rather than the four raw control points.
+                JunoMotion.reduced(JunoMotion.riseIn, when: accessibility.reduceMotion)
             ) {
                 risen = true
             }

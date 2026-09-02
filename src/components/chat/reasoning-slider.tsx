@@ -221,7 +221,7 @@ function ModeChip({
           className={cn(
             "inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 text-micro font-medium transition-[background-color,color,box-shadow] duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11 coarse:px-3 motion-reduce:transition-none",
             pressed
-              ? "bg-foreground text-background shadow-xs"
+              ? "bg-foreground text-background shadow-pop"
               : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
             disabled && "cursor-not-allowed opacity-50"
           )}

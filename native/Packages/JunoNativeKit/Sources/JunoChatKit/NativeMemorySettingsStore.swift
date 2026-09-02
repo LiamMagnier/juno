@@ -145,6 +145,9 @@ public struct NativeSettingsPatch: Equatable, Sendable {
     public var emailWeeklyDigest: Bool?
     /// Where background work may be sent. See `BackgroundProviderMode`.
     public var backgroundProviderMode: BackgroundProviderMode?
+    /// The read-aloud and voice-mode voice. `.some(nil)` clears it back to
+    /// the server default; `.none` leaves it alone.
+    public var voiceID: String??
 
     public init(
         theme: NativeThemePreference? = nil,
@@ -158,7 +161,8 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         favoriteModels: [String]? = nil,
         emailBudgetAlerts: Bool? = nil,
         emailWeeklyDigest: Bool? = nil,
-        backgroundProviderMode: BackgroundProviderMode? = nil
+        backgroundProviderMode: BackgroundProviderMode? = nil,
+        voiceID: String?? = nil
     ) {
         self.theme = theme
         self.accent = accent
@@ -172,6 +176,7 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         self.emailBudgetAlerts = emailBudgetAlerts
         self.emailWeeklyDigest = emailWeeklyDigest
         self.backgroundProviderMode = backgroundProviderMode
+        self.voiceID = voiceID
     }
 
     fileprivate var object: [String: Any] {
@@ -190,6 +195,7 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         if let favoriteModels { result["favoriteModels"] = favoriteModels }
         if let emailBudgetAlerts { result["emailBudgetAlerts"] = emailBudgetAlerts }
         if let emailWeeklyDigest { result["emailWeeklyDigest"] = emailWeeklyDigest }
+        if let voiceID { result["voiceId"] = voiceID ?? NSNull() }
         return result
     }
 }
@@ -573,6 +579,16 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
                 throw NativeMemorySettingsError.invalidMutation
             }
             settings.emailWeeklyDigest = value
+        }
+        if let raw = patch["voiceId"] {
+            if raw is NSNull {
+                settings.voiceID = nil
+            } else {
+                guard let value = raw as? String,
+                    Self.validString(value, maximum: 200, allowsEmpty: true)
+                else { throw NativeMemorySettingsError.invalidMutation }
+                settings.voiceID = value.isEmpty ? nil : value
+            }
         }
     }
 

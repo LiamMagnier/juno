@@ -3,11 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RunReceipt, RunReviewPane } from "@/components/code/run-review";
@@ -243,11 +245,22 @@ export function RunList() {
 
   if (state === "loading") {
     return (
-      <div className="space-y-2" aria-busy="true">
+      <div aria-busy="true">
         <span className="sr-only">Loading runs</span>
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-[72px] w-full rounded-card" style={staggerDelay(i)} />
-        ))}
+        <div className="mb-4 flex items-center gap-2" aria-hidden="true">
+          <Skeleton className="h-9 w-64 rounded-field" />
+          <Skeleton className="h-9 w-44 rounded-menu" />
+        </div>
+        <Skeleton className="mb-2 h-3 w-24 rounded-xs" aria-hidden="true" />
+        <div className="surface-inset space-y-0.5 rounded-card p-1.5" aria-hidden="true">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton
+              key={i}
+              className="h-14 w-full [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i, "tight")}
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -276,18 +289,23 @@ export function RunList() {
   return (
     <div className="flex gap-5">
       <div className="min-w-0 flex-1">
+        {/* The house toolbar: inset search, a segmented filter, the count in
+            mono on the right. */}
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-56">
+          <div className="relative min-w-0 flex-1 basis-56 sm:max-w-xs">
             <label htmlFor="run-search" className="sr-only">
               Search runs
             </label>
-            <AppIcons.search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
+            <AppIcons.search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
               id="run-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search runs, repos, branches…"
-              className="h-8 rounded-field border-border/60 bg-card/80 pl-8.5 pr-8 text-ui placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-primary/40"
+              className="pl-9 pr-9"
             />
             {query && (
               <Button
@@ -295,9 +313,9 @@ export function RunList() {
                 size="icon-sm"
                 onClick={() => setQuery("")}
                 aria-label="Clear search"
-                className="absolute right-1 top-1/2 size-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-1 top-1/2 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <ActionIcons.dismiss className="size-3" aria-hidden="true" />
+                <ActionIcons.dismiss className="size-3.5" aria-hidden="true" />
               </Button>
             )}
           </div>
@@ -307,30 +325,19 @@ export function RunList() {
             about, and a filter is the cheapest way to make the two populations
             visible as populations rather than as a mixed list.
           */}
-          <div className="flex shrink-0 items-center gap-1">
-            {(
-              [
-                { id: "all", label: "All" },
-                { id: "cloud", label: "Cloud" },
-                { id: "device", label: "My Macs" },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={machine === option.id}
-                onClick={() => setMachine(option.id)}
-                className={cn(
-                  "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-control px-3 font-mono text-micro font-medium transition-colors duration-fast ease-out-soft coarse:h-11",
-                  machine === option.id
-                    ? "bg-foreground text-background"
-                    : "border border-border/50 bg-secondary/40 text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl<MachineFilter>
+            value={machine}
+            onChange={setMachine}
+            ariaLabel="Which machines to show"
+            options={[
+              { value: "all", label: "All" },
+              { value: "cloud", label: "Cloud", icon: <CodeIcons.cloud className="size-3.5" aria-hidden="true" /> },
+              { value: "device", label: "My Macs", icon: <CodeIcons.device className="size-3.5" aria-hidden="true" /> },
+            ]}
+          />
+          <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground">
+            {filtered.length} {filtered.length === 1 ? "run" : "runs"}
+          </span>
         </div>
 
         {/*
@@ -379,9 +386,10 @@ export function RunList() {
               const shown = isOpen ? group.runs.slice(0, VISIBLE_CAP) : [];
               return (
                 <section key={bucket} aria-label={meta.label} className="mb-6 last:mb-0">
-                  <div className="mb-2 flex items-baseline gap-2">
-                    <h2 className="font-mono text-label uppercase text-muted-foreground">{meta.label}</h2>
-                    <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                  {/* Group header: eyebrow + mono count, the hint trailing. */}
+                  <div className="mb-2 flex items-baseline gap-2 px-1">
+                    <h2 className="font-mono text-label text-muted-foreground">{meta.label}</h2>
+                    <span className="font-mono text-caption tabular-nums text-muted-foreground/80">
                       {group.runs.length}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
@@ -407,7 +415,10 @@ export function RunList() {
                     )}
                   </div>
                   {isOpen && (
-                    <ul role="list" className="space-y-2">
+                    // Rows are rounded-control inside a rounded-card well at
+                    // p-1.5 — concentric, and the well is what lets a hovered or
+                    // peeked row stand proud of its neighbours.
+                    <ul role="list" className="surface-inset space-y-0.5 rounded-card p-1.5">
                       {shown.map((run, i) => (
                         <li key={run.id} style={staggerDelay(i, "tight")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
                           <RunRow
@@ -434,7 +445,7 @@ export function RunList() {
                         </li>
                       ))}
                       {isOpen && group.runs.length > VISIBLE_CAP && (
-                        <li className="pt-1 text-center text-caption text-muted-foreground">
+                        <li className="px-3 py-2 text-center font-mono text-caption text-muted-foreground">
                           {group.runs.length - VISIBLE_CAP} more not shown. Narrow the list with search.
                         </li>
                       )}
@@ -496,122 +507,162 @@ function RunRow({
    * needs a field the task API does not have — see the note in the page header.
    */
   const href = run.conversationId ? `/chat/${run.conversationId}` : run.prUrl;
+  // The peeked or reviewed row is the one RAISED object in its well.
+  const raised = peeked || reviewing;
+  // +N −M is only known once the run's log has been read, which happens on
+  // peek; a row that has not been opened shows no figures rather than zeros.
+  const churn =
+    detail && !detail.loading && detail.files.length > 0
+      ? detail.files.reduce(
+          (sum, f) => ({ added: sum.added + f.added, removed: sum.removed + f.removed }),
+          { added: 0, removed: 0 },
+        )
+      : null;
 
   return (
     <div
       className={cn(
-        "rounded-card border bg-card transition-[border-color,box-shadow] duration-fast ease-out-soft",
-        focused ? "border-foreground/25" : "border-border/70",
-        peeked && "shadow-lift",
-        // The one row treatment that is not decoration: a run waiting on the
-        // reader wears its state on the container, not only on a chip, so the
-        // section is scannable at arm's length.
-        meta.bucket === "needs-you" && "border-warning/40",
+        "group rounded-control border border-transparent transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none",
+        raised && "surface-raised border-border/60",
+        focused && !raised && "border-border/60",
       )}
     >
-      <div className="flex items-start gap-3 p-3">
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <StatusGlyph state={state} />
+
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <StatusChip state={state} />
+          <div className="flex min-w-0 items-center gap-2">
+            {/*
+              EVERY ROW HAS EXACTLY ONE FOCUSABLE ANCHOR, and it is the same
+              element in all three cases — that is what makes the arrow-key walk
+              above possible. A run with a session opens it; a run with only a
+              pull request opens that; a run started on a Mac with neither has
+              nowhere to send the reader, so its anchor peeks instead of
+              navigating. Rendering a plain <p> in that last case (the obvious
+              version) put rows in the keyboard order that could never take focus,
+              and the arrow keys died silently on them.
+            */}
+            {href ? (
+              <Link
+                ref={registerRef}
+                href={href}
+                tabIndex={tabIndex}
+                onFocus={onFocus}
+                // `target` on the PR fallback only — a run with a session opens in
+                // place, because that is a Juno screen and losing the list for it
+                // is the normal cost of opening a thing.
+                {...(!run.conversationId && run.prUrl ? { target: "_blank", rel: "noreferrer" } : {})}
+                className="min-w-0 truncate text-sm font-medium text-foreground hover:underline"
+              >
+                {run.title}
+              </Link>
+            ) : (
+              <button
+                ref={registerRef}
+                type="button"
+                tabIndex={tabIndex}
+                onFocus={onFocus}
+                onClick={onTogglePeek}
+                aria-expanded={peeked}
+                className="min-w-0 truncate text-left text-sm font-medium text-foreground hover:underline"
+              >
+                {run.title}
+              </button>
+            )}
             {settled && (
-              <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono text-caption text-muted-foreground">
-                PR settled
-              </span>
+              <span className="shrink-0 font-mono text-caption text-muted-foreground">PR settled</span>
             )}
           </div>
 
-          {/*
-            EVERY ROW HAS EXACTLY ONE FOCUSABLE ANCHOR, and it is the same
-            element in all three cases — that is what makes the arrow-key walk
-            above possible. A run with a session opens it; a run with only a
-            pull request opens that; a run started on a Mac with neither has
-            nowhere to send the reader, so its anchor peeks instead of
-            navigating. Rendering a plain <p> in that last case (the obvious
-            version) put rows in the keyboard order that could never take focus,
-            and the arrow keys died silently on them.
-          */}
-          {href ? (
-            <Link
-              ref={registerRef}
-              href={href}
-              tabIndex={tabIndex}
-              onFocus={onFocus}
-              // `target` on the PR fallback only — a run with a session opens in
-              // place, because that is a Juno screen and losing the list for it
-              // is the normal cost of opening a thing.
-              {...(!run.conversationId && run.prUrl ? { target: "_blank", rel: "noreferrer" } : {})}
-              className="mt-1.5 block truncate text-sm font-medium hover:underline"
-            >
-              {run.title}
-            </Link>
-          ) : (
-            <button
-              ref={registerRef}
-              type="button"
-              tabIndex={tabIndex}
-              onFocus={onFocus}
-              onClick={onTogglePeek}
-              aria-expanded={peeked}
-              className="mt-1.5 block max-w-full truncate text-left text-sm font-medium hover:underline"
-            >
-              {run.title}
-            </button>
-          )}
-
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
+          {/* State, checkout, branch, then WHERE IT CAME FROM and HOW IT IS
+              ISOLATED — the facts the research says a row must carry, each as
+              a word rather than as an icon a reader has to learn. */}
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-caption tabular-nums text-muted-foreground">
+            <StatusLabel state={state} />
+            <Dot />
             <span className="inline-flex min-w-0 items-center gap-1">
               {run.target === "cloud" ? (
                 <CodeIcons.cloud className="size-3 shrink-0" aria-hidden="true" />
               ) : (
                 <CodeIcons.device className="size-3 shrink-0" aria-hidden="true" />
               )}
-              <span className="truncate font-mono">{runPlace(run)}</span>
+              <span className="truncate">{runPlace(run)}</span>
             </span>
             {run.baseRef && (
-              <span className="inline-flex min-w-0 items-center gap-1">
-                <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
-                <span className="truncate font-mono">{run.baseRef}</span>
-              </span>
+              <>
+                <Dot />
+                <span className="inline-flex min-w-0 items-center gap-1">
+                  <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{run.baseRef}</span>
+                </span>
+              </>
             )}
-            <span aria-hidden="true">·</span>
-            <span>{timeAgo(run.updatedAt)}</span>
-          </div>
-
-          {/* WHERE IT RUNS, WHERE IT CAME FROM, HOW IT IS ISOLATED — the three
-              facts the research says a row must carry, each as a word rather
-              than as an icon a reader has to learn. */}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <MetaBadge title="Where this run executes">{executionLabel(run, deviceName)}</MetaBadge>
-            <MetaBadge title="Where this run was started from">{originLabel(run.origin)}</MetaBadge>
-            <MetaBadge title={isolation.detail}>{isolation.label}</MetaBadge>
+            <Dot />
+            <MetaFact title="Where this run was started from">{originLabel(run.origin)}</MetaFact>
+            <Dot />
+            <MetaFact title={isolation.detail}>{isolation.label}</MetaFact>
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
+        {churn && (
+          <span className="hidden shrink-0 font-mono text-caption tabular-nums sm:inline">
+            <span className="text-success-ink">+{churn.added}</span>{" "}
+            <span className="text-destructive-ink">−{churn.removed}</span>
+          </span>
+        )}
+
+        {/* Where it executes, as the row's one chip. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge variant="muted" className="hidden max-w-36 shrink-0 cursor-help truncate md:inline-flex">
+              {executionLabel(run, deviceName)}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>Where this run executes</TooltipContent>
+        </Tooltip>
+
+        <span className="hidden shrink-0 font-mono text-caption tabular-nums text-muted-foreground sm:inline">
+          {timeAgo(run.updatedAt)}
+        </span>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          {run.prUrl && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon-sm"
+                  className="opacity-0 transition-opacity duration-fast ease-out-soft focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 coarse:opacity-100 motion-reduce:transition-none"
+                >
+                  <a href={run.prUrl} target="_blank" rel="noreferrer" aria-label="Open the pull request on GitHub">
+                    <AppIcons.pulls className="size-4" aria-hidden="true" />
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Open the pull request on GitHub</TooltipContent>
+            </Tooltip>
+          )}
           <Button
-            variant={peeked ? "secondary" : "outline"}
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
             onClick={onTogglePeek}
             aria-expanded={peeked}
             aria-label={peeked ? `Hide details of ${run.title}` : `Peek at ${run.title}`}
-            className="gap-1.5"
           >
-            {peeked ? "Hide" : "Peek"}
+            <ChevronDown
+              className={cn(
+                "size-4 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+                peeked && "rotate-180",
+              )}
+              aria-hidden="true"
+            />
           </Button>
-          {run.prUrl && (
-            <Button asChild variant="ghost" size="sm" className="gap-1.5">
-              <a href={run.prUrl} target="_blank" rel="noreferrer">
-                <AppIcons.pulls className="size-3.5" aria-hidden="true" />
-                PR
-                <CodeIcons.external className="size-3" aria-hidden="true" />
-              </a>
-            </Button>
-          )}
         </div>
       </div>
 
       {peeked && (
-        <div className="border-t border-border/70 p-3">
+        <div className="border-t border-border/60 px-3 py-3 motion-safe:animate-fade-in">
           <RunPeek run={run} detail={detail} reviewing={reviewing} onReview={onReview} />
         </div>
       )}
@@ -619,13 +670,19 @@ function RunRow({
   );
 }
 
-function MetaBadge({ children, title }: { children: React.ReactNode; title: string }) {
+function Dot() {
+  return (
+    <span aria-hidden="true" className="text-muted-foreground/60">
+      ·
+    </span>
+  );
+}
+
+function MetaFact({ children, title }: { children: React.ReactNode; title: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-help items-center rounded-full border border-border/60 px-2 py-0.5 font-mono text-caption text-muted-foreground">
-          {children}
-        </span>
+        <span className="cursor-help">{children}</span>
       </TooltipTrigger>
       <TooltipContent>{title}</TooltipContent>
     </Tooltip>
@@ -633,57 +690,95 @@ function MetaBadge({ children, title }: { children: React.ReactNode; title: stri
 }
 
 /**
- * The status chip.
+ * The status glyph and the status word.
  *
  * ICON, WORD AND COLOUR — three signals, in that order of importance. Colour is
  * last on purpose: the research behind this surface turned up a real red/green
  * colourblind complaint about a status control in a shipping competitor, and a
- * chip whose only difference is hue is a chip that says nothing to some readers.
+ * mark whose only difference is hue is a mark that says nothing to some readers.
+ * So the glyph at the row's head is a different shape per state, and the word
+ * is repeated in the row's caption line.
  *
  * The tooltip carries the honest sentence rather than a restatement of the
  * label. The one that matters most is `review`, which says out loud that a
  * clean exit is not a claim the work is right — the same caveat Claude's own
  * docs make and its UI does not.
  */
-function StatusChip({ state }: { state: RunState }) {
-  const meta = RUN_STATE_META[state];
-  const Icon =
-    state === "needs-approval"
-      ? CodeIcons.permission
-      : state === "stalled"
-        ? StatusIcons.warning
-        : state === "working"
-          ? Loader2
-          : state === "queued"
-            ? AppIcons.tasks
-            : state === "review"
-              ? StatusIcons.success
-              : state === "failed"
-                ? StatusIcons.error
-                : CodeIcons.file;
+function statusIcon(state: RunState) {
+  return state === "needs-approval"
+    ? CodeIcons.permission
+    : state === "stalled"
+      ? StatusIcons.warning
+      : state === "working"
+        ? Loader2
+        : state === "queued"
+          ? AppIcons.tasks
+          : state === "review"
+            ? StatusIcons.success
+            : state === "failed"
+              ? StatusIcons.error
+              : CodeIcons.file;
+}
 
+type StateTone = (typeof RUN_STATE_META)[RunState]["tone"];
+
+const GLYPH_TONE: Record<StateTone, string> = {
+  attention: "text-warning",
+  active: "text-primary",
+  positive: "text-success",
+  danger: "text-destructive",
+  neutral: "text-muted-foreground",
+};
+
+const LABEL_TONE: Record<StateTone, string> = {
+  attention: "text-warning-foreground",
+  active: "text-primary-ink",
+  positive: "text-success-ink",
+  danger: "text-destructive-ink",
+  neutral: "text-muted-foreground",
+};
+
+function StatusGlyph({ state }: { state: RunState }) {
+  const meta = RUN_STATE_META[state];
+  const Icon = statusIcon(state);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex shrink-0 cursor-help items-center gap-1.5 rounded-full border px-2 py-0.5 text-caption font-medium",
-            meta.tone === "attention" && "border-warning/40 bg-warning/10 text-warning",
-            meta.tone === "active" && "border-primary/40 bg-primary/10 text-primary",
-            meta.tone === "positive" && "border-success/40 bg-success/10 text-success",
-            meta.tone === "danger" && "border-destructive/40 bg-destructive/10 text-destructive",
-            meta.tone === "neutral" && "border-border/60 text-muted-foreground",
+            "surface-inset flex size-8 shrink-0 cursor-help items-center justify-center rounded-md",
+            GLYPH_TONE[meta.tone],
           )}
         >
           <Icon
-            className={cn("size-3 shrink-0", state === "working" && "motion-safe:animate-spin")}
+            className={cn("size-4 shrink-0", state === "working" && "motion-safe:animate-spin")}
             aria-hidden="true"
           />
-          {meta.label}
+          <span className="sr-only">{meta.label}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent>{meta.meaning}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function StatusLabel({ state }: { state: RunState }) {
+  const meta = RUN_STATE_META[state];
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1.5 font-medium", LABEL_TONE[meta.tone])}>
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          meta.tone === "attention" && "bg-warning",
+          meta.tone === "active" && "bg-primary motion-safe:animate-pulse",
+          meta.tone === "positive" && "bg-success",
+          meta.tone === "danger" && "bg-destructive",
+          meta.tone === "neutral" && "bg-muted-foreground/60",
+        )}
+        aria-hidden="true"
+      />
+      {meta.label}
+    </span>
   );
 }
 
@@ -771,7 +866,7 @@ function RunPeek({
         <div
           role="group"
           aria-label="Juno Code approval request"
-          className="space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5"
+          className="space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5 shadow-inset"
         >
           <div className="flex items-start gap-2.5">
             <CodeIcons.permission className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
@@ -880,36 +975,42 @@ function RunPeek({
  */
 function SeededEmptyState() {
   return (
-    <div className="rounded-card border border-dashed border-border px-5 py-8 text-center">
-      <AppIcons.code className="mx-auto size-5 text-muted-foreground [stroke-width:1.5]" aria-hidden="true" />
-      <p className="mt-4 text-base font-semibold tracking-[-0.01em]">No runs yet</p>
-      <p className="mx-auto mt-1.5 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
-        Juno Code works in a project on your Mac, or on a fresh cloud machine that opens a pull
-        request. Anything you start here, in the Mac app or on your phone shows up in this list.
-      </p>
-      <ul role="list" className="mx-auto mt-5 grid max-w-lg gap-2 text-left sm:grid-cols-2">
-        {SEED_PROMPTS.map((seed, i) => (
-          <li key={seed.label} style={staggerDelay(i, "tight")} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]">
-            <Link
-              href={`/code/new?seed=${encodeURIComponent(seed.prompt)}`}
-              className="block h-full rounded-field border border-border/70 bg-card px-3 py-2.5 transition-[border-color,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:bg-accent"
-            >
-              <span className="block text-sm font-medium">{seed.label}</span>
-              <span className="mt-1 block text-caption text-muted-foreground line-clamp-3">
-                {seed.prompt}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-5">
-        <Button asChild className="gap-1.5">
-          <Link href="/code/new">
-            <AppIcons.new className="size-4" aria-hidden="true" />
-            Start a task
-          </Link>
-        </Button>
-      </div>
-    </div>
+    <EmptyState
+      icon={AppIcons.code}
+      title="No runs yet"
+      description="Juno Code works in a project on your Mac, or on a fresh cloud machine that opens a pull request. Anything you start here, in the Mac app or on your phone shows up in this list."
+      action={
+        <div className="w-full">
+          <ul role="list" className="mx-auto grid max-w-lg gap-2 text-left sm:grid-cols-2">
+            {SEED_PROMPTS.map((seed, i) => (
+              <li
+                key={seed.label}
+                style={staggerDelay(i, "tight")}
+                className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+              >
+                {/* The house whole-tile link. */}
+                <Link
+                  href={`/code/new?seed=${encodeURIComponent(seed.prompt)}`}
+                  className="surface-raised block h-full rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg active:shadow-pressed motion-reduce:transition-none"
+                >
+                  <span className="block text-sm font-medium">{seed.label}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                    {seed.prompt}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-5 flex justify-center">
+            <Button asChild className="gap-1.5">
+              <Link href="/code/new">
+                <AppIcons.new className="size-4" aria-hidden="true" />
+                Start a task
+              </Link>
+            </Button>
+          </div>
+        </div>
+      }
+    />
   );
 }

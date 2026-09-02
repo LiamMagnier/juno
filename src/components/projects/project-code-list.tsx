@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Code2, Plus, ArrowUpRight, Search, Laptop, FolderCode } from "lucide-react";
+import { Code2, Plus, Search, FolderCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export interface ProjectCodeSessionItem {
@@ -45,75 +46,88 @@ export function ProjectCodeList({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative min-w-[200px] flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter code sessions…"
-            className="pl-8 h-8 text-ui font-mono bg-secondary/50"
+            placeholder="Search code sessions…"
+            aria-label="Search code sessions"
+            className="pl-9"
           />
         </div>
-
-        <Button
-          type="button"
-          size="sm"
-          onClick={onNewCodeSession}
-          className="h-8 gap-1.5 font-mono text-caption"
-        >
-          <Plus className="size-3.5" />
-          <span>New code session</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          {filtered.length} of {sessions.length}
+        </span>
+        <Button type="button" size="sm" variant="secondary" onClick={onNewCodeSession} className="ml-auto gap-1.5">
+          <Plus className="size-3.5" aria-hidden="true" />
+          New code session
         </Button>
       </div>
 
       {filtered.length === 0 ? (
         <EmptyState
           size="panel"
-          className="motion-safe:animate-rise-in py-8"
-          icon={Code2}
-          title={query ? "No matching code sessions" : "No code sessions in this project"}
+          className="motion-safe:animate-rise-in"
+          icon={query ? Search : Code2}
+          title={query ? "No matching code sessions" : "No code sessions yet"}
           description={
             query
-              ? "Try adjusting your filter keyword."
-              : "Launch an autonomous software development agent against local, remote, or cloud repositories."
+              ? "Try another search term."
+              : "Start a coding session against a local, remote or cloud repository with this project’s context."
+          }
+          action={
+            query ? (
+              <Button variant="ghost" size="sm" onClick={() => setQuery("")} className="text-muted-foreground">
+                Clear search
+              </Button>
+            ) : undefined
           }
         />
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {filtered.map((session) => (
-            <Link
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Code sessions">
+          {filtered.map((session, i) => (
+            <li
               key={session.id}
-              href={`/chat/${session.id}`}
-              className="group flex flex-col justify-between gap-3 rounded-card border border-border/70 bg-card p-4 transition-all duration-fast hover:border-primary/40 hover:shadow-lift hover:-translate-y-0.5"
+              className="min-w-0 [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+              style={staggerDelay(i)}
             >
-              <div className="space-y-1.5">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="font-mono text-ui font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-1">
-                    {session.title || "Code session"}
+              <Link
+                href={`/chat/${session.id}`}
+                className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg active:shadow-pressed motion-reduce:transition-none"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">
+                    <Code2 className="size-4" aria-hidden="true" />
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 px-2 py-0.5 font-mono text-micro text-muted-foreground">
-                    <Laptop className="size-3" /> Local / Remote
-                  </span>
-                </div>
-
-                {session.workspaceName && (
-                  <div className="flex items-center gap-1.5 font-mono text-caption text-muted-foreground">
-                    <FolderCode className="size-3.5 text-primary/70 shrink-0" />
-                    <span className="truncate">{session.workspaceName}</span>
+                  <div className="min-w-0 flex-1 pt-0.5">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {session.title || "Code session"}
+                    </span>
+                    {session.workspaceName ? (
+                      <p className="mt-1 flex items-center gap-1.5 truncate font-mono text-caption text-muted-foreground">
+                        <FolderCode className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{session.workspaceName}</span>
+                      </p>
+                    ) : (
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                        Local or remote repository session.
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between pt-2 border-t border-border/40 font-mono text-micro text-muted-foreground">
-                <span>Active {timeAgo(session.lastMessageAt)}</span>
-                <span className="inline-flex items-center gap-0.5 text-primary group-hover:translate-x-0.5 transition-transform">
-                  Open session <ArrowUpRight className="size-3" />
-                </span>
-              </div>
-            </Link>
+                </div>
+                <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/60 pt-3 font-mono text-caption tabular-nums text-muted-foreground">
+                  <span>Code session</span>
+                  <span>Active {timeAgo(session.lastMessageAt)}</span>
+                </div>
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

@@ -80,7 +80,14 @@ function MenuRow({
   );
 }
 
-export function UserMenu({ compact = false }: { compact?: boolean }) {
+export function UserMenu({
+  compact = false,
+  trigger,
+}: {
+  compact?: boolean;
+  /** A caller-drawn trigger (the sidebar footer's avatar + plan meter row). */
+  trigger?: React.ReactNode;
+}) {
   const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
 
@@ -97,7 +104,9 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {compact ? (
+        {trigger ? (
+          trigger
+        ) : compact ? (
           <Pressable
             kind="icon"
             size="lg"

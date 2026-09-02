@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, CodeIcons } from "@/lib/app-icons";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { ClientWorkHost } from "@/lib/work/serializers";
 import {
@@ -13,13 +15,14 @@ import {
   WORK_PERMISSION_POLICIES,
   DEFAULT_WORK_PERMISSION_POLICY,
 } from "@/lib/work/domain";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { WorkNav } from "@/components/work/work-nav";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { WORK_POLL_MS, WORK_SYNC_EVENT, fetchWorkHosts } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { actionVerb } from "@/components/work/approvals/action-verbs";
-import { cn } from "@/lib/utils";
 
 /**
  * What Juno is allowed to do, and on which machine.
@@ -106,69 +109,79 @@ export default function WorkPermissionsPage() {
   }, [hosts]);
 
   return (
-    <WorkPageFrame
-      title="Permissions"
-      description="What Juno may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
-    >
-      <AlwaysAsks />
-      <ApprovalModes />
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="Permissions"
+        lede="What Juno may do on your behalf, what it always stops to ask about first, and which of your Macs it can reach."
+        icon={AppIcons.work}
+      />
+      <WorkNav />
 
-      <section className="mt-9">
-        <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
-          <div className="min-w-0">
-            <h2 className="font-mono text-label text-muted-foreground">Your Macs</h2>
-            <p className="mt-1.5 max-w-2xl text-ui leading-relaxed text-muted-foreground">
-              Anything a task needs a real machine for — a folder on disk, an app, your signed-in
-              browser — happens on one of these. Open one to say what it may do, or to take its
-              access away.
-            </p>
-          </div>
-          {hosts !== null && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void load()}
-              className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
-            >
-              <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
-            </Button>
-          )}
-        </div>
+      <div className="mt-8">
+        <AlwaysAsks />
+        <ApprovalModes />
 
-        {failed && hosts === null ? (
-          <WorkLoadError onRetry={() => void load()}>
-            Couldn’t load your Macs. This section is empty because the request failed, not because
-            you have none — anything already signed in is still reachable by Juno, with whatever
-            permissions it had.
-          </WorkLoadError>
-        ) : hosts === null ? (
-          <WorkRowSkeletons count={2} />
-        ) : hosts.length === 0 ? (
-          <EmptyState
-            icon={CodeIcons.device}
-            title="No Macs yet"
-            description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
-          />
-        ) : (
-          <>
-            {/* Shown above a list that still has real rows in it. Blanking the
-                list would state that the fleet is unknown, which the failed poll
-                did not establish; the rows are what we last actually knew. */}
-            {failed && (
-              <WorkStateNote tone="warning" className="mb-2.5">
-                These are the last answers Juno got. The most recent check failed, so a Mac may have
-                woken or gone away since.
-              </WorkStateNote>
-            )}
-            <div className="space-y-2.5">
-              {ordered.map((host, index) => (
-                <WorkHostRow key={host.id} host={host} index={index} />
-              ))}
+        <section className="mt-8">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-heading">Your Macs</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Anything a task needs a real machine for — a folder on disk, an app, your signed-in
+                browser — happens on one of these. Open one to say what it may do, or to take its
+                access away.
+              </p>
             </div>
-          </>
-        )}
-      </section>
-    </WorkPageFrame>
+            {hosts !== null && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void load()}
+                className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
+              >
+                <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
+              </Button>
+            )}
+          </div>
+
+          {failed && hosts === null ? (
+            <WorkLoadError onRetry={() => void load()}>
+              Couldn’t load your Macs. This section is empty because the request failed, not
+              because you have none — anything already signed in is still reachable by Juno, with
+              whatever permissions it had.
+            </WorkLoadError>
+          ) : hosts === null ? (
+            <WorkList>
+              <WorkRowSkeletons count={2} />
+            </WorkList>
+          ) : hosts.length === 0 ? (
+            <EmptyState
+              size="panel"
+              icon={CodeIcons.device}
+              title="No Macs yet"
+              description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
+            />
+          ) : (
+            <>
+              {/* Shown above a list that still has real rows in it. Blanking the
+                  list would state that the fleet is unknown, which the failed poll
+                  did not establish; the rows are what we last actually knew. */}
+              {failed && (
+                <WorkStateNote tone="warning" className="mb-3">
+                  These are the last answers Juno got. The most recent check failed, so a Mac may
+                  have woken or gone away since.
+                </WorkStateNote>
+              )}
+              <WorkList>
+                {ordered.map((host, index) => (
+                  <WorkHostRow key={host.id} host={host} index={index} />
+                ))}
+              </WorkList>
+            </>
+          )}
+        </section>
+      </div>
+    </AppPage>
   );
 }
 
@@ -190,20 +203,22 @@ export default function WorkPermissionsPage() {
 function AlwaysAsks() {
   return (
     <section>
-      <h2 className="font-mono text-label text-muted-foreground">Juno always asks first</h2>
-      <p className="mt-1.5 max-w-2xl text-ui leading-relaxed text-muted-foreground">
+      <h2 className="text-heading">Juno always asks first</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         These stop and wait for you every time, under every setting on this page and every setting
         on a task. There is nothing anywhere that turns them off.
       </p>
-      <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
         {ALWAYS_CONFIRM_ACTIONS.map((action) => (
           <li
             key={action}
-            className="flex items-center gap-2 rounded-field border border-border/60 bg-card px-3 py-2"
+            className="surface-raised flex items-center gap-2.5 rounded-card px-3.5 py-2.5"
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
-            <span className="min-w-0 text-ui text-foreground">{actionVerb(action).verb}</span>
-            <span className="min-w-0 flex-1 truncate text-ui text-muted-foreground">
+            <span className="size-2 shrink-0 rounded-full bg-warning" aria-hidden="true" />
+            <span className="min-w-0 text-sm font-medium text-foreground">
+              {actionVerb(action).verb}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
               {describeFloorAction(action)}
             </span>
           </li>
@@ -255,37 +270,37 @@ function describeFloorAction(action: string): string {
  */
 function ApprovalModes() {
   return (
-    <section className="mt-9">
-      <h2 className="font-mono text-label text-muted-foreground">How much it asks otherwise</h2>
-      <p className="mt-1.5 max-w-2xl text-ui leading-relaxed text-muted-foreground">
+    <section className="mt-8">
+      <h2 className="text-heading">How much it asks otherwise</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         Below that floor, how often Juno stops is set per task — on the composer before you start
         it, and from the task itself while it runs. A Mac can also hold a stricter ceiling than a
         task asks for, and the stricter of the two always wins.
       </p>
-      <div className="mt-3 space-y-2">
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {WORK_PERMISSION_POLICIES.map((policy) => (
-          <div
+          <Card
             key={policy}
-            className={cn(
-              "rounded-field border bg-card px-3.5 py-3",
-              policy === DEFAULT_WORK_PERMISSION_POLICY ? "border-border" : "border-border/60"
-            )}
+            // The default mode is the recommended tile, so it takes the larger
+            // throw — the same rung a recommended plan or a hero project tile takes.
+            variant={policy === DEFAULT_WORK_PERMISSION_POLICY ? "elevated" : "default"}
+            className="flex flex-col p-4"
           >
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-ui font-medium text-foreground">
+              <span className="text-sm font-medium text-foreground">
                 {WORK_APPROVAL_MODE_LABEL[policy]}
               </span>
               {policy === DEFAULT_WORK_PERMISSION_POLICY && (
-                <span className="font-mono text-micro text-muted-foreground">Default</span>
+                <Badge variant="secondary">Default</Badge>
               )}
             </div>
-            <p className="mt-1 text-ui leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               {WORK_APPROVAL_MODE_SUMMARY[policy]}
             </p>
-          </div>
+          </Card>
         ))}
       </div>
-      <p className="mt-3 max-w-2xl text-ui leading-relaxed text-muted-foreground">
+      <p className="mt-4 text-sm text-muted-foreground">
         When you answer an approval with “and stop asking”, that covers that one action for the rest
         of that task only, and lapses when the task ends. Nothing you allow on one task carries over
         to another. See the decisions a task made under{" "}

@@ -192,6 +192,24 @@ public enum PreviewFixtures {
         {"id":"file-2","conversationId":"conv-1","messageId":null,"projectId":null,"kind":"IMAGE","fileName":"sidebar-mock.png","mimeType":"image/png","size":86000,"width":1280,"height":800,"createdAt":"\(iso(-3600))"}
         """))
 
+        // Pictures *on messages*: the photo the reader attached to a question
+        // and the picture Juno generated in its answer. The transcript never
+        // rendered either before — `NativeChatMessage` had no attachments at
+        // all — so these are what let the image rows and the viewer be looked
+        // at. The bytes are served by `PreviewImageFixtures`.
+        out.append(record(a, "message", "msg-7", 1, """
+        {"id":"msg-7","conversationId":"conv-1","role":"user","content":"Here's the view from the office tonight — can you make a poster-style version of it?","createdAt":"\(iso(-420))"}
+        """))
+        out.append(record(a, "message", "msg-8", 1, """
+        {"id":"msg-8","conversationId":"conv-1","role":"assistant","content":"Here's a poster take on it — concentric rings picking up the sunset's coral, on the same warm ground the app uses. Tap it to see it full size, or ask for a different palette.","model":"openai:gpt-image-2","promptTokens":140,"completionTokens":0,"costMicroUsd":42000,"createdAt":"\(iso(-380))"}
+        """))
+        out.append(record(a, "attachment", "\(PreviewImageFixtures.userPhotoID)", 2, """
+        {"id":"\(PreviewImageFixtures.userPhotoID)","conversationId":"conv-1","messageId":"msg-7","projectId":null,"kind":"IMAGE","fileName":"IMG_4821.jpg","mimeType":"image/jpeg","size":1830000,"width":1200,"height":800,"createdAt":"\(iso(-420))"}
+        """))
+        out.append(record(a, "attachment", "\(PreviewImageFixtures.generatedID)", 2, """
+        {"id":"\(PreviewImageFixtures.generatedID)","conversationId":"conv-1","messageId":"msg-8","projectId":null,"kind":"IMAGE","fileName":"poster.png","mimeType":"image/png","size":920000,"width":1024,"height":1024,"createdAt":"\(iso(-380))"}
+        """))
+
         // Artifacts + versions.
         out.append(record(a, "artifact", "art-1", 3, """
         {"id":"art-1","conversationId":"conv-proj","messageId":"msg-4","identifier":"brightness-chart","title":"Quasar brightness chart","type":"HTML","language":null,"currentVersion":2,"createdAt":"\(iso(-100000))","updatedAt":"\(iso(-1200))"}

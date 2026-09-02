@@ -21,6 +21,8 @@ struct JunoMobileCodeView: View {
   /// keeps it architectural; a remote browser surface consumes this instead of
   /// creating another relay client when the mobile Code flow is expanded.
   var remoteModel: CodeRemoteBrowserModel? = nil
+  /// Local notifications for approvals. Nil in the harness.
+  var notifications: JunoMobileCodeNotifications? = nil
   /// Starts a Juno Code conversation that has no project, sends the reader's
   /// first message into it, and opens it.
   ///
@@ -55,6 +57,13 @@ struct JunoMobileCodeView: View {
   @State private var prompt = ""
   @State private var showingPulls = false
   @State private var showingUsage = false
+  /// Which chip in the hosts strip is chosen. Nil until the hosts load, then
+  /// the remembered default, the first online Mac, or Cloud.
+  @State private var hostSelection: JunoMobileCodeHostSelection?
+  @State private var showingDevices = false
+  @State private var showingNewSession = false
+  @AppStorage(JunoMobilePreferences.codeDefaultHost) private var defaultHostID = ""
+  @Namespace private var zoom
   /// The cheap half of the usage read: what plan this is and how much of each
   /// window is spent.
   @State private var plan: NativeUsagePlan?
@@ -175,12 +184,138 @@ struct JunoMobileCodeView: View {
     ) {
       JunoMobileCodeSessionView(model: model)
     }
+    // The remote thread. Pushed the moment the session summary is known —
+    // which for a notification tap or a preview flag can be a beat after the
+    // id is set, once the host's list arrives.
+    .navigationDestination(
+      item: Binding(
+        get: { remoteModel?.openSession },
+        set: { if $0 == nil { remoteModel?.closeSession() } }
+      )
+    ) { session in
+      if let remoteModel {
+        JunoMobileCodeRemoteThreadView(
+          model: remoteModel, session: session, modelCatalog: modelCatalog
+        )
+        .modifier(JunoMobileZoomTransitionSource(id: session.sessionID, namespace: zoom))
+      }
+    }
+    .navigationDestination(isPresented: $showingDevices) {
+      JunoMobileCodeDevicesView(remoteModel: remoteModel)
+    }
+    .sheet(isPresented: $showingNewSession) {
+      if let remoteModel, let host = remoteModel.selectedHost {
+        JunoMobileCodeRemoteNewSessionSheet(
+          host: host,
+          workspaces: model.devices.first { $0.id == host.id }?.workspaces ?? []
+        ) { workspace, text in
+          if let id = await remoteModel.createSession(
+            deviceID: host.id, workspaceKey: workspace?.key,
+            workspaceName: workspace?.name, prompt: text
+          ) {
+            remoteModel.openSession(id)
+          }
+        }
+      }
+    }
+    // Asked here, on first use of Code, rather than at launch — see
+    // `JunoMobileCodeNotifications`.
+    .task { await notifications?.requestPermissionIfNeeded() }
     .accessibilityIdentifier("juno.mobile.code")
   }
 
   // MARK: Session list + composer
 
   private var sessions: some View {
+    VStack(spacing: 0) {
+      if let remoteModel {
+        JunoMobileCodeHostsStrip(
+          hosts: remoteModel.hosts,
+          selection: Binding(
+            get: { hostSelection ?? .cloud },
+            set: { choice in
+              hostSelection = choice
+              if let id = choice.deviceID {
+                Task { await remoteModel.selectHost(id) }
+              }
+            }
+          ),
+          onPair: { showingDevices = true }
+        )
+        .padding(.top, JunoSpace.hairline)
+      }
+      if let remoteModel, let host = remoteModel.selectedHost,
+        case .host(let id)? = hostSelection, id == host.id
+      {
+        JunoMobileCodeRemoteSessionsList(
+          model: remoteModel,
+          host: host,
+          open: { session in remoteModel.openSession(session.sessionID) },
+          newSession: host.online ? { showingNewSession = true } : nil
+        )
+        .toolbar {
+          if host.online {
+            ToolbarItem(placement: .topBarTrailing) {
+              Button {
+                showingNewSession = true
+              } label: {
+                JunoIconView(.new, size: 16)
+              }
+              .accessibilityLabel("New session")
+              .accessibilityIdentifier("juno.mobile.code-remote-new")
+            }
+          }
+        }
+      } else {
+        cloudSessions
+      }
+    }
+    .task(id: accountID) {
+      // Remote state is account-scoped. Starting it here rather than at app
+      // launch avoids retaining another account's trusted-host inventory after
+      // sign-out/sign-in, while the model itself owns clearing on `stop()`.
+      if let accountID {
+        remoteModel?.start(for: accountID)
+        remoteModel?.updateHosts(from: model.devices)
+        chooseInitialHost()
+      } else {
+        remoteModel?.stop()
+      }
+    }
+    .onChange(of: model.devices) { _, devices in
+      remoteModel?.updateHosts(from: devices)
+      chooseInitialHost()
+    }
+    .onChange(of: remoteModel?.openSessionID) { _, id in
+      // A session opened from outside — a notification, a preview flag —
+      // names its host; follow it so the list behind the thread agrees.
+      guard let id, let remoteModel,
+        let session = remoteModel.sessionsByDevice.values.joined().first(where: { $0.sessionID == id })
+      else { return }
+      if hostSelection != .host(session.deviceID) {
+        hostSelection = .host(session.deviceID)
+        Task { await remoteModel.selectHost(session.deviceID) }
+      }
+    }
+  }
+
+  /// Picks the strip's chip the first time hosts arrive: the remembered
+  /// default when it is still paired, else the first online Mac, else Cloud.
+  private func chooseInitialHost() {
+    guard hostSelection == nil, let remoteModel, !remoteModel.hosts.isEmpty else { return }
+    let chosen = remoteModel.hosts.first { $0.id == defaultHostID && !defaultHostID.isEmpty }
+      ?? remoteModel.hosts.first { $0.online }
+      ?? remoteModel.hosts.first
+    if let chosen {
+      hostSelection = .host(chosen.id)
+      Task { await remoteModel.selectHost(chosen.id) }
+    } else {
+      hostSelection = .cloud
+    }
+  }
+
+  /// The cloud runner's home — the task list and the launch composer.
+  private var cloudSessions: some View {
     VStack(spacing: 0) {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 12) {
@@ -239,20 +374,6 @@ struct JunoMobileCodeView: View {
       // safe area; keeping the composer in the vertical layout guarantees the
       // last Code card can never render underneath it on iOS 26/27.
       composer
-    }
-    .task(id: accountID) {
-      // Remote state is account-scoped. Starting it here rather than at app
-      // launch avoids retaining another account's trusted-host inventory after
-      // sign-out/sign-in, while the model itself owns clearing on `stop()`.
-      if let accountID {
-        remoteModel?.start(for: accountID)
-        remoteModel?.updateHosts(from: model.devices)
-      } else {
-        remoteModel?.stop()
-      }
-    }
-    .onChange(of: model.devices) { _, devices in
-      remoteModel?.updateHosts(from: devices)
     }
   }
 

@@ -3,8 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { MessageSquare, Plus, Pin, FolderInput, Search } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   DropdownMenu,
@@ -13,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 export interface ProjectConversationItem {
@@ -28,6 +31,7 @@ interface ProjectChatListProps {
   allProjects?: { id: string; name: string }[];
   onTogglePin: (id: string, current: boolean) => void;
   onMoveChat?: (chatId: string, targetProjectId: string) => void;
+  onDeleteChat?: (chat: ProjectConversationItem) => void;
   onNewChat: () => void;
   className?: string;
 }
@@ -38,6 +42,7 @@ export function ProjectChatList({
   allProjects = [],
   onTogglePin,
   onMoveChat,
+  onDeleteChat,
   onNewChat,
   className,
 }: ProjectChatListProps) {
@@ -52,84 +57,80 @@ export function ProjectChatList({
   const pinned = filtered.filter((c) => c.pinned);
   const unpinned = filtered.filter((c) => !c.pinned);
 
+  const rowProps = { allProjects, currentProjectId: projectId, onTogglePin, onMoveChat, onDeleteChat };
+
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative min-w-[200px] flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter chats in this project…"
-            className="pl-8 h-8 text-ui font-mono bg-secondary/50"
+            placeholder="Search chats…"
+            aria-label="Search chats in this project"
+            className="pl-9"
           />
         </div>
-
-        <Button
-          type="button"
-          size="sm"
-          onClick={onNewChat}
-          className="h-8 gap-1.5 font-mono text-caption"
-        >
-          <Plus className="size-3.5" />
-          <span>New chat in project</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          {filtered.length} of {conversations.length}
+        </span>
+        <Button type="button" size="sm" variant="secondary" onClick={onNewChat} className="ml-auto gap-1.5">
+          <Plus className="size-3.5" aria-hidden="true" />
+          New chat
         </Button>
       </div>
 
       {filtered.length === 0 ? (
         <EmptyState
           size="panel"
-          className="motion-safe:animate-rise-in py-8"
-          icon={MessageSquare}
-          title={query ? "No matching chats" : "No chats in this project"}
+          className="motion-safe:animate-rise-in"
+          icon={query ? Search : MessageSquare}
+          title={query ? "No matching chats" : "No chats in this project yet"}
           description={
             query
-              ? "Try adjusting your filter keyword."
-              : "Start a conversation to begin collaborating with the model in this project context."
+              ? "Try another search term."
+              : "Start one above — Juno reads the project’s instructions and files first."
+          }
+          action={
+            query ? (
+              <Button variant="ghost" size="sm" onClick={() => setQuery("")} className="text-muted-foreground">
+                Clear search
+              </Button>
+            ) : undefined
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-5">
           {pinned.length > 0 && (
-            <div className="space-y-1.5">
-              <span className="font-mono text-micro text-muted-foreground uppercase tracking-wider px-1">
-                Pinned ({pinned.length})
-              </span>
-              <div className="space-y-1.5">
-                {pinned.map((chat) => (
-                  <ChatRow
-                    key={chat.id}
-                    chat={chat}
-                    allProjects={allProjects}
-                    currentProjectId={projectId}
-                    onTogglePin={onTogglePin}
-                    onMoveChat={onMoveChat}
-                  />
+            <section aria-label="Pinned chats">
+              <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+                Pinned · {pinned.length}
+              </p>
+              <ul className="space-y-1">
+                {pinned.map((chat, i) => (
+                  <ChatRow key={chat.id} chat={chat} index={i} {...rowProps} />
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
           )}
 
           {unpinned.length > 0 && (
-            <div className="space-y-1.5">
+            <section aria-label="Recent chats">
               {pinned.length > 0 && (
-                <span className="font-mono text-micro text-muted-foreground uppercase tracking-wider px-1">
-                  Recent ({unpinned.length})
-                </span>
+                <p className="mb-1.5 px-3 font-mono text-label text-muted-foreground">
+                  Recent · {unpinned.length}
+                </p>
               )}
-              <div className="space-y-1.5">
-                {unpinned.map((chat) => (
-                  <ChatRow
-                    key={chat.id}
-                    chat={chat}
-                    allProjects={allProjects}
-                    currentProjectId={projectId}
-                    onTogglePin={onTogglePin}
-                    onMoveChat={onMoveChat}
-                  />
+              <ul className="space-y-1">
+                {unpinned.map((chat, i) => (
+                  <ChatRow key={chat.id} chat={chat} index={pinned.length + i} {...rowProps} />
                 ))}
-              </div>
-            </div>
+              </ul>
+            </section>
           )}
         </div>
       )}
@@ -137,70 +138,76 @@ export function ProjectChatList({
   );
 }
 
+/**
+ * One chat: the house hover-raised row. The title is the link; pin / move /
+ * delete arrive on hover or focus (always present on a coarse pointer).
+ */
 function ChatRow({
   chat,
+  index,
   allProjects,
   currentProjectId,
   onTogglePin,
   onMoveChat,
+  onDeleteChat,
 }: {
   chat: ProjectConversationItem;
+  index: number;
   allProjects: { id: string; name: string }[];
   currentProjectId: string;
   onTogglePin: (id: string, current: boolean) => void;
   onMoveChat?: (chatId: string, targetProjectId: string) => void;
+  onDeleteChat?: (chat: ProjectConversationItem) => void;
 }) {
   const otherProjects = allProjects.filter((p) => p.id !== currentProjectId);
 
   return (
-    <div className="group relative flex items-center gap-2 rounded-card border border-border/60 bg-card px-3.5 py-2.5 transition-all duration-fast hover:border-border hover:shadow-soft hover:bg-accent/20">
+    <li
+      className="group flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none [animation-fill-mode:backwards] motion-safe:animate-rise-in"
+      style={staggerDelay(index)}
+    >
+      <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <Link
         href={`/chat/${chat.id}`}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs"
       >
-        <span className="truncate text-body font-medium text-foreground group-hover:text-primary transition-colors">
-          {chat.title}
-        </span>
-        <span className="font-mono text-micro text-muted-foreground">
-          Last message {timeAgo(chat.lastMessageAt)}
+        <span className="truncate text-sm font-medium text-foreground">{chat.title}</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          Updated {timeAgo(chat.lastMessageAt)}
         </span>
       </Link>
 
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:pointer-events-auto coarse:opacity-100">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
+      {chat.pinned && (
+        <Pin className="size-3.5 shrink-0 fill-current text-primary group-hover:hidden group-focus-within:hidden" aria-hidden="true" />
+      )}
+
+      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-fast ease-out-soft focus-within:opacity-100 group-hover:opacity-100 coarse:opacity-100 motion-reduce:transition-none">
+        <Pressable
+          kind="icon"
+          size="sm"
           onClick={() => onTogglePin(chat.id, chat.pinned)}
           aria-label={chat.pinned ? "Unpin chat" : "Pin chat"}
           aria-pressed={chat.pinned}
-          className="size-7 text-muted-foreground hover:text-foreground"
+          selected={chat.pinned}
+          className={cn(chat.pinned && "text-primary hover:text-primary")}
         >
-          <Pin className={cn("size-3.5", chat.pinned && "fill-primary text-primary")} />
-        </Button>
+          <Pin className={cn("size-3.5", chat.pinned && "fill-current")} aria-hidden="true" />
+        </Pressable>
 
         {onMoveChat && otherProjects.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Move chat"
-                className="size-7 text-muted-foreground hover:text-foreground"
-              >
-                <FolderInput className="size-3.5" />
-              </Button>
+              <Pressable kind="icon" size="sm" aria-label="Move chat to another project">
+                <FolderInput className="size-3.5" aria-hidden="true" />
+              </Pressable>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <p className="px-2 py-1 font-mono text-caption text-muted-foreground">
-                Move to project
-              </p>
+              <p className="px-2 py-1 font-mono text-label text-muted-foreground">Move to project</p>
               {otherProjects.map((p) => (
                 <DropdownMenuItem
                   key={p.id}
                   onSelect={() => onMoveChat(chat.id, p.id)}
-                  className="truncate text-ui"
+                  className="truncate"
                 >
                   {p.name}
                 </DropdownMenuItem>
@@ -208,7 +215,19 @@ function ChatRow({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+
+        {onDeleteChat && (
+          <Pressable
+            kind="icon"
+            size="sm"
+            onClick={() => onDeleteChat(chat)}
+            aria-label={`Delete “${chat.title}”`}
+            className="danger-hover"
+          >
+            <ActionIcons.delete className="size-3.5" aria-hidden="true" />
+          </Pressable>
+        )}
       </div>
-    </div>
+    </li>
   );
 }

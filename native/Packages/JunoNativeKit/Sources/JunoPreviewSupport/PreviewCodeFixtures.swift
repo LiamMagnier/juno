@@ -70,6 +70,11 @@ public enum PreviewCodeFixtures {
     static func body(path: String, method: HTTPMethod, empty: Bool) -> Data? {
         guard path.hasPrefix("/api/code/") else { return nil }
 
+        // The relay's per-device routes — the host's own sessions and their
+        // journals — belong to the remote browser, not to the task list.
+        if let remote = PreviewCodeRemoteFixtures.body(path: path, method: method) {
+            return remote
+        }
         if path == "/api/code/devices" {
             return method == .get ? devicesBody(empty: empty) : registeredDeviceBody
         }

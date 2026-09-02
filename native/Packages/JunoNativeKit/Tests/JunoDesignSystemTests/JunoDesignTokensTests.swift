@@ -93,30 +93,27 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.row, 8)
 
         XCTAssertEqual(JunoRadius.well, JunoGeneratedRadius.field)
-        XCTAssertEqual(JunoRadius.well, 10)
+        XCTAssertEqual(JunoRadius.well, 12)
 
         XCTAssertEqual(JunoRadius.card, JunoGeneratedRadius.card)
-        XCTAssertEqual(JunoRadius.card, 14)
+        XCTAssertEqual(JunoRadius.card, 16)
 
         XCTAssertEqual(JunoRadius.message, JunoGeneratedRadius.popover)
         XCTAssertEqual(JunoRadius.floating, JunoGeneratedRadius.popover)
-        XCTAssertEqual(JunoRadius.message, 14)
+        XCTAssertEqual(JunoRadius.message, 16)
 
-        // **Four of these numbers moved: well 12 → 10, card 16 → 14, message
-        // 18 → 14, composer 22 → 26.** That is this assertion doing its job,
-        // not failing at it. tailwind.config.ts was retuned deliberately —
-        // its own header now reads "fields 10 · cards 14", and the composer
-        // was pushed to 26 to stop the one box the user aims at reading as
-        // another section well. Every paired token reference above kept
-        // passing throughout, which is what proves the Swift ladder tracked
-        // the retune and only these literals were behind.
+        // These literals track the Soft UI ladder (docs/design/SOFT_UI.md
+        // §2.3): control 10 · field 12 · menu 14 · card 16 · popover 16 ·
+        // panel 20 · composer 20. When the web retunes, the paired token
+        // references above keep passing and only these numbers move — that
+        // is this assertion doing its job, not failing at it.
         //
-        // 26 by way of the web's `rounded-composer`, never by way of
+        // 20 by way of the web's `rounded-composer`, never by way of
         // `--radius`: the rung once hardcoded 24 while claiming composer
         // parity, and `--radius` merely happened to sit nearby. See the note
         // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 18)
+        XCTAssertEqual(JunoRadius.composer, 20)
     }
 
     /// The three names that used to mean different sizes on the two platforms.

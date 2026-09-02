@@ -120,7 +120,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl overflow-hidden rounded-2xl border border-border/70 bg-card/95 p-6 backdrop-blur-xl shadow-2xl">
+      <DialogContent className="max-w-2xl overflow-hidden p-6">
         <DialogHeader className="gap-2">
           <div className="flex items-center gap-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
@@ -138,7 +138,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
         </DialogHeader>
 
         {/* Tab Filters */}
-        <div className="flex w-fit items-center gap-1 rounded-full border border-border/60 bg-secondary/80 p-1 shadow-xs">
+        <div className="surface-inset flex w-fit items-center gap-1 rounded-full p-1">
           {TABS.map((t) => {
             const isActive = tab === t.key;
             return (
@@ -148,9 +148,9 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                 onClick={() => setTab(t.key)}
                 aria-pressed={isActive}
                 className={cn(
-                  "pressable rounded-full px-3.5 py-1 text-xs transition-all duration-200",
+                  "pressable rounded-full border border-transparent px-3.5 py-1 text-xs",
                   isActive
-                    ? "bg-card font-medium text-foreground shadow-xs"
+                    ? "surface-raised border-border/60 font-medium text-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -177,12 +177,12 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
             <div role="status" className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               <span className="sr-only">Loading your library…</span>
               {[...Array(8)].map((_, i) => (
-                <div key={i} aria-hidden className="skeleton aspect-square rounded-xl" style={staggerDelay(i)} />
+                <div key={i} aria-hidden className="skeleton aspect-square rounded-field" style={staggerDelay(i)} />
               ))}
             </div>
           ) : empty ? (
-            <div className="flex min-h-[16rem] flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-secondary/30 p-8 text-center">
-              <div className="flex size-11 items-center justify-center rounded-full border border-border/60 bg-secondary text-muted-foreground shadow-xs">
+            <div className="surface-inset flex min-h-[16rem] flex-col items-center justify-center rounded-card border-dashed border-border/80 p-8 text-center">
+              <div className="surface-raised flex size-11 items-center justify-center rounded-full text-muted-foreground">
                 <FolderOpen className="size-5" />
               </div>
               <h3 className="mt-3 font-serif text-base font-normal text-foreground">Nothing here yet</h3>
@@ -202,15 +202,15 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     aria-pressed={isSel}
                     aria-label={i.fileName}
                     className={cn(
-                      "group relative aspect-square overflow-hidden rounded-xl border border-border/60 bg-secondary/50 shadow-xs",
-                      "transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
+                      "surface-raised group relative aspect-square overflow-hidden rounded-field",
+                      "transition-[transform,border-color,box-shadow] duration-fast ease-out-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-raised-lg active:translate-y-0 active:scale-[0.98] active:shadow-pressed motion-reduce:transition-none",
                       isSel && "border-primary ring-2 ring-primary/80 ring-offset-2 ring-offset-card"
                     )}
                   >
                     <FilePreview item={i} className="absolute inset-0" sizes="160px" />
                     <span
                       className={cn(
-                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-md border backdrop-blur-xs transition-colors duration-150",
+                        "absolute left-2 top-2 flex size-5 items-center justify-center rounded-xs border backdrop-blur-xs transition-colors duration-fast ease-out-soft",
                         isSel
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border/80 bg-background/80 text-transparent group-hover:border-primary/70"
@@ -218,7 +218,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     >
                       <StatusIcons.success className="size-3.5 stroke-[2.5]" />
                     </span>
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left text-micro font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-left text-micro font-medium text-white opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100">
                       {i.fileName}
                     </span>
                   </button>

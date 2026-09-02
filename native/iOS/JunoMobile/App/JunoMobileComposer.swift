@@ -74,6 +74,13 @@ struct JunoMobileComposer: View {
   var greetingVisible: Bool = false
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.
+  @State private var sendHaptic = JunoMobileHapticTrigger()
+  @State private var stopHaptic = JunoMobileHapticTrigger()
+  /// One namespace for the composer's glass: the `+` and the primary action
+  /// carry ids in it, so a state change morphs the material rather than
+  /// cross-fading two panes.
+  @Namespace private var glassNamespace
   /// The call in progress, published by the shell. Non-nil is what puts the
   /// dock above this composer, the voice field behind it, and every voice-mode
   /// degradation below into effect. See ``JunoMobileVoiceSession``.
@@ -313,6 +320,8 @@ struct JunoMobileComposer: View {
     // Voice is the one ambient field with semantic meaning. It remains mounted
     // here so it tracks the keyboard with the safe-area composer.
     .background(alignment: .bottom) { voiceFieldLayer }
+    .junoHaptic(JunoMobileHaptic.send, trigger: sendHaptic)
+    .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
     .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -558,6 +567,7 @@ struct JunoMobileComposer: View {
       canPickProject: conversation != nil,
       canAttach: attachmentModel?.hasCapacity ?? false,
       canOpenPlugins: openPlugins != nil,
+      glassNamespace: glassNamespace,
       tools: tools,
       // Unknown model → assume it can. The server is the authority and
       // refuses the flag on a model without the capability; guessing
@@ -631,6 +641,7 @@ struct JunoMobileComposer: View {
         .foregroundStyle(.primary)
         .frame(width: 34, height: 34)
         .modifier(JunoComposerGlassCircle())
+        .junoGlassID("composer.plus", in: glassNamespace)
         .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
@@ -760,6 +771,7 @@ struct JunoMobileComposer: View {
   private var composerActionButton: some View {
     if generatingHere {
       Button {
+        stopHaptic.fire()
         model.stopGeneration()
       } label: {
         actionLabel(active: true) {
@@ -826,6 +838,9 @@ struct JunoMobileComposer: View {
       .foregroundStyle(active ? Color.junoOnAccent : Color.junoMutedForeground)
       .frame(width: 34, height: 34)
       .modifier(JunoComposerSendBackground(active: active))
+      // Voice → Send → Stop is one element changing state, so the glass
+      // stretches between them rather than fading two circles.
+      .junoGlassID("composer.action", in: glassNamespace)
       .frame(width: 44, height: 44)
       .contentShape(Rectangle())
   }
@@ -917,6 +932,7 @@ struct JunoMobileComposer: View {
       proMode: options.proMode
     )
     guard sent else { return }
+    sendHaptic.fire()
     prompt = ""
     draftExpanded = false
     attachmentModel?.clear()

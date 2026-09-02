@@ -16,6 +16,7 @@ import UIKit
 /// below the shell that authorizes a session — the chat screen in between owns
 /// neither and should not have to carry it.
 @MainActor
+@Observable
 final class JunoMobileVoiceSession: Identifiable {
     /// Stable for the life of this call. The save route is idempotent per
     /// session, so a retry after a dropped network updates the same conversation
@@ -38,6 +39,18 @@ final class JunoMobileVoiceSession: Identifiable {
     /// Drops the session from the shell. Called once the transcript is filed, or
     /// straight away when there is nothing to file.
     let close: () -> Void
+    /// The camera and the screen share, owned by the call rather than by the
+    /// dock, so the full-screen mode and the dock show the same picture and
+    /// neither can start a second capture the other cannot see.
+    let camera = JunoMobileVoiceCamera()
+    let screenShare = JunoMobileVoiceScreenShare()
+    /// Interruptions and route changes, watched for the life of the call.
+    let audioSession: JunoMobileVoiceAudioSession
+    /// Whether the full-screen mode is showing over the chat.
+    var isFullScreen = false
+    /// Set by the dock while it files the transcript; read by both surfaces.
+    var isSaving = false
+    var saveError: String?
 
     init(
         controller: JunoRealtimeVoiceController,
@@ -51,6 +64,54 @@ final class JunoMobileVoiceSession: Identifiable {
         self.attachmentContextClient = attachmentContextClient
         self.saveTranscript = saveTranscript
         self.close = close
+        self.audioSession = JunoMobileVoiceAudioSession(controller: controller)
+    }
+
+    /// Hang up, then file the conversation.
+    ///
+    /// **In that order, and the order is the point.** `end()` first, so the
+    /// microphone and the socket are down the instant the reader asks — waiting
+    /// on a network round trip with a live mic is the one thing a hang-up must
+    /// never do. The save then runs against the transcript the controller
+    /// already holds, and the dock stays up with a spinner while it does,
+    /// because closing first would leave a failed save with nowhere to report.
+    func hangUp() {
+        camera.stop()
+        screenShare.stop()
+        isFullScreen = false
+        controller.end()
+        guard let saveTranscript, !savableTurns.isEmpty else {
+            close()
+            return
+        }
+        isSaving = true
+        saveError = nil
+        Task {
+            let saved = await saveTranscript(
+                JunoMobileVoiceTranscript(sessionID: id, turns: savableTurns)
+            )
+            isSaving = false
+            guard saved != nil else {
+                saveError = String(localized: "voice.save.failed")
+                return
+            }
+            close()
+        }
+    }
+
+    /// The finished lines, in order. Non-final lines are dropped: they are
+    /// live hypotheses the recognizer is still rewriting, and saving one puts a
+    /// half-heard sentence into the reader's permanent history.
+    var savableTurns: [NativeVoiceTranscriptClient.Turn] {
+        controller.transcript.compactMap { line in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.final, !text.isEmpty else { return nil }
+            return NativeVoiceTranscriptClient.Turn(
+                role: line.role == .assistant ? .assistant : .user,
+                content: text,
+                attachmentIDs: line.attachmentIDs
+            )
+        }
     }
 
     /// True once audio is actually flowing. The one test worth sharing: the
@@ -140,14 +201,17 @@ extension EnvironmentValues {
 struct JunoMobileVoiceDock: View {
     let session: JunoMobileVoiceSession
 
-    @State private var isSaving = false
-    @State private var saveError: String?
-    @State private var camera = JunoMobileVoiceCamera()
-    @State private var screenShare = JunoMobileVoiceScreenShare()
+    @AppStorage(JunoMobilePreferences.voicePushToTalk) private var pushToTalk = false
+    @State private var muteHaptic = JunoMobileHapticTrigger()
+    @State private var endHaptic = JunoMobileHapticTrigger()
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var controller: JunoRealtimeVoiceController { session.controller }
+    private var camera: JunoMobileVoiceCamera { session.camera }
+    private var screenShare: JunoMobileVoiceScreenShare { session.screenShare }
+    private var isSaving: Bool { session.isSaving }
+    private var saveError: String? { session.saveError }
 
     var body: some View {
         VStack(spacing: JunoSpace.snug) {
@@ -187,16 +251,32 @@ struct JunoMobileVoiceDock: View {
                 screenShare.stop()
             }
         }
-        // Ends the call when the chat goes — another section, or a sign-out —
-        // because the alternative is an open microphone with nothing on screen
-        // saying so. It deliberately does **not** start one: `start()` is legal
-        // from `ended`, so a dock that dialled on appearance would silently
-        // redial every time the reader came back to Chat.
+        // The call survives the dock. It used to end here — on navigating to
+        // another section, or on the chat re-rendering underneath — which is
+        // how "I opened Projects for a second" hung up on people. The
+        // microphone is not left unannounced: the shell keeps the session
+        // published and the system's own recording indicator stays lit. Only
+        // the camera stops, because a preview with nobody watching is the
+        // app filming for no one. Hang-up and sign-out are the two ends.
         .onDisappear {
             camera.stop()
             screenShare.stop()
-            controller.end()
         }
+        .junoHaptic(JunoMobileHaptic.mute, trigger: muteHaptic)
+        .junoHaptic(JunoMobileHaptic.stop, trigger: endHaptic)
+        .sensoryFeedback(JunoMobileHaptic.connect, trigger: session.isLive) { _, live in live }
+        // Swipe up on the dock opens the full-screen mode.
+        .gesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { value in
+                    guard value.translation.height < -50,
+                        abs(value.translation.height) > abs(value.translation.width)
+                    else { return }
+                    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) {
+                        session.isFullScreen = true
+                    }
+                }
+        )
         .accessibilityIdentifier("juno.mobile.voice")
     }
 
@@ -209,6 +289,7 @@ struct JunoMobileVoiceDock: View {
             cameraButton
             screenShareButton
             #endif
+            expandButton
             optionsMenu
             hangUpButton
         }
@@ -387,7 +468,7 @@ struct JunoMobileVoiceDock: View {
             // it. The Mac has no equivalent; it should.
             if saveError != nil {
                 HStack(spacing: JunoSpace.regular) {
-                    Button("voice.save.retry") { hangUp() }
+                    Button("voice.save.retry") { session.hangUp() }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
                     .contentShape(.rect)
@@ -429,7 +510,7 @@ struct JunoMobileVoiceDock: View {
                 identifier: "juno.mobile.voice-restart",
                 tone: .prominent
             ) {
-                saveError = nil
+                session.saveError = nil
                 Task { await controller.start() }
             }
         } else {
@@ -439,6 +520,7 @@ struct JunoMobileVoiceDock: View {
                 identifier: "juno.mobile.voice-mute",
                 tone: controller.muted ? .prominent : .quiet
             ) {
+                muteHaptic.fire()
                 controller.setMuted(!controller.muted)
             }
             .disabled(!session.isLive)
@@ -562,6 +644,18 @@ struct JunoMobileVoiceDock: View {
                     .disabled(provider == controller.provider)
                 }
             }
+            Section {
+                Toggle(isOn: $pushToTalk) {
+                    Label("Push to talk", systemImage: "hand.tap")
+                }
+                Button {
+                    withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) {
+                        session.isFullScreen = true
+                    }
+                } label: {
+                    Label("Full screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+            }
         } label: {
             JunoIconView(.chevronDown, size: 15)
                 .foregroundStyle(Color.primary.opacity(0.75))
@@ -574,8 +668,24 @@ struct JunoMobileVoiceDock: View {
         .accessibilityIdentifier("juno.mobile.voice-provider")
     }
 
+    /// Opens the full-screen mode — the orb, captions, and the controls at
+    /// thumb height. The same call, seen rather than heard past.
+    private var expandButton: some View {
+        circleButton(
+            icon: .chevronUp,
+            label: "Full screen",
+            identifier: "juno.mobile.voice-expand",
+            tone: .quiet
+        ) {
+            withAnimation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion)) {
+                session.isFullScreen = true
+            }
+        }
+    }
+
     private var hangUpButton: some View {
         Button {
+            endHaptic.fire()
             hangUp()
         } label: {
             // `junoDanger` rather than `Color.red`, and `junoCanvas` rather than
@@ -638,53 +748,9 @@ struct JunoMobileVoiceDock: View {
 
     // MARK: - Hang up
 
-    /// Hang up, then file the conversation.
-    ///
-    /// **In that order, and the order is the point.** `end()` first, so the
-    /// microphone and the socket are down the instant the reader asks — waiting
-    /// on a network round trip with a live mic is the one thing a hang-up must
-    /// never do. The save then runs against the transcript the controller
-    /// already holds, and the dock stays up with a spinner while it does,
-    /// because closing first would leave a failed save with nowhere to report.
+    /// Hang up, then file the conversation — see ``JunoMobileVoiceSession/hangUp()``.
     private func hangUp() {
-        camera.stop()
-        controller.end()
-        guard let saveTranscript = session.saveTranscript, !savableTurns.isEmpty else {
-            session.close()
-            return
-        }
-        isSaving = true
-        saveError = nil
-        Task {
-            let saved = await saveTranscript(
-                JunoMobileVoiceTranscript(sessionID: session.id, turns: savableTurns)
-            )
-            isSaving = false
-            guard saved != nil else {
-                saveError = String(localized: "voice.save.failed")
-                return
-            }
-            session.close()
-        }
-    }
-
-    /// The finished lines, in order.
-    ///
-    /// Non-final lines are dropped: they are live hypotheses the recognizer is
-    /// still rewriting, and saving one puts a half-heard sentence into the
-    /// reader's permanent history. This filter is the whole reason the doc
-    /// comment above existed — and until now it was only the doc comment. The
-    /// Mac has always filtered; the phone was quietly persisting hypotheses.
-    private var savableTurns: [NativeVoiceTranscriptClient.Turn] {
-        controller.transcript.compactMap { line in
-            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard line.final, !text.isEmpty else { return nil }
-            return NativeVoiceTranscriptClient.Turn(
-                role: line.role == .assistant ? .assistant : .user,
-                content: text,
-                attachmentIDs: line.attachmentIDs
-            )
-        }
+        session.hangUp()
     }
 }
 

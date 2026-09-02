@@ -9,12 +9,15 @@ import JunoSync
 import JunoWorkKit
 import SwiftUI
 import UIKit
+import UserNotifications
 #if DEBUG
 import JunoPreviewSupport
 #endif
 
 @main
 struct JunoMobileApp: App {
+    @UIApplicationDelegateAdaptor(JunoMobileAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -113,6 +116,7 @@ struct JunoMobileApp: App {
                         // relay and a real task in the right state. Work was
                         // fixed; Code was left, and this is the same fix.
                         codeModel: world.codeModel,
+                        remoteCodeModel: world.remoteCodeModel,
                         workModel: world.workModel,
                         libraryModel: world.libraryModel,
                         requestSender: world.requestSender,
@@ -132,6 +136,12 @@ struct JunoMobileApp: App {
             #else
             rootView
             #endif
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Ask for a background check when the app goes away, so an
+            // approval that lands while the phone is in a pocket still
+            // reaches it.
+            if phase == .background { JunoMobileCodeNotifications.shared.scheduleRefresh() }
         }
     }
 
@@ -358,6 +368,70 @@ struct JunoMobileApp: App {
                 shareClient: nil
             )
         }
+    }
+}
+
+/// The two things SwiftUI's `App` cannot receive on its own: a Home Screen
+/// quick action, and a tapped notification. Both become a
+/// ``JunoMobileLaunchRequests`` request the root view acts on.
+final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        JunoMobileCodeNotifications.shared.registerBackgroundTask()
+        if let item = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
+            JunoMobileLaunchRequests.shared.handle(shortcutType: item.type)
+        }
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        if let item = options.shortcutItem {
+            JunoMobileLaunchRequests.shared.handle(shortcutType: item.type)
+        }
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = JunoMobileSceneDelegate.self
+        return configuration
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let info = response.notification.request.content.userInfo
+        let deviceID = info["deviceID"] as? String
+        let sessionID = info["sessionID"] as? String
+        Task { @MainActor in
+            JunoMobileLaunchRequests.shared.handle(remoteDeviceID: deviceID, sessionID: sessionID)
+        }
+        completionHandler()
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+
+final class JunoMobileSceneDelegate: NSObject, UIWindowSceneDelegate {
+    func windowScene(
+        _ windowScene: UIWindowScene,
+        performActionFor shortcutItem: UIApplicationShortcutItem
+    ) async -> Bool {
+        await MainActor.run {
+            JunoMobileLaunchRequests.shared.handle(shortcutType: shortcutItem.type)
+        }
+        return true
     }
 }
 

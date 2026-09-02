@@ -161,7 +161,9 @@ struct DesktopProjectsScreen: View {
                     }
                     deleteTarget = nil
                 }
+                .contentShape(.rect)
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
+                .contentShape(.rect)
             } message: {
                 Text("Chats stay in Juno and are unlinked from the project. The project's files are removed.")
             }
@@ -174,6 +176,7 @@ struct DesktopProjectsScreen: View {
                 presenting: voiceUnavailable
             ) { _ in
                 Button("OK") { voiceUnavailable = nil }
+                .contentShape(.rect)
             } message: { reason in
                 Text(reason)
             }
@@ -268,6 +271,7 @@ struct DesktopProjectsScreen: View {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .help("Create a project (⇧⌘N)")
                 .accessibilityIdentifier("New project")
+                .contentShape(.rect)
             }
 
             searchField
@@ -308,6 +312,7 @@ struct DesktopProjectsScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear project search")
+                .contentShape(.rect)
             }
         }
         .padding(.horizontal, JunoSpace.cozy)
@@ -347,6 +352,7 @@ struct DesktopProjectsScreen: View {
         .fixedSize()
         .help("Order the projects below")
         .accessibilityIdentifier("Projects sort")
+        .contentShape(.rect)
     }
 
     /// The website's states, in the website's order: failure, then loading, then
@@ -434,12 +440,14 @@ struct DesktopProjectsScreen: View {
             )
         }
         .disabled(project.isPending)
+        .contentShape(.rect)
         Button {
             startRename(project)
         } label: {
             JunoIconLabel("Rename…", systemImage: "pencil")
         }
         .disabled(project.isPending)
+        .contentShape(.rect)
         // Not on the website's card menu, and kept anyway: dropping files onto a
         // project is a Mac gesture, and this is the keyboard-and-menu half of it.
         Button {
@@ -448,6 +456,7 @@ struct DesktopProjectsScreen: View {
             JunoIconLabel("Add files…", systemImage: "paperclip")
         }
         .disabled(project.isPending || model.isPerformingFileAction)
+        .contentShape(.rect)
         Divider()
         Button(role: .destructive) {
             deleteTarget = project
@@ -455,6 +464,7 @@ struct DesktopProjectsScreen: View {
             JunoIconLabel("Delete project", systemImage: "trash")
         }
         .disabled(project.isPending)
+        .contentShape(.rect)
     }
 
     // MARK: - Status
@@ -478,13 +488,16 @@ struct DesktopProjectsScreen: View {
                         Button("Keep mine") {
                             Task { await model.resolveConflicts(keepLocalChanges: true) }
                         }
+                        .contentShape(.rect)
                         Button("Use server version") {
                             Task { await model.resolveConflicts(keepLocalChanges: false) }
                         }
+                        .contentShape(.rect)
                     } else {
                         Button("Try again") {
                             Task { await model.reload() }
                         }
+                        .contentShape(.rect)
                     }
                 }
                 .buttonStyle(.borderless)
@@ -756,6 +769,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         )
         .accessibilityIdentifier("juno.project-card.\(row.id)")
         .help(row.instructionsPreview)
+        .contentShape(.rect)
     }
 
     private var card: some View {
@@ -841,6 +855,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         .padding(.top, JunoSpace.regular)
         .accessibilityLabel("Actions for \(row.name)")
         .accessibilityIdentifier("juno.project-card-actions.\(row.id)")
+        .contentShape(.rect)
     }
 
     private var footer: some View {
@@ -1083,12 +1098,14 @@ private struct DesktopProjectDetail: View {
         ) {
             TextField("File name", text: $fileNameDraft)
             Button("Cancel", role: .cancel) { renameFileTarget = nil }
+            .contentShape(.rect)
             Button("Rename") {
                 if let target = renameFileTarget {
                     Task { await model.renameFile(id: target.id, fileName: fileNameDraft) }
                 }
                 renameFileTarget = nil
             }
+            .contentShape(.rect)
         }
         .accessibilityIdentifier("Project detail")
     }
@@ -1102,6 +1119,7 @@ private struct DesktopProjectDetail: View {
         .junoSecondaryInk()
         .help("Back to every project")
         .accessibilityIdentifier("All projects")
+        .contentShape(.rect)
     }
 
     private var header: some View {
@@ -1124,6 +1142,7 @@ private struct DesktopProjectDetail: View {
                 .disabled(project.isPending)
                 .help("Rename project")
                 .accessibilityLabel("Rename project")
+                .contentShape(.rect)
 
                 Spacer(minLength: JunoSpace.regular)
 
@@ -1136,6 +1155,7 @@ private struct DesktopProjectDetail: View {
                 .disabled(project.isPending)
                 .help("Start a chat with this project's instructions and files")
                 .accessibilityIdentifier("New chat in project")
+                .contentShape(.rect)
 
                 pinControl
                 actionsMenu
@@ -1204,6 +1224,7 @@ private struct DesktopProjectDetail: View {
         .help(project.starred ? "Unpin this project" : "Pin this project")
         .accessibilityLabel(project.starred ? "Unpin project" : "Pin project")
         .accessibilityIdentifier("Pin project")
+        .contentShape(.rect)
     }
 
     private var actionsMenu: some View {
@@ -1223,6 +1244,7 @@ private struct DesktopProjectDetail: View {
         .disabled(project.isPending || model.isMutating)
         .help("Rename, edit instructions, add files, or delete this project")
         .accessibilityIdentifier("Project detail actions")
+        .contentShape(.rect)
     }
 
     private var sectionPicker: some View {
@@ -1372,6 +1394,7 @@ private struct DesktopProjectDetail: View {
                 .help("Edit this project's instructions")
                 .accessibilityLabel("Edit project instructions")
                 .accessibilityIdentifier("Edit project instructions")
+                .contentShape(.rect)
             }
 
             if project.instructions.isEmpty {
@@ -1427,6 +1450,7 @@ private struct DesktopProjectDetail: View {
                 .help("Add files to this project")
                 .accessibilityLabel("Add project files")
                 .accessibilityIdentifier("Add project files")
+                .contentShape(.rect)
             }
 
             if files.isEmpty {
@@ -1536,6 +1560,7 @@ private struct DesktopProjectDetail: View {
                 }
                 .disabled(project.isPending || model.isMutating)
                 .accessibilityIdentifier("Open instructions editor")
+                .contentShape(.rect)
             }
 
             if project.instructions.isEmpty {
@@ -1585,6 +1610,7 @@ private struct DesktopProjectDetail: View {
                 }
                 .disabled(project.isPending || model.isPerformingFileAction)
                 .accessibilityIdentifier("Add project files")
+                .contentShape(.rect)
             }
 
             if files.isEmpty {
@@ -1643,6 +1669,7 @@ private struct DesktopProjectDetail: View {
                 }
                 .buttonStyle(.link)
                 .help("Open \(file.fileName)")
+                .contentShape(.rect)
                 Text(DesktopProjectFileFacts.detail(for: file))
                     .junoCodeSmall()
                     .junoSecondaryInk()
@@ -1671,6 +1698,7 @@ private struct DesktopProjectDetail: View {
             .fixedSize()
             .disabled(model.isPerformingFileAction)
             .accessibilityLabel("Options for \(file.fileName)")
+            .contentShape(.rect)
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
@@ -1715,6 +1743,7 @@ private struct DesktopProjectPlaceholder: View {
         if let action {
             Button(action: action) { box }
                 .buttonStyle(.plain)
+                .contentShape(.rect)
         } else {
             box
         }
@@ -1883,6 +1912,7 @@ private struct DesktopProjectAssistantPanel: View {
                         .accessibilityIdentifier("Assistant name")
                     Button("Save", action: savePersonaName)
                         .disabled(!personaNameChanged || workspaceModel.isSaving)
+                        .contentShape(.rect)
                 }
                 Text("Leave empty to use the project's own name.")
                     .junoCaption()
@@ -1928,6 +1958,7 @@ private struct DesktopProjectAssistantPanel: View {
                         Spacer(minLength: JunoSpace.snug)
                         Button("Save instructions", action: saveInstructions)
                             .disabled(!instructionsChanged || workspaceModel.isSaving)
+                            .contentShape(.rect)
                     }
                     // Empty is a real override and not the same as switching this
                     // off: it says "this assistant has no instructions at all",
@@ -1953,6 +1984,7 @@ private struct DesktopProjectAssistantPanel: View {
                 .disabled(workspaceModel.isSaving)
                 .help("Removes the persona, whitelist and knowledge selection. The project, its chats and its files are untouched.")
                 .accessibilityIdentifier("Forget assistant")
+                .contentShape(.rect)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2390,6 +2422,7 @@ private struct DesktopNewProjectSheet: View {
                 Spacer(minLength: JunoSpace.snug)
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button("Create project") {
                     Task {
                         creationError = nil
@@ -2409,6 +2442,7 @@ private struct DesktopNewProjectSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(trimmedName.isEmpty || model.isMutating)
                 .accessibilityIdentifier("Create project")
+                .contentShape(.rect)
             }
         }
         .padding(JunoSpace.section)
@@ -2495,6 +2529,7 @@ private struct DesktopProjectInstructionsSheet: View {
                 }
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button("Save") {
                     Task {
                         isSaving = true
@@ -2507,6 +2542,7 @@ private struct DesktopProjectInstructionsSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(draft == project.instructions || isSaving)
                 .accessibilityIdentifier("Save project instructions")
+                .contentShape(.rect)
             }
         }
         .padding(JunoSpace.section)

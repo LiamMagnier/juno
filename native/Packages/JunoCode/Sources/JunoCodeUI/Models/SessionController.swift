@@ -293,6 +293,12 @@ public final class SessionController {
         /// repository hooks. Permission mode itself remains live through the
         /// coordinator; the hook adapter reads it dynamically.
         let hookPolicyFingerprint: String
+        /// The workspace-authored agent shaping the system prompt, if any.
+        let customAgentID: String?
+        /// The reader's standing switches for skills and MCP servers, so a
+        /// server switched off in Settings leaves the tool list on the next
+        /// turn rather than on the next session.
+        let extensionsFingerprint: String
     }
 
     public let sessionID: CodeSessionID
@@ -347,6 +353,12 @@ public final class SessionController {
     public private(set) var skillDiscoveryResult = SkillDiscoveryResult()
     public private(set) var mcpServerConfigurations: [MCPServerConfiguration] = []
     public private(set) var mcpConfigurationError: String?
+    /// The workspace's own agents, from `.claude/agents` and `.juno/agents`.
+    public private(set) var customAgents: [CustomAgentDefinition] = []
+    /// The pull request this session opened, once it has.
+    public private(set) var lastPullRequestURL: String?
+    /// Whether `gh pr create` is in flight.
+    public private(set) var isCreatingPullRequest = false
     public private(set) var hookPolicy = HookExecutionPolicy.denyAll
     public private(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
@@ -429,7 +441,9 @@ public final class SessionController {
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
     private var openToolCallID: String?
-    private var interactiveTerminalService: InteractiveTerminalSession?
+    /// The reader's own terminal: a real PTY (`NativeTerminalSession`), not the
+    /// bounded one-shot runner the agent's commands go through.
+    private var interactiveTerminalService: NativeTerminalSession?
     private var interactiveTerminalTask: Task<Void, Never>?
     private var interactiveTerminalLog = SessionTerminalLog()
     /// The delegated sub-agents that have not finished, and the line each is
@@ -462,6 +476,16 @@ public final class SessionController {
     private static func hookPolicyFingerprint(_ policy: HookExecutionPolicy) -> String {
         let ids = policy.allowedHookIDs.sorted().joined(separator: ",")
         return "\(policy.allowUntrustedHooks ? "trusted" : "off"):\(ids)"
+    }
+
+    /// The reader's Settings switches, as one string the contract can compare.
+    private static func extensionsFingerprint() -> String {
+        let defaults = CodeDefaults.shared
+        return [
+            defaults.disabledMCPServers.sorted().joined(separator: ","),
+            defaults.disabledHooks.sorted().joined(separator: ","),
+            defaults.disabledSkills.sorted().joined(separator: ","),
+        ].joined(separator: "|")
     }
 
     /// The workspace facts the UI displays: never a capability, only text.
@@ -512,6 +536,7 @@ public final class SessionController {
                 : (behavior == .code ? session.configuration.permissionMode : .readOnly)
         ) ?? .denyAll
         self.hookDiscoveryResult = context?.hookDiscoveryResult ?? HookDiscoveryResult()
+        self.customAgents = context.map { CustomAgentDiscovery(access: $0.access).discover() } ?? []
         self.workspaceSurface = context.map {
             WorkspaceSurface(
                 displayName: $0.record.descriptor.displayName,
@@ -547,7 +572,9 @@ public final class SessionController {
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
             computerUseActive: computerUseActive,
             goalUpdatedAt: session.goal?.updatedAt,
-            hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy)
+            hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy),
+            customAgentID: session.configuration.customAgentID,
+            extensionsFingerprint: Self.extensionsFingerprint()
         )
         if let orchestrator, orchestratorContract == contract {
             return orchestrator
@@ -593,6 +620,7 @@ public final class SessionController {
         if contract.behavior == .code {
             systemPrompt += goalSystemPrompt
         }
+        systemPrompt += extensionsSystemPrompt(customAgentID: contract.customAgentID)
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
@@ -611,7 +639,11 @@ public final class SessionController {
             // session construction path as built-in tools. They remain
             // approval-pinned by MCPCodeTool, so discovery never broadens the
             // permission contract of a normal Code turn.
-            tools.append(contentsOf: await context.mcpTools())
+            tools.append(
+                contentsOf: await context.mcpTools(
+                    excludingServers: CodeDefaults.shared.disabledMCPServers
+                )
+            )
             tools.append(UpdateGoalTool(store: live.store))
             tools.append(
             DelegateTaskTool(
@@ -699,8 +731,9 @@ public final class SessionController {
                 )
             )
         }
+        let disabledHooks = CodeDefaults.shared.disabledHooks
         let activeHooks = hookDiscoveryResult.hooks.filter {
-            hookPolicy.allowedHookIDs.contains($0.id)
+            hookPolicy.allowedHookIDs.contains($0.id) && !disabledHooks.contains($0.id)
         }
         let lifecycleHooks: (any AgentLifecycleHooks)?
         if contract.behavior == .code,
@@ -713,7 +746,10 @@ public final class SessionController {
                 executor: context.executor,
                 permissions: permissions,
                 allowUntrustedHooks: true,
-                currentPermissionMode: { await permissions.permissionMode }
+                currentPermissionMode: { await permissions.permissionMode },
+                didRun: { hookID in
+                    Task { @MainActor in CodeDefaults.shared.recordHookRun(id: hookID) }
+                }
             )
         } else {
             lifecycleHooks = nil
@@ -1929,6 +1965,7 @@ public final class SessionController {
         instructionFiles = await context.instructionFiles()
         hookDiscoveryResult = HookDiscovery(access: context.access).discover()
         skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
+        customAgents = CustomAgentDiscovery(access: context.access).discover()
         hookPolicy = context.hookPolicyStore.load(
             permissionMode: session.configuration.behavior == .code
                 ? session.configuration.permissionMode
@@ -2208,10 +2245,19 @@ public final class SessionController {
         }
     }
 
-    /// Starts a persistent interactive command after applying the same
-    /// command classifier and permission gate as `run_command`. The process is
-    /// not appended to the agent transcript: it belongs to the reader's
-    /// terminal, and its bounded tail is exposed in the Console drawer.
+    /// Starts the reader's terminal on a real pseudo-terminal.
+    ///
+    /// **User-driven, so no approval.** The permission gate exists for actions
+    /// the *agent* proposes; a command the reader typed into their own terminal
+    /// is theirs, exactly as it would be in Terminal.app. What the terminal
+    /// keeps is the *containment*: it runs inside the same kernel sandbox
+    /// profile as the agent's commands, rooted to the workspace, so a stray
+    /// `rm` in it still cannot leave the folder. The agent's own commands are
+    /// unchanged — they still go through `CommandClassifier` and the
+    /// coordinator on the `run_command` path.
+    ///
+    /// The process is not appended to the agent transcript: it belongs to the
+    /// reader, and its bounded tail is what the Console drawer shows.
     public func startInteractiveTerminal(_ command: String) async {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -2237,43 +2283,101 @@ public final class SessionController {
             )
             return
         }
-
-        do {
-            try await context.registry.authorizeInvocation(
-                toolName: "run_command",
-                input: ["command": .string(trimmed)],
-                permissions: live.permissions
-            )
-        } catch let ToolError.denied(reason) {
+        // The classifier's *forbidden* tier still applies — a fork bomb or a
+        // `sudo` is refused for the reader too — but nothing here asks for an
+        // approval, because the reader is the one asking.
+        if case let .forbidden(reason) = CommandClassifier().classify(trimmed) {
             setInteractiveTerminalFailure(reason)
-            return
-        } catch {
-            setInteractiveTerminalFailure(String(describing: error))
             return
         }
 
-        // `run_command` has just passed the same runtime permission gate used
-        // by one-shot commands. Keep the PTY's kernel profile aligned with
-        // that decision so approved installs, dev servers, and Git operations
-        // do not fail because the interactive path silently denied network.
-        let service = context.makeInteractiveTerminal(allowsNetwork: true)
+        let root = context.access.rootURL
+        let invocation: (executable: String, arguments: [String])
+        if CommandSandboxProfile.isAvailable {
+            invocation = CommandSandboxProfile(
+                workspaceRoot: root,
+                filesystem: .readWrite,
+                allowsNetwork: true
+            ).wrap(command: trimmed)
+        } else {
+            invocation = ("/bin/zsh", ["-ilc", trimmed])
+        }
+        var environment = CommandExecutionService.minimalEnvironment(workspaceRoot: root.path)
+        environment["TERM"] = "xterm-256color"
+        environment["COLORTERM"] = "truecolor"
+        environment["NO_COLOR"] = nil
+
+        let nativeCommand: NativeTerminalCommand
+        do {
+            nativeCommand = try NativeTerminalCommand(
+                executable: invocation.executable,
+                arguments: invocation.arguments,
+                environment: environment,
+                workingDirectory: root
+            )
+        } catch {
+            setInteractiveTerminalFailure(error.localizedDescription)
+            return
+        }
+
+        let service = NativeTerminalSession()
         interactiveTerminalService = service
-        let stream = service.start(command: trimmed)
+        let stream: AsyncThrowingStream<NativeTerminalEvent, Error>
+        do {
+            stream = try await service.start(nativeCommand)
+        } catch {
+            interactiveTerminalService = nil
+            setInteractiveTerminalFailure(error.localizedDescription)
+            return
+        }
+        let redactor = SecretRedactor()
         let task = Task { @MainActor [weak self] in
-            for await event in stream {
-                guard let self else { return }
-                switch event {
-                case let .output(text):
-                    self.appendInteractiveTerminal(channel: .stdout, text: text)
-                case let .state(state):
-                    self.interactiveTerminalState = state
-                    if !state.isRunning {
-                        self.interactiveTerminalService = nil
+            do {
+                for try await event in stream {
+                    guard let self else { return }
+                    switch event {
+                    case let .output(data):
+                        let text = String(decoding: data, as: UTF8.self)
+                        self.appendInteractiveTerminal(channel: .stdout, text: redactor.redact(text))
+                    case let .state(state):
+                        self.interactiveTerminalState = Self.interactiveState(state)
+                        if !state.isRunning {
+                            self.interactiveTerminalService = nil
+                        }
+                    case .eof:
+                        break
+                    case let .exited(exit):
+                        self.appendInteractiveTerminal(
+                            channel: .log,
+                            text: Self.exitDescription(exit) + "\n"
+                        )
                     }
                 }
+            } catch {
+                guard let self else { return }
+                self.setInteractiveTerminalFailure(error.localizedDescription)
+                self.interactiveTerminalService = nil
             }
         }
         interactiveTerminalTask = task
+    }
+
+    /// The PTY's own state, in the console's vocabulary.
+    private static func interactiveState(_ state: NativeTerminalState) -> InteractiveTerminalState {
+        switch state {
+        case .idle: .idle
+        case .starting: .starting
+        case let .running(processID): .running(processID: processID)
+        case .stopping: .running(processID: 0)
+        case let .exited(exit): .exited(code: exit.exitCode ?? -1)
+        case let .failed(error): .failed(reason: error.localizedDescription)
+        }
+    }
+
+    private static func exitDescription(_ exit: NativeTerminalExit) -> String {
+        if let code = exit.exitCode { return "[exit \(code)]" }
+        if let signal = exit.signal { return "[signal \(signal)]" }
+        return "[exited]"
     }
 
     /// Sends literal bytes to the PTY. A newline is added for ordinary text;
@@ -2283,13 +2387,28 @@ public final class SessionController {
         guard let service = interactiveTerminalService,
               interactiveTerminalState.isRunning
         else { return }
-        service.write(submit ? input + "\n" : input)
+        try? await service.write(submit ? input + "\n" : input)
+    }
+
+    /// Resizes the PTY to the drawer's visible columns and rows, so a
+    /// full-screen program draws at the size it is actually given.
+    public func resizeInteractiveTerminal(columns: UInt16, rows: UInt16) async {
+        guard let service = interactiveTerminalService else { return }
+        try? await service.resize(to: NativeTerminalSize(columns: columns, rows: rows))
+    }
+
+    /// Sends Ctrl-C to the foreground process without ending the terminal.
+    public func interruptInteractiveTerminal() async {
+        guard let service = interactiveTerminalService else { return }
+        try? await service.interrupt()
     }
 
     public func stopInteractiveTerminal() async {
         interactiveTerminalTask?.cancel()
         interactiveTerminalTask = nil
-        interactiveTerminalService?.stop()
+        if let service = interactiveTerminalService {
+            try? await service.terminate()
+        }
         interactiveTerminalService = nil
         if interactiveTerminalState.isRunning {
             interactiveTerminalState = .idle
@@ -2586,6 +2705,157 @@ public final class SessionController {
             transientError = "Publish failed: \(error)"
         }
         return false
+    }
+
+    // MARK: - Extensions in the prompt
+
+    /// The workspace-authored agent and the enabled skills, as prompt text.
+    ///
+    /// Context, never policy: nothing appended here can widen a permission or
+    /// change the tool registry, which is why it is safe for a repository to
+    /// carry these files. A skill the reader switched off in Settings is simply
+    /// absent, and a custom agent that no longer exists on disk is skipped
+    /// rather than failing the turn.
+    private func extensionsSystemPrompt(customAgentID: String?) -> String {
+        var sections: [String] = []
+        if let customAgentID,
+           let agent = customAgents.first(where: { $0.id == customAgentID })
+        {
+            sections.append(
+                "\n\n## Agent: \(agent.name)\n\(agent.instructions)"
+            )
+        }
+        let defaults = CodeDefaults.shared
+        let skills = skillDiscoveryResult.skills.filter { defaults.isSkillEnabled($0.id) }
+        for skill in skills {
+            sections.append("\n\n## Skill: \(skill.name)\n\(skill.instructions)")
+        }
+        return sections.joined()
+    }
+
+    /// Chooses the workspace-authored agent this session works under, or nil
+    /// for the built-in role alone. Takes effect on the next turn.
+    public func setCustomAgent(_ id: String?) async {
+        guard id != session.configuration.customAgentID else { return }
+        guard let live else {
+            session.configuration.customAgentID = id
+            return
+        }
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.customAgentID = id
+        }
+    }
+
+    /// The model's advertised context window for the session's model, when
+    /// the manifest publishes one. The header's meter is drawn from this and
+    /// ``contextTokens`` and from nothing estimated.
+    public var contextWindowTokens: Int? {
+        live?.modelContextWindowTokens(session.configuration.modelID)
+    }
+
+    // MARK: - Compaction
+
+    /// `/compact`: folds older turns into a bounded summary now.
+    ///
+    /// Refused mid-run — the orchestrator owns the conversation while it is
+    /// appending to it — and explained when there is nothing to fold, so the
+    /// command never silently does nothing.
+    public func compactConversation() async {
+        transientError = nil
+        guard let live else {
+            #if DEBUG
+            appendPreviewEvent(
+                .compaction(
+                    CompactionEvent(
+                        summary: "Older turns were folded into a summary.",
+                        beforeMessageCount: max(2, events.count),
+                        afterMessageCount: 2,
+                        beforeTokens: contextTokens,
+                        requestedByUser: true
+                    )
+                )
+            )
+            #endif
+            return
+        }
+        guard !session.status.isActive else {
+            transientError = "Juno is still working. Compaction happens between turns; try again once this one ends."
+            return
+        }
+        let orchestrator = await currentOrchestrator(live)
+        if await orchestrator.compactNow() == nil {
+            transientError = "There is not enough conversation to compact yet."
+        }
+    }
+
+    // MARK: - Pull requests
+
+    /// A title and body written from the session, for the Create pull request
+    /// sheet to start from.
+    public func pullRequestDraft() -> PullRequestDraft {
+        let summary = events.reversed().compactMap { event -> String? in
+            if case let .runCompleted(completed) = event.payload { return completed.summary }
+            return nil
+        }.first
+        return PullRequestDraft.generated(
+            sessionTitle: session.title,
+            summary: summary,
+            changes: changes,
+            testsPassed: lastTestRun?.passed,
+            branch: gitStatus?.branch ?? session.gitBranch
+        )
+    }
+
+    /// The repository's default branch on GitHub, for the sheet's base field.
+    public func githubDefaultBranch() async -> String? {
+        guard let context = live?.context, context.record.descriptor.isGitRepository else {
+            return nil
+        }
+        return await context.git.githubDefaultBranch()
+    }
+
+    /// Why a pull request cannot be opened from here, or nil when it can.
+    public var pullRequestUnavailableReason: String? {
+        if live == nil { return "Preview mode does not open pull requests." }
+        if live?.context == nil { return Self.noProjectMessage("open a pull request") }
+        if !isGitRepository { return "Open a Git repository to create a pull request." }
+        if session.configuration.behavior != .code {
+            return "Ask and Plan sessions are read-only by design."
+        }
+        return nil
+    }
+
+    /// Opens a pull request for the current branch through `gh pr create`.
+    ///
+    /// Reader-initiated, never a tool: the agent has no route to this, exactly
+    /// as it has none to `git push`. Returns the URL `gh` printed, and leaves
+    /// it in ``lastPullRequestURL`` so the completion card and the Repository
+    /// tab can link to it afterwards.
+    @discardableResult
+    public func createPullRequest(_ draft: PullRequestDraft) async -> String? {
+        transientError = nil
+        if let reason = pullRequestUnavailableReason {
+            transientError = reason
+            return nil
+        }
+        guard let context = live?.context, draft.canSubmit else { return nil }
+        isCreatingPullRequest = true
+        defer { isCreatingPullRequest = false }
+        do {
+            let url = try await context.git.createPullRequest(
+                title: draft.title,
+                body: draft.body,
+                baseBranch: draft.baseBranch.isEmpty ? nil : draft.baseBranch,
+                draft: draft.isDraft
+            )
+            lastPullRequestURL = url
+            appendManualTerminal(channel: .stdout, text: "Opened pull request \(url)\n")
+            await refreshGitHubPullRequest()
+            return url
+        } catch {
+            transientError = "Could not create the pull request: \(error)"
+            return nil
+        }
     }
 
     // MARK: - Sub-agents

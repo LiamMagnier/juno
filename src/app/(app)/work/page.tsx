@@ -6,12 +6,12 @@ import { CheckCheck } from "lucide-react";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useApp } from "@/components/app/app-provider";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkComposer } from "@/components/work/work-composer";
 import { WorkNav } from "@/components/work/work-nav";
 import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { WorkCrossfade } from "@/components/work/motion/work-crossfade";
-import { WorkSection } from "@/components/work/shell/work-section";
+import { WorkList, WorkSection } from "@/components/work/shell/work-section";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { InboxRow } from "@/components/work/inbox/inbox-row";
 import { TriageBar, type TriageCounts } from "@/components/work/inbox/triage-bar";
@@ -87,19 +87,39 @@ export default function WorkHomePage() {
 
 function InboxSkeleton() {
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
-        <div className="mb-7 flex justify-center">
-          <WorkNav />
-        </div>
+    <WorkHomeFrame>
+      <WorkList className="mt-8">
         <WorkRowSkeletons count={4} />
-      </div>
-    </div>
+      </WorkList>
+    </WorkHomeFrame>
+  );
+}
+
+/**
+ * The page frame the inbox and its Suspense fallback share, so the header and
+ * the tab row are on screen before the search params resolve and nothing moves
+ * when they do.
+ */
+function WorkHomeFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="Tasks"
+        lede="Hand Juno an errand with a finish line. It plans the work, shows you every step, and asks before anything it cannot undo."
+        icon={AppIcons.work}
+      />
+      {/* Schedules, skills and permissions live under /work and are reached
+          from here rather than from the app sidebar: the sidebar is the switch
+          between products, and four Work-internal destinations in it would
+          make Work look like four of them. */}
+      <WorkNav />
+      {children}
+    </AppPage>
   );
 }
 
 function WorkInbox() {
-  const { user } = useApp();
   const router = useRouter();
   const params = useSearchParams();
 
@@ -276,39 +296,10 @@ function WorkInbox() {
   // The account has nothing at all — not an empty filter, which says so for
   // itself below, and not a failed load, which says so louder.
   const nothingYet = sessions !== null && live.length === 0 && !sessionsFailed;
-  const firstName = user.name?.split(" ")[0];
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl pt-12 sm:pt-14">
-        {/* Schedules, skills and permissions live under /work and are reached
-            from here rather than from the app sidebar: the sidebar is the switch
-            between products, and four Work-internal destinations in it would
-            make Work look like four of them. */}
-        <div className="mb-7 flex justify-center">
-          <WorkNav />
-        </div>
-
-        <div className="flex flex-col items-center text-center">
-          <p className="mb-3 font-mono text-label text-muted-foreground [animation-fill-mode:backwards] motion-safe:animate-fade-in">
-            Juno Work
-          </p>
-          <h1 className="text-center font-serif text-display font-normal">
-            <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-              What needs doing{firstName ? "," : "?"}
-            </span>
-            {firstName ? (
-              <>
-                {" "}
-                <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-                  {firstName}?
-                </span>
-              </>
-            ) : null}
-          </h1>
-        </div>
-
-        <div className="mt-6 sm:mt-7">
+    <WorkHomeFrame>
+        <div className="mt-6">
           <WorkComposer
             hosts={hosts}
             hostsFailed={hostsFailed}
@@ -377,7 +368,7 @@ function WorkInbox() {
                   </p>
                 )}
 
-                <div className="mt-4 space-y-2.5">
+                <WorkList className="mt-4">
                   {rows.map((session) => (
                     <InboxRow
                       key={session.id}
@@ -390,7 +381,7 @@ function WorkInbox() {
                       onOpen={(opened) => unread.markSeen(opened.id, opened.lastActivityAt)}
                     />
                   ))}
-                </div>
+                </WorkList>
 
                 {rows.length === 0 && (
                   <EmptyState
@@ -449,8 +440,7 @@ function WorkInbox() {
             )}
           </WorkCrossfade>
         )}
-      </div>
-    </div>
+    </WorkHomeFrame>
   );
 }
 

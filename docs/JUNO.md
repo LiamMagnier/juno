@@ -155,10 +155,14 @@ skills, connectors and approvals — §9b), `plans.ts` / `usage.ts` / `spend.ts`
 
 ## 3. Design system
 
-Juno's identity is a **warm editorial** look — Claude × ChatGPT × Perplexity — with
-a monospace **dot/ASCII** signature layer. All tokens are CSS variables in
-`src/app/globals.css`; Tailwind maps them in `tailwind.config.ts`. Never hardcode
-hex in components.
+Juno's identity is **Soft UI** — one warm material cut to three depths, calm and
+tactile — with a monospace **dot/ASCII** signature layer. The brief is
+`docs/design/SOFT_UI.md` and it is authoritative where this section is silent.
+All tokens are CSS variables in `src/app/globals.css`; Tailwind maps them in
+`tailwind.config.ts`; `npm run design:tokens` projects colour, motion and radius
+onto `src/lib/design/tokens.generated.ts` and the Swift package, and
+`design:tokens:check` fails CI when a client drifts. Never hardcode hex in
+components.
 
 ### 3.1 Color (HSL, theme-aware)
 
@@ -166,37 +170,90 @@ Defined for `:root` (light) and `.dark`. Values below are the live tokens.
 
 | Token | Light | Dark | Role |
 |---|---|---|---|
-| `--background` | `48 33% 97%` | `28 9% 9%` | Page — warm paper / warm charcoal |
-| `--foreground` | `30 3% 12%` | `45 24% 93%` | Text |
-| `--card` | `0 0% 100%` | `28 7% 12.5%` | Card / surface |
-| `--popover` | `0 0% 100%` | `28 6% 18%` | Menus / popovers |
-| `--primary` | `15 54% 51%` | `15 54% 51%` | **Coral** accent |
-| `--muted-foreground` | `40 4% 40%` | `37 7% 63%` | Secondary labels |
-| `--accent` | `48 28% 92%` | `28 6% 18%` | Hover/highlight bg |
-| `--destructive` | `11 51% 50%` | `11 51% 56%` | Error |
-| `--success` | `140 33% 46%` | `140 33% 53%` | Success (green) |
-| `--warning` | `40 57% 51%` | `40 60% 58%` | Warning (amber) |
+| `--background` | `50 22% 96%` | `30 7% 9%` | Page — warm paper / warm charcoal (never true black: dual shadows need a ground) |
+| `--foreground` | `48 3% 12%` | `45 12% 96%` | Text |
+| `--card` | `50 30% 98%` | `30 7% 12%` | Raised surfaces |
+| `--popover` | `50 30% 98.5%` | `30 7% 14%` | Floating surfaces |
+| `--secondary` / `--muted` | `48 22% 93%` | `30 6% 15%` | Recessed fills |
+| `--accent` | `48 24% 90%` | `30 6% 18%` | Hover fill |
+| `--primary` | `15 54% 46%` | `15 54% 46%` | **Coral** accent (`--primary-ink` is the AA text ramp) |
+| `--muted-foreground` | `48 4% 40%` | `40 6% 66%` | Secondary labels (≥ 4.5:1 on every reading ground) |
+| `--destructive` | `11 51% 48%` | `11 51% 49.5%` | Error (`--destructive-ink` for text) |
+| `--success` | `140 33% 46%` | `140 33% 53%` | Success (`--success-ink` for text; dark `--success-foreground` is the ground) |
+| `--warning` | `40 57% 45%` | `40 60% 58%` | Warning fill; `--warning-foreground` (`40 57% 33%` / `40 70% 72%`) is the text ramp |
 | `--source` | `187 62% 34%` | `187 58% 49%` | Source / info (teal) |
-| `--border` | `43 23% 88%` | `30 6% 21%` | Borders |
-| `--ring` | `15 54% 51%` | `15 54% 51%` | Focus ring (= accent) |
-| `--sidebar` | `50 23% 95%` | `28 10% 7.5%` | Sidebar bg |
+| `--border` | `46 18% 86%` | `30 6% 20%` | Hairlines |
+| `--ring` | `15 54% 46%` | `45 6% 80%` | Focus ring |
+| `--sidebar` | `48 20% 94%` | `30 7% 8%` | The sidebar well (a step below the page) |
 
-**Five swappable accents** set via `[data-accent]` on `<html>` (drive `--primary`
-+ `--ring`): `coral` (default), `teal`, `violet`, `amber`, `sage`. Custom `#hex`
-accents are converted to HSL and lightness-clamped per theme, then written as inline
-CSS vars (see `app-provider.tsx`). Texture atoms: primary-tinted **text selection**
-(`hsl(var(--primary)/0.25)`) and a fixed **film grain** overlay (`body::after`,
-`opacity 0.022`, SVG fractal noise, non-interactive).
+**Six swappable accents** set via `[data-accent]` on `<html>` (drive `--primary`,
+`--ring`, `--primary-foreground`, `--primary-ink`): `coral` (default), `juniper`,
+`teal`, `violet`, `amber`, `sage`. Custom `#hex` accents are converted to HSL and
+lightness-clamped per theme, then written as inline CSS vars (see
+`app-provider.tsx`). Texture atoms: primary-tinted **text selection**
+(`hsl(var(--primary)/0.25)`, `/0.4` on dark) and a fixed **film grain** overlay
+(`body::after`, `opacity 0.022`, SVG fractal noise, light theme only).
+
+**The depth kit.** Light comes from the top-left. Two inks — `--neu-light`
+(`0 0% 100% / .85` light, `45 20% 96% / .06` dark) and `--neu-dark`
+(`46 18% 20% / .10` light, `0 0% 0% / .55` dark) — make five shadows:
+
+| Token | Recipe | Tailwind |
+|---|---|---|
+| `--shadow-raised` | `-2 -2 6` light, `3 4 10` dark | `shadow-raised` |
+| `--shadow-raised-lg` | `-4 -4 12` light, `6 8 20` dark | `shadow-raised-lg` |
+| `--shadow-inset` | inset `2 2 5` dark, inset `-2 -2 5` light | `shadow-inset` |
+| `--shadow-pressed` | inset `1 1 3` dark, inset `-1 -1 3` light | `shadow-pressed` |
+| `--shadow-float` | `0 1 2` contact + `0 16 40 -20` throw + sheen | `shadow-float` |
+
+Throws are low on purpose (2–6px offsets, 6–20px blur). A neumorphic edge alone
+is under 3:1 and fails WCAG 1.4.11, so every surface also draws a hairline in
+`--border` at 50–70% alpha, and the primary action keeps real colour.
+
+**Composed surfaces** (`@layer components`, globals.css) are the only way a
+component may express depth — a raw `shadow-[…]`, `shadow-2xl` or hand-typed
+rgba is a fork of the system:
+
+| Class | Meaning | Used by |
+|---|---|---|
+| `.surface-raised` | `--card` + `--shadow-raised` + hairline | cards, composer shell, tiles, sidebar active row |
+| `.surface-raised-lg` | bigger throw | hero cards, pricing, project tiles |
+| `.surface-inset` | `--background` + `--shadow-inset` + hairline | inputs, textareas, search, segmented tracks, sidebar frame, user bubbles, empty states |
+| `.surface-float` | `--popover` + `--shadow-float` + sheen | popovers, dropdowns, dialogs, toasts, tooltips, sheets |
+| `.overlay-glass` | composes with `.surface-float`: `--popover/.86` + 12px blur; solid under `prefers-reduced-transparency` | menus, popovers, the command palette — chrome only |
+| `.control-neu` | raised at rest → pressed inset on `:active` / `[data-state=on]` / `[aria-pressed]` / `[data-selected]` | secondary buttons, icon buttons, toggles, chips, tiles |
+| `.control-primary` | coral gradient + `--glow-primary` + `--shadow-raised` | primary buttons, send |
+| `.composer-surface` / `.composer-field` | the raised shell and the inset well inside it | every composer |
+| `.shimmer-text` | ChatGPT-style thinking shimmer; static muted text under reduced motion | status lines |
+| `.check-morph` | copy → check spring | action rows |
+
+`.field-well` and `.glass-raised` survive as aliases of the inset and float
+recipes for older call sites. Every primitive in `src/components/ui` is built
+on these: Button (`default` = `.control-primary`, `secondary` = `.control-neu`,
+`ghost`/`outline` = flat → raised on hover → pressed), Card, Input/Textarea/
+Select trigger (inset; focus is the border darkening, no ring), Tabs and
+SegmentedControl (inset track, raised thumb), Switch/Checkbox/RadioGroup/Slider/
+Progress (inset track, raised coral), Dialog/Popover/DropdownMenu/Select/
+Tooltip/Sheet/Sonner (float), Badge, Kbd (inset keycap), IconButton (44px
+coarse target on `.control-neu`), Avatar, Separator, ScrollArea, Toggle,
+Skeleton, EmptyState (inset dashed well), Pressable (row/tile/chip/icon on
+`.control-neu` semantics) and the `AppPage` frame (`measure="reading" 48rem |
+"wide" 64rem | "full"`, exported with `AppPageHeader` from
+`components/app/app-page.tsx`).
 
 ### 3.2 Typography
 
-Two families only. **Newsreader** (serif, `next/font/google`, optical sizing) is the
-whole UI; **JetBrains Mono** is metadata/code. Tailwind's `font-sans` *and*
-`font-serif` both resolve to Newsreader (serif-first UI). Type scale is size-driven
-(3× jumps), not weight-driven: `text-hero`, `text-display`, `text-title` (22px),
-`text-heading` (18px), `text-body` (15px), `text-label` (12px eyebrow),
-`text-caption` (11px). Eyebrows pair `text-label`/`text-caption` with `font-mono`
-in **sentence case** (e.g. `Memory`, `Thinking`, `Source`, `Tokens`).
+Two families only. **Archivo** (`next/font/google`, `--font-sans`) is the whole
+interface — Tailwind's `font-sans` *and* `font-serif` both resolve to it, the
+serif alias surviving only for older semantic call sites — and **JetBrains Mono**
+(`--font-mono`) is labels, metadata, ids and code. Hierarchy comes from size,
+weight, measure and spacing, not from switching faces. The scale:
+`text-hero`, `text-display`, `text-page-title` (the app `<h1>`), `text-title`
+(22px), `text-heading` (18px), `text-body-lg` (17px), `text-body` (15px),
+`text-ui` (13px, dense rows and chips), `text-label` (12px eyebrow, 0.10em),
+`text-caption` (11px), `text-micro` (10.5px, the mono metadata floor). Eyebrows
+pair `text-label`/`text-caption` with `font-mono` in **sentence case** (e.g.
+`Memory`, `Thinking`, `Source`, `Tokens`).
 
 **No all-caps anywhere in the UI.** The `uppercase` utility and the wide
 letter-spacing that propped it up (`tracking-[0.14em]` and friends) are gone from
@@ -208,19 +265,31 @@ provider names) are literal strings, not a text transform.
 
 ### 3.3 Motion, radius, elevation
 
-- **Easings:** `ease-spring`, `ease-out-soft`, `ease-out-expo`. **Durations:**
-  `fast 120ms`, `base 220ms`, `slow 360ms`. Named animations: `rise-in`,
-  `pop-in/out`, `overlay-in/out`, the `thinking-matrix` reasoning cluster. All gated
-  by `prefers-reduced-motion`.
-- **Radius:** `sm 4px` · `md 8px` · `lg (--radius) 24px` · `panel 28px` (floating
-  layers) · `[18px]` popovers · `[14px]` menus/tabs · `[10px]` small buttons ·
-  `full` pills. Concentric: outer = inner + padding.
-- **Depth kit** (theme-aware, warm, low-throw): `shadow-soft`, `shadow-float`,
-  `shadow-glass`, `shadow-pop`, `shadow-glow-primary`, `shadow-well`. Composed
-  utilities: `.surface-raised`, `.btn-glossy` + `.halo-primary`, `.field-well`
-  (recessed inputs), `.glass-raised` (`bg-popover/80` + `backdrop-blur-xl` — the
-  warm-glass chrome material used on popovers, selects, dropdowns, dialogs, toasts),
-  `.sheen-sweep`, `.skeleton`, `.scroll-fade-y`.
+- **Motion is physical.** Easings (`--ease-*` in globals.css, mirrored as
+  `ease-*` utilities and as `ease.*` in `src/lib/motion.ts`): `spring`
+  (`0.34, 1.16, 0.64, 1` — entrances, a ~2% overrun), `drawer` (sheets),
+  `out-soft` (the default decelerate), `out-strong`, `out-expo`, `in` (exits),
+  `in-out` (A-to-B moves), `breathe` (loops), `out-back` (mass). The duration
+  ladder is `press 70` · `fast 120` · `exit 160` · `base 220` · `slow 360` ·
+  `emphasis 560` — nothing over 360ms except a deliberate one-shot. Named
+  animations: `pop-in/out` (scale .96→1 + fade on the spring — menus, popovers,
+  dialogs via `modal-in/out`), `rise-in` (6px + fade), `sheet-in/out` (drawer
+  easing, side set by `--sheet-from`), `overlay-in/out` (scrims),
+  `shimmer-text`, `check-morph`, `fade-in`, and the `thinking-matrix` reasoning
+  cluster. A press dips to 0.97 in 70ms (`.pressable`). Lists stagger with
+  `staggerDelay()` at 30–60ms, capped at ten. Reduced motion is tiered
+  (globals.css): opacity and colour keep their timing, transforms collapse via
+  `--motion-shift` / `--motion-scale-from`, decorative loops stop. `framer-motion`
+  (`src/lib/motion.ts`) is for interruptible, physical and layout motion; its
+  numbers are derived from the same tokens.
+- **Radius ladder** (single source, `tailwind.config.ts`; enforced by
+  `design-system/no-arbitrary-radius`): `control 10` · `field 12` · `menu 14` ·
+  `card 16` (= `lg` = `surface` = `popover`) · `panel 20` (= `composer`) ·
+  `full`. Concentric: outer = inner + padding. `micro 2`, `xs 6`, `md 8` are
+  the sub-control steps.
+- **Depth** is the kit in §3.1: five shadows, six composed surfaces. The
+  transcript stays flat (§3.5). `.skeleton` is a pressed well with a slow
+  shimmer; `.scroll-fade-y` and `<ScrollFade>` soften scroll edges.
 - **Scroll edges.** Any capped, scrollable region should signal "more this way"
   with a soft edge rather than a hard clip. Two tools: `.scroll-fade-y` (a
   static opacity mask, for reading surfaces like the transcript) and
@@ -231,21 +300,19 @@ provider names) are literal strings, not a text transform.
   as a drop-in for an `overflow-y-auto` child of a flex column (project picker,
   model picker). It gates on `prefers-reduced-transparency` / `-motion`.
 
-Warm-glass is for **chrome only** (menus, popovers, dialogs, toasts, composer shell)
-— never on reading surfaces. It carries a warm `--card`/`--popover` tint and reuses
-Juno's own `--sheen` specular highlight, never a cool system rim.
+Glass is for **chrome only** (menus, popovers, the command palette) — never on
+reading surfaces, and never on a dialog, which holds content to be read.
+`.overlay-glass` carries the warm `--popover` tint and Juno's own `--sheen` rim
+light, never a cool system rim.
 
-**One surface per layer type.** Every modal starts from `dialogSurfaceClassName`
-and every self-drawn close button from `dialogCloseClassName`, both exported by
-`src/components/ui/dialog.tsx`. Callers pass size and position only. The panels
-that used to opt out — the announcement popup, the image editor, the onboarding
-card, the composer's clarification popover, the command palette — each carried
-its own radius, border weight, fill and blur, which is what made some dialogs
-look a generation behind the others. Floating layers below dialog rank
-(dictation transcript, onboarding's model list, the cookie card) use the popover
-recipe instead: `rounded-[18px]`/`[14px]` + `border-border/60` + `bg-popover/80`
-+ `.glass-raised`. Toasts are popovers that show up on their own, so they share
-the popover's 18px and material rather than inventing a third.
+**One surface per layer type.** Every floating layer is `.surface-float`:
+dialogs at `rounded-panel` (20), popovers/dropdowns/selects at `rounded-popover`
+(16, with `.overlay-glass`), toasts at `rounded-card` (16), tooltips at
+`rounded-control` (10), sheets with `rounded-panel` on the inner edge. Callers
+pass size, padding and position only — a `border-*`, `bg-*`, `shadow-*` or
+`backdrop-blur-*` utility on a floating layer is a fork and silently beats the
+material. The close button is `<DialogCloseButton>` (a `<Pressable kind="icon">`)
+and only its position varies.
 
 ### 3.4 Signature language
 
@@ -305,8 +372,9 @@ composer's stop button already say "still writing".
 **Depth, gloss, and glass are for chrome and controls only. The chat transcript
 stays flat and calm** (`src/components/chat/message-list.tsx`,
 `message-item.tsx`). One centered `max-w-3xl` column: user messages are right-aligned
-rounded `bg-secondary` bubbles; assistant messages are full-width markdown prose
-with no card wrapper. Every embedded structure — code blocks, inline learning
+gently **inset** wells (`USER_BUBBLE_CLASS` in `chat/user-bubble.ts` — `.surface-inset`
+at `rounded-card`, shared with the public share page); assistant messages are
+full-width markdown prose with no card wrapper. Every embedded structure — code blocks, inline learning
 blocks, source pills, artifact cards — uses sparse hairline chrome, "figures set into
 a printed article." This keeps the constantly-scrolling list legible and
 `backdrop-filter`-free (performance).

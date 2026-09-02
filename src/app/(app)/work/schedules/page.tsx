@@ -6,7 +6,9 @@ import { Plus } from "lucide-react";
 import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { WorkNav } from "@/components/work/work-nav";
+import { WorkList } from "@/components/work/shell/work-section";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
@@ -57,76 +59,77 @@ export default function WorkSchedulesPage() {
   const active = (schedules ?? []).filter((schedule) => schedule.enabled);
   const paused = (schedules ?? []).filter((schedule) => !schedule.enabled);
 
+  const action = (
+    <Button asChild size="sm" className="gap-1.5">
+      <Link href="/work/schedules/new">
+        <Plus className="size-3.5" aria-hidden="true" /> New automation
+      </Link>
+    </Button>
+  );
+
   return (
-    <WorkPageFrame
-      title="Automations"
-      description="Let Work start itself — at a time you choose or when something changes. Automations can react to email, meetings, monitored topics, connected-app events and granted folders, and every run stays attached to the same task so context compounds instead of resetting."
-      action={
-        <Button asChild size="sm" className="gap-1.5">
-          <Link href="/work/schedules/new">
-            <Plus className="size-3.5" aria-hidden="true" /> New automation
-          </Link>
-        </Button>
-      }
-    >
-      {failed ? (
-        <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your automations. Existing automations keep their server-side state; this
-          page is empty because the read failed, not because they were removed.
-        </WorkLoadError>
-      ) : schedules === null ? (
-        <WorkRowSkeletons />
-      ) : schedules.length === 0 ? (
-        <EmptyState
-          icon={AppIcons.tasks}
-          title="No automations yet"
-          description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
-          action={
-            <Button asChild size="sm" className="gap-1.5">
-              <Link href="/work/schedules/new">
-                <Plus className="size-3.5" aria-hidden="true" /> New automation
-              </Link>
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          {active.length > 0 && (
-            <section>
-              {paused.length > 0 && (
-                <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Active</h2>
-              )}
-              <div className="space-y-2.5">
-                {active.map((schedule, index) => (
-                  <WorkScheduleRow
-                    key={schedule.id}
-                    schedule={schedule}
-                    index={index}
-                    onChanged={replace}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-          {paused.length > 0 && (
-            <section className={active.length > 0 ? "mt-9" : undefined}>
-              {active.length > 0 && (
-                <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Paused</h2>
-              )}
-              <div className="space-y-2.5">
-                {paused.map((schedule, index) => (
-                  <WorkScheduleRow
-                    key={schedule.id}
-                    index={active.length + index}
-                    schedule={schedule}
-                    onChanged={replace}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-    </WorkPageFrame>
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="Automations"
+        lede="Let Work start itself — at a time you choose or when something changes — with every run attached to the same task so context compounds."
+        icon={AppIcons.work}
+        actions={action}
+      />
+      <WorkNav />
+
+      <div className="mt-8">
+        {failed ? (
+          <WorkLoadError onRetry={() => void load()}>
+            Couldn’t load your automations. Existing automations keep their server-side state; this
+            page is empty because the read failed, not because they were removed.
+          </WorkLoadError>
+        ) : schedules === null ? (
+          <WorkList>
+            <WorkRowSkeletons />
+          </WorkList>
+        ) : schedules.length === 0 ? (
+          <EmptyState
+            icon={AppIcons.tasks}
+            title="No automations yet"
+            description="Run a task every weekday at eight, when an invoice arrives, before a meeting, when a topic starts moving, or when a granted folder changes. Juno can work while you are elsewhere and stops for approvals when the policy requires it."
+            action={action}
+          />
+        ) : (
+          <>
+            {active.length > 0 && (
+              <section>
+                {paused.length > 0 && <h2 className="mb-3 text-heading">Active</h2>}
+                <WorkList>
+                  {active.map((schedule, index) => (
+                    <WorkScheduleRow
+                      key={schedule.id}
+                      schedule={schedule}
+                      index={index}
+                      onChanged={replace}
+                    />
+                  ))}
+                </WorkList>
+              </section>
+            )}
+            {paused.length > 0 && (
+              <section className={active.length > 0 ? "mt-8" : undefined}>
+                {active.length > 0 && <h2 className="mb-3 text-heading">Paused</h2>}
+                <WorkList>
+                  {paused.map((schedule, index) => (
+                    <WorkScheduleRow
+                      key={schedule.id}
+                      index={active.length + index}
+                      schedule={schedule}
+                      onChanged={replace}
+                    />
+                  ))}
+                </WorkList>
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </AppPage>
   );
 }

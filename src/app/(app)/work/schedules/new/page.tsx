@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import type { ClientWorkHost } from "@/lib/work/serializers";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { WorkScheduleEditor } from "@/components/work/work-schedule-editor";
 import { fetchWorkHosts } from "@/components/work/work-transport";
 
@@ -30,17 +30,20 @@ export default function NewWorkSchedulePage() {
   }, []);
 
   return (
-    <WorkPageFrame
-      title="New schedule"
-      description="Say what should happen, when it should start, and what Juno may do about it while you are not there."
-      back={{ href: "/work/schedules", label: "Back to schedules" }}
-    >
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="New automation"
+        lede="Say what should happen, when it should start, and what Juno may do about it while you are not there."
+        backHref="/work/schedules"
+        backLabel="Back to automations"
+      />
       <WorkScheduleEditor
         schedule={null}
         hosts={hosts}
         onSaved={(schedule) => router.push(`/work/schedules/${schedule.id}`)}
         onCancel={() => router.push("/work/schedules")}
       />
-    </WorkPageFrame>
+    </AppPage>
   );
 }

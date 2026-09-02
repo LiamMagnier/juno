@@ -231,7 +231,7 @@ export function ReportReader({
   return (
     <div className={cn("space-y-6", className)}>
       {/* Top Action & Metadata Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border/60 bg-card p-3 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 surface-raised rounded-card p-3">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
             Deep Research Report

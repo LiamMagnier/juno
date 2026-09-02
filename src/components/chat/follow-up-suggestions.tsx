@@ -127,8 +127,10 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
           <div
             key={suggestion}
             style={staggerDelay(i)}
+            // `.control-neu` (SOFT_UI.md): a raised chip, lifting a rung on
+            // hover, dealt out on the tight stagger under the reply.
             className={cn(
-              "group/pill relative flex min-w-0 gap-1 border border-border/60 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-out-strong [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-accent hover:text-foreground hover:shadow-soft coarse:py-2 motion-safe:animate-rise-in motion-reduce:transition-none",
+              "group/pill control-neu relative flex min-w-0 gap-1 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground [animation-fill-mode:backwards] hover:z-10 hover:text-foreground coarse:py-2 motion-safe:animate-rise-in",
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius

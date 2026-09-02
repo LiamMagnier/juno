@@ -3,6 +3,7 @@ import { getModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { staggerDelay } from "@/lib/motion";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -59,44 +60,36 @@ export function Metering() {
       heading="You see what every answer costs."
       lede="Most subscriptions sell a vague number of messages. Juno meters your plan in the only unit that's real — what the model providers actually charge."
     >
-      <div className="mt-10 grid items-start gap-10 lg:grid-cols-2">
-        <dl>
-          {POINTS.map(({ term, body }) => (
-            <div key={term} className="border-t border-dotted border-border py-4">
-              <dt className="font-serif text-heading font-medium">{term}</dt>
-              <dd className="mt-1 max-w-prose text-body text-muted-foreground">{body}</dd>
+      <div className="mt-10 grid items-start gap-4 lg:grid-cols-2 lg:gap-6">
+        {/* The three points as raised tiles, dealt out on the base stagger. */}
+        <dl className="grid gap-4">
+          {POINTS.map(({ term, body }, i) => (
+            <div
+              key={term}
+              style={staggerDelay(i)}
+              className="surface-raised rounded-card p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
+              <dt className="text-heading">{term}</dt>
+              <dd className="mt-1.5 text-sm text-muted-foreground">{body}</dd>
             </div>
           ))}
         </dl>
 
-        {/* The receipt — live numbers, recomputed on every build/deploy. Card,
-            so the section's centrepiece is the same primitive as every panel past
-            the sign-in: `rounded-card` (14px), damped hairline, bg-card. (Not the
-            24px and the sheen this comment used to claim — Card sets neither; the
-            highlight is the dark override on the next line.)
-            The dark override is the same lit INSET edge the features privacy row
-            and `.dark .composer-surface` carry: this is the section's whole
-            argument, and on the OLED ground a default card is a 6.5% rectangle
-            behind a hairline with nothing to lift it. */}
-        <Card className="p-6 dark:border-border dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.5),0_18px_44px_-30px_hsl(0_0%_0%/0.9)]">
-          {/* CardEyebrow, not a hand-rolled <p>: this was the mono kicker at
-              text-caption while PageHeader sets the same role at text-label five
-              times higher up the page.
-              The four classes this used to spell out are gone. They existed to
-              overrule CardEyebrow's old `text-xs font-semibold text-foreground`
-              default, and card.tsx has since moved that default to exactly
-              `font-mono text-label text-muted-foreground` — so the override had
-              become a verbatim restatement of the component, under a comment
-              still describing a default that no longer exists. A call site that
-              re-declares its component's own values is how the two drift apart
-              the next time one of them changes. */}
+        {/* The receipt — live numbers, recomputed on every build/deploy. The
+            elevated Card is the section's centrepiece, and the ledger inside it
+            sits in an inset well: one material, three depths, in one box. */}
+        <Card
+          variant="elevated"
+          style={staggerDelay(3)}
+          className="p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:p-6"
+        >
           <CardEyebrow>One message, priced</CardEyebrow>
           <p className="mt-1.5 text-caption text-muted-foreground">
             The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
             {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.
           </p>
           {ROWS.length > 0 ? (
-            <ul className="mt-5 space-y-3 font-mono text-caption">
+            <ul className="surface-inset mt-5 space-y-3 rounded-field px-4 py-3.5 font-mono text-caption">
               {ROWS.map(({ name, cost }) => (
                 <li key={name} className="flex items-baseline gap-2.5">
                   <span className="whitespace-nowrap">{name}</span>
@@ -120,7 +113,7 @@ export function Metering() {
               description="None of the sample models resolve against the current registry, so there is nothing honest to price here."
             />
           )}
-          <p className="mt-5 border-t border-dotted border-border pt-4 text-caption text-muted-foreground">
+          <p className="mt-5 border-t border-border/60 pt-4 text-caption text-muted-foreground">
             This is the exact math your usage meter runs in the app — shown on every reply, tallied on your plan.
           </p>
         </Card>

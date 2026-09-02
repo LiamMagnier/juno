@@ -15,6 +15,8 @@ public struct TranscriptView: View {
     /// come in from the caller that knows them.
     let modelDisplayNames: [String: String]
     var focus: FocusState<Bool>.Binding?
+    /// Opens the Create pull request sheet, when the host offers one.
+    var createPullRequest: (() -> Void)?
 
     /// The auto-scroll below is the only motion this view owns, and it is
     /// travel — the transcript is the largest moving surface in the window, so
@@ -50,27 +52,39 @@ public struct TranscriptView: View {
     public init(
         controller: SessionController,
         modelDisplayNames: [String: String] = [:],
-        focus: FocusState<Bool>.Binding? = nil
+        focus: FocusState<Bool>.Binding? = nil,
+        createPullRequest: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.modelDisplayNames = modelDisplayNames
         self.focus = focus
+        self.createPullRequest = createPullRequest
     }
 
     public var body: some View {
         // Both derivations walk the whole event list, so they are computed once
         // per pass rather than once per use.
-        let events = visibleEvents
+        let items = visibleItems
         let rowContext = context
         return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
-                    if events.isEmpty {
+                    if items.isEmpty {
                         PreRunSuggestions(controller: controller, focus: focus)
                     } else {
-                        ForEach(events) { event in
-                            TranscriptRow(event: event, context: rowContext)
-                                .id(event.id)
+                        ForEach(items) { item in
+                            switch item {
+                            case let .event(event):
+                                TranscriptRow(event: event, context: rowContext)
+                                    .id(event.id)
+                            case let .workLog(group, events):
+                                ActivityNarrativeView(group: group) {
+                                    ForEach(events) { event in
+                                        TranscriptRow(event: event, context: rowContext)
+                                    }
+                                }
+                                .id(group.id)
+                            }
                         }
                     }
                     // The live tail is its own view so that a token arriving
@@ -168,8 +182,66 @@ public struct TranscriptView: View {
             subagentActivity: controller.subagentActivity,
             retryLastTurn: { [controller] in
                 await controller.retryLastTurn()
-            }
+            },
+            openReview: { [controller] path in
+                controller.review.present(path: path ?? controller.changes.first?.path)
+            },
+            createPullRequest: createPullRequest,
+            diffTotals: (
+                controller.changes.reduce(0) { $0 + $1.linesAdded },
+                controller.changes.reduce(0) { $0 + $1.linesRemoved },
+                controller.changes.count
+            )
         )
+    }
+
+    /// One row of the transcript: a conversational event on its own, or a run
+    /// of machine activity folded into a work log.
+    enum Item: Identifiable {
+        case event(SessionEvent)
+        case workLog(ActivityNarrativeGroup, events: [SessionEvent])
+
+        var id: String {
+            switch self {
+            case let .event(event): event.id
+            case let .workLog(group, _): group.id
+            }
+        }
+    }
+
+    /// The visible events, with every event a narrative group claims folded
+    /// under that group at the position of its first event.
+    ///
+    /// The group is the projection's — the same one the inspector's Overview
+    /// reads — so the transcript and the panel never disagree about what the
+    /// agent did between two messages. Events no group claims (prompts, prose,
+    /// errors, the completion card) stay rows of their own.
+    private var visibleItems: [Item] {
+        let events = visibleEvents
+        let groups = controller.narrativeGroups
+        guard !groups.isEmpty else { return events.map(Item.event) }
+        var owner: [String: Int] = [:]
+        for (index, group) in groups.enumerated() {
+            for id in group.eventIDs { owner[id] = index }
+        }
+        var eventsByGroup: [Int: [SessionEvent]] = [:]
+        for event in events {
+            if let index = owner[event.id] {
+                eventsByGroup[index, default: []].append(event)
+            }
+        }
+        var placed: Set<Int> = []
+        var items: [Item] = []
+        for event in events {
+            guard let index = owner[event.id] else {
+                items.append(.event(event))
+                continue
+            }
+            guard !placed.contains(index) else { continue }
+            placed.insert(index)
+            items.append(.workLog(groups[index], events: eventsByGroup[index] ?? []))
+        }
+        return items
     }
 
     /// What the reader sees, out of everything the record holds.
@@ -249,6 +321,45 @@ struct TranscriptTail: View {
                 statusRow("Stopping…")
             } else if showsWorkingRow {
                 statusRow("Juno is working…", showsElapsed: true)
+            }
+            // The last refused action, in the transcript where the refused
+            // gesture happened rather than in a strip over the composer.
+            // `SessionController.transientError` is written on eighty-odd paths
+            // — a send blocked by a paused goal, a failed revert, a transport
+            // that is not configured — and the transcript is the one place the
+            // reader is already looking.
+            if let message = controller.transientError {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    JunoIconView(.error, size: 15)
+                        .foregroundStyle(Color.junoCaution)
+                        .frame(width: 18, alignment: .center)
+                        .accessibilityHidden(true)
+                    Text(message)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button {
+                        controller.clearTransientError()
+                    } label: {
+                        JunoIconView(.close, size: 13)
+                            .junoSecondaryInk()
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.tight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                        .fill(Color.junoCaution.opacity(0.10))
+                )
+                .transition(.junoInline)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("juno.code.transient-error")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

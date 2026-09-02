@@ -430,7 +430,7 @@ struct DesktopArtifactDock<Content: View>: View {
             // reclaiming the room.
             .transition(
                 .asymmetric(
-                    insertion: .offset(x: DesktopChatMotion.canvasSlide)
+                    insertion: .offset(x: DesktopChoreography.canvasSlide)
                         .combined(with: .opacity),
                     removal: .opacity
                 )

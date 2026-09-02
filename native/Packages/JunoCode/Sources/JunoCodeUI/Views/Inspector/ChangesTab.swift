@@ -63,7 +63,14 @@ struct ChangesTab: View {
         } message: {
             Text("Juno restores each file from its checkpoint. Files changed afterward are left untouched.")
         }
-        .confirmationDialog("Revert this file?", isPresented: Binding(get: { pendingRevertPath != nil }, set: { if !$0 { pendingRevertPath = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(
+            "Revert this file?",
+            isPresented: Binding(
+                get: { pendingRevertPath != nil },
+                set: { if !$0 { pendingRevertPath = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
             if let path = pendingRevertPath {
                 Button("Revert \(PathDisplay.fileName(path))", role: .destructive) {
                     pendingRevertPath = nil
@@ -74,7 +81,14 @@ struct ChangesTab: View {
         } message: {
             Text("The file is restored from Juno's checkpoints unless newer content is detected.")
         }
-        .confirmationDialog("That file changed since Juno captured it", isPresented: Binding(get: { pendingForcedRevertPath != nil }, set: { if !$0 { pendingForcedRevertPath = nil } }), titleVisibility: .visible) {
+        .confirmationDialog(
+            "That file changed since Juno captured it",
+            isPresented: Binding(
+                get: { pendingForcedRevertPath != nil },
+                set: { if !$0 { pendingForcedRevertPath = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
             if let path = pendingForcedRevertPath {
                 Button("Restore Anyway", role: .destructive) {
                     pendingForcedRevertPath = nil
@@ -85,7 +99,13 @@ struct ChangesTab: View {
         } message: {
             Text("Restoring now discards content written after Juno's latest checkpoint.")
         }
-        .alert(revertFailureTitle, isPresented: Binding(get: { revertFailureMessage != nil }, set: { if !$0 { revertFailureMessage = nil } })) {
+        .alert(
+            revertFailureTitle,
+            isPresented: Binding(
+                get: { revertFailureMessage != nil },
+                set: { if !$0 { revertFailureMessage = nil } }
+            )
+        ) {
             Button("OK") { revertFailureMessage = nil }
         } message: {
             Text(revertFailureMessage ?? "The restore could not be completed.")

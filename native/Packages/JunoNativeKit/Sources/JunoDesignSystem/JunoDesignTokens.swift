@@ -297,6 +297,23 @@ public enum JunoMotion {
         timingCurve(JunoGeneratedEasing.outExpo, duration: duration)
     }
 
+    // MARK: - Choreography rungs
+
+    /// A pane settling in from the edge it docks against — the artifact canvas,
+    /// the preview dock, the simulator pane, the review pane: `--dur-base` on
+    /// `--ease-out-expo`.
+    ///
+    /// This used to be `DesktopChatMotion.canvasEnter`, a second ladder the Mac
+    /// app kept beside this one with the same curve written as four raw
+    /// numbers. One ladder, one rung.
+    public static let canvasEnter = outExpo(Duration.base)
+
+    /// The web's `rise-in`: opacity 0→1 over a short lift on `--ease-out-strong`,
+    /// pinned to the ladder's `slow` rung rather than the 0.32 it shipped as.
+    /// Shared by an arriving message, the greeting's two beats and the voice
+    /// dock's entrance.
+    public static let riseIn = timingCurve(JunoGeneratedEasing.outStrong, duration: Duration.slow)
+
     /// Builds a SwiftUI curve from a projected cubic-bezier quadruple.
     ///
     /// One place that knows the control-point order, so a new `--ease-*` rung
@@ -366,6 +383,23 @@ public enum JunoMotion {
     public static func ambient(_ animation: Animation, when reduceMotion: Bool) -> Animation? {
         reduced(animation, when: reduceMotion, tier: .ambient)
     }
+}
+
+// MARK: - Reading measures
+
+/// The two column widths every reading surface in the product is set to.
+///
+/// The web's `AppPage` has `measure="reading" (48rem) | "wide" (64rem)`; this
+/// is that pair in points. It exists because the number 768 was declared in
+/// three places and 720/800/820 in four others, each a private constant that
+/// happened to be near the one beside it — the transcript, the composer, the
+/// context strip and the remote canvas were each a few points off one another
+/// and none of them could be retuned from one line.
+public enum JunoReadingMeasure {
+    /// 768 — prose: a transcript, a composer, a page of settings text.
+    public static let reading: CGFloat = 768
+    /// 1024 — a page of tiles or a list that earns the extra width.
+    public static let wide: CGFloat = 1024
 }
 
 // MARK: - Press

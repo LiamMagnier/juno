@@ -424,9 +424,9 @@ function RailButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-field transition-all duration-fast hover:scale-105 active:scale-95",
+        "flex size-9 shrink-0 items-center justify-center rounded-control transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft hover:scale-105 active:scale-95 motion-reduce:transition-none",
         active
-          ? "bg-primary/15 text-primary ring-1 ring-primary/30 shadow-xs"
+          ? "bg-primary/15 text-primary ring-1 ring-primary/30 shadow-pressed"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         dimmed && "opacity-35 hover:scale-100 active:scale-100",
       )}
@@ -533,12 +533,12 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-card border p-2.5 transition-all duration-fast ease-out-soft",
+          "group relative flex flex-col justify-between rounded-card border p-2.5 transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-soft motion-reduce:transition-none",
           "active:scale-[0.99] " +
             (soon
               ? "opacity-45 cursor-not-allowed border-border/40 bg-card/20"
               : active
-                ? "border-primary/60 bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                ? "border-primary/60 bg-primary/10 shadow-pressed ring-1 ring-primary/30"
                 : isHovered
                   ? "border-border/80 bg-accent/60 shadow-soft"
                   : "border-border/50 bg-card/40 hover:border-border hover:bg-accent/40"),
@@ -623,7 +623,7 @@ export function ModelSelector({
         <button
           type="button"
           aria-label={`Model: ${current?.name ?? "Select model"}`}
-          className="composer-chip group inline-flex h-8 w-full min-w-0 max-w-[13rem] items-center gap-1.5 rounded-composer-control px-2.5 text-label font-medium text-foreground/80 transition-all duration-fast hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-ui coarse:h-11"
+          className="composer-chip group inline-flex h-8 w-full min-w-0 max-w-[13rem] items-center gap-1.5 rounded-composer-control px-2.5 text-label font-medium text-foreground/80 transition-[color,background-color,border-color,box-shadow,transform,opacity,width] duration-fast hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-ui coarse:h-11"
         >
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
@@ -644,7 +644,7 @@ export function ModelSelector({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
+        align="end"
         side="top"
         sideOffset={8}
         collisionPadding={16}
@@ -653,7 +653,7 @@ export function ModelSelector({
           maxHeight:
             "min(28rem, var(--radix-popover-content-available-height))",
         }}
-        className="flex w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-panel border border-border/80 bg-popover/98 p-0 text-popover-foreground shadow-2xl backdrop-blur-2xl sm:w-[38rem] sm:max-w-[90vw] md:w-[46rem] md:max-w-[88vw]"
+        className="flex w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-panel p-0 sm:w-[38rem] sm:max-w-[90vw] md:w-[46rem] md:max-w-[88vw]"
       >
         {features.billing && plan !== "MAX" && plan !== "OWNER" && (
           <button
@@ -668,7 +668,7 @@ export function ModelSelector({
               <Zap className="size-3.5 fill-current" /> Upgrade to unlock
               frontier models
             </span>
-            <span className="rounded-md bg-primary px-2 py-0.5 text-micro font-semibold text-primary-foreground shadow-xs">
+            <span className="rounded-md bg-primary px-2 py-0.5 text-micro font-semibold text-primary-foreground shadow-pop">
               Upgrade
             </span>
           </button>
@@ -772,10 +772,10 @@ export function ModelSelector({
                             onMouseEnter={() => setHoveredId(AUTO_MODEL_ID)}
                             onFocus={() => setHoveredId(AUTO_MODEL_ID)}
                             className={cn(
-                              "group relative flex flex-col justify-between rounded-card border p-2.5 transition-all duration-fast ease-out-soft",
+                              "group relative flex flex-col justify-between rounded-card border p-2.5 transition-[background-color,border-color,box-shadow,transform] duration-fast ease-out-soft motion-reduce:transition-none",
                               "active:scale-[0.99] " +
                                 (autoSelected
-                                  ? "border-primary/60 bg-primary/10 shadow-xs ring-1 ring-primary/30"
+                                  ? "border-primary/60 bg-primary/10 shadow-pressed ring-1 ring-primary/30"
                                   : hoveredId === AUTO_MODEL_ID
                                     ? "border-border/80 bg-accent/60 shadow-soft"
                                     : "border-border/50 bg-card/40 hover:border-border hover:bg-accent/40"),

@@ -27,7 +27,9 @@ import {
   TextQuote,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
+import { spring, transition as motionTransition } from "@/lib/motion";
 import {
   ActionIcons,
   AppIcons,
@@ -362,6 +364,50 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * A mode chip — one armed tool, above the field (ChatGPT's redesigned
+ * composer). Raised (`.control-neu`), coral mark, an × to disarm. Added and
+ * removed on the layout spring so the row re-flows rather than jumping.
+ */
+function ModeChip({
+  icon,
+  label,
+  onRemove,
+  reduceMotion,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onRemove?: () => void;
+  reduceMotion: boolean;
+}) {
+  return (
+    <motion.div
+      layout
+      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 4 }}
+      transition={reduceMotion ? { duration: 0 } : spring.standard}
+      className={cn(
+        "control-neu inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full text-caption font-medium text-foreground",
+        onRemove ? "pl-2.5 pr-1" : "px-2.5",
+      )}
+    >
+      <span className="flex size-3.5 items-center justify-center text-primary [&_svg]:size-3.5">{icon}</span>
+      <span className="whitespace-nowrap">{label}</span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Turn off ${label}`}
+          className="pressable ml-0.5 flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-7"
+        >
+          <ActionIcons.dismiss className="size-3" />
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
 export function Composer({
   conversationId,
   model,
@@ -403,6 +449,7 @@ export function Composer({
   onDictatingChange,
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
+  const reduceMotion = useReducedMotion() ?? false;
   const resolved = resolveModel(model);
   const isAuto = isAutoModelId(model);
   // Only the thinking tiers this specific model actually supports (real data).
@@ -703,6 +750,21 @@ export function Composer({
         el.focus();
     });
   }, [isBusy, status, dictating, pendingClarification]);
+
+  // Esc stops a running generation from anywhere on the page. The field is
+  // disabled while busy, so this cannot live in its own onKeyDown; it defers
+  // to any nearer layer (a menu, the find bar) that already claimed the key.
+  React.useEffect(() => {
+    if (!isBusy || status === "checking" || status === "stopping") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"]')) return;
+      e.preventDefault();
+      onStop();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isBusy, status, onStop]);
 
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
@@ -1426,6 +1488,14 @@ export function Composer({
       dismissQuote();
       return;
     }
+    // ↑ in an empty field edits your last message (the newest user turn
+    // listens for this in message-item.tsx). Only when there is nothing typed:
+    // with a draft, ↑ moves the caret as it always has.
+    if (e.key === "ArrowUp" && text.length === 0 && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent("juno:edit-last-user-message"));
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void submit(e.currentTarget.value);
@@ -1907,15 +1977,15 @@ export function Composer({
              * the dark treatment carries an INSET top highlight, which is the only
              * depth cue that survives on #000, and it was being suppressed too.
              */
-            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_24px_rgba(0,0,0,0.3)]",
+            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer",
             "transition-[opacity,transform,border-color,box-shadow,height] duration-base ease-out-strong motion-reduce:transition-none",
             dictating
               ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
               : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
-            privateMode
-              ? "border-dashed border-foreground/25"
-              : "border-border/80 focus-within:border-foreground/25 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.08)] dark:focus-within:shadow-[0_6px_28px_rgba(0,0,0,0.4)]",
+            // Private mode redraws the edge dashed; every other state's border
+            // and focus lift come from `.composer-surface` itself.
+            privateMode && "border-dashed border-foreground/25",
             dragging && "border-primary/55 ring-2 ring-primary/20",
           )}
         >
@@ -2078,6 +2148,45 @@ export function Composer({
               </div>
             )}
 
+            {/* Mode chips — every armed tool, named, above the field. */}
+            {(() => {
+              const chips: { key: string; icon: React.ReactNode; label: string; onRemove?: () => void }[] = [];
+              if (canWebSearch && webSearchEnabled)
+                chips.push({ key: "web", icon: <ComposerIcons.web />, label: "Web search", onRemove: () => onToggleWebSearch?.(false) });
+              if (researchArmed)
+                chips.push({ key: "research", icon: <ComposerIcons.research />, label: "Deep research", onRemove: () => setResearch(false) });
+              if (!privateMode && canvasEnabled && modality === "chat")
+                chips.push({ key: "canvas", icon: <LayoutTemplate />, label: "Canvas", onRemove: () => onToggleCanvas(false) });
+              if (modality === "image") chips.push({ key: "image", icon: <ComposerIcons.image />, label: "Image" });
+              if (modality === "video") chips.push({ key: "video", icon: <ComposerIcons.image />, label: "Video" });
+              if (showConnectors)
+                for (const c of connectors.filter((c) => connectorsEnabled.includes(c.id)))
+                  chips.push({ key: `c:${c.id}`, icon: <ConnectorMark id={c.id} className="size-3.5" />, label: c.label, onRemove: () => pickConnector(c.id) });
+              return (
+                <AnimatePresence initial={false}>
+                  {chips.length > 0 && !showCollapsedDraft && (
+                    <motion.div
+                      key="mode-chips"
+                      layout
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={reduceMotion ? { duration: 0 } : motionTransition.fast}
+                      className="overflow-hidden"
+                    >
+                      <div role="group" aria-label="Active modes" className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
+                        <AnimatePresence initial={false}>
+                          {chips.map((chip) => (
+                            <ModeChip key={chip.key} icon={chip.icon} label={chip.label} onRemove={chip.onRemove} reduceMotion={reduceMotion} />
+                          ))}
+                        </AnimatePresence>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              );
+            })()}
+
             {showCollapsedDraft && (
               <div
                 className="mx-3 mt-3 flex flex-col gap-2 rounded-field border border-border/70 bg-secondary px-3 py-3 sm:mx-3.5"
@@ -2192,7 +2301,7 @@ export function Composer({
               // layer — so adding shadow-float silently replaced the glass entirely
               // and left this popover looking unlike the + menu beside it.
               // DropdownMenuContent uses glass-raised alone; match it.
-              <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-menu border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
+              <div className="surface-float overlay-glass absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-popover p-1.5 motion-safe:animate-pop-in">
                 {/* Options, not tab stops: the caret never leaves the textarea, so this
                 is a combobox popup. A button row also could not legally hold the
                 Switch, which is itself a button. */}
@@ -2336,6 +2445,7 @@ export function Composer({
             {/* Huge drafts render as a compact card above; keep the textarea out of
             the DOM so React never diffs multi-10k controlled values every key. */}
             {!showCollapsedDraft && (
+              <div className="composer-field">
               <textarea
                 ref={textareaRef}
                 id="juno-composer-textarea"
@@ -2370,7 +2480,7 @@ export function Composer({
                     : undefined
                 }
                 className={cn(
-                  "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
+                  "w-full resize-none bg-transparent px-3.5 pb-2.5 pt-3 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4",
                   // `text-base` (16px) at rest is load-bearing, not stylistic: iOS
                   // Safari zooms the whole page into any focused field below 16px.
                   // The clarification / huge-draft states step down to the body rung;
@@ -2383,11 +2493,12 @@ export function Composer({
                       : "max-h-[200px] min-h-[64px] text-base",
                 )}
               />
+              </div>
             )}
 
             <div className="flex flex-nowrap items-center justify-between gap-1.5 px-3 pb-2.5 pt-0.5 sm:px-3.5 sm:pb-3">
-              {/* Left: + menu */}
-              <div className="flex min-w-0 flex-1 items-center gap-1">
+              {/* Left: the one + menu */}
+              <div className="flex shrink-0 items-center gap-1">
                 <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2401,7 +2512,7 @@ export function Composer({
                           }
                           disabled={controlsLocked}
                           className={cn(
-                            "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:size-11",
+                            "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-[color,background-color,border-color,box-shadow,transform,opacity,width] duration-fast flex items-center justify-center coarse:size-11",
                             plusOpen &&
                               "bg-accent border-border text-foreground ring-1 ring-border/50",
                           )}
@@ -2426,7 +2537,7 @@ export function Composer({
                     sideOffset={8}
                     collisionPadding={24}
                     avoidCollisions={true}
-                    className="w-60 max-h-[var(--radix-dropdown-menu-content-available-height,360px)] overflow-y-auto rounded-panel border border-border/80 bg-popover/98 p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl"
+                    className="w-64 max-h-[var(--radix-dropdown-menu-content-available-height,360px)] overflow-y-auto p-1.5"
                   >
                     {voiceActive ? (
                       <>
@@ -2450,6 +2561,7 @@ export function Composer({
                       </>
                     ) : (
                       <>
+                        <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
                         <DropdownMenuItem
                           disabled={!canAttach}
                           onSelect={() => fileInputRef.current?.click()}
@@ -2479,6 +2591,7 @@ export function Composer({
                         </DropdownMenuItem>
 
                         <DropdownMenuSeparator className="my-1" />
+                        {toolsLabel}
 
                         <DropdownMenuItem
                           role="menuitemcheckbox"
@@ -2558,7 +2671,10 @@ export function Composer({
                         {researchMenuItem}
 
                         {(!privateMode || showConnectors) && (
-                          <DropdownMenuSeparator className="my-1" />
+                          <>
+                            <DropdownMenuSeparator className="my-1" />
+                            <DropdownMenuLabel className="font-mono text-label">Context</DropdownMenuLabel>
+                          </>
                         )}
 
                         {!privateMode && (
@@ -2574,7 +2690,7 @@ export function Composer({
                                 </span>
                               )}
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1 rounded-card shadow-2xl">
+                            <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1">
                               <ScrollFade
                                 className="min-h-0 flex-1"
                                 viewportClassName="p-1 space-y-0.5"
@@ -2658,7 +2774,7 @@ export function Composer({
                                 </span>
                               )}
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-64 p-1 rounded-card shadow-2xl">
+                            <DropdownMenuSubContent className="w-64 p-1">
                               <div className="border-b border-border/60 p-1.5">
                                 <label className="relative block">
                                   {/* Raw `Search`: this filters the connector list in
@@ -2742,10 +2858,14 @@ export function Composer({
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Model selector on the LEFT */}
+              </div>
+
+              {/* Right: model + effort, dictation mic, primary action (voice ⇄ send ⇄ stop). */}
+              <div className="ml-auto flex min-w-0 shrink items-center gap-1.5">
+                {/* Model + thinking effort, beside Send (SOFT_UI.md §3). */}
                 <div
                   className={cn(
-                    "min-w-0 flex-1 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+                    "min-w-0 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
                     controlsLocked && "pointer-events-none opacity-60",
                   )}
                   aria-disabled={controlsLocked}
@@ -2758,7 +2878,7 @@ export function Composer({
                   />
                 </div>
 
-                {/* Thinking / Reasoning selector on the LEFT */}
+                {/* Thinking effort */}
                 {isAuto && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2824,7 +2944,7 @@ export function Composer({
                           <PopoverContent
                             align="start"
                             sideOffset={10}
-                            className="w-[300px] origin-popper p-4 rounded-2xl border border-border/80 bg-popover/98 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/98"
+                            className="w-[300px] origin-popper p-4"
                           >
                             <ReasoningSlider
                               options={effortOptions}
@@ -2850,10 +2970,6 @@ export function Composer({
                       </Tooltip>
                     );
                   })()}
-              </div>
-
-              {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}
-              <div className="ml-auto flex shrink-0 items-center gap-1.5">
                 {speechSupported && (
                   <Tooltip>
                     <TooltipTrigger asChild>

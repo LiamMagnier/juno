@@ -115,6 +115,12 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     /// frame that replaces this row with the finished message, and a value that
     /// survived a reload would be claiming a generation that is not running.
     public var mediaProgress: NativeMediaProgress?
+    /// The files that travel with this message — the reader's photos on a
+    /// question, the generated picture on an answer. Joined from the
+    /// `attachment` sync entity by ``NativeConversationStore``; empty on every
+    /// message that has none, and on a streamed placeholder until the server's
+    /// row replaces it.
+    public var attachments: [NativeChatAttachment]
 
     public init(
         id: String,
@@ -136,7 +142,8 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         cacheReadTokens: Int? = nil,
         cacheWriteTokens: Int? = nil,
         feedback: NativeChatFeedback? = nil,
-        mediaProgress: NativeMediaProgress? = nil
+        mediaProgress: NativeMediaProgress? = nil,
+        attachments: [NativeChatAttachment] = []
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -158,7 +165,11 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.cacheWriteTokens = cacheWriteTokens
         self.mediaProgress = mediaProgress
         self.feedback = feedback
+        self.attachments = attachments
     }
+
+    /// The pictures on this message, in the order they were attached.
+    public var imageAttachments: [NativeChatAttachment] { attachments.filter(\.isImage) }
 }
 
 public struct NativeConversationSnapshot: Equatable, Sendable {
@@ -243,6 +254,7 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
         let mutations = try await outbox.mutations(accountID: accountID)
         var conversations: [String: NativeConversation] = [:]
         var messages: [String: [NativeChatMessage]] = [:]
+        var attachmentsByMessage: [String: [NativeChatAttachment]] = [:]
 
         for record in snapshot.records.values where !record.isTombstone {
             switch record.key.namespace {
@@ -259,8 +271,26 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             case "message":
                 let value = try decodeMessage(record)
                 messages[value.conversationID, default: []].append(value)
+            case "attachment":
+                // Lenient on purpose: an attachment row this store cannot
+                // read must not take the whole transcript down with it. The
+                // project store is the one that fails closed on these.
+                if let (messageID, attachment) = decodeAttachment(record) {
+                    attachmentsByMessage[messageID, default: []].append(attachment)
+                }
             default:
                 break
+            }
+        }
+
+        if !attachmentsByMessage.isEmpty {
+            for (conversationID, rows) in messages {
+                messages[conversationID] = rows.map { message in
+                    guard let joined = attachmentsByMessage[message.id] else { return message }
+                    var message = message
+                    message.attachments = joined.sorted { $0.id < $1.id }
+                    return message
+                }
             }
         }
 
@@ -456,6 +486,29 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             lastMessageAt: lastMessageAt,
             revision: record.revision,
             projectId: wire.projectId
+        )
+    }
+
+    /// An attachment that belongs to a message, or nil for one that does not —
+    /// a project file, a library upload — or that cannot be read.
+    private func decodeAttachment(_ record: StoredRecord) -> (String, NativeChatAttachment)? {
+        guard let payload = record.payload,
+            let wire = try? JSONDecoder().decode(MessageAttachmentWire.self, from: payload),
+            wire.id == record.key.id,
+            let messageID = wire.messageId, !messageID.isEmpty,
+            !wire.fileName.isEmpty, !wire.mimeType.isEmpty
+        else { return nil }
+        return (
+            messageID,
+            NativeChatAttachment(
+                id: wire.id,
+                fileName: wire.fileName,
+                mimeType: wire.mimeType,
+                kind: wire.kind,
+                size: wire.size ?? 0,
+                width: wire.width,
+                height: wire.height
+            )
         )
     }
 
@@ -2570,6 +2623,17 @@ private struct ConversationWire: Decodable {
     let updatedAt: String
     let lastMessageAt: String
     let projectId: String?
+}
+
+private struct MessageAttachmentWire: Decodable {
+    let id: String
+    let messageId: String?
+    let kind: String
+    let fileName: String
+    let mimeType: String
+    let size: Int?
+    let width: Int?
+    let height: Int?
 }
 
 private struct MessageWire: Decodable {

@@ -40,6 +40,22 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// Something the composer *does* rather than a prompt it inserts.
+    ///
+    /// Most commands are saved prompts; a few are verbs on the session itself.
+    /// `/compact` is the first: it has no sentence to put in the composer, only
+    /// a fold of the model context to perform, so it is an action the composer
+    /// dispatches to the controller instead of text it hands to the reader.
+    public enum Action: String, Equatable, Sendable {
+        /// Fold older turns into a bounded summary.
+        case compact
+        /// Open the review pane.
+        case review
+    }
+
+    /// The verb this command performs, or nil for an ordinary saved prompt.
+    public let action: Action?
+
     /// The word typed after the slash, lowercased. Also the identity: a
     /// workspace file named `review.md` replaces the built-in `/review`.
     public let name: String
@@ -58,13 +74,15 @@ public struct CodeSlashCommand: Identifiable, Equatable, Sendable {
         summary: String,
         prompt: String,
         behavior: AgentBehavior? = nil,
-        source: Source = .builtIn
+        source: Source = .builtIn,
+        action: Action? = nil
     ) {
         self.name = name.lowercased()
         self.summary = summary
         self.prompt = prompt
         self.behavior = behavior
         self.source = source
+        self.action = action
     }
 
     /// The prompt with the reader's own words substituted in.
@@ -259,6 +277,12 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
                 $ARGUMENTS
                 """,
             behavior: .code
+        ),
+        CodeSlashCommand(
+            name: "compact",
+            summary: "Fold older turns into a summary to free up context",
+            prompt: "",
+            action: .compact
         ),
         CodeSlashCommand(
             name: "commit",

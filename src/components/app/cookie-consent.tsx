@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { getConsent, onConsentChange, setConsent } from "@/lib/consent";
 
 /**
- * Cookie-consent banner — a small glass card pinned bottom-left, shown until a
- * choice is stored (`juno:consent:v1`). Juno only sets essential sign-in
+ * Cookie-consent toast — a compact `.surface-float` card at the bottom centre,
+ * shown until a choice is stored (`juno:consent:v1`). Juno only sets essential sign-in
  * cookies today; the recorded choice gates any analytics added later (which
  * must check `getConsent()` from `@/lib/consent`).
  */
@@ -59,15 +59,15 @@ export function CookieConsent() {
       // fifth entrance curve of its own.
       data-state={closing ? "closed" : "open"}
       onAnimationEnd={() => closing && setVisible(false)}
-      className="fixed bottom-4 left-4 z-popper w-[min(21rem,calc(100vw-2rem))] rounded-popover overlay-glass p-4 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
+      // A compact toast at the bottom centre, on the floating rung at the
+      // toast radius (`rounded-card`), so it sits where every other transient
+      // notice does and never covers the sidebar's footer. Centred with
+      // inset-x + mx-auto rather than a translate, so the pop-in/out keyframes
+      // keep `transform` to themselves.
+      className="surface-float fixed inset-x-3 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-popper mx-auto flex w-fit max-w-[min(40rem,100%)] flex-col gap-3 rounded-card px-4 py-3 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none sm:flex-row sm:items-center"
     >
-      {/* The shell's eyebrow treatment (mono / uppercase / 0.10em), not a
-          one-off `text-xs`. Every other floating surface in the app opens with
-          this exact label role. */}
-      <p className="font-mono text-label uppercase text-muted-foreground">Cookies</p>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        Juno only uses essential cookies to keep you signed in — no analytics, no trackers. Your
-        choice here also covers anything we might add later.{" "}
+      <p className="text-sm leading-snug text-muted-foreground">
+        <span className="font-medium text-foreground">Cookies.</span> Only the essential ones, to keep you signed in — no analytics, no trackers.{" "}
         <Link
           href="/legal/confidentialite"
           className="text-foreground underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary"
@@ -75,12 +75,12 @@ export function CookieConsent() {
           Privacy policy
         </Link>
       </p>
-      <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" onClick={() => choose(true)}>
-          Accept
-        </Button>
+      <div className="flex shrink-0 items-center gap-2">
         <Button size="sm" variant="outline" onClick={() => choose(false)}>
           Essential only
+        </Button>
+        <Button size="sm" onClick={() => choose(true)}>
+          Accept
         </Button>
       </div>
     </section>

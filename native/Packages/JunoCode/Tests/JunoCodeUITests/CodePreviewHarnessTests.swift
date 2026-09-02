@@ -515,6 +515,7 @@ final class CodePreviewHarnessTests: XCTestCase {
                 case .userInstruction: payloadKinds.insert("userInstruction")
                 case .userInstructionApplied: payloadKinds.insert("userInstructionApplied")
                 case .runCompleted: payloadKinds.insert("runCompleted")
+                case .compaction: payloadKinds.insert("compaction")
                 }
             }
             sawRunningTool = sawRunningTool || !startedTools.subtracting(completedTools).isEmpty

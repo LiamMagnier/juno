@@ -115,6 +115,21 @@ public enum AgentBehaviorLabel {
     }
 }
 
+// MARK: - Control metrics
+
+/// The one control size the composer's row uses.
+///
+/// The audit counted five — 36, 30, 52, 44 and the borderless menus' own — in
+/// one row. Every control in the row is now drawn at ``control`` and hit at
+/// ``target``: the glyph capsule is 32pt, which is the platform's `.large`
+/// metric and what the toolbar above the thread uses, and the pointer target
+/// around it is 44pt so a press a few points off the capsule still lands.
+enum CodeComposerMetrics {
+    static let control: CGFloat = 32
+    static let target: CGFloat = 44
+    static let glyph: CGFloat = 15
+}
+
 // MARK: - The composer
 
 /// The one place the next turn's contract is set.
@@ -319,7 +334,12 @@ public struct Composer: View {
                 .frame(width: 1, height: 19)
                 .padding(.horizontal, 2)
 
-            codeToolControl
+            // Two chips, two questions. "What should Juno do" and "what may it
+            // touch" were one fused label, and a session could read "Plan ·
+            // read-only" with no way to tell which half the reader had chosen.
+            behaviorChip
+                .disabled(isRunning)
+            permissionChip
                 .disabled(isRunning)
 
             CodeModelSelector(
@@ -335,30 +355,34 @@ public struct Composer: View {
             .disabled(isRunning)
             Spacer(minLength: JunoSpace.snug)
 
-            contextMeter
-
             if isRunning {
                 instructionKindMenu
+            } else {
+                voiceControl
+            }
 
-                Button(action: send) {
-                    JunoIconView(.send, size: 15)
-                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                        .frame(width: 36, height: 36)
-                        .contentShape(.circle)
-                }
-                .accentGlassAction(active: canSend)
-                .disabled(!canSend)
-                .help(controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up")
-                .accessibilityLabel(controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up")
-                .accessibilityIdentifier("juno.code.composer.send")
+            Button(action: send) {
+                JunoIconView(.send, size: CodeComposerMetrics.glyph)
+                    .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                    .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
+                    .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
+                    .contentShape(.circle)
+            }
+            .accentGlassAction(active: canSend)
+            .disabled(!canSend)
+            .keyboardShortcut(.return, modifiers: .command)
+            .help(sendHelp)
+            .accessibilityLabel(sendLabel)
+            .accessibilityIdentifier("juno.code.composer.send")
 
+            if isRunning {
                 Button {
                     Task { await controller.stop() }
                 } label: {
-                    JunoIconView(.stop, size: 15)
+                    JunoIconView(.stop, size: CodeComposerMetrics.glyph)
                         .foregroundStyle(Color.junoOnAccent)
-                        .frame(width: 36, height: 36)
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
+                        .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
                         .contentShape(.circle)
                 }
                 .accentGlassAction(active: true)
@@ -366,29 +390,115 @@ public struct Composer: View {
                 .help("Stop the agent (⌘.)")
                 .accessibilityLabel("Stop the agent")
                 .accessibilityIdentifier("juno.code.composer.stop")
-            } else {
-                voiceControl
-
-                if beginDictation != nil || beginVoice != nil {
-                    Rectangle()
-                        .fill(Color.junoHairline)
-                        .frame(width: 1, height: 20)
-                        .padding(.horizontal, 1)
-                        .accessibilityHidden(true)
-                }
-
-                Button(action: send) {
-                    JunoIconView(.send, size: 15)
-                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                        .frame(width: 36, height: 36)
-                        .contentShape(.circle)
-                }
-                .accentGlassAction(active: canSend)
-                .disabled(!canSend)
-                .help("Send")
-                .accessibilityLabel("Send")
-                .accessibilityIdentifier("juno.code.composer.send")
             }
+        }
+    }
+
+    private var sendHelp: String {
+        guard isRunning else { return "Send (⌘↩)" }
+        return controller.activeInstructionKind == .steer
+            ? "Steer the active task (⌘↩)"
+            : "Queue a follow-up for after this run (⌘↩)"
+    }
+
+    private var sendLabel: String {
+        guard isRunning else { return "Send" }
+        return controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up"
+    }
+
+    /// Ask · Survey · Plan · Code — what Juno does with the next message.
+    private var behaviorChip: some View {
+        let behavior = controller.session.configuration.behavior
+        return Menu {
+            ForEach(AgentBehavior.allCases, id: \.self) { mode in
+                Button {
+                    select(behavior: mode)
+                } label: {
+                    HStack {
+                        JunoIconLabel(verbatim: AgentBehaviorLabel.text(for: mode), icon: AgentBehaviorLabel.junoIcon(for: mode), size: 14)
+                        Spacer(minLength: JunoSpace.regular)
+                        if behavior == mode {
+                            JunoIconView(.check, size: 14).accessibilityHidden(true)
+                        }
+                    }
+                }
+            }
+            Text(AgentBehaviorLabel.explanation(for: behavior))
+        } label: {
+            ComposerChipLabel(
+                AgentBehaviorLabel.text(for: behavior),
+                icon: AgentBehaviorLabel.junoIcon(for: behavior)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(minHeight: CodeComposerMetrics.target)
+        .help("What Juno does with your next message")
+        .accessibilityLabel("Behavior")
+        .accessibilityValue(AgentBehaviorLabel.text(for: behavior))
+        .accessibilityIdentifier("juno.code.composer.mode")
+    }
+
+    /// The permission level: Read only · Ask before changes · Workspace write ·
+    /// Full access. Ask and Plan are read-only by construction, so the chip
+    /// says so and its menu is disabled rather than hidden — the reader can see
+    /// the level they get back when they return to Code.
+    private var permissionChip: some View {
+        let behavior = controller.session.configuration.behavior
+        let stored = controller.session.configuration.permissionMode
+        let effective: PermissionMode = behavior == .code ? stored : .readOnly
+        let editable = behavior == .code
+        return Menu {
+            ForEach(PermissionMode.allCases, id: \.self) { mode in
+                Button {
+                    select(permission: mode)
+                } label: {
+                    HStack {
+                        JunoIconLabel(verbatim: PermissionModeLabel.text(for: mode), icon: PermissionModeLabel.junoIcon(for: mode), size: 14)
+                        Spacer(minLength: JunoSpace.regular)
+                        if stored == mode {
+                            JunoIconView(.check, size: 14).accessibilityHidden(true)
+                        }
+                    }
+                }
+                .disabled(!editable)
+            }
+            Text(PermissionModeLabel.explanation(for: effective))
+        } label: {
+            ComposerChipLabel(
+                PermissionModeLabel.text(for: effective),
+                icon: PermissionModeLabel.junoIcon(for: effective),
+                // The one place this row spends hue: full access is the level
+                // where Juno stops asking, and that is worth a colour.
+                tint: effective == .fullAccess ? Color.junoCaution : nil
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(minHeight: CodeComposerMetrics.target)
+        .disabled(!editable)
+        .help(editable ? "What Juno may touch on your next message" : "Ask, Survey and Plan are read-only")
+        .accessibilityLabel("Permissions")
+        .accessibilityValue(PermissionModeLabel.text(for: effective))
+        .accessibilityIdentifier("juno.code.composer.permission")
+    }
+
+    /// A menu selection can arrive while AppKit is still closing the menu
+    /// window; a synchronous write relays out the anchor during that dismissal
+    /// and can crash in `NSPopover`/ViewBridge. Yield one main-actor turn first.
+    private func select(behavior: AgentBehavior) {
+        Task { @MainActor in
+            await Task.yield()
+            await controller.setBehavior(behavior)
+        }
+    }
+
+    private func select(permission: PermissionMode) {
+        Task { @MainActor in
+            await Task.yield()
+            await controller.setPermissionMode(permission)
         }
     }
 
@@ -408,38 +518,19 @@ public struct Composer: View {
                 Text("Queue follow-up")
             }
         } label: {
-            Text(controller.activeInstructionKind == .steer ? "Steer" : "Queue")
-                .junoCaption()
-                .foregroundStyle(Color.junoForeground)
-                .frame(minHeight: 32)
+            ComposerChipLabel(
+                controller.activeInstructionKind == .steer ? "Steer" : "Queue",
+                icon: controller.activeInstructionKind == .steer ? .sliders : .tasks
+            )
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .frame(minHeight: CodeComposerMetrics.target)
         .help("Choose how this message joins the active task")
         .accessibilityLabel("Active message delivery")
         .accessibilityValue(controller.activeInstructionKind == .steer ? "Steer" : "Queue")
         .accessibilityIdentifier("juno.code.composer.delivery")
-    }
-
-    /// The Code tool is the only Code-specific control in the Chat composer
-    /// language. It keeps the mode and permission contract visible at rest; the
-    /// menu contains the full set of safe choices without turning the composer
-    /// into a settings bar.
-    private var codeToolControl: some View {
-        TurnContractMenu(
-            behavior: Binding(
-                get: { controller.session.configuration.behavior },
-                set: { newBehavior in
-                    Task { await controller.setBehavior(newBehavior) }
-                }
-            ),
-            permissionMode: Binding(
-                get: { controller.session.configuration.permissionMode },
-                set: { newMode in
-                    Task { await controller.setPermissionMode(newMode) }
-                }
-            )
-        )
     }
 
     /// Dictation and realtime voice share one quiet microphone control. Send is
@@ -473,9 +564,10 @@ public struct Composer: View {
                     .disabled(!controller.isAgentTransportConfigured)
                 }
             } label: {
-                JunoIconView(.mic, size: 15)
+                JunoIconView(.mic, size: CodeComposerMetrics.glyph)
                     .foregroundStyle(Color.junoForeground)
-                    .frame(width: 36, height: 36)
+                    .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
+                    .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
                     .contentShape(.circle)
             } primaryAction: {
                 if let beginDictation {
@@ -508,58 +600,6 @@ public struct Composer: View {
                     }
                 }
             }
-        }
-    }
-
-    /// How full the model's context window is.
-    ///
-    /// Both numbers are the provider's own: the window comes from the manifest
-    /// entry, and the fill from the `usage` the provider reports on every turn.
-    /// Nothing is estimated, which is why the meter simply does not appear until
-    /// there is a real measurement — a made-up token count is worse than none,
-    /// because it invites the reader to plan around it.
-    @ViewBuilder
-    private var contextMeter: some View {
-        if let used = controller.contextTokens,
-            let window = selectedModel?.catalog?.contextWindowTokens,
-            window > 0
-        {
-            let fraction = min(Double(used) / Double(window), 1)
-            let isTight = fraction >= 0.8
-            HStack(spacing: JunoSpace.tight) {
-                // A ring rather than a bar: it holds its meaning at this size and
-                // does not need a width the control row cannot spare.
-                ZStack {
-                    Circle()
-                        .stroke(Color.junoHairline, lineWidth: 2)
-                    Circle()
-                        .trim(from: 0, to: fraction)
-                        .stroke(
-                            isTight ? Color.junoCaution : Color.junoMutedForeground,
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                }
-                .frame(width: 11, height: 11)
-                .animation(JunoMotion.fast, value: fraction)
-
-                // The percentage is only worth the width once it matters.
-                if isTight {
-                    Text("\(Int(fraction * 100))%")
-                        .junoCaption()
-                        .monospacedDigit()
-                        .foregroundStyle(Color.junoCaution)
-                }
-            }
-            .help(
-                """
-                \(JunoModelFormatting.contextWindow(used)) of \
-                \(JunoModelFormatting.contextWindow(window)) context used
-                """
-            )
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Context \(Int(fraction * 100)) percent full")
-            .accessibilityIdentifier("juno.code.composer.context")
         }
     }
 
@@ -700,9 +740,21 @@ public struct Composer: View {
     /// fired straight into the agent would be a stored instruction the reader
     /// never read.
     private func apply(_ command: CodeSlashCommand) {
+        highlightedCommand = 0
+        // A verb, not a prompt: nothing lands in the composer, the session acts.
+        if let action = command.action {
+            controller.composerText = ""
+            switch action {
+            case .compact:
+                Task { await controller.compactConversation() }
+            case .review:
+                controller.review.present()
+            }
+            focus?.wrappedValue = true
+            return
+        }
         let argument = slashToken?.argument ?? ""
         controller.composerText = command.expanded(argument: argument)
-        highlightedCommand = 0
         // Only when the command names one, and only as a default the reader can
         // still override: the contract beside the field is theirs to set.
         if let behavior = command.behavior,
@@ -766,8 +818,9 @@ private struct CodeComposerAddMark: View {
     var body: some View {
         JunoIconView(.plus, size: 13)
             .junoInk()
-            .frame(width: 30, height: 30)
+            .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
             .junoGlass(in: Circle(), interactive: true)
+            .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
             .overlay(alignment: .topTrailing) {
                 if isArmed {
                     Circle()
@@ -1084,125 +1137,6 @@ struct ComposerSurface<Controls: View>: View {
     }
 }
 
-// MARK: - The next turn's contract
-
-/// Mode and permission level in one menu, because they answer one question:
-/// what may Juno do next?
-///
-/// They were two controls in two places, and the pair was unanswerable — a
-/// session could read "Plan" while its permission mode said workspace write.
-/// Ask and Plan are read-only by construction, so the permission picker is
-/// disabled rather than hidden: the reader can see the level they will get back
-/// when they return to Code.
-struct TurnContractMenu: View {
-    @Binding var behavior: AgentBehavior
-    @Binding var storedPermissionMode: PermissionMode
-
-    init(behavior: Binding<AgentBehavior>, permissionMode: Binding<PermissionMode>) {
-        _behavior = behavior
-        _storedPermissionMode = permissionMode
-    }
-
-    private var permissionMode: PermissionMode {
-        behavior == .code ? storedPermissionMode : .readOnly
-    }
-
-    /// The at-rest signal that this session can act without asking. Only full
-    /// access is tinted: colouring every state trains the reader past it.
-    private var tint: Color? {
-        permissionMode == .fullAccess ? .junoCaution : nil
-    }
-
-    var body: some View {
-        Menu {
-            ForEach(AgentBehavior.allCases, id: \.self) { mode in
-                Button {
-                    select(mode)
-                } label: {
-                    menuItem(
-                        AgentBehaviorLabel.text(for: mode),
-                        icon: AgentBehaviorLabel.junoIcon(for: mode),
-                        selected: behavior == mode
-                    )
-                }
-            }
-
-            Text(AgentBehaviorLabel.explanation(for: behavior))
-
-            Divider()
-
-            ForEach(PermissionMode.allCases, id: \.self) { mode in
-                Button {
-                    select(mode)
-                } label: {
-                    menuItem(
-                        PermissionModeLabel.text(for: mode),
-                        icon: PermissionModeLabel.junoIcon(for: mode),
-                        selected: storedPermissionMode == mode
-                    )
-                }
-                .disabled(behavior != .code)
-            }
-
-            Text(PermissionModeLabel.explanation(for: permissionMode))
-        } label: {
-            HStack(spacing: JunoSpace.hairline) {
-                JunoIconView(AgentBehaviorLabel.junoIcon(for: behavior), size: 14)
-                Text(
-                    "\(AgentBehaviorLabel.text(for: behavior)) · \(PermissionModeLabel.shortText(for: permissionMode))"
-                )
-                .lineLimit(1)
-            }
-            .font(.caption)
-            .foregroundStyle(tint ?? Color.junoMutedForeground)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("What Juno may do on your next message")
-        .accessibilityLabel("Mode and permissions")
-        .accessibilityValue(
-            "\(AgentBehaviorLabel.text(for: behavior)), \(PermissionModeLabel.text(for: permissionMode))"
-        )
-        .accessibilityIdentifier("juno.code.composer.mode")
-    }
-
-    /// SwiftUI updates a menu's selection binding before AppKit has finished
-    /// dismissing the menu window. Permission changes also update the label and
-    /// the surrounding composer, which can make SwiftUI try to re-order that
-    /// window during layout on current macOS releases. Let AppKit finish the
-    /// dismissal first; this keeps the selected value and all of its side
-    /// effects intact without racing the menu presentation.
-    private func select(_ mode: AgentBehavior) {
-        Task { @MainActor in
-            await Task.yield()
-            behavior = mode
-        }
-    }
-
-    private func select(_ mode: PermissionMode) {
-        Task { @MainActor in
-            await Task.yield()
-            storedPermissionMode = mode
-        }
-    }
-
-    @ViewBuilder
-    private func menuItem(
-        _ title: String,
-        icon: JunoIcon,
-        selected: Bool
-    ) -> some View {
-        HStack {
-            JunoIconLabel(verbatim: title, icon: icon, size: 14)
-            Spacer(minLength: JunoSpace.regular)
-            if selected {
-                JunoIconView(.check, size: 14)
-                    .accessibilityHidden(true)
-            }
-        }
-    }
-}
-
 /// The model the next turn runs on.
 ///
 /// Changing it used to write the session record and nothing else — the running
@@ -1275,5 +1209,34 @@ struct CodeThinkingControl: View {
                 selection = refitted
             }
         }
+    }
+}
+
+/// A chip in the composer's control row: a mark, a word, a chevron, at the
+/// row's one control height.
+struct ComposerChipLabel: View {
+    private let title: String
+    private let icon: JunoIcon
+    private let tint: Color?
+
+    init(_ title: String, icon: JunoIcon, tint: Color? = nil) {
+        self.title = title
+        self.icon = icon
+        self.tint = tint
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            JunoIconView(icon, size: 13)
+            Text(title)
+                .junoCaption()
+                .lineLimit(1)
+            JunoIconView(.chevronDown, size: 10)
+        }
+        .foregroundStyle(tint ?? Color.junoMutedForeground)
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: CodeComposerMetrics.control)
+        .background(Color.junoMuted.opacity(0.6), in: Capsule(style: .continuous))
+        .contentShape(.capsule)
     }
 }

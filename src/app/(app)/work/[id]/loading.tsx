@@ -1,9 +1,9 @@
+import { AppPage } from "@/components/app/app-page";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkRowSkeletons } from "@/components/work/shell/work-states";
 
 /**
- * The task thread opens with the same mb-1 nav row the loaded header uses; at
- * any other gap the eyebrow visibly jumps the moment the task resolves.
+ * The task thread: the same header as the loaded page, then four short blocks for the transcript.
  *
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
@@ -15,16 +15,27 @@ export default function WorkThreadLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading task">
-      <div className="app-page-content max-w-2xl">
-        <div className="mb-1 flex items-center gap-2">
-          <Skeleton className="size-8 shrink-0" />
-          <Skeleton className="h-3 w-12 rounded-sm" />
+    <AppPage measure="full" role="status" aria-label="Loading task">
+      <div className="mx-auto w-full max-w-[80rem]">
+      {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
+            heading, its lede and the rule that closes the block. Anything looser
+            here and the whole page steps sideways at the moment the real header
+            lands on top of it. */}
+        <div className="mb-6 border-b border-border pb-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Skeleton className="size-8 shrink-0" />
+            <Skeleton className="h-3 w-10 rounded-sm" />
+          </div>
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0 flex-1">
+              <Skeleton className="h-8 w-2/3 max-w-full" />
+              <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-sm" />
+            </div>
+            
+          </div>
         </div>
-        <Skeleton className="mt-3 h-8 w-2/3 max-w-full" />
-        <Skeleton className="mt-2.5 h-4 w-full max-w-md rounded-sm" />
-        <WorkRowSkeletons count={5} height={64} className="mt-7 space-y-3" />
+        <WorkRowSkeletons count={4} height={64} className="space-y-3" />
       </div>
-    </div>
+    </AppPage>
   );
 }

@@ -98,35 +98,41 @@
        back into. `JunoDesignSystemTests.testBrandNeutralsAreWarmInBothAppearances`
        asserts r > b && g >= b over the whole ramp and is the gate that catches
        the drift the next time, on both clients at once. */
-    --background: 54 18% 97%;
+    /* Soft UI ground (docs/design/SOFT_UI.md §2.1). One warm material, three
+       depths: the page is 96%, a raised card sits two points above it and a
+       recessed well sits on the page's own value with an inset shadow. The
+       ground is deliberately NOT 97-99%: a dual-direction shadow needs room on
+       both sides — a white highlight has to be lighter than the surface it
+       lifts, and 96% leaves it four points to work with. */
+    --background: 50 22% 96%;
     --foreground: 48 3% 12%;
 
-    /* 99%, not a pure white. A literal #fff card floating on warm paper is the
-       one pairing that reads as somebody else's brand; a 1% step is invisible
-       as elevation and still puts the float on the paper's hue family. */
-    --card: 54 44% 99%;
+    /* 98%, not a pure white. A literal #fff card floating on warm paper is the
+       one pairing that reads as somebody else's brand; a 2% step is the raised
+       rung, and the highlight in --shadow-raised is what carries the lift. */
+    --card: 50 30% 98%;
     --card-foreground: 48 3% 12%;
 
-    --popover: 54 44% 99%;
+    --popover: 50 30% 98.5%;
     --popover-foreground: 48 3% 12%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 54% 44%;
 
-    --secondary: 50 23% 95%;
+    --secondary: 48 22% 93%;
     --secondary-foreground: 48 3% 18%;
 
-    --muted: 50 23% 95%;
+    --muted: 48 22% 93%;
     /* 40%, not 46%. This is the token `junoSecondaryInk()` and `junoMetaInk()`
        both resolve to, so it is the floor for every caption, timestamp and
        provenance line in the product. At 46% on `--muted` it measured 4.43:1
        against a 4.5 AA floor — a real accessibility failure, not a rounding
-       argument. 40% clears it on all four reading grounds (5.04:1 on the
-       tightest, `--muted`). */
+       argument. 40% clears it on all four reading grounds: 5.14 on the page,
+       5.35 on a card, 4.84 on `--muted`, 4.57 on the `--accent` hover fill. */
     --muted-foreground: 48 4% 40%;
 
-    --accent: 48 28% 92%;
+    --accent: 48 24% 90%;
     --accent-foreground: 48 3% 18%;
 
     --destructive: 11 51% 48%;
@@ -146,15 +152,21 @@
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
 
-    --border: 48 23% 88%;
+    --border: 46 18% 86%;
     --input: 48 12% 53%;
     --ring: 15 54% 46%;
 
-    --sidebar: 50 23% 95%;
+    /* The sidebar is an inset well cut into the page (two points below it), so
+       its frame carries `.surface-inset`'s recess and the active row is the one
+       raised object inside it. */
+    --sidebar: 48 20% 94%;
     --sidebar-foreground: 48 4% 30%;
-    --sidebar-border: 48 23% 88%;
-    --sidebar-accent: 48 28% 91%;
+    --sidebar-border: 46 18% 86%;
+    --sidebar-accent: 48 24% 90%;
 
+    /* `rounded-lg` and the `card` rung. The whole ladder lives in
+       tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
+       popover 16 · panel 20); this is the one value CSS-side recipes read. */
     --radius: 16px;
 
     /* ---- Motion tokens ------------------------------------------------------
@@ -246,6 +258,18 @@
        use it for opacity or colour — a value that overshoots past its target is
        meaningless for those and just clips. */
     --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
+    /* Soft UI motion (SOFT_UI.md §2.4). `spring` is the entrance curve for
+       anything that pops into place — a menu, a dialog, a check replacing a
+       copy glyph. A hair of overshoot (y2 = 1.16, about a 2% overrun) so the
+       arrival reads as settling rather than stopping; milder than --ease-out-back
+       because entrances run on scale AND opacity, and opacity past 1 just clips.
+       `drawer` is the sheet curve: front-loaded and overshoot-free, because a
+       panel sliding in from an edge is being pulled by the user and must not
+       bounce off the frame. Same numbers as --ease-out-strong, named for the
+       job so the sheet keyframes can be retuned without touching every "moving
+       under the finger" transition in the product. */
+    --ease-spring: cubic-bezier(0.34, 1.16, 0.64, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --dur-press: 70ms;
     --dur-fast: 120ms;
     --dur-exit: 160ms;
@@ -279,23 +303,41 @@
      */
     --shadow-ink: 48 10% 18%;
 
-    /* Elevation (light) — warm, soft, low-throw + 1px inner top-highlight on floats.
-       The shadow ink is hue 48 like everything else, so a shadow reads as a
-       darker version of the paper it falls on rather than a separate warm tint.
-       Geometry, blur, spread and alpha are all exactly as they were. */
-    --shadow-soft: 0 1px 2px hsl(48 10% 20% / 0.06);
-    --shadow-float: 0 2px 6px hsl(48 10% 16% / 0.07), 0 18px 42px -28px hsl(48 10% 16% / 0.28);
-    --shadow-glass: 0 2px 6px hsl(48 10% 16% / 0.06), 0 14px 34px -24px hsl(48 10% 16% / 0.22);
-    /* The missing rung. The ladder is soft < lift < glass < float, and it has to
-       be monotonic: an element that has not left the flow cannot out-elevate one
-       that has. Hover states on in-flow cards reached for --shadow-float for want
-       of anything between soft and glass, which put a hovered tile above every
-       dropdown in the product. */
-    --shadow-lift: 0 6px 18px -16px hsl(48 10% 16% / 0.2);
+    /* ---- Soft UI depth kit (SOFT_UI.md §2.2) -------------------------------
+       Light comes from the top-left. Every raised surface carries a light
+       highlight up-left and a dark shadow down-right; every inset surface
+       carries the inverse. The two inks are the whole kit — every recipe below
+       is those two colours at some geometry — so a retune of the material is a
+       two-line change. Throws are LOW (2-6px offsets, 6-20px blur): the
+       2020 "putty" look came from 10px offsets and 30px blurs, and nothing here
+       goes near them.
 
-    /* Depth kit (Awwwards-lean): a top sheen for raised surfaces, a crisp pop shadow
-       for small interactive elements, a colored halo for the primary, and an inset
-       "well" for recessed inputs. Tuned separately for light/dark below. */
+       Neumorphic shadows alone fail WCAG 1.4.11 (3:1 for a UI boundary), which
+       is why every `.surface-*` utility also draws a hairline in --border and
+       why the primary action keeps real colour. Depth is a texture, never the
+       only edge. */
+    --neu-light: 0 0% 100% / 0.85;
+    --neu-dark: 46 18% 20% / 0.10;
+    --shadow-raised: -2px -2px 6px hsl(var(--neu-light)), 3px 4px 10px hsl(var(--neu-dark));
+    --shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark));
+    --shadow-inset: inset 2px 2px 5px hsl(var(--neu-dark)), inset -2px -2px 5px hsl(var(--neu-light));
+    --shadow-pressed: inset 1px 1px 3px hsl(var(--neu-dark)), inset -1px -1px 3px hsl(var(--neu-light));
+    /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
+       crisp contact shadow, a long soft throw pulled in by negative spread so
+       it never smears across the page, and the rim light along the top edge. */
+    --shadow-float: 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(46 18% 20% / 0.28), inset 0 1px 0 hsl(var(--sheen));
+
+    /* The legacy elevation ladder. `soft` and `lift` are the in-flow rungs a
+       call site reaches for when it wants "a little" rather than the full raised
+       recipe; `glass` is the material behind `.overlay-glass`. All three are
+       cut from the same two inks as the kit above so they stay in family. */
+    --shadow-soft: 0 1px 2px hsl(var(--neu-dark));
+    --shadow-lift: -1px -1px 4px hsl(var(--neu-light)), 2px 3px 8px hsl(var(--neu-dark));
+    --shadow-glass: 0 2px 6px hsl(46 18% 20% / 0.06), 0 14px 34px -24px hsl(46 18% 20% / 0.22);
+
+    /* A top sheen for raised surfaces, a crisp pop shadow for small interactive
+       elements, a colored halo for the primary, and an inset "well" alias for
+       recessed inputs. Tuned separately for light/dark below. */
     --sheen: 0 0% 100% / 0.55;
     /* The second rung of the same ramp: the rim light on a surface that is
        FOCUSED. It exists because the dark composer was writing this value out as
@@ -305,8 +347,11 @@
     --sheen-strong: 0 0% 100% / 0.7;
     --hairline: 48 12% 18% / 0.06;
     --shadow-pop: 0 1px 2px hsl(48 12% 18% / 0.08);
-    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.18);
-    --well-inset: inset 0 1px 2px hsl(48 12% 18% / 0.07);
+    --glow-primary: 0 2px 8px -2px hsl(var(--primary) / 0.35);
+    /* Alias onto the kit's inset recipe: `shadow-well` and `.field-well` used
+       to be a one-directional 1px lip, and a well with light from one side only
+       reads as a line, not a recess. */
+    --well-inset: var(--shadow-inset);
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
@@ -354,59 +399,67 @@
 
   .dark {
     /*
-     * True black. The ground is #000000 — not a charcoal that photographs as
-     * black, the actual value, so an OLED panel keeps those pixels switched off
-     * and the app's edge dissolves into the bezel.
+     * Warm charcoal, NOT true black (SOFT_UI.md §2.1).
      *
-     * That one value changes how the whole ladder has to work, in two ways.
+     * The previous ground was #000, chosen for OLED. It cost the product its
+     * depth model: a dark shadow on a black page darkens nothing, and a light
+     * highlight over black is a halo. Every raised surface was reduced to a
+     * lightness step and a 1px rim, which is a flat UI wearing a lit edge.
+     * Soft UI needs a ground with room on BOTH sides — dark enough for the
+     * `--neu-dark` shadow to sink below it and light enough for the
+     * `--neu-light` highlight to read as light rather than as a glow. 9% is
+     * the value at which both work; the ladder above it steps in threes
+     * (card 12 · popover 14 · muted 15 · accent 18 · border 20), which is the
+     * same order the light theme stacks in, so nothing that was above another
+     * thing is now below it.
      *
-     * ELEVATION CANNOT COME FROM SHADOW. A black drop shadow on a black ground
-     * is nothing. Every rung below therefore lifts by LIGHTNESS, and the ladder
-     * is re-based from 0 rather than from the old 9%: what used to be a 3.5-point
-     * step from the ground (9 -> 12.5) is now a 6.5-point one, because a step
-     * measured against black has to be bigger to read as the same lift. Order is
-     * preserved exactly — ground < card < muted/secondary < popover/accent — so
-     * every existing call site still stacks the way its author intended.
-     *
-     * HUE HAS TO THIN OUT. Warm charcoal worked because 7% saturation at 9%
-     * lightness is a tint you cannot name. The same 7% over pure black reads as
-     * brown sludge in the shadows, because there is no longer any lightness to
-     * dilute it. Saturation drops to 4-5% and the hue stays at 48: enough that
-     * the greys sit in the same family as the light theme's paper and the coral
-     * accent has something to belong to, not enough to name a colour.
+     * Hue 30 with 6-7% saturation: warm enough that the greys belong to the
+     * same paper family the light theme uses and the coral has something to
+     * sit on, low enough that nobody can name the colour.
      */
-    --background: 48 5% 4%;
-    --foreground: 45 12% 98%;
+    --background: 30 7% 9%;
+    --foreground: 45 12% 96%;
 
-    --card: 48 5% 7.5%;
-    --card-foreground: 45 12% 98%;
+    --card: 30 7% 12%;
+    --card-foreground: 45 12% 96%;
 
-    --popover: 48 5% 9%;
-    --popover-foreground: 45 12% 98%;
+    --popover: 30 7% 14%;
+    --popover-foreground: 45 12% 96%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 62% 66%;
 
-    --secondary: 48 5% 12%;
+    --secondary: 30 6% 15%;
     --secondary-foreground: 45 10% 92%;
 
-    --muted: 48 5% 12%;
-    --muted-foreground: 45 6% 65%;
+    --muted: 30 6% 15%;
+    /* 66%: 7.7:1 on the page, 5.8:1 on the `--accent` hover fill. */
+    --muted-foreground: 40 6% 66%;
 
-    --accent: 48 5% 15%;
-    --accent-foreground: 45 12% 98%;
+    --accent: 30 6% 18%;
+    --accent-foreground: 45 12% 96%;
 
     --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 11 51% 56%;
 
     --success: 140 33% 53%;
-    --success-foreground: 28 9% 9%;
+    /* Text ON the success fill. The 53% green is mid-tone, so the ink on it is
+       the ground itself — 6.7:1 — rather than white (which measures ~2.6:1).
+       This used to be the retired charcoal's exact ground value, left behind
+       when the page moved; it tracks --background again. */
+    --success-foreground: 30 7% 9%;
     --success-ink: 140 33% 53%;
 
     --warning: 40 60% 58%;
-    --warning-foreground: 40 60% 58%;
+    /* The AA text ramp for warning copy, which `text-warning` resolves to
+       (tailwind.config.ts textColor). It was set equal to the FILL — the same
+       58% amber a chip is painted with — so a warning sentence on a warning
+       chip vanished, and on the page it measured under 4.5:1 against the old
+       card. 72% is 11:1 on the page and 10:1 on a card, and it is a step
+       lighter than the fill so the two never coincide. */
+    --warning-foreground: 40 70% 72%;
     --source: 187 58% 49%;
     --code-string: 152 50% 56%;
     --code-number: 38 90% 60%;
@@ -414,61 +467,46 @@
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 48 5% 14%;
-    --input: 48 5% 20%;
+    --border: 30 6% 20%;
+    --input: 30 6% 24%;
     --ring: 45 6% 80%;
 
-    --sidebar: 48 6% 5%;
-    --sidebar-foreground: 45 6% 68%;
-    --sidebar-border: 48 5% 12%;
-    --sidebar-accent: 48 5% 10%;
+    /* One point below the page: the sidebar is a well cut into the ground,
+       which on dark reads as the deepest thing on screen. */
+    --sidebar: 30 7% 8%;
+    --sidebar-foreground: 40 6% 68%;
+    --sidebar-border: 30 6% 16%;
+    --sidebar-accent: 30 6% 14%;
 
     /*
-     * Elevation (dark) — and the rule that changes on a black ground.
-     *
-     * A drop shadow is black ink spread on whatever is behind the element. On a
-     * #000 page there is nothing for it to darken, so ON THE GROUND these
-     * shadows are invisible and elevation is carried entirely by the lightness
-     * ladder above plus the inset sheen below. They are kept, at strength,
-     * because the moment a layer floats over a CARD or another panel — a menu
-     * over a tile, a dialog over the composer — there is something to darken
-     * again and the shadow does its job.
-     *
-     * Hence the inset top highlight on the two floating rungs. It is the one
-     * depth cue that works on black in both cases: a 1px lit edge along the top
-     * of a panel reads as a surface catching light from above, and it does not
-     * depend on what is underneath.
+     * Depth kit (dark). The highlight is a near-white at 6%: enough that the
+     * up-left edge of a raised card reads as catching light, not enough to read
+     * as an outline. The shadow is pure black at 55% — on a 9% ground a shadow
+     * has to be heavy to be seen at all, and black ink is the only ink that
+     * cannot turn into a light patch. Same geometry as light; only the inks
+     * change, which is what makes the two themes one material.
      */
-    /* Pure black, not the light theme's warm ink: on a #000 ground a shadow with
-       any lightness left in it is a light patch, which is the halo again with
-       the saturation turned down. */
+    --neu-light: 45 20% 96% / 0.06;
+    --neu-dark: 0 0% 0% / 0.55;
     --shadow-ink: 0 0% 0%;
-    --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.28);
-    --shadow-float: 0 2px 8px hsl(0 0% 0% / 0.3), 0 20px 46px -28px hsl(0 0% 0% / 0.72), inset 0 1px 0 hsl(var(--sheen));
-    --shadow-glass: 0 2px 8px hsl(0 0% 0% / 0.28), 0 16px 38px -24px hsl(0 0% 0% / 0.64), inset 0 1px 0 hsl(var(--sheen));
-    /* The rung between soft and glass, so the ladder stays monotonic on dark too. */
-    --shadow-lift: 0 8px 22px -18px hsl(0 0% 0% / 0.62);
+    --shadow-float: 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(0 0% 0% / 0.7), inset 0 1px 0 hsl(var(--sheen));
+    --shadow-glass: 0 2px 8px hsl(0 0% 0% / 0.3), 0 16px 38px -24px hsl(0 0% 0% / 0.64), inset 0 1px 0 hsl(var(--sheen));
 
-    /* Depth kit (dark). The sheen loses most of its saturation with everything
-       else — a warm top highlight over a black panel is a visible yellow line,
-       where over charcoal it was just light. */
-    --sheen: 45 20% 96% / 0.055;
-    /* Focused rim light. The step over --sheen is small on purpose: on a black
-       ground the eye reads a lit edge against nothing, so a large jump reads as
-       the panel switching a light on rather than as it catching one. */
-    --sheen-strong: 45 20% 96% / 0.085;
+    /* The sheen is a warm near-white kept low: over charcoal it is light along
+       an edge, and it is the one cue that survives no matter what is behind
+       the panel. */
+    --sheen: 45 20% 96% / 0.07;
+    /* Focused rim light. A small step over --sheen on purpose: a large jump
+       reads as the panel switching a light on rather than as it catching one. */
+    --sheen-strong: 45 20% 96% / 0.11;
     --hairline: 45 14% 94% / 0.08;
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
-    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.2);
-    --well-inset: inset 0 1px 2px hsl(0 0% 0% / 0.38);
+    --glow-primary: 0 2px 10px -2px hsl(var(--primary) / 0.45);
 
-    /* The modal dim, which dark never declared and so inherited from the light
-       theme: a warm grey at 42%. Over a charcoal page that was invisible enough
-       to pass; over a black one it is a grey film that LIGHTENS the background
-       behind the dialog, so opening a modal made the page brighter. Dark gets
-       its own — pure black, and heavier, because dimming something already at
-       zero lightness needs opacity to do all the work. */
-    --scrim: 0 0% 0% / 0.66;
+    /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
+       needs opacity to do most of the work, and the 2px backdrop blur on the
+       overlay does the rest. */
+    --scrim: 0 0% 0% / 0.6;
 
     /* Design-canvas selection chrome — lifted like every other state colour,
        because a 1px stroke on #000 dies at light-theme lightness. */
@@ -485,9 +523,9 @@
    * surfaces do not shift tint when the user picks a different colour.
    *
    * Contrast targets:
-   *   Light mode: ≥ 4.5:1 against --background (54 18% 97%) for body text,
+   *   Light mode: ≥ 4.5:1 against --background (50 22% 96%) for body text,
    *               ≥ 3.0:1 for large text/icons.
-   *   Dark mode:  ≥ 4.5:1 against --background (48 7% 9%) for body text,
+   *   Dark mode:  ≥ 4.5:1 against --background (30 7% 9%) for body text,
    *               ≥ 3.0:1 for large text/icons.
    */
   :root[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 48 6% 35%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 54% 44%; }
@@ -519,12 +557,13 @@
     background-color: hsl(var(--primary) / 0.25);
     color: hsl(var(--foreground));
   }
-  /* A selection wash is read as a DIFFERENCE from the surface it lies on, and
-     that surface is now zero. Coral at 46% lightness times 0.25 alpha over #000
-     resolves to about a 10%-lightness tint — a hair off --popover, i.e. selected
-     text that does not look selected. 0.25 is still correct against 97% paper. */
+  /* A selection wash is read as a DIFFERENCE from the surface it lies on.
+     Coral at 46% lightness times 0.25 alpha over a 9% ground is a ~14% tint —
+     the same value as --popover, i.e. selected text that does not look
+     selected. 0.4 lands it clear of every surface in the dark ladder; 0.25 is
+     still correct against 96% paper. */
   .dark ::selection {
-    background-color: hsl(var(--primary) / 0.45);
+    background-color: hsl(var(--primary) / 0.4);
   }
 
   body {
@@ -583,10 +622,9 @@
     opacity: 0.022;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  /* Not dimmed — removed. A fixed full-viewport layer at any non-zero opacity
-     means no pixel in the app is ever #000, which is the entire thing the true
-     black in `.dark` buys: an OLED panel only switches a pixel off at zero.
-     Grain is warm paper's texture and it has nothing to sit on here. */
+  /* Off on dark. Grain is warm paper's texture; over charcoal the same noise
+     reads as sensor grain on a photograph, and the dual shadows that carry
+     depth there are subtle enough that a texture on top competes with them. */
   .dark body::after {
     display: none;
   }
@@ -627,10 +665,15 @@
       --motion-scale-from: 1;
       --ease-out-strong: var(--ease-out-soft);
       --ease-out-expo: var(--ease-out-soft);
+      /* The overshoot is travel; with --motion-scale-from at 1 there is nothing
+         left for a spring to overshoot, and a spring on opacity alone clips. */
+      --ease-spring: var(--ease-out-soft);
+      --ease-drawer: var(--ease-out-soft);
       --dur-slow: var(--dur-base);
     }
     .composer-aura,
     .skeleton::after,
+    .shimmer-text,
     [class*="animate-icon-breathe"],
     [class*="animate-gen-"],
     [class*="animate-ultra-"] { animation: none; }
@@ -719,110 +762,193 @@
     .danger-hover:hover svg { transform: none; }
   }
 
-  /* ---- Surface depth --------------------------------------------------------
-     Juno uses restrained depth: hairline borders and one close shadow. Floating
-     layers may blur the canvas slightly, but everyday cards stay matte. */
+  /* ---- Soft UI surfaces (SOFT_UI.md §2.2) -----------------------------------
+     One material, three depths. These six classes are the ONLY way a component
+     may express depth; a raw `shadow-[…]`, `shadow-2xl` or hand-typed rgba on a
+     surface is a fork of this system and will not follow a retune.
 
-  /* Raised panels/cards — faint top sheen + hairline edge for a lit, lifted read. */
-  .surface-raised {
-    background-image: none;
-    box-shadow: 0 1px 2px hsl(var(--shadow-ink) / .04);
-  }
+       .surface-raised     extruded from the page — cards, the composer shell,
+                           tiles, the sidebar's active row
+       .surface-raised-lg  the same, with a bigger throw — hero cards, pricing,
+                           project tiles
+       .surface-inset      recessed into the page — inputs, search fields,
+                           segmented tracks, the sidebar frame, user bubbles
+       .surface-float      lifted above the page — popovers, dropdowns, dialogs,
+                           toasts, tooltips, sheets
+       .control-neu        raised at rest, pressed-inset while held or while on —
+                           secondary buttons, icon buttons, toggles, chips
+       .control-primary    the coral action: gradient fill + glow + raised shadow
 
-  /* ---- Modern Neumorphic Surface System ---------------------------------
-     Tactile soft elevation with dual light/dark ambient shadows in light mode,
-     and deep specular rim illumination with soft drop shadows in dark mode. */
+     Every one of them draws a hairline as well as a shadow. A neumorphic edge
+     on its own is under 3:1 against its ground and fails WCAG 1.4.11; the
+     hairline is the boundary, the shadow is the texture.
 
-  .neumorphic-raised {
-    border: 1px solid hsl(var(--border) / 0.6);
+     Trap worth knowing: these are components-layer classes and Tailwind emits
+     utilities after them at equal specificity, so a `bg-*`, `border-*` or
+     `shadow-*` utility on the same element silently wins. Pair them with
+     layout utilities only. */
+  .surface-raised,
+  .surface-raised-lg {
     background-color: hsl(var(--card));
-    box-shadow:
-      -3px -3px 8px hsl(0 0% 100% / 0.75),
-      3px 4px 12px hsl(var(--shadow-ink) / 0.08);
-    transition: transform var(--dur-fast) var(--ease-out-soft), box-shadow var(--dur-fast) var(--ease-out-soft);
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--border) / .6);
+    box-shadow: var(--shadow-raised);
   }
-  .dark .neumorphic-raised {
-    border: 1px solid hsl(var(--border) / 0.8);
-    background-color: hsl(var(--card));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      -1px -1px 4px hsl(0 0% 100% / 0.02),
-      3px 6px 16px hsl(0 0% 0% / 0.6);
+  .surface-raised-lg {
+    box-shadow: var(--shadow-raised-lg);
   }
-
-  .neumorphic-inset {
-    border: 1px solid hsl(var(--border) / 0.5);
+  .surface-inset {
     background-color: hsl(var(--background));
-    box-shadow:
-      inset 2px 2px 5px hsl(var(--shadow-ink) / 0.08),
-      inset -2px -2px 5px hsl(0 0% 100% / 0.7);
+    border: 1px solid hsl(var(--border) / .55);
+    box-shadow: var(--shadow-inset);
   }
-  .dark .neumorphic-inset {
-    border: 1px solid hsl(var(--border) / 0.6);
-    background-color: hsl(var(--secondary) / 0.5);
-    box-shadow:
-      inset 2px 2px 6px hsl(0 0% 0% / 0.65),
-      inset -1px -1px 3px hsl(0 0% 100% / 0.03);
+  .surface-float {
+    background-color: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+    border: 1px solid hsl(var(--border) / .7);
+    box-shadow: var(--shadow-float);
   }
 
-  .neumorphic-card {
-    border: 1px solid hsl(var(--border) / 0.7);
-    border-radius: var(--radius-xl);
+  /* A control cut from the raised material. At rest it stands proud of the
+     page; while held (`:active`), or while it is ON (`[data-state=on]`,
+     `[aria-pressed=true]`, `[data-selected]`), it goes down INTO the page — the
+     pressed recipe is the inset one at a tighter throw, so the key visibly
+     travels toward the ground rather than merely changing colour. The
+     transform dip runs on --dur-press and everything else on --dur-fast, the
+     split `.pressable` documents. */
+  .control-neu {
     background-color: hsl(var(--card));
-    box-shadow:
-      -2px -2px 6px hsl(0 0% 100% / 0.6),
-      2px 4px 10px hsl(var(--shadow-ink) / 0.06);
-    transition: all var(--dur-fast) var(--ease-out-soft);
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border) / .6);
+    box-shadow: var(--shadow-raised);
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft),
+      border-color     var(--dur-fast)  var(--ease-out-soft),
+      box-shadow       var(--dur-fast)  var(--ease-out-soft);
   }
-  .dark .neumorphic-card {
-    border: 1px solid hsl(var(--border));
-    background-color: hsl(var(--card));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      2px 5px 14px hsl(0 0% 0% / 0.5);
+  @media (hover: hover) {
+    .control-neu:hover {
+      border-color: hsl(var(--border));
+      box-shadow: var(--shadow-raised-lg);
+    }
   }
-  .neumorphic-card:hover {
-    box-shadow:
-      -3px -3px 9px hsl(0 0% 100% / 0.8),
-      3px 6px 14px hsl(var(--shadow-ink) / 0.1);
-  }
-  .dark .neumorphic-card:hover {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen-strong)),
-      3px 8px 20px hsl(0 0% 0% / 0.7);
-  }
-
-  .neumorphic-pill {
-    border: 1px solid hsl(var(--border) / 0.6);
-    background-color: hsl(var(--secondary) / 0.6);
-    box-shadow:
-      inset 1px 1px 3px hsl(var(--shadow-ink) / 0.06),
-      inset -1px -1px 3px hsl(0 0% 100% / 0.6);
-  }
-  .dark .neumorphic-pill {
-    border: 1px solid hsl(var(--border) / 0.7);
+  .control-neu:active,
+  .control-neu[data-state="on"],
+  .control-neu[data-state="checked"],
+  .control-neu[aria-pressed="true"],
+  .control-neu[data-selected] {
     background-color: hsl(var(--secondary));
-    box-shadow:
-      inset 1px 1px 4px hsl(0 0% 0% / 0.5),
-      inset -1px -1px 2px hsl(0 0% 100% / 0.02);
+    border-color: hsl(var(--border) / .8);
+    box-shadow: var(--shadow-pressed);
+  }
+  .control-neu:active {
+    transform: scale(.97);
   }
 
-  /* Glossy fill for the primary action — a specular top highlight over the accent
-     fill. Pair with `.halo-primary` for the colored ambient glow.
+  /* The primary action. Real colour, because a primary must never depend on a
+     shadow to be found: a coral gradient lit from the top, the accent-tinted
+     glow underneath, and the raised recipe so it sits on the page like every
+     other control. Hover brightens the top of the gradient; pressing collapses
+     the glow and dips. */
+  .control-primary {
+    color: hsl(var(--primary-foreground));
+    border: 1px solid hsl(var(--primary) / .9);
+    background-color: hsl(var(--primary));
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / .14), hsl(0 0% 100% / 0) 55%);
+    box-shadow: var(--glow-primary), var(--shadow-raised);
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft),
+      border-color     var(--dur-fast)  var(--ease-out-soft),
+      box-shadow       var(--dur-fast)  var(--ease-out-soft),
+      filter           var(--dur-fast)  var(--ease-out-soft);
+  }
+  @media (hover: hover) {
+    .control-primary:hover {
+      filter: brightness(1.06);
+    }
+  }
+  .control-primary:active {
+    filter: brightness(.96);
+    box-shadow: var(--shadow-pressed);
+    transform: scale(.97);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .control-neu,
+    .control-primary { transition: none; }
+    .control-neu:active,
+    .control-primary:active { transform: none; }
+  }
 
-     Both of these had been emptied out: `.btn-glossy`'s whole body was
-     `background-image: none` and `.halo-primary` drew a neutral grey shadow with
-     the same geometry as `.surface-raised`, so two classes that cost a selector
-     each at every call site produced, between them, nothing the caller asked for.
-     They are restored against the tokens that already exist for exactly this:
-     --sheen is the top highlight every lifted surface in the file uses, and
-     --glow-primary is the accent-tinted halo, declared per theme since the depth
-     kit landed and until now read by nobody. */
+  /* Legacy composables kept for the three landing/marketing call sites that
+     layer them: a specular top highlight and the accent halo. New controls take
+     `.control-primary`, which is both of these plus the raised shadow. */
   .btn-glossy {
     background-image: linear-gradient(hsl(var(--sheen)), transparent 45%);
   }
   .halo-primary {
     box-shadow: var(--glow-primary);
+  }
+
+  /* ChatGPT-style thinking shimmer: the status sentence is painted with a
+     gradient that sweeps through it, so "Thinking…" reads as live without a
+     spinner beside it. The gradient is muted → foreground → muted, so at every
+     instant most of the line is at the muted ink and one band is lit. Text is
+     clipped to the background, which means colour must be transparent — the
+     reduced-motion fallback below restores a plain muted colour and drops the
+     background, so the line is static, legible text rather than a frozen
+     gradient. Never on prose: this is a status affordance, not a text style. */
+  .shimmer-text {
+    color: transparent;
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--muted-foreground)) 0%,
+      hsl(var(--muted-foreground)) 35%,
+      hsl(var(--foreground)) 50%,
+      hsl(var(--muted-foreground)) 65%,
+      hsl(var(--muted-foreground)) 100%
+    );
+    background-size: 250% 100%;
+    background-position: 100% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: shimmer-text 2.2s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shimmer-text {
+      color: hsl(var(--muted-foreground));
+      background-image: none;
+      -webkit-background-clip: border-box;
+      background-clip: border-box;
+    }
+  }
+
+  /* Copy → check. Put it on the glyph that REPLACES the copy icon: it springs
+     in from a small, slightly rotated start. Reads --motion-scale-from, so the
+     reduced-motion tier keeps the fade and drops the pop. */
+  .check-morph {
+    animation: check-morph var(--dur-base) var(--ease-spring) both;
+    transform-origin: center;
+  }
+  /* Both keyframes live HERE, not only in tailwind.config.ts: Tailwind emits a
+     keyframe only when its `animate-*` utility is used somewhere, and the two
+     classes above reference them from plain CSS. The config declares the same
+     pair (identically) for `animate-shimmer-text` / `animate-check-morph`. */
+  @keyframes shimmer-text {
+    from { background-position: 100% 0; }
+    to { background-position: -100% 0; }
+  }
+  @keyframes check-morph {
+    from {
+      opacity: 0;
+      transform: scale(var(--motion-scale-from, 0.5)) rotate(calc(-14deg * var(--motion-shift, 1)));
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
   }
 
   /* The Juno mark's press: a quick spring pop (dip, overshoot with a tilt,
@@ -1169,56 +1295,45 @@
     .animated-title__sheen { display: none; }
   }
 
-  /* Composer: close, precise elevation instead of a broad floating-card smudge.
-     Focus stays neutral and still, so entering the field never flashes an accent
-     halo or nudges the layout.
+  /* Composer: a raised soft card (SOFT_UI.md §3) with an inset field inside.
+     The shell IS `.surface-raised` — same material, same hairline, same shadow
+     as every other card — and focus lifts it one rung to the large throw and
+     darkens the edge. Focus stays neutral: no accent halo, no layout nudge.
 
-     The four alphas are custom properties because this recipe ships in two
-     tunings: the ambient one here (landing, auth, previews) and a step quieter
-     under [data-juno-chat-root] (end of this file). They used to be two whole
-     hand-copied box-shadow recipes, and the copies had already drifted apart in
-     alpha alone — a difference nobody chose. With the geometry written once, a
-     variant can only say how dark the shadow is, never quietly reshape it. */
+     This recipe used to be dead paint. composer.tsx and composer-shell.tsx both
+     closed their class strings with hand-typed `shadow-[…rgba…]` utilities,
+     and a utility beats the components layer, so the composer never wore the
+     material this rule described. Those utilities are gone; this is the one
+     place the composer's depth is decided. The `.dark` re-paste and the
+     `--composer-shadow-*` alpha knobs went with them — dual shadows work on
+     the charcoal ground now, so one recipe holds in both themes. */
   .composer-surface {
+    background-color: hsl(var(--card));
     background-image: none;
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / var(--composer-shadow-crisp, .055)),
-      0 10px 28px -24px hsl(var(--shadow-ink) / var(--composer-shadow-throw, .28));
+    border: 1px solid hsl(var(--border) / .6);
+    /* The large throw (`.surface-raised-lg`): the composer is the one card on
+       the chat surface and the thing the eye returns to. */
+    box-shadow: var(--shadow-raised-lg);
   }
   .composer-surface:focus-within {
     transform: none;
-    box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / var(--composer-shadow-crisp-focus, .07)),
-      0 12px 30px -24px hsl(var(--shadow-ink) / var(--composer-shadow-throw-focus, .32));
+    border-color: hsl(var(--foreground) / .25);
+    box-shadow: var(--shadow-raised-lg);
   }
-  /*
-   * On black the two shadows above are doing nothing — see the elevation note in
-   * `.dark`. The composer is the one surface in the product where that matters
-   * most, because it is the thing the user is aiming at on an otherwise empty
-   * page, so it gets its depth rebuilt out of the two cues that survive: a lit
-   * top edge, and a border that brightens as you approach it.
-   *
-   * The lit edge is 1px and inset. It is emphatically NOT an outer glow — an
-   * outer light on a dark ground is exactly the halo that was removed, and the
-   * difference between "this panel catches the light" and "this panel emits
-   * light" is entirely whether the highlight falls inside the border box.
-   *
-   * One dark treatment for every context: the tuning variables above are a
-   * light-theme knob, and the matte chat override sets only those variables —
-   * it declares no box-shadow — so these two rules hold everywhere without the
-   * higher-specificity dark re-paste that used to shadow them.
-   */
-  .dark .composer-surface {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      0 1px 2px hsl(0 0% 0% / .5),
-      0 18px 44px -30px hsl(0 0% 0% / .9);
+  /* The field tier's well: the textarea sits in a recess cut into the raised
+     shell, which is the "one material, three depths" rule in a single box.
+     Margin rather than padding on the shell, so the utility strip below can
+     still run full-bleed to the border. 12px = `rounded-field`; concentric
+     with the 20px shell at an 8-10px inset. */
+  .composer-field {
+    margin: 10px 10px 4px;
+    border-radius: 12px;
+    background-color: hsl(var(--background));
+    box-shadow: var(--shadow-inset), inset 0 0 0 1px hsl(var(--border) / .5);
+    transition: box-shadow var(--dur-fast) var(--ease-out-soft);
   }
-  .dark .composer-surface:focus-within {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen-strong)),
-      0 1px 2px hsl(0 0% 0% / .55),
-      0 22px 52px -30px hsl(0 0% 0% / .95);
+  .composer-field:focus-within {
+    box-shadow: var(--shadow-inset), inset 0 0 0 1px hsl(var(--border) / .8);
   }
 
   /* Accent aura — a soft bloom of the live accent behind the empty-state
@@ -1776,47 +1891,48 @@
    */
   .field-well {
     background-color: hsl(var(--background));
-    box-shadow: var(--well-inset);
-  }
-  .dark .field-well {
-    background-color: hsl(var(--secondary));
+    border-color: hsl(var(--border) / .55);
+    box-shadow: var(--shadow-inset);
   }
 
-  /* Floating glass layers (menus/popovers/selects) — a crisp top-edge highlight over
-     the frosted glass shadow, so they catch light at the rim. */
+  /* Legacy alias for the float material's shadow. The three remaining call
+     sites (canvas toolbar, slash palette, an image overlay) get the same lift
+     the popper tier has; migrate them to `.surface-float` when touched. */
   .glass-raised {
-    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
+    box-shadow: var(--shadow-float);
   }
 
-  /* The whole floating-surface material in one name — the hairline, the frosted
-     fill, the ink, the blur and the rim light that .glass-raised above supplies.
-     It is the SAME recipe ~25 surfaces already open-code as an eight-class string;
-     this only gives it somewhere to live so the copies cannot drift apart, and so
-     a retheme reaches all of them at once.
+  /* The floating material with glass. Composes with `.surface-float`: same
+     hairline, same ink, same float shadow — plus a translucent tint and a 12px
+     backdrop blur so the page shows through the panel's edge. Glass is for
+     CHROME only (menus, popovers, dialogs, toasts, the command palette); never
+     on a reading surface. Under prefers-reduced-transparency the tint goes
+     opaque and the blur is dropped, which leaves exactly `.surface-float`.
 
      Trap worth knowing before migrating a call site: this is a components-layer
      class, and Tailwind emits utilities after components at equal specificity, so
      a competing `shadow-*` or `bg-*` utility on the same element silently wins.
      Check each call site for one. */
   .overlay-glass {
-    /* No alpha on the hairline. --border was already dropped from 21% to 16%
-       precisely to hold its contrast against the black ground; discounting it a
-       second time by 0.82 landed the edge at ~13.5% effective — the same value
-       as --popover, so the panel's own outline became a half-point step and
-       disappeared. The token carries the right number for each theme; a call
-       site that thins it is overruling a decision made with the ground in view. */
-    border: 1px solid hsl(var(--border));
-    background-color: hsl(var(--popover));
+    border: 1px solid hsl(var(--border) / .7);
+    background-color: hsl(var(--popover) / .86);
     color: hsl(var(--popover-foreground));
-    backdrop-filter: none;
-    /* The exact recipe `.glass-raised` uses, and for the same reason. What was
-       here was two hardcoded shadows drawn in --shadow-ink, which is pure black
-       in dark — black ink spread on a black page, i.e. nothing. Every popover,
-       dropdown, select, tooltip, dialog and toast in the product read as a flat
-       13% rectangle with no lift at all. --shadow-glass already carries the
-       inset rim light that survives on black; the leading inset here is what
-       makes that unconditional. */
-    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.2);
+    box-shadow: var(--shadow-float);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .overlay-glass {
+      background-color: hsl(var(--popover));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  @media (prefers-contrast: more) {
+    .overlay-glass,
+    .surface-float {
+      border-color: hsl(var(--border));
+    }
   }
 
   /* Media generation.
@@ -2872,7 +2988,8 @@
        A placeholder that cannot be told from the surface it stands in for is not
        a loading state. */
     background: hsl(var(--muted));
-    box-shadow: inset 0 0 0 1px hsl(var(--hairline));
+    /* Pressed into its ground: a placeholder is a well the content will fill. */
+    box-shadow: var(--shadow-pressed), inset 0 0 0 1px hsl(var(--hairline));
   }
   .skeleton::after {
     content: "";
@@ -3135,13 +3252,49 @@
   .app-main-canvas {
     background-color: hsl(var(--background));
   }
-  /* The sidebar's own edge. It was drawn in --background, which worked only
-     while the sidebar was darker than the page: --sidebar is 0 0% 0% now and
-     identical to --background, so this painted black on black and rendered
-     nothing, leaving one discounted hairline to separate two #000 fields.
-     --sidebar-border is the token that owns that seam. */
+  /* The sidebar is an inset well (SOFT_UI.md §3): its fill sits a step below
+     the page and its inner edge carries the recess — the seam hairline in
+     --sidebar-border, plus the kit's inset shadow pulled to the right edge so
+     the canvas reads as standing proud of the panel. The active row inside it
+     is the one raised object (`.surface-raised`). */
   .app-sidebar-frame {
-    box-shadow: inset -1px 0 0 hsl(var(--sidebar-border));
+    background-color: hsl(var(--sidebar));
+    box-shadow:
+      inset -1px 0 0 hsl(var(--sidebar-border)),
+      inset -6px 0 10px -8px hsl(var(--neu-dark));
+  }
+  /* At md–lg the expanded panel floats over the content (app-shell.tsx):
+     it takes the floating rung's throw so it reads as lifted, not as a wider
+     well. */
+  .app-sidebar-frame[data-floating] {
+    box-shadow:
+      inset -1px 0 0 hsl(var(--sidebar-border)),
+      var(--shadow-float);
+  }
+  /* The streaming progress line (app-shell.tsx): a 2px band at the top of
+     the content, one soft coral sweep on the symmetric curve while a reply
+     is arriving. Reduced motion holds a static hairline instead. */
+  .stream-progress {
+    overflow: hidden;
+  }
+  .stream-progress::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, hsl(var(--primary) / .9), transparent);
+    animation: stream-progress 1.4s var(--ease-in-out) infinite;
+  }
+  @keyframes stream-progress {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(350%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stream-progress::before {
+      width: 100%;
+      animation: none;
+      background: hsl(var(--primary) / .5);
+    }
   }
   .app-page-scroll {
     height: 100%;
@@ -3165,23 +3318,9 @@
   [data-juno-chat-root] .composer-aura {
     display: none;
   }
-  /* The matte tuning of the one composer shadow recipe (see .composer-surface).
-     Alphas only — no box-shadow is declared here, so the light geometry exists
-     in a single place and `.dark .composer-surface` applies untouched. The
-     previous version re-pasted the full light recipe, then both dark rules a
-     second time at higher specificity purely to survive its own override, and
-     the copies had already drifted apart in alpha. */
-  [data-juno-chat-root] .composer-surface {
-    --composer-shadow-crisp: .05;
-    --composer-shadow-throw: .24;
-    --composer-shadow-crisp-focus: .06;
-    --composer-shadow-throw-focus: .28;
-  }
-  /* --ring, not --foreground. This was the last foreground-derived edge in the
-     file: on dark it resolved to ~22% off-white, brighter than --border (16%)
-     and than every other hairline in the product, so focusing the in-product
-     composer painted a whiter line than anything else on screen. It was also the
-     only focus affordance here not speaking the same language as :focus-visible. */
+  /* --ring, not --foreground: the in-product composer's focus edge speaks the
+     same language as :focus-visible. The landing/auth composers keep the
+     neutral foreground/25 edge `.composer-surface` itself sets. */
   [data-juno-chat-root] .composer-surface:focus-within {
     border-color: hsl(var(--ring) / .5);
   }

@@ -43,6 +43,25 @@ public actor PreviewSender: NativeChatRequestSending {
                 body: PreviewWorkFixtures.artifactDownloadBytes
             )
         }
+        // The transcript's pictures. A real PNG so the row's decode path runs.
+        if request.path.hasPrefix("/api/attachments/") {
+            let id = String(request.path.dropFirst("/api/attachments/".count))
+            if let png = PreviewImageFixtures.png(for: id) {
+                return HTTPResponse(
+                    statusCode: 200,
+                    headers: try HTTPHeaders([
+                        "content-type": "image/png",
+                        "content-length": String(png.count),
+                    ]),
+                    body: png
+                )
+            }
+            return HTTPResponse(
+                statusCode: 404,
+                headers: try HTTPHeaders(["content-type": "application/json"]),
+                body: Data(#"{"error":"Image not found."}"#.utf8)
+            )
+        }
         return HTTPResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "application/json"]),

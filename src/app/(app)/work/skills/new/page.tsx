@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { skillSlugFromName } from "@/lib/work/skills";
-import { WorkPageFrame } from "@/components/work/work-nav";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { createWorkSkill } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 
@@ -75,11 +75,14 @@ export default function NewWorkSkillPage() {
   };
 
   return (
-    <WorkPageFrame
-      title="New skill"
-      description="Instructions Juno can be handed by name. What it asks for is a request, never a grant — it can only ever do what you have already allowed elsewhere."
-      back={{ href: "/work/skills", label: "Back to skills" }}
-    >
+    <AppPage measure="reading">
+      <AppPageHeader
+        eyebrow="Work"
+        heading="New skill"
+        lede="Instructions Juno can be handed by name. What it asks for is a request, never a grant — it can only ever do what you have already allowed elsewhere."
+        backHref="/work/skills"
+        backLabel="Back to skills"
+      />
       <div className="space-y-6">
         <div>
           <Label htmlFor="skill-name">Name</Label>
@@ -159,6 +162,6 @@ export default function NewWorkSkillPage() {
           </Button>
         </div>
       </div>
-    </WorkPageFrame>
+    </AppPage>
   );
 }

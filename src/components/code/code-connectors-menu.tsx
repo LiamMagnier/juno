@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ChevronDown, ExternalLink, Plug, Search, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ConnectorMark } from "@/components/connections/connector-logos";
@@ -163,12 +165,12 @@ export function CodeConnectorsMenu({
               disabled={disabled}
               aria-label={`Connectors: ${activeCount} active`}
               className={cn(
-                "composer-chip group relative h-8 shrink-0 items-center gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 transition-all duration-fast",
-                activeCount > 0 ? "text-primary hover:text-primary" : "text-muted-foreground hover:text-foreground",
+                "composer-chip group relative h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-mono text-ui tracking-tight coarse:h-11",
+                activeCount > 0 ? "text-primary-ink hover:text-primary-ink" : "text-muted-foreground hover:text-foreground",
                 className
               )}
             >
-              <Plug className={cn("size-3.5 shrink-0 transition-transform duration-fast group-hover:scale-110", activeCount > 0 && "text-primary")} />
+              <Plug className={cn("size-3.5 shrink-0", activeCount > 0 && "text-primary")} aria-hidden="true" />
               <span className="min-w-0 font-medium">
                 {activeCount === 0 ? "Connectors" : `Connectors (${activeCount})`}
               </span>
@@ -182,31 +184,35 @@ export function CodeConnectorsMenu({
       <PopoverContent
         align="start"
         sideOffset={10}
-        className="w-[320px] origin-popper rounded-2xl border border-border/80 bg-popover/95 p-3 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95 sm:w-[350px]"
+        className="w-[320px] origin-popper p-3 sm:w-[350px]"
       >
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-1.5">
-              <Plug className="size-4 text-primary" />
-              <span className="text-sm font-semibold tracking-tight">Connectors & Tools</span>
+              <Plug className="size-4 text-muted-foreground" aria-hidden="true" />
+              <span className="text-sm font-semibold">Connectors and tools</span>
             </div>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-caption font-medium text-primary">
+            <Badge variant={activeCount > 0 ? "soft" : "muted"} className="tabular-nums">
               {activeCount} active
-            </span>
+            </Badge>
           </div>
 
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search tools & connectors…"
-              className="h-8 rounded-lg pl-8 pr-3 text-xs bg-muted/30 focus:bg-background"
+              placeholder="Search tools and connectors…"
+              aria-label="Search tools and connectors"
+              className="h-8 pl-8.5 pr-3 text-ui coarse:h-11"
             />
           </div>
 
           <ScrollFade className="max-h-[260px] overflow-y-auto">
-            <div className="space-y-1 pr-1">
+            <div className="space-y-0.5 pr-1">
               {filtered.length === 0 ? (
                 <div className="py-6 text-center text-xs text-muted-foreground">
                   No connectors found for &ldquo;{query}&rdquo;
@@ -215,42 +221,38 @@ export function CodeConnectorsMenu({
                 filtered.map((item) => {
                   const isEnabled = enabledConnectors.includes(item.id);
                   return (
+                    // A row, not a button: the switch inside it is the control,
+                    // and a button wrapping a switch is one control inside
+                    // another. The row's own press toggles too, via the label.
                     <div
                       key={item.id}
-                      onClick={() => onToggleConnector(item.id)}
                       className={cn(
-                        "group flex cursor-pointer items-start justify-between gap-3 rounded-xl p-2 transition-colors",
-                        isEnabled ? "bg-primary/8 hover:bg-primary/12" : "hover:bg-muted/50"
+                        "group flex items-start justify-between gap-3 rounded-control border border-transparent px-2 py-2 transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none",
+                        isEnabled && "surface-raised border-border/60 hover:bg-card",
                       )}
                     >
-                      <div className="flex min-w-0 items-start gap-2.5">
-                        <div
+                      <label htmlFor={`code-connector-${item.id}`} className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5">
+                        <span
                           className={cn(
-                            "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
-                            isEnabled
-                              ? "border-primary/30 bg-primary/10 text-primary"
-                              : "border-border/60 bg-muted/40 text-muted-foreground group-hover:text-foreground"
+                            "surface-inset flex size-7 shrink-0 items-center justify-center rounded-md",
+                            isEnabled ? "text-primary" : "text-muted-foreground",
                           )}
                         >
                           <ConnectorMark id={item.id} className="size-3.5" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-medium text-foreground">{item.label}</span>
-                            {isEnabled && (
-                              <span className="size-1.5 rounded-full bg-primary" />
-                            )}
-                          </div>
-                          <p className="line-clamp-2 text-caption leading-tight text-muted-foreground mt-0.5">
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-foreground">{item.label}</span>
+                          <span className="mt-0.5 line-clamp-2 block text-caption leading-tight text-muted-foreground">
                             {item.description}
-                          </p>
-                        </div>
-                      </div>
+                          </span>
+                        </span>
+                      </label>
 
                       <Switch
+                        id={`code-connector-${item.id}`}
                         checked={isEnabled}
                         onCheckedChange={() => onToggleConnector(item.id)}
-                        className="scale-75 shrink-0 mt-0.5"
+                        className="mt-0.5 shrink-0 scale-75"
                       />
                     </div>
                   );
@@ -259,22 +261,23 @@ export function CodeConnectorsMenu({
             </div>
           </ScrollFade>
 
-          <div className="flex items-center justify-between border-t border-border/40 pt-2 px-1 text-caption">
+          <div className="flex items-center justify-between border-t border-border/60 px-1 pt-2 text-caption">
             <Link
               href="/connections"
-              className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground motion-reduce:transition-none"
             >
               <span>Manage all connections</span>
-              <ExternalLink className="size-3" />
+              <ExternalLink className="size-3" aria-hidden="true" />
             </Link>
             {activeCount > 0 && (
-              <button
-                type="button"
+              <Pressable
+                kind="chip"
+                size="sm"
                 onClick={() => enabledConnectors.forEach((id) => onToggleConnector(id))}
-                className="text-muted-foreground hover:text-destructive transition-colors font-mono"
+                className="font-mono"
               >
                 Clear all
-              </button>
+              </Pressable>
             )}
           </div>
         </div>
@@ -304,7 +307,7 @@ export function CodeActiveConnectorsBar({
         return (
           <span
             key={id}
-            className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 pl-2 pr-1.5 py-0.5 text-caption font-medium text-foreground transition-all duration-fast hover:bg-primary/15"
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 pl-2 pr-1.5 py-0.5 text-caption font-medium text-foreground transition-[color,background-color,border-color,box-shadow,transform,opacity,width] duration-fast hover:bg-primary/15"
           >
             <ConnectorMark id={id} className="size-3 text-primary shrink-0" />
             <span className="truncate max-w-[120px]">{item.label}</span>

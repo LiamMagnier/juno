@@ -8,6 +8,16 @@ const TooltipProvider = TooltipPrimitive.Provider;
 const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
+/**
+ * A small `.surface-float` at `rounded-control` (10) — the same material as
+ * the menu it appears beside, opaque so a transient micro-label stays legible
+ * over arbitrary content. Not inverted: an inked slab was the single
+ * brightest object on the dark theme, flaring on every hover.
+ *
+ * ~25px tall, so 10px is the rung that still reads as the popper family
+ * without becoming a capsule. instant-open (hopping between adjacent
+ * triggers) intentionally skips the entrance.
+ */
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
@@ -18,26 +28,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        // instant-open (hopping between adjacent triggers) intentionally skips the entrance.
-        // The one deliberately INVERTED tier: a transient micro-label has to stay
-        // legible over arbitrary content, so it keeps the solid inked fill and does
-        // NOT take .overlay-glass. It is still out-of-flow though, so it belongs on
-        // the float ramp — shadow-soft was the in-flow card shadow on a floating layer.
-        //
-        // The inversion is inverted BACK on dark. `bg-foreground` there is
-        // `45 14% 94%` — a near-white slab, and on an OLED-black page it was the
-        // single brightest object in the product, flaring on every hover. Dark
-        // gets the popover rung it floats beside plus the hairline it was the
-        // only overlay to go without; light keeps the inked chip, where an
-        // inverted label against warm paper is exactly right. The edge is an
-        // inset RING rather than a border so the dark tooltip does not come out
-        // 2px larger than the light one for the same string.
-        //
-        // `rounded-control` (9), not the off-ladder `rounded-md` and not the
-        // `rounded-menu` (12) the rest of the popper tier takes: this box is
-        // ~25px tall, and 12px on 25px is a capsule. 9 is the nearest rung that
-        // still reads as the same family as the dropdown it appears beside.
-        "z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control bg-foreground px-2.5 py-1 text-xs text-background shadow-float data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out dark:bg-popover dark:text-popover-foreground dark:ring-1 dark:ring-inset dark:ring-border",
+        "surface-float z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1 text-xs text-foreground data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

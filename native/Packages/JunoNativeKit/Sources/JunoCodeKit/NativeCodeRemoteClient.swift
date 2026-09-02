@@ -12,7 +12,7 @@ import JunoSync
 /// that workspace lives on the Mac. That is a deliberate boundary, not an
 /// omission — a leaked absolute path tells an attacker the account name, the
 /// directory layout, and often the project's real identity.
-public struct CodeRemoteSessionSummary: Equatable, Sendable, Identifiable {
+public struct CodeRemoteSessionSummary: Equatable, Hashable, Sendable, Identifiable {
     public let sessionID: String
     public let deviceID: String
     public let workspaceKey: String?
@@ -33,6 +33,10 @@ public struct CodeRemoteSessionSummary: Equatable, Sendable, Identifiable {
     /// that has gone quiet is shown as stale rather than as live-but-idle,
     /// because sending to it would produce a command nobody claims.
     public let fresh: Bool?
+    /// The reasoning effort the session runs at, when the host reports one.
+    public let reasoningEffort: String?
+    /// The project the workspace belongs to, when the host named one.
+    public let projectName: String?
 
     public var id: String { sessionID }
 
@@ -41,7 +45,8 @@ public struct CodeRemoteSessionSummary: Equatable, Sendable, Identifiable {
         title: String, modelID: String, permissionMode: String, currentStatus: String,
         isRunning: Bool, isAwaitingApproval: Bool, pendingChangeCount: Int,
         activeBranch: String?, lastError: String?, lastEventSequence: Int,
-        updatedAt: Date, lastMessageAt: Date, fresh: Bool?
+        updatedAt: Date, lastMessageAt: Date, fresh: Bool?,
+        reasoningEffort: String? = nil, projectName: String? = nil
     ) {
         self.sessionID = sessionID
         self.deviceID = deviceID
@@ -60,6 +65,8 @@ public struct CodeRemoteSessionSummary: Equatable, Sendable, Identifiable {
         self.updatedAt = updatedAt
         self.lastMessageAt = lastMessageAt
         self.fresh = fresh
+        self.reasoningEffort = reasoningEffort
+        self.projectName = projectName
     }
 }
 
@@ -461,7 +468,9 @@ public struct NativeCodeRemoteClient: Sendable {
             lastEventSequence: Int(object["lastEventSequence"]?.numberValue ?? 0),
             updatedAt: updatedAt,
             lastMessageAt: lastMessageAt,
-            fresh: object["fresh"]?.boolValue
+            fresh: object["fresh"]?.boolValue,
+            reasoningEffort: object["reasoningEffort"]?.stringValue,
+            projectName: object["projectName"]?.stringValue
         )
     }
 

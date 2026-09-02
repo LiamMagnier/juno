@@ -15,7 +15,9 @@
 export function AuthFormSkeleton({ mode }: { mode: "signin" | "signup" }) {
   return (
     <div className="space-y-5" role="status" aria-label="Loading the form">
-      <div className="skeleton h-9 w-full rounded-field coarse:h-11" aria-hidden />
+      {/* Buttons are `rounded-control`, fields `rounded-field` — the placeholder
+          keeps each shape so the corner does not change when the control lands. */}
+      <div className="skeleton h-9 w-full rounded-control coarse:h-11" aria-hidden />
       {/* The "or" divider's own row, so the swap does not shift the fields up. */}
       <div className="flex items-center gap-3" aria-hidden>
         <span className="h-px flex-1 bg-border/60" />
@@ -31,7 +33,7 @@ export function AuthFormSkeleton({ mode }: { mode: "signin" | "signup" }) {
             <div className="skeleton h-9 w-full rounded-field coarse:h-11" />
           </div>
         ))}
-        <div className="skeleton h-9 w-full rounded-field coarse:h-11" />
+        <div className="skeleton h-9 w-full rounded-control coarse:h-11" />
       </div>
       <div className="skeleton mx-auto h-3 w-44 rounded-micro" aria-hidden />
     </div>

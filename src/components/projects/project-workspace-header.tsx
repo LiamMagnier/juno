@@ -1,23 +1,21 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import {
-  ArrowLeft,
-  Pin,
-  NotebookPen,
-  SlidersHorizontal,
-  MessageCircle,
-  Zap,
-  Code2,
-  FileText,
-  Boxes,
-} from "lucide-react";
+import { Pin, NotebookPen } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
+import { AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
-import { CardEyebrow } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { promptPreview } from "@/lib/prompt-preview";
 import { cn } from "@/lib/utils";
 
 interface ProjectWorkspaceHeaderProps {
@@ -38,19 +37,25 @@ interface ProjectWorkspaceHeaderProps {
   };
   stats: {
     chatCount: number;
-    workCount: number;
-    codeCount: number;
     fileCount: number;
-    artifactCount: number;
   };
   isStarred: boolean;
   onToggleStar: () => void;
   onEditInstructions: () => void;
   onRename: (newName: string) => Promise<void>;
   onDelete: () => void;
+  /** Extra entries for the actions menu, placed before the destructive group. */
+  menuExtras?: React.ReactNode;
   className?: string;
 }
 
+/**
+ * The project page's opening: the shared `<AppPageHeader>` with the project's
+ * name as the heading, its instructions summarised on one line as the lede,
+ * and the pin / instructions / actions cluster on the right. Renaming goes
+ * through a dialog — the same one the projects grid uses — rather than an
+ * inline-editable heading, so the two routes agree.
+ */
 export function ProjectWorkspaceHeader({
   project,
   stats,
@@ -59,187 +64,145 @@ export function ProjectWorkspaceHeader({
   onEditInstructions,
   onRename,
   onDelete,
+  menuExtras,
   className,
 }: ProjectWorkspaceHeaderProps) {
-  const [editingName, setEditingName] = React.useState(false);
+  const [renameOpen, setRenameOpen] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState(project.name);
+  const [renaming, setRenaming] = React.useState(false);
 
-  React.useEffect(() => {
+  const openRename = () => {
     setNameDraft(project.name);
-  }, [project.name]);
-
-  const handleSaveName = async () => {
-    if (!nameDraft.trim() || nameDraft.trim() === project.name) {
-      setEditingName(false);
-      setNameDraft(project.name);
-      return;
-    }
-    await onRename(nameDraft.trim());
-    setEditingName(false);
+    setRenameOpen(true);
   };
 
-  return (
-    <header className={cn("mb-6 flex flex-col gap-4", className)}>
-      {/* Back button */}
-      <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="-ml-2 gap-1.5 font-mono text-caption text-muted-foreground hover:text-foreground"
-        >
-          <Link href="/projects">
-            <ArrowLeft className="size-3.5" /> All projects
-          </Link>
-        </Button>
-      </div>
+  const handleSaveName = async () => {
+    const next = nameDraft.trim();
+    if (!next || next === project.name) {
+      setRenameOpen(false);
+      return;
+    }
+    setRenaming(true);
+    try {
+      await onRename(next);
+      setRenameOpen(false);
+    } finally {
+      setRenaming(false);
+    }
+  };
 
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <CardEyebrow>Project Workspace</CardEyebrow>
-            {project.instructions && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 font-mono text-micro text-muted-foreground">
-                <SlidersHorizontal className="size-2.5" /> Custom Instructions
-              </span>
-            )}
-          </div>
-
-          <div className="mt-1.5 flex items-center gap-2">
-            {editingName ? (
-              <Input
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
-                autoFocus
-                onBlur={handleSaveName}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveName();
-                  if (e.key === "Escape") setEditingName(false);
-                }}
-                aria-label="Project name"
-                className="h-auto max-w-xl px-2.5 py-1 text-page-title font-serif font-medium"
-              />
-            ) : (
-              <>
-                <h1 className="truncate text-page-title font-serif font-medium text-foreground tracking-tight">
-                  {project.name}
-                </h1>
-                <Pressable
-                  kind="icon"
-                  size="md"
-                  onClick={() => {
-                    setNameDraft(project.name);
-                    setEditingName(true);
-                  }}
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                  aria-label="Rename project"
-                >
-                  <ActionIcons.edit className="size-3.5" />
-                </Pressable>
-              </>
-            )}
-          </div>
-
-          {/* Context Pillars Badges */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-micro text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
-              <MessageCircle className="size-3 text-muted-foreground" />
-              {stats.chatCount} {stats.chatCount === 1 ? "chat" : "chats"}
-            </span>
-
-            {stats.workCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
-                <Zap className="size-3 text-muted-foreground" />
-                {stats.workCount} {stats.workCount === 1 ? "work run" : "work runs"}
-              </span>
-            )}
-
-            {stats.codeCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
-                <Code2 className="size-3 text-muted-foreground" />
-                {stats.codeCount} {stats.codeCount === 1 ? "code session" : "code sessions"}
-              </span>
-            )}
-
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
-              <FileText className="size-3 text-muted-foreground" />
-              {stats.fileCount} {stats.fileCount === 1 ? "file" : "files"}
-            </span>
-
-            {stats.artifactCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/40 bg-secondary/40 px-2.5 py-0.5 text-foreground/80">
-                <Boxes className="size-3 text-muted-foreground" />
-                {stats.artifactCount} {stats.artifactCount === 1 ? "artifact" : "artifacts"}
-              </span>
-            )}
-
-            <span className="text-muted-foreground/60">· Updated {timeAgo(project.updatedAt)}</span>
-          </div>
-        </div>
-
-        {/* Header Actions */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onEditInstructions}
-            className="h-8 gap-1.5 font-mono text-caption"
-          >
-            <NotebookPen className="size-3.5" />
-            <span>Instructions</span>
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={onToggleStar}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label={isStarred ? "Unpin project" : "Pin project"}
-            aria-pressed={isStarred}
-          >
-            <Pin className={cn("size-4", isStarred && "fill-primary text-primary")} />
-          </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Project actions"
-              >
-                <ActionIcons.more className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem
-                onSelect={() => {
-                  setNameDraft(project.name);
-                  setEditingName(true);
-                }}
-              >
-                <ActionIcons.edit className="mr-2 size-4" />
-                <span>Rename</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={onEditInstructions}>
-                <NotebookPen className="mr-2 size-4" />
-                <span>Edit instructions</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={onDelete}
-                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-              >
-                <ActionIcons.delete className="mr-2 size-4" />
-                <span>Delete project</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    </header>
+  const summary = promptPreview(project.instructions);
+  const lede = summary ? (
+    <span className="line-clamp-1" title={summary}>
+      {summary}
+    </span>
+  ) : (
+    <span className="font-mono text-caption tabular-nums">
+      {plural(stats.chatCount, "chat")} · {plural(stats.fileCount, "file")} · Updated {timeAgo(project.updatedAt)}
+    </span>
   );
+
+  return (
+    <>
+      <AppPageHeader
+        className={className}
+        backHref="/projects"
+        backLabel="Back to projects"
+        eyebrow="Project"
+        heading={<span className="min-w-0 truncate">{project.name}</span>}
+        lede={lede}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onEditInstructions}
+              className="gap-1.5"
+            >
+              <NotebookPen className="size-3.5" aria-hidden="true" />
+              Instructions
+            </Button>
+
+            <Pressable
+              kind="icon"
+              size="md"
+              onClick={onToggleStar}
+              selected={isStarred}
+              aria-pressed={isStarred}
+              aria-label={isStarred ? "Unpin project" : "Pin project"}
+              className={cn(isStarred && "text-primary hover:text-primary")}
+            >
+              <Pin className={cn("size-4", isStarred && "fill-current")} aria-hidden="true" />
+            </Pressable>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Pressable kind="icon" size="md" aria-label="Project actions">
+                  <ActionIcons.more className="size-4" aria-hidden="true" />
+                </Pressable>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem onSelect={openRename}>
+                  <ActionIcons.edit className="mr-2 size-4" aria-hidden="true" />
+                  <span>Rename</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEditInstructions}>
+                  <NotebookPen className="mr-2 size-4" aria-hidden="true" />
+                  <span>Edit instructions</span>
+                </DropdownMenuItem>
+                {menuExtras && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {menuExtras}
+                  </>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                >
+                  <ActionIcons.delete className="mr-2 size-4" aria-hidden="true" />
+                  <span>Delete project</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
+
+      <Dialog open={renameOpen} onOpenChange={(open) => { if (!open) setRenameOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename project</DialogTitle>
+            <DialogDescription>Change the name of this project.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="project-rename">Project name</Label>
+            <Input
+              id="project-rename"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder="New project name"
+              autoFocus
+              aria-label="Project name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSaveName();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveName} disabled={renaming || !nameDraft.trim()}>
+              {renaming ? "Renaming…" : "Rename project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function plural(n: number, noun: string) {
+  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
