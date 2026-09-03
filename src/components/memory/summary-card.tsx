@@ -229,7 +229,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
             }}
             aria-disabled={paused}
             className={cn(
-              "pointer-events-auto flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground btn-glossy halo-primary transition-[filter,transform] duration-fast ease-out-soft hover:brightness-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
+              "pointer-events-auto flex size-11 items-center justify-center control-primary rounded-full transition-[filter,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
               // Press feedback only while pressing does something.
               paused ? "opacity-50" : "active:scale-95 motion-reduce:active:scale-100"
             )}

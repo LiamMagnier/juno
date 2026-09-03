@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { HelpCircle, Zap } from "lucide-react";
+import { HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningOption } from "@/lib/model-metrics";
 import {
@@ -219,14 +219,13 @@ function ModeChip({
           aria-pressed={pressed}
           onClick={onPress}
           className={cn(
-            "inline-flex min-h-8 items-center gap-1 rounded-full px-2.5 text-micro font-medium transition-[background-color,color,box-shadow] duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11 coarse:px-3 motion-reduce:transition-none",
+            "inline-flex min-h-8 items-center rounded-full px-2.5 font-mono text-caption font-medium transition-[background-color,color,box-shadow] duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11 coarse:px-3 motion-reduce:transition-none",
             pressed
               ? "bg-foreground text-background shadow-pop"
               : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
             disabled && "cursor-not-allowed opacity-50"
           )}
         >
-          <Zap className={cn("size-2.5", pressed && "fill-current")} aria-hidden="true" />
           {label}
         </button>
       </TooltipTrigger>

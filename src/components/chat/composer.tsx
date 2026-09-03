@@ -1,15 +1,11 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import {
-  ArrowUp,
   AudioLines,
   Blocks,
   NotebookPen,
-  Brain,
   ChevronDown,
   Cpu,
   FileUp,
@@ -22,23 +18,31 @@ import {
   Plug,
   Plus,
   Search,
-  Square,
   SquareDashedMousePointer,
   SquarePen,
   TextQuote,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { spring, transition as motionTransition } from "@/lib/motion";
 import {
   ActionIcons,
   AppIcons,
-  CodeIcons,
   ComposerIcons,
   StatusIcons,
 } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import {
+  ComposerAttachmentRow,
+  ComposerDivider,
+  ComposerPrimaryAction,
+  ComposerShell,
+  composerChevronClass,
+  composerChipClass,
+  composerFieldClass,
+  composerIconButtonClass,
+  useComposerAutosize,
+  type ComposerPrimaryFace,
+} from "@/components/ui/composer-shell";
 import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
@@ -89,7 +93,7 @@ import {
   COMPOSER_LONG_TEXT_CHARS,
   sampleLineCount,
 } from "@/lib/prompt-limits";
-import { formatBytes, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   artifactEditRequestFromQuote,
   serializeQuote,
@@ -234,6 +238,13 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
 };
 
 const MAX_VOICE_IMAGES = 4;
+/** The composer's four states, on the shared primary action's four faces. */
+const PRIMARY_FACES = {
+  checking: "busy",
+  stop: "stop",
+  voice: "voice",
+  send: "send",
+} as const satisfies Record<string, ComposerPrimaryFace>;
 // Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
 // cannot be imported from a client component.
 const COMPOSIO_ID_PREFIX = "composio:";
@@ -260,12 +271,12 @@ const filterRows = (rows: SlashCommand[], query: string) =>
 // as a hover colour rather than as "this is what Enter picks".
 //
 // `rounded-xs`, by the same arithmetic DropdownMenuItem documents: the palette
-// shell is a 12px `rounded-menu` with p-1.5, so 12 − 6 leaves 6px for the rows.
+// shell is a 16px `rounded-popover` with p-1.5, so 16 − 6 leaves 10px (`rounded-control`) for the rows.
 // At rounded-md these were drawn 2px too round for their shell — and 2px rounder
 // than the + menu's rows one trigger to the left, which are the same object.
 const paletteRowClass = (selected: boolean) =>
   cn(
-    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xs px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-control px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
     selected
       ? "bg-accent ring-1 ring-inset ring-primary/20"
       : "hover:bg-accent/50",
@@ -365,50 +376,6 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * A mode chip — one armed tool, above the field (ChatGPT's redesigned
- * composer). Raised (`.control-neu`), coral mark, an × to disarm. Added and
- * removed on the layout spring so the row re-flows rather than jumping.
- */
-function ModeChip({
-  icon,
-  label,
-  onRemove,
-  reduceMotion,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onRemove?: () => void;
-  reduceMotion: boolean;
-}) {
-  return (
-    <motion.div
-      layout
-      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 4 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 4 }}
-      transition={reduceMotion ? { duration: 0 } : spring.standard}
-      className={cn(
-        "control-neu inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full text-caption font-medium text-foreground",
-        onRemove ? "pl-2.5 pr-1" : "px-2.5",
-      )}
-    >
-      <span className="flex size-3.5 items-center justify-center text-primary [&_svg]:size-3.5">{icon}</span>
-      <span className="whitespace-nowrap">{label}</span>
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Turn off ${label}`}
-          className="pressable ml-0.5 flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:size-7"
-        >
-          <ActionIcons.dismiss className="size-3" />
-        </button>
-      )}
-    </motion.div>
-  );
-}
-
 export function Composer({
   conversationId,
   model,
@@ -450,7 +417,6 @@ export function Composer({
   onDictatingChange,
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
-  const reduceMotion = useReducedMotion() ?? false;
   const resolved = resolveModel(model);
   const isAuto = isAutoModelId(model);
   // Only the thinking tiers this specific model actually supports (real data).
@@ -661,20 +627,6 @@ export function Composer({
   React.useEffect(() => {
     if (voiceActive) setLibraryOpen(false);
   }, [voiceActive]);
-  // Chip exit: play pop-out (120ms) before the upload actually leaves state.
-  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
-  const removeUpload = React.useCallback(
-    (localId: string) => {
-      setRemovingIds((prev) =>
-        prev.includes(localId) ? prev : [...prev, localId],
-      );
-      window.setTimeout(() => {
-        setRemovingIds((prev) => prev.filter((id) => id !== localId));
-        remove(localId);
-      }, 120);
-    },
-    [remove],
-  );
 
   const { supported: speechSupported } = useSpeechRecognition();
   const [dictating, setDictatingInner] = React.useState(false);
@@ -767,17 +719,14 @@ export function Composer({
     return () => window.removeEventListener("keydown", onKey);
   }, [isBusy, status, onStop]);
 
-  const autoresize = React.useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    const maxHeight = pendingClarification ? 60 : 200;
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-  }, [pendingClarification]);
-
-  React.useEffect(() => {
-    autoresize();
-  }, [text, pendingClarification, autoresize]);
+  // One line at rest, eight before it scrolls, on the composer spring. A
+  // clarification keeps the free-text path short (three lines); a huge paste
+  // that has been expanded to edit gets a taller window so it can be read.
+  const autoresize = useComposerAutosize(textareaRef, text, {
+    maxLines: pendingClarification ? 3 : 8,
+    maxHeight: text.length > COMPOSER_INLINE_SOFT_CHARS ? 448 : undefined,
+    minHeight: text.length > COMPOSER_INLINE_SOFT_CHARS ? 120 : 0,
+  });
 
   React.useEffect(() => {
     if (privateMode) {
@@ -1813,7 +1762,7 @@ export function Composer({
       role="menuitemcheckbox"
       aria-checked={research && planAllowsResearch}
       disabled={!planAllowsResearch}
-      className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+      className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
       onSelect={(event) => {
         event.preventDefault();
         setResearch((v) => !v);
@@ -1850,7 +1799,7 @@ export function Composer({
   return (
     <div
       ref={rootRef}
-      className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4"
+      className="mx-auto w-full max-w-3xl px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
     >
       {quotaReached && (
         <div
@@ -1963,139 +1912,56 @@ export function Composer({
           // page. `opacity-0 pointer-events-none` hides it from the eye and the
           // mouse and leaves it in the tab order and the accessibility tree, so a
           // keyboard or screen-reader user could reach a composer that is not on
-          // screen — and, mid-dictation, type into it. Same defect the chat
-          // transcript's jump-to-latest button had.
+          // screen — and, mid-dictation, type into it.
           inert={dictating}
+          // The cross-fade lives on this wrapper, not on the surface: the surface
+          // owns its own focus transition (`.composer-surface`), and a second
+          // `transition-[…]` utility on the same element would replace it.
           className={cn(
-            /*
-             * No `shadow-none`. It used to close this line, and because Tailwind
-             * emits utilities after the components layer at equal specificity, it
-             * beat `.composer-surface`'s box-shadow — so the composer rendered as
-             * a flat bordered rectangle with no material at all, and the
-             * `[data-juno-chat-root] .composer-surface` rule written specifically
-             * to give this surface its in-product elevation was dead code that
-             * never painted a pixel. On the black ground that mattered twice over:
-             * the dark treatment carries an INSET top highlight, which is the only
-             * depth cue that survives on #000, and it was being suppressed too.
-             */
-            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer",
-            "transition-[opacity,transform,border-color,box-shadow,height] duration-base ease-out-strong motion-reduce:transition-none",
+            "col-start-1 row-start-1 w-full origin-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
             dictating
               ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
               : "translate-y-0 scale-100 opacity-100",
-            clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
+          )}
+        >
+        <ComposerShell
+          // The palette's containing block: it carries `relative`, so this — not
+          // the surface — is what its `bottom-full` resolves against, and so this
+          // is the top edge the room above it must be measured from.
+          fieldTierRef={paletteAnchorRef}
+          dimmed={controlsLocked && !steerMode}
+          className={cn(
+            "max-h-[600px]",
             // Private mode redraws the edge dashed; every other state's border
             // and focus lift come from `.composer-surface` itself.
             privateMode && "border-dashed border-foreground/25",
             dragging && "border-primary/55 ring-2 ring-primary/20",
           )}
-        >
-          {dragging && !privateMode && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
-              <FileUp className="size-6 text-primary" />
-              <span className="font-mono text-label text-primary">
-                Drop to attach
-              </span>
-            </div>
-          )}
-
-          {pendingClarification && (
-            <ComposerClarificationPopover
-              pending={pendingClarification}
-              disabled={isBusy && status !== "checking"}
-              onSubmit={submitClarification}
-              onSkip={skipClarification}
-              onClose={cancelClarification}
-              variant="inline"
-              onAnswersChange={setClarificationAnswers}
-            />
-          )}
-
-          <div
-            // The palette's containing block: it carries `relative`, so this — not
-            // the capsule — is what its `bottom-full` resolves against, and so this
-            // is the top edge the room above it must be measured from.
-            ref={paletteAnchorRef}
-            className={cn(
-              "relative flex w-full flex-col transition-[opacity,transform] duration-base ease-out-soft",
-              // Keep the free-text path calm under a clarification — no second heavy card.
-              clarificationOpen
-                ? "rounded-card border border-border/45 bg-secondary px-3 py-2.5 sm:rounded-popover sm:px-3.5 sm:py-3"
-                : "",
-            )}
-          >
-            {!privateMode && (
-              <div
-                className={cn(
-                  "grid transition-[grid-template-rows] duration-base ease-out-soft",
-                  uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                )}
-              >
-                <div className="min-h-0 overflow-hidden">
-                  <div className="flex flex-wrap gap-2 p-3 pb-0">
-                    {uploads.map((u) => (
-                      <div
-                        key={u.localId}
-                        className={cn(
-                          // The chip sits inside the composer shell, which is `bg-card`.
-                          // `bg-background` is pure black in dark — DARKER than its own
-                          // container — so an attached file read as a hole punched in
-                          // the composer, and its `shadow-soft` (black ink) had nothing
-                          // to cast onto. `bg-secondary` is the rung above card, which
-                          // is what "raised chip" actually means here.
-                          // `rounded-field` — the small-container rung. rounded-md was
-                          // off the ladder, and 2px sharper than the quote card below,
-                          // which is the same species of object in the same slot.
-                          "group relative flex items-center gap-2 rounded-field border bg-secondary px-2.5 py-2",
-                          removingIds.includes(u.localId)
-                            ? "pointer-events-none motion-safe:animate-pop-out"
-                            : "motion-safe:animate-rise-in",
-                        )}
-                      >
-                        {u.attachment?.kind === "IMAGE" ? (
-                          <Image
-                            src={u.attachment.url}
-                            unoptimized={requiresViewerCredentials(
-                              u.attachment.url,
-                            )}
-                            alt={u.fileName}
-                            width={32}
-                            height={32}
-                            className="size-8 rounded-xs object-cover"
-                          />
-                        ) : (
-                          <CodeIcons.file className="size-5 text-muted-foreground" />
-                        )}
-                        <div className="max-w-[140px]">
-                          <p className="truncate text-ui font-medium">
-                            {u.fileName}
-                          </p>
-                          {/* Size / progress is metadata, so it takes the mono voice —
-                          the quote card's location line beside it already does. */}
-                          <p className="font-mono text-caption tabular-nums text-muted-foreground">
-                            {u.status === "uploading"
-                              ? `${u.progress}%`
-                              : u.status === "error"
-                                ? "Failed"
-                                : formatBytes(u.size)}
-                          </p>
-                        </div>
-                        {u.status === "uploading" && (
-                          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeUpload(u.localId)}
-                          className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                          aria-label="Remove attachment"
-                        >
-                          <ActionIcons.dismiss className="size-3 coarse:size-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+          above={
+            <>
+              {dragging && !privateMode && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+                  <FileUp className="size-6 text-primary" />
+                  <span className="font-mono text-label text-primary">
+                    Drop to attach
+                  </span>
                 </div>
-              </div>
+              )}
+
+              {pendingClarification && (
+                <ComposerClarificationPopover
+                  pending={pendingClarification}
+                  disabled={isBusy && status !== "checking"}
+                  onSubmit={submitClarification}
+                  onSkip={skipClarification}
+                  onClose={cancelClarification}
+                  variant="inline"
+                  onAnswersChange={setClarificationAnswers}
+                />
+              )}
+
+            {!privateMode && (
+              <ComposerAttachmentRow uploads={uploads} onRemove={remove} />
             )}
 
             {quote && (
@@ -2148,45 +2014,6 @@ export function Composer({
                 </button>
               </div>
             )}
-
-            {/* Mode chips — every armed tool, named, above the field. */}
-            {(() => {
-              const chips: { key: string; icon: React.ReactNode; label: string; onRemove?: () => void }[] = [];
-              if (canWebSearch && webSearchEnabled)
-                chips.push({ key: "web", icon: <ComposerIcons.web />, label: "Web search", onRemove: () => onToggleWebSearch?.(false) });
-              if (researchArmed)
-                chips.push({ key: "research", icon: <ComposerIcons.research />, label: "Deep research", onRemove: () => setResearch(false) });
-              if (!privateMode && canvasEnabled && modality === "chat")
-                chips.push({ key: "canvas", icon: <LayoutTemplate />, label: "Canvas", onRemove: () => onToggleCanvas(false) });
-              if (modality === "image") chips.push({ key: "image", icon: <ComposerIcons.photos />, label: "Image" });
-              if (modality === "video") chips.push({ key: "video", icon: <ComposerIcons.photos />, label: "Video" });
-              if (showConnectors)
-                for (const c of connectors.filter((c) => connectorsEnabled.includes(c.id)))
-                  chips.push({ key: `c:${c.id}`, icon: <ConnectorMark id={c.id} className="size-3.5" />, label: c.label, onRemove: () => pickConnector(c.id) });
-              return (
-                <AnimatePresence initial={false}>
-                  {chips.length > 0 && !showCollapsedDraft && (
-                    <motion.div
-                      key="mode-chips"
-                      layout
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={reduceMotion ? { duration: 0 } : motionTransition.fast}
-                      className="overflow-hidden"
-                    >
-                      <div role="group" aria-label="Active modes" className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
-                        <AnimatePresence initial={false}>
-                          {chips.map((chip) => (
-                            <ModeChip key={chip.key} icon={chip.icon} label={chip.label} onRemove={chip.onRemove} reduceMotion={reduceMotion} />
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              );
-            })()}
 
             {showCollapsedDraft && (
               <div
@@ -2445,8 +2272,10 @@ export function Composer({
 
             {/* Huge drafts render as a compact card above; keep the textarea out of
             the DOM so React never diffs multi-10k controlled values every key. */}
-            {!showCollapsedDraft && (
-              <div className="composer-field">
+            </>
+          }
+          field={
+            !showCollapsedDraft && (
               <textarea
                 ref={textareaRef}
                 id="juno-composer-textarea"
@@ -2481,25 +2310,16 @@ export function Composer({
                     : undefined
                 }
                 className={cn(
-                  "w-full resize-none bg-transparent px-3.5 pb-2.5 pt-3 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4",
+                  composerFieldClass,
                   // `text-base` (16px) at rest is load-bearing, not stylistic: iOS
                   // Safari zooms the whole page into any focused field below 16px.
-                  // The clarification / huge-draft states step down to the body rung;
-                  // under a clarification the leading tightens too, so the capped
-                  // 72px window shows three lines instead of two and a bit.
-                  clarificationOpen
-                    ? "max-h-[72px] min-h-[40px] text-body leading-snug"
-                    : hugeDraft
-                      ? "max-h-[min(60vh,28rem)] min-h-[120px] text-body"
-                      : "max-h-[200px] min-h-[64px] text-base",
+                  // The clarification / huge-draft states step down to the body rung.
+                  (clarificationOpen || hugeDraft) && "text-body",
                 )}
               />
-              </div>
-            )}
-
-            <div className="flex flex-nowrap items-center justify-between gap-1.5 px-3 pb-2.5 pt-0.5 sm:px-3.5 sm:pb-3">
-              {/* Left: the one + menu */}
-              <div className="flex shrink-0 items-center gap-1">
+            )
+          }
+          leading={
                 <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -2512,16 +2332,21 @@ export function Composer({
                             armedSummary ? `Add — ${armedSummary}` : "Add"
                           }
                           disabled={controlsLocked}
-                          className={cn(
-                            "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-[color,background-color,border-color,box-shadow,transform,opacity,width] duration-fast flex items-center justify-center coarse:size-11",
-                            plusOpen &&
-                              "bg-accent border-border text-foreground ring-1 ring-border/50",
-                          )}
+                          className={cn(composerIconButtonClass, "group relative")}
                         >
                           <Plus
                             aria-hidden="true"
-                            className="size-4 text-muted-foreground transition-colors group-hover:text-foreground"
+                            className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
                           />
+                          {/* The only trace a tool leaves on the bar: one dot.
+                              What is on is named inside the menu (and in the
+                              button's own label), not on the composer. */}
+                          {activeToolCount > 0 && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary ring-2 ring-card"
+                            />
+                          )}
                         </Button>
                       </DropdownMenuTrigger>
                     </TooltipTrigger>
@@ -2545,7 +2370,7 @@ export function Composer({
                         <DropdownMenuItem
                           disabled={!features.storage || privateMode}
                           onSelect={() => fileInputRef.current?.click()}
-                          className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                           <span className="flex-1 font-medium">
@@ -2566,7 +2391,7 @@ export function Composer({
                         <DropdownMenuItem
                           disabled={!canAttach}
                           onSelect={() => fileInputRef.current?.click()}
-                          className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                           <span className="flex-1 font-medium">
@@ -2576,7 +2401,7 @@ export function Composer({
 
                         <DropdownMenuItem
                           onSelect={() => setLibraryOpen(true)}
-                          className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <AppIcons.library className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                           <span className="flex-1 font-medium">Library</span>
@@ -2585,7 +2410,7 @@ export function Composer({
                         <DropdownMenuItem
                           disabled={privateMode}
                           onSelect={() => startCanvas()}
-                          className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <SquarePen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                           <span className="flex-1 font-medium">New canvas</span>
@@ -2602,7 +2427,7 @@ export function Composer({
                             event.preventDefault();
                             onToggleWebSearch?.(!webSearchEnabled);
                           }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <div className="flex min-w-0 flex-1 items-center">
                             <ComposerIcons.web className="size-4 text-muted-foreground mr-2.5 shrink-0" />
@@ -2632,7 +2457,7 @@ export function Composer({
                             event.preventDefault();
                             onToggleCanvas(!canvasEnabled);
                           }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <div className="flex min-w-0 flex-1 items-center">
                             <LayoutTemplate className="size-4 text-muted-foreground mr-2.5 shrink-0" />
@@ -2655,7 +2480,7 @@ export function Composer({
                             event.preventDefault();
                             toggleMemory(!settings.memoryEnabled);
                           }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
                         >
                           <div className="flex min-w-0 flex-1 items-center">
                             <NotebookPen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
@@ -2680,7 +2505,7 @@ export function Composer({
 
                         {!privateMode && (
                           <DropdownMenuSub>
-                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs">
+                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs">
                               <AppIcons.projects className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                               <span className="flex-1 font-medium">
                                 Project
@@ -2691,10 +2516,10 @@ export function Composer({
                                 </span>
                               )}
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1">
+                            <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1.5">
                               <ScrollFade
                                 className="min-h-0 flex-1"
-                                viewportClassName="p-1 space-y-0.5"
+                                viewportClassName="space-y-0.5"
                               >
                                 {loadingProjects && projects.length === 0 ? (
                                   <div className="flex items-center justify-center py-4">
@@ -2716,7 +2541,7 @@ export function Composer({
                                             active ? null : project.id,
                                           )
                                         }
-                                        className="rounded-field px-2 py-1.5 text-xs"
+                                        className="h-9 rounded-control px-2.5 text-xs"
                                       >
                                         <AppIcons.projects
                                           className={cn(
@@ -2737,14 +2562,14 @@ export function Composer({
                                   })
                                 )}
                               </ScrollFade>
-                              <div className="shrink-0 border-t border-border/60 pt-1">
+                              <div className="mt-1 shrink-0 border-t border-foreground/12 pt-1">
                                 <DropdownMenuItem
                                   disabled={creatingProject}
                                   onSelect={(e) => {
                                     e.preventDefault();
                                     void createProjectAndPick();
                                   }}
-                                  className="rounded-field px-2 py-1.5 text-xs font-medium text-primary"
+                                  className="h-9 rounded-control px-2.5 text-xs font-medium text-primary"
                                 >
                                   {creatingProject ? (
                                     <Loader2 className="size-3 animate-spin mr-1.5" />
@@ -2764,7 +2589,7 @@ export function Composer({
                               !open && setConnectorQuery("")
                             }
                           >
-                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs">
+                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs">
                               <Plug className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                               <span className="flex-1 font-medium">
                                 Connectors
@@ -2775,8 +2600,8 @@ export function Composer({
                                 </span>
                               )}
                             </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-64 p-1">
-                              <div className="border-b border-border/60 p-1.5">
+                            <DropdownMenuSubContent className="w-64 p-1.5">
+                              <div className="pb-1.5">
                                 <label className="relative block">
                                   {/* Raw `Search`: this filters the connector list in
                                   place. `AppIcons.search` is the app's search
@@ -2792,25 +2617,25 @@ export function Composer({
                                     }
                                     placeholder="Search apps…"
                                     aria-label="Search apps"
-                                    className="h-7.5 w-full rounded-md border border-border/60 bg-background/80 pl-7 pr-2 text-xs outline-none focus:border-primary/50"
+                                    className="surface-inset h-8 w-full rounded-control border border-input pl-7 pr-2 text-xs outline-none transition-[border-color] duration-base ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
                                   />
                                 </label>
                               </div>
-                              <div className="max-h-52 overflow-y-auto p-1 space-y-0.5">
+                              <div className="max-h-52 space-y-0.5 overflow-y-auto">
                                 {connectorsLoading &&
                                 connectors.length === 0 ? (
                                   <div className="flex flex-col gap-1 p-1">
                                     {[0, 1, 2].map((row) => (
                                       <span
                                         key={row}
-                                        className="skeleton h-8 rounded-lg"
+                                        className="skeleton h-9 rounded-control"
                                       />
                                     ))}
                                   </div>
                                 ) : connectors.length === 0 ? (
                                   <DropdownMenuItem
                                     onSelect={() => router.push("/connections")}
-                                    className="rounded-lg text-xs"
+                                    className="h-9 rounded-control px-2.5 text-xs"
                                   >
                                     <Plug className="size-3.5 text-muted-foreground mr-2" />
                                     <span className="flex-1">
@@ -2833,7 +2658,7 @@ export function Composer({
                                           event.preventDefault();
                                           pickConnector(connector.id);
                                         }}
-                                        className="rounded-lg px-2 py-1.5 cursor-pointer text-xs"
+                                        className="h-9 rounded-control px-2.5 cursor-pointer text-xs"
                                       >
                                         <ConnectorMark
                                           id={connector.id}
@@ -2844,7 +2669,9 @@ export function Composer({
                                         </span>
                                         <Switch
                                           checked={selected}
-                                          className="pointer-events-none scale-75"
+                                          tabIndex={-1}
+                                          aria-hidden
+                                          className="pointer-events-none shrink-0"
                                         />
                                       </DropdownMenuItem>
                                     );
@@ -2858,17 +2685,12 @@ export function Composer({
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
-
-              </div>
-
-              {/* Right: model + effort, dictation mic, primary action (voice ⇄ send ⇄ stop). */}
-              <div className="ml-auto flex min-w-0 shrink items-center gap-1.5">
+          }
+          trailing={
+            <>
                 {/* Model + thinking effort, beside Send (SOFT_UI.md §3). */}
                 <div
-                  className={cn(
-                    "min-w-0 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
-                    controlsLocked && "pointer-events-none opacity-60",
-                  )}
+                  className={cn("min-w-0", controlsLocked && "pointer-events-none")}
                   aria-disabled={controlsLocked}
                 >
                   <ModelSelector
@@ -2889,7 +2711,7 @@ export function Composer({
                         size="sm"
                         aria-disabled
                         aria-label="Thinking effort: Auto — chosen automatically with the model"
-                        className="composer-chip h-8 shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2.5 font-mono text-ui tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11"
+                        className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
                       >
                         <span className="min-w-0 truncate">Auto</span>
                       </Button>
@@ -2929,17 +2751,14 @@ export function Composer({
                                 disabled={controlsLocked}
                                 aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
                                 className={cn(
-                                  "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11",
-                                  atTopTier
-                                    ? "text-primary"
-                                    : "text-foreground",
+                                  composerChipClass,
+                                  atTopTier && "text-primary hover:text-primary",
                                 )}
                               >
-                                <Brain className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
-                                <span className="min-w-0 flex-1 truncate text-center">
+                                <span className="min-w-0 truncate">
                                   {compactEffortLabel}
                                 </span>
-                                <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                                <ChevronDown className={composerChevronClass} />
                               </Button>
                             </TooltipTrigger>
                           </PopoverTrigger>
@@ -2983,28 +2802,23 @@ export function Composer({
                         disabled={controlsLocked || dictating || voiceActive}
                         aria-label="Dictate"
                         aria-pressed={dictating}
-                        className="composer-mic-button rounded-composer-control coarse:size-11"
+                        className={composerIconButtonClass}
                       >
-                        <Mic className="composer-mic-icon size-4" />
+                        <Mic className="size-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Dictate</TooltipContent>
                   </Tooltip>
                 )}
 
-                {speechSupported && (
-                  <span
-                    className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                    aria-hidden="true"
-                  />
-                )}
-
-                {/* Primary Action Button: Morphs seamlessly between Voice (empty), Send (has text), Stop (when generating) */}
+                <ComposerDivider />
+            </>
+          }
+          action={
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon"
+                    <ComposerPrimaryAction
+                      face={PRIMARY_FACES[primaryFace]}
                       onClick={
                         primaryFace === "stop"
                           ? onStop
@@ -3030,55 +2844,7 @@ export function Composer({
                               ? "Add this to the research"
                               : "Send message"
                       }
-                      className={cn(
-                        "composer-primary-action size-9 rounded-composer-action coarse:size-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
-                        primaryFace === "stop" && "ring-2 ring-primary/15",
-                      )}
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="grid place-items-center"
-                      >
-                        <Loader2
-                          className={cn(
-                            "col-start-1 row-start-1 size-4 transition-[opacity,transform] duration-exit ease-out-soft",
-                            primaryFace === "checking"
-                              ? "scale-100 animate-spin opacity-100"
-                              : "scale-75 opacity-0 motion-reduce:scale-100",
-                          )}
-                        />
-                        <Square
-                          className={cn(
-                            "col-start-1 row-start-1 size-3.5 fill-current transition-[opacity,transform] duration-exit ease-out-soft",
-                            primaryFace === "stop"
-                              ? "composer-stop-icon scale-100 opacity-100"
-                              : "scale-75 opacity-0 motion-reduce:scale-100",
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "composer-voice-wave col-start-1 row-start-1 transition-[opacity,transform] duration-exit ease-out-soft",
-                            primaryFace === "voice"
-                              ? "scale-100 opacity-100"
-                              : "scale-75 opacity-0 motion-reduce:scale-100",
-                          )}
-                        >
-                          <span />
-                          <span />
-                          <span />
-                          <span />
-                          <span />
-                        </span>
-                        <ArrowUp
-                          className={cn(
-                            "col-start-1 row-start-1 size-4 transition-[opacity,transform] duration-exit ease-out-soft",
-                            primaryFace === "send"
-                              ? "composer-send-icon scale-100 opacity-100"
-                              : "scale-75 opacity-0 motion-reduce:scale-100",
-                          )}
-                        />
-                      </span>
-                    </Button>
+                    />
                   </TooltipTrigger>
                   <TooltipContent>
                     {primaryFace === "stop"
@@ -3092,8 +2858,8 @@ export function Composer({
                           : "Send"}
                   </TooltipContent>
                 </Tooltip>
-              </div>
-            </div>
+          }
+        />
 
             <input
               ref={imageInputRef}
@@ -3129,7 +2895,6 @@ export function Composer({
                 existingCount={uploads.length}
               />
             )}
-          </div>
         </div>
       </div>
       {!hideDisclaimer && privateMode && (

@@ -18,6 +18,7 @@ final class JunoMobileLaunchRequests {
   enum Request: Equatable, Sendable {
     case newChat
     case voice
+    case dictate
     case code
     case ask(String)
     case openConversation(String)
@@ -38,6 +39,7 @@ final class JunoMobileLaunchRequests {
     switch shortcutType {
     case "com.liammagnier.JunoMobile.new-chat": pending = .newChat
     case "com.liammagnier.JunoMobile.voice": pending = .voice
+    case "com.liammagnier.JunoMobile.dictate": pending = .dictate
     case "com.liammagnier.JunoMobile.code": pending = .code
     default: break
     }
@@ -70,6 +72,20 @@ struct StartVoiceIntent: AppIntent {
   @MainActor
   func perform() async throws -> some IntentResult {
     JunoMobileLaunchRequests.shared.request(.voice)
+    return .result()
+  }
+}
+
+/// Opens a new chat with Dictate ready. Kept separate from ``StartVoiceIntent``:
+/// dictation produces a message draft, while Voice starts a realtime call.
+struct StartDictationIntent: AppIntent {
+  static let title: LocalizedStringResource = "Dictate to Juno"
+  static let description = IntentDescription("Opens a new Juno chat and starts dictation.")
+  static let openAppWhenRun = true
+
+  @MainActor
+  func perform() async throws -> some IntentResult {
+    JunoMobileLaunchRequests.shared.request(.dictate)
     return .result()
   }
 }
@@ -124,6 +140,15 @@ struct JunoMobileShortcuts: AppShortcutsProvider {
       ],
       shortTitle: "Voice",
       systemImageName: "waveform"
+    )
+    AppShortcut(
+      intent: StartDictationIntent(),
+      phrases: [
+        "Dictate to \(.applicationName)",
+        "Start dictation in \(.applicationName)",
+      ],
+      shortTitle: "Dictate",
+      systemImageName: "mic"
     )
     AppShortcut(
       intent: AskJunoIntent(),

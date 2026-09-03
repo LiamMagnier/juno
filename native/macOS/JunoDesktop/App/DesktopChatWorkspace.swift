@@ -3217,8 +3217,9 @@ struct DesktopComposer: View {
                     .junoInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                JunoIconView(systemImage: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
+                // Mark, name, one chevron. The chip is a menu trigger and says
+                // so the way every menu trigger in the bar does.
+                JunoIconView(systemImage: "chevron.down", size: 9)
                     .junoSecondaryInk()
             }
             .padding(.horizontal, 10)
@@ -3254,12 +3255,6 @@ struct DesktopComposer: View {
         .desktopPreviewOverlays(popover: { showingModelSelector = true })
     }
 
-    private var thinkingSymbol: some View {
-        JunoIconView(systemImage: "gauge.with.dots.needle.33percent")
-            .imageScale(.small)
-            .accessibilityHidden(true)
-    }
-
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if scale.isAutomatic {
@@ -3284,12 +3279,13 @@ struct DesktopComposer: View {
             Button {
                 showingThinking = true
             } label: {
+                // Label and chevron only — the gauge glyph that led this chip
+                // was a third icon language beside the provider mark and the
+                // plus, and said nothing "Medium" does not.
                 HStack(spacing: 5) {
-                    thinkingSymbol
                     Text(currentThinkingLabel(in: scale))
                         .lineLimit(1)
-                    JunoIconView(systemImage: "chevron.up")
-                        .font(.caption2.weight(.semibold))
+                    JunoIconView(systemImage: "chevron.down", size: 9)
                         .junoSecondaryInk()
                 }
                 .font(.subheadline.weight(.medium))
@@ -3354,11 +3350,10 @@ struct DesktopComposer: View {
                 )
                 .contentShape(.circle)
         }
-        .junoGlass(
-            in: Circle(),
-            tint: dictating ? Color.junoAccent : nil,
-            interactive: true
-        )
+        // The neutral tile at rest, the accent tile while dictating. This was
+        // interactive glass, and its rim scatter is the "halo on the mic" the
+        // review named; see `junoRaisedCircle` for the whole argument.
+        .junoRaisedCircle(tint: dictating ? Color.junoAccent : nil)
         // A fill crossfading in place is tint-tier motion: it keeps `fast`'s
         // character under Reduce Motion, exactly as its two sibling chips do.
         .animation(
@@ -3388,7 +3383,7 @@ struct DesktopComposer: View {
     /// glyphs are small ink in a 36pt frame — the voice bars are five 2pt
     /// capsules, roughly 110pt² inside 1296pt², so nine tenths of the circle the
     /// reader aims at was dead. `Circle` rather than `.rect` because
-    /// ``View/accentGlassAction(active:)`` draws a circle: claiming the corners
+    /// ``View/junoCircleAction(active:)`` draws a circle: claiming the corners
     /// would make the button react where it visibly is not.
     private var primaryAction: some View {
         Group {
@@ -3402,7 +3397,7 @@ struct DesktopComposer: View {
                         .foregroundStyle(Color.junoOnAccent)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: true)
+                .junoCircleAction(active: true)
                 .help("Stop generating")
                 .accessibilityLabel("Stop generating")
             } else if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -3418,7 +3413,7 @@ struct DesktopComposer: View {
                         .foregroundStyle(Color.junoOnAccent)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: !selectedModelID.isEmpty)
+                .junoCircleAction(active: !selectedModelID.isEmpty)
                 .disabled(selectedModelID.isEmpty)
                 .help("Start a voice conversation")
                 .accessibilityIdentifier("Start voice conversation")
@@ -3435,7 +3430,7 @@ struct DesktopComposer: View {
                         )
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: canSend)
+                .junoCircleAction(active: canSend)
                 .disabled(!canSend)
                 .help("Send message")
                 .accessibilityIdentifier("Send message")
@@ -4671,7 +4666,7 @@ private struct DesktopAddMenuMark: View {
             .junoFont(size: 13, relativeTo: .body, weight: .semibold)
             .junoInk()
             .frame(width: 30, height: 30)
-            .junoGlass(in: Circle(), interactive: true)
+            .junoRaisedCircle()
             .overlay(alignment: .topTrailing) { badge }
             .contentShape(.circle)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isArmed)

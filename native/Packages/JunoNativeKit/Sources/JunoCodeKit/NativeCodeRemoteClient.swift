@@ -162,6 +162,31 @@ public struct NativeCodeRemoteClient: Sendable {
 
     // MARK: - Mobile side
 
+    /// Revokes one paired computer: the relay deletes the host's row and every
+    /// device-scoped relay row under it, so the Mac stops being listed and its
+    /// claim loop meets a refusal it treats as terminal rather than a host it
+    /// keeps polling for.
+    ///
+    /// The versioned path is deliberate. The sibling inventory still lives
+    /// under `/api` with a per-operation contract override; revocation is new
+    /// surface, so it starts on `/api/v1` where the contract needs no override
+    /// to describe it.
+    public func revokeDevice(
+        deviceID: String,
+        for accountID: AccountID
+    ) async throws {
+        try validate(deviceID)
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/v1/code/devices/\(deviceID)",
+                method: .delete,
+                headers: try HTTPHeaders(["accept": "application/json"])
+            ),
+            for: accountID
+        )
+        try require2xx(response)
+    }
+
     public func sessions(
         deviceID: String,
         for accountID: AccountID

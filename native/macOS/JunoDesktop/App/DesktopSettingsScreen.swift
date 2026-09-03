@@ -623,6 +623,8 @@ struct DesktopSettingsScreen: View {
                     .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
                     .contentShape(.rect)
                 }
+
+                DesktopCodeHostRevokeSection(host: host)
             }
         }
     }

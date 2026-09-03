@@ -12,7 +12,7 @@ import {
   MessageSquareText,
   Moon,
   NotebookPen,
-  Zap,
+  CreditCard,
   Sun,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -1043,7 +1043,7 @@ function CommandMenu() {
 
     const settings: PaletteItem[] = [
       { id: "settings", group: "Settings", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
-      { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: Zap, keywords: "billing pro max pricing", run: () => go("/upgrade") },
+      { id: "upgrade", group: "Settings", label: "Plans & upgrade", icon: CreditCard, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
         id: "theme",
         group: "Settings",

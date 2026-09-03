@@ -58,6 +58,8 @@ struct JunoMobileChatDetailScreen: View {
   /// A question handed in from outside — Siri's "Ask Juno" — to drop into the
   /// draft composer. Cleared once taken.
   var pendingPrompt: Binding<String?> = .constant(nil)
+  /// One-shot request from the Dictate App Intent / widget shortcut.
+  var startDictation: Binding<Bool> = .constant(false)
 
   /// Fetches and caches the transcript's pictures for the life of the screen.
   @State private var imageLoader: NativeChatImageLoader?
@@ -314,6 +316,7 @@ private struct JunoMobileDraftChat: View {
           // The greeting holds the bloom whenever it is on screen, so
           // the composer must not draw a second one.
           greetingVisible: voiceMessages.isEmpty
+          , startDictation: startDictation
         )
       }
       // After the inset, never before it: the camera panel is a sibling

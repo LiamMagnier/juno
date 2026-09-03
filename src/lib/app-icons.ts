@@ -60,7 +60,7 @@ import {
   TriangleAlert,
   Type,
   X,
-  Zap,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -81,20 +81,12 @@ export const AppIcons = {
   home: MessageCircle,
   /** Juno Work — tasks Juno carries out on your Mac or in the cloud.
    *
-   *  A bolt. Two glyphs were tried and rejected first: a briefcase (luggage —
-   *  it says *employment*, and at 14px it is a filled rectangle with a notch),
-   *  and a kanban square (accurate about "tasks at stages", but a board is a
-   *  place you administer work rather than the work happening).
-   *
-   *  The bolt is chosen for the pair it makes rather than for itself. Work now
-   *  sits directly beside Chat in one control, and the distinction that control
-   *  draws is not chat-versus-tasks, it is TALK versus ACT: a speech bubble is
-   *  you asking, a bolt is it going and doing. Two marks, one sentence.
-   *
-   *  It also survives the size this is actually read at — a single unbroken
-   *  stroke with no interior detail to lose at 14px, which is where both
-   *  rejected glyphs failed. */
-  work: Zap,
+   *  A workflow mark: nodes joined by a line, i.e. steps being carried out.
+   *  It replaced a lightning bolt, which read as a stock "AI magic" glyph
+   *  rather than as a destination. Beside Chat's speech bubble the pair still
+   *  says TALK versus ACT, and the drawing survives 14px — three boxes and one
+   *  stroke, nothing to lose. */
+  work: Workflow,
   code: Code2,
   /** Juno Design — the visual design surface. A pen nib rather than a paint
    *  brush or a square: the mode is about drawing something precise that

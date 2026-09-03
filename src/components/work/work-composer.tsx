@@ -3,9 +3,16 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUp, Loader2, Mic } from "lucide-react";
+import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ComposerShell } from "@/components/ui/composer-shell";
+import {
+  ComposerDivider,
+  ComposerPrimaryAction,
+  ComposerShell,
+  composerFieldClass,
+  composerIconButtonClass,
+  useComposerAutosize,
+} from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
@@ -114,11 +121,13 @@ import { cn } from "@/lib/utils";
  * one surface asking one question two ways is how a reader concludes they are
  * two questions.
  *
- * ── TWO TIERS, AND WHICH CONTROL BELONGS IN WHICH ──────────────────────────
+ * ── ONE ROW, AND WHERE EACH CONTROL SITS ON IT ─────────────────────────────
  *
- * The surface is `ComposerShell`, so the controls are split by a hairline into
- * what you do to THIS message and what stays true after you press Start. That
- * line moved three controls, and each move fixes a specific misreading:
+ * The surface is `ComposerShell` — one quiet box, one row of controls. The
+ * left of the row is the standing context of the run: the [+] (files and the
+ * skill), then the project, the approval mode and the apps as chips. The right
+ * is what is spent on this sentence: the model, the thinking depth, dictation
+ * and the primary action. Each placement fixes a specific misreading:
  *
  *   - the project and the approval mode were a chip strip ABOVE the field. A
  *     strip above the field reads as part of the message being composed, which
@@ -126,17 +135,13 @@ import { cn } from "@/lib/utils";
  *   - the apps were the third section of the [+], two gestures deep inside a
  *     menu that opens upward over the text. They are the standing reach of the
  *     run, not something spent on this sentence, and they now wear
- *     `WorkConnectorsChip` on the strip. The [+]'s dot badge went with them: it
+ *     `WorkConnectorsChip` on the row. The [+]'s dot badge went with them: it
  *     existed only because a granted app had no other trace on the surface.
- *   - the executor joined them as `WorkRunTarget`. It is the one item on the
- *     strip that is not a control, because Work has none to offer —
- *     `selectForInferred` decides and the dispatch route runs the same function
- *     over the same list — but "where is this going to run" is the third
- *     standing fact about a run and a reader is owed it before the press.
- *
- * What stayed above the line: the [+] (files and the skill), the model, the
- * thinking depth, dictation and the primary action. Every one of them is spent
- * on the sentence in the field and starts over on the next task.
+ *   - the executor is `WorkRunTarget`, under the surface. It is not a control,
+ *     because Work has none to offer — `selectForInferred` decides and the
+ *     dispatch route runs the same function over the same list — but "where is
+ *     this going to run" is the third standing fact about a run and a reader is
+ *     owed it before the press.
  *
  * ── TALKING IT THROUGH ─────────────────────────────────────────────────────
  *
@@ -446,15 +451,8 @@ export function WorkComposer({
     [reasoningEffort, setReasoningEffort]
   );
 
-  const autoresize = React.useCallback(() => {
-    const element = textareaRef.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 220)}px`;
-  }, []);
-  React.useEffect(() => {
-    autoresize();
-  }, [goal, autoresize]);
+  // The shared composer growth: one line at rest, eight before it scrolls.
+  useComposerAutosize(textareaRef, goal);
 
   /*
    * A suggestion pressed elsewhere on the page, written into the field.
@@ -935,7 +933,7 @@ export function WorkComposer({
   return (
     <div className="w-full">
       {/*
-       * `composer-aura-host` + `isolate`, so the voice field can light this
+       * `isolate`, so the voice field can light this
        * composer the way it lights chat's. The aura paints at `z-index: -1` and
        * therefore needs a stacking context here to mean "behind the composer"
        * rather than "behind whichever distant ancestor happens to make one".
@@ -946,7 +944,7 @@ export function WorkComposer({
        * the same reason: its first child is the aura, and an aura nested inside
        * a box paints behind that box instead of behind the composer.
        */}
-      <div className="composer-aura-host relative isolate w-full">
+      <div className="relative isolate w-full">
         {voice.open && (
           <WorkComposerVoicePanel
             briefing={{
@@ -976,7 +974,7 @@ export function WorkComposer({
           onClose={closeDictation}
         >
           <ComposerShell
-            utilityLabel="What this task is filed under and where it runs"
+            dimmed={submitting}
             /*
              * ── Above the field ────────────────────────────────────────────
              * The documents this task is handed, as chips, so they are visible
@@ -997,17 +995,17 @@ export function WorkComposer({
                 disabled={submitting}
                 placeholder="Work on anything..."
                 aria-label="Describe the task for Juno to carry out"
-                className="max-h-[220px] min-h-[72px] w-full resize-none bg-transparent px-4 pb-2 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/60 disabled:opacity-70 sm:px-4.5 sm:pt-4.5"
+                className={composerFieldClass}
               />
             }
             /*
-             * ── The inline row: what you do to THIS message ────────────────
-             * Attach, name a skill, pick the model, set the thinking depth,
-             * dictate, start.
+             * ── One controls row ───────────────────────────────────────────
+             * Left: attach, name a skill, and the standing context of the run
+             * (project, how often it asks, which apps). Right: the model, the
+             * thinking depth, dictate, start. One line, never a second strip.
              */
-            controls={
+            leading={
               <>
-                <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-visible">
                   <ComposerAddMenu
                     disabled={submitting}
                     attach={
@@ -1027,11 +1025,26 @@ export function WorkComposer({
                     }}
                   />
 
+                  <ProjectChip value={projectId} onChange={setProject} disabled={submitting} />
+                  <WorkPermissionChip
+                    value={approvalMode}
+                    onChange={setApprovalMode}
+                    disabled={submitting}
+                  />
+                  <WorkConnectorsChip
+                    connectors={apps.connectors}
+                    failed={apps.failed}
+                    onRetry={apps.reload}
+                    selected={connectorIds}
+                    onToggle={toggleConnector}
+                    disabled={submitting}
+                  />
+              </>
+            }
+            trailing={
+              <>
                   <div
-                    className={cn(
-                      "min-w-0 shrink-0",
-                      submitting && "pointer-events-none opacity-60"
-                    )}
+                    className={cn("min-w-0 shrink-0", submitting && "pointer-events-none")}
                   >
                     <ModelSelector
                       value={model}
@@ -1049,9 +1062,6 @@ export function WorkComposer({
                     onChange={setReasoningEffort}
                     disabled={submitting}
                   />
-                </div>
-
-                <div className="ml-auto flex shrink-0 items-center gap-1.5">
 
                   {/* Dictate. Sits immediately left of the primary action, the
                       same place it occupies in the chat and Code composers — a
@@ -1076,22 +1086,24 @@ export function WorkComposer({
                           disabled={submitting || dictating || voice.open}
                           aria-label="Dictate the task"
                           aria-pressed={dictating}
-                          className="composer-mic-button shrink-0 rounded-composer-control coarse:size-11"
+                          className={composerIconButtonClass}
                         >
-                          <Mic className="composer-mic-icon size-4" aria-hidden="true" />
+                          <Mic className="size-4" aria-hidden="true" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Dictate</TooltipContent>
                     </Tooltip>
                   )}
 
-                  {/* Primary Action Button: Morphs seamlessly between Voice (empty), Start (has text/target) */}
+                  <ComposerDivider />
+              </>
+            }
+            action={
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="shrink-0">
-                        <Button
-                          type="button"
-                          size="icon"
+                        <ComposerPrimaryAction
+                          face={submitting ? "busy" : showVoiceButton ? "voice" : "send"}
                           onClick={
                             showVoiceButton ? voice.onOpenVoiceMode : () => void submit()
                           }
@@ -1103,95 +1115,13 @@ export function WorkComposer({
                                 ? selection.explanation
                                 : "Start this task"
                           }
-                          className={cn(
-                            "composer-primary-action size-9 rounded-composer-action coarse:size-11",
-                            "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
-                          )}
-                        >
-                          {submitting ? (
-                            <Loader2
-                              key="starting"
-                              className="size-4 animate-spin motion-safe:animate-fade-in"
-                              aria-hidden="true"
-                            />
-                          ) : showVoiceButton ? (
-                            <span
-                              key="voice"
-                              className="composer-voice-wave motion-safe:animate-fade-in"
-                              aria-hidden="true"
-                            >
-                              <span />
-                              <span />
-                              <span />
-                              <span />
-                              <span />
-                            </span>
-                          ) : (
-                            <ArrowUp
-                              key="start"
-                              className="composer-send-icon size-4 motion-safe:animate-fade-in"
-                              aria-hidden="true"
-                            />
-                          )}
-                        </Button>
+                        />
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       {showVoiceButton ? "Voice conversation" : "Start task"}
                     </TooltipContent>
                   </Tooltip>
-                </div>
-              </>
-            }
-            /*
-             * ── The utility strip: the standing context of the run ─────────
-             *
-             * Everything here is still true after the task starts, and true of
-             * the task after that. Two of the three arrived from somewhere
-             * worse: the project and the approval mode were a chip strip ABOVE
-             * the field, which reads as part of the message being composed
-             * when it is the opposite of that, and the apps were two gestures
-             * deep inside a [+] that opens upward over the text.
-             *
-             * The executor is the odd one out and is not a control, because
-             * Work has no executor to choose — `selectForInferred` reads the
-             * goal and decides, and the dispatch route runs the same function
-             * over the same list. It is here because it answers the third
-             * question the strip exists to answer, and a reader is owed it
-             * before they press Start rather than after.
-             */
-            utility={
-              <>
-                <ProjectChip value={projectId} onChange={setProject} disabled={submitting} />
-                <WorkPermissionChip
-                  value={approvalMode}
-                  onChange={setApprovalMode}
-                  disabled={submitting}
-                />
-                <WorkConnectorsChip
-                  connectors={apps.connectors}
-                  failed={apps.failed}
-                  onRetry={apps.reload}
-                  selected={connectorIds}
-                  onToggle={toggleConnector}
-                  disabled={submitting}
-                />
-                {/* Last and pushed right, so it is the item that gives up room
-                    first when the strip runs out of it: it is the only one of
-                    the four a reader can also get in full elsewhere, by
-                    opening the disclosure under the composer. */}
-                <span className="ml-auto flex min-w-0 justify-end">
-                  <WorkRunTarget
-                    target={selection.target}
-                    hostName={
-                      (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ??
-                      null
-                    }
-                    loading={loadingHosts}
-                    unknown={executorsUnknown}
-                  />
-                </span>
-              </>
             }
           />
         </WorkDictationLayer>
@@ -1257,12 +1187,25 @@ export function WorkComposer({
        * carries the same line per row from the same record, so there is one
        * sentence per mode in the product rather than two that can drift.
        */}
+      {/* Where it will run — a fact, not a control (Work has no executor to
+          choose; `selectForInferred` decides), so it lives under the surface
+          rather than on the row, beside the other standing facts about the run. */}
+      <div className="mt-2.5 flex min-w-0 items-center px-1.5">
+        <WorkRunTarget
+          target={selection.target}
+          hostName={
+            (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ?? null
+          }
+          loading={loadingHosts}
+          unknown={executorsUnknown}
+        />
+      </div>
       <p
         // Announced when it changes: the chip above says only the mode's name,
         // and a reader moving between the three with a screen reader would
         // otherwise hear three words and no meaning.
         aria-live="polite"
-        className="mt-3 px-1.5 text-caption leading-relaxed text-muted-foreground"
+        className="mt-1 px-1.5 text-caption leading-relaxed text-muted-foreground"
       >
         {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
       </p>

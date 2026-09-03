@@ -1,34 +1,32 @@
 "use client";
 
 import * as React from "react";
+import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 /**
- * A segmented control that follows the product's lighting model (globals.css
- * "Depth kit"): the track is a well (`field-well` / `--well-inset`) and the live
- * segment is a raised thumb wearing the same top sheen + `--shadow-pop` as a
- * `secondary` Button, so the selection reads as a key standing proud of its slot
- * rather than a tinted rectangle.
+ * A segmented control on the product's lighting model (docs/design/SOFT_UI.md
+ * §2.2): the track is an inset well and the live segment is a raised key
+ * standing proud of it.
  *
- * One thumb glides between the segments — measured geometry (offsetLeft/Top),
- * no new dependency — so the switch says "these sit side by side and you moved
- * between them" instead of cross-fading two fills. It travels on whichever axis
- * the group is laid out on (horizontal by default; vertical for icon rails).
+ * ONE thumb, carried between segments by framer-motion's `layoutId`. The old
+ * version measured `offsetLeft` and wrote a `translate3d` by hand, with a
+ * ResizeObserver, a first-placement snap and a one-frame "stretch" — ~150
+ * lines to approximate what a shared-layout element does natively, and it
+ * still snapped when a segment's width changed underneath it. With `layoutId`
+ * the thumb simply IS wherever the selected segment is; framer measures both
+ * boxes and runs the spring between them, interruptible, and a resize just
+ * re-measures. The spring (stiffness 420, damping 34, mass 0.8) is a firm
+ * settle with no visible overrun — the key lands, it does not bounce.
  *
- * Radiogroup semantics: selection follows focus, arrows move it (with wrap).
- * This is the shared idiom behind the sidebar's Home/Code toggle and the
- * /code/new Device/Cloud toggle.
+ * Labels cross-fade their ink over `--dur-fast`; icons stay put (no scale,
+ * no bounce — the thumb is the thing that moves). A press dips the whole
+ * segment, thumb and legend together, to 0.97 for `--dur-press`.
+ *
+ * Radiogroup semantics: one tab stop, arrows move the selection with wrap.
+ * This is the shared idiom behind the sidebar's Chat / Code switch, the
+ * Chat / Work switch above the transcript and every list filter.
  */
-
-/**
- * The squash below is a transform the CSS `prefers-reduced-motion` block cannot
- * reach, because it is written from JavaScript. Asked here instead, so the
- * setting is honoured by the same rule as everything else rather than by the
- * absence of one.
- */
-const prefersReducedMotion = () =>
-  typeof window !== "undefined" &&
-  window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 export type SegmentedOption<T extends string> = {
   value: T;
@@ -36,18 +34,17 @@ export type SegmentedOption<T extends string> = {
   /** Rendered before the label (or alone, when `labelHidden`). */
   icon?: React.ReactNode;
   /**
-   * A live tally shown after the label — "All 12", "Images 5".
-   *
-   * Here because its absence was the stated reason a filter went and drew its
-   * own pills instead: `label` is a `string`, so a count concatenated into it
-   * flattens into untabulated sans. It gets the mono tabular face those pills
-   * used, and the equal-width grid below means a digit arriving or leaving
-   * moves no segment and sends the thumb nowhere.
+   * A live tally shown after the label — "All 12", "Images 5" — in the mono
+   * tabular face, so a digit arriving or leaving moves no segment and sends
+   * the thumb nowhere (the equal-width grid below does the rest).
    */
   count?: number;
   /** Disables just this segment (still announced, not selectable). */
   disabled?: boolean;
 };
+
+/** The thumb's spring: firm, quick, no overrun. */
+const THUMB_SPRING: Transition = { type: "spring", stiffness: 420, damping: 34, mass: 0.8 };
 
 export function SegmentedControl<T extends string>({
   value,
@@ -72,165 +69,10 @@ export function SegmentedControl<T extends string>({
   optionClassName?: string;
 }) {
   const refs = React.useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
-  const trackRef = React.useRef<HTMLDivElement>(null);
-  const thumbRef = React.useRef<HTMLSpanElement>(null);
-  /**
-   * Whether the ACTIVE segment is currently held down.
-   *
-   * The control claimed to be a physical thing — a key standing proud of a
-   * recess — and then, on the one gesture that tests the claim, only the label
-   * moved: `active:scale-[0.97]` dipped the text and icon while the raised
-   * surface under them stayed exactly where it was. Pressing a real key pushes
-   * the KEY down. So the thumb dips with its contents and its shadow collapses
-   * toward the well, because a surface travelling toward the ground it sits on
-   * casts less shadow, not the same shadow lower down.
-   *
-   * Only for the active segment. Pressing an inactive one is a request to move
-   * the thumb, not to push it — dipping the thumb there would animate the wrong
-   * object, and it would do it in the wrong place.
-   */
-  const [pressed, setPressed] = React.useState(false);
-
-  /**
-   * Release is watched on the WINDOW, not on the segment.
-   *
-   * The obvious version — onPointerUp/onPointerLeave on the button — leaves the
-   * thumb stuck down, and it is not a rare path: press a segment, slide off it,
-   * release. The pointerup then lands on whatever is under the cursor, the
-   * button never hears it, and the control sits permanently dipped until it is
-   * pressed again. (Verified in the browser: after a press that ended off the
-   * element, `data-pressed` was still set.) `pointerleave` is no help either,
-   * because React derives it from pointerout, so a release outside the document
-   * or during a drag can miss both.
-   *
-   * A window listener answers all of those with one rule: the press ends when
-   * the POINTER comes up, wherever it happens to be. `blur` covers the tab
-   * losing focus mid-press, which fires no pointer event at all.
-   */
-  React.useEffect(() => {
-    if (!pressed) return;
-    const release = () => setPressed(false);
-    window.addEventListener("pointerup", release);
-    window.addEventListener("pointercancel", release);
-    window.addEventListener("blur", release);
-    return () => {
-      window.removeEventListener("pointerup", release);
-      window.removeEventListener("pointercancel", release);
-      window.removeEventListener("blur", release);
-    };
-  }, [pressed]);
-  // The thumb is placed from measured pixels, so it must snap (not glide) into
-  // its first position and after a track resize — gliding there would animate
-  // from a place the user never selected.
-  const hasPlaced = React.useRef(false);
-
-  /** Where the thumb was last placed, so travel distance is knowable. */
-  const lastPos = React.useRef<{ x: number; y: number } | null>(null);
-  /** The one-frame stretch applied while the thumb is in flight. */
-  const [travel, setTravel] = React.useState<{ sx: number; sy: number } | null>(null);
-
-  /**
-   * How far the thumb stretches along its direction of travel, as a fraction of
-   * the distance it covers.
-   *
-   * This is the part that makes the switch read as a physical object rather
-   * than a rectangle being repositioned. A shape that moves and stays perfectly
-   * rigid reads as a slide transition; a shape that leans into its travel and
-   * relaxes on arrival reads as something with mass. Apple's segmented control
-   * does a version of this, which is why its switch feels like a switch.
-   *
-   * The cross-axis contracts by the reciprocal, so the thumb conserves its
-   * apparent area and the stretch reads as deformation rather than as growth.
-   *
-   * Capped hard at 8%. Beyond roughly that it stops being physics and starts
-   * being an effect — and this control sits in a 240px sidebar, where the whole
-   * travel is ~90px and an over-eager stretch just looks like a rubber band.
-   *
-   * Both constants had been zeroed, which made `along` always 0, `grow`/`shrink`
-   * always 1 and `setTravel` a no-op that wrote `scale: "1 1"` — so the effect
-   * these ~70 lines of comment exist to justify never ran once. Restored to the
-   * spec above: 0.0011/px reaches the 8% cap at ~73px of travel, which is inside
-   * the ~90px the sidebar toggle covers, so a full-width switch saturates and a
-   * neighbour-to-neighbour one does not.
-   */
-  const STRETCH_PER_PX = 0.0011;
-  const MAX_STRETCH = 0.08;
-
-  const place = React.useCallback(
-    (animate: boolean) => {
-      const thumb = thumbRef.current;
-      const el = refs.current[value];
-      if (!thumb || !el) return;
-
-      const x = el.offsetLeft;
-      const y = el.offsetTop;
-
-      if (!animate) thumb.style.transition = "none";
-      thumb.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-      thumb.style.width = `${el.offsetWidth}px`;
-      thumb.style.height = `${el.offsetHeight}px`;
-
-      if (!animate) {
-        void thumb.offsetHeight; // flush the jump before the class transition returns
-        thumb.style.transition = "";
-        lastPos.current = { x, y };
-        setTravel(null);
-        return;
-      }
-
-      // The stretch is STATE, not an inline style cleared from a rAF callback.
-      //
-      // The first version wrote `thumb.style.scale` directly and scheduled a
-      // rAF to clear it. Verified in the browser: it never cleared — the thumb
-      // stayed permanently deformed at 1.08 × 0.93 after the first switch. An
-      // imperative write racing a declarative render is a bug waiting for a
-      // slow frame; React owns the attribute, so React owns the value.
-      const prev = lastPos.current;
-      lastPos.current = { x, y };
-      if (!prev || prefersReducedMotion()) return;
-
-      const dx = Math.abs(x - prev.x);
-      const dy = Math.abs(y - prev.y);
-      if (dx < 1 && dy < 1) return;
-
-      const along = Math.min(Math.max(dx, dy) * STRETCH_PER_PX, MAX_STRETCH);
-      const grow = 1 + along;
-      const shrink = 1 / grow;
-      // Stretch along travel, contract across it: the thumb keeps its apparent
-      // area, so it reads as a body deforming rather than one growing.
-      setTravel(dx >= dy ? { sx: grow, sy: shrink } : { sx: shrink, sy: grow });
-    },
-    [value],
-  );
-
-  /**
-   * Release the stretch one frame after it is applied.
-   *
-   * Applying and releasing on the same frame would collapse into no animation
-   * at all; a frame apart, the `scale` transition runs the whole way back on
-   * its own (slower) curve while the thumb is still travelling. The overlap is
-   * the effect: the body leans into the move, arrives, and relaxes a beat
-   * later — which is what "settled" looks like, as opposed to "stopped".
-   */
-  React.useEffect(() => {
-    if (!travel) return;
-    const id = requestAnimationFrame(() => setTravel(null));
-    return () => cancelAnimationFrame(id);
-  }, [travel]);
-
-  React.useLayoutEffect(() => {
-    place(hasPlaced.current);
-    hasPlaced.current = true;
-  }, [place, orientation, labelHidden]);
-
-  // Fluid segments (resizable sidebar, responsive page) go stale without this.
-  React.useEffect(() => {
-    const track = trackRef.current;
-    if (!track || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => place(false));
-    ro.observe(track);
-    return () => ro.disconnect();
-  }, [place]);
+  const reduceMotion = useReducedMotion() ?? false;
+  // `layoutId` is global to the page, so two controls on screen at once must
+  // not share one — the thumb would try to fly between them.
+  const thumbId = `${React.useId()}-thumb`;
 
   const move = (dir: 1 | -1) => {
     const enabled = options.filter((o) => !o.disabled);
@@ -250,37 +92,13 @@ export function SegmentedControl<T extends string>({
 
   return (
     <div
-      ref={trackRef}
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        // The track is a shadow cast into its surface, so it darkens the parent
-        // in both themes. It shares TabsList's material and geometry — this and
-        // the tab strip are two renderings of one idiom, and shipping them with
-        // two concentric systems and two track colours is the drift. The track
-        // used to be a raw `bg-black/[0.055] dark:bg-black/25` literal, which no
-        // retheme can reach. No border: the thumb is positioned from
-        // offsetLeft/offsetTop, which agree with left-0/top-0 only while the
-        // padding edge and border edge coincide.
-        // Concentric corners: the track's outer radius = the thumb's inner
-        // radius + the padding that separates them (menu 12 = control 9 + 4, to
-        // within the 1px that a rounded corner cannot show), and the padding is
-        // uniform (p-1) so the thumb's inset is identical on all four sides.
-        //
-        // This line said "shares TabsList's material and geometry" while
-        // diverging from it on four axes at once: radius 9 vs 12, fill 55% vs
-        // 70%, a border TabsList does not have, and no `field-well` — the inset
-        // the docstring at the top of this file calls the track's defining
-        // feature. Two renderings of one idiom cannot disagree about all four.
-        // It is TabsList's string now, verbatim — including the removal of
-        // `bg-muted/70`, which was silently overriding `field-well`'s own fill.
-        // Utilities are emitted after the components layer, so on light the
-        // utility won; on dark `.dark .field-well` (0,2,0) outranked it and won
-        // instead. One track, two themes, two different sources of truth — and
-        // the one that knows a well has to LIFT on a black ground rather than
-        // recess below it was the half that kept getting overruled.
         // `.surface-inset` (SOFT_UI.md): the recess the thumb stands out of.
-        // TabsList shares this string — two renderings of one idiom.
+        // Concentric: track `rounded-menu` (14) − p-1 (4) = the thumb's
+        // `rounded-control` (10). TabsList shares this string — two renderings
+        // of one idiom.
         "surface-inset relative gap-1 rounded-menu p-1",
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
@@ -291,167 +109,75 @@ export function SegmentedControl<T extends string>({
           : undefined
       }
     >
-      <span
-        ref={thumbRef}
-        aria-hidden="true"
-        data-pressed={pressed ? "" : undefined}
-        // Scale is driven from one place: a press wins over travel, because a
-        // finger on the control outranks an animation it interrupted.
-        style={
-          pressed
-            ? { scale: "0.97" }
-            : travel
-              ? { scale: `${travel.sx} ${travel.sy}` }
-              : undefined
-        }
-        className={cn(
-          // rounded-control (9), not rounded-xs (6): the track is 12 with p-1, so
-          // 12 − 4 = 8 ≈ 9 is the concentric answer, the same one TabsTrigger
-          // already uses inside the identical shell.
-          // The raised key: `.surface-raised` supplies fill, hairline and the
-          // dual shadow in both themes, so the thumb stands out of the well by
-          // the same mechanism every other raised object in the product does.
-          "surface-raised pointer-events-none absolute left-0 top-0 z-0 rounded-control",
-          // THE SLIDE. `ease-out-back` overshoots by ~3% and comes back, so the
-          // pane arrives with weight instead of stopping on the mark. This is
-          // the one curve in the system that overshoots and this is what it was
-          // added for. (`ease-spring`, which this used to name, was an alias of
-          // ease-out-strong that never sprang at all — since deleted.)
-          //
-          // THE RELAX. `scale` is given a slower rung and a plain decelerate, so
-          // the stretch is still unwinding for ~140ms after the travel has
-          // finished. Two properties, two durations, deliberately out of phase —
-          // an element whose deformation ends exactly when its movement ends
-          // reads as rigid, however far it stretched on the way.
-          // ONE transition declaration, written longhand because the four
-          // properties genuinely want four timings and any shorthand that gave
-          // them one would flatten the whole effect:
-          //
-          //   transform  --dur-base  ease-out-back   the slide, overshooting ~3%
-          //                                          so the pane settles rather
-          //                                          than stops
-          //   width/height  ditto                    kept in lockstep with it,
-          //                                          or the box visibly resizes
-          //                                          after arriving
-          //   scale      --dur-slow  ease-out-soft   the stretch relaxing — a
-          //                                          slower rung on purpose, so
-          //                                          deformation is still
-          //                                          unwinding ~140ms after the
-          //                                          travel ends. An element
-          //                                          that stops deforming exactly
-          //                                          when it stops moving reads
-          //                                          as rigid however far it
-          //                                          stretched on the way.
-          //   box-shadow --dur-fast                  depth answers the pointer,
-          //                                          not the journey
-          //
-          // What shipped was 180ms/ease-out-soft for transform and --dur-press
-          // for scale: an off-ladder duration (the rungs are 70/120/160/220/360/
-          // 560), no overshoot anywhere, and a "relax" that finished before the
-          // travel did — i.e. the exact three things the block above says are the
-          // point. It is the spec now.
-          "[transition:transform_var(--dur-base)_var(--ease-out-back),width_var(--dur-base)_var(--ease-out-back),height_var(--dur-base)_var(--ease-out-back),scale_var(--dur-slow)_var(--ease-out-soft),box-shadow_var(--dur-fast)_var(--ease-out-soft)]",
-          // Held: the key goes down into its well — the pressed recipe, which
-          // is the inset shadow at a tighter throw — and `scale` is re-timed
-          // to --dur-press, because the slow rung above is right for relaxing
-          // a stretch and far too slow for answering a finger.
-          "data-[pressed]:shadow-pressed",
-          "data-[pressed]:[transition:scale_var(--dur-press)_var(--ease-out-strong),box-shadow_var(--dur-press)_var(--ease-out-soft)]",
-          // Rest value for the independent `scale` property. Independent rather
-          // than a transform utility because `place()` writes
-          // `transform: translate3d(...)` inline on every move, and a
-          // `scale-[...]` class would be clobbered by the next placement.
-          "[scale:1]",
-          "motion-reduce:transition-none",
-        )}
-      />
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          ref={(el) => {
-            refs.current[opt.value] = el;
-          }}
-          type="button"
-          role="radio"
-          aria-checked={value === opt.value}
-          aria-label={labelHidden ? opt.label : undefined}
-          title={labelHidden ? opt.label : undefined}
-          disabled={opt.disabled}
-          // Roving tabindex: the group is one tab stop; arrows move within it.
-          tabIndex={value === opt.value ? 0 : -1}
-          onClick={() => !opt.disabled && onChange(opt.value)}
-          onKeyDown={handleKeyDown}
-          // Only the press starts here; the window listener above ends it, so a
-          // release anywhere on screen lifts the thumb.
-          onPointerDown={() => value === opt.value && !opt.disabled && setPressed(true)}
-          className={cn(
-            // The contents dip WITH the thumb rather than instead of it, so the
-            // key and its legend travel together. --dur-press, matching .pressable.
-            "group relative z-10 flex items-center justify-center rounded-control font-medium",
-            "transition-[color,transform,background-color] duration-fast ease-out-soft",
-            "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
-            "motion-reduce:transition-none motion-reduce:active:scale-100",
-            // `coarse:` growth on the icon rail. This is the one variant meant
-            // for a sidebar toggle on touch and it was the only control in the
-            // product still under the 44px target — Button (button.tsx) and
-            // Pressable (pressable.tsx) both grow every icon target on a coarse
-            // pointer. `text-sm` rather than the off-ladder 13px: this is the
-            // same idiom as TabsTrigger and now says so at the same size.
-            labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-sm",
-            value === opt.value
-              ? "text-foreground"
-              : // An inactive segment had colour-only hover: the label brightened
-                // with no ground under it, so the hit area was invisible until
-                // you were already on it. A faint wash names the target. It is
-                // deliberately far below the thumb's own contrast — this is
-                // "you can press here", not a second selected state.
-                //
-                // `bg-accent/60`, not `bg-foreground/[0.035]`: 3.5% of a 94%
-                // foreground over the track lands at ~3% lightness, so on pure
-                // black the wash the comment above describes was still invisible.
-                // The accent rung is what the rest of the product hovers with.
-                "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-            optionClassName,
-          )}
-        >
-          {/* The mark arrives WITH the thumb rather than snapping when the
-              class flips. An unselected icon sits slightly small and dimmed;
-              becoming selected brings it to full size and full ink over the
-              same --dur-base the thumb travels in, so the destination segment
-              is visibly "coming alive" while the thumb is still on its way.
-              That overlap is what makes the switch feel like one gesture
-              instead of a slide followed by a colour change. */}
-          <span
+      {options.map((opt) => {
+        const selected = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            ref={(el) => {
+              refs.current[opt.value] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={labelHidden ? opt.label : undefined}
+            title={labelHidden ? opt.label : undefined}
+            disabled={opt.disabled}
+            // Roving tabindex: the group is one tab stop; arrows move within it.
+            tabIndex={selected ? 0 : -1}
+            onClick={() => !opt.disabled && onChange(opt.value)}
+            onKeyDown={handleKeyDown}
             className={cn(
-              "inline-flex transition-[transform,opacity] duration-base ease-out-strong motion-reduce:transition-none",
-              value === opt.value ? "scale-100 opacity-100" : "scale-[0.92] opacity-70",
+              // The key and its legend dip TOGETHER: the thumb is a child of
+              // the segment, so one transform moves both. --dur-press, matching
+              // `.pressable`.
+              "group relative flex items-center justify-center rounded-control font-medium",
+              "transition-[color,transform,background-color] duration-fast ease-out-soft",
+              "active:scale-[0.97] active:duration-press disabled:pointer-events-none disabled:opacity-50",
+              "motion-reduce:transition-none motion-reduce:active:scale-100",
+              labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-sm",
+              selected
+                ? "text-foreground"
+                : // A faint wash names the target under the pointer — far below
+                  // the thumb's own contrast, so it reads as "you can press here",
+                  // not as a second selected state.
+                  "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+              optionClassName,
             )}
           >
-            {opt.icon}
-          </span>
-          {/* The label tracks the same curve. `font-medium` throughout — shifting
-              weight on selection would reflow the segment and make the thumb
-              chase a target that moved while it was travelling. */}
-          {!labelHidden && (
-            <span
-              className={cn(
-                "transition-opacity duration-base ease-out-strong motion-reduce:transition-none",
-                value === opt.value ? "opacity-100" : "opacity-85",
-              )}
-            >
-              {opt.label}
-            </span>
-          )}
-          {/* The tally, in the same register a `Badge` count wears: mono, 10.5px,
-              tabular so the segment does not twitch as the number changes width.
-              `opacity-70` rather than a colour, because the segment above already
-              decides the ink for both of its states and a second colour here
-              would have to be wrong in one of them. */}
-          {!labelHidden && opt.count !== undefined && (
-            <span className="font-mono text-micro tabular-nums opacity-70">{opt.count}</span>
-          )}
-        </button>
-      ))}
+            {selected && (
+              <motion.span
+                layoutId={thumbId}
+                aria-hidden="true"
+                transition={reduceMotion ? { duration: 0 } : THUMB_SPRING}
+                // The raised key. `.surface-raised` supplies fill, hairline and
+                // the dual shadow in both themes. The radius rides `style` too,
+                // so framer can keep the corners true while it scales the box
+                // between two segments of different widths.
+                className="surface-raised absolute inset-0 rounded-control"
+                style={{ borderRadius: 10 }}
+              />
+            )}
+            {/* Steady: the mark neither scales nor bounces. Only its ink
+                follows the selection, on the same fast ramp as the label. */}
+            {opt.icon && (
+              <span className="relative z-10 inline-flex transition-colors duration-fast ease-out-soft motion-reduce:transition-none">
+                {opt.icon}
+              </span>
+            )}
+            {!labelHidden && (
+              <span className="relative z-10 transition-colors duration-fast ease-out-soft motion-reduce:transition-none">
+                {opt.label}
+              </span>
+            )}
+            {/* The tally, in the register a `Badge` count wears: mono, tabular,
+                dimmed by opacity so the segment's own ink decides its colour. */}
+            {!labelHidden && opt.count !== undefined && (
+              <span className="relative z-10 font-mono text-micro tabular-nums opacity-70">{opt.count}</span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }

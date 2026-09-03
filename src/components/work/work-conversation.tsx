@@ -211,19 +211,13 @@ export function WorkConversation({
           tall: enough to read as depth without borrowing a shadow, which this
           surface does not use. */}
       {/*
-        `composer-aura-host` + `isolate` are what let the voice field light this
-        composer the way it lights chat's. The aura paints at `z-index: -1`, so
-        it needs a stacking context here to mean "behind the composer" rather
-        than "behind whichever distant ancestor happens to make one" — and the
-        host rule is where the aura's tint and its easing live. Both are inert
-        until `WorkVoicePanel` mounts something that reads them.
-
-        No `transition-[padding]` utility on this element, deliberately: Tailwind
-        emits utilities after components at equal specificity, so it would
-        replace the whole `transition` declaration in `.composer-aura-host` and
-        silently drop the custom-property easing with it.
+        `isolate` is what lets the voice field light this composer the way it
+        lights chat's. The aura paints at `z-index: -1`, so it needs a stacking
+        context here to mean "behind the composer" rather than "behind whichever
+        distant ancestor happens to make one". Inert until `WorkVoicePanel`
+        mounts something that reads it.
       */}
-      <div className="composer-aura-host sticky bottom-0 isolate z-10 mt-6 bg-background pb-2 pt-1">
+      <div className="sticky bottom-0 isolate z-10 mt-6 bg-background pb-2 pt-1">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-background to-transparent"

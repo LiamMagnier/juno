@@ -22,7 +22,7 @@ const Switch = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
-      "surface-inset peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border/70 transition-[background-color,border-color,box-shadow] duration-base ease-out-soft before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] coarse:before:size-11 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none data-[state=checked]:border-primary/80 data-[state=checked]:bg-primary data-[state=checked]:[box-shadow:var(--shadow-pressed),var(--glow-primary)]",
+      "surface-inset peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-border/70 transition-[background-color,border-color,box-shadow] duration-base ease-out-soft before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] coarse:before:size-11 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none data-[state=checked]:border-primary/80 data-[state=checked]:bg-primary data-[state=checked]:shadow-pressed",
       className
     )}
     {...props}

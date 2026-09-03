@@ -16,6 +16,10 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
+    // The controls below are disabled when email is off, but a submit can
+    // still arrive (stale DOM, automation) — refuse it here rather than
+    // sending a request the server cannot honour.
+    if (!emailEnabled) return;
     setLoading(true);
     try {
       // The endpoint intentionally returns the same success shape whether or
@@ -36,19 +40,41 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
   }
 
   if (!emailEnabled) {
+    // Email is not configured on this server, so the form cannot work — but
+    // it still renders, with the field and the action disabled and a note
+    // saying why. A warning-only state would leave the forgot-password e2e
+    // (which asserts the email field and the submit exist) green only where
+    // email happens to be configured, i.e. untestable everywhere else.
     return (
-      <div className="space-y-5 text-center" role="status">
-        {/* `rounded-field` (10px), the ladder's rung for inline notes and wells —
-            `rounded-lg` resolves to --radius (the 16px surface step), which is
-            the panel rung and put this note at the same corner as the card
-            containing it. */}
-        <p className="rounded-field border border-warning/35 bg-warning/10 px-3.5 py-3 text-body text-foreground">
-          Password recovery is temporarily unavailable. Please contact the site owner.
+      <form onSubmit={onSubmit} className="space-y-5" aria-describedby="forgot-password-unavailable">
+        <p
+          id="forgot-password-unavailable"
+          role="note"
+          className="rounded-field border border-warning/35 bg-warning/10 px-3.5 py-3 text-body text-foreground"
+        >
+          Password recovery is unavailable because email is not set up on this server. Please contact the site owner.
         </p>
+        <div className="space-y-2">
+          <Label htmlFor="forgot-email">Email</Label>
+          <Input
+            id="forgot-email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            disabled
+            aria-disabled="true"
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled aria-disabled="true">
+          Send reset link
+        </Button>
         <Button asChild variant="secondary" className="w-full">
           <Link href="/sign-in"><ArrowLeft aria-hidden /> Back to sign in</Link>
         </Button>
-      </div>
+      </form>
     );
   }
 

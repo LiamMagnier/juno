@@ -470,11 +470,24 @@ final class DesktopCodeHostModel {
         /// The last registration was refused or could not be sent. The beat
         /// continues; ``lastError`` says what happened.
         case failed
+        /// The pairing is gone — revoked here or from the phone — and the beat
+        /// is stopped so it cannot resurrect the row. ``pairAgain()`` is the
+        /// only way back: signing in is not consent to re-pair a Mac someone
+        /// deliberately unpaired.
+        case revoked
     }
 
     private(set) var phase: Phase = .idle
     /// The server's own id for this Mac's row, once it has one.
     private(set) var deviceID: String?
+    /// Whether a self-revoke is in flight, so the tile can hold its button
+    /// rather than letting it be pressed twice.
+    private(set) var isRevoking = false
+    /// A self-revoke the relay refused. Kept apart from ``lastError`` because
+    /// that one belongs to the heartbeat, which keeps beating past a failed
+    /// revoke — folding the two together would let the next beat clear an
+    /// error the reader has not read yet.
+    private(set) var revokeError: String?
     /// When the last registration succeeded. A settings row showing "last seen"
     /// needs this to distinguish "listed" from "listed an hour ago".
     private(set) var lastRegisteredAt: Date?
@@ -533,6 +546,50 @@ final class DesktopCodeHostModel {
         servesQueuedTasks = false
     }
 
+    /// Whether the tile can offer "Revoke this Mac". The row id and a revoke
+    /// transport are both required — a button that cannot reach the server is
+    /// worse than an absent one.
+    var canRevokeThisDevice: Bool {
+        deviceID != nil && remoteClient != nil && !isRevoking
+    }
+
+    /// Revokes this Mac's own pairing: the relay deletes the row, the beat
+    /// stops, and the Mac reads as unpaired until someone here pairs it again.
+    ///
+    /// The server delete comes first for a reason. Deleting only locally would
+    /// be undone by the next heartbeat — the upsert would mint a fresh row for
+    /// the same name — so ``enterRevoked()`` keeps the beat stopped after the
+    /// relay confirms.
+    func revokeThisDevice() {
+        guard let accountID, let deviceID, let remoteClient, !isRevoking else { return }
+        isRevoking = true
+        Task {
+            defer { isRevoking = false }
+            do {
+                try await remoteClient.revokeDevice(deviceID: deviceID, for: accountID)
+            } catch {
+                guard self.accountID == accountID else { return }
+                revokeError = NativeFailureMessage.presentable(error)
+                phase = .failed
+                return
+            }
+            guard self.accountID == accountID else { return }
+            enterRevoked()
+        }
+    }
+
+    /// Pairs again after a revoke, as a fresh host with no replayed id: the
+    /// old row is gone, so replaying its id would only earn another 404.
+    func pairAgain() {
+        guard accountID != nil else { return }
+        defaults.removeObject(forKey: Self.revokedKey)
+        deviceID = nil
+        revokeError = nil
+        lastError = nil
+        phase = .registering
+        beginBeat()
+    }
+
     /// Starts or stops the claim loop to match the switch.
     ///
     /// Called from the switch, from sign-in and from sign-out, so there is one
@@ -580,9 +637,20 @@ final class DesktopCodeHostModel {
     /// Matches the Windows client's `DEVICE_ID_KEY` so the two hosts describe
     /// the same idea with the same name.
     private static let deviceIDKey = "juno.code.deviceId"
+    /// The account a persisted device id was issued for. A pairing belongs to
+    /// the account it was issued for, so a different account signing in starts
+    /// clean rather than replaying an id its rows will never contain.
+    private static let deviceAccountKey = "juno.code.deviceAccountId"
+    /// Set while revoked, so a relaunch does not silently re-pair a Mac
+    /// someone deliberately unpaired. Only ``pairAgain()`` clears it.
+    private static let revokedKey = "juno.code.deviceRevoked"
     private static let heartbeatInterval = Duration.seconds(60)
 
     private let client: NativeCodeTaskClient
+    /// The relay transport for revocation. Separate from `relay` (the claim
+    /// loop's seam, which stays a protocol so the loop remains testable
+    /// against fakes) because unpairing is device management, not commanding.
+    private let remoteClient: NativeCodeRemoteClient?
     /// The relay transport for the claim loop. Separate from `client`, which
     /// only registers — keeping them apart means presence still works on a
     /// build where hosting is unavailable.
@@ -609,11 +677,13 @@ final class DesktopCodeHostModel {
         client: NativeCodeTaskClient,
         relay: (any CodeRemoteRelaying)? = nil,
         agentClient: NativeCodeAgentClient? = nil,
+        remoteClient: NativeCodeRemoteClient? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.client = client
         self.relay = relay
         self.agentClient = agentClient
+        self.remoteClient = remoteClient
         self.defaults = defaults
         // Read exactly as `JunoDesktopConfiguration` reads them, so the computer
         // named in the phone's picker is the computer named everywhere else.
@@ -676,14 +746,34 @@ final class DesktopCodeHostModel {
     /// Registers immediately, then once a minute until ``stop()``.
     func start(for accountID: AccountID) {
         guard self.accountID != accountID else { return }
+        let wasRevoked = defaults.bool(forKey: Self.revokedKey)
         stop()
         self.accountID = accountID
+        if defaults.string(forKey: Self.deviceAccountKey) != accountID.rawValue {
+            // A pairing belongs to the account it was issued for. Replaying
+            // another account's id would earn a 404 and a revoked screen on a
+            // Mac that never paired with this account at all.
+            defaults.removeObject(forKey: Self.deviceIDKey)
+            defaults.removeObject(forKey: Self.revokedKey)
+        } else if wasRevoked {
+            // Unpaired before sign-out: stay unpaired until the person at this
+            // Mac pairs again, rather than beating once against a gone row.
+            phase = .revoked
+            return
+        }
         // Replayed on every post from here on. Without it the route falls back
         // to matching on `(user, name)`, so a rename would leave the old row
         // behind as a computer that is listed, never beats again, and can never
         // be selected.
         deviceID = defaults.string(forKey: Self.deviceIDKey)
         phase = .registering
+        beginBeat()
+    }
+
+    /// One beat loop, shared by sign-in and re-pairing: without it the two
+    /// entry points grow their own loops, and two loops double-register.
+    private func beginBeat() {
+        beat?.cancel()
         beat = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
@@ -718,6 +808,8 @@ final class DesktopCodeHostModel {
         lastError = nil
         isRegistering = false
         needsAnotherRegistration = false
+        isRevoking = false
+        revokeError = nil
         phase = .idle
     }
 
@@ -771,12 +863,24 @@ final class DesktopCodeHostModel {
                 // this is the earliest the loop can be started.
                 deviceID = id
                 defaults.set(id, forKey: Self.deviceIDKey)
+                defaults.set(accountID.rawValue, forKey: Self.deviceAccountKey)
                 self.syncRemoteHost()
                 lastRegisteredAt = Date()
                 lastError = nil
+                revokeError = nil
                 phase = .listed
             } catch {
                 guard self.accountID == accountID else { return }
+                if let codeError = error as? NativeCodeError,
+                   case .server(404, _) = codeError {
+                    // The replayed id names no row: the pairing was revoked —
+                    // from the phone, from this Mac, or with the database.
+                    // Re-registering here would resurrect a computer the account
+                    // just removed, so the beat stops and the tile offers to
+                    // pair again instead.
+                    enterRevoked()
+                    return
+                }
                 // Left readable and left beating. A refusal now is very often a
                 // token that is about to be refreshed or a network that is about
                 // to come back, and the next beat is a minute away — which is
@@ -785,6 +889,34 @@ final class DesktopCodeHostModel {
                 phase = .failed
             }
         } while needsAnotherRegistration && !Task.isCancelled
+    }
+
+    /// Drops the pairing after the relay refused the replayed id or a
+    /// self-revoke confirmed: the beat stops so it cannot resurrect the row,
+    /// the claim loops stop so nothing runs here, and the persisted id goes
+    /// with the row so a relaunch cannot replay it either. Only ``pairAgain()``
+    /// reverses this — signing in is not consent to re-pair.
+    private func enterRevoked() {
+        beat?.cancel()
+        beat = nil
+        if let host = remoteHost {
+            remoteHost = nil
+            Task { await host.deactivate(reason: "This Mac was unpaired") }
+        }
+        if let host = queuedHost {
+            queuedHost = nil
+            Task { await host.deactivate() }
+        }
+        deviceID = nil
+        defaults.removeObject(forKey: Self.deviceIDKey)
+        defaults.set(true, forKey: Self.revokedKey)
+        defaults.set(false, forKey: Self.servesQueuedTasksKey)
+        lastRegisteredAt = nil
+        lastError = nil
+        revokeError = nil
+        isRegistering = false
+        needsAnotherRegistration = false
+        phase = .revoked
     }
 
     /// One granted folder, as the account should see it — or nothing, when the

@@ -224,8 +224,8 @@ rgba is a fork of the system:
 | `.surface-float` | `--popover` + `--shadow-float` + sheen | popovers, dropdowns, dialogs, toasts, tooltips, sheets |
 | `.overlay-glass` | composes with `.surface-float`: `--popover/.86` + 12px blur; solid under `prefers-reduced-transparency` | menus, popovers, the command palette — chrome only |
 | `.control-neu` | raised at rest → pressed inset on `:active` / `[data-state=on]` / `[aria-pressed]` / `[data-selected]` | secondary buttons, icon buttons, toggles, chips, tiles |
-| `.control-primary` | coral gradient + `--glow-primary` + `--shadow-raised` | primary buttons, send |
-| `.composer-surface` / `.composer-field` | the raised shell and the inset well inside it | every composer |
+| `.control-primary` | flat coral fill + `--shadow-raised` (no tinted glow) | primary buttons, send |
+| `.composer-surface` | the composer's one quiet surface: card fill, hairline, one low shadow; focus darkens the edge and lifts it a notch | every composer, via `ComposerShell` |
 | `.shimmer-text` | ChatGPT-style thinking shimmer; static muted text under reduced motion | status lines |
 | `.check-morph` | copy → check spring | action rows |
 

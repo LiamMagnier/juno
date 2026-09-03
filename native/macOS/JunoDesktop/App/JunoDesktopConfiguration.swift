@@ -336,7 +336,12 @@ struct JunoDesktopConfiguration {
                     relay: NativeCodeRemoteClient(sender: runtime, streamer: runtime),
                     // iOS creates server-owned `/api/code/tasks`; this is the
                     // authenticated host client that claims and streams them.
-                    agentClient: NativeCodeAgentClient(sender: runtime)
+                    agentClient: NativeCodeAgentClient(sender: runtime),
+                    // Unpairs this Mac on request. A separate instance from the
+                    // claim loop's: revocation is device management, and the
+                    // loop's seam stays a protocol so it remains testable
+                    // against fakes.
+                    remoteClient: NativeCodeRemoteClient(sender: runtime, streamer: runtime)
                 ),
                 workModel: NativeWorkModel(
                     client: NativeWorkClient(sender: runtime, streamer: runtime)

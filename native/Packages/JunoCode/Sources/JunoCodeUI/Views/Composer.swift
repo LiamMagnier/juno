@@ -368,7 +368,7 @@ public struct Composer: View {
                     .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
                     .contentShape(.circle)
             }
-            .accentGlassAction(active: canSend)
+            .junoCircleAction(active: canSend)
             .disabled(!canSend)
             .keyboardShortcut(.return, modifiers: .command)
             .help(sendHelp)
@@ -385,7 +385,7 @@ public struct Composer: View {
                         .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: true)
+                .junoCircleAction(active: true)
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop the agent (⌘.)")
                 .accessibilityLabel("Stop the agent")
@@ -579,7 +579,9 @@ public struct Composer: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .junoGlass(in: Circle(), interactive: true)
+            // The neutral tile, not glass: see `junoRaisedCircle` for why no
+            // round control in a composer is glass any more.
+            .junoRaisedCircle()
             .buttonStyle(.junoPress)
             .help("Dictate, or start a voice conversation")
             .accessibilityLabel("Voice")
@@ -819,7 +821,7 @@ private struct CodeComposerAddMark: View {
         JunoIconView(.plus, size: 13)
             .junoInk()
             .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
-            .junoGlass(in: Circle(), interactive: true)
+            .junoRaisedCircle()
             .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
             .overlay(alignment: .topTrailing) {
                 if isArmed {

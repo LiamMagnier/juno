@@ -32,43 +32,6 @@
  */
 
 /*
- * The composer aura's two animated inputs, registered so they can interpolate.
- *
- * Both are read inside a gradient, and an unregistered custom property is a raw
- * token: it flips from one value to the next with nothing in between, so the
- * tint would cut from the accent to the model's lab colour and the send swell
- * would step rather than swell. Giving them types lets one transition and one
- * keyframe animation re-render the whole ramp smoothly.
- */
-@property --aura-tint {
-  syntax: "<color>";
-  inherits: true;
-  /* Never used — .composer-aura-host always sets a real one. Kept in step with
-     --primary at light value: a raw brand-family hex has no business in a token
-     file that tells components to keep raw hex out of themselves. */
-  initial-value: #b64f2e;
-}
-@property --aura-pulse {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 1;
-}
-/*
- * How hard the model is thinking, 0…1 (see reasoningGlow in model-metrics).
- *
- * Registered for two reasons. It has to interpolate, so dragging the effort
- * slider swells the light instead of stepping it. And it must NOT be declared
- * on .composer-aura itself: the aura sets --aura there, and a declaration on an
- * element always beats a value inherited from its parent, so a default written
- * into that rule would silently ignore whatever the host passes down. An
- * initial-value gives the fallback with nothing to lose the cascade to.
- */
-@property --aura-think {
-  syntax: "<number>";
-  inherits: true;
-  initial-value: 0.5;
-}
-/*
  * The AIcss to-do header's determinate pie, 0…100% (see .aicss-todo-pie).
  *
  * A conic-gradient stop is a raw token like the aura's tint above: unregistered,
@@ -351,7 +314,6 @@
     --sheen-strong: 0 0% 100% / 0.7;
     --hairline: 48 12% 18% / 0.06;
     --shadow-pop: 0 1px 2px hsl(48 12% 18% / 0.08);
-    --glow-primary: 0 2px 8px -2px hsl(var(--primary) / 0.35);
     /* Alias onto the kit's inset recipe: `shadow-well` and `.field-well` used
        to be a one-directional 1px lip, and a well with light from one side only
        reads as a line, not a recess. */
@@ -512,7 +474,6 @@
     --sheen-strong: 45 20% 96% / 0.11;
     --hairline: 45 14% 94% / 0.08;
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
-    --glow-primary: 0 2px 10px -2px hsl(var(--primary) / 0.45);
 
     /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
        needs opacity to do most of the work, and the 2px backdrop blur on the
@@ -682,7 +643,6 @@
       --ease-drawer: var(--ease-out-soft);
       --dur-slow: var(--dur-base);
     }
-    .composer-aura,
     .skeleton::after,
     .shimmer-text,
     [class*="animate-icon-breathe"],
@@ -778,7 +738,7 @@
      may express depth; a raw `shadow-[…]`, `shadow-2xl` or hand-typed rgba on a
      surface is a fork of this system and will not follow a retune.
 
-       .surface-raised     extruded from the page — cards, the composer shell,
+       .surface-raised     extruded from the page — cards,
                            tiles, the sidebar's active row
        .surface-raised-lg  the same, with a bigger throw — hero cards, pricing,
                            project tiles
@@ -859,16 +819,15 @@
   }
 
   /* The primary action. Real colour, because a primary must never depend on a
-     shadow to be found: a coral gradient lit from the top, the accent-tinted
-     glow underneath, and the raised recipe so it sits on the page like every
-     other control. Hover brightens the top of the gradient; pressing collapses
-     the glow and dips. */
+     shadow to be found: a flat coral fill and the same raised recipe every
+     other control sits on. No tinted glow — a halo under the send button is
+     the one thing that made the composer look like an AI demo. Hover
+     brightens; pressing dips into the pressed recipe. */
   .control-primary {
     color: hsl(var(--primary-foreground));
     border: 1px solid hsl(var(--primary) / .9);
     background-color: hsl(var(--primary));
-    background-image: linear-gradient(180deg, hsl(0 0% 100% / .14), hsl(0 0% 100% / 0) 55%);
-    box-shadow: var(--glow-primary), var(--shadow-raised);
+    box-shadow: var(--shadow-raised);
     transition:
       transform        var(--dur-press) var(--ease-out-soft),
       background-color var(--dur-fast)  var(--ease-out-soft),
@@ -891,16 +850,6 @@
     .control-primary { transition: none; }
     .control-neu:active,
     .control-primary:active { transform: none; }
-  }
-
-  /* Legacy composables kept for the three landing/marketing call sites that
-     layer them: a specular top highlight and the accent halo. New controls take
-     `.control-primary`, which is both of these plus the raised shadow. */
-  .btn-glossy {
-    background-image: linear-gradient(hsl(var(--sheen)), transparent 45%);
-  }
-  .halo-primary {
-    box-shadow: var(--glow-primary);
   }
 
   /* ChatGPT-style thinking shimmer: the status sentence is painted with a
@@ -1306,240 +1255,36 @@
     .animated-title__sheen { display: none; }
   }
 
-  /* Composer: a raised soft card (SOFT_UI.md §3) with an inset field inside.
-     The shell IS `.surface-raised` — same material, same hairline, same shadow
-     as every other card — and focus lifts it one rung to the large throw and
-     darkens the edge. Focus stays neutral: no accent halo, no layout nudge.
-
-     This recipe used to be dead paint. composer.tsx and composer-shell.tsx both
-     closed their class strings with hand-typed `shadow-[…rgba…]` utilities,
-     and a utility beats the components layer, so the composer never wore the
-     material this rule described. Those utilities are gone; this is the one
-     place the composer's depth is decided. The `.dark` re-paste and the
-     `--composer-shadow-*` alpha knobs went with them — dual shadows work on
-     the charcoal ground now, so one recipe holds in both themes. */
+  /* Composer: one quiet surface (SOFT_UI.md §3). A single rounded container —
+     card fill, a 1px hairline, one low shadow — and the text sits directly in
+     it. No inner well, no second border, no gradient, no aura. Focus darkens
+     the edge and lifts the shadow one notch; nothing else moves. This is the
+     ONLY place the composer's material is decided: every composer in the
+     product (chat, Code, Compare, Work) wears this class through ComposerShell. */
   .composer-surface {
     background-color: hsl(var(--card));
-    background-image: none;
-    border: 1px solid hsl(var(--border) / .6);
-    /* The large throw (`.surface-raised-lg`): the composer is the one card on
-       the chat surface and the thing the eye returns to. */
-    box-shadow: var(--shadow-raised-lg);
+    border: 1px solid hsl(var(--border));
+    box-shadow:
+      0 1px 2px hsl(var(--neu-dark) / .6),
+      0 8px 24px -12px hsl(var(--neu-dark-lg));
+    transition:
+      border-color var(--dur-fast) var(--ease-out-soft),
+      box-shadow   var(--dur-fast) var(--ease-out-soft);
   }
   .composer-surface:focus-within {
-    transform: none;
-    border-color: hsl(var(--foreground) / .25);
-    box-shadow: var(--shadow-raised-lg);
-  }
-  /* The field tier's well: the textarea sits in a recess cut into the raised
-     shell, which is the "one material, three depths" rule in a single box.
-     Margin rather than padding on the shell, so the utility strip below can
-     still run full-bleed to the border. 12px = `rounded-field`; concentric
-     with the 20px shell at an 8-10px inset. */
-  .composer-field {
-    margin: 10px 10px 4px;
-    border-radius: 12px;
-    background-color: hsl(var(--background));
-    box-shadow: var(--shadow-inset), inset 0 0 0 1px hsl(var(--border) / .5);
-    transition: box-shadow var(--dur-fast) var(--ease-out-soft);
-  }
-  .composer-field:focus-within {
-    box-shadow: var(--shadow-inset), inset 0 0 0 1px hsl(var(--border) / .8);
-  }
-
-  /* Accent aura — a soft bloom of the live accent behind the empty-state
-     composer, so a brand-new chat reads as the warmest thing on the page.
-     Purely decorative: it sits on z-index -1 inside the composer column's own
-     stacking context, so it can never paint over the composer or eat a click,
-     and it takes no layout (the column's height is the composer's alone). */
-  /*
-   * What colour the bloom is, and when.
-   *
-   * Idle it is the user's accent, so the empty state answers the accent picker
-   * live. Focused it becomes the colour of the lab behind the selected model —
-   * the composer is about to talk to Anthropic or OpenAI or Moonshot, and the
-   * light behind it says which. Every stop of the ramp derives from this one
-   * colour, so the whole bloom turns over together and stays a coherent light
-   * rather than a mix of two.
-   */
-  .composer-aura-host {
-    --aura-tint: hsl(var(--primary));
-    /* Both inherited into the aura, so both transition from up here — a change
-       on the host is what the descendant follows. Effort eases a touch slower
-       than colour: moving the slider should feel like light coming up, not like
-       a value changing.
-       `padding` belongs in this list rather than as a transition-[padding]
-       utility on the docked host. Tailwind emits utilities after components at
-       the same specificity, so that utility replaced this whole declaration and
-       silently dropped both custom properties — the docked aura would jump
-       colour and effort instead of easing. */
-    transition:
-      padding var(--dur-slow) var(--ease-out-soft),
-      --aura-tint var(--dur-slow) var(--ease-out-soft),
-      --aura-think 520ms var(--ease-out-expo);
-  }
-  .composer-aura-host:has(.composer-surface:focus-within) {
-    --aura-tint: var(--aura-provider, hsl(var(--primary)));
-  }
-  /* Send: one swell and settle. Driven from the host so it animates a variable
-     the aura merely reads, which keeps it clear of the breathing animation on
-     the aura itself — that one owns `transform` and is left alone. */
-  .composer-aura-host.is-sending {
-    animation: composer-aura-send 1100ms var(--ease-out-expo);
-  }
-  @keyframes composer-aura-send {
-    0% { --aura-pulse: 1; }
-    16% { --aura-pulse: 2.3; }
-    100% { --aura-pulse: 1; }
+    border-color: hsl(var(--foreground) / .4);
+    box-shadow:
+      0 1px 3px hsl(var(--neu-dark) / .7),
+      0 16px 40px -16px hsl(var(--neu-dark-lg));
   }
   @media (prefers-reduced-motion: reduce) {
-    .composer-aura-host.is-sending { animation: none; }
-  }
-
-  .composer-aura {
-    /* One knob for the whole effect: every alpha below is scaled by it, so the
-       bloom can be dialled up or down without re-balancing the ramp. */
-    --aura: .72;
-    /* Thinking, folded into the two things you can see: --aura-lit rides the
-       alphas, --aura-reach rides the box. At Instant the bloom is a hint, at
-       Max it is the full light. Reach tops out at exactly 1 — the envelope
-       below is the one measured flush against short windows, and effort must
-       never push past it.
-
-       Lit curves rather than ramps. A straight line puts a constant ABSOLUTE
-       step between tiers, which is a shrinking RELATIVE step as it climbs, so
-       the deep end of the ladder — where the difference matters most — bunched
-       up: 17% between the first two tiers but only 9% between the last two,
-       under what the eye picks up. The quadratic term spends more of the range
-       higher up and holds every step to about a sixth brighter than the one
-       below it, evenly, from Instant to Max. */
-    --aura-lit: calc(.62 + .42 * var(--aura-think) + .44 * var(--aura-think) * var(--aura-think));
-    --aura-reach: calc(.74 + .26 * var(--aura-think));
-    position: absolute;
-    /* Half the composer root's bottom padding, so the bloom centres on the
-       capsule rather than on the column — otherwise the light pools under it. */
-    top: calc(50% - .5rem);
-    left: 50%;
-    /* Width is free — the column above clips sideways (overflow-x-clip), so
-       nothing it clears there can ever be scrolled to. Height is not: this box
-       is real layout, and whatever it clears below the composer is added to the
-       empty state's scroll height. So height is taken from the viewport rather
-       than from the width, which keeps the bloom inside the slack a centred
-       greeting leaves at any window size instead of handing short windows a
-       scrollbar over dead space. The cap stops it ballooning on tall screens. */
-    width: min(138%, 58rem);
-    height: min(22rem, 38vh);
-    /*
-     * Effort scales the bloom, it does not resize it. The box stays exactly the
-     * size and place it always was and `scale` grows or shrinks it about its own
-     * centre, which is the only formulation where the centre cannot move: a
-     * width that changes has to be re-centred every frame by the -50% translate,
-     * through layout, and any disagreement between the two — rounding, a stale
-     * composited layer — reads as the light sliding sideways as it dims. This
-     * also means the laid-out box is always the full envelope, the one measured
-     * flush against short windows, rather than a size that varies with a slider.
-     */
-    scale: var(--aura-reach);
-    translate: -50% -50%;
-    z-index: -1;
-    pointer-events: none;
-    /*
-     * ONE gradient, painted edge to edge of this box.
-     *
-     * Two things this shape is fixing. Stacked box-shadows drew the bloom as
-     * three separate falloffs, and their seams read as concentric rings on a
-     * good display. And a shadow paints only OUTSIDE its element's border box,
-     * so the box itself stayed unlit — a dark plate below the capsule, since
-     * the host is taller than the capsule by the composer's bottom padding.
-     * A single background covers its own box, so there is no plate, and one
-     * continuous ramp has no seams to band along.
-     *
-     * The ramp is hand-shaped to a rough Gaussian rather than left linear: a
-     * straight alpha ramp spends most of its length in the flat middle, which
-     * is exactly where 8-bit alpha steps are widest and most visible. It ends on
-     * an explicit zero-alpha stop of its OWN colour, not `transparent` — which
-     * is zero-alpha black, and greys the hue on the way out.
-     *
-     * The first declaration is the single-hue fallback: the ramp below needs
-     * relative colour syntax, and where that does not parse the cascade keeps
-     * this one and you get a plainer bloom rather than none.
-     */
-    background: radial-gradient(
-      ellipse 50% 50% at 50% 47%,
-      hsl(var(--primary) / calc(.225 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 0%,
-      hsl(var(--primary) / calc(.195 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 18%,
-      hsl(var(--primary) / calc(.14 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 36%,
-      hsl(var(--primary) / calc(.085 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 54%,
-      hsl(var(--primary) / calc(.042 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 72%,
-      hsl(var(--primary) / calc(.014 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 88%,
-      hsl(var(--primary) / 0) 100%
-    );
-    background: radial-gradient(
-      ellipse 50% 50% at 50% 47% in oklab,
-      hsl(from var(--aura-tint) h s calc(l * 1.08) / calc(.225 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 0%,
-      hsl(from var(--aura-tint) h s l / calc(.195 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 18%,
-      hsl(from var(--aura-tint) h s calc(l * .88) / calc(.14 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 36%,
-      hsl(from var(--aura-tint) h calc(s * .96) calc(l * .72) / calc(.085 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 54%,
-      hsl(from var(--aura-tint) h calc(s * .9) calc(l * .55) / calc(.042 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 72%,
-      hsl(from var(--aura-tint) h calc(s * .84) calc(l * .4) / calc(.014 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 88%,
-      hsl(from var(--aura-tint) h calc(s * .8) calc(l * .3) / 0) 100%
-    );
-    opacity: .68;
-    transition: opacity var(--dur-slow) var(--ease-out-soft);
-  }
-  /* Dither. Even a perfect ramp bands: alpha is quantised to 1/255, so a slow
-     fade over ~400px puts a visible step every few pixels, and no amount of
-     blur helps because the blur output is quantised too. A little fixed noise
-     on top scatters each step across the boundary, which is what makes the
-     bands disappear rather than merely soften. Kept faint enough to read as
-     paper grain, and it must NOT be blurred — hence no filter on the parent. */
-  .composer-aura::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    /* Faint enough to read as paper grain rather than as texture — its whole job
-       is to scatter each 1/255 alpha step across its own boundary. */
-    opacity: .04;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23a)'/%3E%3C/svg%3E");
-  }
-  /* Dark takes LESS of the wash, not more.
-     This used to read 1.02 against a light 0.72, on the argument that warm
-     charcoal swallows a low-alpha bloom. There is no warm charcoal any more:
-     the same alpha ramp over #000 has nothing diluting it and reads stronger
-     than it does over 97% paper, so the boost is now an over-strength aura.
-     0.82 keeps dark a touch above light — a coloured wash still loses a little
-     to a black ground — without the bloom becoming the brightest thing on an
-     empty page. */
-  .dark .composer-aura { --aura: .82; }
-  /* Typing warms it a little — the one place the composer is allowed an accent
-     response to focus, since it happens behind the surface, not on it. */
-  .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
-    opacity: .82;
-  }
-  /* The landing's composer preview is not focusable — it is aria-hidden and
-     pointer-events-none — so it pins the aura to the state a real composer only
-     reaches when you type in it. Without this the front door shows the surface
-     with its light off. */
-  .composer-aura-host.is-preview .composer-aura {
-    opacity: .76;
-  }
-  /*
-   * In an open conversation the same bloom sits behind the docked composer, but
-   * it has messages above it to stay out of the way of: a third of the light,
-   * and short enough that it pools around the capsule instead of washing up the
-   * transcript. It earns its place by carrying the same two signals — the lab's
-   * colour while you type, the swell when you send.
-   */
-  .composer-aura--docked {
-    display: none !important;
+    .composer-surface { transition: none; }
   }
 
   /*
    * ——— Voice aura ———
    *
-   * The composer aura above lights the box you type into. This one is what a
-   * live voice call looks like: waves that run along the bottom of the chat
+   * What a live voice call looks like: waves that run along the bottom of the chat
    * column and up its two sides, dying out a little past halfway so they frame
    * the reading area instead of enclosing it.
    *
@@ -1557,9 +1302,9 @@
     /* Anchored just below the composer and reaching up behind it. */
     bottom: -1.25rem;
     height: min(30rem, 46vh);
-    /* UNDER the composer, not over it. `.composer-aura-host` is the stacking
-       context that makes this mean "behind the composer" rather than "behind
-       the page" — the same one the composer bloom uses. */
+    /* UNDER the composer, not over it. The `isolate` on the host wrapper is
+       the stacking context that makes this mean "behind the composer" rather
+       than "behind the page". */
     z-index: -1;
     pointer-events: none;
     /* One compositor-level blur over the whole field. Softening each wave
@@ -1636,22 +1381,6 @@
       color: hsl(from hsl(var(--primary)) h s clamp(52%, calc(l * 1% + 14%), 78%));
     }
   }
-  @media (prefers-reduced-motion: no-preference) {
-    .composer-aura {
-      /* --ease-breathe, the symmetric curve. This is a loop that returns to its
-         own start value, and an ease-out reaches the turn still decelerating, so
-         a 14-second breath acquires a visible pulse at each end — the exact
-         failure --ease-breathe was named for. */
-      animation: composer-aura-breathe 14s var(--ease-breathe) infinite;
-    }
-  }
-  /* Scale only — opacity stays out of the keyframes so the focus rule above can
-     still win (an animation's declarations outrank a plain one at any origin). */
-  @keyframes composer-aura-breathe {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.015); }
-  }
-
   .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
     animation: reasoning-fast-charge 480ms var(--ease-out-strong) both;
   }
@@ -1669,159 +1398,6 @@
     100% { transform: rotate(0) scale(1); }
   }
 
-  .composer-add-icon__plus {
-    transform-origin: 10px 10px;
-    transition: transform 420ms var(--ease-out-strong);
-  }
-  .composer-add-icon__spark {
-    transform-origin: 10px 10px;
-  }
-  .composer-add-button:hover .composer-add-icon__plus {
-    animation: composer-add-plus 420ms var(--ease-out-strong) both;
-  }
-  .composer-add-button:hover .composer-add-icon__spark {
-    animation: composer-add-spark 480ms var(--ease-out-soft) both;
-  }
-  @keyframes composer-add-plus {
-    0% { transform: rotate(0) scale(1); }
-    58% { transform: rotate(102deg) scale(.88); }
-    100% { transform: rotate(90deg) scale(1); }
-  }
-  @keyframes composer-add-spark {
-    0% { transform: scale(.55); opacity: 0; }
-    58% { transform: scale(1.08); opacity: .65; }
-    100% { transform: scale(1); opacity: .25; }
-  }
-
-  .composer-mic-button::before {
-    content: "";
-    position: absolute;
-    inset: 7px;
-    border: 1px solid hsl(var(--foreground) / .14);
-    border-radius: 999px;
-    opacity: 0;
-    transform: scale(.65);
-    pointer-events: none;
-  }
-  .composer-mic-icon {
-    transform-origin: center bottom;
-    transition: transform var(--dur-slow) var(--ease-out-strong);
-  }
-  .composer-mic-button:hover .composer-mic-icon {
-    animation: composer-mic-listen 520ms var(--ease-out-strong) both;
-  }
-  .composer-mic-button:hover::before {
-    animation: composer-mic-ring 600ms var(--ease-out-soft) both;
-  }
-  @keyframes composer-mic-listen {
-    0% { transform: scaleY(1); }
-    45% { transform: scaleY(.84); }
-    72% { transform: scaleY(1.1); }
-    100% { transform: scaleY(1); }
-  }
-  @keyframes composer-mic-ring {
-    0% { transform: scale(.65); opacity: 0; }
-    42% { opacity: .45; }
-    100% { transform: scale(1.45); opacity: 0; }
-  }
-
-  /* The send button's rim light is --sheen, like every other lifted surface in
-     the file, and not the raw `hsl(0 0% 100% / .2)` it carried. That literal was
-     tuned once against the light theme and never revisited: --sheen was
-     deliberately thinned to .055 for the black ground, so a fixed 20% white made
-     this one 24px control about four times more specular than the composer shell
-     it is seated inside.
-
-     Hover deepens the CAST shadow and leaves the specular alone — a highlight is
-     a fact about where the light is, and the light does not move when a pointer
-     arrives. */
-  /*
-   * The composer's SETTING chips — the model picker and the thinking-effort
-   * picker. One material, because they are one kind of thing: a value you are
-   * choosing, sitting inline with the actions you take.
-   *
-   * They used to be bare text buttons, transparent until hovered. That is the
-   * single biggest reason the control row read as unfinished: a bare word on a
-   * dark panel is a LABEL, and a label with a chevron after it is a label with a
-   * decoration. Nothing at rest said "press me" — the affordance only existed
-   * once the pointer was already on it, which is no affordance at all on touch,
-   * and no affordance ever for someone scanning the row deciding what they can
-   * change.
-   *
-   * So they get a surface. Recessed rather than raised, because they sit INSIDE
-   * the composer and a raised chip inside a raised panel is a stacking error:
-   * `--secondary` is one rung below `--card`, so the chips read as wells cut
-   * into the composer rather than as tiles resting on it. The hairline is what
-   * carries the shape on the light theme, where a one-rung fill difference is
-   * nearly invisible.
-   */
-  /* The composer's controls (+, model, effort) are cut from the control
-     material (SOFT_UI.md §3 — "a raised chip for the model trigger"): raised
-     at rest on the shell, lifted a rung on hover, and pressed INTO the shell
-     while open or held. They used to be a flat secondary wash, which on a
-     raised shell read as a stain rather than a key. */
-  .composer-chip {
-    background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--border) / .6);
-    box-shadow: var(--shadow-raised);
-    transition:
-      background-color var(--dur-fast) var(--ease-out-soft),
-      border-color     var(--dur-fast) var(--ease-out-soft),
-      box-shadow       var(--dur-fast) var(--ease-out-soft),
-      color            var(--dur-fast) var(--ease-out-soft),
-      transform        var(--dur-press) var(--ease-out-soft);
-  }
-  @media (hover: hover) {
-    .composer-chip:hover {
-      background-color: hsl(var(--card));
-      border-color: hsl(var(--border));
-      box-shadow: var(--shadow-raised-lg);
-    }
-  }
-  /* Open is not a louder hover. Hover lifts; open goes DOWN into the shell,
-     the same gesture as holding it, so the chip whose panel you are looking at
-     is the one that is visibly pressed. */
-  .composer-chip[data-state="open"],
-  .composer-chip:active {
-    background-color: hsl(var(--secondary));
-    border-color: hsl(var(--border) / .8);
-    box-shadow: var(--shadow-pressed);
-    color: hsl(var(--foreground));
-  }
-  .composer-chip:active {
-    transform: scale(.975);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .composer-chip { transition: none; }
-    .composer-chip:active { transform: none; }
-  }
-
-  /*
-   * The class name is doubled to raise specificity to (0,2,0), and that is not
-   * a style preference — it is the only way this rule paints at all.
-   *
-   * The send button is a `<Button variant="default">`, and that variant carries
-   * `[box-shadow:inset_0_1px_0_hsl(var(--sheen))]` as an arbitrary UTILITY.
-   * Tailwind emits utilities after the components layer, so at equal specificity
-   * the utility wins and everything below was dead code: the composer's primary
-   * action rendered with the same flat inset sheen as every other filled button
-   * and none of the coral cast shadow that is its whole point. On black that
-   * cost the one control the eye is meant to land on its only elevation cue.
-   *
-   * Doubling the selector rather than reaching for `!important` keeps the rule
-   * overridable by anything genuinely more specific, and rather than editing the
-   * variant, because that sheen is correct for the other ~200 default Buttons.
-   */
-  .composer-primary-action.composer-primary-action {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      0 1px 2px hsl(var(--primary) / .22);
-  }
-  .composer-primary-action.composer-primary-action:hover {
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      0 2px 5px -2px hsl(var(--primary) / .38);
-  }
   .composer-voice-wave {
     display: inline-flex;
     align-items: center;
@@ -1849,42 +1425,14 @@
   .composer-primary-action:hover .composer-voice-wave > span:nth-child(3) { animation-delay: 90ms; }
   .composer-primary-action:hover .composer-voice-wave > span:nth-child(4) { animation-delay: 135ms; }
   .composer-primary-action:hover .composer-voice-wave > span:nth-child(5) { animation-delay: 180ms; }
-  .composer-send-icon,
-  .composer-stop-icon {
-    transform-origin: center;
-  }
-  .composer-primary-action:hover .composer-send-icon {
-    animation: composer-send 520ms var(--ease-out-strong) both;
-  }
-  .composer-primary-action:hover .composer-stop-icon {
-    animation: composer-stop 420ms var(--ease-out-strong) both;
-  }
   @keyframes composer-wave {
     0%, 100% { transform: scaleY(1); }
     38% { transform: scaleY(.48); }
     70% { transform: scaleY(1.24); }
   }
-  @keyframes composer-send {
-    0% { transform: translateY(0) scale(1); opacity: 1; }
-    38% { transform: translateY(-3px) scale(.9); opacity: .35; }
-    39% { transform: translateY(2.5px) scale(.9); opacity: .35; }
-    100% { transform: translateY(0) scale(1); opacity: 1; }
-  }
-  @keyframes composer-stop {
-    0% { transform: rotate(0) scale(1); }
-    58% { transform: rotate(50deg) scale(.76); }
-    100% { transform: rotate(45deg) scale(.82); }
-  }
   @media (prefers-reduced-motion: reduce) {
-    .composer-surface:focus-within { transform: none; }
     .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon,
-    .composer-add-button:hover .composer-add-icon__plus,
-    .composer-add-button:hover .composer-add-icon__spark,
-    .composer-mic-button:hover .composer-mic-icon,
-    .composer-mic-button:hover::before,
-    .composer-primary-action:hover .composer-voice-wave > span,
-    .composer-primary-action:hover .composer-send-icon,
-    .composer-primary-action:hover .composer-stop-icon { animation: none; }
+    .composer-primary-action:hover .composer-voice-wave > span { animation: none; }
     .group:hover .sidebar-motion-icon { transform: none; }
   }
 
@@ -3334,18 +2882,6 @@
     }
   }
 
-  /* The authenticated product stays matte and task-first. The landing page can
-     keep its ambient brand bloom, but the working chat surface does not glow
-     behind every input. */
-  [data-juno-chat-root] .composer-aura {
-    display: none;
-  }
-  /* --ring, not --foreground: the in-product composer's focus edge speaks the
-     same language as :focus-visible. The landing/auth composers keep the
-     neutral foreground/25 edge `.composer-surface` itself sets. */
-  [data-juno-chat-root] .composer-surface:focus-within {
-    border-color: hsl(var(--ring) / .5);
-  }
   [data-juno-chat-root] .empty-greeting {
     text-shadow: none;
   }

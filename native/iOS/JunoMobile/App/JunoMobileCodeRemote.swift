@@ -365,33 +365,28 @@ struct JunoMobileRunningDot: View {
 struct JunoMobileCodeDevicesView: View {
   var remoteModel: CodeRemoteBrowserModel?
 
+  /// The host a revoke confirmation is up for. Set from the row's swipe
+  /// action rather than revoking inline: full-swipe is off, so a revoke is
+  /// always a deliberate second tap, never a gesture that overshoots.
+  @State private var pendingRevoke: CodeRemoteHostSummary?
+  @State private var revokeError: String?
+
   var body: some View {
     List {
       Section {
         if let hosts = remoteModel?.hosts, !hosts.isEmpty {
           ForEach(hosts) { host in
-            HStack(spacing: JunoSpace.cozy) {
-              Image(systemName: host.platform == "windows" ? "pc" : "laptopcomputer")
-                .junoFont(size: 17, relativeTo: .body)
-                .foregroundStyle(Color.junoAccent)
-                .frame(width: 26)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(host.name).junoRowLabel()
-                Text(host.online ? "Online now" : "Last seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))")
-                  .junoCaption()
-                if !host.workspaceNames.isEmpty {
-                  Text(host.workspaceNames.joined(separator: " · "))
-                    .junoFont(size: 11, relativeTo: .caption2)
-                    .junoMetaInk()
-                    .lineLimit(1)
+            hostRow(host)
+              .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                  pendingRevoke = host
+                } label: {
+                  Label("Revoke", systemImage: "trash")
                 }
+                .disabled(remoteModel?.revokingHostID != nil)
+                .accessibilityLabel("Revoke \(host.name)")
+                .accessibilityIdentifier("juno.mobile.code-device-revoke.\(host.id)")
               }
-              Spacer(minLength: 0)
-              Circle()
-                .fill(host.online ? Color.junoSuccess : Color.junoMutedForeground.opacity(0.4))
-                .frame(width: 8, height: 8)
-            }
-            .padding(.vertical, 2)
           }
         } else {
           Text("No computers are paired yet.")
@@ -400,7 +395,7 @@ struct JunoMobileCodeDevicesView: View {
       } header: {
         Text("Paired computers")
       } footer: {
-        Text("A computer stays paired until you sign Juno Code out on it or revoke it from the web's Settings › Devices.")
+        Text("Swipe left on a computer to revoke it. Its sessions and pending approvals go with it; the Mac pairs again from Juno Code on the Mac.")
       }
 
       Section("How to pair a Mac") {
@@ -415,7 +410,80 @@ struct JunoMobileCodeDevicesView: View {
     .navigationTitle("Paired computers")
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { await remoteModel?.refreshAllSessions() }
+    .confirmationDialog(
+      pendingRevoke.map { "Revoke \($0.name)?" } ?? "",
+      isPresented: Binding(
+        get: { pendingRevoke != nil },
+        set: { if !$0 { pendingRevoke = nil } }
+      ),
+      titleVisibility: .visible,
+      presenting: pendingRevoke
+    ) { host in
+      Button("Revoke \(host.name)", role: .destructive) {
+        pendingRevoke = nil
+        Task { await revoke(host) }
+      }
+      .contentShape(.rect)
+      Button("Cancel", role: .cancel) { pendingRevoke = nil }
+        .contentShape(.rect)
+    } message: { host in
+      Text("\(host.name) stops being listed, and its sessions and pending approvals go with it. The Mac can pair again from Juno Code on the Mac.")
+    }
+    .alert(
+      "Could not revoke this computer",
+      isPresented: Binding(
+        get: { revokeError != nil },
+        set: { if !$0 { revokeError = nil } }
+      )
+    ) {
+      Button("OK", role: .cancel) { revokeError = nil }
+        .contentShape(.rect)
+    } message: {
+      Text(revokeError ?? "Try again.")
+    }
     .accessibilityIdentifier("juno.mobile.code-devices")
+  }
+
+  /// Revokes through the browser model and reports only a genuine failure: a
+  /// host the model no longer lists is revoked, whatever else has happened
+  /// since.
+  private func revoke(_ host: CodeRemoteHostSummary) async {
+    await remoteModel?.revokeHost(id: host.id)
+    if remoteModel?.hosts.contains(where: { $0.id == host.id }) == true {
+      revokeError = remoteModel?.lastErrorDescription
+        ?? "The computer could not be revoked."
+    }
+  }
+
+  private func hostRow(_ host: CodeRemoteHostSummary) -> some View {
+    HStack(spacing: JunoSpace.cozy) {
+      Image(systemName: host.platform == "windows" ? "pc" : "laptopcomputer")
+        .junoFont(size: 17, relativeTo: .body)
+        .foregroundStyle(Color.junoAccent)
+        .frame(width: 26)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(host.name).junoRowLabel()
+        Text(host.online ? "Online now" : "Last seen \(host.lastSeenAt.formatted(.relative(presentation: .named)))")
+          .junoCaption()
+        if !host.workspaceNames.isEmpty {
+          Text(host.workspaceNames.joined(separator: " · "))
+            .junoFont(size: 11, relativeTo: .caption2)
+            .junoMetaInk()
+            .lineLimit(1)
+        }
+      }
+      Spacer(minLength: 0)
+      if remoteModel?.revokingHostID == host.id {
+        ProgressView()
+          .controlSize(.small)
+          .accessibilityLabel("Revoking \(host.name)")
+      } else {
+        Circle()
+          .fill(host.online ? Color.junoSuccess : Color.junoMutedForeground.opacity(0.4))
+          .frame(width: 8, height: 8)
+      }
+    }
+    .padding(.vertical, 2)
   }
 
   private func step(_ number: Int, _ text: String) -> some View {

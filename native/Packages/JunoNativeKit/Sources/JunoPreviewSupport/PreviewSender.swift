@@ -201,6 +201,13 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.hasSuffix("/models") {
             return Data(PreviewModelCatalog.json.utf8)
         }
+        // Revoking a paired computer in the harness: the browser model only
+        // requires a 2xx, so the fixture confirms without modelling a server
+        // row — the row removal itself is the model's local convergence, which
+        // is what the screenshot exercises.
+        if path.hasPrefix("/api/v1/code/devices/"), request.method == .delete {
+            return Data(#"{"revoked":true,"deviceId":"preview"}"#.utf8)
+        }
         return Data("{}".utf8)
     }
 }

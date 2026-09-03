@@ -62,12 +62,12 @@ Composed utilities (the only ones components may use):
 
 | Class | Meaning | Used by |
 |---|---|---|
-| `.surface-raised` | `bg-card` + `--shadow-raised` + hairline | cards, composer shell, tiles, sidebar active row |
+| `.surface-raised` | `bg-card` + `--shadow-raised` + hairline | cards, tiles, sidebar active row |
 | `.surface-raised-lg` | bigger throw | hero cards, pricing, project tiles |
 | `.surface-inset` | `bg-background` + `--shadow-inset` + hairline | inputs, textareas, search fields, segmented tracks, sidebar frame, user bubbles |
 | `.surface-float` | `bg-popover` + `--shadow-float` + sheen (glass optional via `.overlay-glass`) | popovers, dropdowns, dialogs, toasts, tooltips, sheets |
 | `.control-neu` | raised at rest → pressed inset on `:active` / `[data-state=on]` | secondary buttons, icon buttons, toggles, chips |
-| `.control-primary` | coral gradient + `--glow-primary` + `--shadow-raised` | primary buttons, send |
+| `.control-primary` | flat coral fill + `--shadow-raised` (no tinted glow — a halo under the send button reads as an AI demo) | primary buttons, send |
 
 ### 2.3 Radius ladder (single source)
 
@@ -92,9 +92,29 @@ Concentric rule: outer radius = inner radius + padding. Remove `lg/surface` dual
   folders collapsible); Pinned; Recents grouped by date (Today / Yesterday / Previous
   7 days / Older); footer: user + plan meter. Collapsed rail mode (icon-only, 64px)
   with tooltips. Hover/float mode on narrow widths.
-- **Composer**: raised soft card; inset field; one `+` menu; mode chips above the
-  field (Search, Research, Canvas, Image, Study…); `@` mentions; `/` commands;
-  model + effort control left of send; send morphs to stop.
+- **Composer**: one quiet surface, not a box inside a box. A single
+  `rounded-panel` container — `bg-card`, a 1px `border-border` hairline, one
+  low shadow (no inset well, no second border, no gradient, no aura, no
+  neumorphic dual shadow). The textarea is transparent and sits directly in it
+  at 14/16px padding, one line at rest, growing to eight on the composer spring
+  (380/32) before it scrolls. Focus darkens the edge to `foreground/40` and
+  lifts the shadow one notch over `duration-fast`; nothing else changes. Under
+  the text, one controls row: left `+` (32px flat icon button, accent on hover,
+  a coral dot when a tool is on); right model chip · effort chip · thin rule ·
+  mic · send. Chips are flat `font-sans text-ui` text with `rounded-control`,
+  accent fill on hover, the same fill with darker ink while open — never raised
+  or pressed. Send is a 32px flat coral circle that cross-morphs (scale .9→1 +
+  fade) to a stop square while streaming; streaming and locked states fade the
+  rest of the row to 60%. Attachments are a row of 56px thumbnails above the
+  text inside the same surface, entering with `pop-in`; the `+` menu pops in
+  from its trigger corner. The one `+` menu holds every tool as a toggle row
+  (Web search, Canvas, Memory, Deep research, connectors, project) — nothing
+  about tool state shows on the bar except the dot; `@` mentions; `/` commands.
+  Every composer (chat, Code, Compare, Work) draws this box through
+  `ComposerShell`; surfaces with extra context (target, permission, project)
+  put those chips on the same row, never on a second stacked strip. In an empty
+  chat the surface sits under the greeting at `max-w-3xl`; in a conversation it
+  is pinned at the bottom with a 24px page gutter and no plate behind it.
 - **Messages**: user = inset well, right-aligned; assistant = flat prose; actions
   row on hover: copy (→check morph), thumbs, read aloud, regenerate ▾ (with model
   submenu), branch, share. Version pager keeps alternatives.

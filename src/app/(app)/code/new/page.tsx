@@ -6,15 +6,22 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowRight,
-  ArrowUp,
   ChevronDown,
   Clock,
   Loader2,
   Mic,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ComposerShell } from "@/components/ui/composer-shell";
+import {
+  ComposerDivider,
+  ComposerPrimaryAction,
+  ComposerShell,
+  composerChevronClass,
+  composerChipClass,
+  composerFieldClass,
+  composerIconButtonClass,
+  useComposerAutosize,
+} from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
@@ -60,8 +67,6 @@ const MODEL_KEY = "juno:code:model";
 const EFFORT_KEY = "juno:code:reasoning";
 const CONNECTORS_KEY = "juno:code:connectors";
 
-const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block";
-
 type CloudStartError = "not_configured" | "dispatch_failed" | null;
 
 function CodeGreeting() {
@@ -80,14 +85,14 @@ function CodeGreeting() {
   );
 }
 
+/** What the run may do without asking — said in the caption under the composer. */
 function PermissionFact({ target }: { target: Target }) {
   const cloud = target === "cloud";
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex min-w-0 cursor-help items-center gap-1.5 font-mono text-ui text-muted-foreground hover:text-foreground transition-colors">
-          <CodeIcons.permission className="size-3 shrink-0 text-primary/80" aria-hidden="true" />
-          <span className="min-w-0 truncate">{cloud ? "Full access (PR review)" : "Ask before changes"}</span>
+        <span className="cursor-help underline decoration-dotted underline-offset-2">
+          {cloud ? "Full access, reviewed as a PR" : "Asks before changes"}
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-64">
@@ -217,16 +222,8 @@ export default function NewCodeSessionPage() {
   const { runs } = useCodeRuns();
   const recentRun = runs[0] ?? null;
 
-  const autoresize = React.useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
-  }, []);
-
-  React.useEffect(() => {
-    autoresize();
-  }, [prompt, autoresize]);
+  // The shared composer growth: one line at rest, eight before it scrolls.
+  const autoresize = useComposerAutosize(textareaRef, prompt);
 
   React.useEffect(() => {
     try {
@@ -485,7 +482,7 @@ export default function NewCodeSessionPage() {
 
           {/* The Main Composer */}
           <div className="w-full">
-            <div className="relative w-full">
+            <div className="relative isolate w-full">
               {codeVoice.open && (
                 <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
               )}
@@ -537,7 +534,7 @@ export default function NewCodeSessionPage() {
                 >
                   <ComposerShell
                     className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
-                    utilityLabel="Where this session runs"
+                    dimmed={submitting}
                     above={canAttach && <ComposerAttachmentTray uploads={uploads} onRemove={remove} />}
                     field={
                       <textarea
@@ -549,232 +546,177 @@ export default function NewCodeSessionPage() {
                         disabled={submitting}
                         placeholder="Describe what to build, test, refactor, or fix…"
                         aria-label="Describe the task for this Juno Code session"
-                        className="max-h-[240px] min-h-[68px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
+                        className={composerFieldClass}
                       />
                     }
-                    controls={
+                    leading={
                       <>
-                        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto no-scrollbar">
-                          {/* Attach Button */}
-                          {canAttach && (
-                            <ComposerAddMenu
-                              open={plusOpen}
-                              onOpenChange={setPlusOpen}
-                              disabled={submitting}
-                              onPickPhotos={() => imageInputRef.current?.click()}
-                              onPickFiles={() => fileInputRef.current?.click()}
-                              onPickLibrary={() => setLibraryOpen(true)}
-                            />
-                          )}
-
-                          {/* Connectors / Tools Selector */}
-                          <CodeConnectorsMenu
-                            enabledConnectors={enabledConnectors}
-                            onToggleConnector={toggleConnector}
+                        {canAttach && (
+                          <ComposerAddMenu
+                            open={plusOpen}
+                            onOpenChange={setPlusOpen}
                             disabled={submitting}
+                            onPickPhotos={() => imageInputRef.current?.click()}
+                            onPickFiles={() => fileInputRef.current?.click()}
+                            onPickLibrary={() => setLibraryOpen(true)}
                           />
+                        )}
 
-                          <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                        {/* Where it runs — a chip on the same row as everything
+                            else, never a second strip. */}
+                        <CodeTargetPicker
+                          target={target}
+                          onTargetChange={switchTarget}
+                          selectedWorkspace={selectedWorkspace}
+                          onSelectWorkspace={(w) => {
+                            setSelectedWorkspace(w);
+                            setCloudStartError(null);
+                          }}
+                          selectedRepo={selectedRepo}
+                          onSelectRepo={(r) => {
+                            setSelectedRepo(r);
+                            setBaseRef("");
+                            setCloudStartError(null);
+                            if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                          }}
+                          baseRef={baseRef}
+                          onBaseRefChange={setBaseRef}
+                          disabled={submitting}
+                        />
 
-                          {/* Model Selector */}
-                          <div className="min-w-0 shrink-0">
-                            <ModelSelector
-                              value={model}
-                              onChange={changeModel}
-                              reasoningEffort={reasoningEffort}
-                              onReasoningChange={changeReasoning}
-                            />
-                          </div>
-
-                          {/* Thinking Slider / Reasoning Depth Control */}
-                          {isAuto && (
-                            <>
-                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    aria-disabled
-                                    className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent"
-                                  >
-                                    <Sparkles className="size-3 text-primary/70" />
-                                    <span>Auto</span>
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
-                              </Tooltip>
-                            </>
-                          )}
-
-                          {!isAuto && effortOptions.length > 0 && (() => {
-                            const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
-                            const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
-                            const label = current.label === "Extra high" ? "X-high" : current.label;
-                            const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
-
-                            return (
-                              <>
-                                <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                                <Tooltip>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          disabled={submitting}
-                                          aria-label={`Thinking effort: ${current.label}`}
-                                          className={cn(
-                                            "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
-                                            atTop ? "text-primary" : "text-foreground"
-                                          )}
-                                        >
-                                          <span className="min-w-0 flex-1 truncate text-center">{label}</span>
-                                          <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                    </PopoverTrigger>
-                                    <PopoverContent
-                                      align="start"
-                                      sideOffset={10}
-                                      className="w-[300px] origin-popper p-4"
-                                    >
-                                      <ReasoningSlider
-                                        options={effortOptions}
-                                        value={reasoningEffort}
-                                        onChange={changeReasoning}
-                                        disabled={submitting}
-                                        fastMode={fastMode}
-                                        onFastModeChange={setFastMode}
-                                        proMode={proMode}
-                                        onProModeChange={setProMode}
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                  <TooltipContent>Thinking effort & depth</TooltipContent>
-                                </Tooltip>
-                              </>
-                            );
-                          })()}
+                        <CodeConnectorsMenu
+                          enabledConnectors={enabledConnectors}
+                          onToggleConnector={toggleConnector}
+                          disabled={submitting}
+                        />
+                      </>
+                    }
+                    trailing={
+                      <>
+                        <div className="min-w-0 shrink-0">
+                          <ModelSelector
+                            value={model}
+                            onChange={changeModel}
+                            reasoningEffort={reasoningEffort}
+                            onReasoningChange={changeReasoning}
+                          />
                         </div>
 
-                        {/* Right: Mic Dictation + Send Button */}
-                        <div className="ml-auto flex shrink-0 items-center gap-1">
-                          {speechSupported && (
-                            <>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() => setDictating(true)}
-                                    disabled={submitting || dictating || codeVoice.open}
-                                    aria-label="Dictate"
-                                    aria-pressed={dictating}
-                                    className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
-                                  >
-                                    <Mic className="composer-mic-icon h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Dictate</TooltipContent>
-                              </Tooltip>
-                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                            </>
-                          )}
-
-                          {/* Primary Action Button: Morphs seamlessly between Voice (empty), Start (has text/target) */}
+                        {isAuto && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 type="button"
-                                size="icon"
-                                onClick={
-                                  showVoiceButton && codeVoice.onOpenVoiceMode
-                                    ? codeVoice.onOpenVoiceMode
-                                    : () => void submit()
-                                }
-                                disabled={showVoiceButton ? false : !canSubmit}
-                                aria-label={
-                                  showVoiceButton
-                                    ? "Talk this through with Juno"
-                                    : !hasTarget
-                                      ? gateHint ?? "Select where to run first"
-                                      : target === "cloud"
-                                        ? "Start a cloud run"
-                                        : "Start the session"
-                                }
-                                className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
+                                variant="ghost"
+                                size="sm"
+                                aria-disabled
+                                className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
                               >
-                                {submitting ? (
-                                  <Loader2 key="starting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" aria-hidden="true" />
-                                ) : showVoiceButton ? (
-                                  <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
-                                    <span />
-                                    <span />
-                                    <span />
-                                    <span />
-                                    <span />
-                                  </span>
-                                ) : (
-                                  <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" aria-hidden="true" />
-                                )}
+                                <span>Auto</span>
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              {showVoiceButton
-                                ? "Voice conversation"
-                                : target === "cloud"
-                                  ? "Start cloud run"
-                                  : "Start session"}
-                            </TooltipContent>
+                            <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
                           </Tooltip>
-                        </div>
+                        )}
+
+                        {!isAuto && effortOptions.length > 0 && (() => {
+                          const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
+                          const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
+                          const label = current.label === "Extra high" ? "X-high" : current.label;
+                          const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
+
+                          return (
+                            <Tooltip>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={submitting}
+                                      aria-label={`Thinking effort: ${current.label}`}
+                                      className={cn(composerChipClass, atTop && "text-primary hover:text-primary")}
+                                    >
+                                      <span className="min-w-0 truncate">{label}</span>
+                                      <ChevronDown className={composerChevronClass} />
+                                    </Button>
+                                  </TooltipTrigger>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                  align="end"
+                                  sideOffset={10}
+                                  className="w-[300px] origin-popper p-4"
+                                >
+                                  <ReasoningSlider
+                                    options={effortOptions}
+                                    value={reasoningEffort}
+                                    onChange={changeReasoning}
+                                    disabled={submitting}
+                                    fastMode={fastMode}
+                                    onFastModeChange={setFastMode}
+                                    proMode={proMode}
+                                    onProModeChange={setProMode}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <TooltipContent>Thinking effort & depth</TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
+
+                        {speechSupported && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => setDictating(true)}
+                                disabled={submitting || dictating || codeVoice.open}
+                                aria-label="Dictate"
+                                aria-pressed={dictating}
+                                className={composerIconButtonClass}
+                              >
+                                <Mic className="size-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Dictate</TooltipContent>
+                          </Tooltip>
+                        )}
+                        <ComposerDivider />
                       </>
                     }
-                    utility={
-                      <div className="flex w-full min-w-0 items-center justify-between gap-2">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <CodeTargetPicker
-                            target={target}
-                            onTargetChange={switchTarget}
-                            selectedWorkspace={selectedWorkspace}
-                            onSelectWorkspace={(w) => {
-                              setSelectedWorkspace(w);
-                              setCloudStartError(null);
-                            }}
-                            selectedRepo={selectedRepo}
-                            onSelectRepo={(r) => {
-                              setSelectedRepo(r);
-                              setBaseRef("");
-                              setCloudStartError(null);
-                              if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                            }}
-                            baseRef={baseRef}
-                            onBaseRefChange={setBaseRef}
-                            disabled={submitting}
-                            className="h-7"
+                    action={
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <ComposerPrimaryAction
+                            face={submitting ? "busy" : showVoiceButton ? "voice" : "send"}
+                            onClick={
+                              showVoiceButton && codeVoice.onOpenVoiceMode
+                                ? codeVoice.onOpenVoiceMode
+                                : () => void submit()
+                            }
+                            disabled={showVoiceButton ? false : !canSubmit}
+                            aria-label={
+                              showVoiceButton
+                                ? "Talk this through with Juno"
+                                : !hasTarget
+                                  ? gateHint ?? "Select where to run first"
+                                  : target === "cloud"
+                                    ? "Start a cloud run"
+                                    : "Start the session"
+                            }
                           />
-
-                          {target === "cloud" && selectedRepo && (
-                            <>
-                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                              <span className="hidden min-w-0 items-center gap-1 font-mono text-ui text-muted-foreground sm:flex">
-                                <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
-                                <span className="sr-only">Base branch </span>
-                                <span className="min-w-0 truncate">
-                                  {baseRef.trim() || selectedRepo.defaultBranch}
-                                </span>
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        <PermissionFact target={target} />
-                      </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {showVoiceButton
+                            ? "Voice conversation"
+                            : target === "cloud"
+                              ? "Start cloud run"
+                              : "Start session"}
+                        </TooltipContent>
+                      </Tooltip>
                     }
                   />
 
@@ -849,8 +791,9 @@ export default function NewCodeSessionPage() {
                 <span className="text-foreground/70">{gateHint}. </span>
               ) : null}
               {target === "cloud"
-                ? "Runs on a fresh cloud runner and opens a pull request to review."
-                : "Runs with Juno Code on your Mac and streams the output directly."}
+                ? "Runs on a fresh cloud runner and opens a pull request to review. "
+                : "Runs with Juno Code on your Mac and streams the output directly. "}
+              <PermissionFact target={target} />
             </p>
           </div>
 

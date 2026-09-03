@@ -171,7 +171,7 @@ export function WorkVoiceSurface({
   return (
     <>
       {/* First, and outside the box: the field paints at `z-index: -1`, so it
-          has to be a SIBLING of the composer inside `.composer-aura-host` for
+          has to be a SIBLING of the composer inside its `isolate` host for
           that to mean "behind the composer". Inside the section below it would
           land behind the section instead, trapped in a layer of its own. */}
       <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />

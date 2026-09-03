@@ -1,10 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
+import { Loader2, Mic, Plus } from "lucide-react";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { ComposerShell } from "@/components/ui/composer-shell";
+import {
+  ComposerDivider,
+  ComposerPrimaryAction,
+  ComposerShell,
+  composerFieldClass,
+  composerIconButtonClass,
+  useComposerAutosize,
+} from "@/components/ui/composer-shell";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -229,15 +236,9 @@ export function WorkThreadComposer({
     setLibraryOpen(true);
   }, []);
 
-  const autoresize = React.useCallback(() => {
-    const element = textareaRef.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-  }, []);
-  React.useEffect(() => {
-    autoresize();
-  }, [draft, autoresize]);
+  // The shared composer growth: one line at rest, six before it scrolls — a
+  // shorter window than the home composer's, because the thread is the point.
+  const autoresize = useComposerAutosize(textareaRef, draft, { maxLines: 6 });
 
   const submit = React.useCallback(
     async (text: string) => {
@@ -342,7 +343,7 @@ export function WorkThreadComposer({
         )}
       >
         <ComposerShell
-          utilityLabel="How often this task asks, and where it is filed"
+          dimmed={sending}
           above={
             <>
               {/* What sending does, in the same mono register as every other
@@ -482,15 +483,11 @@ export function WorkThreadComposer({
               // mid-sentence. The send button is where the effect is named, and
               // it is not the thing holding focus.
               aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Message"}
-              // `text-body`. Writing the thing Juno will act on was set at 14px
-              // here and 16px in the home composer — the same act, two pixels
-              // apart, neither on the scale.
-              className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-3 py-2.5 text-body outline-none placeholder:text-muted-foreground/70 sm:px-3.5"
+              className={composerFieldClass}
             />
           }
-          controls={
+          leading={
             <>
-              <div className="flex min-w-0 flex-1 items-center gap-1">
                 <Popover open={addOpen} onOpenChange={setAddOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -498,18 +495,12 @@ export function WorkThreadComposer({
                       variant="ghost"
                       size="icon-sm"
                       aria-label="Add a file, an app or a skill to this task"
-                      className={cn(
-                        // `coarse:size-11` to match the home composer's
-                        // [+]. Without it this button tops out at 32px on touch,
-                        // under the 44px the coarse variant exists to guarantee.
-                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:size-11",
-                        addOpen && "bg-accent"
-                      )}
+                      className={cn(composerIconButtonClass, "group")}
                     >
                       <Plus
                         aria-hidden="true"
                         strokeWidth={1.75}
-                        className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                        className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
                       />
                     </Button>
                   </PopoverTrigger>
@@ -525,17 +516,15 @@ export function WorkThreadComposer({
                   </PopoverContent>
                 </Popover>
 
-                {/* One divider class, one height, one breakpoint — the form chat
-                    settled on after shipping two of each. */}
-                <span
-                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                  aria-hidden="true"
-                />
-
+                {/* The standing context of the task — how often it asks, where
+                    it is filed — on the same row as everything else. */}
+                <WorkThreadRunContext context={context} />
+            </>
+          }
+          trailing={
+            <>
                 <WorkThreadModelControl context={context} />
-              </div>
 
-              <div className="ml-auto flex shrink-0 items-center gap-1">
                 {speechSupported && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -552,64 +541,36 @@ export function WorkThreadComposer({
                         disabled={dictating || voiceActive}
                         aria-label="Dictate this message"
                         aria-pressed={dictating}
-                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:size-11"
+                        className={composerIconButtonClass}
                       >
-                        <Mic className="composer-mic-icon size-4" aria-hidden="true" />
+                        <Mic className="size-4" aria-hidden="true" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Dictate</TooltipContent>
                   </Tooltip>
                 )}
 
-                {/* Primary action morphs in place: Voice (empty) → Send (has text). */}
+                <ComposerDivider />
+            </>
+          }
+          action={
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
+                    <ComposerPrimaryAction
+                      face={sending ? "busy" : showVoiceButton ? "voice" : "send"}
                       onClick={showVoiceButton ? onOpenVoiceMode : () => void submit(draft)}
                       disabled={showVoiceButton ? false : !canSend}
                       aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
-                      className={cn(
-                        "composer-primary-action size-9 shrink-0 rounded-composer-action coarse:size-11",
-                        "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
-                      )}
-                    >
-                      {sending ? (
-                        <Loader2
-                          key="sending"
-                          className="size-3.5 animate-spin motion-safe:animate-fade-in"
-                          aria-hidden="true"
-                        />
-                      ) : showVoiceButton ? (
-                        <span
-                          key="voice"
-                          className="composer-voice-wave motion-safe:animate-fade-in"
-                          aria-hidden="true"
-                        >
-                          <span /><span /><span /><span /><span />
-                        </span>
-                      ) : (
-                        <ArrowUp
-                          key="send"
-                          className="composer-send-icon size-3.5 motion-safe:animate-fade-in"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </Button>
+                    />
                   </TooltipTrigger>
                   <TooltipContent>{showVoiceButton ? "Voice conversation" : "Send"}</TooltipContent>
                 </Tooltip>
-              </div>
-            </>
           }
-          utility={<WorkThreadRunContext context={context} />}
         />
 
-        {/* Under the shell rather than beside any one control: it is true of all
-            of them, and a caveat that wrapped in among the chips would be read
-            as a label for whichever one it landed next to. The utility tier does
-            not wrap, so a sentence cannot live in it. */}
+        {/* Under the surface rather than beside any one control: it is true of
+            all of them, and a caveat that wrapped in among the chips would be
+            read as a label for whichever one it landed next to. */}
         <WorkThreadControlsNote context={context} live={live} />
 
         <LibraryPicker

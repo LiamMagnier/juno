@@ -184,15 +184,20 @@ public struct JunoGradeBars: View {
 
 // MARK: - Capability chips
 
-/// The capabilities a model reported, as chips.
+/// The capabilities a model reported, as text tags.
 ///
 /// An empty `capabilities` array renders nothing — it means the product reported
 /// no capabilities, not that they were omitted for space.
+///
+/// **Words, not glyphs.** These were icon-led capsules — a brain for reasoning,
+/// an eye for vision — and in the catalog rows a glyph-only row of them under
+/// every model, which is the "row of spark icons" the review asked to lose. A
+/// capability is a fact about a model, and a fact is stated: a small
+/// monospaced word on an inset well, one height, the muted ink, no icon. The
+/// `compact` argument survives for callers that pass it, and now only tightens
+/// the flow's spacing.
 public struct JunoModelCapabilityChips: View {
     private let capabilities: [JunoModelCapability]
-    /// List rows use glyph-only chips. Four labelled capsules do not fit a
-    /// narrow row, and a chip that wraps mid-word is worse than a glyph with an
-    /// accessibility label — the spec sheet spells them out.
     private let compact: Bool
 
     public init(capabilities: [JunoModelCapability], compact: Bool = false) {
@@ -202,29 +207,9 @@ public struct JunoModelCapabilityChips: View {
 
     public var body: some View {
         if !capabilities.isEmpty {
-            JunoChipFlow(spacing: compact ? 4 : 5) {
+            JunoChipFlow(spacing: compact ? 4 : 5, lineSpacing: compact ? 4 : 5) {
                 ForEach(capabilities) { chip in
-                    Group {
-                        if compact {
-                            JunoIconView(systemImage: chip.systemImage)
-                                .junoFont(size: 10, relativeTo: .caption, weight: .medium)
-                                .frame(width: 15, height: 15)
-                        } else {
-                            JunoIconLabel(verbatim: chip.label, systemImage: chip.systemImage)
-                                .junoFont(size: 10, relativeTo: .caption, weight: .medium)
-                                .labelStyle(.titleAndIcon)
-                                // A chip is one line by definition; without this
-                                // the label wraps mid-word inside its capsule.
-                                .lineLimit(1)
-                                .fixedSize()
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                        }
-                    }
-                    .junoSecondaryInk()
-                    .background {
-                        Capsule().strokeBorder(Color.junoHairline, lineWidth: 1)
-                    }
+                    JunoModelTag(chip.label)
                 }
             }
             .accessibilityElement(children: .ignore)
@@ -232,6 +217,37 @@ public struct JunoModelCapabilityChips: View {
                 capabilities.map(\.label).joined(separator: ", ")
             )
         }
+    }
+}
+
+/// One small monospaced tag on an inset well: a capability, a "Smart" badge,
+/// a "Recently used" marker. Uniform height so a row of them reads as a row.
+public struct JunoModelTag: View {
+    private let text: String
+    private let accent: Bool
+
+    public init(_ text: String, accent: Bool = false) {
+        self.text = text
+        self.accent = accent
+    }
+
+    public var body: some View {
+        Text(text)
+            .junoFont(size: 10, relativeTo: .caption2, weight: .medium, design: .monospaced)
+            .foregroundStyle(accent ? Color.junoAccent : Color.junoMutedForeground)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, JunoSpace.tight)
+            .frame(height: 18)
+            .background {
+                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                    .fill(Color.junoMuted.opacity(0.55))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                            .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+                    )
+            }
+            .accessibilityHidden(true)
     }
 }
 

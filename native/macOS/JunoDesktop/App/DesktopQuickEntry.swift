@@ -141,8 +141,8 @@ struct DesktopQuickEntryView: View {
                     .accessibilityIdentifier("juno.desktop.quick-entry.field")
                 DesktopSegmented(
                     options: [
-                        .init(DesktopProductMode.chat, "Chat", symbol: DesktopProductMode.chat.symbol),
-                        .init(DesktopProductMode.code, "Code", symbol: DesktopProductMode.code.symbol),
+                        .init(DesktopProductMode.chat, "Chat"),
+                        .init(DesktopProductMode.code, "Code"),
                     ],
                     selection: $product,
                     accessibilityLabel: "Send to"

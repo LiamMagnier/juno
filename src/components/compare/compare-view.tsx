@@ -3,8 +3,15 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUp, Plus, Square } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  ComposerPrimaryAction,
+  ComposerShell,
+  composerChipClass,
+  composerFieldClass,
+  useComposerAutosize,
+} from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
 import { ComparePane } from "@/components/compare/compare-pane";
@@ -158,15 +165,9 @@ export function CompareView() {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const canSend = prompt.trim().length > 0 && !anyStreaming;
 
-  const autoresize = React.useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, []);
-  React.useEffect(() => {
-    autoresize();
-  }, [prompt, autoresize]);
+  // One line at rest, six before it scrolls — a shorter window than chat's,
+  // because the panes below are the point of this page.
+  useComposerAutosize(textareaRef, prompt, { maxLines: 6 });
 
   const runAll = React.useCallback(
     (text: string) => {
@@ -280,82 +281,64 @@ export function CompareView() {
         </span>
       </header>
 
-      {/* Prompt composer — one textarea, one coral action. */}
+      {/* Prompt composer — the shared single surface: one textarea, one coral action. */}
       <div className="shrink-0 px-4 pb-4 sm:px-6">
-        {/* focus-within lands on the ring token, not foreground/35: a near-white
-            border on the true-black ground read as the halo the shadow rebase
-            just removed, and it was the only focus affordance the composer had. */}
-        <div className="composer-surface flex w-full flex-col rounded-panel transition-[border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none">
-          <div className="composer-field">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={onKeyDown}
-            disabled={anyStreaming}
-            rows={1}
-            autoFocus
-            placeholder="Ask every model at once…"
-            // motion-reduce:transition-none on the growth as well as on the shell:
-            // the box under the caret animating its own height is the single most
-            // literal case of "an interface that moves", and it was the one
-            // transition in this composer without the escape.
-            className="max-h-[160px] min-h-[56px] w-full resize-none bg-transparent px-3.5 py-3 text-base leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 motion-reduce:transition-none sm:px-4"
-          />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={addPane}
-                    disabled={panes.length >= MAX_PANES || anyStreaming}
-                    className="gap-1.5 text-foreground/80"
-                  >
-                    <Plus className="size-4" /> Add model
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {panes.length >= MAX_PANES ? "Up to three models per race" : "Race a third model"}
-              </TooltipContent>
-            </Tooltip>
-            {/* tabular-nums: this counter changes in place as panes come and go. */}
-            <span className="font-mono text-caption tabular-nums text-muted-foreground">{panes.length}/{MAX_PANES}</span>
-
-            {/* Primary action morphs in place: Send → Stop, shared by every pane. */}
-            <div className="ml-auto">
+        <ComposerShell
+          dimmed={anyStreaming}
+          field={
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={onKeyDown}
+              disabled={anyStreaming}
+              rows={1}
+              autoFocus
+              placeholder="Ask every model at once…"
+              className={composerFieldClass}
+            />
+          }
+          leading={
+            <>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={anyStreaming ? compare.stopAll : submit}
-                    disabled={anyStreaming ? stopping : !canSend}
-                    aria-label={anyStreaming ? (stopping ? "Stopping all models" : "Stop all models") : "Send to every model"}
-                    className={cn(
-                      // The two derived composer rungs, not one flat radius: the corner
-                      // has to fall as the box widens into Stop or the button visibly
-                      // inflates. Both move with the composer shell above them.
-                      "coarse:size-11 transition-[width,border-radius,color,background-color,border-color] duration-fast ease-out-soft motion-reduce:transition-none",
-                      anyStreaming ? "w-12 rounded-composer-control" : "rounded-composer-action"
-                    )}
-                  >
-                    {anyStreaming ? (
-                      <Square key="stop" className="size-3.5 fill-current motion-safe:animate-fade-in" />
-                    ) : (
-                      <ArrowUp key="send" className="size-4 motion-safe:animate-fade-in" />
-                    )}
-                  </Button>
+                  <span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={addPane}
+                      disabled={panes.length >= MAX_PANES || anyStreaming}
+                      className={cn(composerChipClass, "gap-1.5 px-2")}
+                    >
+                      <Plus className="size-4" /> Add model
+                    </Button>
+                  </span>
                 </TooltipTrigger>
-                <TooltipContent>{anyStreaming ? "Stop" : "Send"}</TooltipContent>
+                <TooltipContent>
+                  {panes.length >= MAX_PANES ? "Up to three models per race" : "Race a third model"}
+                </TooltipContent>
               </Tooltip>
-            </div>
-          </div>
-        </div>
+              {/* tabular-nums: this counter changes in place as panes come and go. */}
+              <span className="px-1 font-mono text-caption tabular-nums text-muted-foreground">
+                {panes.length}/{MAX_PANES}
+              </span>
+            </>
+          }
+          action={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ComposerPrimaryAction
+                  face={anyStreaming ? (stopping ? "busy" : "stop") : "send"}
+                  onClick={anyStreaming ? compare.stopAll : submit}
+                  disabled={anyStreaming ? stopping : !canSend}
+                  aria-label={anyStreaming ? (stopping ? "Stopping all models" : "Stop all models") : "Send to every model"}
+                />
+              </TooltipTrigger>
+              <TooltipContent>{anyStreaming ? "Stop" : "Send"}</TooltipContent>
+            </Tooltip>
+          }
+        />
       </div>
 
       {/* Body: hero (until the first run) + the panes. Desktop keeps the page

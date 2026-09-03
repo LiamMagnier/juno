@@ -81,7 +81,7 @@ function readHSL(el: HTMLElement, name: string): [number, number, number] | null
  * **It belongs to the column, not the window.** Voice is a property of this
  * conversation, so the light stops where the conversation stops — the sidebar
  * stays its own surface rather than being washed by whatever the chat is doing.
- * That is why this mounts inside `.composer-aura-host` and not on `document.body`.
+ * That is why this mounts inside the composer's `isolate` host and not on `document.body`.
  *
  * **It sits under the composer, at `z-index: -1`.** The composer is the control
  * you are using; light in front of it makes it harder to read for no gain. The

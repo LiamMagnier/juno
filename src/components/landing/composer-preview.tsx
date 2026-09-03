@@ -30,7 +30,7 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
       {/* The bloom: a soft coral radial behind the shell, blurred, so the
           composer reads as the warmest object on the page — the landing keeps
           the ambient brand glow the working chat surface deliberately drops
-          (globals.css, `[data-juno-chat-root] .composer-aura`). */}
+          (the in-product composer is a single quiet surface with no aura). */}
       <div
         aria-hidden
         className="absolute -inset-x-10 -inset-y-8 -z-10 bg-[radial-gradient(60%_70%_at_50%_45%,hsl(var(--primary)/0.18),transparent_70%)] blur-2xl"

@@ -98,7 +98,7 @@ const merge = extendTailwindMerge({
         {
           shadow: [
             "raised", "raised-lg", "inset", "pressed", "float",
-            "soft", "lift", "glass", "pop", "glow-primary", "well",
+            "soft", "lift", "glass", "pop", "well",
           ],
         },
       ],

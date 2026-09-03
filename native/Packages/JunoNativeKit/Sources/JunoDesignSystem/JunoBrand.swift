@@ -133,6 +133,13 @@ public enum JunoIcon: String, CaseIterable, Sendable {
         if value.contains("chevron.left") || value == "arrow.left" {
             return .chevronLeft
         }
+        // Down and up have their own glyphs. Every chevron used to resolve to
+        // the right-pointing one, which is how a menu chip's "chevron.down"
+        // came out as "›" — the composer read "Claude Fable 5 ›", and the
+        // disclosure looked like navigation. `chevron.up.chevron.down` is the
+        // pop-up idiom; it wants down, the menu direction.
+        if value.contains("chevron.down") { return .chevronDown }
+        if value.contains("chevron.up") { return .chevronUp }
         if value.contains("chevron") || value == "arrow.right" { return .chevronRight }
         if value.contains("trianglehead.pull") || value.contains("pull-request") {
             return .pulls

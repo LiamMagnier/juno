@@ -3,38 +3,39 @@ import SwiftUI
 
 // MARK: - Segmented control
 
-/// The view switcher: a quiet capsule track with one knob of real Liquid Glass.
+/// The view switcher: a quiet inset track with one raised thumb that slides.
 ///
 /// Replaces `Picker(...).pickerStyle(.segmented)`, whose AppKit chrome is the
 /// wrong weight for a control sitting *inside* content — hard dividers and a
-/// slab that announces itself louder than the thing it switches. That picker
-/// also does not get Tahoe's glass for free: screenshotting the running window
-/// showed `NSSegmentedControl` drawing its pre-Tahoe appearance inside a toolbar
-/// item, a flat grey knob whose radius did not even match its track's.
+/// slab that announces itself louder than the thing it switches.
 ///
-/// **The knob is the only glass.** Glass is for the thing that floats, and the
-/// knob is the thing that floats; the track stays a plain fill. Making both
-/// glass flattens both, because glass cannot sample glass. `glassEffectID`
-/// inside a `GlassEffectContainer` is what carries the knob between segments as
-/// one continuous piece of material — it stretches and re-forms rather than
-/// cross-fading in place, which is the motion the phone's Apple Music tab bar
-/// has and a `matchedGeometryEffect` rectangle never will.
+/// **Tonal, not glass.** This used to carry a Liquid Glass knob inside a
+/// `GlassEffectContainer`, morphing between segments with `glassEffectID`. On
+/// the sidebar's vibrant material the glass had nothing honest to refract, so
+/// the knob read as a smeared highlight with a halo, and the morph — the knob
+/// stretching and re-forming — was the "bounce" the review called out. The
+/// Soft UI direction (`docs/design/SOFT_UI.md` §4) states depth on Apple as
+/// tonal: a `junoSurface` tile with a hairline and a very soft shadow, on a
+/// `junoWell` inset. That is exactly what a thumb on a track is, so the thumb
+/// is now that tile, carried between segments by `matchedGeometryEffect` on
+/// `JunoMotion.spring`. It slides; it does not stretch.
 ///
-/// Two constraints here were found by looking at the window rather than by
-/// reasoning, and both are easy to undo by accident:
+/// Three things happen on a switch, and they are deliberately separate:
 ///
-/// * **The effect goes on the label, not behind it.** As a `.background` the
-///   knob swallows its own text: inside a container the glass elements are
-///   composited as a group, and that group draws above a label the modifier was
-///   never attached to, so the selected segment renders as an empty capsule.
-/// * **The container must not be `.focusable()`.** SwiftUI hands initial focus
-///   to the first focusable view, so a focusable switcher wears a permanent
-///   accent ring that reads as an error badge on a freshly opened window. The
-///   segments are ordinary Buttons, so Full Keyboard Access still tabs to them
-///   and Space activates them, each drawing the system ring only when focus is
-///   really on it. Arrow keys between segments are the cost; VoiceOver keeps the
-///   equivalent through the adjustable action below, and there is a
-///   `CommandMenu("Product")` for the keyboard.
+/// * the thumb **travels** — one spring, one piece of geometry;
+/// * the label **ink cross-fades** — a tint-tier change that survives Reduce
+///   Motion, because a word changing colour is feedback, not movement;
+/// * the pressed segment **dips** — `JunoMotion.press`, the 70ms rung, on the
+///   label alone. Nothing scales the thumb, and no symbol bounces.
+///
+/// **The container must not be `.focusable()`.** SwiftUI hands initial focus
+/// to the first focusable view, so a focusable switcher wears a permanent
+/// accent ring that reads as an error badge on a freshly opened window. The
+/// segments are ordinary Buttons, so Full Keyboard Access still tabs to them
+/// and Space activates them, each drawing the system ring only when focus is
+/// really on it. Arrow keys between segments are the cost; VoiceOver keeps the
+/// equivalent through the adjustable action below, and there is a
+/// `CommandMenu("Product")` for the keyboard.
 ///
 /// The phone's `JunoMobileSegmented` is the same control; the two are separate
 /// only because the apps share no view layer.
@@ -45,11 +46,9 @@ struct DesktopSegmented<Value: Hashable>: View {
         /// An optional SF Symbol shown before the title.
         ///
         /// Optional because not every segmented control wants a mark — a
-        /// two-word filter reads better as two words. The product switch does
-        /// want them, and `DesktopProductMode` has carried a `symbol` for each
-        /// case all along that nothing ever passed here, so the top-level
-        /// control in the app was the one place with bare text where the web's
-        /// equivalent has icons.
+        /// two-word filter reads better as two words, and the product switch
+        /// reads better as three. A symbol here is a plain glyph in the label's
+        /// ink; it never animates on its own.
         let symbol: String?
         var id: Value { value }
 
@@ -65,54 +64,70 @@ struct DesktopSegmented<Value: Hashable>: View {
     var accessibilityLabel: String
     var optionAccessibilityIdentifier: ((Value) -> String)? = nil
 
-    @Namespace private var knob
+    @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // spacing 0: the knob is a single element, so there is no second piece
-        // of glass for it to blend with. The container is here to give that one
-        // element a shared sampling region and somewhere to morph within.
-        JunoDesktopGlass(spacing: 0) {
-            HStack(spacing: 2) {
-                ForEach(options) { option in
-                    let selected = option.value == selection
-                    Button {
-                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                            selection = option.value
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            if let symbol = option.symbol {
-                                // Sized off the label rather than fixed, so the
-                                // mark tracks the 12pt text if that ever moves,
-                                // and `.medium` so a 12pt glyph does not read
-                                // thinner than the word beside it.
-                                JunoIconView(systemImage: symbol)
-                                    .junoFont(size: 11, relativeTo: .body, weight: .medium)
-                                    .accessibilityHidden(true)
-                            }
-                            Text(option.title)
-                        }
-                            .junoFont(size: 12, relativeTo: .body, weight: .medium)
-                            .foregroundStyle(
-                                selected ? Color.junoForeground : Color.junoMutedForeground
-                            )
-                            .padding(.horizontal, option.symbol == nil ? 12 : 10)
-                            .frame(height: 28)
-                            .modifier(GlassKnob(active: selected, namespace: knob))
-                            .contentShape(.capsule)
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                let selected = option.value == selection
+                Button {
+                    withAnimation(JunoMotion.reduced(JunoMotion.spring, when: reduceMotion)) {
+                        selection = option.value
                     }
-                    .buttonStyle(DesktopSegmentStyle())
-                    .accessibilityLabel(option.title)
-                    .accessibilityIdentifier(
-                        optionAccessibilityIdentifier?(option.value) ?? ""
+                } label: {
+                    HStack(spacing: 5) {
+                        if let symbol = option.symbol {
+                            JunoIconView(systemImage: symbol)
+                                .junoFont(size: 11, relativeTo: .body, weight: .medium)
+                                .accessibilityHidden(true)
+                        }
+                        Text(option.title)
+                    }
+                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
+                    .foregroundStyle(
+                        selected ? Color.junoForeground : Color.junoMutedForeground
                     )
-                    .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+                    // The ink is the one thing here that changes without moving,
+                    // so it keeps its curve under Reduce Motion.
+                    .animation(
+                        JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
+                        value: selected
+                    )
+                    // A segment never truncates. A label that cannot fit is a
+                    // layout bug to fix at the call site, not an ellipsis to
+                    // ship — four "…" buttons in a row is what this replaces.
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, option.symbol == nil ? 12 : 10)
+                    .frame(height: 28)
+                    .background {
+                        if selected {
+                            DesktopSegmentThumb()
+                                .matchedGeometryEffect(id: "thumb", in: thumb)
+                        }
+                    }
+                    .contentShape(.capsule)
                 }
+                .buttonStyle(DesktopSegmentStyle())
+                .accessibilityLabel(option.title)
+                .accessibilityIdentifier(
+                    optionAccessibilityIdentifier?(option.value) ?? ""
+                )
+                .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
             }
         }
         .padding(2)
-        .background(Capsule(style: .continuous).fill(Color.junoMuted.opacity(0.55)))
+        // The track is the well: the secondary fill with an inner hairline, so
+        // the thumb has something to be raised *from*.
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.junoMuted.opacity(0.55))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+                )
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         // What `.focusable()` would have bought, without the permanent ring:
@@ -127,49 +142,48 @@ struct DesktopSegmented<Value: Hashable>: View {
             @unknown default: return
             }
             guard options.indices.contains(next) else { return }
-            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            withAnimation(JunoMotion.reduced(JunoMotion.spring, when: reduceMotion)) {
                 selection = options[next].value
             }
         }
     }
 }
 
-/// Glass, but only for the segment that is selected.
+/// The raised thumb: the Soft UI tile — surface fill, hairline, the one
+/// sanctioned soft throw — in a capsule.
 ///
-/// The id is shared across every segment on purpose. One element carrying one
-/// id, present in a different position each time selection changes, is what the
-/// container reads as "the same piece of material, moved" — which is the
-/// travelling knob. Give each segment its own id and they materialise in place
-/// instead, which is a different control.
-private struct GlassKnob: ViewModifier {
-    let active: Bool
-    let namespace: Namespace.ID
-
-    func body(content: Content) -> some View {
-        if active {
-            content
-                .junoGlass(in: Capsule(style: .continuous), interactive: true)
-                .junoGlassID("knob", in: namespace)
-        } else {
-            content
-        }
+/// One view, one `matchedGeometryEffect` id, present under whichever segment
+/// is selected. That is what the layout reads as "the same tile, moved", which
+/// is the sliding thumb. Give each segment its own thumb and they would fade in
+/// place instead, which is a different control.
+private struct DesktopSegmentThumb: View {
+    var body: some View {
+        Capsule(style: .continuous)
+            .fill(Color.junoSurface)
+            .shadow(
+                color: Color.junoCardShadow,
+                radius: JunoElevation.cardBlur,
+                y: JunoElevation.cardOffsetY
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            )
     }
 }
 
-/// The web's `active:scale-[0.97]` on the same curve the knob travels on, so a
-/// press and the throw it causes are one gesture rather than two animations.
+/// The press dip: the web's `active:scale-[0.97]` on the 70ms press rung.
 ///
-/// Interactive glass already flexes under the pointer, so this stays subtle —
-/// the two together should read as one press, not as a control that shrinks
-/// twice.
+/// On the label only. The thumb travels on its own spring, and a press that
+/// also scaled the thumb would read as the control shrinking twice.
 private struct DesktopSegmentStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
             .animation(
-                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                JunoMotion.reduced(JunoMotion.press, when: reduceMotion),
                 value: configuration.isPressed
             )
     }

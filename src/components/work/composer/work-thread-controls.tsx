@@ -114,7 +114,7 @@ export function WorkThreadModelControl({ context }: { context: WorkThreadContext
     // list wearing its lock and sending the reader to /upgrade — the picker's
     // own behaviour, and the reason this is that component rather than a smaller
     // one written for a strip.
-    <div className={cn("min-w-0 flex-1 sm:flex-none", held && "pointer-events-none opacity-60")}>
+    <div className={cn("min-w-0 shrink-0", held && "pointer-events-none opacity-60")}>
       <ModelSelector
         value={context.model}
         onChange={changeModel}

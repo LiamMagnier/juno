@@ -72,6 +72,9 @@ struct JunoMobileComposer: View {
   /// composer with one element, and a second instance here would double every
   /// alpha in the ramp. See ``auraLayer`` and ``JunoMobileGreeting``.
   var greetingVisible: Bool = false
+  /// A one-shot request from a shortcut. The owner resets it as soon as the
+  /// composer has claimed the microphone.
+  var startDictation: Binding<Bool> = .constant(false)
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Send, stop and voice answer in the hand. See `JunoMobileHaptic`.

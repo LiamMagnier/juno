@@ -495,6 +495,188 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         )
     }
 
+    /// Every product's column starts under the window chrome, and the product
+    /// switch at its head reaches every other product.
+    ///
+    /// Two regressions this pins. The sidebar strip used to ignore the top
+    /// safe area and pad a constant, which put Code's search field over the
+    /// product switch and — on a window whose titlebar measured differently —
+    /// the column's first rows under the traffic lights. And Work's column
+    /// shipped with no product switch at all, so a window that had switched
+    /// into Work could not switch back out from the sidebar.
+    func testEveryProductColumnStartsBelowTheToolbarAndSwitchesToTheOthers() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "work",
+            "--juno-preview-work-overview",
+            // 1239, not 1240: the harness treats the scene default as "leave the
+            // window alone", and this window has to be measured at the size asked.
+            "--juno-preview-size", "1239x800",
+        ]
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+
+        let productSwitch = app.descendants(matching: .any)["Juno product"]
+        XCTAssertTrue(productSwitch.waitForExistence(timeout: 12), "Work's column has no product switch.")
+        assertColumnHeadBelowChrome(in: app, product: "work")
+        XCTAssertTrue(app.buttons["juno.work.new-task"].exists)
+
+        app.descendants(matching: .any)["juno.product-brand.chat"].click()
+        XCTAssertTrue(app.buttons["New chat"].waitForExistence(timeout: 8), "Work → Chat")
+        assertColumnHeadBelowChrome(in: app, product: "chat")
+
+        app.descendants(matching: .any)["juno.product-brand.code"].click()
+        // The filter row, not "Add project…": that button is the last row of
+        // the column and a `.sidebar` List does not build rows below the fold,
+        // so on an 800pt window it does not exist to be found.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.code.sidebar-filter"].waitForExistence(timeout: 8),
+            "Chat → Code"
+        )
+        assertColumnHeadBelowChrome(in: app, product: "code")
+        // Code declares a sidebar search field; it must sit above the strip,
+        // not across it.
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(
+            search.frame.maxY, productSwitch.frame.minY + 1,
+            "The Code column's search field overlaps the product switch."
+        )
+
+        app.descendants(matching: .any)["juno.product-brand.work"].click()
+        XCTAssertTrue(app.buttons["juno.work.new-task"].waitForExistence(timeout: 8), "Code → Work")
+    }
+
+    private func assertColumnHeadBelowChrome(in app: XCUIApplication, product: String) {
+        let toolbar = app.toolbars.firstMatch
+        let productSwitch = app.descendants(matching: .any)["Juno product"]
+        XCTAssertTrue(productSwitch.waitForExistence(timeout: 8), product)
+        XCTAssertTrue(toolbar.exists, product)
+        // The arriving workspace settles over `JunoMotion.standard`; measure
+        // it at rest, and leave the numbers in the log for whoever reads a
+        // failure.
+        Thread.sleep(forTimeInterval: 1.5)
+        NSLog(
+            "juno.layout %@ window=%@ toolbar=%@ switch=%@",
+            product,
+            NSStringFromRect(app.windows.firstMatch.frame),
+            NSStringFromRect(toolbar.frame),
+            NSStringFromRect(productSwitch.frame)
+        )
+        XCTAssertGreaterThanOrEqual(
+            productSwitch.frame.minY, toolbar.frame.maxY - 1,
+            "\(product): the product switch is drawn under the window's toolbar."
+        )
+        let closeButton = app.windows.firstMatch.buttons.matching(
+            NSPredicate(format: "label == %@ OR identifier == %@", "close button", "_XCUI:CloseWindow")
+        ).firstMatch
+        if closeButton.exists {
+            XCTAssertGreaterThanOrEqual(
+                productSwitch.frame.minY, closeButton.frame.maxY,
+                "\(product): the product switch collides with the traffic lights."
+            )
+        }
+    }
+
+    /// Window captures for design review, written to `JUNO_SCREENSHOT_DIR`.
+    ///
+    /// Not an assertion — a way to *look*. `screencapture` needs the Screen
+    /// Recording permission the terminal does not have; an `XCUIScreenshot`
+    /// taken under `xcodebuild test` does not. Skipped unless the directory is
+    /// set, so the ordinary test run does not write PNGs anywhere.
+    func testCapturesReviewScreenshots() throws {
+        guard let directory = ProcessInfo.processInfo.environment["JUNO_SCREENSHOT_DIR"],
+            !directory.isEmpty
+        else {
+            throw XCTSkip("Set JUNO_SCREENSHOT_DIR to capture review screenshots.")
+        }
+        try FileManager.default.createDirectory(
+            atPath: directory, withIntermediateDirectories: true
+        )
+
+        struct Capture {
+            let name: String
+            let size: String
+            let arguments: [String]
+        }
+        let captures: [Capture] = [
+            .init(name: "chat-1240", size: "1239x800", arguments: ["--juno-preview-tab", "chat"]),
+            .init(name: "chat-1440", size: "1440x900", arguments: ["--juno-preview-tab", "chat"]),
+            .init(name: "code-1240", size: "1239x800", arguments: ["--juno-preview-tab", "code"]),
+            .init(name: "code-1440", size: "1440x900", arguments: ["--juno-preview-tab", "code"]),
+            .init(
+                name: "work-1240", size: "1239x800",
+                arguments: ["--juno-preview-tab", "work", "--juno-preview-work-overview"]
+            ),
+            .init(
+                name: "work-1440", size: "1440x900",
+                arguments: ["--juno-preview-tab", "work", "--juno-preview-work-overview"]
+            ),
+            .init(name: "library", size: "1239x800", arguments: ["--juno-preview-tab", "library"]),
+            .init(name: "artifacts", size: "1239x800", arguments: ["--juno-preview-tab", "artifacts"]),
+            .init(name: "connections", size: "1239x800", arguments: ["--juno-preview-tab", "connections"]),
+            .init(name: "projects", size: "1239x800", arguments: ["--juno-preview-tab", "projects"]),
+            .init(name: "tasks", size: "1239x800", arguments: ["--juno-preview-tab", "tasks"]),
+            .init(name: "memory", size: "1239x800", arguments: ["--juno-preview-tab", "memory"]),
+            .init(name: "usage", size: "1239x800", arguments: ["--juno-preview-tab", "usage"]),
+            .init(name: "model-selector", size: "1239x800", arguments: ["--juno-preview-model-selector"]),
+        ]
+
+        for capture in captures {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "-ApplePersistenceIgnoreState", "YES",
+                "--juno-ui-preview",
+                "--juno-preview-appearance", "light",
+                "--juno-preview-size", capture.size,
+            ] + capture.arguments
+            app.launch()
+            openMainWindowIfNeeded(in: app)
+            let window = app.windows.firstMatch
+            XCTAssertTrue(window.waitForExistence(timeout: 12), capture.name)
+            dismissKeychainPrompts()
+            // Let the arrival rise and the first render settle.
+            _ = app.staticTexts.firstMatch.waitForExistence(timeout: 3)
+            Thread.sleep(forTimeInterval: 1.2)
+            let screenshot = window.screenshot()
+            // Both routes, because the runner may be sandboxed away from the
+            // requested directory: a file where it can be written, and an
+            // attachment in the result bundle (`xcresulttool export attachments`)
+            // where it cannot.
+            let attachment = XCTAttachment(screenshot: screenshot)
+            attachment.name = capture.name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            let url = URL(fileURLWithPath: directory).appendingPathComponent("\(capture.name).png")
+            do {
+                try screenshot.pngRepresentation.write(to: url)
+            } catch {
+                let fallback = URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("\(capture.name).png")
+                try screenshot.pngRepresentation.write(to: fallback)
+                NSLog("juno.screenshot fallback %@", fallback.path)
+            }
+            app.terminate()
+        }
+    }
+
+    /// A locally re-signed build is a different identity to the one that wrote
+    /// the account's keychain item, so the preview raises the system's
+    /// "Juno wants to use your confidential information" sheet over every
+    /// window. Deny it — the preview needs no account — so it is not in the
+    /// picture.
+    private func dismissKeychainPrompts() {
+        let agent = XCUIApplication(bundleIdentifier: "com.apple.SecurityAgent")
+        for _ in 0..<3 {
+            let deny = agent.buttons["Deny"]
+            guard deny.waitForExistence(timeout: 2) else { return }
+            deny.click()
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+    }
+
     private func labelBeginsWith(_ value: String) -> NSPredicate {
         NSPredicate(format: "label BEGINSWITH %@", value)
     }

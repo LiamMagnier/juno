@@ -84,6 +84,9 @@ struct JunoMobileRootView: View {
   private var launchRequests: JunoMobileLaunchRequests { .shared }
   /// A question from "Ask Juno", handed to the draft composer.
   @State private var pendingAskPrompt: String?
+  /// The Widget / App Intent "Dictate" shortcut. It is a one-shot binding so
+  /// the composer can clear it once speech recognition owns the microphone.
+  @State private var pendingDictation = false
   /// Whether full-screen voice is up — see the note on the cover.
   @State private var voiceFullScreenPresented = false
   /// Local notifications and the background approval check for Juno Code.
@@ -480,6 +483,10 @@ struct JunoMobileRootView: View {
       showingSettings = false
       startVoice()
       voiceSession?.isFullScreen = true
+    case .dictate:
+      showingSettings = false
+      startNewChat()
+      pendingDictation = true
     case .code:
       showingSettings = false
       selection = .code
@@ -984,6 +991,7 @@ struct JunoMobileRootView: View {
         voiceID: memorySettingsModel?.settings?.voiceID,
         requestSender: requestSender,
         pendingPrompt: $pendingAskPrompt
+        , startDictation: $pendingDictation
       )
       .transition(.opacity)
     } else {

@@ -10,11 +10,11 @@
     "files": {}
   },
   "targets": {
-    "total": 351,
+    "total": 348,
     "modules": {
-      "JunoNativeKit (shared)": 37,
+      "JunoNativeKit (shared)": 36,
       "JunoCode (shared)": 103,
-      "JunoDesktop (macOS)": 182,
+      "JunoDesktop (macOS)": 180,
       "JunoMobile (iOS)": 29
     },
     "files": {
@@ -51,7 +51,7 @@
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesktopChrome.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoLearningBlockViews.swift": 3,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoMathView.swift": 1,
-      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoModelSelector.swift": 2,
+      "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoModelSelector.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoStepLabView.swift": 5,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceAura.swift": 1,
       "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoVoiceOrb.swift": 1,
@@ -69,7 +69,7 @@
       "native/macOS/JunoDesktop/App/DesktopArtifactsScreen.swift": 15,
       "native/macOS/JunoDesktop/App/DesktopChatWorkspace.swift": 23,
       "native/macOS/JunoDesktop/App/DesktopCodeAccountFooter.swift": 1,
-      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 21,
+      "native/macOS/JunoDesktop/App/DesktopCodeStudio.swift": 19,
       "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift": 7,
       "native/macOS/JunoDesktop/App/DesktopConnectionsScreen.swift": 10,
       "native/macOS/JunoDesktop/App/DesktopDesignScreen.swift": 8,

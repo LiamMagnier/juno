@@ -1,69 +1,59 @@
-import * as React from "react";
+"use client";
 
+import * as React from "react";
+import Image from "next/image";
+import {
+  AnimatePresence,
+  MotionConfig,
+  animate,
+  motion,
+  useReducedMotion,
+  type AnimationPlaybackControls,
+} from "framer-motion";
+import { ArrowUp, Loader2, Square } from "lucide-react";
+
+import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { cn } from "@/lib/utils";
+import type { PendingUpload } from "@/hooks/use-uploads";
 
 /**
- * The two-tier composer chrome. Slots only — no state, no pickers, no upload
- * logic. Every composer in the product (chat, Work, Code) draws the same box;
- * this is that box, and nothing else.
+ * The composer: one quiet surface (docs/design/SOFT_UI.md §3).
  *
  *   ┌──────────────────────────────────────────────┐
- *   │  above     attachment strip / clarification   │
- *   │ ┌──────────────────────────────────────────┐ │
- *   │ │ field   the textarea, in an inset well   │ │
- *   │ └──────────────────────────────────────────┘ │
- *   │  controls  + · model · effort ⟵⟶ mic · send   │  the inline row
- *   ├───────────────────────────────────────────────┤  the hairline
- *   │  utility   project · connectors · executor    │  the quieter tier
+ *   │  above      attachment thumbnails / quote     │
+ *   │  field      the textarea, directly on the     │
+ *   │             surface — no well, no second box  │
+ *   │  leading ······················ trailing  ●   │  one controls row
  *   └──────────────────────────────────────────────┘
  *
- * THE MATERIAL (docs/design/SOFT_UI.md §3). The shell is `.composer-surface`
- * — the raised card recipe, with focus lifting it to the large throw — and
- * the field sits in `.composer-field`, a recess cut into it. One material,
- * two depths, in one box. Both classes live in globals.css and are the ONLY
- * place the composer's depth is decided: the raw `shadow-[…rgba…]` utilities
- * that used to close this class string beat the components layer and left
- * `.composer-surface` as dead paint.
+ * The material is `.composer-surface` (globals.css): `bg-card`, a 1px
+ * hairline, one low shadow. Focus darkens the edge and lifts the shadow one
+ * notch; nothing else changes. There is deliberately no second tier — every
+ * chip a surface needs (model, effort, target, permission, project) sits on
+ * the same row, and the row scrolls sideways before it ever stacks.
  *
- * WHY TWO TIERS. The two rows answer different questions:
- *
- *   inline    what you are doing to THIS message. Attach a file, pick the
- *             model, raise the effort, dictate, send. Spent on send.
- *
- *   utility   the persistent context of the RUN. Which project it belongs to,
- *             which connectors it can reach, where it executes. Still true
- *             after you press send.
- *
- * The hairline is the sentence neither a flat row nor a chip strip can say:
- * everything below this line survives the send. A surface with nothing
- * persistent to show simply omits `utility` and gets the one-tier composer
- * back, hairline included in the omission.
+ * Slots only. No state, no pickers, no upload logic: every composer in the
+ * product (chat, Code, Compare, Work) draws this box and owns everything in
+ * it. The shared recipes below — the chip, the icon button, the primary
+ * action, the attachment tile — are what keep six composers reading as one.
  */
 export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<"div">, "children"> {
   /** The textarea — or whatever replaces it, e.g. a collapsed-draft card. */
   field: React.ReactNode;
-  /**
-   * The inline row: per-message actions. Supply the two clusters the way the
-   * chat composer does — `<div className="flex min-w-0 flex-1 items-center gap-1">`
-   * for the left, `<div className="ml-auto flex shrink-0 items-center gap-1">`
-   * for the right. The row container (padding, gap, nowrap) is chrome and lives
-   * here; the split is the caller's.
-   */
-  controls: React.ReactNode;
-  /** Above the field, inside the shell: attachment strip, quote chip, clarification. */
+  /** Left cluster of the controls row: `+`, and any context chips. */
+  leading?: React.ReactNode;
+  /** Right cluster, before the primary action: model, effort, mic. */
+  trailing?: React.ReactNode;
+  /** The primary action — send ⇄ stop ⇄ voice. Never dimmed. */
+  action: React.ReactNode;
+  /** Above the field, inside the surface: attachments, quote chip, clarification. */
   above?: React.ReactNode;
   /**
-   * The quieter attached strip under the hairline. Omit it entirely on surfaces
-   * with no persistent run context — omitting it removes the tier, the border
-   * and the padding, not just the contents. The strip does not scroll, so give
-   * each item `min-w-0` and truncate its label.
+   * Streaming / locked: the row fades to 60% while the primary action stays
+   * at full strength, because Stop is the one thing left to press.
    */
-  utility?: React.ReactNode;
-  /**
-   * Names the second tier for assistive tech: a hairline is not announced, and
-   * without a label the strip's controls read as a continuation of the send row.
-   */
-  utilityLabel?: string;
+  dimmed?: boolean;
   /**
    * The field tier's element. Anything a host floats off the composer with
    * `bottom-full` — the slash/@ palette — resolves against this, not the shell.
@@ -72,44 +62,305 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
 }
 
 const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(function ComposerShell(
-  { field, controls, above, utility, utilityLabel = "Run context", fieldTierRef, className, ...props },
+  { field, leading, trailing, action, above, dimmed = false, fieldTierRef, className, ...props },
   ref
 ) {
+  const dim = cn(
+    "transition-opacity duration-fast ease-out-soft motion-reduce:transition-none",
+    dimmed && "opacity-60"
+  );
   return (
     <div
       ref={ref}
-      className={cn(
-        // No padding on the shell: each child supplies its own, which is what
-        // lets the utility strip run full-bleed to the border. ONE radius at
-        // every width — the composer takes the panel rung.
-        "composer-surface relative flex w-full flex-col rounded-composer",
-        "transition-[border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none",
-        className
-      )}
+      className={cn("composer-surface relative flex w-full flex-col rounded-panel", className)}
       {...props}
     >
-      {/* The field tier is its own positioned block, and the utility strip is
-          deliberately outside it: the slash/@ palette anchors `bottom-full`
-          against this element. */}
       <div ref={fieldTierRef} className="relative flex w-full min-w-0 flex-col">
         {above}
-        <div className="composer-field">{field}</div>
-        <div className="flex flex-nowrap items-center justify-between gap-1.5 px-3 pb-2.5 pt-1 sm:px-3.5 sm:pb-3">{controls}</div>
-      </div>
-
-      {/* The hairline belongs to the strip, not to the shell, so a one-tier
-          surface never shows a rule under its control row. */}
-      {utility ? (
-        <div
-          role="group"
-          aria-label={utilityLabel}
-          className="flex min-w-0 flex-nowrap items-center justify-between gap-2 rounded-b-inherit border-t border-border/50 bg-muted/25 px-3.5 py-2 text-caption text-muted-foreground sm:px-4"
-        >
-          {utility}
+        {field}
+        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-1">
+          <div className={cn("flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar", dim)}>
+            {leading}
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {trailing && <div className={cn("flex min-w-0 items-center gap-1", dim)}>{trailing}</div>}
+            {action}
+          </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 });
 
-export { ComposerShell };
+/* ————————————————————————————————————————————————————————————————————————
+ * Shared recipes
+ * ———————————————————————————————————————————————————————————————————— */
+
+/** The height spring every composer grows on (SOFT_UI.md §2.4). */
+export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } as const;
+
+/**
+ * The textarea, directly on the surface: transparent, 16px inline / 14px
+ * block padding, `text-base` because iOS Safari zooms into anything smaller.
+ */
+export const composerFieldClass =
+  "block w-full resize-none bg-transparent px-4 pb-2 pt-3.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-60";
+
+/**
+ * A flat text chip on the controls row: model, effort, target, permission.
+ * Hover fills with the accent; open is the same fill with darker ink. No
+ * raised or pressed treatment — the row is one quiet line of text.
+ */
+export const composerChipClass =
+  "group inline-flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-ui font-medium text-foreground/80 transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+
+/** The chevron that closes a chip: quiet, and it turns while the chip is open. */
+export const composerChevronClass =
+  "size-3 shrink-0 opacity-60 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
+
+/**
+ * A 32px flat icon button (`+`, mic). Written against `<Button variant="ghost"
+ * size="icon-sm">`, whose hover raises a card — every raised/pressed class is
+ * cancelled here so the button stays flat and only the accent fill arrives.
+ */
+export const composerIconButtonClass =
+  "size-8 shrink-0 rounded-control border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
+
+/** The thin rule between the chips and the mic/send pair. */
+export function ComposerDivider({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn("mx-1 hidden h-4 w-px shrink-0 bg-border min-[380px]:block", className)} />;
+}
+
+/**
+ * Auto-growing textarea, on the spring.
+ *
+ * Measures the content height on every value change and animates the field's
+ * inline height to it — one line at rest, up to `maxLines` before it scrolls.
+ * The measurement is a synchronous set-to-auto / read / restore, so nothing
+ * paints in between; framer's `animate` then drives the inline style, which
+ * is the same property the measurement reads back from, so an interrupted
+ * growth carries on from wherever it was. Reduced motion snaps.
+ */
+export function useComposerAutosize(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string,
+  {
+    maxLines = 8,
+    maxHeight,
+    minHeight = 0,
+  }: { maxLines?: number; maxHeight?: number; minHeight?: number } = {}
+) {
+  const reduce = useReducedMotion();
+  const controls = React.useRef<AnimationPlaybackControls | null>(null);
+
+  const measure = React.useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const prev = el.style.height;
+    el.style.height = "auto";
+    const cs = getComputedStyle(el);
+    const line = parseFloat(cs.lineHeight) || 24;
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const cap = maxHeight ?? Math.round(line * maxLines + pad);
+    const next = Math.max(minHeight, Math.min(el.scrollHeight, cap));
+    el.style.overflowY = el.scrollHeight > cap ? "auto" : "hidden";
+    el.style.height = prev;
+
+    controls.current?.stop();
+    const from = parseFloat(prev);
+    if (!prev || Number.isNaN(from) || reduce || Math.abs(from - next) < 1) {
+      el.style.height = `${next}px`;
+      return;
+    }
+    controls.current = animate(from, next, {
+      ...COMPOSER_SPRING,
+      onUpdate: (v) => {
+        el.style.height = `${v}px`;
+      },
+      onComplete: () => {
+        el.style.height = `${next}px`;
+      },
+    });
+  }, [ref, maxLines, maxHeight, minHeight, reduce]);
+
+  React.useLayoutEffect(() => {
+    measure();
+  }, [value, measure]);
+
+  React.useEffect(() => () => controls.current?.stop(), []);
+
+  return measure;
+}
+
+/* ————————————————————————————————————————————————————————————————————————
+ * Primary action: send ⇄ stop ⇄ voice ⇄ busy
+ * ———————————————————————————————————————————————————————————————————— */
+
+export type ComposerPrimaryFace = "send" | "stop" | "voice" | "busy";
+
+const FACE_MOTION = {
+  initial: { opacity: 0, scale: 0.9 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.9 },
+  transition: { duration: 0.12, ease: [0.2, 0, 0, 1] as const },
+};
+
+/**
+ * The 32px coral circle. Flat — no raised shadow, no halo — and its face
+ * cross-morphs (scale .9→1 + fade over `duration-fast`) between send, stop,
+ * the voice wave and a spinner. `.composer-primary-action` is kept as a class
+ * hook for the e2e suite; it carries no styles.
+ */
+export interface ComposerPrimaryActionProps
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+  face: ComposerPrimaryFace;
+}
+
+const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimaryActionProps>(
+  function ComposerPrimaryAction({ face, className, type = "button", ...props }, ref) {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={cn(
+          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
+          "hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+          className
+        )}
+        {...props}
+      >
+        <MotionConfig reducedMotion="user">
+          <AnimatePresence initial={false} mode="sync">
+            {face === "busy" ? (
+              <motion.span key="busy" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+                <Loader2 className="size-4 animate-spin" />
+              </motion.span>
+            ) : face === "stop" ? (
+              <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+                <Square className="size-3 fill-current" />
+              </motion.span>
+            ) : face === "voice" ? (
+              <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+                <span className="composer-voice-wave">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </motion.span>
+            ) : (
+              <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
+                <ArrowUp className="size-4" strokeWidth={2.25} />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </MotionConfig>
+      </button>
+    );
+  }
+);
+
+/* ————————————————————————————————————————————————————————————————————————
+ * Attachments: a row of 56px thumbnails above the text
+ * ———————————————————————————————————————————————————————————————————— */
+
+const TILE_MOTION = {
+  initial: { opacity: 0, scale: 0.9 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.9 },
+  transition: COMPOSER_SPRING,
+};
+
+function fileExtension(name: string) {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).slice(0, 4).toUpperCase() : "FILE";
+}
+
+/** One 56px tile: the image itself, or the file's extension over a glyph. */
+export function ComposerAttachmentTile({
+  upload,
+  onRemove,
+  className,
+}: {
+  upload: PendingUpload;
+  onRemove?: () => void;
+  className?: string;
+}) {
+  const image = upload.attachment?.kind === "IMAGE" ? upload.attachment : null;
+  const status =
+    upload.status === "uploading" ? `Uploading ${upload.progress}%` : upload.status === "error" ? "Failed" : null;
+  return (
+    <div
+      title={status ? `${upload.fileName} — ${status}` : upload.fileName}
+      className={cn(
+        "group relative size-14 shrink-0 overflow-hidden rounded-field border border-border/70 bg-secondary",
+        upload.status === "error" && "border-destructive/60",
+        className
+      )}
+    >
+      {image ? (
+        <Image
+          src={image.url}
+          unoptimized={requiresViewerCredentials(image.url)}
+          alt={upload.fileName}
+          fill
+          sizes="56px"
+          className="object-cover"
+        />
+      ) : (
+        <span className="flex size-full flex-col items-center justify-center gap-0.5 text-muted-foreground">
+          <CodeIcons.file className="size-5" aria-hidden="true" />
+          <span className="font-mono text-micro leading-none">{fileExtension(upload.fileName)}</span>
+        </span>
+      )}
+      {upload.status === "uploading" && (
+        <span className="absolute inset-0 grid place-items-center bg-card/70">
+          <Loader2 className="size-4 animate-spin text-foreground" aria-hidden="true" />
+        </span>
+      )}
+      <span className="sr-only">{status ? `${upload.fileName}, ${status}` : upload.fileName}</span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${upload.fileName}`}
+          className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+        >
+          <ActionIcons.dismiss className="size-3" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The thumbnail row. Tiles pop in on the spring and pop out on removal;
+ * the row itself takes no space while it is empty.
+ */
+export function ComposerAttachmentRow({
+  uploads,
+  onRemove,
+  className,
+}: {
+  uploads: readonly PendingUpload[];
+  onRemove: (localId: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-wrap gap-2 px-4 pt-3.5 empty:hidden", className)}>
+      <MotionConfig reducedMotion="user">
+        <AnimatePresence initial={false}>
+          {uploads.map((upload) => (
+            <motion.div key={upload.localId} layout {...TILE_MOTION}>
+              <ComposerAttachmentTile upload={upload} onRemove={() => onRemove(upload.localId)} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </MotionConfig>
+    </div>
+  );
+}
+
+export { ComposerShell, ComposerPrimaryAction };

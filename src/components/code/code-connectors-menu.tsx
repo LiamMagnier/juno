@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { composerChevronClass, composerChipClass } from "@/components/ui/composer-shell";
 import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
@@ -165,16 +166,17 @@ export function CodeConnectorsMenu({
               disabled={disabled}
               aria-label={`Connectors: ${activeCount} active`}
               className={cn(
-                "composer-chip group relative h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-mono text-ui tracking-tight coarse:h-11",
-                activeCount > 0 ? "text-primary-ink hover:text-primary-ink" : "text-muted-foreground hover:text-foreground",
+                composerChipClass,
+                "px-2",
+                activeCount > 0 ? "text-primary-ink hover:text-primary-ink" : "text-muted-foreground",
                 className
               )}
             >
               <Plug className={cn("size-3.5 shrink-0", activeCount > 0 && "text-primary")} aria-hidden="true" />
-              <span className="min-w-0 font-medium">
+              <span className="min-w-0 truncate">
                 {activeCount === 0 ? "Connectors" : `Connectors (${activeCount})`}
               </span>
-              <ChevronDown className="size-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+              <ChevronDown className={composerChevronClass} />
             </Button>
           </TooltipTrigger>
         </PopoverTrigger>

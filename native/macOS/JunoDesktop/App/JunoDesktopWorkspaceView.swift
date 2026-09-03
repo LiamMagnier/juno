@@ -7,20 +7,22 @@ import SwiftUI
 /// The window's contents for the current product, and the one moment of motion
 /// between them.
 ///
-/// **Why the mode change is not cross-faded.** Chat, Code and Work are each a
-/// `NavigationSplitView`, and a SwiftUI transition between two of them keeps
-/// both alive for the length of the animation — two split views, two AppKit
-/// split-view controllers, negotiating sizes against the same window at the
-/// same time. That is precisely the shape that produced the documented
+/// **Why the two workspaces are never on screen together.** Chat, Code and Work
+/// are each a `NavigationSplitView`, and a SwiftUI transition between two of
+/// them keeps both alive for the length of the animation — two split views,
+/// two AppKit split-view controllers, negotiating sizes against the same window
+/// at the same time. That is precisely the shape that produced the documented
 /// update-constraints crash (`docs/native/MACOS_CRASH_ROOT_CAUSE.md`), and a
 /// nicer-feeling switch is not worth reintroducing it.
 ///
 /// So the swap itself stays instantaneous — only one workspace is ever
-/// instantiated — and what animates is the arriving workspace *resolving*:
-/// blurred and dimmed on the frame it appears, sharp a third of a second later.
-/// Nothing has to co-exist with anything, and unlike the canvas-coloured wash
-/// this replaced, what is on screen for the whole transition is the new
-/// workspace rather than a rectangle of flat paint.
+/// instantiated — and what animates is the arriving workspace *settling in*:
+/// it appears fully transparent six points low and rises into place on
+/// `JunoMotion.standard`, the same curve and the same distance the rest of the
+/// app uses for something small arriving. Read alongside the product switch's
+/// own thumb sliding in the sidebar, the two read as one gesture — the thumb
+/// moves, the window follows — where a hard swap read as the window being
+/// replaced.
 struct JunoDesktopWorkspaceView: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
@@ -34,9 +36,6 @@ struct JunoDesktopWorkspaceView: View {
     /// from the live app's launch policy.
     var consumeInitialDestination: (() -> Void)? = nil
 
-    /// 0 the instant the workspace swaps, 1 once it has settled. Drives a short
-    /// defocus on the arriving content rather than a wash laid over it.
-    @State private var settle: Double = 1
     /// A "New chat" raised from Code or Work is deliberately not a session with
     /// no folder or a task with no goal. It is an ordinary Juno conversation, so
     /// it crosses the product boundary and is consumed exactly once by the Chat
@@ -49,10 +48,16 @@ struct JunoDesktopWorkspaceView: View {
     /// with. Consumed with the request.
     @State private var unscopedChatPrompt: String?
     @State private var registry = DesktopWorkbenchRegistry.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         workspace
+            .modifier(DesktopWorkspaceArrival())
+            // Outside the modifier, not inside it. A fresh identity per product
+            // is what resets the arrival modifier's own state and re-fires its
+            // `onAppear`, so every switch — not only the first appearance —
+            // gets its rise. With the id on the workspace alone the modifier
+            // would keep its identity, and its state, across the swap.
+            .id(product)
             // Requests from the menu bar item and the quick-entry panel that
             // need the *product* changed land here, because only this view can
             // change it. Code's own requests are consumed by the Code window.
@@ -145,5 +150,34 @@ struct JunoDesktopWorkspaceView: View {
                 )
             }
         }
+    }
+}
+
+/// The arriving workspace's rise: transparent and 6pt low on the frame it is
+/// built, in place a `JunoMotion.standard` later.
+///
+/// A modifier with its own `@State` rather than state on the parent, because
+/// the parent's state would have to be reset *and* animated in one update —
+/// and SwiftUI only renders the end of that, so nothing would move. Fresh
+/// identity (`.id(product)` above) gives this modifier fresh state, and
+/// `onAppear` is the moment the new workspace exists to be animated.
+///
+/// Under Reduce Motion the rise collapses to a plain cross-fade through
+/// `JunoMotion.reduced`; the opacity still animates, the offset is skipped,
+/// because a whole window's contents shifting is exactly the travel the
+/// preference asks to remove.
+private struct DesktopWorkspaceArrival: ViewModifier {
+    @State private var settled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(settled ? 1 : 0)
+            .offset(y: settled || reduceMotion ? 0 : 6)
+            .onAppear {
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    settled = true
+                }
+            }
     }
 }

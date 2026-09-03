@@ -149,7 +149,7 @@ type TileState = "connected" | "connecting" | "available" | "setup" | "unavailab
 function TileStatus({ state }: { state: TileState }) {
   const meta: Record<TileState, { label: string; pip: string; ink?: string }> = {
     connected: { label: "Connected", pip: "bg-success", ink: "text-success-ink" },
-    connecting: { label: "Connecting", pip: "bg-warning motion-safe:animate-pulse", ink: "text-warning-foreground" },
+    connecting: { label: "Connecting", pip: "bg-warning", ink: "text-warning-foreground" },
     available: { label: "Available", pip: "border border-muted-foreground/60" },
     setup: { label: "Setup needed", pip: "bg-warning" },
     unavailable: { label: "Unavailable", pip: "bg-muted-foreground/40" },
@@ -157,12 +157,7 @@ function TileStatus({ state }: { state: TileState }) {
   const m = meta[state];
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-1.5 font-mono text-caption text-muted-foreground", m.ink)}>
-      <span className="relative flex size-2">
-        {state === "connected" && (
-          <span className="absolute inline-flex size-full rounded-full bg-success/70 motion-safe:animate-ping" />
-        )}
-        <span className={cn("relative inline-flex size-2 rounded-full", m.pip)} />
-      </span>
+      <span className={cn("inline-flex size-2 shrink-0 rounded-full", m.pip)} />
       {m.label}
     </span>
   );
@@ -220,28 +215,31 @@ function ConnectorTile({
     <Card
       variant="default"
       className={cn(
-        "group flex flex-col gap-3 p-4 hover:border-foreground/20 hover:shadow-raised-lg motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "group flex flex-col gap-3 p-3.5 hover:border-foreground/20 hover:shadow-raised-lg motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         unavailable && "text-muted-foreground"
       )}
       style={staggerDelay(index, "tight")}
     >
       <div className="flex items-start gap-3">
         <AppLogo item={item} />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-medium text-foreground">{item.label}</h3>
-          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground">{description}</p>
+        {/* Name over account (or the one-line description), both at the
+            body rung: the tile is a row in a grid, not a page header. */}
+        <div className="min-w-0 flex-1 self-center">
+          <h3 className="truncate text-ui font-medium leading-5 text-foreground">{item.label}</h3>
+          <p className="line-clamp-2 text-caption leading-4 text-muted-foreground">{description}</p>
         </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+      <div className="mt-auto flex min-h-8 items-center justify-between gap-2 border-t border-border/60 pt-2.5">
         <TileStatus state={state} />
 
         {item.connected ? (
-          <div className="flex items-center gap-1">
-            {/* Only a linked app can be exposed to chats. */}
+          <div className="flex items-center gap-1.5">
+            {/* Only a linked app can be exposed to chats. A normal Switch with
+                a plain label — the toggle is a setting, not a hero. */}
             <label className="flex cursor-pointer items-center gap-2 pr-1">
-              <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Expose ${item.label} to chats`} />
-              <span className="font-mono text-caption text-muted-foreground">In chats</span>
+              <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Use ${item.label} in chats`} />
+              <span className="text-caption text-muted-foreground">Use in chats</span>
             </label>
             <Button
               variant="ghost"
@@ -249,20 +247,16 @@ function ConnectorTile({
               onClick={onDisconnect}
               disabled={busy}
               aria-haspopup="dialog"
-              className="group/disconnect danger-hover gap-1.5 px-2.5 text-muted-foreground"
+              className="danger-hover h-7 gap-1.5 px-2 text-caption text-muted-foreground"
             >
-              {busy ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Link2Off className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
-              )}
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2Off className="size-3.5" />}
               Disconnect
             </Button>
           </div>
         ) : needsSetup ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button asChild variant="secondary" size="sm" className="gap-1.5">
+              <Button asChild variant="secondary" size="sm" className="h-7 gap-1.5 px-2.5 text-caption">
                 <a
                   href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`}
                   target="_blank"
@@ -279,18 +273,8 @@ function ConnectorTile({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy || unavailable}
-            onClick={onConnect}
-            className="group/connect gap-1.5"
-          >
-            {busy ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Link2 className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/connect:-rotate-6 group-hover/connect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
-            )}
+          <Button size="sm" variant="secondary" disabled={busy || unavailable} onClick={onConnect} className="h-7 gap-1.5 px-2.5 text-caption">
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Link2 className="size-3.5" />}
             Connect
           </Button>
         )}

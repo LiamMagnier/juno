@@ -25,7 +25,16 @@ test.describe("Authentication surfaces", () => {
 
   test("forgot-password page is accessible", async ({ page }) => {
     await page.goto("/forgot-password");
-    await expect(page.locator('input[type="email"]')).toBeVisible();
-    await expect(page.locator('button[type="submit"]')).toBeVisible();
+    const email = page.locator('input[type="email"]');
+    const submit = page.locator('button[type="submit"]');
+    await expect(email).toBeVisible();
+    await expect(submit).toBeVisible();
+    // Without a configured email provider the form renders disabled with an
+    // explanatory note rather than a warning-only state, so this holds in
+    // every environment — with email configured the controls are live.
+    if (await submit.isDisabled()) {
+      await expect(email).toBeDisabled();
+      await expect(page.locator('[role="note"]')).toContainText(/email is not set up/i);
+    }
   });
 });

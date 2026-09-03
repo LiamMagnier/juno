@@ -191,7 +191,6 @@ const config: Config = {
         // Crisp shadow for small chips, the accent halo, and `well` as an alias
         // of `inset` for the call sites that predate the kit.
         pop: "var(--shadow-pop)",
-        "glow-primary": "var(--glow-primary)",
         well: "var(--well-inset)",
       },
       // The out-of-flow stacking order. globals.css has declared these since the

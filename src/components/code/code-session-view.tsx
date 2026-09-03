@@ -18,6 +18,7 @@ import { useCodeTaskMeta, useDevicePresence } from "@/components/code/code-sessi
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useComposerAutosize } from "@/components/ui/composer-shell";
 import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
@@ -168,15 +169,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   const canAttach = features.storage;
   const { supported: speechSupported } = useSpeechRecognition();
 
-  const autoresize = React.useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, []);
-  React.useEffect(() => {
-    autoresize();
-  }, [draft, autoresize]);
+  // The shared composer growth: one line at rest, eight before it scrolls.
+  const autoresize = useComposerAutosize(textareaRef, draft);
 
   // First prompt handed off from the New session screen (device sessions only —
   // cloud sessions dispatch their task up front). Pre-fill the draft + staged

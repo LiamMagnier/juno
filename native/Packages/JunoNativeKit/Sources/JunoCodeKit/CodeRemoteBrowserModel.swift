@@ -168,11 +168,43 @@ public final class CodeRemoteBrowserModel {
         await loadSessions(deviceID: deviceID)
     }
 
+    /// The host a revoke is in flight for, so the UI can hold its row rather
+    /// than letting it be tapped twice.
+    public private(set) var revokingHostID: String?
+
     /// Reloads every host's sessions — the pull-to-refresh action, and what the
     /// background fetch calls to learn about new approvals.
     public func refreshAllSessions() async {
         for host in hosts {
             await loadSessions(deviceID: host.id)
+        }
+    }
+
+    /// Revokes one paired computer and drops it from every list this model keeps.
+    ///
+    /// The server delete is authoritative: the host's sessions cascade away
+    /// with the row, so the cached per-host lists go too rather than lingering
+    /// as threads that open onto a computer that no longer exists. A failure
+    /// leaves everything in place and reports only itself — a revoke the relay
+    /// refused must not look revoked, and it must not fail the session list
+    /// alongside it.
+    public func revokeHost(id deviceID: String) async {
+        guard let accountID, revokingHostID == nil else { return }
+        revokingHostID = deviceID
+        defer { revokingHostID = nil }
+        do {
+            try await client.revokeDevice(deviceID: deviceID, for: accountID)
+            hosts.removeAll { $0.id == deviceID }
+            sessionsByDevice.removeValue(forKey: deviceID)
+            sessions.removeAll { $0.deviceID == deviceID }
+            if selectedDeviceID == deviceID {
+                selectedDeviceID = hosts.first?.id
+                sessions = selectedDeviceID.flatMap { sessionsByDevice[$0] } ?? []
+            }
+            if openSessionID != nil, openSession == nil { closeSession() }
+            lastErrorDescription = nil
+        } catch {
+            lastErrorDescription = NativeFailureMessage.presentable(error)
         }
     }
 

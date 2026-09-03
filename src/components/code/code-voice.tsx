@@ -143,7 +143,7 @@ function sendButtonLabel(send: CodeVoiceSend): string {
  *
  * It returns a FRAGMENT, and the aura is the first thing in it. The field
  * paints at `z-index: -1`, so it has to be a SIBLING of the composer inside
- * `.composer-aura-host` for that to mean "behind the composer" — wrapped in
+ * an `isolate` host for that to mean "behind the composer" — wrapped in
  * this component's own <section> it would land behind the section instead, and
  * the section's rise-in would trap it in a layer of its own. Same arrangement
  * as chat-view.tsx and work-conversation.tsx, for the same reason.

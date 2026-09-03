@@ -242,6 +242,87 @@ struct DesktopCodeRemoteHostTile: View {
                     .contentShape(.rect)
                     .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
                 }
+
+                DesktopCodeHostRevokeSection(host: host)
+            }
+        }
+    }
+}
+
+/// Unpair + re-pair for this Mac's Remote pairing, shared by the ⌘, window's
+/// Code section and the settings page so the two tiles cannot disagree about
+/// what revoking does.
+///
+/// Revoking deletes this Mac's row on the relay: the phone stops listing it,
+/// its sessions and pending approvals go with the row, and the heartbeat stops
+/// so it cannot resurrect the pairing. Re-pairing registers fresh — the old
+/// row is gone, so replaying its id would only earn another 404.
+struct DesktopCodeHostRevokeSection: View {
+    let host: DesktopCodeHostModel
+
+    @State private var confirmingRevoke = false
+
+    var body: some View {
+        if host.phase == .revoked {
+            Divider()
+            Text(
+                "This Mac was unpaired and no longer appears on your other devices. "
+                    + "Pair it again to run Juno Code sessions from your phone."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                host.pairAgain()
+            } label: {
+                Text("Pair this Mac again").frame(maxWidth: .infinity)
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+            .accessibilityIdentifier("juno.desktop.settings.remote-host-pair-again")
+        } else if host.deviceID != nil {
+            Divider()
+            if let error = host.revokeError {
+                Text(error)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoDanger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button(role: .destructive) {
+                confirmingRevoke = true
+            } label: {
+                HStack(spacing: JunoSpace.snug) {
+                    if host.isRevoking {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Revoking this Mac")
+                    }
+                    Text(host.isRevoking ? "Revoking…" : "Revoke this Mac…")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+            .disabled(!host.canRevokeThisDevice)
+            .help("Unlist this Mac from your other devices")
+            .accessibilityIdentifier("juno.desktop.settings.remote-host-revoke")
+            .confirmationDialog(
+                "Revoke this Mac?",
+                isPresented: $confirmingRevoke,
+                titleVisibility: .visible
+            ) {
+                Button("Revoke this Mac", role: .destructive) {
+                    host.revokeThisDevice()
+                }
+                .contentShape(.rect)
+                Button("Cancel", role: .cancel) {}
+                    .contentShape(.rect)
+            } message: {
+                Text(
+                    "This Mac stops being listed on your other devices, and anything "
+                        + "it was running for them stops with it. Pair it again here any time."
+                )
             }
         }
     }

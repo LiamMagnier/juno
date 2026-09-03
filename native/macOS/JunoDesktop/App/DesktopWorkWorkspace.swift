@@ -227,6 +227,7 @@ struct DesktopWorkWorkspace: View {
                 sessions: visibleSessions,
                 isSearching: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 selection: selection,
+                product: $product,
                 compose: compose,
                 openDesign: openDesign,
                 openSettings: { leaveForChat(.settings) },
@@ -431,10 +432,12 @@ struct DesktopWorkWorkspace: View {
             .accessibilityIdentifier("juno.work.new-task")
         }
 
-        ToolbarItem(placement: .status) {
-            statusIndicator
-        }
-
+        // No `.status` item. The toolbar used to centre a "No task open" /
+        // "Needs approval" chip here, and on the home page it sat directly over
+        // the greeting as the page scrolled under the toolbar — the one line
+        // on the page that is meant to be read, with a caption pasted across
+        // it. The thread's status is the thread header's job and the home
+        // page has no status; the toolbar keeps the three things that act.
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button {
@@ -487,42 +490,6 @@ struct DesktopWorkWorkspace: View {
             .junoToolbarMetrics()
             .disabled(model.isMutating)
             .accessibilityIdentifier("juno.work.task-menu")
-        }
-    }
-
-    /// What the open task is doing, in the titlebar.
-    ///
-    /// Present with a neutral reading when nothing is open, rather than absent:
-    /// see the note on ``detailToolbar`` for why nothing here may come and go.
-    ///
-    /// **`.titleAndIcon` is required, not cosmetic.** A bare `Label` in a
-    /// toolbar collapses to its glyph, and `.status` placement centres it — so
-    /// this rendered as a lone unlabelled shield floating in the middle of the
-    /// titlebar, touching nothing, meaning nothing to anyone who had not read
-    /// this file. With the title shown it becomes what it was written to be: the
-    /// answer to "what is this task doing" while the thread is scrolled past its
-    /// own header.
-    @ViewBuilder
-    private var statusIndicator: some View {
-        if case .automations = selection.wrappedValue {
-            JunoIconLabel("Automations", systemImage: "clock.badge.checkmark")
-                .labelStyle(.titleAndIcon)
-                .font(.system(.caption, design: .default, weight: .medium))
-                .foregroundStyle(Color.junoAccent)
-                .accessibilityLabel("Automations")
-        } else if let session = openSession {
-            let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
-            JunoIconLabel(verbatim: style.label, systemImage: style.symbol)
-                .labelStyle(.titleAndIcon)
-                .font(.system(.caption, design: .default, weight: .medium))
-                .foregroundStyle(style.tint)
-                .help(style.sentence)
-                .accessibilityLabel(style.sentence)
-        } else {
-            JunoIconLabel("No task open", systemImage: "checklist")
-                .labelStyle(.titleAndIcon)
-                .font(.system(.caption, design: .default, weight: .medium))
-                .junoSecondaryInk()
         }
     }
 
@@ -921,6 +888,12 @@ private struct DesktopWorkSidebar: View {
     /// with two different next steps.
     let isSearching: Bool
     @Binding var selection: DesktopWorkSidebarItem?
+    /// The Chat · Code · Work switch at the top of the column, the same one
+    /// Chat and Code head their columns with. Work shipped without it, which
+    /// meant a window that had switched *into* Work had no way back out of it
+    /// short of the menu bar — the column stated one product and offered no
+    /// other.
+    @Binding var product: DesktopProductMode
     let compose: () -> Void
     /// Opens Juno Design. It is not a page this window can draw — see
     /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
@@ -981,6 +954,7 @@ private struct DesktopWorkSidebar: View {
         }
         .listStyle(.sidebar)
         .focused($columnFocused)
+        .junoSidebarProductHeader(product: $product)
         // `safeAreaBar`, not `safeAreaInset` with `.background(.bar)`.
         //
         // Work was the last column in the window still painting an opaque lid
@@ -1350,7 +1324,11 @@ private struct DesktopWorkOverview: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, JunoSpace.snug)
+        // A section's worth of air under the toolbar, on top of the page's own
+        // region inset. The greeting is the largest type on the page and it
+        // sat eight points off the page's top edge; with the toolbar floating
+        // over the scroller, that is close enough to read as *in* it.
+        .padding(.top, JunoSpace.section)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(firstName.map { "Juno Work. What needs doing, \($0)?" }
             ?? "Juno Work. What needs doing?")
@@ -1559,16 +1537,23 @@ private struct DesktopWorkHomeComposer: View {
                     .transition(.opacity)
             }
 
-            HStack(spacing: JunoSpace.snug) {
+            // Attach · Environment · Model · Effort · Options. Five chips, each
+            // a word and a chevron. The row used to read "Attach ▾ · Wherever
+            // it fits ▾ · No apps · Balanced ▾ · GLM 5.3 › · Instant ›" — six
+            // values in four type treatments, two of them stating defaults
+            // nobody had changed. The connected-app scope and the approval
+            // posture are still per task; they live in Options, where a
+            // setting that is usually left alone belongs.
+            HStack(spacing: JunoSpace.cozy) {
                 attachmentMenu
                 targetMenu
-                contextMenu
                 if !modelOptions.isEmpty {
                     modelControl
                     if let thinkingScale, thinkingScale.isPresentable {
                         thinkingControl(thinkingScale)
                     }
                 }
+                optionsMenu
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: start) {
                     JunoIconView(systemImage: "arrow.up")
@@ -1576,7 +1561,7 @@ private struct DesktopWorkHomeComposer: View {
                         .foregroundStyle(canStart ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
                 }
-                .accentGlassAction(active: canStart)
+                .junoCircleAction(active: canStart)
                 .disabled(!canStart)
                 .help("Start this task (↩)")
                 .accessibilityLabel("Start this task")
@@ -1641,16 +1626,14 @@ private struct DesktopWorkHomeComposer: View {
             Button("Choose from Library…") { showingLibrary = true }
                 .disabled(libraryModel == nil || attachmentModel?.hasCapacity != true)
         } label: {
-            Label(
+            DesktopWorkComposerChip(
                 attachmentModel?.attachments.isEmpty == false
-                    ? "Attachments staged"
-                    : "Attach",
-                systemImage: "paperclip"
+                    ? "Attached"
+                    : "Attach"
             )
-            .junoCodeSmall()
-            .junoSecondaryInk()
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Attach files or choose from your Juno Library")
         .accessibilityLabel("Attach files")
@@ -1689,21 +1672,27 @@ private struct DesktopWorkHomeComposer: View {
                 }
             }
         } label: {
-            JunoIconLabel(verbatim: targetLabel, systemImage: "shippingbox")
-                .junoCodeSmall()
-                .junoSecondaryInk()
+            DesktopWorkComposerChip(targetLabel)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
+        .help("Where this task runs")
+        .accessibilityLabel("Environment")
+        .accessibilityValue(targetLabel)
         .accessibilityIdentifier("juno.work.composer.target")
     }
 
+    /// "Environment" until somebody chooses one. The default is the default;
+    /// a chip reading "Wherever it fits" on every fresh task was stating a
+    /// preference nobody had expressed, in the one row that is meant to be
+    /// scanned rather than read.
     private var targetLabel: String {
         switch target {
         case .cloud: "Cloud"
         case .local:
             model.availableHosts.first { $0.hostID == preferredHostID }?.displayName ?? "A Mac"
-        default: "Wherever it fits"
+        default: "Environment"
         }
     }
 
@@ -1809,7 +1798,11 @@ private struct DesktopWorkHomeComposer: View {
     /// intentionally explicit about an empty app selection; leaving every app
     /// off is a deliberate boundary, not an invitation for the planner to open
     /// whatever happens to be linked to the account.
-    private var contextMenu: some View {
+    ///
+    /// Labelled "Options" rather than by its values. "No apps · Balanced" was
+    /// two defaults restated on every task; the values are still read out to
+    /// assistive technology and shown as checkmarks inside the menu.
+    private var optionsMenu: some View {
         Menu {
             Section("Connected apps") {
                 if connectorModel == nil {
@@ -1846,13 +1839,13 @@ private struct DesktopWorkHomeComposer: View {
                 }
             }
         } label: {
-            JunoIconLabel(verbatim: contextLabel, systemImage: "slider.horizontal.3")
-                .junoCodeSmall()
-                .junoSecondaryInk()
+            DesktopWorkComposerChip("Options")
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel("Task context")
+        .help("Connected apps and approval mode for this task")
+        .accessibilityLabel("Task options")
         .accessibilityValue(contextLabel)
         .accessibilityIdentifier("juno.work.composer.context")
     }
@@ -1905,6 +1898,29 @@ private struct DesktopWorkHomeComposer: View {
             importError = nil
             started(session)
         }
+    }
+}
+
+/// One chip on the home composer's control row: a word and a chevron, in the
+/// same caption face the shared model and effort triggers use, so the five
+/// controls on the row read as one row.
+private struct DesktopWorkComposerChip: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        // One `Text`, chevron inline, rather than an `HStack` of word and
+        // glyph. A borderless `Menu` treats a label's image as *its* icon and
+        // hoists it to the leading edge, which put the chevron in front of the
+        // word ("⌄ Attach"). Inline in the text it stays where it is written.
+        Text("\(title) \(Image(systemName: "chevron.down"))")
+            .font(.caption)
+            .lineLimit(1)
+            .junoSecondaryInk()
+            .contentShape(.rect)
     }
 }
 
@@ -4336,7 +4352,7 @@ private struct DesktopWorkThreadComposer: View {
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
                 }
-                .accentGlassAction(active: canSend)
+                .junoCircleAction(active: canSend)
                 .disabled(!canSend)
                 .accessibilityLabel(isAnswering ? "Send answer" : "Send instruction")
                 .accessibilityIdentifier(

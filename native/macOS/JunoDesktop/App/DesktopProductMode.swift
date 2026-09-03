@@ -1,3 +1,4 @@
+import AppKit
 import JunoDesignSystem
 import SwiftUI
 
@@ -97,8 +98,13 @@ struct DesktopProductSwitcher: View {
     @Binding var selection: DesktopProductMode
 
     var body: some View {
+        // Words only. The symbols stay on the enum for the menu bar item, but in
+        // a 28pt segment beside a 12pt word the Code bracket pair rendered as a
+        // lone "‹" — which reads as a back button at the top of a column, the
+        // one place a back button would mean something. Three words need no
+        // glyphs to tell apart.
         DesktopSegmented(
-            options: DesktopProductMode.allCases.map { .init($0, $0.label, symbol: $0.symbol) },
+            options: DesktopProductMode.allCases.map { .init($0, $0.label) },
             selection: $selection,
             accessibilityLabel: "Juno product",
             optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" }
@@ -107,21 +113,19 @@ struct DesktopProductSwitcher: View {
     }
 }
 
-/// Shared measurements for the strip above the two native source lists. Keeping
-/// this here prevents Chat and Code from drifting when one of their sidebars is
-/// refreshed.
+/// Shared measurements for the strip above the three native source lists.
+/// Keeping this here prevents Chat, Code and Work from drifting when one of
+/// their sidebars is refreshed.
 ///
-/// The strip used to be empty and had one number. It now carries the product
-/// switch, so it has two: what the *window* owns and what *Juno* draws under it.
-/// Stated separately because they answer to different things — the first to
-/// AppKit's titlebar geometry, the second to the height of a segmented control —
-/// and adding them at the bottom is what keeps a change to either from silently
-/// moving the other.
+/// There is deliberately no "traffic-light clearance" here any more. The strip
+/// used to ignore the window's top safe area and pad itself down by a constant
+/// 52pt — a hand-copied guess at the titlebar's height. Whenever the real safe
+/// area was anything else (a `.searchable(placement: .sidebar)` field adds to
+/// it; the toolbar's own metric varies with the window style) the guess was
+/// wrong in one of two directions: content under the traffic lights, or a
+/// search field drawn over the product switch. The strip now sits *in* the safe
+/// area and the window says where that is.
 enum DesktopSidebarChromeMetrics {
-    /// The band the window's own chrome owns above the *sidebar*: the traffic
-    /// lights, and nothing else.
-    static let trafficLightClearance: CGFloat = 52
-
     /// The lockup row that gives the navigation column a stable product identity.
     /// The mark is intentionally a little larger than a row icon: it is the
     /// app's anchor, not another destination.
@@ -151,12 +155,110 @@ extension View {
     /// on you" arrived level with the traffic lights on a scrolled column. The
     /// list's bounds now begin below the strip, so there is nothing above it to
     /// pin over.
+    ///
+    /// **Inside the safe area, never ignoring it.** The stack respects the
+    /// column's top safe area — the titlebar and toolbar, plus a sidebar search
+    /// field where the column declares one — and starts directly under it. The
+    /// previous build ignored that inset and padded a constant instead, which
+    /// is how the Code column's search field ended up drawn across the product
+    /// switch and how, on a window whose titlebar measured differently, the
+    /// column's first rows landed under the traffic lights.
+    ///
+    /// **And measured against the window, because the safe area lies.** After
+    /// a product switch the freshly built Chat column reported a top safe area
+    /// of 40pt under a 52pt toolbar — the titlebar band without the toolbar it
+    /// was drawn under — and the strip landed across the traffic lights again.
+    /// So the strip also asks AppKit where the window's chrome ends
+    /// (`contentLayoutRect`) and pads by whatever the safe area left short. When
+    /// the safe area is right the extra is zero; when it is short the strip
+    /// still clears the chrome. Either way it never draws under it.
     func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
+        modifier(DesktopSidebarProductHeaderLayout(product: product))
+    }
+}
+
+/// The strip above the list, corrected against the window's own chrome.
+///
+/// Two readings, both cheap: the strip's own top in window space (a
+/// `GeometryReader` behind the stack, whose top is fixed by the safe area and
+/// so does not move when the padding inside it changes), and the height of
+/// the window's titlebar-plus-toolbar band from AppKit. The difference, when
+/// positive, is how far the safe area fell short.
+private struct DesktopSidebarProductHeaderLayout: ViewModifier {
+    let product: Binding<DesktopProductMode>
+
+    @State private var chromeHeight: CGFloat = 0
+    @State private var stripTop: CGFloat = 0
+
+    private var shortfall: CGFloat {
+        max(0, (chromeHeight - stripTop).rounded())
+    }
+
+    func body(content: Content) -> some View {
         VStack(spacing: 0) {
             DesktopSidebarProductHeader(product: product)
-            self
+                .padding(.top, shortfall)
+            content
         }
-        .ignoresSafeArea(.container, edges: .top)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.frame(in: .global).minY, initial: true) { _, top in
+                        stripTop = top
+                    }
+            }
+        }
+        .background(DesktopWindowChromeReader(height: $chromeHeight))
+    }
+}
+
+/// Reports how tall the window's titlebar-and-toolbar band is, from the
+/// window itself: the content view's height less its `contentLayoutRect`,
+/// which is exactly the region AppKit reserves for chrome above the content.
+private struct DesktopWindowChromeReader: NSViewRepresentable {
+    @Binding var height: CGFloat
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ChromeObservingView()
+        view.report = { height = $0 }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ChromeObservingView)?.report = { height = $0 }
+        (nsView as? ChromeObservingView)?.measure()
+    }
+
+    final class ChromeObservingView: NSView {
+        var report: ((CGFloat) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+                self.observer = nil
+            }
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.measure() }
+            }
+            measure()
+        }
+
+        override func layout() {
+            super.layout()
+            measure()
+        }
+
+        func measure() {
+            guard let window, let contentView = window.contentView else { return }
+            let chrome = contentView.bounds.maxY - window.contentLayoutRect.maxY
+            let value = max(0, chrome.rounded())
+            report?(value)
+        }
     }
 }
 
@@ -191,7 +293,7 @@ struct DesktopSidebarProductHeader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, JunoSpace.cozy)
-        .padding(.top, DesktopSidebarChromeMetrics.trafficLightClearance)
+        .padding(.top, JunoSpace.snug)
         .padding(.bottom, JunoSpace.snug)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

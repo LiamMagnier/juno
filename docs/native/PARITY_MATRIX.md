@@ -23,8 +23,11 @@ iOS / macOS findings + resolutions) at release v1.5.0:
   with detail tabs + three-page onboarding (`JunoMobileWorkspaceViews.swift`,
   `JunoMobileOnboarding.swift`); App Intents + `AppShortcutsProvider`, quick
   actions and Spotlight indexing (`JunoMobileIntents.swift`,
-  `JunoMobileSpotlight.swift`). Still open: revoke-a-paired-Mac server route,
-  widgets / Live Activities extension targets, iPad screenshots.
+  `JunoMobileSpotlight.swift`). Paired-Mac revocation is now implemented end
+  to end: `DELETE /api/v1/code/devices/{deviceId}` is in the canonical OpenAPI
+  contract, the phone offers a non-full-swipe Revoke action with confirmation,
+  and the Mac Remote-hosting tile can revoke/re-pair itself. Widgets / Live
+  Activities extension targets and a recorded iPad screenshot pass remain open.
 - macOS shipped since the baseline: project-grouped Code sessions column with
   All · Running · Needs you · Done filters; one New-task screen; review as a
   resizable split pane (`ReviewModel` single source of truth); approval queue
@@ -33,9 +36,10 @@ iOS / macOS findings + resolutions) at release v1.5.0:
   context meter, `gh pr create` sheet, real PTY, ⌘K palette, `MenuBarExtra`,
   ⌥Space quick entry, ⇧⌘1 screenshot to composer (`DesktopScreenshotCapture.swift`,
   `DesktopQuickEntry.swift`, `DesktopMenuBarExtra.swift`); one `JunoMotion`,
-  one `JunoReadingMeasure`. Still open: tonal pass on Library / Artifacts /
-  Connections / Tasks / Usage / Memory, manual screenshot-picker run,
-  target-size ratchet at 351.
+  one `JunoReadingMeasure`. Library / Artifacts / Connections / Tasks / Usage /
+  Memory now use the raised/inset soft-UI vocabulary and Memory is a Chat
+  sidebar destination. The target-size ratchet is 348 (down from 351). A manual
+  run of the system screenshot picker is still required.
 - Chat / conversations / projects / library / artifacts / memory / settings /
   search / sync all have production native UI backed by the encrypted store and
   the `/api/v1` + bearer chat/upload/stream contracts (see
@@ -103,12 +107,12 @@ experience exists.
 | Account creation, credentials, Google sign-in, password recovery, profile, export, deletion | **Implemented** through Auth.js and account/profile routes | **Partial**. PKCE bearer flow exists; general account routes require route-by-route bearer and response-shape verification | **Missing** | **Missing** | Web tests exist; no native UI tests | Build native account flows and add bearer contract tests |
 | Native PKCE, access/refresh, logout, device list and revocation | **Implemented** in `/api/v1/auth/*`, `src/lib/native-auth*.ts`, and Prisma native-session models | **Partial**. Production Keychain, PKCE browser planning, auth-route client, single-flight refresh, restore and logout are implemented; device-list UI is not | **Partial**. Real auth gate and system-browser adapter are wired | **Partial**. Real auth gate and system-browser adapter are wired | 26 Swift auth tests plus macOS/iOS sign-in-gate UI tests pass; live browser completion and database-backed route reuse suite remain | Run live browser matrix, then add connected-device management |
 | Model catalog, availability, capabilities, reasoning effort | **Implemented** server-side through `/api/v1/models` and model discovery | **Partial**. OpenAPI exposes the manifest but generated Swift models are only a small handwritten subset | **Missing** | **Missing** | TypeScript model validation exists; no Swift decoding tests | Generate complete typed Swift catalog and validate contract drift in CI |
-| Conversations and messages | **Implemented** Web routes for list/create/update/archive/pin/delete/fork, message edit, versions, feedback, encrypted persistence | **Partial**. Sync hydrates conversations/messages/versions; native mutations cover only part of conversation behavior | **Missing** | **Missing** | Server unit coverage is partial; no Swift or cross-surface tests | Complete typed native mutations and native persistence/UI |
-| Chat generation and streaming | **Implemented** Web chat SSE, cancellation, receipts, reasoning, sources, tools, Markdown, multimodal inputs | **Partial**. General route may use dual cookie/bearer auth, but chat/upload/stream payloads are absent from OpenAPI and lack native contract tests | **Missing** | **Missing** | Web pipeline tests exist; no native reconnect/duplicate/scroll tests | Publish typed bearer contract and build native streaming engine |
-| Composer and uploads | **Implemented** Web attachments, images, files, library reattach, dictation, model/effort and connectors | **Partial**. Upload routes exist but are not described in the native OpenAPI contract | **Missing** | **Missing** | Server upload validation exists; no native upload lifecycle tests | Add typed upload/attachment contract and native camera/photo/file flows |
-| Folders and projects | **Implemented** Web CRUD, instructions, reference files and starring | **Partial**. Entities hydrate; mutations cover basic folder/project CRUD but not the complete file/reference lifecycle | **Missing** | **Missing** | Mutation helpers have partial tests | Extend mutations/contracts and add offline conflict coverage |
-| Library, saved prompts, artifacts and Canvas | **Implemented** Web routes and sandboxed artifact rendering | **Partial**. Entities hydrate attachments, saved prompts, artifacts and versions; mutation coverage is incomplete | **Missing** | **Missing** | Web tests are feature-specific; no native sandbox/export tests | Define native mutation and secure rendering/export contracts |
-| Memory | **Implemented** Web CRUD, natural-language edits and encrypted chat integration | **Partial**. Entity hydration and basic native mutations exist | **Missing** | **Missing** | Server memory tests exist; no Swift tests | Implement native store/UI and cross-device conflict tests |
+| Conversations and messages | **Implemented** Web routes for list/create/update/archive/pin/delete/fork, message edit, versions, feedback, encrypted persistence | **Partial**. Sync hydrates conversations/messages/versions; native mutations cover only part of conversation behavior | **Implemented UI** | **Implemented UI** | Native UI is present; cross-surface/offline convergence remains unverified | Complete typed native mutations and convergence tests |
+| Chat generation and streaming | **Implemented** Web chat SSE, cancellation, receipts, reasoning, sources, tools, Markdown, multimodal inputs | **Partial**. General route may use dual cookie/bearer auth, but chat/upload/stream payloads are absent from OpenAPI and lack native contract tests | **Implemented UI** | **Implemented UI** | Native UI is present; reconnect/duplicate/scroll stress coverage remains | Publish typed bearer contract and add reconnect coverage |
+| Composer and uploads | **Implemented** Web attachments, images, files, library reattach, dictation, model/effort and connectors | **Partial**. Upload routes exist but are not described in the native OpenAPI contract | **Implemented UI** | **Implemented UI** | Native attachment, dictation and composer flows exist; lifecycle contract coverage remains | Add typed upload/attachment contract and offline lifecycle tests |
+| Folders and projects | **Implemented** Web CRUD, instructions, reference files and starring | **Partial**. Entities hydrate; mutations cover basic folder/project CRUD but not the complete file/reference lifecycle | **Implemented UI** | **Implemented UI** | Native project list/detail UI exists; conflict/reference-file coverage remains | Extend mutations/contracts and add offline conflict coverage |
+| Library, saved prompts, artifacts and Canvas | **Implemented** Web routes and sandboxed artifact rendering | **Partial**. Entities hydrate attachments, saved prompts, artifacts and versions; mutation coverage is incomplete | **Implemented UI** | **Implemented UI** | Native library, artifact and Canvas UI exists; sandbox/export coverage remains | Define native mutation and secure rendering/export contracts |
+| Memory | **Implemented** Web CRUD, natural-language edits and encrypted chat integration | **Partial**. Entity hydration and basic native mutations exist | **Implemented UI** | **Implemented UI** | Native memory manager UI exists; cross-device conflict coverage remains | Add memory conflict and convergence tests |
 | Connections, MCP and external tools | **Implemented** Web connector directory and server-held encrypted credentials | **Partial**. Connection metadata hydrates without credentials; native connect/callback contracts are not in OpenAPI | **Missing** | **Missing** | Server security coverage is partial | Define secure native browser handoffs and typed metadata/errors |
 | Scheduled tasks | **Implemented** Web CRUD and server worker | **Partial**. Tasks hydrate through sync; native mutation contract is missing | **Missing** | **Missing** | Worker behavior has Web coverage only | Add typed native CRUD and notification behavior |
 | Settings, profile, usage, subscription and announcements | **Implemented** Web routes and bootstrap data | **Partial**. Settings mutation exists; remaining account/billing behaviors are not fully contracted and bootstrap returns an empty feature-flag/announcement baseline | **Missing** | **Missing** | Server coverage is partial | Complete typed schemas, native screens and cross-device tests |
@@ -144,6 +148,7 @@ route can happen to authenticate a bearer today.
 | `/api/v1/changes/stream` | GET SSE | No | Yes | Yes | Wakeup channel only; pages remain authoritative | No native reconnect suite | No generated SSE client / none |
 | `/api/v1/entities` | GET | No | Yes | Yes, loose entity payload | Owner-scoped hydration and tombstones | No exhaustive loader contract suite | Generic envelope only / none |
 | `/api/v1/mutations` | POST | No | Yes | Yes, response is generic | Serializable transaction, revision check and per-device idempotency | Partial mutation tests | Operation/result union incomplete / none |
+| `/api/v1/code/devices/{deviceId}` | DELETE | No | Yes | Yes | Account-scoped Code-host pairing revocation | Route + CodeKit tests | Generated request client plus revoke-model/UI coverage |
 | General chat/conversation/project/file/artifact/voice/account routes | Mixed | Yes | Often via dual-mode session gate; must be verified per route | No | Route-specific behavior | Mixed | None |
 | `/api/code/tasks*`, `/api/code/github/*`, `/api/code/devices*` | Mixed | Yes | Via dual-mode user gate or scoped task token | No | Task idempotency, SSE events, OIDC Cloud runner | Partial | None |
 | Draft `/api/code/devices/{deviceId}/sessions*` and commands | GET/PUT/PATCH/DELETE/POST/SSE | Yes | Via dual-mode user gate | No | Version checks, explicit tombstones, ordered replay-safe events, idempotent commands | Pure planner tests only | None |

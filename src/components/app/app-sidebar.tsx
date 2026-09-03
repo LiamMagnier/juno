@@ -617,7 +617,7 @@ export function AppSidebar({
                   className="w-full"
                   optionClassName="gap-1.5 px-3 py-1.5 text-ui font-medium"
                   options={[
-                    { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="new" className="size-3.5" /> },
+                    { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
                     { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
                   ]}
                 />

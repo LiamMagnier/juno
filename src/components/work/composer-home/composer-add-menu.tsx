@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FileUp, Plus, Wrench } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
+import { composerIconButtonClass } from "@/components/ui/composer-shell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -112,15 +113,12 @@ export function ComposerAddMenu({
           size="icon-sm"
           disabled={disabled}
           aria-label="Add to this task"
-          className={cn(
-            "composer-add-button group relative shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-            open && "bg-accent"
-          )}
+          className={cn(composerIconButtonClass, "group relative")}
         >
           <Plus
             aria-hidden="true"
             strokeWidth={1.75}
-            className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+            className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
           />
         </Button>
       </DropdownMenuTrigger>

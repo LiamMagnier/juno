@@ -526,6 +526,36 @@ paths:
           description: Registered hosts with online status derived from the heartbeat window.
           content: { application/json: { schema: { $ref: '#/components/schemas/CodeDevicesResponse' } } }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/devices/{deviceId}:
+    delete:
+      operationId: revokeNativeCodeDevice
+      description: >-
+        Revokes one Juno Code host pairing for the calling account. The row was
+        created by heartbeat upserts to the sibling list route; deleting it
+        unlists the computer and cascades its device-scoped relay rows
+        (remote sessions, commands, events, device-addressed tasks). A
+        heartbeat that replays the revoked id gets 404 from the list route
+        rather than a silently resurrected row, so the host can surface
+        "unpaired" instead of beating against a pairing nobody lists.
+      parameters:
+        - in: path
+          name: deviceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: The pairing was removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked, deviceId]
+                properties:
+                  revoked: { const: true }
+                  deviceId: { type: string }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
   /code/workspaces:
     get:
       servers: [{ url: /api }]

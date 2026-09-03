@@ -100,20 +100,35 @@ export async function POST(req: Request) {
     lastSeenAt: now,
   };
 
-  const existing = deviceId
-    ? await prisma.codeDevice.findFirst({ where: { id: deviceId, userId: user.id }, select: { id: true } })
-    : null;
+  // A replayed id that names no row means the pairing is gone — revoked
+  // from the phone, or wiped with the database — and silently minting a fresh
+  // row here would resurrect a computer the account just removed. Refuse with
+  // 404 so the host can say "this Mac was unpaired" and offer to pair again
+  // instead of beating forever against a row nobody lists. First-time hosts
+  // send no id at all and still fall through to the upsert below.
+  if (deviceId) {
+    const existing = await prisma.codeDevice.findFirst({
+      where: { id: deviceId, userId: user.id },
+      select: { id: true },
+    });
+    if (!existing) {
+      return NextResponse.json(
+        { error: "This computer is no longer paired with your account." },
+        { status: 404 },
+      );
+    }
+    const device = await prisma.codeDevice.update({
+      where: { id: existing.id, userId: user.id },
+      data: { name, ...capabilities },
+    });
+    return NextResponse.json({ device: serializeDevice(device) });
+  }
 
-  const device = existing
-    ? await prisma.codeDevice.update({
-        where: { id: existing.id, userId: user.id },
-        data: { name, ...capabilities },
-      })
-    : await prisma.codeDevice.upsert({
-        where: { userId_name: { userId: user.id, name } },
-        update: capabilities,
-        create: { userId: user.id, name, ...capabilities },
-      });
+  const device = await prisma.codeDevice.upsert({
+    where: { userId_name: { userId: user.id, name } },
+    update: capabilities,
+    create: { userId: user.id, name, ...capabilities },
+  });
 
   return NextResponse.json({ device: serializeDevice(device) });
 }

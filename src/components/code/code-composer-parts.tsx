@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ComposerAttachmentRow, composerIconButtonClass } from "@/components/ui/composer-shell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,11 +15,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ActionIcons, AppIcons, CodeIcons, ComposerIcons } from "@/lib/app-icons";
-import { requiresViewerCredentials } from "@/lib/image-source";
-import { staggerDelay } from "@/lib/motion";
+import { AppIcons, ComposerIcons } from "@/lib/app-icons";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { PendingUpload } from "@/hooks/use-uploads";
 
 /*
@@ -39,22 +36,11 @@ import type { PendingUpload } from "@/hooks/use-uploads";
  * gating — the only thing shared is the shape.
  */
 
-/** How long a chip's pop-out runs before the upload is actually dropped. */
-const CHIP_EXIT_MS = 180;
-
 /**
- * The staged-attachment tray, above the field and inside the shell.
- *
- * It collapses rather than unmounting so the composer's growth is eased rather
- * than jumped; `motion-reduce:transition-none` because this is real layout
- * movement on the commonest interaction the tray has.
- *
- * The exit is owned HERE rather than by the host. Both Code screens kept an
- * identical `removingIds` array plus an identical 180ms `setTimeout` in page
- * state, purely so a chip could finish its pop-out before the upload hook
- * dropped it — page state describing an animation this component runs. Neither
- * copy cleared its timer on unmount, so navigating away mid-removal called
- * `setState` on a dead tree.
+ * The staged-attachment tray, above the field and inside the surface: the
+ * shared 56px thumbnail row, so a file attached to a Code session looks
+ * exactly like one attached to a chat. Tiles pop in and out on the spring;
+ * the row takes no space while it is empty.
  */
 export function ComposerAttachmentTray({
   uploads,
@@ -63,103 +49,14 @@ export function ComposerAttachmentTray({
   uploads: PendingUpload[];
   onRemove: (localId: string) => void;
 }) {
-  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
-  const timers = React.useRef<number[]>([]);
-  React.useEffect(() => {
-    const pending = timers.current;
-    return () => pending.forEach((id) => window.clearTimeout(id));
-  }, []);
-
-  const remove = (localId: string) => {
-    setRemovingIds((prev) => (prev.includes(localId) ? prev : [...prev, localId]));
-    timers.current.push(
-      window.setTimeout(() => {
-        onRemove(localId);
-        setRemovingIds((prev) => prev.filter((id) => id !== localId));
-      }, CHIP_EXIT_MS),
-    );
-  };
-
-  return (
-    <div
-      className={cn(
-        "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
-        uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-      )}
-    >
-      <div className="min-h-0 overflow-hidden">
-        <div className="flex flex-wrap gap-2 p-3 pb-0">
-          {uploads.map((u, i) => (
-            <div
-              key={u.localId}
-              className={cn(
-                // `bg-muted`, not `bg-background`: this chip sits INSIDE
-                // ComposerShell's `bg-card`, and on true black a
-                // background-filled chip punches a 0%-lightness hole into a
-                // 6.5% panel. It also takes the shell's own seated-control
-                // radius rather than a stray `rounded-md`. `shadow-soft` is
-                // gone — it is black ink on black here.
-                "group relative flex items-center gap-2 rounded-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
-                removingIds.includes(u.localId)
-                  ? "pointer-events-none motion-safe:animate-pop-out"
-                  : "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
-              )}
-              // Attaching six files at once dealt them out as one flat repaint.
-              // `tight` is the rung for dense items; the shared cap keeps a
-              // large drop from taking a second to finish arriving.
-              style={removingIds.includes(u.localId) ? undefined : staggerDelay(i, "tight")}
-            >
-              {u.attachment?.kind === "IMAGE" ? (
-                <Image
-                  src={u.attachment.url}
-                  unoptimized={requiresViewerCredentials(u.attachment.url)}
-                  alt={u.fileName}
-                  width={32}
-                  height={32}
-                  className="size-8 rounded-xs object-cover"
-                />
-              ) : (
-                <CodeIcons.file className="size-5 text-muted-foreground" aria-hidden="true" />
-              )}
-              <div className="max-w-[140px]">
-                <p className="truncate font-medium">{u.fileName}</p>
-                <p className={cn("text-muted-foreground", u.status === "error" && "text-destructive")}>
-                  {u.status === "uploading"
-                    ? `${u.progress}%`
-                    : u.status === "error"
-                      ? "Failed"
-                      : formatBytes(u.size)}
-                </p>
-              </div>
-              {u.status === "uploading" && (
-                <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden="true" />
-              )}
-              {/* `bg-secondary`, not `bg-foreground`. A 94%-lightness disc on a
-                  0% ground made a 20px micro-control the single brightest
-                  object on the screen; the hairline is what shapes it now, and
-                  `shadow-soft` — black on black here — is gone. */}
-              <button
-                type="button"
-                onClick={() => remove(u.localId)}
-                className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-secondary p-0.5 text-foreground opacity-0 transition-[opacity,background-color,border-color,color] duration-fast ease-out-soft group-hover:opacity-100 hover:border-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                aria-label={`Remove ${u.fileName}`}
-              >
-                <ActionIcons.dismiss className="size-3 coarse:size-4" aria-hidden="true" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+  return <ComposerAttachmentRow uploads={uploads} onRemove={onRemove} />;
 }
 
 /**
  * The "+" menu: photos, files, library.
  *
- * A `<Button>` rather than a `<Pressable kind="icon">` because it is the
- * composer's own control family — same `composer-add-button` hook, same
- * quarter-turn on hover, same coarse growth as the mic and send beside it.
+ * The shared 32px flat icon button; the plus turns into a × while the menu is
+ * open, which is the only motion the trigger makes.
  */
 export function ComposerAddMenu({
   open,
@@ -185,15 +82,12 @@ export function ComposerAddMenu({
           size="icon-sm"
           aria-label="Add an attachment"
           disabled={disabled}
-          className={cn(
-            "composer-add-button group shrink-0 rounded-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-            open && "bg-accent",
-          )}
+          className={cn(composerIconButtonClass, "group")}
         >
           <AppIcons.new
             aria-hidden="true"
             strokeWidth={1.75}
-            className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+            className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
           />
         </Button>
       </DropdownMenuTrigger>

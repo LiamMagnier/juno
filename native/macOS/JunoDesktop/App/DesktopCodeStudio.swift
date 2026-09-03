@@ -108,6 +108,12 @@ enum DesktopCodeSessionFilter: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The label as the sidebar's pull-down states it: "All" alone, at the top
+    /// of a column of sessions, does not say all of *what*.
+    var menuLabel: String {
+        self == .all ? "All sessions" : label
+    }
+
     func includes(_ status: CodeRunStatus) -> Bool {
         switch self {
         case .all: true
@@ -443,26 +449,32 @@ struct DesktopCodeSidebar: View {
         }
     }
 
-    /// All · Running · Needs you · Done, as one compact row that is not a
+    /// All · Running · Needs you · Done, as one pull-down that is not a
     /// selectable item.
+    ///
+    /// **A menu, not a segmented control.** This row was a four-segment
+    /// `DesktopSegmented` with a ⌘K keycap beside it, in a column 264pt wide.
+    /// "All", "Running", "Needs you" and "Done" at 12pt need about 255pt of
+    /// segment between them; after the keycap and the row insets they had 190,
+    /// so every segment truncated to "…" — four ellipsis buttons in a row,
+    /// which is what the review saw. A pull-down states the current filter in
+    /// full and fits at the column's minimum width.
+    ///
+    /// Drawn entirely by SwiftUI — a plain button and a popover — rather than
+    /// a `Menu` or a `.menu` `Picker`. Both of those are AppKit menu buttons,
+    /// and inside a `.sidebar` list row on the column's vibrant material each
+    /// painted its title in the emphasised (white) ink: the first was
+    /// unreadable, the second invisible. A `Button` in the same row draws its
+    /// label in the column's own ink, as "New task" beside it always has.
+    ///
+    /// The keycap went with it. Search is the `.searchable` field the column
+    /// already declares, and the command palette is the toolbar's Commands item
+    /// and ⌘K; a third hint for the same shortcut, squeezed into the one row
+    /// that had no room for it, was decoration.
     private var filterRow: some View {
         HStack(spacing: JunoSpace.snug) {
-            DesktopSegmented(
-                options: DesktopCodeSessionFilter.allCases.map { .init($0, $0.label) },
-                selection: $filter,
-                accessibilityLabel: "Session filter",
-                optionAccessibilityIdentifier: { "juno.code.filter.\($0.rawValue)" }
-            )
+            DesktopCodeSessionFilterButton(filter: $filter)
             Spacer(minLength: 0)
-            Button(action: openPalette) {
-                DesktopKeycap("⌘K")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .help("Open the command palette (⌘K)")
-            .accessibilityLabel("Command palette")
-            .accessibilityIdentifier("juno.code.palette-hint")
         }
         .listRowInsets(
             EdgeInsets(top: 0, leading: JunoSpace.snug, bottom: JunoSpace.tight, trailing: JunoSpace.snug)
@@ -916,6 +928,64 @@ private struct DesktopSessionChip: View {
 }
 
 /// A keyboard shortcut, as the menu bar would print it.
+/// The sidebar's session filter: the current choice and a chevron, opening
+/// a short popover of the four choices. See `filterRow` for why this is not a
+/// `Menu`.
+private struct DesktopCodeSessionFilterButton: View {
+    @Binding var filter: DesktopCodeSessionFilter
+    @State private var presented = false
+
+    var body: some View {
+        Button {
+            presented = true
+        } label: {
+            Text("\(filter.menuLabel) \(Image(systemName: "chevron.down"))")
+                .junoFont(size: 12, relativeTo: .body, weight: .medium)
+                .junoSecondaryInk()
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minHeight: 28)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.junoPress)
+        .help("Which sessions the column shows")
+        .accessibilityLabel("Session filter")
+        .accessibilityValue(filter.menuLabel)
+        // Dismissed with its anchor, always — the same guard every popover in
+        // the app carries, for the crash documented on the model selector.
+        .onDisappear { presented = false }
+        .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(DesktopCodeSessionFilter.allCases) { option in
+                    Button {
+                        filter = option
+                        presented = false
+                    } label: {
+                        HStack(spacing: JunoSpace.snug) {
+                            Text(option.menuLabel)
+                                .junoFont(size: 12.5, relativeTo: .body, weight: option == filter ? .semibold : .regular)
+                            Spacer(minLength: JunoSpace.regular)
+                            if option == filter {
+                                Image(systemName: "checkmark")
+                                    .junoFont(size: 10, relativeTo: .caption, weight: .semibold)
+                                    .foregroundStyle(Color.junoAccent)
+                            }
+                        }
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .frame(minWidth: 160, minHeight: 28, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.junoPress)
+                    .accessibilityIdentifier("juno.code.filter.\(option.rawValue)")
+                    .accessibilityAddTraits(option == filter ? .isSelected : [])
+                }
+            }
+            .padding(JunoSpace.tight)
+            .frame(width: 200, height: CGFloat(DesktopCodeSessionFilter.allCases.count) * 30 + 12)
+        }
+    }
+}
+
 struct DesktopKeycap: View {
     let text: String
 
@@ -2072,7 +2142,7 @@ struct DesktopCodeNewTaskScreen: View {
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: true)
+                .junoCircleAction(active: true)
                 .disabled(true)
             } else if trimmedPrompt.isEmpty {
                 Button {
@@ -2086,7 +2156,7 @@ struct DesktopCodeNewTaskScreen: View {
                         .foregroundStyle(Color.junoOnAccent)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: beginVoice != nil && !modelID.isEmpty)
+                .junoCircleAction(active: beginVoice != nil && !modelID.isEmpty)
                 .disabled(beginVoice == nil || modelID.isEmpty)
                 .help("Start a voice conversation")
                 .accessibilityLabel("Start voice conversation")
@@ -2099,7 +2169,7 @@ struct DesktopCodeNewTaskScreen: View {
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(.circle)
                 }
-                .accentGlassAction(active: canSend)
+                .junoCircleAction(active: canSend)
                 .disabled(!canSend)
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("Start this task (⌘↩)")
@@ -2484,9 +2554,11 @@ struct DesktopCodeAllProjects: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)
                     .controlSize(.small)
+                    .contentShape(.rect)
                 Button("Show in Finder") { revealInFinder(row.record.descriptor.localPathHint) }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.regular)

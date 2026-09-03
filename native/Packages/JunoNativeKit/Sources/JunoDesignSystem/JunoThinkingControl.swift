@@ -238,7 +238,6 @@ public struct JunoThinkingPanel: View {
                 if showsFast, let fastMode {
                     JunoModeToggle(
                         isOn: fastMode,
-                        symbol: "bolt.fill",
                         title: "Flash",
                         detail: ladder.fastModeRateMultiplier.map {
                             "\(JunoThinkingPanel.rate($0))x rate"
@@ -249,7 +248,6 @@ public struct JunoThinkingPanel: View {
                 if showsPro, let proMode {
                     JunoModeToggle(
                         isOn: proMode,
-                        symbol: "sparkles",
                         title: "Pro",
                         detail: "Same rate",
                         accessibilityName: "Pro mode"
@@ -296,7 +294,6 @@ public struct JunoThinkingPanel: View {
 /// wrong thing to make people guess at.
 private struct JunoModeToggle: View {
     @Binding var isOn: Bool
-    let symbol: String
     let title: String
     let detail: String
     let accessibilityName: String
@@ -307,32 +304,32 @@ private struct JunoModeToggle: View {
         Button {
             isOn.toggle()
         } label: {
-            HStack(spacing: 4) {
-                JunoIconView(systemImage: symbol)
-                    .junoFont(size: 9, relativeTo: .body, weight: .semibold)
-                Text(title)
-                    .junoFont(size: 11, relativeTo: .body, weight: .medium)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            // The web's on-state is `bg-foreground text-background` — the
-            // inverted pair, deliberately not the coral accent, which already
-            // means "the current tier" two rows up in this same panel.
-            .foregroundStyle(isOn ? Color.junoCanvas : Color.secondary)
-            .background {
-                Capsule().fill(isOn ? Color.junoForeground : Color.clear)
-            }
-            .overlay {
-                Capsule().strokeBorder(
-                    isOn ? Color.clear : Color.junoHairline,
-                    lineWidth: 1
-                )
-            }
-            // Liquid Glass and plain capsules alike draw nothing the hit-tester
-            // sees, so the pill states its own shape. Without this the live area
-            // is the glyphs only — the bug already documented on the iOS
-            // Thinking chip, where a 56pt capsule had a 13pt target.
-            .contentShape(Capsule())
+            // The word alone. "Flash" wore a bolt and "Pro" a sparkle, and a
+            // sparkle beside a model control is the one glyph the product's
+            // design direction singles out as reading like an AI demo. The
+            // inverted on-state below already says which mode is live.
+            Text(title)
+                .junoFont(size: 11, relativeTo: .body, weight: .medium)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                // The web's on-state is `bg-foreground text-background` — the
+                // inverted pair, deliberately not the coral accent, which already
+                // means "the current tier" two rows up in this same panel.
+                .foregroundStyle(isOn ? Color.junoCanvas : Color.secondary)
+                .background {
+                    Capsule().fill(isOn ? Color.junoForeground : Color.clear)
+                }
+                .overlay {
+                    Capsule().strokeBorder(
+                        isOn ? Color.clear : Color.junoHairline,
+                        lineWidth: 1
+                    )
+                }
+                // Liquid Glass and plain capsules alike draw nothing the hit-tester
+                // sees, so the pill states its own shape. Without this the live area
+                // is the glyphs only — the bug already documented on the iOS
+                // Thinking chip, where a 56pt capsule had a 13pt target.
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: isOn)
@@ -381,12 +378,13 @@ public struct JunoThinkingButton: View {
             Button {
                 presented = true
             } label: {
+                // Label and chevron, nothing else. The gauge glyph that used to
+                // lead this chip was a third icon language on a row that
+                // already had the provider mark and the attach clip, and it
+                // said nothing "Medium" does not.
                 HStack(spacing: JunoSpace.hairline) {
-                    JunoIconView(systemImage: "gauge.with.dots.needle.33percent")
-                        .imageScale(.small)
                     Text(ladder.label(for: stopID)).lineLimit(1)
-                    JunoIconView(systemImage: "chevron.up")
-                        .font(.caption2.weight(.semibold))
+                    JunoIconView(systemImage: "chevron.down", size: 9)
                 }
                 .font(.caption)
                 .junoSecondaryInk()

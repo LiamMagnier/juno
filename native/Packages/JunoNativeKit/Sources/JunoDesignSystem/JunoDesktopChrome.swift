@@ -367,32 +367,56 @@ public extension View {
         buttonStyle(.glassProminent).tint(Color.junoAccent)
     }
 
-    /// A circular accent-tinted glass action — the composer's send/stop/voice
-    /// button, and anything else that is the single obvious next step.
+    /// A round control's ground: the Soft UI tile, in a circle.
     ///
-    /// The tint appears and disappears rather than the shape changing when the
+    /// **Flat fill, hairline, the one sanctioned soft throw — and nothing
+    /// else.** Every circular control in the composers used to be a disc of
+    /// interactive Liquid Glass, and on the light canvas the glass's rim scatter
+    /// read as a halo: a bright ring around the send button, a fainter one
+    /// around the mic, both floating a little off the bar they sat in. The Soft
+    /// UI direction (`docs/design/SOFT_UI.md` §4) reserves glass for chrome that
+    /// *floats* — the composer bar itself — and states depth on Apple as tonal.
+    /// A button inside that bar is content on chrome, so it gets the tile: a
+    /// `junoSurface` fill with a hairline, or the accent at full strength when
+    /// it is the one primary action, under ``JunoElevation``'s card throw.
+    ///
+    /// `tint` is all-or-nothing on purpose. A diluted accent was the old
+    /// inactive state, and it made the glyph's contrast a function of whatever
+    /// happened to be behind the window; a control that is not the primary
+    /// action is simply the neutral tile.
+    func junoRaisedCircle(tint: Color? = nil) -> some View {
+        background {
+            Circle()
+                .fill(tint ?? Color.junoSurface)
+                .shadow(
+                    color: Color.junoCardShadow,
+                    radius: JunoElevation.cardBlur,
+                    y: JunoElevation.cardOffsetY
+                )
+        }
+        .overlay {
+            if tint == nil {
+                Circle().strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            }
+        }
+    }
+
+    /// A circular action — the composer's send/stop/voice button, and anything
+    /// else that is the single obvious next step — as a flat coral disc.
+    ///
+    /// The fill appears and disappears rather than the shape changing when the
     /// action is unavailable, so the control keeps its position and the pointer
     /// does not have to re-find it between states. Pair it with
     /// ``Color/junoOnAccent`` for the glyph, never a literal white: the accent is
     /// an account setting and white fails contrast on two of the five palettes.
     ///
-    /// **The inactive state is untinted, not a faded accent.** It used to be
-    /// `Color.junoAccent.opacity(0.32)`, and a diluted tint is the one thing
-    /// `Glass.tint(_:)` must never be given: it honours the alpha, so the tint
-    /// stops establishing a predictable luminance under the glyph and the
-    /// glyph's contrast becomes a function of whatever is behind the window.
-    /// Passing `nil` gives plain `.regular` glass — which is the honest reading
-    /// of the state anyway, since an unavailable action is not the primary
-    /// action. The active value went to full strength from 0.95 for the same
-    /// reason. Note this is one expression rather than an `if`, so the control
-    /// keeps a single view identity and the change animates.
-    func accentGlassAction(active: Bool) -> some View {
+    /// Formerly `accentGlassAction`: tinted interactive glass in a circle. See
+    /// ``junoRaisedCircle(tint:)`` for why the glass went. One expression rather
+    /// than an `if`, so the control keeps a single view identity and the
+    /// active/inactive change cross-fades.
+    func junoCircleAction(active: Bool) -> some View {
         buttonStyle(.junoPress)
-            .junoGlass(
-                in: Circle(),
-                tint: active ? Color.junoAccent : nil,
-                interactive: true
-            )
+            .junoRaisedCircle(tint: active ? Color.junoAccent : nil)
     }
 }
 
