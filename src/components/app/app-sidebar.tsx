@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, FolderPlus, Pencil, Pin, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Pencil, Pin, Plus } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { UserMenu } from "@/components/app/user-menu";
@@ -45,7 +45,6 @@ import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
-import type { ClientFolder } from "@/types/app";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/SOFT_UI.md §3).
@@ -102,28 +101,6 @@ type SectionKey = keyof typeof SECTION_KEYS;
 const KEBAB_CLASS =
   "group/kebab size-7 shrink-0 opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:opacity-100 coarse:size-11 coarse:opacity-100";
 
-/** Today / Yesterday / Previous 7 days / Older — the ChatGPT grouping. */
-function dateGroup(iso: string, now: Date): string {
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return "Older";
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const t = then.getTime();
-  if (t >= startOfToday) return "Today";
-  if (t >= startOfToday - 86_400_000) return "Yesterday";
-  if (t >= startOfToday - 7 * 86_400_000) return "Previous 7 days";
-  return "Older";
-}
-
-function groupByDate(list: ClientConversation[], now: Date): { label: string; items: ClientConversation[] }[] {
-  const out: { label: string; items: ClientConversation[] }[] = [];
-  for (const c of list) {
-    const label = dateGroup(c.lastMessageAt || c.createdAt, now);
-    const last = out[out.length - 1];
-    if (last?.label === label) last.items.push(c);
-    else out.push({ label, items: [c] });
-  }
-  return out;
-}
 
 function initialsOf(name: string | null, email: string | null): string {
   const source = (name ?? email ?? "").trim();
@@ -147,8 +124,6 @@ export function AppSidebar({
   const reduceMotion = useReducedMotion();
   const {
     conversations,
-    folders,
-    setFolders,
     updateConversation,
     removeConversation,
     upsertConversation,
@@ -175,8 +150,6 @@ export function AppSidebar({
   const [renamingProject, setRenamingProject] = React.useState(false);
   const [shareId, setShareId] = React.useState<string | null>(null);
   const [archivedOpen, setArchivedOpen] = React.useState(false);
-  const [creatingFolder, setCreatingFolder] = React.useState(false);
-  const [dragOverFolder, setDragOverFolder] = React.useState<string | null>(null);
   const [recentsLimit, setRecentsLimit] = React.useState(RECENTS_PAGE);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const sentinelRef = React.useRef<HTMLDivElement>(null);
@@ -339,79 +312,6 @@ export function AppSidebar({
 
   /* ── Folders ─────────────────────────────────────────────────────────── */
 
-  const createFolder = async (name: string) => {
-    const trimmed = name.trim();
-    setCreatingFolder(false);
-    if (!trimmed) return;
-    const r = await fetch("/api/folders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
-    }).catch(() => null);
-    const data = r ? await r.json().catch(() => null) : null;
-    if (!r?.ok || !data?.folder) {
-      toast.error("Could not create the folder.");
-      return;
-    }
-    setFolders([...folders, { id: data.folder.id, name: data.folder.name }]);
-  };
-
-  const renameFolder = async (folder: ClientFolder, name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === folder.name) return;
-    setFolders(folders.map((f) => (f.id === folder.id ? { ...f, name: trimmed } : f)));
-    const r = await fetch(`/api/folders/${folder.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: trimmed }),
-    }).catch(() => null);
-    if (!r?.ok) {
-      setFolders(folders);
-      toast.error("Could not rename the folder.");
-    }
-  };
-
-  const deleteFolder = (folder: ClientFolder) => {
-    const count = conversations.filter((c) => c.folderId === folder.id).length;
-    setConfirm({
-      title: "Delete this folder?",
-      description:
-        count > 0
-          ? `Its ${count} ${count === 1 ? "chat moves" : "chats move"} back to Recents. Nothing is deleted.`
-          : "The folder is empty; nothing else changes.",
-      confirmLabel: "Delete folder",
-      onConfirm: async () => {
-        const r = await fetch(`/api/folders/${folder.id}`, { method: "DELETE" });
-        if (!r.ok) {
-          toast.error("Could not delete the folder.");
-          return;
-        }
-        setFolders(folders.filter((f) => f.id !== folder.id));
-        for (const c of conversations) if (c.folderId === folder.id) updateConversation(c.id, { folderId: null });
-      },
-    });
-  };
-
-  const moveToFolder = React.useCallback(
-    async (conversationId: string, folderId: string | null) => {
-      const prev = conversations.find((c) => c.id === conversationId)?.folderId ?? null;
-      if (prev === folderId) return;
-      updateConversation(conversationId, { folderId });
-      const res = await fetch(`/api/conversations/${conversationId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId }),
-      }).catch(() => null);
-      if (!res?.ok) {
-        updateConversation(conversationId, { folderId: prev });
-        toast.error("Could not move the chat.");
-      }
-    },
-    [conversations, updateConversation]
-  );
-
-  /* ── Archive ─────────────────────────────────────────────────────────── */
-
   const archiveConversation = React.useCallback(
     async (c: ClientConversation) => {
       removeConversation(c.id);
@@ -454,11 +354,9 @@ export function AppSidebar({
   // in the list — while project chats also stay in Recents, because a project
   // is a workspace rather than a filing.
   const recents = React.useMemo(
-    () => live.filter((c) => !c.pinned && !(c.folderId && folders.some((f) => f.id === c.folderId))),
-    [live, folders]
+    () => live.filter((c) => !c.pinned),
+    [live]
   );
-  const now = React.useMemo(() => new Date(), [mounted, live.length]); // eslint-disable-line react-hooks/exhaustive-deps
-  const recentGroups = React.useMemo(() => groupByDate(recents.slice(0, recentsLimit), now), [recents, recentsLimit, now]);
 
   const newChat = () => {
     router.push("/chat");
@@ -470,16 +368,10 @@ export function AppSidebar({
     renamingId,
     setRenaming: setRenamingId,
     projects,
-    folders,
     onUpdate: updateConversation,
     onRemove: removeConversation,
     onNavigate: () => setSidebarOpen(false),
     onRequestConfirm: setConfirm,
-    onMoveToFolder: moveToFolder,
-    onNewFolder: () => {
-      setSectionCollapsed((p) => ({ ...p, folders: false }));
-      setCreatingFolder(true);
-    },
     onShare: setShareId,
     onArchive: archiveConversation,
   };
@@ -729,38 +621,6 @@ export function AppSidebar({
                       </Section>
                     )}
 
-                    {(folders.length > 0 || creatingFolder) && (
-                      <Section
-                        label="Folders"
-                        isCollapsed={sectionCollapsed.folders}
-                        onToggleCollapse={() => toggleSection("folders")}
-                        action={
-                          <SectionAction label="New folder" onClick={() => setCreatingFolder(true)}>
-                            <FolderPlus className="size-3.5" />
-                          </SectionAction>
-                        }
-                      >
-                        {creatingFolder && <InlineNameInput placeholder="Folder name" onCommit={createFolder} onCancel={() => setCreatingFolder(false)} />}
-                        {folders.map((f) => (
-                          <FolderRow
-                            key={f.id}
-                            folder={f}
-                            chats={live.filter((c) => c.folderId === f.id)}
-                            activeConversationId={activeConversationId}
-                            dragOver={dragOverFolder === f.id}
-                            onDragOverChange={(over) => setDragOverFolder(over ? f.id : null)}
-                            onDrop={(conversationId) => {
-                              setDragOverFolder(null);
-                              void moveToFolder(conversationId, f.id);
-                            }}
-                            onRename={(name) => renameFolder(f, name)}
-                            onDelete={() => deleteFolder(f)}
-                            rowProps={rowProps}
-                          />
-                        ))}
-                      </Section>
-                    )}
-
                     {pinned.length > 0 && (
                       <Section label="Pinned" isCollapsed={sectionCollapsed.pinned} onToggleCollapse={() => toggleSection("pinned")}>
                         {pinned.map((c) => (
@@ -774,26 +634,12 @@ export function AppSidebar({
                         label="Recents"
                         isCollapsed={sectionCollapsed.recents}
                         onToggleCollapse={() => toggleSection("recents")}
-                        action={
-                          folders.length === 0 && !creatingFolder ? (
-                            <SectionAction label="New folder" onClick={() => setCreatingFolder(true)}>
-                              <FolderPlus className="size-3.5" />
-                            </SectionAction>
-                          ) : undefined
-                        }
                       >
-                        {recentGroups.map((group) => (
-                          <div key={group.label} className="pb-2">
-                            {/* The date eyebrow sits on the rows' left edge, in the
-                                mono metadata voice: it labels, it is not a row. */}
-                            <p className="px-2.5 pb-1 pt-1.5 font-mono text-caption text-muted-foreground">{group.label}</p>
-                            <div className="space-y-0.5">
-                              {group.items.map((c) => (
-                                <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
-                              ))}
-                            </div>
-                          </div>
-                        ))}
+                        <div className="space-y-0.5">
+                          {recents.slice(0, recentsLimit).map((c) => (
+                            <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                          ))}
+                        </div>
                         {recents.length > recentsLimit && (
                           <div ref={sentinelRef} className="flex justify-center py-2" aria-hidden>
                             <span className="skeleton h-2 w-16 rounded-full" />
@@ -1301,13 +1147,10 @@ type RowSharedProps = {
   renamingId: string | null;
   setRenaming: (id: string | null) => void;
   projects: { id: string; name: string }[];
-  folders: ClientFolder[];
   onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
   onRemove: (id: string) => void;
   onNavigate: () => void;
   onRequestConfirm: (c: ConfirmState) => void;
-  onMoveToFolder: (conversationId: string, folderId: string | null) => void;
-  onNewFolder: () => void;
   onShare: (id: string) => void;
   onArchive: (c: ClientConversation) => void;
 };
@@ -1319,13 +1162,10 @@ function ConversationRow({
   renamingId,
   setRenaming,
   projects,
-  folders,
   onUpdate,
   onRemove,
   onNavigate,
   onRequestConfirm,
-  onMoveToFolder,
-  onNewFolder,
   onShare,
   onArchive,
 }: RowSharedProps & {
@@ -1436,29 +1276,6 @@ function ConversationRow({
           <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
-              <SidebarMotionIcon kind="folder" className="size-4" /> Move to folder
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
-              <DropdownMenuItem onSelect={() => onMoveToFolder(conversation.id, null)}>
-                {conversation.folderId == null ? <StatusIcons.success className="size-4" /> : <span className="size-4" />}
-                No folder
-              </DropdownMenuItem>
-              {folders.map((f) => (
-                <DropdownMenuItem key={f.id} onSelect={() => onMoveToFolder(conversation.id, f.id)}>
-                  {conversation.folderId === f.id ? <StatusIcons.success className="size-4" /> : <SidebarMotionIcon kind="folder" className="size-4" />}
-                  <span dir="auto" className="truncate">
-                    {f.name}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={onNewFolder}>
-                <FolderPlus className="size-4" /> New folder…
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
               <AppIcons.projects className="size-4" /> Add to project
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-56">
@@ -1497,121 +1314,6 @@ function ConversationRow({
   );
 }
 
-function FolderRow({
-  folder,
-  chats,
-  activeConversationId,
-  dragOver,
-  onDragOverChange,
-  onDrop,
-  onRename,
-  onDelete,
-  rowProps,
-}: {
-  folder: ClientFolder;
-  chats: ClientConversation[];
-  activeConversationId: string | null;
-  dragOver: boolean;
-  onDragOverChange: (over: boolean) => void;
-  onDrop: (conversationId: string) => void;
-  onRename: (name: string) => void;
-  onDelete: () => void;
-  rowProps: RowSharedProps;
-}) {
-  const containsActive = chats.some((c) => c.id === activeConversationId);
-  const [expanded, setExpanded] = React.useState(containsActive);
-  const [renaming, setRenaming] = React.useState(false);
-  React.useEffect(() => {
-    if (containsActive) setExpanded(true);
-  }, [containsActive]);
-
-  if (renaming) {
-    return (
-      <InlineNameInput
-        initial={folder.name}
-        placeholder="Folder name"
-        onCommit={(v) => {
-          setRenaming(false);
-          onRename(v);
-        }}
-        onCancel={() => setRenaming(false)}
-      />
-    );
-  }
-
-  return (
-    <div>
-      <div
-        onDragOver={(e) => {
-          if (!e.dataTransfer.types.includes(CHAT_DRAG_TYPE)) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (!dragOver) onDragOverChange(true);
-        }}
-        onDragLeave={() => onDragOverChange(false)}
-        onDrop={(e) => {
-          const id = e.dataTransfer.getData(CHAT_DRAG_TYPE);
-          if (!id) return;
-          e.preventDefault();
-          setExpanded(true);
-          onDrop(id);
-        }}
-        className={cn(
-          "group relative flex items-center rounded-control border pl-2 pr-1 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
-          dragOver ? "surface-inset border-primary/50 text-foreground" : "border-transparent hover:bg-sidebar-accent"
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/90 hover:text-foreground"
-        >
-          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
-            <SidebarMotionIcon kind="folder" className="h-[15px] w-[15px]" />
-          </span>
-          <span dir="auto" className="min-w-0 flex-1 truncate">
-            {folder.name}
-          </span>
-          <span className="shrink-0 pr-1 font-mono text-micro tabular-nums text-muted-foreground/70">{chats.length}</span>
-          <ChevronRight
-            className={cn("size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")}
-          />
-        </button>
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>
-                <Pressable kind="icon" className={KEBAB_CLASS} aria-label="Folder options">
-                  <SidebarMotionIcon kind="more" className="size-4" />
-                </Pressable>
-              </DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent>Folder options</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuItem onSelect={() => setRenaming(true)}>
-              <ActionIcons.edit className="size-4" /> Rename
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDelete} variant="destructive">
-              <ActionIcons.delete className="size-4" /> Delete folder
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-      <Disclosure open={expanded}>
-        <div className="mt-0.5 space-y-0.5">
-          {chats.length === 0 ? (
-            <p className="py-1.5 pl-9 pr-2 text-caption text-muted-foreground">Drop a chat here, or use a chat’s menu.</p>
-          ) : (
-            chats.map((c) => <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} nested {...rowProps} />)
-          )}
-        </div>
-      </Disclosure>
-    </div>
-  );
-}
 
 function ProjectRow({
   project,
