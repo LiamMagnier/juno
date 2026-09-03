@@ -76,6 +76,51 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
 
 Swift: 6.4. Xcode: 27.0 beta (`27A5218g`). Before production release, repeat all archives with the intended stable Xcode/SDK.
 
+## How to screenshot each platform
+
+DEBUG only, no account needed. Both apps render the real authenticated screens
+over an isolated in-memory fixture world via `JunoPreviewSupport`
+(`native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/`). It never touches
+the production store, Keychain, or network; add fixtures there for anything new
+so it can be screenshotted without signing in. The Stable/Release binary
+contains zero preview symbols (gated by `release-gates.sh`).
+
+macOS (`JunoDesktop`, `--juno-ui-preview`):
+
+```bash
+# Build once (Debug), then launch the app binary directly — not via `open -n`,
+# which can reuse a just-terminated instance with no window.
+./native/macOS/JunoDesktop/.build/debug/Juno \
+  --juno-ui-preview --juno-preview-tab chat --juno-preview-scenario normal \
+  --juno-preview-appearance light --juno-preview-size 1240x800
+```
+
+iOS (`JunoMobile`, `JUNO_UI_PREVIEW=1` — launch args and env vars are
+equivalent; `JunoPreviewEnvironment` accepts both):
+
+```bash
+xcrun simctl launch booted com.liammagnier.JunoMobile.debug \
+  --juno-ui-preview --juno-preview-tab chat \
+  --juno-preview-appearance dark
+# or: JUNO_UI_PREVIEW=1 JUNO_PREVIEW_TAB=projects xcrun simctl launch booted …
+```
+
+Useful flags (each has a `JUNO_PREVIEW_*` env twin, see `PreviewShell.swift`):
+`--juno-preview-tab <chat|search|projects|library|artifacts|code|work|settings>`
+· `--juno-preview-scenario
+<normal|manyItems|empty|loading|offline|error|conflict|mutating|longText|streaming>`
+· `--juno-preview-appearance <light|dark>` · `--juno-preview-size <WxH>`
+· `--juno-preview-settings-route <voice|archived|notifications|code|appearance>`
+· `--juno-preview-model-selector`, `--juno-preview-thinking`,
+`--juno-preview-keyboard` (composer QA) · `--juno-preview-signed-out`
+(onboarding) · `--juno-preview-code-session <id>` /
+`--juno-preview-code-remote-session <id>` (Code states) ·
+`--juno-preview-overlay <sheet|alert|confirm|popover|add-menu>` (macOS overlays).
+
+Capture with `screencapture -R x,y,w,h` (points, not pixels) on macOS, or
+`xcrun simctl io booted screenshot out.png` in the simulator. Screenshot every
+screen light + dark; on iPad Pro 13" do both orientations.
+
 ## Contract alignment — `b903159`
 
 | Command | Result | Notes |
