@@ -223,7 +223,12 @@ export function MessageList(props: MessageListProps) {
         // scrollTop when content resizes, which while streaming is constantly.
         // Left on, it moves the view out from under a reader who has scrolled
         // up, and nothing in here asked it to.
-        className="h-full overflow-y-auto [overflow-anchor:none]"
+        // `scrollbar-gutter: stable both-edges`: a classic (non-overlay)
+        // scrollbar would otherwise eat ~15px from the right of this scroller
+        // and slide the transcript column ~7px left of the composer, which
+        // sits outside it. Reserving the gutter on both sides keeps the two
+        // columns on one centre line whatever the platform's scrollbars do.
+        className="h-full overflow-y-auto [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
         style={SCROLL_FADE_STYLE}
       >
         {/*
@@ -247,7 +252,9 @@ export function MessageList(props: MessageListProps) {
         role="log"
         aria-label="Conversation transcript"
         aria-live="off"
-        className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6"
+        // The same column as the composer (`max-w-3xl px-3 sm:px-6`): the
+        // bubbles' outer edges and the composer's edges are one line.
+        className="mx-auto w-full max-w-3xl space-y-6 px-3 py-6 sm:px-6"
       >
           {messages.map((m, i) => (
             // Scroll anchor for find-in-conversation. A wrapper rather than a

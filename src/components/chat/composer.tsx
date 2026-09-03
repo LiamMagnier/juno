@@ -1754,8 +1754,16 @@ export function Composer({
    * with the reason on it rather than vanishing, so "why is web search
    * missing" never has to be asked.
    */
-  const projectPanel = ({ close }: { close: () => void }) => (
+  const projectPanel = () => (
     <>
+      <PlusMenuRow
+        selected={!selectedProjectId}
+        icon={AppIcons.projects}
+        onSelect={() => onPickProject?.(null)}
+      >
+        No project
+      </PlusMenuRow>
+      <PlusMenuSeparator />
       <ScrollFade className="min-h-0 flex-1" viewportClassName="max-h-64">
         {loadingProjects && projects.length === 0 ? (
           <div className="flex items-center justify-center py-4">
@@ -1766,33 +1774,23 @@ export function Composer({
             No projects yet.
           </p>
         ) : (
-          projects.map((project) => {
-            const active = selectedProjectId === project.id;
-            return (
-              <PlusMenuRow
-                key={project.id}
-                role="menuitemradio"
-                aria-checked={active}
-                icon={AppIcons.projects}
-                onClick={() => {
-                  onPickProject?.(active ? null : project.id);
-                  close();
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                  {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
-                </span>
-              </PlusMenuRow>
-            );
-          })
+          projects.map((project) => (
+            <PlusMenuRow
+              key={project.id}
+              selected={selectedProjectId === project.id}
+              icon={AppIcons.projects}
+              onSelect={() => onPickProject?.(project.id)}
+            >
+              {project.name}
+            </PlusMenuRow>
+          ))
         )}
       </ScrollFade>
       <PlusMenuSeparator />
       <PlusMenuRow
         icon={Plus}
         disabled={creatingProject}
-        onClick={() => void createProjectAndPick()}
+        onSelect={() => void createProjectAndPick()}
         className="text-primary-ink"
       >
         {creatingProject ? "Creating…" : "New project"}
@@ -1800,20 +1798,22 @@ export function Composer({
     </>
   );
 
-  const connectorsPanel = ({ close }: { close: () => void }) => (
+  const connectorsPanel = () => (
     <>
       <div className="px-0.5 pb-1.5 pt-0.5">
         <label className="relative block">
           {/* Raw `Search`: this filters the connector list in place.
               `AppIcons.search` is the app's search destination, which this
-              never opens. */}
+              never opens. Key events stay in the field — the menu's typeahead
+              and arrow handling must not see them. */}
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             value={connectorQuery}
             onChange={(event) => setConnectorQuery(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
             placeholder="Search apps…"
             aria-label="Search apps"
-            data-menu-autofocus=""
+            autoFocus
             className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-base ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
           />
         </label>
@@ -1826,13 +1826,7 @@ export function Composer({
             ))}
           </div>
         ) : connectors.length === 0 ? (
-          <PlusMenuRow
-            icon={Plug}
-            onClick={() => {
-              close();
-              router.push("/connections");
-            }}
-          >
+          <PlusMenuRow icon={Plug} onSelect={() => router.push("/connections")}>
             Connect an app
           </PlusMenuRow>
         ) : visibleConnectors.length === 0 ? (
@@ -1844,7 +1838,7 @@ export function Composer({
             <PlusMenuRow
               key={connector.id}
               checked={connectorsEnabled.includes(connector.id)}
-              onClick={() => pickConnector(connector.id)}
+              onSelect={() => pickConnector(connector.id)}
               leading={
                 <ConnectorMark id={connector.id} className="size-4 shrink-0 text-foreground" />
               }
@@ -1854,20 +1848,18 @@ export function Composer({
           ))
         )}
       </div>
-      <PlusMenuSeparator />
-      <div className="flex items-center justify-between px-2.5 py-1 font-mono text-caption text-muted-foreground">
-        <span>{activeConnectorCount} of {MAX_CHAT_CONNECTORS} on</span>
-        <button
-          type="button"
-          onClick={() => {
-            close();
-            router.push("/connections");
-          }}
-          className="rounded-xs text-primary-ink hover:underline"
-        >
-          Manage
-        </button>
-      </div>
+      {connectors.length > 0 && (
+        <>
+          <PlusMenuSeparator />
+          <PlusMenuRow
+            icon={Plug}
+            detail={`${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on`}
+            onSelect={() => router.push("/connections")}
+          >
+            Manage connections
+          </PlusMenuRow>
+        </>
+      )}
     </>
   );
 
@@ -1987,6 +1979,9 @@ export function Composer({
                   icon: Plug,
                   detail: activeConnectorCount > 0 ? String(activeConnectorCount) : undefined,
                   render: connectorsPanel,
+                  onOpenChange: (open: boolean) => {
+                    if (!open) setConnectorQuery("");
+                  },
                 },
               ]
             : []),
