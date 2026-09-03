@@ -129,6 +129,10 @@ struct JunoMobileSettingsView: View {
   @State private var dangerError: String?
   /// A page the preview harness asked to open on launch.
   @State private var previewRoute: JunoMobileSettingsRoute?
+  /// Regular widths — iPad — read the index as a split: this is the sidebar's
+  /// selected leaf, and the detail column shows it.
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @State private var splitSelection: JunoMobileSettingsRoute?
 
   var body: some View {
     Group {
@@ -212,7 +216,11 @@ struct JunoMobileSettingsView: View {
           let route = JunoMobileSettingsRoute(previewName: raw)
         {
           try? await Task.sleep(nanoseconds: 350_000_000)
-          previewRoute = route
+          if sizeClass == .regular {
+            splitSelection = route
+          } else {
+            previewRoute = route
+          }
         }
         if CommandLine.arguments.contains("--juno-preview-memory") {
           try? await Task.sleep(nanoseconds: 350_000_000)
@@ -272,8 +280,18 @@ struct JunoMobileSettingsView: View {
 
   /// A native settings index. Dense controls live one level down, where their
   /// title and purpose remain visible while editing; the root stays scannable
-  /// as the product grows.
+  /// as the product grows. Regular widths read it as a two-column split — the
+  /// platform's own Settings shape — and compact widths keep the stack.
+  @ViewBuilder
   private var page: some View {
+    if sizeClass == .regular {
+      splitPage
+    } else {
+      stackedPage
+    }
+  }
+
+  private var stackedPage: some View {
     List {
       Section {
         profileHeader
@@ -323,6 +341,107 @@ struct JunoMobileSettingsView: View {
     .navigationDestination(for: JunoMobileSettingsRoute.self) { route in
       settingsDestination(route)
     }
+  }
+
+  /// Regular widths — iPad in either orientation — read the same index the
+  /// way iOS Settings does: the sections as a sidebar, the leaf as the detail
+  /// column. The sidebar's rows select rather than push, so the detail column
+  /// owns the stack and its own nested destinations keep working through the
+  /// same route mapping the stacked page registers.
+  private var splitPage: some View {
+    // An explicit two-column layout rather than a nested `NavigationSplitView`:
+    // on iPad the shell already renders the drawer as a split's sidebar, and a
+    // second split inside its detail collapses to a hidden column behind a
+    // second toggle. A plain HStack keeps the index permanently visible.
+    HStack(spacing: 0) {
+      List(selection: $splitSelection) {
+        Section {
+          profileHeaderRow
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 14, trailing: 16))
+        }
+
+        if session != nil, requestSender != nil {
+          Section("Plan") {
+            settingsRow(.usage, title: "Plan & Usage", icon: .usage)
+          }
+        }
+
+        Section("Personalization") {
+          settingsRow(.appearance, title: "Appearance", icon: .appearance)
+          settingsRow(.writing, title: "Response style & Instructions", icon: .writing)
+          settingsRow(.memory, title: "Memory", icon: .memory)
+          settingsRow(.language, title: "Language", icon: .language)
+        }
+
+        Section("AI") {
+          settingsRow(.models, title: "Models", icon: .models)
+          settingsRow(.voice, title: "Voice", icon: .mic)
+          settingsRow(.code, title: "Juno Code", icon: .code)
+        }
+
+        Section("Chats") {
+          settingsRow(.archived, title: "Archived chats", icon: .conversation)
+        }
+
+        Section("General") {
+          settingsRow(.notifications, title: "Notifications", icon: .notifications)
+          #if DEBUG
+            settingsRow(.advanced, title: "Advanced", icon: .sliders)
+          #endif
+        }
+
+        Section("About") {
+          settingsRow(.about, title: "About Juno", icon: .about)
+        }
+      }
+      .listStyle(.sidebar)
+      .scrollContentBackground(.hidden)
+      .refreshable { await model.refresh() }
+      .frame(width: 320)
+      .background(Color.junoCanvas)
+
+      Divider().ignoresSafeArea()
+
+      NavigationStack {
+        if let splitSelection {
+          settingsDestination(splitSelection)
+            .navigationDestination(for: JunoMobileSettingsRoute.self) { route in
+              settingsDestination(route)
+            }
+        } else {
+          ContentUnavailableView {
+            Label("Settings", systemImage: "gearshape")
+          } description: {
+            Text("Choose a setting from the sidebar.")
+          }
+        }
+      }
+      .background(Color.junoCanvas)
+      .frame(maxWidth: .infinity)
+    }
+    .background(Color.junoCanvas)
+    .accessibilityIdentifier("juno.mobile.settings-split")
+  }
+
+  /// The split sidebar's selectable counterpart of ``settingsLink``: the same
+  /// row, selecting rather than pushing — a value link inside a selection
+  /// `List` would push within the sidebar column instead of the detail.
+  private func settingsRow(
+    _ route: JunoMobileSettingsRoute,
+    title: LocalizedStringKey,
+    icon: JunoIcon
+  ) -> some View {
+    HStack(spacing: 12) {
+      JunoIconView(icon, size: 18)
+        .foregroundStyle(Color.junoAccent)
+        .frame(width: 24)
+      Text(title)
+        .junoRowLabel()
+    }
+    .tag(route)
+    .accessibilityIdentifier(settingsRouteIdentifier(route))
+    .contentShape(.rect)
   }
 
   private func settingsLink(
@@ -463,44 +582,67 @@ struct JunoMobileSettingsView: View {
   private var profileHeader: some View {
     if let session {
       NavigationLink(value: JunoMobileSettingsRoute.data) {
-        HStack(spacing: 14) {
-          JunoAvatar(
-            imageData: avatarData,
-            imageURL: session.profile.imageURL,
-            name: session.profile.name ?? session.profile.email,
-            size: 52
-          )
-          VStack(alignment: .leading, spacing: 3) {
-            Text(session.profile.name ?? "Your account")
-              .junoFont(size: 18, relativeTo: .headline, weight: .semibold)
-              .foregroundStyle(Color.primary)
-            Text(session.profile.email)
-              .junoCaption()
-              .lineLimit(1)
-            Text("Profile, data and security")
-              .junoFont(size: 12, relativeTo: .caption)
-              .junoMetaInk()
-          }
-          Spacer(minLength: 8)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+        profileCard(session)
       }
       .buttonStyle(.plain)
       .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
       .accessibilityIdentifier("juno.mobile.settings-profile")
     } else {
-      HStack(spacing: 12) {
-        JunoIconView(.settings, size: 22)
-          .foregroundStyle(Color.junoAccent)
-        Text("Settings")
-          .junoPageHeading(compact: true)
-      }
-      .padding(16)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+      signedOutHeader
     }
+  }
+
+  /// The sidebar counterpart of ``profileHeader``: the same card, selecting
+  /// the account page rather than pushing it — a value link inside a selection
+  /// `List` would push within the sidebar column instead of the detail.
+  @ViewBuilder
+  private var profileHeaderRow: some View {
+    if let session {
+      profileCard(session)
+        .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityIdentifier("juno.mobile.settings-profile")
+        .tag(JunoMobileSettingsRoute.data)
+    } else {
+      signedOutHeader
+    }
+  }
+
+  private func profileCard(_ session: NativeAuthenticatedSession) -> some View {
+    HStack(spacing: 14) {
+      JunoAvatar(
+        imageData: avatarData,
+        imageURL: session.profile.imageURL,
+        name: session.profile.name ?? session.profile.email,
+        size: 52
+      )
+      VStack(alignment: .leading, spacing: 3) {
+        Text(session.profile.name ?? "Your account")
+          .junoFont(size: 18, relativeTo: .headline, weight: .semibold)
+          .foregroundStyle(Color.primary)
+        Text(session.profile.email)
+          .junoCaption()
+          .lineLimit(1)
+        Text("Profile, data and security")
+          .junoFont(size: 12, relativeTo: .caption)
+          .junoMetaInk()
+      }
+      Spacer(minLength: 8)
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .contentShape(Rectangle())
+  }
+
+  private var signedOutHeader: some View {
+    HStack(spacing: 12) {
+      JunoIconView(.settings, size: 22)
+        .foregroundStyle(Color.junoAccent)
+      Text("Settings")
+        .junoPageHeading(compact: true)
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.junoSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
   }
 
   /// Native account/profile page: one identity header, then ordinary grouped

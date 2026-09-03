@@ -10,6 +10,7 @@ import JunoVoiceKit
 import JunoWorkKit
 import QuickLook
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 #if DEBUG
@@ -150,6 +151,68 @@ struct JunoMobileRootView: View {
     }
   }
 
+  #if DEBUG
+  /// The fixture world's launch routing, applied once the shell can act: the
+  /// preview destination, the scripted-rotation and deep-link flags, and the
+  /// draft/incognito/voice states. Extracted from ``body`` — the whole
+  /// expression sat at the type checker's limit, and this closure pushed it
+  /// over.
+  private func applyPreviewLaunchRouting() {
+    if let raw = JunoPreviewEnvironment.initialDestination,
+      let section = JunoMobileSection(rawValue: raw)
+    {
+      selection = section
+    }
+    // Landscape without the Simulator's Device menu: simctl cannot rotate a
+    // device and the QA pass has to screenshot every screen in both
+    // orientations from a script. The request is app-initiated, so the scene
+    // honours it directly.
+    if ProcessInfo.processInfo.environment["JUNO_PREVIEW_LANDSCAPE"] == "1" {
+      for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+      }
+    }
+    // A widget or Live Activity deep link, from the launch command: the same
+    // routes the extension mints, run through the same parser an onOpenURL
+    // event reaches.
+    if let open = JunoPreviewEnvironment.previewOpenURL,
+      let url = URL(string: open),
+      let request = JunoMobileLaunchRequests.request(for: url)
+    {
+      launchRequests.request(request)
+    }
+    if CommandLine.arguments.contains("--juno-preview-sidebar") {
+      sidebarOpen = true
+    }
+    if CommandLine.arguments.contains("--juno-preview-settings") {
+      showingSettings = true
+    }
+    // Opens straight into incognito, so the mode's own look is one relaunch
+    // away rather than a scripted tap.
+    if CommandLine.arguments.contains("--juno-preview-incognito") {
+      selection = .chat
+      conversationModel?.selectedConversationID = nil
+      incognito = true
+    }
+    // A draft is a first-class preview state. Keep it separate from the
+    // signed-in fixture conversation so header controls can be audited in
+    // both states without relying on a prior tap or restored scene storage.
+    if CommandLine.arguments.contains("--juno-preview-chat-draft") {
+      selection = .chat
+      conversationModel?.isDraftingNewConversation = true
+      conversationModel?.selectedConversationID = nil
+    }
+    if CommandLine.arguments.contains("--juno-preview-voice")
+      || JunoPreviewEnvironment.opensVoiceFullScreen
+    {
+      startVoice()
+      if JunoPreviewEnvironment.opensVoiceFullScreen {
+        voiceSession?.isFullScreen = true
+      }
+    }
+  }
+  #endif
+
   var body: some View {
     Group {
       #if DEBUG
@@ -212,41 +275,7 @@ struct JunoMobileRootView: View {
     .task {
       #if DEBUG
         if previewSession != nil {
-          if let raw = JunoPreviewEnvironment.initialDestination,
-            let section = JunoMobileSection(rawValue: raw)
-          {
-            selection = section
-          }
-          if CommandLine.arguments.contains("--juno-preview-sidebar") {
-            sidebarOpen = true
-          }
-          if CommandLine.arguments.contains("--juno-preview-settings") {
-            showingSettings = true
-          }
-          // Opens straight into incognito, so the mode's own look is one
-          // relaunch away rather than a scripted tap.
-          if CommandLine.arguments.contains("--juno-preview-incognito") {
-            selection = .chat
-            conversationModel?.selectedConversationID = nil
-            incognito = true
-          }
-          // A draft is a first-class preview state. Keep it separate from the
-          // signed-in fixture conversation so header controls can be audited
-          // in both states without relying on a prior tap or restored scene
-          // storage.
-          if CommandLine.arguments.contains("--juno-preview-chat-draft") {
-            selection = .chat
-            conversationModel?.isDraftingNewConversation = true
-            conversationModel?.selectedConversationID = nil
-          }
-          if CommandLine.arguments.contains("--juno-preview-voice")
-            || JunoPreviewEnvironment.opensVoiceFullScreen
-          {
-            startVoice()
-            if JunoPreviewEnvironment.opensVoiceFullScreen {
-              voiceSession?.isFullScreen = true
-            }
-          }
+          applyPreviewLaunchRouting()
           return
         }
         // Opens the real, signed-in shell straight onto one destination, so
