@@ -173,7 +173,8 @@ struct DesktopChatWorkspace: View {
                 destination: destination,
                 selection: selection,
                 requestedProjectID: $requestedProjectID,
-                openSettingsModal: { showingSettingsModal = true }
+                openSettingsModal: { showingSettingsModal = true },
+                signOut: { Task { await configuration.authModel.signOut() } }
             )
             .junoSidebarColumn()
         } detail: {
@@ -328,7 +329,7 @@ struct DesktopChatWorkspace: View {
             Button {
                 beginDraft()
             } label: {
-                JunoIconLabel("New chat", systemImage: "square.and.pencil")
+                Label("New chat", icon: .compose)
             }
             .help("Start a new chat (⌘N)")
             .accessibilityIdentifier("New chat")
@@ -338,7 +339,7 @@ struct DesktopChatWorkspace: View {
             Button {
                 destination.wrappedValue = .search
             } label: {
-                JunoIconLabel("Search", systemImage: "magnifyingglass")
+                Label("Search", icon: .search)
             }
             .help("Search chats, projects and files (⌘⇧F)")
             .accessibilityIdentifier("Search")
@@ -355,7 +356,7 @@ struct DesktopChatWorkspace: View {
                 Button {
                     Task { await createShare() }
                 } label: {
-                    JunoIconLabel("Share", systemImage: "square.and.arrow.up")
+                    Label("Share", icon: .share)
                 }
                 .disabled(sharing)
                 .help("Create a public link to this conversation")
@@ -472,6 +473,8 @@ private struct DesktopChatSidebar: View {
     @Binding var selection: DesktopSidebarItem?
     @Binding var requestedProjectID: String?
     var openSettingsModal: (() -> Void)? = nil
+    /// Signs the account out from the footer's menu. Nil hides the item.
+    var signOut: (() -> Void)? = nil
     @State private var renameProjectTarget: NativeProject?
     @State private var renameChatTarget: NativeConversation?
     @State private var renameDraft = ""
@@ -612,13 +615,8 @@ private struct DesktopChatSidebar: View {
         return Label {
             Text(item.label)
         } icon: {
-            if let icon = item.junoIcon {
-                JunoIconView(icon, size: 16)
-                    .foregroundStyle(ink)
-            } else {
-                JunoIconView(systemImage: item.symbol)
-                    .foregroundStyle(ink)
-            }
+            JunoIconView(item.junoIcon, size: 16)
+                .foregroundStyle(ink)
         }
         .foregroundStyle(ink)
         // A selection changing is `standard`'s documented brief; the inline
@@ -627,6 +625,7 @@ private struct DesktopChatSidebar: View {
         // which Reduce Motion leaves alone — so it is deliberately not gated
         // behind the preference.
         .animation(JunoMotion.standard, value: selected)
+        .junoSidebarRowSelection(selected)
         .tag(DesktopSidebarItem.destination(item))
     }
 
@@ -643,6 +642,7 @@ private struct DesktopChatSidebar: View {
             }
         }
         .junoSidebarRowInk()
+        .junoSidebarRowSelection(selection == .conversation(conversation.id))
         .tag(DesktopSidebarItem.conversation(conversation.id))
         .contextMenu {
             Button(conversation.pinned ? "Unpin" : "Pin") {
@@ -734,7 +734,8 @@ private struct DesktopChatSidebar: View {
                     } else {
                         destination = .settings
                     }
-                }
+                },
+                signOut: signOut
             )
         }
     }
@@ -788,23 +789,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .chat: "bubble.left.and.bubble.right"
-        case .search: "magnifyingglass"
-        case .projects: "folder"
-        case .library: "books.vertical"
-        case .artifacts: "square.stack.3d.up"
-        case .connections: "link"
-        case .tasks: "clock"
-        case .design: "pencil.tip"
-        case .memory: "brain"
-        case .usage: "chart.line.uptrend.xyaxis"
-        case .settings: "gearshape"
-        }
-    }
-
-    var junoIcon: JunoIcon? {
+    /// The website's mark for this destination — `src/lib/app-icons.ts`, via
+    /// the generated catalog. Design is the pen nib the web draws for it.
+    var junoIcon: JunoIcon {
         switch self {
         case .chat: .home
         case .search: .search
@@ -815,7 +802,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .tasks: .tasks
         case .settings: .settings
         case .usage: .usage
-        case .design: .pencil
+        case .design: .penTool
         case .memory: .memory
         }
     }
@@ -992,7 +979,8 @@ struct DesktopConversationView: View {
             draftPrompt: $draftPrompt,
             accountID: session.profile.id,
             syncModel: configuration.syncModel,
-            openArtifact: open(artifact:)
+            openArtifact: open(artifact:),
+            share: configuration.shareClient == nil ? nil : { Task { await shareConversation() } }
         )
         .safeAreaInset(edge: .bottom, spacing: 0) {
             composer
@@ -1003,6 +991,21 @@ struct DesktopConversationView: View {
     private func open(artifact: NativeMessageContent.ArtifactReference) {
         withAnimation(JunoMotion.reduced(JunoMotion.canvasEnter, when: reduceMotion)) {
             openArtifact = DesktopChatArtifact(reference: artifact)
+        }
+    }
+
+    /// The row's Share: publish and copy the link, exactly as the toolbar does.
+    private func shareConversation() async {
+        guard let client = configuration.shareClient,
+              let conversationID = model.selectedConversationID,
+              case .signedIn(let signedIn) = configuration.authModel.phase
+        else { return }
+        do {
+            let share = try await client.share(conversationID: conversationID, for: signedIn.profile.id)
+            JunoPasteboard.copy(share.url.absoluteString)
+        } catch {
+            // The toolbar's Share reports the failure in its own notice; the
+            // row's stays quiet rather than adding a second surface for it.
         }
     }
 
@@ -1198,6 +1201,10 @@ private struct DesktopTranscript: View {
     /// Asks the conversation column to dock the canvas. A row cannot own that
     /// panel — see ``DesktopConversationView/openArtifact``.
     let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
+    /// Publishes the conversation and copies its link; nil when the account
+    /// has no share service. Reached from every reply's action row, as on the
+    /// web, not only from the toolbar.
+    let share: (() -> Void)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
     @State private var speechPlayback = DesktopSpeechPlayback()
@@ -1221,7 +1228,17 @@ private struct DesktopTranscript: View {
     /// honest — the answer really did come from something this account can no
     /// longer name — and is better than attributing it to nothing.
     private func displayName(forModelID id: String) -> String {
-        model.model(withID: id)?.displayName ?? id
+        // The catalog's name when it knows the id; otherwise the shared
+        // humanizer rather than the raw routing key — "Claude Sonnet 4.6",
+        // never "anthropic:claude-sonnet-4-6", under the most-read line in
+        // the product.
+        model.model(withID: id)?.displayName ?? junoDisplayModelName(id)
+    }
+
+    /// The regenerate menu's "Switch model" list: every model this account can
+    /// send to, by its human name.
+    private var switchableModels: [DesktopRegenerateModel] {
+        model.selectableModels.map { DesktopRegenerateModel(id: $0.id, name: $0.displayName) }
     }
 
     var body: some View {
@@ -1242,12 +1259,16 @@ private struct DesktopTranscript: View {
                             copy: {
                                 copy(NativeMessageContent.plainText(of: message.content))
                             },
-                            regenerate: {
+                            regenerate: { modelID in
                                 guard let conversationID = model.selectedConversationID else {
                                     return
                                 }
-                                model.retryLastMessage(conversationID: conversationID)
+                                model.retryLastMessage(
+                                    conversationID: conversationID,
+                                    modelID: modelID
+                                )
                             },
+                            switchableModels: switchableModels,
                             continueResponse: model.canContinueSelectedConversation
                                 ? {
                                     guard let conversationID = model.selectedConversationID else {
@@ -1271,6 +1292,7 @@ private struct DesktopTranscript: View {
                                     )
                                 }
                             },
+                            share: share,
                             openArtifact: openArtifact,
                             branchPosition: branchPosition(for: message),
                             stepBranch: { offset in
@@ -1324,10 +1346,12 @@ private struct DesktopTranscript: View {
                                 copy(NativeMessageContent.plainText(of: message.content))
                             },
                             regenerate: nil,
+                            switchableModels: [],
                             continueResponse: nil,
                             branch: nil,
                             setFeedback: nil,
                             readAloud: nil,
+                            share: nil,
                             // A spoken turn carries no artifact tag: it is a
                             // recognizer's line, not a written reply.
                             openArtifact: { _ in },
@@ -1615,6 +1639,24 @@ private struct DesktopMessageRise: ViewModifier {
     }
 }
 
+/// A model the regenerate menu can switch to. The catalog row, reduced to what
+/// a menu item needs.
+struct DesktopRegenerateModel: Identifiable, Equatable {
+    let id: String
+    let name: String
+}
+
+/// One turn of the transcript, laid out as the website lays it out
+/// (`message-item.tsx`).
+///
+/// The reader's turn is a quiet inset bubble on the right — secondary fill,
+/// `rounded-card` with the bottom-trailing corner tucked, a hairline, **no
+/// shadow** (SOFT_UI §1.4: the transcript stays flat). The reply is prose on
+/// the page: no card, no plate. Under either sits **one** action row that
+/// appears on hover, in the website's own marks — copy that morphs to a
+/// check, thumbs, read aloud, regenerate with its model submenu, branch,
+/// share; edit on the reader's turn. The model/cost line is a mono caption
+/// under the reply, exactly where the web puts it.
 private struct DesktopMessageRow: View {
     let message: NativeChatMessage
     /// Whether this is a spoken turn from a call that is still running.
@@ -1626,54 +1668,43 @@ private struct DesktopMessageRow: View {
     /// call is hung up and filed.
     let isVoice: Bool
     /// The model's human name, resolved from the account catalog by the caller.
-    ///
-    /// The footer used to render `message.model` directly, which is the canonical
-    /// id — so the most-read surface in the product attributed answers to
-    /// "anthropic:claude-sonnet-4-6". The id is a routing key, not a name.
     let modelDisplayName: String?
     let isLastAssistant: Bool
     let copy: () -> Void
-    /// Nil where there is nothing on the server to regenerate — the same
-    /// absence `branch` and `setFeedback` express, rather than a closure that
-    /// does nothing.
-    let regenerate: (() -> Void)?
+    /// Re-asks the prompt. `nil` is "the same model"; an id switches to it.
+    /// Nil altogether where there is nothing on the server to regenerate.
+    let regenerate: ((String?) -> Void)?
+    /// What the regenerate menu's "Switch model" submenu lists.
+    let switchableModels: [DesktopRegenerateModel]
     /// Nil unless the last answer ended at a resumable boundary. Continue is a
     /// new user turn; unlike regenerate it leaves the partial answer visible.
     let continueResponse: (() -> Void)?
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
+    /// Publishes the conversation and copies its link — the toolbar's Share,
+    /// reachable from the row as it is on the web.
+    let share: (() -> Void)?
     /// Hands an artifact up to the conversation column, which owns the canvas.
-    /// This row only says which one — it cannot hold the panel, because a
-    /// `LazyVStack` is free to tear the row down while the reader is still
-    /// reading it.
     let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
     /// Where this message sits among its revisions, or nil when it has none.
-    ///
-    /// Nil is the answer for every message in a conversation nobody has edited,
-    /// which is what keeps the `‹ 1 / 1 ›` pager — a control that cannot do
-    /// anything — off the overwhelming majority of transcripts.
     let branchPosition: NativeMessageBranchPosition?
-    /// Switches to the revision `offset` steps away. Supplied by the transcript
-    /// rather than derived here: a row cannot reach the store.
     let stepBranch: ((Int) -> Void)?
-    /// Re-asks this prompt with new wording, as a **new branch**. The original
-    /// keeps its text and its whole subtree of replies — see
-    /// ``NativeConversationModel/editUserMessage(messageID:conversationID:newContent:modelID:)``.
-    /// Nil on answers and on spoken lines, neither of which can be re-asked.
+    /// Re-asks this prompt with new wording, as a **new branch**. Nil on
+    /// answers and on spoken lines, neither of which can be re-asked.
     let editMessage: ((String) -> Void)?
-    /// Whether a generation is running. Greys the pager and withholds Edit
-    /// rather than hiding either — a control that vanishes mid-stream reads as a
-    /// revision that was lost.
+    /// Whether a generation is running. Greys the pager and withholds Edit.
     let isGenerating: Bool
-    /// Whether a long prompt is showing in full. Collapsed is the resting state,
-    /// as it is on the web.
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The pointer is over the turn: the web's `group-hover`.
+    @State private var hovered = false
+    /// Copy just happened; the copy mark is a check for two seconds.
+    @State private var copied = false
+    @State private var copiedReset: Task<Void, Never>?
+    /// Whether a long prompt is showing in full. Collapsed is the resting
+    /// state, as it is on the web.
     @State private var promptExpanded = false
-    /// Whether this prompt is open for rewriting, and the words being written.
-    ///
-    /// Local to the row on purpose: an edit in progress is not conversation
-    /// state, and hoisting it would make a `LazyVStack` tearing the row down on
-    /// scroll into a way to lose what someone was typing.
     @State private var editing = false
     @State private var draft = ""
 
@@ -1691,65 +1722,100 @@ private struct DesktopMessageRow: View {
         NativeMessageContent.plainText(of: message.content)
     }
 
-    /// The lines AIcss's viewport shows, or nil when the model sent no trace.
-    ///
-    /// A display chunking of what the provider sent — never a claim about where its
-    /// steps were. See `JunoAIcssReasoningLines`.
     private var reasoningLines: [String]? {
         guard let reasoning = message.reasoning, !reasoning.isEmpty else { return nil }
         return JunoAIcssReasoningLines.lines(text: reasoning)
     }
 
-    /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
-    /// edge. Uniform corners make a card; the notch is what makes it a remark.
+    /// `rounded-card rounded-br-md`: the card rung with one tucked corner.
     private static let bubbleShape = UnevenRoundedRectangle(
-        topLeadingRadius: JunoRadius.message,
-        bottomLeadingRadius: JunoRadius.message,
-        bottomTrailingRadius: JunoRadius.chip,
-        topTrailingRadius: JunoRadius.message,
+        topLeadingRadius: JunoRadius.card,
+        bottomLeadingRadius: JunoRadius.card,
+        bottomTrailingRadius: JunoRadius.row,
+        topTrailingRadius: JunoRadius.card,
         style: .continuous
     )
 
-    /// Which model wrote this, what it cost, and whether it is still arriving —
-    /// one line, in the web's monospaced metadata voice.
-    ///
-    /// Joined here rather than laid out as three `Text`s in an `HStack`: the web
-    /// writes a single `font-mono` string with "·" separators, and three floating
-    /// fragments under every answer is three things to read instead of one.
+    /// The web's mono line: model, then cost. One string, "·" separated.
     private var footerLine: String? {
-        // Not named `parts`: that is already this row's *content* parts, and one
-        // shadowing the other in a file this long is a trap for the next reader.
         var fields: [String] = []
-        if let modelDisplayName {
-            fields.append(modelDisplayName)
-        }
-        if let cost = message.costUSD {
-            fields.append(cost.formatted(.currency(code: "USD")))
-        }
-        if message.isPending {
-            fields.append("Streaming")
+        if let modelDisplayName { fields.append(modelDisplayName) }
+        if let cost = message.costUSD, cost > 0 {
+            fields.append(cost.formatted(.currency(code: "USD").precision(.fractionLength(2...4))))
         }
         return fields.isEmpty ? nil : fields.joined(separator: " · ")
     }
 
-    /// Whether this prompt is long enough to open collapsed. The rule and the
-    /// numbers are the website's — see ``NativePromptLimits``.
     private var isLongPrompt: Bool {
         message.role == .user && NativePromptLimits.isLongMessage(plainText)
     }
 
-    /// The bubble proper.
-    ///
-    /// A long prompt — a pasted system prompt, a curriculum, a stack trace — is
-    /// clipped to ``NativePromptLimits/collapsedMessageHeight`` with a fade off
-    /// its bottom edge, so the answer the reader came back for is not pushed a
-    /// screen down by the thing they already know they wrote. The text itself is
-    /// untouched: Copy and VoiceOver read the whole message either way.
+    private var hasTextContent: Bool {
+        !plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        Group {
+            switch message.role {
+            case .user: userTurn
+            case .assistant: assistantTurn
+            case .system, .tool:
+                Text(message.content)
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .junoSecondaryInk()
+                    .textSelection(.enabled)
+            }
+        }
+        .onHover { hovered = $0 }
+    }
+
+    // MARK: The reader's turn
+
+    private var userTurn: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Spacer(minLength: 90)
+            VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
+                if editing {
+                    promptEditor
+                } else {
+                    userBubble
+                    if isLongPrompt { expandControl }
+                }
+                if !editing, !isVoice, !message.isPending {
+                    HStack(spacing: 2) {
+                        branchNavigator
+                        actionRow {
+                            copyAction
+                            if editMessage != nil {
+                                DesktopMessageAction("Edit", icon: .pencil) {
+                                    draft = plainText
+                                    editing = true
+                                }
+                                .disabled(isGenerating)
+                                .accessibilityIdentifier("juno.desktop.chat.message-edit")
+                            }
+                            if let branch {
+                                DesktopMessageAction("Fork from here", icon: .fork, action: branch)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The bubble: the one inset well in the transcript. Fill, hairline, and
+    /// nothing else — a reading surface that casts a shadow is a card.
     private var userBubble: some View {
         Text(plainText)
+            .junoFont(size: 15, relativeTo: .body)
+            .lineSpacing(4)
+            .junoInk()
             .textSelection(.enabled)
             .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.snug)
+            .padding(.vertical, 10)
             .frame(
                 maxHeight: isLongPrompt && !promptExpanded
                     ? NativePromptLimits.collapsedMessageHeight : nil,
@@ -1758,9 +1824,6 @@ private struct DesktopMessageRow: View {
             .clipped()
             .overlay(alignment: .bottom) {
                 if isLongPrompt, !promptExpanded {
-                    // The web's `bg-gradient-to-t from-secondary` — the bubble's
-                    // own fill dissolving upward, which is what says "clipped"
-                    // rather than "ended".
                     LinearGradient(
                         colors: [Color.junoMuted, Color.junoMuted.opacity(0)],
                         startPoint: .bottom,
@@ -1770,55 +1833,31 @@ private struct DesktopMessageRow: View {
                     .allowsHitTesting(false)
                 }
             }
-            // The web's bubble is a *raised* surface, not a tint:
-            // `bg-secondary` **plus** `border-border/50` and
-            // `--shadow-soft`. With the fill alone it read as a
-            // slightly darker patch of the same cream field — the
-            // flatness this redesign exists to remove — because
-            // `--muted` and `--background` are barely a step apart.
-            // Hand-rolled rather than `junoCard()` only because the
-            // shape is uneven; the tokens are the card's own.
             .background(Self.bubbleShape.fill(Color.junoMuted))
-            .overlay(
-                Self.bubbleShape
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
-            .shadow(
-                color: .junoCardShadow,
-                radius: JunoElevation.cardBlur,
-                y: JunoElevation.cardOffsetY
-            )
+            .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
+            .frame(maxWidth: 640, alignment: .trailing)
     }
 
-    /// "Show more · 22 lines", in the web's monospaced metadata voice. The size
-    /// is sampled off the head of the message, never counted across the whole of
-    /// a multi-megabyte paste.
+    /// "Show more · 22 lines", in the web's monospaced metadata voice.
     private var expandControl: some View {
         Button {
-            withAnimation(JunoMotion.standard) { promptExpanded.toggle() }
-        } label: {
-            HStack(spacing: 4) {
-                JunoIconView(systemImage: promptExpanded ? "chevron.up" : "chevron.down")
-                    .junoFont(size: 9, relativeTo: .caption, weight: .semibold)
-                Text(
-                    promptExpanded
-                        ? "Show less"
-                        : "Show more · \(NativePromptLimits.collapsedSummary(for: plainText))"
-                )
-                .font(.caption.monospaced())
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                promptExpanded.toggle()
             }
+        } label: {
+            Text(
+                promptExpanded
+                    ? "Show less"
+                    : "Show more · \(NativePromptLimits.collapsedSummary(for: plainText))"
+            )
+            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
             .junoSecondaryInk()
+            .contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .contentShape(.rect)
+        .buttonStyle(.junoPress)
         .accessibilityIdentifier("juno.desktop.chat.message-expand")
     }
 
-    /// The `‹ 1 / 3 ›` pager, where this message has revisions to page through.
-    ///
-    /// Built only when the store handed down a position, which it does only for
-    /// a message that genuinely has siblings — so this is empty on almost every
-    /// row, and the transcript keeps the spacing it had before trees existed.
     @ViewBuilder
     private var branchNavigator: some View {
         if let branchPosition, let stepBranch {
@@ -1831,45 +1870,33 @@ private struct DesktopMessageRow: View {
     }
 
     /// The bubble, opened for rewriting in place.
-    ///
-    /// In place rather than in a sheet: the reader is changing one sentence in a
-    /// conversation they can see, and a modal over the transcript takes away the
-    /// context that tells them what to change it to.
     private var promptEditor: some View {
         VStack(alignment: .trailing, spacing: JunoSpace.snug) {
             TextEditor(text: $draft)
-                .font(.body)
+                .junoFont(size: 15, relativeTo: .body)
                 .textEditorStyle(.plain)
-                // The editor draws its own opaque backing, which would sit as a
-                // white slab inside the bubble's fill.
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 64, maxHeight: 240)
-                .padding(.horizontal, JunoSpace.tight)
-                .padding(.vertical, JunoSpace.hairline)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
                 .background(Self.bubbleShape.fill(Color.junoMuted))
-                .overlay(
-                    Self.bubbleShape
-                        .strokeBorder(Color.junoFocusRing, lineWidth: 1)
-                )
-                .frame(maxWidth: 560)
+                .overlay(Self.bubbleShape.strokeBorder(Color.junoFocusRing, lineWidth: 1))
+                .frame(maxWidth: 640)
                 .accessibilityLabel("Edit message")
                 .accessibilityIdentifier("juno.desktop.chat.message-editor")
 
             HStack(spacing: JunoSpace.snug) {
                 Button("Cancel") { editing = false }
-                    .buttonStyle(.plain)
-                    .junoSecondaryInk()
-                Button("Send") { submitEdit() }
+                    .buttonStyle(.bordered)
+                Button("Save & resend") { submitEdit() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!canSubmitEdit)
+                    .junoProminentAction()
             }
-            .font(.callout)
+            .controlSize(.small)
         }
     }
 
-    /// Whether the rewrite is worth sending: not blank, and not the words that
-    /// are already there. Re-asking an unchanged prompt would spend a turn to
-    /// add a revision identical to the one beside it.
     private var canSubmitEdit: Bool {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         return !trimmed.isEmpty
@@ -1883,263 +1910,260 @@ private struct DesktopMessageRow: View {
         editMessage(draft)
     }
 
-    /// Edit and the pager, under the reader's own words.
-    @ViewBuilder
-    private var promptControls: some View {
-        // `isVoice` withholds Edit for the same reason it withholds the action
-        // row: a spoken line exists only in the call controller, and there is no
-        // stored message for a fork to branch away from.
-        if !isVoice, editMessage != nil || branchPosition != nil {
-            HStack(spacing: JunoSpace.hairline) {
-                branchNavigator
-                if editMessage != nil, !editing {
-                    messageAction("Edit message", symbol: "pencil") {
-                        draft = plainText
-                        editing = true
-                    }
-                    .disabled(isGenerating)
-                    .accessibilityIdentifier("juno.desktop.chat.message-edit")
-                }
+    // MARK: The reply
+
+    private var assistantTurn: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            if let lines = reasoningLines, !lines.isEmpty {
+                JunoAIcssReasoningStream(
+                    lines: lines,
+                    streaming: message.isPending,
+                    duration: nil,
+                    showsHeader: !message.isPending
+                )
+                .frame(maxWidth: 520, alignment: .leading)
             }
-        }
-    }
 
-    var body: some View {
-        Group {
-            switch message.role {
-            case .user:
-                HStack {
-                    Spacer(minLength: 90)
-                    VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                        if editing {
-                            promptEditor
-                        } else {
-                            userBubble
-                            if isLongPrompt { expandControl }
-                        }
-                        promptControls
-                    }
+            if let progress = message.mediaProgress {
+                NativeMediaGenerationView(progress: progress)
+            } else if message.content.isEmpty, message.isPending {
+                HStack(spacing: 10) {
+                    JunoThinkingMatrix()
+                    JunoAIcssThinkingLabel("Thinking about your request", size: 15)
                 }
-
-            case .assistant:
-                VStack(alignment: .leading, spacing: 14) {
-                // THE TRACE, in AIcss's viewport.
-                //
-                // This was a system `DisclosureGroup` over the whole reasoning
-                // trace as one `Text`: a triangle labelled "Thought process" that,
-                // opened, dropped an unbounded wall of prose into the transcript
-                // and pushed the answer off screen. Nothing about it said how long
-                // the run took, and while streaming it grew under the reader on
-                // every delta. The viewport is bounded — 40pt slots clamped to two
-                // lines, capped at 180pt, then masked — so the trace can now be
-                // open by default while the answer is being written, which is when
-                // it is worth anything.
-                if let lines = reasoningLines, !lines.isEmpty {
-                    JunoAIcssReasoningStream(
-                        lines: lines,
-                        streaming: message.isPending,
-                        duration: nil,
-                        showsHeader: !message.isPending
-                    )
-                    .frame(maxWidth: 520, alignment: .leading)
-                }
-
-                if let progress = message.mediaProgress {
-                    // A generation in flight has no text to render — the picture
-                    // is the answer, and it arrives whole in the `done` frame.
-                    NativeMediaGenerationView(progress: progress)
-                } else if message.content.isEmpty, message.isPending {
-                    // The dot matrix and AIcss's shine, as on the phone and the
-                    // web. This was a stock `ProgressView` spinner beside "Juno is
-                    // working…" — a system control saying nothing of Juno's, next
-                    // to a sentence that named the app rather than the work.
-                    HStack(spacing: 10) {
-                        // No ink stated here, deliberately. The matrix draws
-                        // itself in absolute `junoForeground` at the web's own
-                        // per-dot alphas, so the diluted
-                        // `junoMutedForeground.opacity(0.65)` this used to
-                        // carry never reached a single dot — and the ramp has
-                        // no diluted rung to restate it with anyway.
-                        JunoThinkingMatrix()
-                        JunoAIcssThinkingLabel("Thinking about your request", size: 15)
-                    }
-                    .frame(minHeight: 22)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Thinking about your request")
-                    .accessibilityAddTraits(.updatesFrequently)
-                } else {
+                .frame(minHeight: 22)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Thinking about your request")
+                .accessibilityAddTraits(.updatesFrequently)
+            } else {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
                     ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                         switch part {
                         case .text(let text):
-                            // AIcss's caret rides the last paragraph while tokens
-                            // are still arriving. Same signal as the phone's.
                             JunoLessonText(text, streaming: message.isPending)
                         case .artifact(let artifact):
                             DesktopInlineArtifactCard(
                                 artifact: artifact,
-                                open: artifact.streaming
-                                    ? nil
-                                    : { openArtifact(artifact) }
+                                open: artifact.streaming ? nil : { openArtifact(artifact) }
                             )
                         }
                     }
                 }
+            }
 
-                if !message.sources.isEmpty {
-                    DesktopMessageSources(sources: message.sources)
-                }
+            if !message.sources.isEmpty {
+                DesktopMessageSources(sources: message.sources)
+            }
 
-                if let footerLine, !isVoice {
-                    // The per-message meta line: model, token count, latency. It
-                    // was `.tertiary` and measured **1.89:1** in light appearance
-                    // — the worst contrast anywhere in the product, on text that
-                    // is offered as selectable and is therefore explicitly meant
-                    // to be read and copied. It is still the quietest thing in
-                    // the message: `caption2`, monospaced, no weight. Quiet is a
-                    // matter of size and weight; it was never a licence to go
-                    // below the AA floor.
-                    Text(footerLine)
-                        .font(.system(.caption2, design: .monospaced))
-                        .junoMetaInk()
-                        .textSelection(.enabled)
-                }
-
-                if let error = message.errorDescription {
-                    Text(error)
-                        .font(.callout)
-                        // The status ramp, not `.red`: `junoDanger` is tuned for
-                        // contrast against both the warm canvas and the raised
-                        // surfaces, and it lifts rather than saturates in dark.
-                        .foregroundStyle(Color.junoDanger)
-                        .textSelection(.enabled)
-                }
-
-                if !message.isPending, !isVoice {
-                    HStack(spacing: 4) {
-                        messageAction(
-                            "Copy",
-                            symbol: "doc.on.doc",
-                            action: copy
-                        )
-                        if let readAloud {
-                            messageAction(
-                                "Read aloud",
-                                symbol: "speaker.wave.2",
-                                action: readAloud
-                            )
-                        }
-                        if let branch {
-                            messageAction(
-                                "Branch from here",
-                                symbol: "arrow.triangle.branch",
-                                action: branch
-                            )
-                        }
-                        if isLastAssistant, let regenerate {
-                            messageAction(
-                                "Regenerate",
-                                symbol: "arrow.clockwise",
-                                action: regenerate
-                            )
-                        }
-                        if isLastAssistant,
-                            let continueResponse,
-                            message.finishReason == .length
-                                || message.finishReason == .networkError
-                        {
-                            messageAction(
-                                "Continue",
-                                symbol: "arrow.down.circle",
-                                action: continueResponse
-                            )
-                        }
-                        if let setFeedback {
-                            Spacer()
-                            messageAction(
-                                "Good response",
-                                symbol: message.feedback == .up
-                                    ? "hand.thumbsup.fill" : "hand.thumbsup",
-                                active: message.feedback == .up
-                            ) {
-                                setFeedback(message.feedback == .up ? nil : .up)
-                            }
-                            messageAction(
-                                "Bad response",
-                                symbol: message.feedback == .down
-                                    ? "hand.thumbsdown.fill" : "hand.thumbsdown",
-                                active: message.feedback == .down
-                            ) {
-                                setFeedback(message.feedback == .down ? nil : .down)
-                            }
-                        }
-                    }
-                    .junoSecondaryInk()
-                }
-
-                // Under the answer, where the web puts it. An answer has
-                // siblings when the question above it was re-asked, so this is
-                // the same pager the prompt carries, reading the same numbers.
-                branchNavigator
-                }
-
-            case .system, .tool:
-                Text(message.content)
-                    .font(.callout)
-                    .junoSecondaryInk()
+            if let error = message.errorDescription {
+                Text(error)
+                    .junoFont(size: 13, relativeTo: .callout)
+                    .foregroundStyle(Color.junoDanger)
                     .textSelection(.enabled)
+            }
+
+            if !message.isPending, !isVoice {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    if let footerLine {
+                        Text(footerLine)
+                            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                            .junoSecondaryInk()
+                            .textSelection(.enabled)
+                    }
+                    HStack(spacing: 2) {
+                        branchNavigator
+                        actionRow {
+                            if hasTextContent { copyAction }
+                            if let setFeedback {
+                                DesktopMessageAction(
+                                    "Good response", icon: .thumbsUp, active: message.feedback == .up
+                                ) {
+                                    setFeedback(message.feedback == .up ? nil : .up)
+                                }
+                                DesktopMessageAction(
+                                    "Bad response", icon: .thumbsDown, active: message.feedback == .down
+                                ) {
+                                    setFeedback(message.feedback == .down ? nil : .down)
+                                }
+                            }
+                            if let readAloud, hasTextContent {
+                                DesktopMessageAction("Read aloud", icon: .volume, action: readAloud)
+                            }
+                            if isLastAssistant, let regenerate, !isGenerating {
+                                regenerateMenu(regenerate)
+                            }
+                            if isLastAssistant, let continueResponse,
+                                message.finishReason == .length
+                                    || message.finishReason == .networkError
+                            {
+                                DesktopMessageAction("Continue", icon: .arrowDown, action: continueResponse)
+                            }
+                            if let branch {
+                                DesktopMessageAction("Branch from here", icon: .branch, action: branch)
+                            }
+                            if let share {
+                                DesktopMessageAction("Share", icon: .share, action: share)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    private func messageAction(
-        _ label: String,
-        symbol: String,
-        active: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            JunoIconView(systemImage: symbol)
-                .frame(width: 22, height: 22)
-                .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
+    // MARK: Actions
+
+    /// The row itself: present in the tree always, visible under the pointer
+    /// (or keyboard focus) — the web's `opacity-0 group-hover:opacity-100`.
+    private func actionRow<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 2) { content() }
+            .opacity(hovered || copied ? 1 : 0)
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: hovered
+            )
+            .accessibilityElement(children: .contain)
+    }
+
+    /// Copy, with the check morphing in as the confirmation — the web's
+    /// `.check-morph`. No toast: the mark is the whole feedback.
+    private var copyAction: some View {
+        DesktopMessageAction(
+            copied ? "Copied" : "Copy",
+            icon: copied ? .check : .copy,
+            tint: copied ? Color.junoSuccess : nil
+        ) {
+            copy()
+            copiedReset?.cancel()
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                copied = true
+            }
+            copiedReset = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) {
+                    copied = false
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
+    }
+
+    /// Regenerate: try again, or the same prompt of a different model.
+    private func regenerateMenu(_ regenerate: @escaping (String?) -> Void) -> some View {
+        Menu {
+            Button {
+                regenerate(nil)
+            } label: {
+                Label("Try again", icon: .refresh)
+            }
+            if !switchableModels.isEmpty {
+                Menu("Switch model") {
+                    ForEach(switchableModels) { option in
+                        Button(option.name) { regenerate(option.id) }
+                    }
+                }
+            }
+        } label: {
+            DesktopMessageActionMark(icon: .refresh, active: false, tint: nil)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Regenerate")
+        .accessibilityLabel("Regenerate")
     }
 }
 
-/// An artifact referenced inline in an answer.
+/// One action on a message row: a 28pt flat icon button in the website's mark,
+/// hover fill, nothing else. `active` is a pressed thumb.
+private struct DesktopMessageAction: View {
+    let label: String
+    let icon: JunoIcon
+    var active = false
+    var tint: Color? = nil
+    let action: () -> Void
+
+    init(
+        _ label: String,
+        icon: JunoIcon,
+        active: Bool = false,
+        tint: Color? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.label = label
+        self.icon = icon
+        self.active = active
+        self.tint = tint
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            DesktopMessageActionMark(icon: icon, active: active, tint: tint)
+        }
+        .buttonStyle(.junoPress)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// The mark and its hover plate, shared by the plain buttons and the menu
+/// trigger so the two cannot differ by a point.
+private struct DesktopMessageActionMark: View {
+    let icon: JunoIcon
+    let active: Bool
+    let tint: Color?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
+    var body: some View {
+        JunoIconView(icon, size: 16)
+            .foregroundStyle(
+                tint ?? (active || hovered ? Color.junoForeground : Color.junoMutedForeground)
+            )
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(
+                        active
+                            ? Color.junoAccent.opacity(0.12)
+                            : (hovered ? Color.junoRowHover : Color.clear)
+                    )
+            )
+            .contentShape(.rect)
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: hovered
+            )
+            .onHover { hovered = $0 }
+    }
+}
+
+/// An artifact referenced inline in an answer — the web's
+/// `artifact-inline-card.tsx`.
 ///
-/// Built from the web's `artifact-inline-card.tsx`: a raised card, a glyph in its
-/// own bordered tile, the title in the UI face, and everything else — the kind,
-/// the language, the live status — on one monospaced metadata line. The chrome
-/// stays quiet on purpose; on the web the artifact's *content* is the visual
-/// event, which is also why the icon is not painted coral. Coral is spent on one
-/// primary action per surface, and a card in a transcript is not it.
-///
-/// The card is a launcher and nothing more: it hands the artifact up and
-/// ``DesktopArtifactCanvas`` docks beside the conversation. Names come from
-/// ``DesktopArtifactKindLabel`` so the card and the panel it opens cannot
-/// describe the same object differently.
+/// An opaque tile on the card rung with a hairline: a 40pt icon tile, the title
+/// in the UI face, the kind on a mono caption, and an "Open" ghost button with
+/// the external mark. Never glass, never a neumorphic throw — a card in a
+/// transcript is content, and the coral is spent nowhere on it.
 private struct DesktopInlineArtifactCard: View {
     let artifact: NativeMessageContent.ArtifactReference
     let open: (() -> Void)?
 
-    private var glyph: String {
-        DesktopArtifactKindLabel.symbol(forWireKind: artifact.kind)
-    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
 
     private var kindLabel: String {
         DesktopArtifactKindLabel.title(forWireKind: artifact.kind)
     }
 
-    /// The web's mono line: the kind, then the language when the model named one.
-    /// "Writing" replaces both while the source is still arriving.
+    /// The web's mono line: the kind, then the language when the model named
+    /// one. "Writing" replaces both while the source is still arriving.
     private var metadata: String {
         if artifact.streaming { return "Writing" }
-        guard let language = artifact.language, !language.isEmpty else {
-            return kindLabel
-        }
+        guard let language = artifact.language, !language.isEmpty else { return kindLabel }
         return "\(kindLabel) · \(language.uppercased())"
     }
 
@@ -2148,32 +2172,21 @@ private struct DesktopInlineArtifactCard: View {
             open?()
         } label: {
             HStack(spacing: JunoSpace.cozy) {
-                // The web's `size-8` tile. The glyph needs a surface of its own or
-                // it reads as punctuation in front of the title. Fill only, no
-                // second hairline: this is nested inside a card that already has
-                // one, which is the distinction `junoPanel` draws against
-                // `junoCard`.
-                JunoIconView(systemImage: glyph)
-                    .font(.callout)
-                    .foregroundStyle(
-                        artifact.streaming ? Color.junoAccent : Color.junoMutedForeground
-                    )
-                    .frame(width: 32, height: 32)
+                JunoIconView(DesktopArtifactKindLabel.icon(forWireKind: artifact.kind), size: 18)
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .frame(width: 40, height: 40)
                     .background(
-                        RoundedRectangle(
-                            cornerRadius: JunoRadius.row,
-                            style: .continuous
-                        )
-                        .fill(Color.junoMuted)
+                        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                            .fill(Color.junoMuted)
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
-                        .font(.callout.weight(.medium))
+                        .junoFont(size: 13, relativeTo: .callout, weight: .medium)
                         .junoInk()
                         .lineLimit(1)
                     Text(metadata)
-                        .font(.system(.caption2, design: .monospaced))
+                        .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                         .junoSecondaryInk()
                         .lineLimit(1)
                 }
@@ -2181,23 +2194,42 @@ private struct DesktopInlineArtifactCard: View {
                 Spacer(minLength: JunoSpace.snug)
 
                 if artifact.streaming {
-                    // Juno's own dot matrix, which is what the web animates while
-                    // an artifact writes — not a spinner, which says "blocked".
                     JunoThinkingMatrix(dot: 3, spacing: 2)
                         .junoSecondaryInk()
                 } else if open != nil {
-                    JunoIconLabel("Open", systemImage: "arrow.up.right")
-                        .labelStyle(.titleAndIcon)
-                        .font(.caption.weight(.medium))
-                        .junoSecondaryInk()
+                    HStack(spacing: JunoSpace.hairline) {
+                        Text("Open")
+                        JunoIconView(.external, size: 12)
+                    }
+                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                    .foregroundStyle(hovered ? Color.junoForeground : Color.junoMutedForeground)
+                    .padding(.horizontal, JunoSpace.snug)
+                    .frame(height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                            .fill(hovered ? Color.junoRowHover : Color.clear)
+                    )
                 }
             }
-            .padding(JunoSpace.cozy)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(Color.junoSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 0.5)
+            )
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .disabled(open == nil)
-        .junoCard(cornerRadius: JunoRadius.card)
+        .onHover { hovered = $0 }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: hovered
+        )
         .accessibilityLabel(
             artifact.streaming
                 ? "Writing artifact \(artifact.title)"
@@ -2270,8 +2302,7 @@ private struct DesktopMessageSources: View {
                 // The web stacks each site's favicon here. This client fetches no
                 // remote images for a transcript, so it says the same thing with
                 // one glyph rather than inventing placeholder logos.
-                JunoIconView(systemImage: "globe")
-                    .font(.caption)
+                JunoIconView(.web, size: 13)
                     .junoSecondaryInk()
                 Text("Sources")
                     .font(.system(.caption, design: .monospaced))
@@ -2280,8 +2311,7 @@ private struct DesktopMessageSources: View {
                     .font(.system(.caption2, design: .monospaced))
                     .junoSecondaryInk()
                     .monospacedDigit()
-                JunoIconView(systemImage: "chevron.down")
-                    .font(.caption2.weight(.semibold))
+                JunoIconView(.chevronDown, size: 12)
                     .junoSecondaryInk()
                     .rotationEffect(.degrees(expanded ? 180 : 0))
             }
@@ -2322,8 +2352,7 @@ private struct DesktopMessageSources: View {
 
                 Spacer(minLength: JunoSpace.snug)
 
-                JunoIconView(systemImage: "arrow.up.right")
-                    .font(.caption2)
+                JunoIconView(.external, size: 12)
                     .junoMetaInk()
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -2387,7 +2416,7 @@ private struct DesktopChatError: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "exclamationmark.triangle.fill")
+            JunoIconView(.triangleAlert, size: 16)
                 .foregroundStyle(Color.junoDanger)
             Text(message)
                 .font(.callout)
@@ -2508,7 +2537,6 @@ struct DesktopComposer: View {
     /// is in `prompt` and sent in full either way — this only decides whether it
     /// is live in the text field. See ``NativePromptLimits``.
     @State private var draftExpanded = false
-    @State private var isHoveringDictate = false
     @FocusState private var focused: Bool
     /// The call this composer is inside, published by ``junoVoiceDock(_:)``.
     /// Non-nil is what routes a send over the socket instead of to `/api/chat`.
@@ -2559,16 +2587,16 @@ struct DesktopComposer: View {
     @ViewBuilder
     private var documentContextNotice: some View {
         if let groundingNote {
-            JunoIconLabel(verbatim: groundingNote, systemImage: "doc.text.magnifyingglass")
+            Label(verbatim: groundingNote, icon: .fileSearch)
                 .junoCaption()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("juno.desktop.chat.document-context-note")
         } else if documentGroundingArmed {
             Label(
-                indexedDocumentCount == 1
+                verbatim: indexedDocumentCount == 1
                     ? "Juno will search 1 document on this Mac and quote what it finds in your message."
                     : "Juno will search \(indexedDocumentCount) documents on this Mac and quote what it finds in your message.",
-                systemImage: "doc.text.magnifyingglass"
+                icon: .fileSearch
             )
             .junoCaption()
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2743,11 +2771,14 @@ struct DesktopComposer: View {
                 } else {
                 TextField("Message Juno", text: $prompt, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .lineLimit(1...6)
-                    .font(.body)
+                    .lineLimit(1...8)
+                    .junoFont(size: 15, relativeTo: .body)
+                    .lineSpacing(4)
+                    .junoInk()
                     .focused($focused)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 4)
+                    .padding(.horizontal, JunoSpace.tight)
+                    .padding(.top, JunoSpace.tight)
+                    .padding(.bottom, 2)
                     .accessibilityIdentifier("Message Juno")
                     // Return sends; Shift-Return breaks the line.
                     //
@@ -2775,36 +2806,36 @@ struct DesktopComposer: View {
                     }
                 }
 
-                HStack(spacing: 6) {
+                // One controls row, the web's (`composer-shell.tsx`): `+` on
+                // the left; model chip · effort chip · mic · a thin rule · send
+                // on the right. Streaming fades everything but the primary
+                // action to 60%, because Stop is the one thing left to press.
+                HStack(spacing: JunoSpace.hairline) {
                     addMenu
-
+                    Spacer(minLength: JunoSpace.snug)
+                    HStack(spacing: JunoSpace.hairline) {
+                        modelControl
+                        if let scale = thinkingScale, scale.isPresentable {
+                            thinkingControl(scale)
+                        }
+                        if JunoSpeechService.isSupported {
+                            dictateButton
+                        }
+                    }
+                    .opacity(model.isGenerating ? 0.6 : 1)
+                    .disabled(model.isGenerating)
                     Rectangle()
-                        .fill(Color.junoHairline)
-                        .frame(width: 1, height: 19)
-                        .padding(.horizontal, 2)
-
-                    modelControl
-
-                    if let scale = thinkingScale, scale.isPresentable {
-                        thinkingControl(scale)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    if JunoSpeechService.isSupported, !model.isGenerating {
-                        dictateButton
-                        Rectangle()
-                            .fill(Color.junoHairline)
-                            .frame(width: 1, height: 20)
-                            .padding(.horizontal, 1)
-                            .accessibilityHidden(true)
-                    }
-
+                        .fill(Color.junoBorder)
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, JunoSpace.hairline)
+                        .accessibilityHidden(true)
                     primaryAction
                 }
             }
         }
-        .padding(JunoSpace.snug)
+        .padding(.horizontal, 10)
+        .padding(.top, JunoSpace.snug)
+        .padding(.bottom, 10)
         // Was a freehand 720 against the transcript's 768 — see
         // ``DesktopChatMeasure``. The composer and the transcript are one column
         // and now read one number for it, gutter included, so they stay one
@@ -2989,7 +3020,7 @@ struct DesktopComposer: View {
                 .junoSecondaryInk()
             Spacer(minLength: JunoSpace.tight)
             Button(action: attachDraftAsFile) {
-                JunoIconLabel("Attach as file", systemImage: "doc.badge.arrow.up")
+                Label("Attach as file", icon: .files)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -3026,8 +3057,7 @@ struct DesktopComposer: View {
                     prompt = ""
                     draftExpanded = false
                 } label: {
-                    JunoIconView(systemImage: "xmark")
-                        .font(.caption.weight(.semibold))
+                    JunoIconView(.close, size: 14)
                 }
                 .buttonStyle(.borderless)
                 .help("Clear this message")
@@ -3039,13 +3069,13 @@ struct DesktopComposer: View {
                     draftExpanded = true
                     focused = true
                 } label: {
-                    JunoIconLabel("Edit", systemImage: "pencil")
+                    Label("Edit", icon: .pencil)
                 }
                 .accessibilityIdentifier("juno.desktop.chat.expand-draft")
 
                 if canAttachDraft {
                     Button(action: attachDraftAsFile) {
-                        JunoIconLabel("Attach as file", systemImage: "doc.badge.arrow.up")
+                        Label("Attach as file", icon: .files)
                     }
                     .accessibilityIdentifier("juno.desktop.chat.attach-draft")
                 }
@@ -3088,110 +3118,114 @@ struct DesktopComposer: View {
     /// glass independently from macOS. That is exactly why it looked foreign.
     /// Native menu groups and submenus give the same information architecture as
     /// the website while letting the platform own Liquid Glass and interaction.
+    /// The composer's one menu: Attach · Tools · Context, the web's `+` menu
+    /// (`composer.tsx`) as a native `Menu` so the platform owns the glass, the
+    /// hover states and the submenus. Every row's mark is the website's.
     private var addMenu: some View {
         Menu {
-            Button {
-                showingFileImporter = true
-            } label: {
-                JunoIconLabel(
-                    verbatim: voiceActive ? "Attach images…" : "Attach files…",
-                    systemImage: "paperclip"
-                )
-            }
-            .disabled(voiceActive ? !canAttachInVoice : !(attachmentModel?.hasCapacity ?? false))
+            Section("Attach") {
+                Button {
+                    showingFileImporter = true
+                } label: {
+                    Label(verbatim: voiceActive ? "Attach images…" : "Attach files…", icon: .attach)
+                }
+                .disabled(voiceActive ? !canAttachInVoice : !(attachmentModel?.hasCapacity ?? false))
 
-            Button {
-                showingLibrary = true
-            } label: {
-                JunoIconLabel("Choose from Library…", systemImage: "books.vertical")
+                Button {
+                    showingLibrary = true
+                } label: {
+                    Label("Choose from Library…", icon: .library)
+                }
+                .disabled(voiceActive || !(attachmentModel?.hasCapacity ?? false))
             }
-            .disabled(voiceActive || !(attachmentModel?.hasCapacity ?? false))
 
-            if fixedProjectID == nil, let projectModel {
-                Menu {
-                    Button {
-                        selectedProjectID = nil
-                    } label: {
-                        JunoIconLabel(
-                            "No project",
-                            systemImage: selectedProjectID == nil ? "checkmark" : "folder"
+            Section("Tools") {
+                Toggle(isOn: $webSearch) {
+                    Label("Web search", icon: .web)
+                }
+                .disabled(selectedModel?.supportsWebSearch != true)
+
+                Toggle(isOn: $canvasEnabled) {
+                    Label("Canvas & artifacts", icon: .artifactsTool)
+                }
+
+                Toggle(isOn: $deepResearch) {
+                    Label("Deep research", icon: .research)
+                }
+
+                if documentIndex != nil {
+                    Toggle(isOn: $documentContext) {
+                        Label(
+                            verbatim: indexedDocumentCount == 0
+                                ? "My documents — none on this Mac" : "My documents",
+                            icon: .fileSearch
                         )
                     }
-                    ForEach(projectModel.projects) { project in
-                        Button {
-                            selectedProjectID = project.id
+                    .disabled(voiceActive || indexedDocumentCount == 0)
+                }
+            }
+
+            if (fixedProjectID == nil && projectModel != nil) || connectorModel != nil {
+                Section("Context") {
+                    if fixedProjectID == nil, let projectModel {
+                        Menu {
+                            Button {
+                                selectedProjectID = nil
+                            } label: {
+                                if selectedProjectID == nil {
+                                    Label("No project", icon: .check)
+                                } else {
+                                    Text("No project")
+                                }
+                            }
+                            ForEach(projectModel.projects) { project in
+                                Button {
+                                    selectedProjectID = project.id
+                                } label: {
+                                    if selectedProjectID == project.id {
+                                        Label(verbatim: project.name, icon: .check)
+                                    } else {
+                                        Text(project.name)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label(verbatim: selectedProjectName ?? "Project", icon: .projects)
+                        }
+                        .disabled(model.selectedConversationID != nil)
+                    }
+
+                    if connectorModel != nil {
+                        Menu {
+                            if connectedConnectors.isEmpty {
+                                Text("No connected apps")
+                            } else {
+                                ForEach(connectedConnectors) { connector in
+                                    Toggle(
+                                        connector.label,
+                                        isOn: Binding(
+                                            get: { selectedConnectors.contains(connector.id) },
+                                            set: { _ in toggleConnector(connector.id) }
+                                        )
+                                    )
+                                    .disabled(
+                                        !selectedConnectors.contains(connector.id)
+                                            && selectedConnectors.count >= 5
+                                    )
+                                }
+                            }
                         } label: {
                             Label(
-                                project.name,
-                                systemImage: selectedProjectID == project.id ? "checkmark" : "folder"
+                                verbatim: selectedConnectors.isEmpty
+                                    ? "Connectors" : "Connectors (\(selectedConnectors.count))",
+                                icon: .connections
                             )
                         }
                     }
-                } label: {
-                    JunoIconLabel(
-                        verbatim: selectedProjectName ?? "Add to project",
-                        systemImage: "folder"
-                    )
-                }
-                .disabled(model.selectedConversationID != nil)
-            }
-
-            Divider()
-
-            Toggle(isOn: $deepResearch) {
-                JunoIconLabel("Deep research", systemImage: "telescope")
-            }
-
-            Toggle(isOn: $webSearch) {
-                JunoIconLabel("Web search", systemImage: "globe")
-            }
-            .disabled(selectedModel?.supportsWebSearch != true)
-
-            Toggle(isOn: $canvasEnabled) {
-                JunoIconLabel("Canvas & artifacts", systemImage: "rectangle.3.group")
-            }
-
-            if documentIndex != nil {
-                Toggle(isOn: $documentContext) {
-                    Label(
-                        indexedDocumentCount == 0 ? "My documents — none on this Mac" : "My documents",
-                        systemImage: "doc.text.magnifyingglass"
-                    )
-                }
-                .disabled(voiceActive || indexedDocumentCount == 0)
-            }
-
-            if connectorModel != nil {
-                Divider()
-                Menu {
-                    if connectedConnectors.isEmpty {
-                        Text("No connected apps")
-                    } else {
-                        ForEach(connectedConnectors) { connector in
-                            Toggle(
-                                connector.label,
-                                isOn: Binding(
-                                    get: { selectedConnectors.contains(connector.id) },
-                                    set: { _ in toggleConnector(connector.id) }
-                                )
-                            )
-                            .disabled(
-                                !selectedConnectors.contains(connector.id)
-                                    && selectedConnectors.count >= 5
-                            )
-                        }
-                    }
-                } label: {
-                    Label(
-                        selectedConnectors.isEmpty
-                            ? "Connectors" : "Connectors (\(selectedConnectors.count))",
-                        systemImage: "powerplug"
-                    )
                 }
             }
         } label: {
             DesktopAddMenuMark(isArmed: hasArmedTools)
-            .contentShape(.circle)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -3203,31 +3237,20 @@ struct DesktopComposer: View {
     }
 
     private var modelControl: some View {
-        Button {
-            showingModelSelector = true
-        } label: {
-            HStack(spacing: 6) {
+        DesktopComposerChip(
+            label: selectedModel?.displayName ?? "Choose model",
+            open: showingModelSelector,
+            leading: {
                 JunoProviderMark(
                     providerID: selectedModel?.providerID ?? "juno",
                     providerName: selectedModel?.providerName ?? "Juno",
                     size: 14
                 )
-                Text(selectedModel?.displayName ?? "Choose model")
-                    .font(.subheadline.weight(.medium))
-                    .junoInk()
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                // Mark, name, one chevron. The chip is a menu trigger and says
-                // so the way every menu trigger in the bar does.
-                JunoIconView(systemImage: "chevron.down", size: 9)
-                    .junoSecondaryInk()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .contentShape(.capsule)
+            },
+            chevron: true
+        ) {
+            showingModelSelector = true
         }
-        .buttonStyle(.borderless)
-        .fixedSize(horizontal: true, vertical: false)
         .help("Choose model")
         .accessibilityLabel("Model")
         .accessibilityValue(selectedModel?.displayName ?? "Not selected")
@@ -3237,9 +3260,11 @@ struct DesktopComposer: View {
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
+            let metrics = JunoModelSelectorMetrics.fitted
             JunoModelSelector(
                 models: model.modelCatalog.map(\.junoDescriptor),
                 selectedModelID: selectedModelID,
+                metrics: metrics,
                 select: { descriptor in
                     selectedModelID = descriptor.id
                     // The only place this is set. It is what makes rung 1 of
@@ -3251,6 +3276,7 @@ struct DesktopComposer: View {
                     showingModelSelector = false
                 }
             )
+            .frame(width: metrics.width, height: metrics.height)
         }
         .desktopPreviewOverlays(popover: { showingModelSelector = true })
     }
@@ -3258,44 +3284,22 @@ struct DesktopComposer: View {
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if scale.isAutomatic {
-            // Nothing, which is what the web does: `{!isAuto && effortOptions.length
-            // > 0 && …}` in composer.tsx, over the comment "Auto picks thinking
-            // server-side — no manual slider."
-            //
-            // The Mac used to draw an inert chip here instead — a 34pt-tall row
-            // reading "Auto", the same height as the model button, immediately
-            // beside a model button that ALSO read "Auto". Two adjacent chips,
-            // one word, two meanings (which model / how much thinking), and only
-            // one of them responded to a click. A control that looks exactly like
-            // its neighbour and does nothing is worse than an absent one: the
-            // reader does not learn it is decorative until they have already
-            // pressed it.
-            //
-            // No information is lost. The model selector's own detail panel
-            // states "Thinking — chosen automatically for each message", which is
-            // where a reader who wants that fact goes looking.
+            // Nothing, which is what the web does: Auto picks thinking
+            // server-side, and a chip that reads "Auto" beside a model chip
+            // that also reads "Auto" is two controls for one word.
             EmptyView()
         } else {
-            Button {
+            // Label only — no chevron. The effort chip is a word on the row
+            // (SOFT_UI §3); the model chip beside it already carries the one
+            // disclosure the row needs.
+            DesktopComposerChip(
+                label: currentThinkingLabel(in: scale),
+                open: showingThinking,
+                leading: { EmptyView() },
+                chevron: false
+            ) {
                 showingThinking = true
-            } label: {
-                // Label and chevron only — the gauge glyph that led this chip
-                // was a third icon language beside the provider mark and the
-                // plus, and said nothing "Medium" does not.
-                HStack(spacing: 5) {
-                    Text(currentThinkingLabel(in: scale))
-                        .lineLimit(1)
-                    JunoIconView(systemImage: "chevron.down", size: 9)
-                        .junoSecondaryInk()
-                }
-                .font(.subheadline.weight(.medium))
-                .junoInk()
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .contentShape(.capsule)
             }
-            .buttonStyle(.borderless)
-            .fixedSize()
             .help("How much thinking the model does before answering")
             .accessibilityLabel("Thinking")
             .accessibilityValue(currentThinkingLabel(in: scale))
@@ -3321,120 +3325,45 @@ struct DesktopComposer: View {
     }
 
     private var dictateButton: some View {
-        Button {
+        DesktopComposerIconButton(
+            "Dictate",
+            icon: .mic,
+            active: dictating
+        ) {
             focused = false
-            withAnimation(JunoMotion.fast) {
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
                 dictating = true
             }
-        } label: {
-            JunoIconView(systemImage: "mic.fill")
-                .font(.callout.weight(.medium))
-                .frame(width: 36, height: 36)
-                // On-accent over the armed tint, primary ink otherwise — the
-                // ramp's own rungs. `Color.primary.opacity(0.85)` was a fourth,
-                // diluted ink the three-rung ramp deliberately does not have.
-                .foregroundStyle(dictating ? Color.junoOnAccent : Color.junoForeground)
-                // Hover on the Mac is a fill, the same `junoRowHover` wash the
-                // model and thinking chips beside this button answer with. The
-                // scale-and-shadow treatment this replaces was the web's hover
-                // idiom, and it hand-painted a black shadow onto glass — the
-                // decoration the floating-chrome contract exists to forbid.
-                // Drawn inside the label so it sits between the material and
-                // the glyph, and skipped while dictating, when the full-alpha
-                // accent tint already owns the button's whole ground.
-                .background(
-                    Circle().fill(
-                        isHoveringDictate && !dictating
-                            ? Color.junoRowHover : Color.clear
-                    )
-                )
-                .contentShape(.circle)
         }
-        // The neutral tile at rest, the accent tile while dictating. This was
-        // interactive glass, and its rim scatter is the "halo on the mic" the
-        // review named; see `junoRaisedCircle` for the whole argument.
-        .junoRaisedCircle(tint: dictating ? Color.junoAccent : nil)
-        // A fill crossfading in place is tint-tier motion: it keeps `fast`'s
-        // character under Reduce Motion, exactly as its two sibling chips do.
-        .animation(
-            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-            value: isHoveringDictate
-        )
-        .onHover { isHoveringDictate = $0 }
-        .buttonStyle(.junoPress)
-        .help("Dictate")
-        .accessibilityLabel("Dictate")
         .accessibilityIdentifier("juno.desktop.chat-dictate")
     }
 
-    @ViewBuilder
-    /// The composer's single morphing action: stop while generating, voice on an
-    /// empty prompt, send otherwise.
+    /// Whether the draft is empty of anything sendable — the state in which
+    /// the primary action offers voice instead of send, as on the web.
+    private var draftIsEmpty: Bool {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (attachmentModel?.attachments.isEmpty ?? true)
+    }
+
+    /// The composer's single morphing action: stop while generating, voice on
+    /// an empty prompt, send otherwise — the web's `ComposerPrimaryAction`.
     ///
-    /// Two fixes over the flat version this replaces. It is real interactive
-    /// Liquid Glass tinted with the accent, so it belongs to the composer's glass
-    /// container instead of sitting on it as an opaque tile. And the glyph uses
-    /// ``Color/junoOnAccent`` rather than a hardcoded white: the accent is an
-    /// account setting, and white on the amber and sage accents fails contrast —
-    /// which is the entire reason the design system carries an on-accent token.
-    ///
-    /// Every variant states a `Circle` content shape. SwiftUI hit-tests a button
-    /// by what its label *draws*, not by the frame around it, and all three
-    /// glyphs are small ink in a 36pt frame — the voice bars are five 2pt
-    /// capsules, roughly 110pt² inside 1296pt², so nine tenths of the circle the
-    /// reader aims at was dead. `Circle` rather than `.rect` because
-    /// ``View/junoCircleAction(active:)`` draws a circle: claiming the corners
-    /// would make the button react where it visibly is not.
+    /// A 32pt **flat** coral circle. No glass, no raised throw, no halo: a
+    /// tinted glow under the send button is the one thing the Soft UI brief
+    /// names as reading like an AI demo. The face cross-fades (scale .9→1 +
+    /// opacity over `fast`) between send, stop and the voice wave; the disc
+    /// itself never moves, so the pointer does not have to re-find it.
     private var primaryAction: some View {
-        Group {
+        DesktopComposerPrimaryAction(
+            face: model.isGenerating ? .stop : (draftIsEmpty ? .voice : .send),
+            enabled: model.isGenerating || canSend || (draftIsEmpty && !selectedModelID.isEmpty)
+        ) {
             if model.isGenerating {
-                Button {
-                    model.stopGeneration()
-                } label: {
-                    JunoIconView(systemImage: "stop.fill")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 36, height: 36)
-                        .foregroundStyle(Color.junoOnAccent)
-                        .contentShape(.circle)
-                }
-                .junoCircleAction(active: true)
-                .help("Stop generating")
-                .accessibilityLabel("Stop generating")
-            } else if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                attachmentModel?.attachments.isEmpty ?? true
-            {
-                // Voice takes the slot exactly when Send has nothing to do. A
-                // staged attachment is something to send, so it keeps Send.
-                Button {
-                    openVoiceMode(selectedModelID)
-                } label: {
-                    DesktopVoiceGlyph()
-                        .frame(width: 36, height: 36)
-                        .foregroundStyle(Color.junoOnAccent)
-                        .contentShape(.circle)
-                }
-                .junoCircleAction(active: !selectedModelID.isEmpty)
-                .disabled(selectedModelID.isEmpty)
-                .help("Start a voice conversation")
-                .accessibilityIdentifier("Start voice conversation")
-                .accessibilityLabel("Start voice conversation")
+                model.stopGeneration()
+            } else if draftIsEmpty {
+                openVoiceMode(selectedModelID)
             } else {
-                Button {
-                    send()
-                } label: {
-                    JunoIconView(systemImage: "arrow.up")
-                        .font(.callout.weight(.bold))
-                        .frame(width: 36, height: 36)
-                        .foregroundStyle(
-                            canSend ? Color.junoOnAccent : Color.junoMutedForeground
-                        )
-                        .contentShape(.circle)
-                }
-                .junoCircleAction(active: canSend)
-                .disabled(!canSend)
-                .help("Send message")
-                .accessibilityIdentifier("Send message")
-                .accessibilityLabel("Send message")
+                send()
             }
         }
     }
@@ -3454,20 +3383,6 @@ struct DesktopComposer: View {
 
     private func currentThinkingLabel(in scale: NativeThinkingScale) -> String {
         scale.stops.first { $0.id == thinkingStopID }?.label ?? "Off"
-    }
-
-    private func selectionMenuButton(
-        title: String,
-        selected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            if selected {
-                JunoIconLabel(verbatim: title, systemImage: "checkmark")
-            } else {
-                Text(title)
-            }
-        }
     }
 
     /// The project whose preferences apply to this composer, if any. The fixed
@@ -3931,13 +3846,8 @@ struct DesktopLibraryPicker: View {
                     .opacity(selected ? 1 : 0)
             }
             .overlay(alignment: .topTrailing) {
-                JunoIconView(systemImage: selected ? "checkmark.circle.fill" : "circle")
-                    .junoFont(size: 16, relativeTo: .body)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(
-                        selected ? Color.junoOnAccent : Color.white,
-                        selected ? Color.junoAccent : Color.black.opacity(0.35)
-                    )
+                JunoIconView(selected ? .circleCheck : .circle, size: 16)
+                    .foregroundStyle(selected ? Color.junoAccent : Color.white)
                     .padding(8)
                     .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
             }
@@ -3988,12 +3898,10 @@ struct DesktopLibraryPicker: View {
                     ProgressView("Loading Library…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if model.visibleItems.isEmpty {
-                    ContentUnavailableView(
-                        "No matching files",
-                        systemImage: "books.vertical",
-                        description: Text(
-                            "Files and images you share in conversations appear here."
-                        )
+                    JunoEmptyState(
+                        title: "No matching files",
+                        message: "Files and images you share in conversations appear here.",
+                        icon: .library
                     )
                 } else {
                     ScrollView {
@@ -4078,7 +3986,7 @@ private struct DesktopAttachmentChip: View {
                     .font(.caption.weight(.medium))
             }
             Button(action: remove) {
-                JunoIconView(systemImage: "xmark")
+                JunoIconView(.close, size: 12)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(attachment.fileName)")
@@ -4086,8 +3994,12 @@ private struct DesktopAttachmentChip: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
-            Capsule(style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoMuted)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
         .help(failureMessage ?? attachment.fileName)
     }
@@ -4099,10 +4011,10 @@ private struct DesktopAttachmentChip: View {
             ProgressView()
                 .controlSize(.mini)
         case .uploaded:
-            JunoIconView(systemImage: "checkmark.circle.fill")
+            JunoIconView(.circleCheck, size: 14)
                 .foregroundStyle(Color.junoSuccess)
         case .failed:
-            JunoIconView(systemImage: "exclamationmark.circle.fill")
+            JunoIconView(.error, size: 14)
                 .foregroundStyle(Color.junoDanger)
         }
     }
@@ -4130,561 +4042,188 @@ private extension NativeConversationBucket {
     }
 }
 
-// MARK: - The composer's "+" menu
+// MARK: - The composer's controls
 
-/// What the "+" adds to a message, and the tools it arms.
-///
-/// **A hand-drawn popover rather than a `Menu`, and that is AppKit's decision.**
-/// A SwiftUI `Menu` on this OS renders its rows title-only — measured with a Juno
-/// mark, with an SF Symbol, and with `.labelStyle(.titleAndIcon)` forced on, all
-/// three produce plain text. The phone can use a real `Menu` and does
-/// (`JunoMobileComposerActions`); the Mac cannot draw a marked, stateful row
-/// inside one, so it draws its own.
-///
-/// **Drawing our own is not licence to invent one.** It is a menu, so it is
-/// shaped like a menu: single-line rows, rules between groups, and no captions.
-/// Two earlier passes each drifted the other way. The first spent three `Toggle`s
-/// on the tools, and at `.controlSize(.mini)` in the dark a switch track is the
-/// highest-contrast object on the surface — the eye read three switches before
-/// any of the six labels. The second replaced them with uppercase monospaced
-/// group headings and a line of explanatory text under every tool, which is a
-/// settings pane wearing a menu's anchor: "Real-time search results" under "Web
-/// search" tells a reader nothing they did not get from the two words above it,
-/// and it cost the row twice its height to say so.
-///
-/// **The ellipsis is what separates an action from a toggle**, which is the job
-/// the headings had been hired for. It is the platform's own signal and it costs
-/// no line: `Attach files…` opens something, `Deep research` does not — it is a
-/// state, and it carries a tick when it is on, exactly as a checked `NSMenuItem`
-/// does. Nothing here has to be captioned to be understood.
-///
-/// The marks are the website's own — Files is `FileUp`, Deep research is
-/// `Telescope`, Connectors is `Plug` — so the three clients name one thing with
-/// one glyph.
-private struct JunoAddMenuContent: View {
-    let voiceActive: Bool
-    let voiceCanSeeImages: Bool
-    let canAttachInVoice: Bool
-    let hasCapacity: Bool
-    let showFileImporter: () -> Void
-    let showLibrary: () -> Void
-    let fixedProjectID: String?
-    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
-    @Binding var selectedProjectID: String?
-    let isConversationStarted: Bool
-    let selectedProjectName: String?
-    @Binding var deepResearch: Bool
-    @Binding var webSearch: Bool
-    let supportsWebSearch: Bool
-    @Binding var canvasEnabled: Bool
-    @Binding var documentContext: Bool
-    /// How many documents this Mac has indexed, or **nil when there is no index
-    /// at all** — a composition root that could not open the local store.
-    ///
-    /// Absent is not zero, and the row treats them differently: nil hides it,
-    /// because a switch for a feature this build cannot perform is a switch that
-    /// does nothing, while `0` shows it disabled with the reason beside it, which
-    /// is how somebody learns the Library is where documents come from.
-    let indexedDocumentCount: Int?
-    let connectorModel: NativeConnectorModel?
-    let connectedConnectors: [NativeConnector]
-    @Binding var selectedConnectors: Set<String>
-    let toggleConnector: (String) -> Void
-    let close: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Which drawer is open, if either. One at a time, as before.
-    @State private var openDrawer: Drawer?
-
-    private enum Drawer { case projects, connectors }
-
-    /// The most connected apps one message may act through.
-    private static let connectorLimit = 5
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            addRows
-            rule
-            toolRows
-            if connectorModel != nil {
-                rule
-                connectorRows
-            }
-        }
-        .padding(JunoSpace.tight)
-        .frame(width: 238)
-        // The frame is fixed, so type needs a ceiling — the bargain
-        // `JunoModelSelector` strikes, for the same reason. Everything inside
-        // scales up to the clamp, which is what makes it a ceiling rather than a
-        // fiction: every label here is a `junoFont`, none a fixed `.system`.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
-        // Escape closes the drawer before it closes the menu. Left to the system
-        // one press dismissed the whole popover from inside a submenu, which is
-        // not how a nested menu on this OS behaves.
-        .onExitCommand {
-            if openDrawer == nil { close() } else { setDrawer(nil) }
-        }
-        .accessibilityIdentifier("juno.desktop.chat.add-menu")
-    }
-
-    /// What separates the groups: a rule, at the weight the rest of the app draws
-    /// one. Not a heading — a menu that has to label its own sections is a menu
-    /// whose rows are not carrying their meaning.
-    private var rule: some View {
-        Rectangle()
-            .fill(Color.junoHairline)
-            .frame(height: 0.5)
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.hairline + 1)
-    }
-
-    // MARK: Sources
-
-    @ViewBuilder
-    private var addRows: some View {
-        JunoAddMenuRow(
-            icon: .attach,
-            title: voiceActive ? "Attach images…" : "Attach files…",
-            note: attachNote,
-            disabled: voiceActive ? !canAttachInVoice : !hasCapacity,
-            identifier: "juno.desktop.chat.add.files"
-        ) {
-            close()
-            showFileImporter()
-        }
-
-        JunoAddMenuRow(
-            icon: .library,
-            // The reason a row is off belongs beside it, not inside its name.
-            // This title used to *become* "Choose from Library — chat only"
-            // during a call: a sentence where a label should be, and long enough
-            // to truncate at any width this popover could reasonably take. The
-            // web spells the same thing as a note on the row — "not on this
-            // model", "paid plan", "private" — and so does this.
-            title: "Choose from Library…",
-            note: voiceActive ? "chat only" : (hasCapacity ? nil : "full"),
-            disabled: voiceActive || !hasCapacity,
-            identifier: "juno.desktop.chat.add.library"
-        ) {
-            close()
-            showLibrary()
-        }
-
-        if fixedProjectID == nil, let projectModel {
-            JunoAddMenuRow(
-                icon: .projects,
-                title: selectedProjectName ?? "Add to project",
-                note: isConversationStarted ? "already filed" : nil,
-                accessory: .drawer(openDrawer == .projects),
-                disabled: isConversationStarted,
-                identifier: "juno.desktop.chat.add.projects"
-            ) {
-                setDrawer(openDrawer == .projects ? nil : .projects)
-            }
-
-            if openDrawer == .projects {
-                drawer { projectRows(projectModel) }
-            }
-        }
-    }
-
-    /// Why the attach row is off, in the web's words rather than in its title.
-    ///
-    /// This is what `voiceCanSeeImages` is for. It has been a parameter of this
-    /// view since the view existed and was read by nothing: `canAttachInVoice` is
-    /// `voiceCanSeeImages && count < limit`, so a call that cannot see images at
-    /// all and a call that is merely full produced the same dimmed row with the
-    /// same silence about which one it was.
-    private var attachNote: String? {
-        guard voiceActive else { return hasCapacity ? nil : "full" }
-        if !voiceCanSeeImages { return "no vision" }
-        return canAttachInVoice ? nil : "full"
-    }
-
-    @ViewBuilder
-    private func projectRows(_ projectModel: NativeProjectModel<SQLiteAccountRepository>) -> some View {
-        let rows = VStack(alignment: .leading, spacing: 1) {
-            JunoAddMenuRow(
-                icon: .projects,
-                title: "No project",
-                accessory: .state(selectedProjectID == nil),
-                identifier: "juno.desktop.chat.add.project.none"
-            ) {
-                selectedProjectID = nil
-                close()
-            }
-
-            ForEach(projectModel.projects) { project in
-                JunoAddMenuRow(
-                    icon: .projects,
-                    title: project.name,
-                    accessory: .state(selectedProjectID == project.id),
-                    identifier: "juno.desktop.chat.add.project.\(project.id)"
-                ) {
-                    selectedProjectID = project.id
-                    close()
-                }
-            }
-        }
-
-        // A drawer that holds an account's whole project list is a drawer that
-        // can make this popover taller than the window it is anchored in. Past
-        // six it scrolls, so the menu's height stops being a function of how many
-        // projects somebody happens to have.
-        if projectModel.projects.count > 6 {
-            ScrollView { rows }
-                .frame(height: 156)
-                .scrollIndicators(.automatic)
-        } else {
-            rows
-        }
-    }
-
-    // MARK: Tools
-
-    @ViewBuilder
-    private var toolRows: some View {
-        JunoAddMenuRow(
-            icon: .research,
-            title: "Deep research",
-            accessory: .state(deepResearch),
-            identifier: "juno.desktop.chat.add.research"
-        ) {
-            arm($deepResearch)
-        }
-
-        JunoAddMenuRow(
-            icon: .web,
-            title: "Web search",
-            note: supportsWebSearch ? nil : "not on this model",
-            // A flag the server would refuse is not "on", whatever the sticky
-            // value behind it says. Switching to a model that cannot search used
-            // to leave a lit switch sitting in a dimmed row.
-            accessory: .state(webSearch && supportsWebSearch),
-            disabled: !supportsWebSearch,
-            identifier: "juno.desktop.chat.add.web"
-        ) {
-            arm($webSearch)
-        }
-
-        JunoAddMenuRow(
-            icon: .artifactsTool,
-            title: "Canvas & artifacts",
-            accessory: .state(canvasEnabled),
-            identifier: "juno.desktop.chat.add.canvas"
-        ) {
-            arm($canvasEnabled)
-        }
-
-        if let indexedDocumentCount {
-            JunoAddMenuRow(
-                icon: .files,
-                // "My documents", not "Documents": the files are the reader's own
-                // and they are on their own Mac, and the two words that say so
-                // are the difference between a tool and a place.
-                title: "My documents",
-                // Why it is off, beside it rather than inside its name — the rule
-                // the Library row above already follows. A spoken turn goes over
-                // the realtime socket and never through the text this grounding
-                // extends, so during a call the switch genuinely cannot act.
-                note: voiceActive
-                    ? "chat only"
-                    : (indexedDocumentCount == 0 ? "none on this Mac" : "\(indexedDocumentCount)"),
-                // The same rule the Web search row follows for a model that
-                // cannot search: a lit switch over an empty index promises
-                // something that cannot happen.
-                accessory: .state(documentContext && indexedDocumentCount > 0 && !voiceActive),
-                disabled: voiceActive || indexedDocumentCount == 0,
-                identifier: "juno.desktop.chat.add.documents"
-            ) {
-                arm($documentContext)
-            }
-        }
-    }
-
-    /// Arms or disarms a tool, and deliberately leaves the menu open: these are
-    /// the rows somebody switches two of at once.
-    ///
-    /// `.tint` because nothing moves — a tick fades in and the mark crosses to
-    /// the accent, both on the spot. Reduce Motion asks for less movement, not
-    /// for less feedback, so this rung survives the preference intact.
-    private func arm(_ flag: Binding<Bool>) {
-        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
-            flag.wrappedValue.toggle()
-        }
-    }
-
-    // MARK: Apps
-
-    @ViewBuilder
-    private var connectorRows: some View {
-        JunoAddMenuRow(
-            // Always the connections mark. This row used to swap to the pull
-            // request glyph whenever *any* connected app happened to be GitHub —
-            // a group naming itself after one of its members.
-            icon: .connections,
-            title: "Connectors",
-            note: selectedConnectors.isEmpty ? nil : "\(selectedConnectors.count)",
-            accessory: .drawer(openDrawer == .connectors),
-            identifier: "juno.desktop.chat.add.connectors"
-        ) {
-            setDrawer(openDrawer == .connectors ? nil : .connectors)
-        }
-
-        if openDrawer == .connectors {
-            if connectedConnectors.isEmpty {
-                // Bare, not in a drawer. A container drawn around one line of
-                // grey text is a filled box the width of the menu holding
-                // nothing, and in the dark it lands brighter than any row above
-                // it — the eye goes to the emptiest thing on the surface.
-                Text("No connected apps")
-                    .junoFont(size: 11, relativeTo: .footnote)
-                    .junoSecondaryInk()
-                    .padding(.horizontal, JunoSpace.snug)
-                    .padding(.vertical, JunoSpace.tight)
-                    .padding(.leading, 26)
-                    .transition(.junoInline)
-            } else {
-                drawer {
-                    ForEach(connectedConnectors) { connector in
-                        connectorRow(connector)
-                    }
-                }
-            }
-        }
-    }
-
-    private func connectorRow(_ connector: NativeConnector) -> some View {
-        let on = selectedConnectors.contains(connector.id)
-        let capped = !on && selectedConnectors.count >= Self.connectorLimit
-
-        return JunoAddMenuRow(
-            icon: connector.id.lowercased().contains("github") ? .pulls : .connections,
-            title: connector.label,
-            // The cap used to be a row that dimmed for no stated reason once the
-            // fifth app went on.
-            note: capped ? "max \(Self.connectorLimit)" : nil,
-            accessory: .state(on),
-            disabled: capped,
-            identifier: "juno.desktop.chat.add.connector.\(connector.id)"
-        ) {
-            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
-                toggleConnector(connector.id)
-            }
-        }
-    }
-
-    // MARK: Drawers
-
-    /// The recess a drawer's rows sit in.
-    ///
-    /// A fill and no outline: with a hairline of its own, a chosen row inside a
-    /// drawer put an accent border a few points inside a grey one — two nested
-    /// rectangles saying the same thing, and only the inner one carries
-    /// information.
-    ///
-    /// `.junoInline` rather than the `.move(edge: .top)` this used to carry. The
-    /// popover is *already* animating its own frame taller to make room, and a
-    /// body that slides down inside a panel that is simultaneously growing is two
-    /// motions, two owners, two curves. The design system names a transition for
-    /// exactly this case — "a disclosure body… no scale — it must not push the
-    /// text around it sideways" — and letting the popover's growth be the only
-    /// movement is what makes opening a drawer read as one gesture.
-    @ViewBuilder
-    private func drawer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            content()
-        }
-        .padding(2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .fill(Color.junoForeground.opacity(0.05))
-        )
-        .transition(.junoInline)
-    }
-
-    private func setDrawer(_ drawer: Drawer?) {
-        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-            openDrawer = drawer
-        }
-    }
-}
-
-/// What a row shows at its trailing edge — which is also what kind of row it is.
-private enum JunoAddMenuAccessory: Equatable {
-    /// An action. Its title carries the ellipsis; nothing trails it.
-    case none
-    /// A capability or a choice, on or off.
-    case state(Bool)
-    /// A drawer, open or closed.
-    case drawer(Bool)
-}
-
-/// One row of the "+" menu: a mark, a name, optionally a short reason it is
-/// unavailable, and a trailing accessory.
-///
-/// One type for what used to be three near-identical ones
-/// (`JunoPopoverRowButton`, `JunoPopoverSubmenuHeaderRow`, `JunoPopoverToggleRow`),
-/// which between them carried three copies of the hover fill, three of the
-/// padding, and three slightly different ideas of what a disabled row looks like.
-private struct JunoAddMenuRow: View {
-    let icon: JunoIcon
-    let title: String
-    var note: String? = nil
-    var accessory: JunoAddMenuAccessory = .none
-    var disabled: Bool = false
-    let identifier: String
-    let action: () -> Void
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
-    private var isArmed: Bool {
-        if case .state(true) = accessory { return true }
-        return false
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(icon, size: 15)
-                    .foregroundStyle(isArmed ? Color.junoAccent : Color.junoMutedForeground)
-                    .frame(width: 18)
-
-                Text(title)
-                    .junoFont(size: 13, relativeTo: .subheadline)
-                    .foregroundStyle(disabled ? Color.junoMutedForeground : Color.junoForeground)
-                    .lineLimit(1)
-
-                Spacer(minLength: JunoSpace.hairline)
-
-                if let note {
-                    Text(note)
-                        .junoFont(size: 10, relativeTo: .caption2)
-                        .junoSecondaryInk()
-                        .lineLimit(1)
-                        .layoutPriority(-1)
-                }
-
-                accessoryView
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, 5)
-            .background(fill)
-            .contentShape(.rect)
-        }
-        // Not `.plain`. `.plain` on macOS gives no press feedback whatsoever, so
-        // every row in this menu was silent under the pointer between the hover
-        // fill and whatever the click did.
-        .buttonStyle(.junoPress)
-        .disabled(disabled)
-        // No blanket `.opacity(0.45)`. That dimmed the *label* along with
-        // everything else, dropping a row that still has to be read below the
-        // contrast floor — and the palette's own note is that a token already at
-        // the floor and scaled by hand is not a quieter grey, it is an illegible
-        // one. A disabled row is stated in ink and in words instead.
-        .onHover { isHovered = $0 }
-        .help(note ?? "")
-        .accessibilityLabel(Text(title))
-        .accessibilityValue(Text(accessibilityValue))
-        .accessibilityAddTraits(isArmed ? .isSelected : [])
-        .accessibilityIdentifier(identifier)
-    }
-
-    private var fill: some View {
-        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-            .fill(fillColor)
-            .animation(
-                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                value: fillColor
-            )
-    }
-
-    /// An armed row keeps answering the pointer. Letting the accent fill win
-    /// outright made the rows most likely to be clicked twice the only ones with
-    /// no hover state. No border on it either: at this row height an outline is a
-    /// second rectangle inside a menu that already has one.
-    private var fillColor: Color {
-        if isArmed { return Color.junoAccent.opacity(isHovered ? 0.16 : 0.10) }
-        return isHovered && !disabled ? Color.junoRowHover : .clear
-    }
-
-    @ViewBuilder
-    private var accessoryView: some View {
-        switch accessory {
-        case .none:
-            EmptyView()
-        case .state(let on):
-            JunoIconView(systemImage: "checkmark")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Color.junoAccent)
-                .opacity(on ? 1 : 0)
-                .animation(
-                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                    value: on
-                )
-                .frame(width: 10)
-        case .drawer(let open):
-            // Rotated, not swapped. `chevron.right` → `chevron.down` is a hard
-            // cut dropped into the middle of a spring that is continuous either
-            // side of it, and the two glyphs are not even the same width.
-            JunoIconView(systemImage: "chevron.right")
-                .junoFont(size: 9, relativeTo: .caption, weight: .bold)
-                .junoSecondaryInk()
-                .rotationEffect(.degrees(open ? 90 : 0))
-                .animation(
-                    JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-                    value: open
-                )
-                .frame(width: 10)
-        }
-    }
-
-    private var accessibilityValue: String {
-        switch accessory {
-        case .none: ""
-        case .state(let on): on ? "On" : "Off"
-        case .drawer(let open): open ? "Expanded" : "Collapsed"
-        }
-    }
-}
-
-/// The composer's native menu trigger. The system owns its pressed, hover and
-/// open states; Juno only adds a badge when one or more tools are armed.
+/// The `+` that opens the menu: a 32pt flat icon button with a coral dot when
+/// a tool is armed — the web's `+` exactly. No raised circle, no glass: the
+/// button is content on the composer's chrome, and the only thing the bar
+/// says about tool state is the dot.
 private struct DesktopAddMenuMark: View {
     let isArmed: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
 
     var body: some View {
-        JunoIconView(systemImage: "plus")
-            // Scales with Dynamic Type like the mic and send glyphs beside it,
-            // whose `.callout` faces already move — a frozen 13pt here would
-            // make this the one control in the bar that ignores the setting.
-            .junoFont(size: 13, relativeTo: .body, weight: .semibold)
-            .junoInk()
-            .frame(width: 30, height: 30)
-            .junoRaisedCircle()
-            .overlay(alignment: .topTrailing) { badge }
-            .contentShape(.circle)
+        JunoIconView(.plus, size: 16)
+            .foregroundStyle(hovered ? Color.junoForeground : Color.junoMutedForeground)
+            .frame(width: 32, height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(hovered ? Color.junoRowHover : Color.clear)
+            )
+            .overlay(alignment: .topTrailing) {
+                if isArmed {
+                    Circle()
+                        .fill(Color.junoAccent)
+                        .stroke(Color.junoSurface, lineWidth: 1.5)
+                        .frame(width: 7, height: 7)
+                        .offset(x: -5, y: 5)
+                        .transition(.junoOverlay)
+                }
+            }
+            .contentShape(.rect)
+            .onHover { hovered = $0 }
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: hovered
+            )
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isArmed)
     }
+}
 
-    /// The dot used to light for deep research and connectors only, so a chat
-    /// armed with web search or with canvas looked from the outside exactly like
-    /// a chat armed with nothing — two of the four states this menu can leave
-    /// behind were invisible once it closed.
-    @ViewBuilder
-    private var badge: some View {
-        if isArmed {
-            Circle()
-                .fill(Color.junoAccent)
-                .stroke(Color.junoSurface, lineWidth: 1.5)
-                .frame(width: 8, height: 8)
-                .offset(x: 1, y: -1)
-                .transition(.junoOverlay)
+/// A flat text chip on the controls row — the web's `composerChipClass`: 32pt
+/// tall, `text-ui` medium, ink at 80%, an accent-fill on hover, the same fill
+/// with full ink while open. Never raised, never pressed.
+private struct DesktopComposerChip<Leading: View>: View {
+    let label: String
+    let open: Bool
+    @ViewBuilder let leading: () -> Leading
+    let chevron: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
+    private var lit: Bool { hovered || open }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: JunoSpace.tight) {
+                leading()
+                Text(label)
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if chevron {
+                    JunoIconView(.chevronDown, size: 12)
+                        .opacity(0.6)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                }
+            }
+            .foregroundStyle(lit ? Color.junoForeground : Color.junoForeground.opacity(0.8))
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(lit ? Color.junoRowHover : Color.clear)
+            )
+            .contentShape(.rect)
         }
+        .buttonStyle(.junoPress)
+        .fixedSize(horizontal: true, vertical: false)
+        .onHover { hovered = $0 }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: lit
+        )
+    }
+}
+
+/// A 32pt flat icon button on the controls row — the web's
+/// `composerIconButtonClass`: muted mark, accent fill and full ink on hover.
+private struct DesktopComposerIconButton: View {
+    let label: String
+    let icon: JunoIcon
+    let active: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
+
+    init(_ label: String, icon: JunoIcon, active: Bool = false, action: @escaping () -> Void) {
+        self.label = label
+        self.icon = icon
+        self.active = active
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            JunoIconView(icon, size: 16)
+                .foregroundStyle(
+                    active ? Color.junoAccent
+                        : (hovered ? Color.junoForeground : Color.junoMutedForeground)
+                )
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .fill(hovered ? Color.junoRowHover : Color.clear)
+                )
+                .contentShape(.rect)
+        }
+        .buttonStyle(.junoPress)
+        .onHover { hovered = $0 }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: hovered
+        )
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// The 32pt coral circle. Flat — no shadow, no glass — with a face that
+/// cross-morphs between send, stop and the voice wave.
+private struct DesktopComposerPrimaryAction: View {
+    enum Face { case send, stop, voice }
+
+    let face: Face
+    let enabled: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var label: String {
+        switch face {
+        case .send: "Send message"
+        case .stop: "Stop generating"
+        case .voice: "Start voice conversation"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle().fill(Color.junoAccent)
+                Group {
+                    switch face {
+                    case .send:
+                        JunoIconView(.arrowUp, size: 16)
+                    case .stop:
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(.foreground)
+                            .frame(width: 11, height: 11)
+                    case .voice:
+                        DesktopVoiceGlyph()
+                    }
+                }
+                .foregroundStyle(Color.junoOnAccent)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .id(face)
+            }
+            .frame(width: 32, height: 32)
+            .contentShape(.circle)
+        }
+        .buttonStyle(.junoPress)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
+            value: face
+        )
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(label)
     }
 }

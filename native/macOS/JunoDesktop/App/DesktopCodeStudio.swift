@@ -11,16 +11,14 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Code window's sessions column, its selection rules, its status
-/// vocabulary, and the New task screen.
+/// The Code window's navigation column, its selection rules, and the New task
+/// screen.
 ///
-/// The window shell is ``DesktopCodeWorkspace``. This file used to draw six
-/// equal-weight sections at once — search, Workspace, Needs attention, In
-/// progress, a Recents list mixing pinned, recent and relayed runs, Projects,
-/// Other computers — and to host the account's Usage, Settings and Connections
-/// pages inside the coding surface. It is now the shape Codex and Claude Code
-/// desktop settle on: a column of sessions grouped by project with one filter
-/// row, and account pages in the Settings window where a Mac keeps them.
+/// The window shell is ``DesktopCodeWorkspace``. The column is the shape the
+/// Codex desktop app settles on: a brand row, six destinations, the projects
+/// as disclosure rows with their threads underneath, the threads that belong
+/// to no project under Recents, and a footer with the account, Voice and help.
+/// Account pages live in the Settings window where a Mac keeps them.
 ///
 /// The file name is historical; its contents are the navigation column and
 /// the screen a new task starts on.
@@ -42,8 +40,16 @@ enum DesktopCodeSidebarItem: Hashable {
     case draft
     /// The pull requests Juno Code opened, across every project.
     case pulls
-    /// Juno Design, reached from the footer as the website does it.
+    /// Juno Design, reached from the brand menu as the website does it.
     case design
+    /// The account's scheduled tasks.
+    case scheduled
+    /// The MCP servers, hooks, skills and agents each project declares.
+    case plugins
+    /// What a new task may touch, where it runs, and who may reach this Mac.
+    case security
+    /// Every granted project, as one page to browse.
+    case explore
     /// The New task screen, aimed at this project.
     case repository(WorkspaceID)
     case session(CodeSessionID)
@@ -140,6 +146,10 @@ enum DesktopCodeNavigationState {
         case .draft: "draft"
         case .pulls: "pulls"
         case .design: "design"
+        case .scheduled: "scheduled"
+        case .plugins: "plugins"
+        case .security: "security"
+        case .explore: "explore"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -158,6 +168,10 @@ enum DesktopCodeNavigationState {
         case ("draft", 1): return .draft
         case ("pulls", 1): return .pulls
         case ("design", 1): return .design
+        case ("scheduled", 1): return .scheduled
+        case ("plugins", 1): return .plugins
+        case ("security", 1): return .security
+        case ("explore", 1): return .explore
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -177,7 +191,8 @@ enum DesktopCodeNavigationState {
         case .session(let id): return sessions.contains(id) ? item : nil
         case .task(let id): return tasks.contains(id) ? item : nil
         case .repository(let id): return repositories.contains(id) ? item : nil
-        case .allProjects, .draft, .pulls, .design: return item
+        case .allProjects, .draft, .pulls, .design, .scheduled, .plugins, .security, .explore:
+            return item
         case .remote, .none: return item
         }
     }
@@ -256,23 +271,26 @@ struct DesktopCodeProjectGroup: Identifiable {
     var id: WorkspaceID { workspaceID }
 }
 
-/// The sessions column, as a real macOS source list.
+/// The navigation column, as a real macOS source list.
 ///
-/// Three things and no more: the product switch and New task at the top, the
-/// sessions grouped by the project they run in, and — only when there are any
-/// — the account's cloud runs and the sessions on other computers underneath.
-/// The account's own pages left the column for the Settings window, reached
-/// from the account row in the footer.
+/// Top to bottom: the shell's product switcher in its own strip, the brand
+/// row, the search field, six destinations, the projects as disclosure rows with their threads
+/// underneath, the threads that belong to no project under Recents, the
+/// sessions on other computers when there are any, and a footer with the
+/// account, Voice and help.
 ///
 /// Everything visual here belongs to the platform: `List(selection:)` in
-/// `.sidebar` style draws the selection, the hover state, the section headers and
-/// the row metrics. The column paints **no background**.
+/// `.sidebar` style draws the selection, the hover state, the disclosure
+/// triangles, the section headers and the row metrics. The column paints
+/// **no background** and carries no glass.
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
     let remote: CodeRemoteBrowserModel
     @Binding var selection: DesktopCodeSidebarItem?
     @Binding var remoteDeviceID: String
+    /// The shell's Chat / Code / Work switch, drawn by
+    /// `junoSidebarProductHeader` in its own 44pt strip above this list.
     @Binding var product: DesktopProductMode
     @Binding var filter: DesktopCodeSessionFilter
     let isBootstrapping: Bool
@@ -284,11 +302,22 @@ struct DesktopCodeSidebar: View {
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
     @Binding var searchText: String
-    /// Opens the ⌘K palette; the search field's hint names it.
+    /// Opens the ⌘K palette; the brand menu names it.
     let openPalette: () -> Void
+    /// Starts a realtime voice conversation from the footer's Voice button.
+    let beginVoice: () -> Void
+    /// The footer's help glyph: the ⌘/ shortcuts window.
+    let openHelp: () -> Void
+
     @State private var projectPendingDeletion: DesktopCodeProjectGroup?
     @State private var projectPendingRename: DesktopCodeProjectGroup?
     @State private var projectRenameDraft = ""
+    /// Projects the reader folded. Empty means every project is open, which
+    /// is the state a fresh column starts in.
+    @State private var collapsedProjects: Set<WorkspaceID> = []
+    /// Whether the column's search field holds keyboard focus. The brand row's
+    /// search glyph sets it; the field clears it when editing ends.
+    @State private var searchFocused = false
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -325,90 +354,70 @@ struct DesktopCodeSidebar: View {
         }
     }
 
+    /// The runs blocked on the reader, for the bell.
+    private var needsYou: [DesktopCodeRun] {
+        DesktopCodeNavigationState.filtered(runs, by: .needsYou)
+    }
+
     var body: some View {
         let allRuns = runs
         let groups = projectGroups(from: allRuns)
-        let cloudRuns = DesktopCodeNavigationState.filtered(
-            allRuns.filter { $0.environment == .cloud || $0.environment == .device },
-            by: filter
-        )
-        let conversations = DesktopCodeNavigationState.filtered(
-            allRuns.filter { $0.workspaceID == nil && $0.environment == .local },
+        let recents = DesktopCodeNavigationState.filtered(
+            allRuns.filter { $0.workspaceID == nil },
             by: filter
         )
         let isSearching = !workbench.sessionSearchText.trimmingCharacters(in: .whitespaces).isEmpty
 
         return List(selection: $selection) {
             Section {
-                Label {
-                    HStack {
-                        Text("New task").junoRowLabel()
-                        Spacer(minLength: JunoSpace.hairline)
-                        DesktopKeycap("⌘N")
+                destinationRow("New task", icon: .new, item: .draft, trailing: .plus)
+                    .accessibilityIdentifier("juno.code.new-conversation")
+                destinationRow("Pull requests", icon: .pulls, item: .pulls)
+                    .accessibilityIdentifier("juno.code.pulls")
+                destinationRow("Scheduled", icon: .clock, item: .scheduled)
+                    .accessibilityIdentifier("juno.code.scheduled")
+                destinationRow("Plugins", icon: .blocks, item: .plugins)
+                    .accessibilityIdentifier("juno.code.plugins")
+                destinationRow("Security", icon: .shield, item: .security)
+                    .accessibilityIdentifier("juno.code.security")
+                destinationRow("Explore", icon: .compass, item: .explore)
+                    .accessibilityIdentifier("juno.code.explore")
+            }
+
+            Section {
+                if groups.isEmpty {
+                    emptyProjects
+                }
+                ForEach(groups) { group in
+                    projectDisclosure(group)
+                }
+                if !groups.isEmpty || isSearching {
+                    Button(action: openRepository) {
+                        DesktopCodeAddProjectLabel()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
                     }
-                } icon: {
-                    JunoIconView(.new, size: 15)
-                        .junoSidebarMarkInk(selected: selection == .draft)
+                    .buttonStyle(.plain)
+                    .help("Open a folder as a project (⌘O)")
+                    .accessibilityIdentifier("juno.code.add-project")
+                    .selectionDisabled()
                 }
-                .junoSidebarRowInk()
-                .tag(DesktopCodeSidebarItem.draft)
-                .accessibilityIdentifier("juno.code.new-conversation")
-
-                Label {
-                    Text("Pull requests").junoRowLabel()
-                } icon: {
-                    JunoIconView(.pulls, size: 15)
-                        .junoSidebarMarkInk(selected: selection == .pulls)
-                }
-                .junoSidebarRowInk()
-                .tag(DesktopCodeSidebarItem.pulls)
-                .accessibilityIdentifier("juno.code.pulls")
-            }
-
-            filterRow
-
-            if groups.isEmpty, cloudRuns.isEmpty, conversations.isEmpty {
-                emptyProjects
-            }
-
-            ForEach(groups) { group in
-                if group.runs.isEmpty {
-                    // A project with nothing in it collapses to a single row:
-                    // selecting it is how the next task starts in there.
-                    projectRow(group)
-                        .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
-                } else {
-                    Section {
-                        ForEach(group.runs) { row($0) }
-                    } header: {
-                        projectHeader(group)
-                    }
+            } header: {
+                HStack(spacing: JunoSpace.tight) {
+                    Text("Projects")
+                    Spacer(minLength: JunoSpace.hairline)
+                    DesktopCodeSessionFilterButton(filter: $filter)
                 }
             }
 
-            if !conversations.isEmpty {
-                Section("Conversations") {
-                    ForEach(conversations) { row($0) }
+            Section("Recents") {
+                if recents.isEmpty {
+                    Text(isSearching ? "No chats match" : "No chats")
+                        .junoCaption()
+                        .selectionDisabled()
+                        .accessibilityIdentifier("juno.code.recents.empty")
                 }
-            }
-
-            if !cloudRuns.isEmpty {
-                Section("Cloud and devices") {
-                    ForEach(cloudRuns) { row($0) }
-                }
-            }
-
-            if !groups.isEmpty || isSearching {
-                Button(action: openRepository) {
-                    DesktopCodeAddProjectLabel()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: CodeRowMetrics.minHeight)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .help("Open a folder as a project (⌘O)")
-                .accessibilityIdentifier("juno.code.add-project")
-                .selectionDisabled()
+                ForEach(recents) { threadRow($0) }
             }
 
             if !code.devices.isEmpty, !remote.sessions.isEmpty || isSearching {
@@ -417,15 +426,24 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        .searchable(
-            text: $searchText,
-            placement: .sidebar,
-            prompt: "Search sessions"
-        )
+        // The brand row and the search field, pinned under the product strip
+        // and above the rows: switcher → brand → search → destinations, which
+        // is the Chat column's rhythm with Code's own search in it.
+        //
+        // Not `.searchable(placement: .sidebar)`. That placement hoists the
+        // field to the very top of the split-view column — above the strip
+        // and the brand row, whatever order the column's content states — and
+        // it is how this column came to read search → switcher → brand.
+        // `DesktopSidebarSearchField` is the platform's own `NSSearchField`,
+        // laid out where the column wants it.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            columnHead
+        }
+        // The shell's Chat / Code / Work switch, in the strip it reserves
+        // (`DesktopSidebarChromeMetrics.productSwitcherRow`) above the list.
         .junoSidebarProductHeader(product: $product)
         .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
-                .background(.thickMaterial)
         }
         .junoSidebarScrollEdge()
         .alert(item: $projectPendingDeletion) { project in
@@ -449,39 +467,159 @@ struct DesktopCodeSidebar: View {
         }
     }
 
-    /// All · Running · Needs you · Done, as one pull-down that is not a
-    /// selectable item.
-    ///
-    /// **A menu, not a segmented control.** This row was a four-segment
-    /// `DesktopSegmented` with a ⌘K keycap beside it, in a column 264pt wide.
-    /// "All", "Running", "Needs you" and "Done" at 12pt need about 255pt of
-    /// segment between them; after the keycap and the row insets they had 190,
-    /// so every segment truncated to "…" — four ellipsis buttons in a row,
-    /// which is what the review saw. A pull-down states the current filter in
-    /// full and fits at the column's minimum width.
-    ///
-    /// Drawn entirely by SwiftUI — a plain button and a popover — rather than
-    /// a `Menu` or a `.menu` `Picker`. Both of those are AppKit menu buttons,
-    /// and inside a `.sidebar` list row on the column's vibrant material each
-    /// painted its title in the emphasised (white) ink: the first was
-    /// unreadable, the second invisible. A `Button` in the same row draws its
-    /// label in the column's own ink, as "New task" beside it always has.
-    ///
-    /// The keycap went with it. Search is the `.searchable` field the column
-    /// already declares, and the command palette is the toolbar's Commands item
-    /// and ⌘K; a third hint for the same shortcut, squeezed into the one row
-    /// that had no room for it, was decoration.
-    private var filterRow: some View {
-        HStack(spacing: JunoSpace.snug) {
-            DesktopCodeSessionFilterButton(filter: $filter)
-            Spacer(minLength: 0)
+    // MARK: Column head
+
+    /// The brand row over the search field. Nothing here paints a background:
+    /// the column is a vibrant region and stays one to its top edge.
+    private var columnHead: some View {
+        VStack(spacing: 0) {
+            brandRow
+            DesktopSidebarSearchField(
+                text: $searchText,
+                prompt: "Search threads",
+                isFocused: $searchFocused
+            )
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.bottom, JunoSpace.snug)
         }
-        .listRowInsets(
-            EdgeInsets(top: 0, leading: JunoSpace.snug, bottom: JunoSpace.tight, trailing: JunoSpace.snug)
-        )
-        .listRowBackground(Color.clear)
-        .selectionDisabled()
-        .accessibilityIdentifier("juno.code.sidebar-filter")
+        .frame(maxWidth: .infinity)
+    }
+
+    /// "Juno ▾" — the column's own menu — with search and the bell beside it.
+    private var brandRow: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Menu {
+                Button("Open folder…", action: openRepository)
+                    .keyboardShortcut("o", modifiers: .command)
+                Button("Commands…", action: openPalette)
+                Divider()
+                Button("Explore projects") { selection = .explore }
+                Button("Design") { selection = .design }
+                Divider()
+                if let plan {
+                    Button(usageTitle(plan)) { DesktopSettingsRouter.open(.usage) }
+                } else {
+                    Button("Usage…") { DesktopSettingsRouter.open(.usage) }
+                }
+                Button("Settings…") { DesktopSettingsRouter.open(.general) }
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoMark(size: 16)
+                    Text("Juno")
+                        .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                    JunoIconView(.chevronDown, size: 10)
+                        .junoMetaInk()
+                }
+                .junoInk()
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Juno")
+            .accessibilityLabel("Juno menu")
+            .accessibilityIdentifier("juno.code.brand")
+
+            Spacer(minLength: JunoSpace.hairline)
+
+            Button {
+                searchFocused = true
+            } label: {
+                JunoIconView(.search, size: 14)
+                    .junoSidebarMarkInk()
+                    .frame(width: 28, height: 28)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .help("Search threads")
+            .accessibilityLabel("Search threads")
+            .accessibilityIdentifier("juno.code.sidebar-search")
+
+            bellMenu
+        }
+        // On the strip's own inset, so the mark, the switcher's pill and the
+        // search field below share one left edge.
+        .padding(.leading, JunoSpace.cozy)
+        .padding(.trailing, JunoSpace.snug)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.brand-row")
+    }
+
+    /// The bell: the runs blocked on the reader, one row each.
+    private var bellMenu: some View {
+        let blocked = needsYou
+        return Menu {
+            if blocked.isEmpty {
+                Text("Nothing needs you")
+            } else {
+                Section("Needs you") {
+                    ForEach(blocked) { run in
+                        Button {
+                            selection = run.item
+                        } label: {
+                            JunoIconLabel(verbatim: run.title, icon: .permission, size: 14)
+                        }
+                    }
+                }
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                JunoIconView(.bell, size: 14)
+                    .junoSidebarMarkInk()
+                if !blocked.isEmpty {
+                    Circle()
+                        .fill(Color.junoCaution)
+                        .frame(width: 7, height: 7)
+                        .offset(x: 2, y: -2)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(blocked.isEmpty ? "Nothing needs you" : "\(blocked.count) waiting on you")
+        .accessibilityLabel("Notifications")
+        .accessibilityValue(blocked.isEmpty ? "Nothing needs you" : "\(blocked.count) waiting on you")
+        .accessibilityIdentifier("juno.code.bell")
+    }
+
+    private func usageTitle(_ plan: DesktopUsagePlan) -> String {
+        if plan.isBrowseOnly { return "Usage · browse only" }
+        if plan.isUnlimited { return "Usage · no cap" }
+        let percent = Int((min(1, max(0, plan.weekly.fraction)) * 100).rounded())
+        return "Usage · \(percent)% used"
+    }
+
+    // MARK: Destinations
+
+    private func destinationRow(
+        _ title: String,
+        icon: JunoIcon,
+        item: DesktopCodeSidebarItem,
+        trailing: JunoIcon? = nil
+    ) -> some View {
+        Label {
+            HStack(spacing: JunoSpace.hairline) {
+                Text(title).junoRowLabel()
+                Spacer(minLength: JunoSpace.hairline)
+                if let trailing {
+                    JunoIconView(trailing, size: 12)
+                        .junoMetaInk()
+                        .accessibilityHidden(true)
+                }
+            }
+        } icon: {
+            JunoIconView(icon, size: 15)
+                .junoSidebarMarkInk(selected: selection == item)
+        }
+        .junoSidebarRowInk()
+        .junoSidebarRowSelection(selection == item)
+        .tag(item)
     }
 
     private var emptyProjects: some View {
@@ -489,14 +627,13 @@ struct DesktopCodeSidebar: View {
             Text(
                 workbench.sessionSearchText.isEmpty
                     ? "Open a folder to let Juno read and change real files."
-                    : "No sessions match."
+                    : "No threads match."
             )
             .junoCaption()
             .fixedSize(horizontal: false, vertical: true)
             if workbench.sessionSearchText.isEmpty {
                 Button(action: openRepository) {
                     DesktopCodeAddProjectLabel()
-                        .frame(minHeight: CodeRowMetrics.minHeight)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -510,51 +647,49 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Projects
 
-    private func projectHeader(_ group: DesktopCodeProjectGroup) -> some View {
-        HStack(spacing: JunoSpace.tight) {
-            Button {
-                selection = .repository(group.workspaceID)
-            } label: {
-                HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(group.isGitRepository ? .branch : .projects, size: 12)
-                    Text(group.name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+    /// A project and, under its disclosure triangle, the threads in it.
+    ///
+    /// The row itself is a destination — selecting it opens the New task
+    /// screen aimed at this project — and the triangle is the platform's.
+    private func projectDisclosure(_ group: DesktopCodeProjectGroup) -> some View {
+        DisclosureGroup(
+            isExpanded: Binding(
+                get: { !collapsedProjects.contains(group.workspaceID) },
+                set: { expanded in
+                    if expanded {
+                        collapsedProjects.remove(group.workspaceID)
+                    } else {
+                        collapsedProjects.insert(group.workspaceID)
+                    }
                 }
-                .frame(minHeight: 28)
-                .contentShape(.rect)
+            )
+        ) {
+            if group.runs.isEmpty {
+                Text(filter == .all ? "No threads yet" : "No \(filter.label.lowercased()) threads")
+                    .junoCaption()
+                    .selectionDisabled()
             }
-            .buttonStyle(.plain)
-            .help("Start a task in \(group.name)")
-            .accessibilityLabel("Project \(group.name)")
-            .accessibilityHint("Starts a new task in this project")
-            Spacer(minLength: JunoSpace.hairline)
-            projectMenu(group)
-        }
-        .contextMenu { projectActions(group) }
-    }
-
-    private func projectRow(_ group: DesktopCodeProjectGroup) -> some View {
-        HStack(spacing: JunoSpace.tight) {
-            JunoIconView(group.isGitRepository ? .branch : .projects, size: 15)
-                .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
-            VStack(alignment: .leading, spacing: 1) {
+            ForEach(group.runs) { threadRow($0) }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                JunoIconView(.folderOpen, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
                 Text(group.name)
                     .junoRowLabel()
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(filter == .all ? "No sessions yet" : "No \(filter.label.lowercased()) sessions")
-                    .junoCaption()
-                    .lineLimit(1)
+                Spacer(minLength: JunoSpace.hairline)
+                projectMenu(group)
             }
-            Spacer(minLength: JunoSpace.hairline)
-            projectMenu(group)
+            .junoSidebarRowInk()
+            .contentShape(.rect)
+            .contextMenu { projectActions(group) }
+            .help("Start a task in \(group.name)")
+            .accessibilityLabel("Project \(group.name)")
+            .accessibilityHint("Starts a new task in this project")
         }
-        .frame(minHeight: CodeRowMetrics.stackedHeight)
-        .junoSidebarRowInk()
-        .contextMenu { projectActions(group) }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(group.name), no sessions")
+        .junoSidebarRowSelection(selection == .repository(group.workspaceID))
+        .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
     }
 
     private func projectMenu(_ group: DesktopCodeProjectGroup) -> some View {
@@ -647,16 +782,19 @@ struct DesktopCodeSidebar: View {
             return id == workspaceID
         case .session(let id):
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
-        case .allProjects, .draft, .pulls, .design, .task, .remote, nil:
+        case .allProjects, .draft, .pulls, .design, .scheduled, .plugins, .security, .explore,
+             .task, .remote, nil:
             return false
         }
     }
 
-    // MARK: Rows
+    // MARK: Threads
 
-    private func row(_ run: DesktopCodeRun) -> some View {
-        DesktopCodeSessionRow(run: run, workbench: workbench)
+    /// One thread: its title, and its mark only while it is doing something.
+    private func threadRow(_ run: DesktopCodeRun) -> some View {
+        DesktopCodeThreadRow(run: run, showsPlace: run.workspaceID == nil)
             .junoSidebarRowInk()
+            .junoSidebarRowSelection(selection == run.item)
             .tag(run.item)
             .contextMenu { rowMenu(run) }
     }
@@ -697,7 +835,7 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .draft, .pulls, .design, .repository:
+        case .allProjects, .draft, .pulls, .design, .scheduled, .plugins, .security, .explore, .repository:
             EmptyView()
         }
     }
@@ -727,7 +865,7 @@ struct DesktopCodeSidebar: View {
                     .selectionDisabled()
             }
             ForEach(matching) { summary in
-                row(DesktopCodeRunBuilder.run(for: summary))
+                threadRow(DesktopCodeRunBuilder.run(for: summary))
             }
         } header: {
             HStack(spacing: JunoSpace.tight) {
@@ -750,26 +888,84 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
-    /// A transient workspace notice, the door to Design, and the account.
+    /// A transient workspace notice, a staged update, then the account, Voice
+    /// and help on one row. Nothing here paints a background: the column is a
+    /// vibrant region to its bottom edge.
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 0) {
             workspaceStatus
-            DesktopSidebarDesignRow(isActive: selection == .design) {
-                selection = .design
+            DesktopUpdateReadyRow()
+            HStack(spacing: JunoSpace.tight) {
+                if let session {
+                    accountButton(session)
+                }
+                Spacer(minLength: JunoSpace.hairline)
+                Button(action: beginVoice) {
+                    HStack(spacing: JunoSpace.hairline) {
+                        JunoIconView(.mic, size: 12)
+                        Text("Voice")
+                    }
+                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                    .junoInk()
+                    .padding(.horizontal, JunoSpace.snug)
+                    .frame(height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                            .fill(Color.junoSidebarSelection)
+                    )
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.junoPress)
+                .help("Start a voice conversation")
+                .accessibilityLabel("Voice")
+                .accessibilityIdentifier("juno.code.sidebar.voice")
+
+                Button(action: openHelp) {
+                    JunoIconView(.circleHelp, size: 14)
+                        .junoSidebarMarkInk()
+                        .frame(width: 26, height: 26)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.junoPress)
+                .help("Keyboard shortcuts (⌘/)")
+                .accessibilityLabel("Help")
+                .accessibilityIdentifier("juno.code.sidebar.help")
             }
-            if let session {
-                DesktopSidebarFooter(
-                    session: session,
-                    avatarModel: avatarModel,
-                    syncModel: syncModel,
-                    plan: plan,
-                    openUsage: { DesktopSettingsRouter.open(.usage) },
-                    openSettings: { DesktopSettingsRouter.open(.general) }
-                )
-            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.bottom, JunoSpace.tight)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Who is signed in, and the way to Settings. The launch UI suite finds
+    /// the window by this button's identifier.
+    private func accountButton(_ session: NativeAuthenticatedSession) -> some View {
+        Button {
+            DesktopSettingsRouter.open(.general)
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                JunoAvatar(
+                    imageData: avatarModel?.imageData,
+                    imageURL: session.profile.imageURL,
+                    name: session.profile.name ?? session.profile.email,
+                    size: 24
+                )
+                Text(session.profile.name ?? "Juno account")
+                    .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
+                    .junoInk()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, JunoSpace.tight)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.junoPress)
+        .help("Account and settings")
+        .accessibilityIdentifier("Account and settings")
     }
 
     @ViewBuilder
@@ -835,102 +1031,53 @@ struct DesktopCodeSidebar: View {
     }
 }
 
-/// One session in the column: status glyph, title, relative time, branch or
-/// worktree chip, and — once it has finished — its diff stat.
-private struct DesktopCodeSessionRow: View {
+/// One thread in the column: its title, and — only while it is running or
+/// waiting on the reader — its mark. A finished thread is a title and nothing
+/// else, the way the Codex column lists them.
+private struct DesktopCodeThreadRow: View {
     let run: DesktopCodeRun
-    let workbench: WorkbenchModel
-    @State private var stat: WorkbenchModel.DiffStat?
+    /// Whether to say where the thread lives — for the Recents section, where
+    /// the project is not the parent row.
+    let showsPlace: Bool
 
-    private var sessionID: CodeSessionID? {
-        if case .session(let id) = run.item { return id }
-        return nil
+    private var showsMark: Bool {
+        run.status.isActive || run.status.state == .failed
     }
 
     var body: some View {
         HStack(spacing: JunoSpace.tight) {
-            CodeStatusGlyph(run.status)
-
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(run.title)
                     .junoRowLabel()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                HStack(spacing: JunoSpace.tight) {
-                    Text(run.updatedAt.formatted(.relative(presentation: .named)))
+                if showsPlace {
+                    Text(run.caption)
                         .junoCaption()
                         .lineLimit(1)
-                    if run.environment == .worktree || run.environment == .cloud || run.environment == .device || run.environment == .remote {
-                        DesktopSessionChip(run.environment.rawValue, icon: run.environment == .worktree ? .branch : .device)
-                    }
-                    if let branch = run.branch, !branch.isEmpty {
-                        DesktopSessionChip(branch, icon: .branch)
-                    }
+                        .truncationMode(.middle)
                 }
             }
-
             Spacer(minLength: JunoSpace.hairline)
-
-            if let stat, !stat.isEmpty, !run.status.isActive {
-                HStack(spacing: 2) {
-                    Text("+\(stat.added)").foregroundStyle(Color.junoSuccess)
-                    Text("−\(stat.removed)").foregroundStyle(Color.junoDanger)
-                }
-                .junoCodeSmall()
-                .monospacedDigit()
-                .accessibilityHidden(true)
+            if showsMark {
+                CodeStatusGlyph(run.status, size: 11)
             }
         }
-        .frame(minHeight: CodeRowMetrics.stackedHeight)
         .contentShape(.rect)
-        .task(id: "\(run.id)\(run.updatedAt.timeIntervalSince1970)") {
-            guard let sessionID, !run.status.isActive else { return }
-            stat = await workbench.diffStat(for: sessionID)
-        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        var text = "\(run.title), \(run.caption), \(run.status.label)"
-        if let stat, !stat.isEmpty {
-            text += ", \(stat.added) added, \(stat.removed) removed"
-        }
-        return text
+        .accessibilityLabel("\(run.title), \(run.caption), \(run.status.label)")
     }
 }
 
-/// A branch or an environment, as a quiet capsule inside a row.
-private struct DesktopSessionChip: View {
-    let title: String
-    let icon: JunoIcon
-
-    init(_ title: String, icon: JunoIcon) {
-        self.title = title
-        self.icon = icon
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            JunoIconView(icon, size: 9)
-            Text(title)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .junoFont(size: 10, relativeTo: .caption2, weight: .medium)
-        .junoSecondaryInk()
-        .padding(.horizontal, JunoSpace.tight)
-        .padding(.vertical, 1)
-        .background(Color.junoMuted.opacity(0.7), in: Capsule(style: .continuous))
-        .frame(maxWidth: 140)
-        .accessibilityHidden(true)
-    }
-}
-
-/// A keyboard shortcut, as the menu bar would print it.
-/// The sidebar's session filter: the current choice and a chevron, opening
-/// a short popover of the four choices. See `filterRow` for why this is not a
-/// `Menu`.
+/// The column's thread filter: the current choice, opening a short popover of
+/// the four choices.
+///
+/// Drawn entirely by SwiftUI — a plain button and a popover — rather than a
+/// `Menu` or a `.menu` `Picker`. Both of those are AppKit menu buttons, and
+/// inside a `.sidebar` list header on the column's vibrant material each
+/// painted its title in the emphasised (white) ink: the first was unreadable,
+/// the second invisible. A `Button` in the same row draws its label in the
+/// column's own ink.
 private struct DesktopCodeSessionFilterButton: View {
     @Binding var filter: DesktopCodeSessionFilter
     @State private var presented = false
@@ -939,18 +1086,19 @@ private struct DesktopCodeSessionFilterButton: View {
         Button {
             presented = true
         } label: {
-            Text("\(filter.menuLabel) \(Image(systemName: "chevron.down"))")
-                .junoFont(size: 12, relativeTo: .body, weight: .medium)
+            Text(filter == .all ? "All" : filter.label)
+                .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                 .junoSecondaryInk()
                 .lineLimit(1)
                 .fixedSize()
-                .frame(minHeight: 28)
+                .frame(minHeight: 24)
                 .contentShape(.rect)
         }
         .buttonStyle(.junoPress)
-        .help("Which sessions the column shows")
-        .accessibilityLabel("Session filter")
+        .help("Which threads the column shows")
+        .accessibilityLabel("Thread filter")
         .accessibilityValue(filter.menuLabel)
+        .accessibilityIdentifier("juno.code.sidebar-filter")
         // Dismissed with its anchor, always — the same guard every popover in
         // the app carries, for the crash documented on the model selector.
         .onDisappear { presented = false }
@@ -966,8 +1114,7 @@ private struct DesktopCodeSessionFilterButton: View {
                                 .junoFont(size: 12.5, relativeTo: .body, weight: option == filter ? .semibold : .regular)
                             Spacer(minLength: JunoSpace.regular)
                             if option == filter {
-                                Image(systemName: "checkmark")
-                                    .junoFont(size: 10, relativeTo: .caption, weight: .semibold)
+                                JunoIconView(.check, size: 11)
                                     .foregroundStyle(Color.junoAccent)
                             }
                         }
@@ -1007,19 +1154,13 @@ struct DesktopKeycap: View {
 private struct DesktopCodeAddProjectLabel: View {
     var body: some View {
         HStack(spacing: JunoSpace.tight) {
-            ZStack(alignment: .bottomTrailing) {
-                JunoIconView(.projects, size: 15)
-                JunoIconView(.plus, size: 8)
-                    .padding(1)
-                    .background(Color.junoSidebar)
-                    .clipShape(Circle())
-            }
-            .foregroundStyle(Color.junoSidebarForeground)
-
+            JunoIconView(.folderPlus, size: 15)
+                .foregroundStyle(Color.junoSidebarForeground)
             Text("Open folder…")
                 .junoRowLabel()
                 .junoSecondaryInk()
         }
+        .frame(minHeight: 28)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1200,11 +1341,12 @@ enum DesktopCodeDraftReadiness {
 /// here: the sidebar's New task, ⌘N, a project row, the menu bar item, the
 /// quick-entry panel.
 ///
-/// Title, a row of project chips, the glass composer, three selectors under it
-/// — where it runs, what it may touch, which model — and four starters. The
-/// project is shown *once*, in the chip row; the audit found it repeated in
-/// four places on the old screen. Cloud and Device stay selectable with no
-/// project and say what they need instead of silently falling back to Local.
+/// Centred: a large outlined mark, "What should we build in **juno**?" with the
+/// project name as the one control that changes it, four starter cards, and
+/// the glass composer with its context strip — project · environment · branch
+/// — inside the same surface. The permission, model and effort live on the
+/// composer's own row, exactly where they live once the thread exists, so the
+/// first turn and every later turn are set in the same place.
 struct DesktopCodeNewTaskScreen: View {
     let record: WorkspaceRecord?
     let workbench: WorkbenchModel
@@ -1219,6 +1361,9 @@ struct DesktopCodeNewTaskScreen: View {
     /// Text handed in from the quick-entry panel or the menu bar item, placed
     /// in the composer once.
     var initialPrompt: String?
+    /// The environment the reader asked for from the rail's "Local ▾" picker,
+    /// applied once on appearance.
+    var initialEnvironment: CodeEnvironmentChoice?
 
     @State private var prompt = ""
     @State private var behavior = AgentBehavior.code
@@ -1234,6 +1379,9 @@ struct DesktopCodeNewTaskScreen: View {
     @State private var isDropTargeted = false
     @State private var importError: String?
     @State private var didSeedDefaults = false
+    @State private var modelPresented = false
+    @State private var effortPresented = false
+    @State private var hoveredStarter: String?
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1283,15 +1431,30 @@ struct DesktopCodeNewTaskScreen: View {
             && pendingAttachments.count < 4
     }
 
+    /// The branch the project is on, from the most recent thread in it. A
+    /// project with no threads yet shows no branch chip rather than a guess.
+    private var projectBranch: String? {
+        guard let record else { return nil }
+        return workbench.sessions
+            .filter { $0.workspaceID == record.id }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first?
+            .gitBranch
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: JunoSpace.roomy) {
-                Text("New task")
-                    .junoPageHeading()
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("juno.code.start-header")
+            VStack(spacing: JunoSpace.section) {
+                Spacer(minLength: JunoSpace.region)
 
-                projectRow
+                mark
+
+                heading
+
+                if trimmedPrompt.isEmpty {
+                    starterRow
+                        .transition(.junoOverlay)
+                }
 
                 VStack(spacing: JunoSpace.snug) {
                     if let voiceDock {
@@ -1300,8 +1463,6 @@ struct DesktopCodeNewTaskScreen: View {
                     composer
                 }
 
-                selectors
-
                 if let issue = importError ?? blockingReason ?? launchIssue {
                     JunoIconLabel(verbatim: issue, icon: .error, size: 14)
                         .junoCaption()
@@ -1309,13 +1470,8 @@ struct DesktopCodeNewTaskScreen: View {
                         .transition(.junoInline)
                         .accessibilityIdentifier("juno.code.launch-issue")
                 }
-
-                if trimmedPrompt.isEmpty {
-                    starterGrid
-                        .transition(.junoOverlay)
-                }
             }
-            .frame(maxWidth: JunoReadingMeasure.reading, alignment: .leading)
+            .frame(maxWidth: JunoReadingMeasure.reading)
             .padding(.horizontal, JunoSpace.region)
             .padding(.vertical, JunoSpace.section)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -1332,6 +1488,9 @@ struct DesktopCodeNewTaskScreen: View {
         .onAppear {
             seedDefaults()
             configureModel()
+            if let initialEnvironment {
+                environment = initialEnvironment
+            }
             configureNativeTarget(environment)
             if let initialPrompt, prompt.isEmpty {
                 prompt = initialPrompt
@@ -1341,92 +1500,197 @@ struct DesktopCodeNewTaskScreen: View {
         .onChange(of: initialPrompt) { _, next in
             if let next, prompt.isEmpty { prompt = next }
         }
+        .onChange(of: initialEnvironment) { _, next in
+            if let next {
+                environment = next
+                configureNativeTarget(next)
+            }
+        }
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, _ in
             configureModel()
         }
         .task(id: record?.id) { await loadCustomAgents() }
     }
 
-    // MARK: Project row
+    // MARK: Heading
 
-    /// Which project this task is in, as chips: none, each granted project,
-    /// and Open folder. The one place the project appears on this screen.
-    private var projectRow: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: JunoSpace.snug) {
-                projectChip(title: "No project", icon: .conversation, selected: record == nil) {
-                    selectProject(nil)
-                }
-                ForEach(workbench.workspaces) { workspace in
-                    projectChip(
-                        title: workspace.descriptor.displayName,
-                        icon: workspace.descriptor.isGitRepository ? .branch : .projects,
-                        selected: record?.id == workspace.id
-                    ) {
-                        selectProject(workspace.id)
-                    }
-                    .help((workspace.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath)
-                }
-                Button(action: addProject) {
-                    HStack(spacing: JunoSpace.hairline) {
-                        JunoIconView(.plus, size: 12)
-                        Text("Open folder…")
-                        DesktopKeycap("⌘O")
-                    }
-                    .junoCaption()
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .frame(height: 32)
-                    .frame(minHeight: 44)
-                    .contentShape(.capsule)
-                }
-                .buttonStyle(.junoPress)
-                .help("Open a folder as a project (⌘O)")
-                .accessibilityIdentifier("juno.code.draft-open-folder")
-            }
-            .padding(.vertical, JunoSpace.hairline)
+    /// A large outlined terminal mark — the page's one piece of ornament.
+    private var mark: some View {
+        JunoIconView(.terminal, size: 26)
+            .junoInk()
+            .frame(width: 56, height: 56)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 1.5)
+            )
+            .accessibilityHidden(true)
+    }
+
+    /// "What should we build in juno?" — the project name is the one control.
+    private var heading: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("What should we build in ")
+                .junoFont(size: 24, relativeTo: .title2, weight: .semibold)
+                .junoInk()
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("juno.code.start-header")
+            projectMenu
+            Text("?")
+                .junoFont(size: 24, relativeTo: .title2, weight: .semibold)
+                .junoInk()
         }
-        .scrollIndicators(.hidden)
-        .accessibilityElement(children: .contain)
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+    }
+
+    /// The project name, dotted-underlined, opening the project picker.
+    private var projectMenu: some View {
+        Menu {
+            Button {
+                selectProject(nil)
+            } label: {
+                HStack {
+                    JunoIconLabel(verbatim: "No project", icon: .conversation, size: 14)
+                    Spacer(minLength: JunoSpace.regular)
+                    if record == nil { JunoIconView(.check, size: 13).accessibilityHidden(true) }
+                }
+            }
+            Section("Projects") {
+                ForEach(workbench.workspaces) { workspace in
+                    Button {
+                        selectProject(workspace.id)
+                    } label: {
+                        HStack {
+                            JunoIconLabel(verbatim: workspace.descriptor.displayName, icon: .folderOpen, size: 14)
+                            Spacer(minLength: JunoSpace.regular)
+                            if record?.id == workspace.id {
+                                JunoIconView(.check, size: 13).accessibilityHidden(true)
+                            }
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button(action: addProject) {
+                JunoIconLabel(verbatim: "Open folder…", icon: .folderPlus, size: 14)
+            }
+        } label: {
+            Text(record?.descriptor.displayName ?? "a project")
+                .junoFont(size: 24, relativeTo: .title2, weight: .semibold)
+                .junoInk()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .overlay(alignment: .bottom) {
+                    DottedRule()
+                        .frame(height: 2)
+                        .offset(y: 2)
+                }
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(record.map { ($0.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath } ?? "Choose a project")
         .accessibilityLabel("Project")
+        .accessibilityValue(record?.descriptor.displayName ?? "No project")
         .accessibilityIdentifier("juno.code.draft-project")
     }
 
-    private func projectChip(
-        title: String,
-        icon: JunoIcon,
-        selected: Bool,
-        select: @escaping () -> Void
-    ) -> some View {
-        Button(action: select) {
-            HStack(spacing: JunoSpace.hairline) {
-                JunoIconView(icon, size: 12)
-                Text(title)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+    // MARK: Starters
+
+    private struct StarterTask: Identifiable {
+        let id: String
+        let title: String
+        let prompt: String
+        let behavior: AgentBehavior
+        let icon: JunoIcon
+        let tint: Color
+    }
+
+    private var starterTasks: [StarterTask] {
+        [
+            StarterTask(
+                id: "explain-project", title: "Explore and understand code",
+                prompt: "Explain the architecture of this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
+                behavior: .survey, icon: .compass, tint: Color.junoSource
+            ),
+            StarterTask(
+                id: "build", title: "Build a new feature, app, or tool",
+                prompt: "Build the following, checkpointing each edit and running the relevant tests when you are done: ",
+                behavior: .code, icon: .blocks, tint: Color.junoAccent
+            ),
+            StarterTask(
+                id: "review-changes", title: "Review code and suggest changes",
+                prompt: "Review the current working tree for correctness, regressions, and missing tests. Summarize the highest-value fixes.",
+                behavior: .ask, icon: .fileDiff, tint: Color.junoSuccess
+            ),
+            StarterTask(
+                id: "fix", title: "Fix issues and failures",
+                prompt: "Run the relevant test suite, report failures clearly, and fix failures that are caused by this project.",
+                behavior: .code, icon: .shield, tint: Color.junoCaution
+            ),
+        ]
+    }
+
+    /// Four cards in a row, folding to two by two when the column is narrow.
+    /// They fill the composer rather than launching — a one-click launch of a
+    /// prompt the reader has not read is how a session starts in the wrong
+    /// direction.
+    private var starterRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: JunoSpace.cozy) {
+                ForEach(starterTasks) { starterCard($0) }
             }
-            .junoFont(size: 12, relativeTo: .caption, weight: selected ? .semibold : .medium)
-            .foregroundStyle(selected ? Color.junoForeground : Color.junoMutedForeground)
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 32)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(selected ? Color.junoRaised : Color.junoMuted.opacity(0.5))
-                    .shadow(
-                        color: selected ? Color.junoCardShadow : .clear,
-                        radius: JunoElevation.cardBlur,
-                        y: JunoElevation.cardOffsetY
-                    )
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(selected ? Color.junoBorder : Color.junoHairline, lineWidth: 0.5)
-            )
-            .frame(minHeight: 44)
-            .contentShape(.capsule)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(minimum: 140), spacing: JunoSpace.cozy),
+                    GridItem(.flexible(minimum: 140), spacing: JunoSpace.cozy),
+                ],
+                spacing: JunoSpace.cozy
+            ) {
+                ForEach(starterTasks) { starterCard($0) }
+            }
+        }
+        .accessibilityIdentifier("juno.code.starter-tasks")
+    }
+
+    private func starterCard(_ task: StarterTask) -> some View {
+        let hovered = hoveredStarter == task.id
+        return Button {
+            apply(task)
+        } label: {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                JunoIconView(task.icon, size: 16)
+                    .foregroundStyle(task.tint)
+                Text(task.title)
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                    .junoInk()
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+            .junoCard(cornerRadius: JunoRadius.card)
+            .scaleEffect(hovered ? 1.015 : 1)
+            .offset(y: hovered ? -2 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
         }
         .buttonStyle(.junoPress)
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
-        .accessibilityLabel(title)
+        .onHover { inside in
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                hoveredStarter = inside ? task.id : (hoveredStarter == task.id ? nil : hoveredStarter)
+            }
+        }
+        .accessibilityHint("Puts this prompt in the composer")
+        .accessibilityIdentifier("juno.code.launch-intent.\(task.id)")
+    }
+
+    private func apply(_ task: StarterTask) {
+        prompt = task.prompt
+        behavior = task.behavior
+        focused = true
     }
 
     // MARK: Composer
@@ -1436,13 +1700,15 @@ struct DesktopCodeNewTaskScreen: View {
             tint: isDropTargeted ? Color.junoAccent : nil,
             maxWidth: JunoReadingMeasure.reading
         ) {
-            destinationRow
+            contextStrip
         } input: {
             composerInput
         } actions: {
             HStack(spacing: JunoSpace.snug) {
                 composerAddMenu
+                permissionChip
                 Spacer(minLength: JunoSpace.cozy)
+                modelEffortChip
                 voiceButton
                 sendButton
             }
@@ -1453,31 +1719,76 @@ struct DesktopCodeNewTaskScreen: View {
         }
     }
 
-    /// The shell's top row: where the run lands, as a statement rather than a
-    /// control — the controls are the selectors below.
-    private var destinationRow: some View {
-        HStack(spacing: JunoSpace.snug) {
-            JunoIconView(destinationIcon, size: 14)
-                .junoSecondaryInk()
-            Text(destinationTitle)
-                .junoRowLabel()
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: JunoSpace.tight)
-            Text(destinationDetail)
-                .junoCaption()
-                .lineLimit(1)
-                .truncationMode(.head)
+    /// "juno · Local · main" — where the task lands, as three quiet chips at
+    /// the top of the same surface. The environment chip is the one that
+    /// changes; Cloud and Device add their own picker beside it.
+    private var contextStrip: some View {
+        HStack(spacing: JunoSpace.tight) {
+            CodeContextChip(
+                destinationTitle,
+                icon: destinationIcon
+            )
+            .help(destinationDetail)
+            .accessibilityLabel("Project")
+            .accessibilityValue(destinationTitle)
+
+            Menu {
+                ForEach(CodeEnvironmentChoice.allCases) { choice in
+                    Button {
+                        select(environment: choice)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(choice.label)
+                            }
+                            Spacer(minLength: JunoSpace.regular)
+                            if choice == environment {
+                                JunoIconView(.check, size: 13).accessibilityHidden(true)
+                            }
+                        }
+                    }
+                }
+                Text(environment.detail)
+            } label: {
+                CodeContextChip(environment.label, icon: environmentIcon)
+                    .contentShape(.rect)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .contentShape(.rect)
+            .help("Where this task runs")
+            .accessibilityLabel("Environment")
+            .accessibilityValue(environment.label)
+            .accessibilityIdentifier("juno.code.launch-target")
+
+            if environment.isLocal, let branch = projectBranch, !branch.isEmpty {
+                CodeContextChip(branch, icon: .branch)
+                    .help("The branch this project is on")
+                    .accessibilityLabel("Branch")
+                    .accessibilityValue(branch)
+            }
+
             if environment == .cloud {
-                CodeContextSeparator()
                 cloudControls
             } else if environment == .device {
-                CodeContextSeparator()
                 deviceControls
             }
+
+            Spacer(minLength: 0)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(environment.label), \(destinationTitle), \(destinationDetail)")
+        .accessibilityIdentifier("juno.code.draft-context")
+    }
+
+    private var environmentIcon: JunoIcon {
+        switch environment {
+        case .local: .device
+        case .worktree: .fork
+        case .cloud: .cloud
+        case .device: .device
+        }
     }
 
     @ViewBuilder
@@ -1507,79 +1818,33 @@ struct DesktopCodeNewTaskScreen: View {
                 )
                 .transition(.opacity)
             } else {
-                TextField(
-                    record == nil
-                        ? "Ask about a codebase, an idea, or a fix…"
-                        : "Describe what you want Juno to build, fix, review, or explain…",
-                    text: $prompt,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .lineLimit(2...8)
-                .font(.body)
-                .focused($focused)
-                .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.top, JunoSpace.regular)
-                .padding(.bottom, JunoSpace.snug)
-                .accessibilityIdentifier("juno.code.launch-prompt")
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { return .ignored }
-                    if canSend { send() }
-                    return .handled
-                }
-            }
-        }
-    }
-
-    // MARK: Selectors
-
-    /// Environment · Permissions · Model + effort · Agent, in one row under
-    /// the composer. Each is a decision about *this* task, so each lives here
-    /// rather than in a preferences window; Settings holds the defaults they
-    /// start from.
-    private var selectors: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: JunoSpace.regular) {
-                environmentSelector
-                permissionSelector
-                modelSelector
-                agentSelector
-            }
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                environmentSelector
-                HStack(spacing: JunoSpace.regular) {
-                    permissionSelector
-                    modelSelector
-                    agentSelector
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("juno.code.launch-selectors")
-    }
-
-    private var environmentSelector: some View {
-        selector("Environment") {
-            DesktopSegmented(
-                options: CodeEnvironmentChoice.allCases.map { .init($0, $0.label) },
-                selection: Binding(
-                    get: { environment },
-                    set: { next in
-                        guard next != environment else { return }
-                        environment = next
-                        configureNativeTarget(next)
+                TextField("Do anything", text: $prompt, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...8)
+                    .font(.body)
+                    .focused($focused)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.top, JunoSpace.cozy)
+                    .padding(.bottom, JunoSpace.snug)
+                    .accessibilityIdentifier("juno.code.launch-prompt")
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) { return .ignored }
+                        if canSend { send() }
+                        return .handled
                     }
-                ),
-                accessibilityLabel: "Environment",
-                optionAccessibilityIdentifier: { "juno.code.launch-target.\($0.rawValue)" }
-            )
+            }
         }
     }
 
-    private var permissionSelector: some View {
-        selector("Permissions") {
-            Menu {
+    // MARK: Chips
+
+    /// The contract, as the session composer draws it: the permission level
+    /// in coral when Juno stops asking, with the mode and the project's
+    /// agents in the same menu.
+    private var permissionChip: some View {
+        Menu {
+            Section("Permissions") {
                 ForEach(PermissionMode.allCases, id: \.self) { mode in
                     Button {
                         select(permission: mode)
@@ -1592,8 +1857,10 @@ struct DesktopCodeNewTaskScreen: View {
                             }
                         }
                     }
+                    .disabled(behavior != .code || record == nil)
                 }
-                Divider()
+            }
+            Section("Mode") {
                 ForEach(AgentBehavior.allCases, id: \.self) { value in
                     Button {
                         select(behavior: value)
@@ -1607,60 +1874,9 @@ struct DesktopCodeNewTaskScreen: View {
                         }
                     }
                 }
-                Text(PermissionModeLabel.explanation(for: effectivePermissionMode))
-            } label: {
-                CodeContextChipLabel(
-                    permissionTitle,
-                    icon: PermissionModeLabel.junoIcon(for: effectivePermissionMode),
-                    tint: effectivePermissionMode == .fullAccess ? Color.junoCaution : nil
-                )
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("What Juno may touch, and whether it answers, plans or edits")
-            .accessibilityLabel("Permissions")
-            .accessibilityValue(permissionTitle)
-            .accessibilityIdentifier("juno.code.launch-contract")
-        }
-    }
-
-    private var effectivePermissionMode: PermissionMode {
-        guard behavior == .code, record != nil else { return .readOnly }
-        return permissionMode
-    }
-
-    private var permissionTitle: String {
-        guard behavior == .code else { return "\(AgentBehaviorLabel.text(for: behavior)) · read only" }
-        guard record != nil else { return "Read only" }
-        return PermissionModeLabel.text(for: permissionMode)
-    }
-
-    private var modelSelector: some View {
-        selector("Model") {
-            HStack(spacing: JunoSpace.snug) {
-                JunoModelSelectorButton(
-                    models: workbench.availableModels.map(\.descriptor),
-                    selectedModelID: modelBinding,
-                    placeholder: "Choose model",
-                    accessibilityID: "juno.code.launch-model"
-                )
-                if let selectedModel {
-                    JunoThinkingButton(
-                        ladder: selectedModel.thinkingLadder,
-                        stopID: reasoningBinding,
-                        accessibilityID: "juno.code.launch-reasoning"
-                    )
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var agentSelector: some View {
-        if !customAgents.isEmpty {
-            selector("Agent") {
-                Menu {
+            if !customAgents.isEmpty {
+                Section("Agent") {
                     ForEach(AgentRoleOption.options(custom: customAgents)) { option in
                         Button {
                             if case .custom(let agent) = option {
@@ -1678,18 +1894,37 @@ struct DesktopCodeNewTaskScreen: View {
                             }
                         }
                     }
-                } label: {
-                    CodeContextChipLabel(selectedAgentLabel, icon: .user)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Which of the project's agents shapes this task")
-                .accessibilityLabel("Agent")
-                .accessibilityValue(selectedAgentLabel)
-                .accessibilityIdentifier("juno.code.launch-agent")
             }
+            Text(PermissionModeLabel.explanation(for: effectivePermissionMode))
+        } label: {
+            CodeContextChipLabel(
+                permissionTitle,
+                icon: PermissionModeLabel.junoIcon(for: effectivePermissionMode),
+                tint: effectivePermissionMode == .fullAccess ? Color.junoAccent : nil,
+                showsChevron: false
+            )
+            .contentShape(.rect)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .contentShape(.rect)
+        .help("What Juno may touch, and whether it answers, plans or edits")
+        .accessibilityLabel("Permissions")
+        .accessibilityValue(permissionTitle)
+        .accessibilityIdentifier("juno.code.launch-contract")
+    }
+
+    private var effectivePermissionMode: PermissionMode {
+        guard behavior == .code, record != nil else { return .readOnly }
+        return permissionMode
+    }
+
+    private var permissionTitle: String {
+        guard behavior == .code else { return "\(AgentBehaviorLabel.text(for: behavior)) · read-only" }
+        guard record != nil else { return "Read-only" }
+        return PermissionModeLabel.text(for: permissionMode)
     }
 
     private func isSelected(_ option: AgentRoleOption) -> Bool {
@@ -1699,19 +1934,88 @@ struct DesktopCodeNewTaskScreen: View {
         }
     }
 
-    private var selectedAgentLabel: String {
-        customAgents.first { $0.id == customAgentID }?.displayName ?? "Engineer"
-    }
+    /// Provider mark · model name · effort, with the row's one chevron. The
+    /// same two popovers the session composer opens.
+    private var modelEffortChip: some View {
+        let descriptor = selectedModel?.descriptor
+        let ladder = selectedModel?.thinkingLadder
+            ?? .code(efforts: ModelOption.contractReasoningEfforts)
+        let effortLabel = ladder.isAutomatic ? "Auto" : ladder.label(for: reasoningBinding.wrappedValue)
+        return HStack(spacing: JunoSpace.hairline) {
+            Button {
+                modelPresented = true
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoProviderMark(
+                        providerID: descriptor?.providerID ?? "juno",
+                        providerName: descriptor?.providerName ?? "Juno",
+                        size: 14
+                    )
+                    Text(descriptor?.displayName ?? (modelID.isEmpty ? "Choose model" : modelID))
+                        .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
+                        .junoInk()
+                        .lineLimit(1)
+                }
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .disabled(workbench.availableModels.isEmpty)
+            .help("The model this task runs on")
+            .accessibilityLabel("Model")
+            .accessibilityValue(descriptor?.displayName ?? "Choose model")
+            .accessibilityIdentifier("juno.code.launch-model")
+            .onDisappear { modelPresented = false }
+            .popover(isPresented: $modelPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                JunoModelSelector(
+                    models: workbench.availableModels.map(\.descriptor),
+                    selectedModelID: modelID,
+                    metrics: .standard,
+                    select: { model in
+                        modelPresented = false
+                        modelBinding.wrappedValue = model.id
+                    }
+                )
+                .frame(
+                    width: JunoModelSelectorMetrics.standard.width,
+                    height: JunoModelSelectorMetrics.standard.height
+                )
+            }
 
-    private func selector<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-            Text(title)
-                .junoSidebarSection()
-            content()
+            Text("·").junoMetaInk().accessibilityHidden(true)
+
+            Button {
+                effortPresented = true
+            } label: {
+                Text(effortLabel)
+                    .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
+                    .junoSecondaryInk()
+                    .lineLimit(1)
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .disabled(!ladder.isAdjustable)
+            .help("How much thinking the model does before answering")
+            .accessibilityLabel("Thinking")
+            .accessibilityValue(effortLabel)
+            .accessibilityIdentifier("juno.code.launch-reasoning")
+            .onDisappear { effortPresented = false }
+            .popover(isPresented: $effortPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                JunoThinkingPanel(ladder: ladder, stopID: reasoningBinding)
+                    .frame(
+                        width: JunoThinkingMetrics.width,
+                        height: JunoThinkingMetrics.height(caption: ladder.caption != nil, modeToggles: false)
+                    )
+            }
+
+            JunoIconView(.chevronDown, size: 10)
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
         }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(minHeight: 44)
+        .fixedSize()
     }
 
     private var modelBinding: Binding<String> {
@@ -1760,83 +2064,13 @@ struct DesktopCodeNewTaskScreen: View {
         }
     }
 
-    // MARK: Starters
-
-    private struct StarterTask: Identifiable {
-        let id: String
-        let title: String
-        let detail: String
-        let prompt: String
-        let behavior: AgentBehavior
-        let icon: JunoIcon
-    }
-
-    private var starterTasks: [StarterTask] {
-        if record == nil {
-            return [
-                StarterTask(id: "ask", title: "Ask a question", detail: "Get an answer before you open a project", prompt: "Help me think through this coding question and show a small, concrete example.", behavior: .ask, icon: .conversation),
-                StarterTask(id: "plan", title: "Plan a change", detail: "Turn an outcome into an implementation plan", prompt: "Create a focused implementation plan for the change I describe. Call out assumptions, files likely involved, and how to verify it.", behavior: .plan, icon: .sliders),
-                StarterTask(id: "explain", title: "Explain a concept", detail: "Work through architecture, APIs, or a bug", prompt: "Explain this coding problem clearly, including the trade-offs and the next step I should take.", behavior: .ask, icon: .knowledge),
-                StarterTask(id: "choose-project", title: "Start with a project", detail: "Open a folder to let Juno inspect and edit files", prompt: "Help me understand where to start in this project.", behavior: .survey, icon: .projects),
-            ]
+    private func select(environment value: CodeEnvironmentChoice) {
+        Task { @MainActor in
+            await Task.yield()
+            guard value != environment else { return }
+            environment = value
+            configureNativeTarget(value)
         }
-        return [
-            StarterTask(id: "plan-change", title: "Plan a change", detail: "Inspect first, then outline the work", prompt: "Create a focused implementation plan for the change I describe. Inspect the relevant code first, call out assumptions, and include verification steps.", behavior: .plan, icon: .sliders),
-            StarterTask(id: "explain-project", title: "Understand this project", detail: "Map entry points, modules, and risks", prompt: "Explain the architecture of this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.", behavior: .survey, icon: .knowledge),
-            StarterTask(id: "review-changes", title: "Review current changes", detail: "Find regressions before you commit", prompt: "Review the current working tree for correctness, regressions, and missing tests. Summarize the highest-value fixes.", behavior: .ask, icon: .check),
-            StarterTask(id: "run-tests", title: "Run the tests", detail: "Report failures and fix the cause", prompt: "Run the relevant test suite, report failures clearly, and fix failures that are caused by this project.", behavior: .code, icon: .check),
-        ]
-    }
-
-    /// Four raised tiles. They fill the composer rather than launching — a
-    /// one-click launch of a prompt the reader has not read is how a session
-    /// starts in the wrong direction.
-    private var starterGrid: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(minimum: 140), spacing: JunoSpace.cozy),
-                GridItem(.flexible(minimum: 140), spacing: JunoSpace.cozy),
-            ],
-            spacing: JunoSpace.cozy
-        ) {
-            ForEach(starterTasks) { task in
-                Button {
-                    apply(task)
-                } label: {
-                    HStack(spacing: JunoSpace.snug) {
-                        JunoIconView(task.icon, size: 15)
-                            .junoSecondaryInk()
-                            .frame(width: 22)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(task.title)
-                                .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
-                                .junoInk()
-                            Text(task.detail)
-                                .junoFont(size: 11, relativeTo: .caption2)
-                                .junoMetaInk()
-                                .lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug)
-                    .frame(minHeight: 52)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .junoCard(cornerRadius: JunoRadius.well)
-                    .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
-                }
-                .buttonStyle(.junoPress)
-                .accessibilityHint("Puts this prompt in the composer")
-                .accessibilityIdentifier("juno.code.launch-intent.\(task.id)")
-            }
-        }
-        .accessibilityIdentifier("juno.code.starter-tasks")
-    }
-
-    private func apply(_ task: StarterTask) {
-        prompt = task.prompt
-        behavior = task.behavior
-        focused = true
     }
 
     // MARK: Cloud and device controls
@@ -1907,8 +2141,7 @@ struct DesktopCodeNewTaskScreen: View {
 
     private var destinationIcon: JunoIcon {
         switch environment {
-        case .local: record == nil ? .conversation : .projects
-        case .worktree: .branch
+        case .local, .worktree: record == nil ? .conversation : .folderOpen
         case .cloud: .cloud
         case .device: .device
         }
@@ -2004,7 +2237,7 @@ struct DesktopCodeNewTaskScreen: View {
             Divider()
 
             Button(action: addProject) {
-                JunoIconLabel(verbatim: "Open folder…", icon: .projects, size: 14)
+                JunoIconLabel(verbatim: "Open folder…", icon: .folderPlus, size: 14)
             }
         } label: {
             JunoIconView(.plus, size: 13)
@@ -2111,18 +2344,40 @@ struct DesktopCodeNewTaskScreen: View {
 
     @ViewBuilder
     private var voiceButton: some View {
-        if JunoSpeechService.isSupported {
-            Button(action: startDictation) {
+        if JunoSpeechService.isSupported || beginVoice != nil {
+            Menu {
+                if JunoSpeechService.isSupported {
+                    Button(action: startDictation) {
+                        JunoIconLabel(verbatim: "Dictate into the composer", icon: .mic, size: 14)
+                    }
+                }
+                if let beginVoice {
+                    Button {
+                        if !modelID.isEmpty { beginVoice(modelID) }
+                    } label: {
+                        JunoIconLabel(verbatim: "Start a voice conversation", icon: .conversation, size: 14)
+                    }
+                    .disabled(modelID.isEmpty)
+                }
+            } label: {
                 JunoIconView(.mic, size: 15)
-                    .junoSecondaryInk()
+                    .junoInk()
                     .frame(width: 32, height: 32)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(.circle)
+            } primaryAction: {
+                if JunoSpeechService.isSupported {
+                    startDictation()
+                } else if let beginVoice, !modelID.isEmpty {
+                    beginVoice(modelID)
+                }
             }
-            .buttonStyle(.plain)
-            .help("Dictate into the composer")
-            .accessibilityLabel("Dictate")
-            .accessibilityIdentifier("juno.code.composer.dictate")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Dictate, or start a voice conversation")
+            .accessibilityLabel("Voice")
+            .accessibilityIdentifier("juno.code.composer.voice")
         }
     }
 
@@ -2131,7 +2386,7 @@ struct DesktopCodeNewTaskScreen: View {
         withAnimation(JunoMotion.fast) { dictating = true }
     }
 
-    /// The composer's primary action: Voice on an empty prompt, Send otherwise.
+    /// The composer's primary action: a filled coral circle.
     private var sendButton: some View {
         Group {
             if isStartingLocal || code.isMutating {
@@ -2144,26 +2399,9 @@ struct DesktopCodeNewTaskScreen: View {
                 }
                 .junoCircleAction(active: true)
                 .disabled(true)
-            } else if trimmedPrompt.isEmpty {
-                Button {
-                    if let beginVoice, !modelID.isEmpty {
-                        beginVoice(modelID)
-                    }
-                } label: {
-                    DesktopCodeVoiceGlyph()
-                        .frame(width: 32, height: 32)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .foregroundStyle(Color.junoOnAccent)
-                        .contentShape(.circle)
-                }
-                .junoCircleAction(active: beginVoice != nil && !modelID.isEmpty)
-                .disabled(beginVoice == nil || modelID.isEmpty)
-                .help("Start a voice conversation")
-                .accessibilityLabel("Start voice conversation")
-                .accessibilityIdentifier("juno.code.launch-voice")
             } else {
                 Button(action: send) {
-                    JunoIconView(.send, size: 15)
+                    JunoIconView(.arrowUp, size: 15)
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 32, height: 32)
                         .frame(minWidth: 44, minHeight: 44)
@@ -2447,6 +2685,23 @@ struct DesktopCodeNewTaskScreen: View {
     }
 }
 
+/// The dotted underline under the project name: the web's `decoration-dotted`.
+private struct DottedRule: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 1))
+                path.addLine(to: CGPoint(x: proxy.size.width, y: 1))
+            }
+            .stroke(
+                Color.junoMutedForeground,
+                style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [1.5, 4])
+            )
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - All projects
 
 /// Every folder the reader has granted Juno Code, as one page.
@@ -2499,7 +2754,7 @@ struct DesktopCodeAllProjects: View {
                         A project is a folder Juno Code may read and write in. \
                         Open one to start a task.
                         """,
-                    symbol: "folder.badge.plus",
+                    icon: .folderPlus,
                     actionLabel: "Open Folder…",
                     action: addProject
                 )
@@ -2582,20 +2837,5 @@ struct DesktopCodeAllProjects: View {
             )
         }
         return parts.joined(separator: " · ")
-    }
-}
-
-private struct DesktopCodeVoiceGlyph: View {
-    private let heights: [CGFloat] = [7, 13, 18, 11, 6]
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
-                Capsule()
-                    .fill(.foreground)
-                    .frame(width: 2, height: height)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }

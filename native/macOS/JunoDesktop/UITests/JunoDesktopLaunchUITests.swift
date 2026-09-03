@@ -150,20 +150,31 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.product-brand.code"].exists
         )
-        let addProject = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "Add project…"))
-            .firstMatch
-        XCTAssertTrue(addProject.exists)
-        XCTAssertLessThan(
-            productSwitch.frame.minX,
-            addProject.frame.maxX,
+        // The column's head, top to bottom: the product switch in its strip,
+        // the brand row, the search field, then the first destination row.
+        let brandRow = app.descendants(matching: .any)["juno.code.brand-row"]
+        XCTAssertTrue(brandRow.waitForExistence(timeout: 5))
+        let search = app.searchFields["juno.code.sidebar-search-field"]
+        XCTAssertTrue(search.exists)
+        let newTask = app.descendants(matching: .any)["juno.code.new-conversation"]
+        XCTAssertTrue(newTask.exists)
+        XCTAssertLessThanOrEqual(
+            productSwitch.frame.maxY, brandRow.frame.minY + 1,
             """
             The Chat / Code switch belongs at the top of the sidebar, over the \
-            column it switches — not in the detail toolbar.
+            column it switches — above the brand row, not in the detail toolbar.
             """
         )
+        XCTAssertLessThanOrEqual(
+            brandRow.frame.maxY, search.frame.minY + 1,
+            "The search field sits under the brand row, not above the strip."
+        )
+        XCTAssertLessThanOrEqual(
+            search.frame.maxY, newTask.frame.minY + 1,
+            "The destinations start under the search field."
+        )
         XCTAssertFalse(app.buttons["juno.code.new-chat"].exists)
-        XCTAssertFalse(app.buttons["juno.code.sidebar-search"].exists)
+        XCTAssertTrue(app.buttons["juno.code.sidebar-search"].exists)
 
         let projectMenu = app.menuButtons["juno.code.project-menu.ws-preview-juno"]
         XCTAssertTrue(projectMenu.exists)
@@ -305,8 +316,9 @@ final class JunoDesktopLaunchUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        // And back. The overview is a destination, not the absence of one.
-        let overview = app.descendants(matching: .any)["juno.work.sidebar.overview"].firstMatch
+        // And back. "New task" *is* the home: the composer page is a
+        // destination, not the absence of one.
+        let overview = app.descendants(matching: .any)["juno.work.sidebar.new-task"].firstMatch
         XCTAssertTrue(overview.exists)
         overview.click()
         XCTAssertTrue(
@@ -536,12 +548,12 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             "Chat → Code"
         )
         assertColumnHeadBelowChrome(in: app, product: "code")
-        // Code declares a sidebar search field; it must sit above the strip,
-        // not across it.
-        let search = app.searchFields.firstMatch
+        // Code pins a search field under its brand row; it must sit below the
+        // strip, not across it.
+        let search = app.searchFields["juno.code.sidebar-search-field"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(
-            search.frame.maxY, productSwitch.frame.minY + 1,
+        XCTAssertGreaterThanOrEqual(
+            search.frame.minY, productSwitch.frame.maxY - 1,
             "The Code column's search field overlaps the product switch."
         )
 
@@ -692,5 +704,46 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         guard !app.windows.firstMatch.waitForExistence(timeout: 2) else { return }
         app.typeKey("n", modifierFlags: [.command])
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
+    }
+
+    // MARK: - Screenshots
+
+    /// Photographs the shell for visual QA: every product at the two window
+    /// sizes the brief names, plus Settings. Written to
+    /// `JUNO_SHELL_SCREENSHOT_DIR` when the environment sets it; otherwise the
+    /// test only launches each surface and asserts it came up.
+    func testCaptureShellScreenshots() throws {
+        let directory = ProcessInfo.processInfo.environment["JUNO_SHELL_SCREENSHOT_DIR"]
+        let captures: [(name: String, tab: String, size: String, extra: [String])] = [
+            ("chat-1240", "chat", "1240x800", []),
+            ("code-1240", "code", "1240x800", []),
+            ("work-home-1240", "work", "1240x800", ["--juno-preview-work-overview"]),
+            ("work-home-1440", "work", "1440x900", ["--juno-preview-work-overview"]),
+            ("work-thread-1440", "work", "1440x900", []),
+            ("settings-1240", "settings", "1240x800", []),
+        ]
+        for capture in captures {
+            let app = XCUIApplication()
+            app.launchArguments = [
+                "-ApplePersistenceIgnoreState", "YES",
+                "--juno-ui-preview",
+                "--juno-preview-tab", capture.tab,
+                "--juno-preview-size", capture.size,
+            ] + capture.extra
+            app.launch()
+            openMainWindowIfNeeded(in: app)
+            XCTAssertTrue(
+                app.descendants(matching: .any)["Juno product"].waitForExistence(timeout: 15),
+                "\(capture.name): the product switch should head the sidebar"
+            )
+            // Let the preview world settle and the arrival animation finish.
+            _ = app.descendants(matching: .any)["juno.never.exists"].waitForExistence(timeout: 2)
+            if let directory {
+                let png = XCUIScreen.main.screenshot().pngRepresentation
+                let url = URL(fileURLWithPath: directory).appendingPathComponent("\(capture.name).png")
+                try png.write(to: url)
+            }
+            app.terminate()
+        }
     }
 }

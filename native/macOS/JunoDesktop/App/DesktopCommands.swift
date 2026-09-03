@@ -207,20 +207,20 @@ struct JunoDesktopCommands: Commands {
         }
     }
 
-    /// One row per product, with a checkmark against the focused window's.
+    /// One row per product, with the platform's own checkmark against the
+    /// focused window's — a `Toggle` in a menu is how AppKit draws a checked
+    /// item, so no glyph of ours is involved.
     @ViewBuilder
     private var productItems: some View {
         Section {
             ForEach(DesktopProductMode.allCases) { mode in
-                Button {
-                    actions?.switchProduct(mode)
-                } label: {
-                    if actions?.currentProduct == mode {
-                        Label(mode.label, systemImage: "checkmark")
-                    } else {
-                        Text(mode.label)
-                    }
-                }
+                Toggle(
+                    mode.label,
+                    isOn: Binding(
+                        get: { actions?.currentProduct == mode },
+                        set: { isOn in if isOn { actions?.switchProduct(mode) } }
+                    )
+                )
                 .keyboardShortcut(KeyEquivalent(mode.keyboardDigit), modifiers: [.command])
                 .disabled(actions == nil)
             }

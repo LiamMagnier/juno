@@ -3,21 +3,27 @@ import JunoCodeCore
 import JunoCodeLocal
 import JunoDesignSystem
 
-/// The compact, task-oriented repository rail.
+/// The rail's face: the task's environment as a short column of rows.
 ///
-/// Environment is intentionally a short list rather than another settings
-/// dashboard. It keeps the facts that matter while a task is running in one
-/// place: the current diff, the checkout, the branch, publication, review and
-/// the files that supplied context. Every action below routes through an
-/// existing controller or review capability; the rail never invents status.
+/// Changes with the diff stat, where the task runs, the branch, the way to
+/// commit or push, the compare link, then the delegated agents and the sources
+/// that supplied context. Every row routes through an existing controller or
+/// review capability; the rail never invents status, and every honest
+/// "unavailable" stays visible rather than hidden.
 struct EnvironmentTab: View {
     @Bindable var controller: SessionController
     let review: ReviewModel
     let openSources: (() -> Void)?
     let openWorkspace: (() -> Void)?
+    /// Opens the Subagents pane, from the section's header.
+    let openSubagents: (() -> Void)?
+    /// Opens the Create pull request sheet, or nil where the host has none.
+    let createPullRequest: (() -> Void)?
+    /// Starts a new task in this project in another environment. The engine a
+    /// session runs on is fixed when the session is created, so the picker
+    /// under "Local" cannot migrate this thread; it starts the next one.
+    let startTask: ((CodeEnvironmentChoice) -> Void)?
 
-    @State private var localExpanded = false
-    @State private var branchExpanded = false
     @State private var commitMessage = "Apply changes from Juno"
     @State private var showingCommit = false
     @State private var committing = false
@@ -25,6 +31,9 @@ struct EnvironmentTab: View {
     @State private var pushing = false
     @State private var pushPlan: GitPushPlan?
     @State private var actionError: String?
+    @State private var creatingBranch = false
+    @State private var newBranchName = ""
+    @Environment(\.openURL) private var openURL
 
     private var status: GitStatusSummary? { controller.gitStatus }
 
@@ -43,37 +52,19 @@ struct EnvironmentTab: View {
         var seen = Set<String>()
 
         for file in controller.instructionFiles {
-            appendSource(
-                path: file.path.value,
-                detail: "Instructions",
-                icon: .file,
-                to: &entries,
-                seen: &seen
-            )
+            appendSource(path: file.path.value, detail: "Instructions", icon: .file, to: &entries, seen: &seen)
         }
-
+        for path in controller.composerFileReferences {
+            appendSource(path: path.value, detail: "Attached", icon: .link, to: &entries, seen: &seen)
+        }
         for change in controller.changes {
-            appendSource(
-                path: change.path,
-                detail: "Changed file",
-                icon: .code,
-                to: &entries,
-                seen: &seen
-            )
+            appendSource(path: change.path, detail: "Changed", icon: .fileDiff, to: &entries, seen: &seen)
         }
-
         if entries.isEmpty {
             for file in controller.rootEntries where !file.isDirectory {
-                appendSource(
-                    path: file.path.value,
-                    detail: "Workspace file",
-                    icon: .file,
-                    to: &entries,
-                    seen: &seen
-                )
+                appendSource(path: file.path.value, detail: "Workspace file", icon: .file, to: &entries, seen: &seen)
             }
         }
-
         return entries
     }
 
@@ -81,52 +72,52 @@ struct EnvironmentTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 changesRow
-                hairline
-
-                disclosureRow(
-                    title: "Local",
-                    subtitle: controller.workspaceDisplayName,
-                    icon: .device,
-                    isExpanded: $localExpanded
-                )
-                if localExpanded {
-                    localDetails
-                }
-
+                environmentRow
                 if controller.isGitRepository {
-                    disclosureRow(
-                        title: branchName,
-                        subtitle: branchSubtitle,
-                        icon: .branch,
-                        isExpanded: $branchExpanded
-                    )
-                    if branchExpanded {
-                        branchDetails
-                    }
-
+                    branchRow
                     actionRow(
                         title: "Commit or push",
                         subtitle: commitPushSubtitle,
-                        icon: .send,
+                        icon: .gitCommit,
                         isEnabled: canUseGitActions,
                         isBusy: committing || preparingPush || pushing,
+                        identifier: "juno.code.environment.commit",
                         action: commitOrPush
                     )
-
                     actionRow(
-                        title: "Review branch changes",
-                        subtitle: "Open the current diff",
-                        icon: .code,
-                        isEnabled: !controller.changes.isEmpty,
-                        action: { review.present() }
+                        title: "Compare branch",
+                        subtitle: compareSubtitle,
+                        icon: .external,
+                        isEnabled: canCompare,
+                        trailing: .external,
+                        identifier: "juno.code.environment.compare",
+                        action: compareBranch
                     )
                 }
 
-                hairline
-                sourcesSection
+                sectionHeader("Subagents") { EmptyView() }
+                subagentsRow
+
+                sectionHeader("Sources") {
+                    Button {
+                        openSources?()
+                    } label: {
+                        JunoIconView(.plus, size: 13)
+                            .junoSecondaryInk()
+                            .frame(width: 24, height: 24)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.junoPress)
+                    .disabled(openSources == nil)
+                    .help("Open a file from this workspace")
+                    .accessibilityLabel("Add source")
+                    .accessibilityIdentifier("juno.code.environment.sources.add")
+                }
+                sourcesList
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
         }
         .scrollIndicators(.hidden)
         .background(Color.junoCanvas)
@@ -137,6 +128,14 @@ struct EnvironmentTab: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Juno will stage the current workspace changes and create one local commit.")
+        }
+        .alert("New branch", isPresented: $creatingBranch) {
+            TextField("Branch name", text: $newBranchName)
+            Button("Create") { createBranch() }
+                .disabled(newBranchName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Creates and checks out a branch from the current HEAD.")
         }
         .confirmationDialog(
             pushPlan?.setsUpstream == true ? "Publish branch?" : "Push branch?",
@@ -176,194 +175,153 @@ struct EnvironmentTab: View {
         }
     }
 
+    // MARK: - Rows
+
+    /// The diff, as `+1,926 −1,668` in green and red mono. Opens the review.
     private var changesRow: some View {
         Button {
             review.present()
         } label: {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(.file, size: 17)
-                        .foregroundStyle(Color.junoAccent)
-                    Text("Review changes")
-                        .font(.callout.weight(.semibold))
-                    Spacer(minLength: JunoSpace.tight)
-                    JunoIconView(.chevronRight, size: 12)
-                        .junoSecondaryInk()
-                }
-                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(changeSubtitle)
-                        .junoCaption()
-                        .lineLimit(1)
-                }
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(.fileDiff, size: 15)
+                    .junoSecondaryInk()
+                    .frame(width: 18)
+                Text("Changes")
+                    .junoRowLabel()
+                    .junoInk()
                 Spacer(minLength: JunoSpace.tight)
                 if totalAdded > 0 || totalRemoved > 0 {
-                    DiffStat(added: totalAdded, removed: totalRemoved)
-                }
+                    HStack(spacing: JunoSpace.tight) {
+                        Text("+\(Self.grouped(totalAdded))")
+                            .foregroundStyle(Color.junoSuccess)
+                        Text("−\(Self.grouped(totalRemoved))")
+                            .foregroundStyle(Color.junoDanger)
+                    }
+                    .junoCode()
+                    .monospacedDigit()
+                } else {
+                    Text(changeSubtitle)
+                        .junoCaption()
                 }
             }
-            .padding(JunoSpace.cozy)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .fill(Color.junoRaised.opacity(0.72))
-            )
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help("Review the files changed by this task")
+        .help("Review the files changed by this task (⌥⌘R)")
+        .accessibilityLabel("Changes, \(totalAdded) added, \(totalRemoved) removed")
         .accessibilityIdentifier("juno.code.environment.changes")
     }
 
-    private var localDetails: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            detailRow("Workspace", controller.workspacePathDisplay, icon: .projects)
-            detailRow(
-                "Permission",
-                PermissionModeLabel.text(for: effectivePermissionMode),
-                icon: PermissionModeLabel.junoIcon(for: effectivePermissionMode)
-            )
-            if let openWorkspace {
-                Button {
-                    openWorkspace()
-                } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(.external, size: 13)
-                        Text("Reveal in Finder")
+    /// "Local ▾" — where this thread runs, and the menu that starts the next
+    /// one somewhere else.
+    private var environmentRow: some View {
+        let current: CodeEnvironmentChoice = controller.session.executionRootPath != nil ? .worktree : .local
+        return Menu {
+            Section("This thread") {
+                Text(controller.workspacePathDisplay)
+                Text(current.detail)
+            }
+            Section("Start the next task in") {
+                ForEach(CodeEnvironmentChoice.allCases) { choice in
+                    Button {
+                        startTask?(choice)
+                    } label: {
+                        HStack {
+                            Text(choice.label)
+                            Spacer(minLength: JunoSpace.regular)
+                            if choice == current {
+                                JunoIconView(.check, size: 13).accessibilityHidden(true)
+                            }
+                        }
                     }
-                    .junoCaption()
+                    .disabled(startTask == nil)
                 }
-                .contentShape(.rect)
-                .buttonStyle(.borderless)
+            }
+            if let openWorkspace {
+                Divider()
+                Button(action: openWorkspace) {
+                    JunoIconLabel(verbatim: "Reveal in Finder", icon: .external, size: 14)
+                }
                 .disabled(controller.context == nil)
             }
+        } label: {
+            menuRowLabel(
+                title: current.label,
+                subtitle: controller.workspaceDisplayName,
+                icon: current == .worktree ? .fork : .device
+            )
         }
-        .padding(.leading, 42)
-        .padding(.trailing, JunoSpace.cozy)
-        .padding(.bottom, JunoSpace.snug)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .contentShape(.rect)
+        .help("Where this thread runs")
+        .accessibilityLabel("Environment")
+        .accessibilityValue(current.label)
+        .accessibilityIdentifier("juno.code.environment.location")
     }
 
-    private var branchDetails: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            detailRow("Upstream", status?.upstream ?? "No upstream", icon: .external)
-            HStack(spacing: JunoSpace.regular) {
-                compactCount("Ahead", value: status?.ahead ?? 0, icon: .send)
-                compactCount("Behind", value: status?.behind ?? 0, icon: .arrowDown)
-            }
-        }
-        .padding(.leading, 42)
-        .padding(.trailing, JunoSpace.cozy)
-        .padding(.bottom, JunoSpace.snug)
-    }
-
-    private var sourcesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Sources")
-                    .junoCaption()
-                Spacer(minLength: 0)
-                Button {
-                    openSources?()
-                } label: {
-                    JunoIconView(.plus, size: 14)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
+    /// "main ▾" — the branch, its upstream, and the branch actions.
+    private var branchRow: some View {
+        Menu {
+            Section(branchName) {
+                Text(branchSubtitle)
+                if let status {
+                    Text("Ahead \(status.ahead) · Behind \(status.behind)")
                 }
-                .buttonStyle(.borderless)
-                .disabled(openSources == nil)
-                .help("Open a file from this workspace")
-                .accessibilityLabel("Add source")
             }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-
-            if sourceEntries.isEmpty {
-                Text("No source files recorded yet")
-                    .junoCaption()
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.bottom, JunoSpace.snug)
-            } else {
-                ForEach(Array(sourceEntries.prefix(3))) { entry in
-                    sourceRow(entry)
-                }
-                if sourceEntries.count > 3 || openSources != nil {
-                    Button("View all") {
-                        openSources?()
+            Button {
+                newBranchName = ""
+                creatingBranch = true
+            } label: {
+                JunoIconLabel(verbatim: "New branch…", icon: .branch, size: 14)
+            }
+            .disabled(!canUseGitActions)
+            if !controller.managedWorktrees.isEmpty {
+                Section("Worktrees") {
+                    ForEach(controller.managedWorktrees) { worktree in
+                        Text("\(worktree.branch) · \(PathDisplay.fileName(worktree.rootPath))")
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.top, JunoSpace.hairline)
-                    .padding(.bottom, JunoSpace.snug)
-                    .disabled(openSources == nil)
-                    .contentShape(.rect)
-                    .accessibilityIdentifier("juno.code.environment.sources.all")
                 }
             }
+        } label: {
+            menuRowLabel(title: branchName, subtitle: branchSubtitle, icon: .branch)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .contentShape(.rect)
+        .help("The branch this thread works on")
+        .accessibilityLabel("Branch")
+        .accessibilityValue(branchName)
+        .accessibilityIdentifier("juno.code.environment.branch")
+    }
+
+    /// A menu row: mark, title, quiet subtitle, and the one chevron a menu
+    /// row earns.
+    private func menuRowLabel(title: String, subtitle: String, icon: JunoIcon) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            JunoIconView(icon, size: 15)
+                .junoSecondaryInk()
+                .frame(width: 18)
+            Text(title)
+                .junoRowLabel()
+                .junoInk()
+                .lineLimit(1)
+                .truncationMode(.middle)
+            JunoIconView(.chevronDown, size: 11)
+                .junoMetaInk()
+            Spacer(minLength: JunoSpace.tight)
+            Text(subtitle)
+                .junoCaption()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 120, alignment: .trailing)
+        }
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func sourceRow(_ entry: SourceEntry) -> some View {
-        Button {
-            openSource(entry.path)
-        } label: {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(entry.icon, size: 14)
-                    .junoSecondaryInk()
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(PathDisplay.fileName(entry.path))
-                        .junoCode()
-                        .lineLimit(1)
-                    Text(entry.detail)
-                        .font(.caption2)
-                        .junoMetaInk()
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.tight)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .help("Open \(entry.path)")
-    }
-
-    private func disclosureRow(
-        title: String,
-        subtitle: String,
-        icon: JunoIcon,
-        isExpanded: Binding<Bool>
-    ) -> some View {
-        Button {
-            withAnimation(JunoMotion.fast) {
-                isExpanded.wrappedValue.toggle()
-            }
-        } label: {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(icon, size: 17)
-                    .junoSecondaryInk()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .junoRowLabel()
-                        .lineLimit(1)
-                    Text(subtitle)
-                        .junoCaption()
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 0)
-                JunoIconView(isExpanded.wrappedValue ? .chevronDown : .chevronRight, size: 12)
-                    .junoSecondaryInk()
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(isExpanded.wrappedValue ? "Expanded" : "Collapsed")
+        .frame(minHeight: 44)
+        .contentShape(.rect)
     }
 
     private func actionRow(
@@ -372,69 +330,174 @@ struct EnvironmentTab: View {
         icon: JunoIcon,
         isEnabled: Bool,
         isBusy: Bool = false,
+        trailing: JunoIcon? = nil,
+        identifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(icon, size: 17)
+                JunoIconView(icon, size: 15)
                     .junoSecondaryInk()
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .junoRowLabel()
-                    Text(subtitle)
-                        .junoCaption()
-                        .lineLimit(1)
+                    .frame(width: 18)
+                Text(title)
+                    .junoRowLabel()
+                    .junoInk()
+                if let trailing {
+                    JunoIconView(trailing, size: 11)
+                        .junoMetaInk()
                 }
                 Spacer(minLength: JunoSpace.tight)
                 if isBusy {
-                    ProgressView()
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 } else {
-                    JunoIconView(.chevronRight, size: 12)
-                        .junoSecondaryInk()
+                    Text(subtitle)
+                        .junoCaption()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 120, alignment: .trailing)
                 }
             }
             .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled || isBusy)
         .help(isEnabled ? subtitle : disabledActionHelp)
+        .accessibilityIdentifier(identifier)
     }
 
-    private func detailRow(_ title: String, _ value: String, icon: JunoIcon) -> some View {
-        HStack(spacing: JunoSpace.tight) {
-            JunoIconView(icon, size: 13)
-                .junoSecondaryInk()
-            Text(title)
+    // MARK: - Subagents
+
+    /// One dot per agent, coloured by its state, and the count.
+    private var subagentsRow: some View {
+        let runs = controller.subagents
+        let active = runs.filter(\.isActive).count
+        let done = runs.count - active
+        return Button {
+            openSubagents?()
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                if runs.isEmpty {
+                    Text("No agents delegated")
+                        .junoCaption()
+                } else {
+                    HStack(spacing: 3) {
+                        ForEach(runs.prefix(12)) { run in
+                            Circle()
+                                .fill(Self.dotTint(run.status))
+                                .frame(width: 7, height: 7)
+                        }
+                    }
+                    .accessibilityHidden(true)
+                    Text(subagentSummary(active: active, done: done))
+                        .junoCaption()
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(runs.isEmpty || openSubagents == nil)
+        .accessibilityLabel(runs.isEmpty ? "No agents delegated" : subagentSummary(active: active, done: done))
+        .accessibilityIdentifier("juno.code.environment.subagents")
+    }
+
+    private func subagentSummary(active: Int, done: Int) -> String {
+        var parts: [String] = []
+        if active > 0 { parts.append("\(active) running") }
+        if done > 0 { parts.append("\(done) done") }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func dotTint(_ status: SubagentStatus) -> Color {
+        switch status {
+        case .completed: .junoSuccess
+        case .failed: .junoDanger
+        case .waitingForApproval, .interrupted: .junoCaution
+        case .running: .junoAccent
+        case .queued, .preparing, .cancelled: .junoMutedForeground
+        }
+    }
+
+    // MARK: - Sources
+
+    @ViewBuilder
+    private var sourcesList: some View {
+        let entries = sourceEntries
+        if entries.isEmpty {
+            Text("No sources yet")
                 .junoCaption()
-            Spacer(minLength: JunoSpace.tight)
-            Text(value)
-                .junoCodeSmall()
-                .junoMetaInk()
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.bottom, JunoSpace.snug)
+        } else {
+            ForEach(Array(entries.prefix(4))) { entry in
+                sourceRow(entry)
+            }
+            if entries.count > 4 || openSources != nil {
+                Button {
+                    openSources?()
+                } label: {
+                    Text("View all")
+                        .junoCaption()
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(openSources == nil)
+                .accessibilityIdentifier("juno.code.environment.sources.all")
+            }
         }
-        .accessibilityElement(children: .combine)
     }
 
-    private func compactCount(_ title: String, value: Int, icon: JunoIcon) -> some View {
-        HStack(spacing: JunoSpace.hairline) {
-            JunoIconView(icon, size: 12)
-                .junoSecondaryInk()
-            Text("\(title) \(value)")
-                .junoCodeSmall()
-                .junoMetaInk()
-                .monospacedDigit()
+    private func sourceRow(_ entry: SourceEntry) -> some View {
+        Button {
+            openSource(entry.path)
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(entry.icon, size: 13)
+                    .junoSecondaryInk()
+                    .frame(width: 18)
+                Text(PathDisplay.fileName(entry.path))
+                    .junoCode()
+                    .junoInk()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: JunoSpace.tight)
+                Text(entry.detail)
+                    .junoCaption()
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .help("Open \(entry.path)")
     }
 
-    private var hairline: some View {
-        Divider()
-            .overlay(Color.junoSeparator)
-            .padding(.vertical, JunoSpace.hairline)
+    private func sectionHeader<Trailing: View>(
+        _ title: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            Text(title)
+                .junoSidebarSection()
+            Spacer(minLength: 0)
+            trailing()
+        }
+        .padding(.leading, JunoSpace.cozy)
+        .padding(.trailing, JunoSpace.tight)
+        .padding(.top, JunoSpace.regular)
+        .frame(minHeight: 32)
+        .accessibilityAddTraits(.isHeader)
     }
+
+    // MARK: - Facts
 
     private var branchName: String {
         status?.branch ?? controller.session.gitBranch ?? "No branch"
@@ -442,7 +505,7 @@ struct EnvironmentTab: View {
 
     private var branchSubtitle: String {
         if let upstream = status?.upstream { return upstream }
-        return status == nil ? "Loading repository" : "No upstream"
+        return status == nil ? "Loading" : "No upstream"
     }
 
     private var changeSubtitle: String {
@@ -450,16 +513,26 @@ struct EnvironmentTab: View {
             return PathDisplay.fileCount(controller.changes.count)
         }
         if let status, !status.files.isEmpty {
-            return "\(status.files.count) working tree files"
+            return "\(status.files.count) in working tree"
         }
-        return "Working tree clean"
+        return "Clean"
     }
 
     private var commitPushSubtitle: String {
-        if !canUseGitActions { return controller.context == nil ? "Unavailable in preview" : "Read-only session" }
-        if hasRepositoryChanges { return "\(status?.files.count ?? controller.changes.count) files ready" }
-        if let status, status.ahead > 0 { return "\(status.ahead) local commit\(status.ahead == 1 ? "" : "s") to push" }
+        if !canUseGitActions { return controller.context == nil ? "Unavailable in preview" : "Read-only" }
+        if hasRepositoryChanges { return "\(status?.files.count ?? controller.changes.count) files" }
+        if let status, status.ahead > 0 { return "\(status.ahead) to push" }
         return "Nothing to publish"
+    }
+
+    private var canCompare: Bool {
+        controller.gitHubPullRequest != nil || createPullRequest != nil
+    }
+
+    private var compareSubtitle: String {
+        if let pull = controller.gitHubPullRequest { return "#\(pull.number)" }
+        if createPullRequest != nil { return "Open a pull request" }
+        return controller.pullRequestUnavailableReason ?? "Unavailable"
     }
 
     private var disabledActionHelp: String {
@@ -468,19 +541,14 @@ struct EnvironmentTab: View {
         return "There is nothing to publish from this workspace"
     }
 
-    private var effectivePermissionMode: PermissionMode {
-        controller.session.configuration.behavior == .code
-            ? controller.session.configuration.permissionMode
-            : .readOnly
+    private var totalAdded: Int { controller.changes.reduce(0) { $0 + $1.linesAdded } }
+    private var totalRemoved: Int { controller.changes.reduce(0) { $0 + $1.linesRemoved } }
+
+    static func grouped(_ value: Int) -> String {
+        value.formatted(.number.grouping(.automatic))
     }
 
-    private var totalAdded: Int {
-        controller.changes.reduce(0) { $0 + $1.linesAdded }
-    }
-
-    private var totalRemoved: Int {
-        controller.changes.reduce(0) { $0 + $1.linesRemoved }
-    }
+    // MARK: - Actions
 
     private func commitOrPush() {
         guard canUseGitActions else { return }
@@ -501,6 +569,17 @@ struct EnvironmentTab: View {
                 actionError = controller.transientError ?? "The commit could not be created."
             }
             committing = false
+        }
+    }
+
+    private func createBranch() {
+        let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        Task {
+            let succeeded = await controller.createGitBranch(named: name)
+            if !succeeded {
+                actionError = controller.transientError ?? "The branch could not be created."
+            }
         }
     }
 
@@ -526,6 +605,15 @@ struct EnvironmentTab: View {
             }
             pushing = false
         }
+    }
+
+    /// The pull request when there is one, the sheet that opens one otherwise.
+    private func compareBranch() {
+        if let pull = controller.gitHubPullRequest, let url = URL(string: pull.url) {
+            openURL(url)
+            return
+        }
+        createPullRequest?()
     }
 
     private func openSource(_ rawPath: String) {

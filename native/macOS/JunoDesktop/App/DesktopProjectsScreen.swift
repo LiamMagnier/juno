@@ -263,7 +263,7 @@ struct DesktopProjectsScreen: View {
 
                 sortMenu
                 Button(action: startCreate) {
-                    JunoIconLabel("New project", systemImage: "plus")
+                    Label("New project", icon: .plus)
                 }
                 .junoProminentGlassButton()
                 // Registered exactly once on this screen. While the old browser
@@ -297,7 +297,7 @@ struct DesktopProjectsScreen: View {
     /// the same job.
     private var searchField: some View {
         HStack(spacing: JunoSpace.tight) {
-            JunoIconView(systemImage: "magnifyingglass")
+            JunoIconView(.search)
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             TextField("Search projects…", text: $query)
@@ -307,7 +307,7 @@ struct DesktopProjectsScreen: View {
                 Button {
                     query = ""
                 } label: {
-                    JunoIconView(systemImage: "xmark.circle.fill")
+                    JunoIconView(.circleX)
                         .junoMetaInk()
                 }
                 .buttonStyle(.plain)
@@ -345,7 +345,7 @@ struct DesktopProjectsScreen: View {
             Label {
                 Text("Sort by: \(sort.label)")
             } icon: {
-                JunoIconView(systemImage: "slider.horizontal.3")
+                JunoIconView(.sliders)
             }
         }
         .menuStyle(.borderlessButton)
@@ -374,7 +374,7 @@ struct DesktopProjectsScreen: View {
                             model.lastErrorDescription,
                             fallback: "Check your connection and try again."
                         ),
-                    symbol: "exclamationmark.triangle",
+                    icon: .triangleAlert,
                     actionLabel: "Try again",
                     action: { Task { await model.reload() } }
                 )
@@ -434,17 +434,14 @@ struct DesktopProjectsScreen: View {
         Button {
             togglePin(project)
         } label: {
-            Label(
-                project.starred ? "Unpin" : "Pin",
-                systemImage: project.starred ? "pin.slash" : "pin"
-            )
+            Label(verbatim: project.starred ? "Unpin" : "Pin", icon: .pin)
         }
         .disabled(project.isPending)
         .contentShape(.rect)
         Button {
             startRename(project)
         } label: {
-            JunoIconLabel("Rename…", systemImage: "pencil")
+            Label("Rename…", icon: .pencil)
         }
         .disabled(project.isPending)
         .contentShape(.rect)
@@ -453,7 +450,7 @@ struct DesktopProjectsScreen: View {
         Button {
             beginFileImport(for: project)
         } label: {
-            JunoIconLabel("Add files…", systemImage: "paperclip")
+            Label("Add files…", icon: .attach)
         }
         .disabled(project.isPending || model.isPerformingFileAction)
         .contentShape(.rect)
@@ -461,7 +458,7 @@ struct DesktopProjectsScreen: View {
         Button(role: .destructive) {
             deleteTarget = project
         } label: {
-            JunoIconLabel("Delete project", systemImage: "trash")
+            Label("Delete project", icon: .trash)
         }
         .disabled(project.isPending)
         .contentShape(.rect)
@@ -479,7 +476,7 @@ struct DesktopProjectsScreen: View {
         if !model.projects.isEmpty, let status = status {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(spacing: JunoSpace.cozy) {
-                    JunoIconView(systemImage: status.symbol)
+                    JunoIconView(status.icon, size: 16)
                         .foregroundStyle(status.isConflict ? Color.junoCaution : .secondary)
                         .accessibilityHidden(true)
                     Text(status.message)
@@ -514,11 +511,11 @@ struct DesktopProjectsScreen: View {
     /// retry — so it is decided here. Everything else goes through the shared
     /// copy, which is what stops a bare "Not found" or "401" from being printed
     /// under the grid as if it were a sentence.
-    private var status: (message: String, symbol: String, isConflict: Bool)? {
+    private var status: (message: String, icon: JunoIcon, isConflict: Bool)? {
         if model.conflictedMutationCount > 0 {
             return (
                 "A project changed on another device.",
-                "exclamationmark.arrow.triangle.2.circlepath",
+                .refresh,
                 true
             )
         }
@@ -529,7 +526,7 @@ struct DesktopProjectsScreen: View {
             subject: "projects",
             singular: "project"
         ) else { return nil }
-        return (resolved.message, resolved.symbol, false)
+        return (resolved.message, resolved.icon, false)
     }
 
     // MARK: - Actions
@@ -842,7 +839,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         Menu {
             menu()
         } label: {
-            JunoIconView(systemImage: "ellipsis")
+            JunoIconView(.ellipsis)
                 .junoSecondaryInk()
         }
         .menuStyle(.borderlessButton)
@@ -1112,7 +1109,7 @@ private struct DesktopProjectDetail: View {
 
     private var backControl: some View {
         Button(action: showAllProjects) {
-            JunoIconLabel("All projects", systemImage: "chevron.left")
+            Label("All projects", icon: .chevronLeft)
                 .junoRowLabel()
         }
         .buttonStyle(.plain)
@@ -1135,7 +1132,7 @@ private struct DesktopProjectDetail: View {
                     .lineLimit(2)
                     .textSelection(.enabled)
                 Button(action: renameProject) {
-                    JunoIconView(systemImage: "pencil")
+                    JunoIconView(.pencil)
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -1149,7 +1146,7 @@ private struct DesktopProjectDetail: View {
                 Button {
                     startConversation(nil)
                 } label: {
-                    JunoIconLabel("New chat", systemImage: "square.and.pencil")
+                    Label("New chat", icon: .compose)
                 }
                 .junoProminentGlassButton()
                 .disabled(project.isPending)
@@ -1235,7 +1232,7 @@ private struct DesktopProjectDetail: View {
             Divider()
             Button("Delete project…", role: .destructive, action: deleteProject)
         } label: {
-            JunoIconLabel("Project actions", systemImage: "ellipsis")
+            Label("Project actions", icon: .ellipsis)
         }
         .labelStyle(.iconOnly)
         .menuStyle(.borderlessButton)
@@ -1348,7 +1345,7 @@ private struct DesktopProjectDetail: View {
                         .foregroundStyle(Color.junoAccent)
                         .accessibilityLabel("Pinned")
                 }
-                JunoIconView(systemImage: "chevron.right")
+                JunoIconView(.chevronRight)
                     .font(.caption)
                     .junoMetaInk()
                     .accessibilityHidden(true)
@@ -1386,7 +1383,7 @@ private struct DesktopProjectDetail: View {
                 eyebrow("Instructions")
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: editInstructions) {
-                    JunoIconView(systemImage: "pencil")
+                    JunoIconView(.pencil)
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -1442,7 +1439,7 @@ private struct DesktopProjectDetail: View {
                 eyebrow("Files")
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: addFiles) {
-                    JunoIconView(systemImage: "plus")
+                    JunoIconView(.plus)
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -1464,7 +1461,7 @@ private struct DesktopProjectDetail: View {
                 // this screen ended up with two of everything.
                 ForEach(files) { file in
                     HStack(spacing: JunoSpace.snug) {
-                        JunoIconView(systemImage: DesktopProjectFileFacts.symbol(for: file))
+                        JunoIconView(DesktopProjectFileFacts.icon(for: file), size: 16)
                             .junoSecondaryInk()
                             .accessibilityHidden(true)
                         Text(file.fileName)
@@ -1529,7 +1526,7 @@ private struct DesktopProjectDetail: View {
             DesktopProjectPlaceholder(
                 title: "Assistant setup is unavailable",
                 message: "Juno could not open the account store, so assistant settings cannot be saved.",
-                symbol: "exclamationmark.triangle"
+                icon: .triangleAlert
             )
         }
     }
@@ -1556,7 +1553,7 @@ private struct DesktopProjectDetail: View {
                 }
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: editInstructions) {
-                    JunoIconLabel("Full editor", systemImage: "arrow.up.left.and.arrow.down.right")
+                    Label("Full editor", icon: .maximize)
                 }
                 .disabled(project.isPending || model.isMutating)
                 .accessibilityIdentifier("Open instructions editor")
@@ -1606,7 +1603,7 @@ private struct DesktopProjectDetail: View {
                 }
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: addFiles) {
-                    JunoIconLabel("Add file", systemImage: "paperclip")
+                    Label("Add file", icon: .attach)
                 }
                 .disabled(project.isPending || model.isPerformingFileAction)
                 .accessibilityIdentifier("Add project files")
@@ -1617,7 +1614,7 @@ private struct DesktopProjectDetail: View {
                 DesktopProjectPlaceholder(
                     title: "No files yet",
                     message: "Drop files here or click to browse — Juno references them in every chat.",
-                    symbol: "arrow.up.doc",
+                    icon: .upload,
                     action: addFiles
                 )
             } else {
@@ -1653,7 +1650,7 @@ private struct DesktopProjectDetail: View {
 
     private func fileRow(_ file: NativeProjectFile) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: DesktopProjectFileFacts.symbol(for: file))
+            JunoIconView(DesktopProjectFileFacts.icon(for: file), size: 16)
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -1691,7 +1688,7 @@ private struct DesktopProjectDetail: View {
                     Task { await model.deleteFile(id: file.id) }
                 }
             } label: {
-                JunoIconLabel("File options", systemImage: "ellipsis")
+                Label("File options", icon: .ellipsis)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -1736,7 +1733,7 @@ private struct DesktopProjectDetail: View {
 private struct DesktopProjectPlaceholder: View {
     var title: String?
     let message: String
-    var symbol: String?
+    var icon: JunoIcon?
     var action: (() -> Void)?
 
     var body: some View {
@@ -1751,8 +1748,8 @@ private struct DesktopProjectPlaceholder: View {
 
     private var box: some View {
         VStack(spacing: JunoSpace.snug) {
-            if let symbol {
-                JunoIconView(systemImage: symbol)
+            if let icon {
+                JunoIconView(icon, size: 16)
                     .font(.title2)
                     .junoMetaInk()
             }
@@ -1881,7 +1878,7 @@ private struct DesktopProjectAssistantPanel: View {
 
     private var syncNotice: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "arrow.triangle.2.circlepath")
+            JunoIconView(.refresh)
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             Text("Persona, preferred model, tool limits and knowledge selection sync with this project on your Juno devices.")
@@ -2043,7 +2040,7 @@ private struct DesktopProjectAssistantPanel: View {
                 ForEach(files) { file in
                     Toggle(isOn: knowledgeBinding(file)) {
                         HStack(spacing: JunoSpace.snug) {
-                            JunoIconView(systemImage: DesktopProjectFileFacts.symbol(for: file))
+                            JunoIconView(DesktopProjectFileFacts.icon(for: file), size: 16)
                                 .junoSecondaryInk()
                                 .accessibilityHidden(true)
                             Text(file.fileName)
@@ -2298,15 +2295,13 @@ private enum DesktopProjectFileFacts {
     /// No thumbnail: the only way to reach a file's bytes is `accessFile`, which
     /// flips the model's `isPerformingFileAction` flag and would put every row's
     /// spinner on and every file action off for as long as previews were loading.
-    static func symbol(for file: NativeProjectFile) -> String {
+    static func icon(for file: NativeProjectFile) -> JunoIcon {
         let mime = file.mimeType.lowercased()
-        if mime.hasPrefix("image/") || file.kind.uppercased() == "IMAGE" { return "photo" }
-        if mime.hasPrefix("audio/") { return "waveform" }
-        if mime.hasPrefix("video/") { return "film" }
-        if mime.contains("pdf") { return "doc.richtext" }
-        if mime.contains("csv") || mime.contains("spreadsheet") { return "tablecells" }
-        if mime.hasPrefix("text/") { return "doc.text" }
-        return "doc"
+        if mime.hasPrefix("image/") || file.kind.uppercased() == "IMAGE" { return .image }
+        if mime.hasPrefix("audio/") { return .activity }
+        if mime.hasPrefix("video/") { return .image }
+        if mime.contains("csv") || mime.contains("spreadsheet") { return .grid }
+        return .file
     }
 
     static func size(of file: NativeProjectFile) -> String {
@@ -2510,10 +2505,7 @@ private struct DesktopProjectInstructionsSheet: View {
 
             HStack(spacing: JunoSpace.cozy) {
                 if draft.count > softWarnLength {
-                    Label(
-                        "Very long — a model may not attend to all of it.",
-                        systemImage: "exclamationmark.triangle"
-                    )
+                    Label("Very long — a model may not attend to all of it.", icon: .triangleAlert)
                     .junoCaption()
                     .foregroundStyle(Color.junoCaution)
                 } else {

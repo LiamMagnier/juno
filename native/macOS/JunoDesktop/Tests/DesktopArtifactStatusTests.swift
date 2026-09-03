@@ -73,7 +73,7 @@ struct DesktopArtifactStatusTests {
     func offlineExplainsItselfAndOffersNoRetry() {
         let result = status(phase: .offline)
         #expect(result?.isRetryable == false)
-        #expect(result?.symbol == "wifi.slash")
+        #expect(result?.icon == .wifiOff)
         #expect(result?.message.contains("saved on this Mac") == true)
     }
 

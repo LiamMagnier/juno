@@ -30,7 +30,7 @@ public struct OpenQuicklySheet: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: "magnifyingglass")
+                JunoIconView(.search)
                     .junoSecondaryInk()
                 TextField("Open a file by name", text: $query)
                     .textFieldStyle(.plain)
@@ -69,7 +69,7 @@ public struct OpenQuicklySheet: View {
                         open(entry)
                     } label: {
                         HStack(spacing: JunoSpace.snug) {
-                            JunoIconView(systemImage: "doc")
+                            JunoIconView(.file)
                                 .junoSecondaryInk()
                             Text(entry.path.value)
                                 .junoCode()

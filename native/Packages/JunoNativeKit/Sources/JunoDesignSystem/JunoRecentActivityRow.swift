@@ -14,7 +14,7 @@ public struct JunoRecentActivityRow: View {
 
     public var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: item.kind.systemImage)
+            JunoIconView(item.kind.icon)
                 .junoFont(size: 13, relativeTo: .body, weight: .medium)
                 .foregroundStyle(item.needsAttention ? Color.junoCaution : Color.junoSidebarForeground)
                 .frame(width: 18)
@@ -50,6 +50,19 @@ public struct JunoRecentActivityRow: View {
         case "failed": "Failed"
         case "interrupted": "Interrupted"
         default: nil
+        }
+    }
+}
+
+extension JunoRecentKind {
+    /// The website's mark for each kind: the same glyphs the product switcher
+    /// and the sidebar draw for the product the item belongs to.
+    var icon: JunoIcon {
+        switch self {
+        case .chat: .conversation
+        case .work: .listChecks
+        case .code: .code
+        case .project: .projects
         }
     }
 }

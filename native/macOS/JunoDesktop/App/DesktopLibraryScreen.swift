@@ -305,7 +305,7 @@ struct DesktopLibraryScreen: View {
 
     private func indexSummary(_ index: NativeDocumentIndexModel) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "text.magnifyingglass")
+            JunoIconView(.fileSearch)
                 .junoSecondaryInk()
                 .accessibilityHidden(true)
             Text(indexSummaryLine(index))
@@ -380,7 +380,7 @@ struct DesktopLibraryScreen: View {
 
     private func indexFailure(_ message: String, index: NativeDocumentIndexModel) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "exclamationmark.triangle.fill")
+            JunoIconView(.triangleAlert)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)
@@ -639,11 +639,10 @@ struct DesktopLibraryScreen: View {
         } label: {
             Group {
                 if isSelected {
-                    JunoIconView(systemImage: "checkmark.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(Color.junoCanvasWarm, Color.junoForeground)
+                    JunoIconView(.circleCheck)
+                        .foregroundStyle(Color.junoForeground)
                 } else {
-                    JunoIconView(systemImage: "circle")
+                    JunoIconView(.circle)
                         .junoSecondaryInk()
                 }
             }
@@ -670,7 +669,7 @@ struct DesktopLibraryScreen: View {
                     // (`text-muted-foreground`, `library/page.tsx:359`). A coral
                     // icon in *every* row is the accent describing nothing: it
                     // marked no state and distinguished no file from any other.
-                    JunoIconView(systemImage: item.isImage ? "photo" : "doc.text")
+                    JunoIconView(item.isImage ? .image : .file, size: 18)
                         .foregroundStyle(Color.junoMutedForeground)
                 }
                 .help(item.fileName)
@@ -808,8 +807,8 @@ struct DesktopLibraryScreen: View {
             .accessibilityIdentifier("juno.desktop.library-filter")
 
             Picker("View", selection: presentationBinding) {
-                JunoIconLabel("Grid", systemImage: "square.grid.2x2").tag(Presentation.grid)
-                JunoIconLabel("List", systemImage: "list.bullet").tag(Presentation.list)
+                Label("Grid", icon: .grid).tag(Presentation.grid)
+                Label("List", icon: .list).tag(Presentation.list)
             }
             .pickerStyle(.segmented)
             .labelStyle(.iconOnly)
@@ -827,7 +826,7 @@ struct DesktopLibraryScreen: View {
                 documentPanelFailure = nil
                 choosingDocument = true
             } label: {
-                JunoIconLabel("Add Document", systemImage: "doc.badge.plus")
+                Label("Add Document", icon: .filePlus)
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             .disabled(documentIndex?.isReady != true || documentIndex?.isIngesting == true)
@@ -840,7 +839,7 @@ struct DesktopLibraryScreen: View {
             .accessibilityIdentifier("juno.desktop.library-add-document")
 
             Button(action: refresh) {
-                JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
+                Label("Refresh", icon: .refresh)
             }
             .keyboardShortcut("r", modifiers: .command)
             .disabled(model.isLoading)
@@ -865,7 +864,7 @@ struct DesktopLibraryScreen: View {
             JunoEmptyState(
                 title: "Library unavailable",
                 message: error,
-                symbol: "exclamationmark.triangle",
+                icon: .triangleAlert,
                 actionLabel: "Try Again",
                 action: refresh
             )
@@ -900,7 +899,7 @@ struct DesktopLibraryScreen: View {
         if let error = model.lastErrorDescription, !model.items.isEmpty {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(systemImage: "exclamationmark.triangle.fill")
+                    JunoIconView(.triangleAlert)
                         .foregroundStyle(Color.junoCaution)
                         .accessibilityHidden(true)
                     Text(error)

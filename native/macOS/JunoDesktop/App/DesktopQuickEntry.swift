@@ -6,10 +6,11 @@ import SwiftUI
 /// The floating "Ask Juno" panel, bound to ⌥Space from anywhere.
 ///
 /// A small non-activating panel — the app does not come to the front, the
-/// panel does — with one field and a Chat / Code switch. Return sends: Chat
-/// opens the main window on a new conversation carrying the text, Code opens
-/// it on the New task screen with the text as the prompt. The panel is the
-/// whole of the feature; it holds no state a window does not already own.
+/// panel does — with one field and a Chat / Code / Work switch. Return sends:
+/// Chat opens the main window on a new conversation carrying the text, Code
+/// opens it on the New task screen with the text as the prompt, Work opens it
+/// on Work's home with the text as the errand. The panel is the whole of the
+/// feature; it holds no state a window does not already own.
 ///
 /// **The hotkey needs Accessibility.** A global key monitor only receives
 /// events when the app is trusted for accessibility, so the panel says so in
@@ -80,7 +81,7 @@ final class DesktopQuickEntryController {
 
     private func makePanel() -> NSPanel {
         let panel = DesktopQuickEntryPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 120),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 132),
             styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -117,7 +118,14 @@ private final class DesktopQuickEntryPanel: NSPanel {
     }
 }
 
-/// The panel's contents.
+/// The panel's contents: one glass surface, in the composer's own language.
+///
+/// The same single-surface box every composer in the product draws — the
+/// composer radius, the floating chrome, one field, one control row with the
+/// product switch on the left and the coral send on the right. It used to be
+/// an opaque raised rectangle at the card radius with the switch jammed beside
+/// the field; a panel that pops up over other apps is the one place the
+/// material genuinely has something to refract.
 struct DesktopQuickEntryView: View {
     let isAccessibilityTrusted: Bool
     let dismiss: () -> Void
@@ -127,55 +135,88 @@ struct DesktopQuickEntryView: View {
     @FocusState private var fieldFocused: Bool
     @Environment(\.openWindow) private var openWindow
 
+    private var canSend: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var placeholder: String {
+        switch product {
+        case .chat: "Ask Juno…"
+        case .code: "Describe a task for Juno Code…"
+        case .work: "Give Juno an errand with a finish line…"
+        }
+    }
+
+    private var hint: String {
+        switch product {
+        case .chat: "↩ starts a new chat"
+        case .code: "↩ starts a task in Juno Code"
+        case .work: "↩ hands the errand to Juno Work"
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.cozy) {
-                JunoMark(size: 20)
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityHidden(true)
-                TextField(product == .code ? "Describe a task for Juno Code…" : "Ask Juno…", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.title2)
-                    .focused($fieldFocused)
-                    .onSubmit(send)
-                    .accessibilityIdentifier("juno.desktop.quick-entry.field")
-                DesktopSegmented(
-                    options: [
-                        .init(DesktopProductMode.chat, "Chat"),
-                        .init(DesktopProductMode.code, "Code"),
-                    ],
-                    selection: $product,
-                    accessibilityLabel: "Send to"
-                )
-            }
-            HStack(spacing: JunoSpace.cozy) {
-                Text(product == .code ? "↩ starts a task in Juno Code" : "↩ starts a new chat")
-                    .junoCaption()
-                Spacer(minLength: 0)
-                if !isAccessibilityTrusted {
-                    Button {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
+        JunoDesktopGlass {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                HStack(spacing: JunoSpace.cozy) {
+                    JunoMark(size: 20)
+                        .junoInk()
+                        .accessibilityHidden(true)
+                    TextField(placeholder, text: $text)
+                        .textFieldStyle(.plain)
+                        .junoFont(size: 17, relativeTo: .title3)
+                        .junoInk()
+                        .focused($fieldFocused)
+                        .onSubmit(send)
+                        .accessibilityIdentifier("juno.desktop.quick-entry.field")
+                }
+
+                HStack(spacing: JunoSpace.cozy) {
+                    DesktopSegmented(
+                        options: DesktopProductMode.allCases.map {
+                            .init($0, $0.label, icon: $0.icon)
+                        },
+                        selection: $product,
+                        accessibilityLabel: "Send to"
+                    )
+                    Text(hint)
+                        .junoCaption()
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if !isAccessibilityTrusted {
+                        Button {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        } label: {
+                            JunoIconLabel(verbatim: "Allow ⌥Space everywhere", icon: .permission, size: 12)
+                                .junoCaption()
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(.rect)
                         }
-                    } label: {
-                        JunoIconLabel(verbatim: "⌥Space works everywhere once Juno has Accessibility access", icon: .permission, size: 12)
-                            .junoCaption()
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(.rect)
+                        .buttonStyle(.plain)
+                        .help("Open Privacy & Security › Accessibility — the global shortcut needs it")
+                        .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
                     }
-                    .buttonStyle(.plain)
-                    .help("Open Privacy & Security › Accessibility")
-                    .accessibilityIdentifier("juno.desktop.quick-entry.accessibility")
+                    Button(action: send) {
+                        JunoIconView(.arrowUp, size: 14)
+                            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                            .frame(width: 32, height: 32)
+                    }
+                    .junoCircleAction(active: canSend)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Circle())
+                    .disabled(!canSend)
+                    .help("Send (↩)")
+                    .accessibilityLabel("Send")
+                    .accessibilityIdentifier("juno.desktop.quick-entry.send")
                 }
             }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .junoFloatingChrome(cornerRadius: JunoRadius.composer)
         }
-        .padding(JunoSpace.regular)
-        .frame(width: 620)
-        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 0.5)
-        )
+        .frame(width: 640)
         .padding(JunoSpace.snug)
         .onAppear { fieldFocused = true }
         .accessibilityElement(children: .contain)
@@ -189,7 +230,9 @@ struct DesktopQuickEntryView: View {
         switch product {
         case .code:
             DesktopWorkbenchRegistry.shared.request(.newCodeTask(prompt: prompt))
-        case .chat, .work:
+        case .work:
+            DesktopWorkbenchRegistry.shared.requestWorkErrand(prompt: prompt)
+        case .chat:
             DesktopWorkbenchRegistry.shared.request(.newChat(prompt: prompt))
         }
         text = ""

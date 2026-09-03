@@ -986,7 +986,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let conversationID: String
         let clientID: String
         let prompt: String
-        let modelID: String
+        /// `var` for one caller: ``retryLastMessage(conversationID:modelID:)``,
+        /// the action row's "Switch model" regenerate, which re-asks the same
+        /// prompt of a different model. Everything else on the context is what
+        /// the reader asked for and travels unchanged.
+        var modelID: String
         let reasoningEffort: NativeReasoningEffort?
         /// Carried through retries so a resend claims the same uploads rather
         /// than losing them. Claiming is idempotent per attachment — the second
@@ -1730,9 +1734,28 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     public func retryLastMessage(conversationID: String) {
-        guard !chatPhase.isActive, let context = retryContexts[conversationID],
+        retryLastMessage(conversationID: conversationID, modelID: nil)
+    }
+
+    /// Re-asks the last prompt, optionally of a different model.
+    ///
+    /// The web's regenerate menu — "Try again" and a "Switch model" submenu —
+    /// both land here. A model that is not in the account's catalog is refused
+    /// the same way ``sendMessage`` refuses it, so the row cannot re-ask a
+    /// question of something the account cannot use. The new model is written
+    /// back into the retry context, so a *further* retry keeps the switch.
+    public func retryLastMessage(conversationID: String, modelID: String?) {
+        guard !chatPhase.isActive, var context = retryContexts[conversationID],
             accountID == context.accountID
         else { return }
+        if let modelID, modelID != context.modelID {
+            guard validModelSelection(modelID, effort: context.reasoningEffort) else { return }
+            context.modelID = modelID
+            retryContexts[conversationID] = context
+            if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+                conversations[index].model = modelID
+            }
+        }
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = context.userMessageID == nil ? .appending : .submitting

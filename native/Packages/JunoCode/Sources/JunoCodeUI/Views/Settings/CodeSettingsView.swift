@@ -53,9 +53,23 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
 /// Remote hosting stays the tile it was; it is handed in by the host because
 /// the model behind it lives in the app.
 public struct CodeSettingsView<RemoteHosting: View>: View {
+    /// Which slice of the page to draw.
+    ///
+    /// The Code window's sidebar reaches two of these directly — Plugins is
+    /// the per-project MCP, hooks, skills and agents; Security is the
+    /// permission and environment defaults plus remote hosting — so a reader
+    /// lands on the tiles the row named rather than scrolling a settings page
+    /// for them. The Settings window still draws the whole thing.
+    public enum Scope: Sendable {
+        case all
+        case plugins
+        case security
+    }
+
     @Bindable private var defaults: CodeDefaults
     private let workbench: WorkbenchModel?
     private let availableModels: [ModelOption]
+    private let scope: Scope
     private let remoteHosting: RemoteHosting
 
     @State private var selectedWorkspaceID: WorkspaceID?
@@ -66,11 +80,13 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
         defaults: CodeDefaults = .shared,
         workbench: WorkbenchModel?,
         availableModels: [ModelOption],
+        scope: Scope = .all,
         @ViewBuilder remoteHosting: () -> RemoteHosting
     ) {
         self.defaults = defaults
         self.workbench = workbench
         self.availableModels = availableModels
+        self.scope = scope
         self.remoteHosting = remoteHosting()
     }
 
@@ -84,28 +100,65 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
         JunoDetailPage(maxWidth: JunoSettingsMetrics.readingWidth) {
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
                 header
-                defaultsTile
-                environmentTile
-                projectPicker
-                mcpTile
-                hooksTile
-                skillsTile
-                agentsTile
-                remoteHosting
+                switch scope {
+                case .all:
+                    defaultsTile
+                    environmentTile
+                    projectPicker
+                    mcpTile
+                    hooksTile
+                    skillsTile
+                    agentsTile
+                    remoteHosting
+                case .plugins:
+                    projectPicker
+                    mcpTile
+                    hooksTile
+                    skillsTile
+                    agentsTile
+                case .security:
+                    defaultsTile
+                    environmentTile
+                    remoteHosting
+                }
             }
         }
         .task(id: selectedWorkspace?.id) { await loadExtensions() }
-        .accessibilityIdentifier("juno.desktop.settings.code")
+        .accessibilityIdentifier(scopeIdentifier)
+    }
+
+    private var scopeIdentifier: String {
+        switch scope {
+        case .all: "juno.desktop.settings.code"
+        case .plugins: "juno.code.plugins"
+        case .security: "juno.code.security"
+        }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-            Text("Code")
+            Text(headerTitle)
                 .junoPageHeading()
-            Text("What a new task starts with, and what each project adds to it.")
+            Text(headerDetail)
                 .junoRowLabel()
                 .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var headerTitle: String {
+        switch scope {
+        case .all: "Code"
+        case .plugins: "Plugins"
+        case .security: "Security"
+        }
+    }
+
+    private var headerDetail: String {
+        switch scope {
+        case .all: "What a new task starts with, and what each project adds to it."
+        case .plugins: "The MCP servers, hooks, skills and agents each project declares."
+        case .security: "What a new task may touch, where it runs, and who may reach this Mac."
         }
     }
 

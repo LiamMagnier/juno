@@ -2,13 +2,14 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The inspector is supervision, not another editor.
+/// The rail beside the thread is the task's environment, not another editor.
 ///
-/// The three primary destinations are the three surfaces a reader repeatedly
-/// needs while an agent is working: an overview of the run, the files it
-/// changed, and the agents it delegated. Environment, Repository and Preview
-/// remain available as secondary workspace tools without consuming permanent
-/// horizontal space in a 320pt inspector.
+/// Its face is ``EnvironmentTab``: the diff, where the task runs, the branch,
+/// the way to commit or push, the delegated agents and the sources — the
+/// facts a reader keeps glancing at while an agent works. The deeper panes —
+/// the run overview, the changed-file index, the agents, the repository, the
+/// preview — are one menu away and come back to the environment with one
+/// click, so the 320pt column is never a tab bar.
 public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
     case activity
     case changes
@@ -23,7 +24,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .activity: "Overview"
         case .changes: "Changes"
-        case .subagents: "Agents"
+        case .subagents: "Subagents"
         case .environment: "Environment"
         case .repository: "Repository"
         case .preview: "Preview"
@@ -32,6 +33,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 
     public var segmentLabel: String { label }
 
+    /// Legacy SF name, kept for older callers. New code draws ``junoIcon``.
     public var symbol: String {
         switch self {
         case .activity: "waveform.path.ecg"
@@ -40,6 +42,18 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         case .environment: "externaldrive"
         case .repository: "arrow.triangle.branch"
         case .preview: "rectangle.on.rectangle"
+        }
+    }
+
+    /// The website's mark for the pane.
+    public var junoIcon: JunoIcon {
+        switch self {
+        case .activity: .circleDot
+        case .changes: .fileDiff
+        case .subagents: .agents
+        case .environment: .box
+        case .repository: .branch
+        case .preview: .play
         }
     }
 
@@ -54,12 +68,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var isPrimary: Bool {
-        switch self {
-        case .activity, .changes, .subagents: true
-        case .environment, .repository, .preview: false
-        }
-    }
+    var isPrimary: Bool { self == .environment }
 }
 
 public struct InspectorView: View {
@@ -68,47 +77,41 @@ public struct InspectorView: View {
     private let openSources: (() -> Void)?
     private let openWorkspace: (() -> Void)?
     private let createPullRequest: (() -> Void)?
+    private let startTask: ((CodeEnvironmentChoice) -> Void)?
 
-    @SceneStorage("juno.code.inspector.pane.v3") private var storedPane =
-        CodeInspectorPane.activity.rawValue
+    /// v4: the rail's face is the environment now, and a scene that remembered
+    /// "Overview" from the segmented build should open on the new face once.
+    @SceneStorage("juno.code.inspector.pane.v4") private var storedPane =
+        CodeInspectorPane.environment.rawValue
 
     public init(
         controller: SessionController,
         openPreview: (() -> Void)? = nil,
         openSources: (() -> Void)? = nil,
         openWorkspace: (() -> Void)? = nil,
-        createPullRequest: (() -> Void)? = nil
+        createPullRequest: (() -> Void)? = nil,
+        startTask: ((CodeEnvironmentChoice) -> Void)? = nil
     ) {
         self.controller = controller
         self.openPreview = openPreview
         self.openSources = openSources
         self.openWorkspace = openWorkspace
         self.createPullRequest = createPullRequest
+        self.startTask = startTask
     }
 
     private var review: ReviewModel { controller.review }
 
     private var pane: Binding<CodeInspectorPane> {
         Binding(
-            get: { CodeInspectorPane(rawValue: storedPane) ?? .activity },
+            get: { CodeInspectorPane(rawValue: storedPane) ?? .environment },
             set: { storedPane = $0.rawValue }
         )
     }
 
-    private var status: CodeRunStatus {
-        CodeRunStatus(
-            controller.session.status,
-            hasPendingApproval: !controller.pendingApprovals.isEmpty
-        )
-    }
-
-    private var isShowingPrimaryPane: Bool { pane.wrappedValue.isPrimary }
-
     public var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Color.junoSeparator)
-            navigation
             Divider().overlay(Color.junoSeparator)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -119,6 +122,8 @@ public struct InspectorView: View {
             ideal: JunoInspectorMetrics.ideal,
             max: JunoInspectorMetrics.maximum
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.inspector.pane")
         .task(id: controller.sessionID) {
             #if DEBUG
             let arguments = CommandLine.arguments
@@ -133,131 +138,123 @@ public struct InspectorView: View {
         }
     }
 
+    /// "Environment", an ellipsis to the deeper panes, and Play. On a deeper
+    /// pane the title becomes a way back.
     private var header: some View {
-        HStack(spacing: JunoSpace.snug) {
-            CodeStatusGlyph(status, size: 14)
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Task").font(.headline)
-                Text(status.label)
-                    .junoCaption()
-                    .foregroundStyle(status.tint)
+        HStack(spacing: JunoSpace.tight) {
+            if pane.wrappedValue.isPrimary {
+                Text(pane.wrappedValue.label)
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                    .junoInk()
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                Button {
+                    pane.wrappedValue = .environment
+                } label: {
+                    HStack(spacing: JunoSpace.hairline) {
+                        JunoIconView(.chevronLeft, size: 12)
+                            .junoSecondaryInk()
+                        Text(pane.wrappedValue.label)
+                            .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                            .junoInk()
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Back to Environment")
+                .accessibilityLabel("Back to Environment")
+                .accessibilityIdentifier("juno.code.inspector.back")
             }
-            Spacer(minLength: JunoSpace.tight)
 
             if !controller.pendingApprovals.isEmpty {
                 HStack(spacing: JunoSpace.hairline) {
-                    JunoIconView(.permission, size: 12)
+                    JunoIconView(.permission, size: 11)
                     Text("\(controller.pendingApprovals.count)")
                         .monospacedDigit()
                 }
-                .font(.caption.weight(.semibold))
+                .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
                 .foregroundStyle(Color.junoCaution)
                 .padding(.horizontal, JunoSpace.tight)
-                .padding(.vertical, 3)
+                .padding(.vertical, 2)
                 .background(Color.junoCaution.opacity(0.12), in: Capsule())
                 .help("Approval requests waiting")
                 .accessibilityLabel("\(controller.pendingApprovals.count) approval requests waiting")
             }
 
-            secondaryMenu
+            Spacer(minLength: JunoSpace.tight)
+
+            paneMenu
+
+            Button {
+                openPreview?()
+            } label: {
+                JunoIconView(.play, size: 14)
+                    .junoSecondaryInk()
+                    .frame(width: 26, height: 26)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .disabled(openPreview == nil || controller.context == nil)
+            .help("Run the project in the live preview (⌥⌘P)")
+            .accessibilityLabel("Run preview")
+            .accessibilityIdentifier("juno.code.inspector.play")
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
+        .padding(.leading, JunoSpace.cozy)
+        .padding(.trailing, JunoSpace.tight)
+        .frame(height: 44)
         .accessibilityIdentifier("juno.code.inspector.header")
     }
 
-    @ViewBuilder
-    private var navigation: some View {
-        if isShowingPrimaryPane {
-            Picker("Inspector", selection: pane) {
-                Text("Overview").tag(CodeInspectorPane.activity)
-                Text(changeTabLabel).tag(CodeInspectorPane.changes)
-                Text(agentTabLabel).tag(CodeInspectorPane.subagents)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .accessibilityIdentifier("juno.code.inspector.primary-navigation")
-        } else {
-            HStack(spacing: JunoSpace.snug) {
-                Button {
-                    pane.wrappedValue = .activity
-                } label: {
-                    HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(systemImage: "chevron.left", size: 12)
-                        Text("Overview")
-                    }
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .junoSecondaryInk()
-                .accessibilityLabel("Back to Overview")
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(systemImage: pane.wrappedValue.symbol, size: 13)
-                    Text(pane.wrappedValue.label).junoRowLabel()
-                }
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("juno.code.inspector.secondary-navigation")
-        }
-    }
-
-    private var changeTabLabel: String {
-        controller.changes.isEmpty ? "Changes" : "Changes \(controller.changes.count)"
-    }
-
-    private var agentTabLabel: String {
-        controller.subagents.isEmpty ? "Agents" : "Agents \(controller.subagents.count)"
-    }
-
-    private var secondaryMenu: some View {
+    private var paneMenu: some View {
         Menu {
-            Section("Workspace") {
-                secondaryButton(.environment)
-                secondaryButton(.repository)
-                secondaryButton(.preview)
+            Section("Panes") {
+                ForEach(CodeInspectorPane.allCases) { candidate in
+                    Button { pane.wrappedValue = candidate } label: { menuLabel(candidate) }
+                }
             }
-            Divider()
-            Button { pane.wrappedValue = .activity } label: { menuLabel(.activity) }
-            Button { pane.wrappedValue = .changes } label: { menuLabel(.changes) }
-            Button { pane.wrappedValue = .subagents } label: { menuLabel(.subagents) }
+            if let openWorkspace {
+                Divider()
+                Button(action: openWorkspace) {
+                    JunoIconLabel(verbatim: "Reveal in Finder", icon: .external, size: 14)
+                }
+                .disabled(controller.context == nil)
+            }
         } label: {
-            JunoIconView(.ellipsis, size: 15)
-                .frame(width: 30, height: 30)
+            JunoIconView(.ellipsis, size: 14)
+                .junoSecondaryInk()
+                .frame(width: 26, height: 26)
                 .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Circle())
+                .contentShape(.rect)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .help("More task tools")
         .accessibilityLabel("More task tools")
         .accessibilityIdentifier("juno.code.inspector.more")
     }
 
-    private func secondaryButton(_ candidate: CodeInspectorPane) -> some View {
-        Button {
-            pane.wrappedValue = candidate
-        } label: {
-            menuLabel(candidate)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(.rect)
-        }
-    }
-
     private func menuLabel(_ candidate: CodeInspectorPane) -> some View {
         HStack {
-            JunoIconView(systemImage: candidate.symbol, size: 14)
-            Text(candidate.label)
+            JunoIconView(candidate.junoIcon, size: 14)
+            Text(candidateTitle(candidate))
             Spacer(minLength: JunoSpace.regular)
             if pane.wrappedValue == candidate {
                 JunoIconView(.check, size: 13)
             }
+        }
+    }
+
+    private func candidateTitle(_ candidate: CodeInspectorPane) -> String {
+        switch candidate {
+        case .changes where !controller.changes.isEmpty:
+            "Changes (\(controller.changes.count))"
+        case .subagents where !controller.subagents.isEmpty:
+            "Subagents (\(controller.subagents.count))"
+        default:
+            candidate.label
         }
     }
 
@@ -271,7 +268,15 @@ public struct InspectorView: View {
         case .subagents:
             SubagentPane(controller: controller)
         case .environment:
-            EnvironmentTab(controller: controller, review: review, openSources: openSources, openWorkspace: openWorkspace)
+            EnvironmentTab(
+                controller: controller,
+                review: review,
+                openSources: openSources,
+                openWorkspace: openWorkspace,
+                openSubagents: { pane.wrappedValue = .subagents },
+                createPullRequest: createPullRequest,
+                startTask: startTask
+            )
         case .repository:
             RepositoryTab(controller: controller, createPullRequest: createPullRequest)
         case .preview:

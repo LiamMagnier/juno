@@ -191,7 +191,7 @@ public struct JunoAIcssReasoningStream: View {
                         .foregroundStyle(Color.junoMutedForeground)
                         + Text(duration.map { " for \($0)" } ?? "")
                         .foregroundStyle(Color.junoMutedForeground)
-                    JunoIconView(systemImage: "chevron.up")
+                    JunoIconView(.chevronUp)
                         .junoFont(size: 9, relativeTo: .caption2, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
                         .rotationEffect(.degrees(open ? 0 : 180))

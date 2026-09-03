@@ -140,7 +140,7 @@ public struct JunoChoiceCard<Trailing: View>: View {
                 // the border — a tinted edge alone fails on a monochrome display
                 // and under Increase Contrast.
                 if isSelected {
-                    JunoIconView(systemImage: "checkmark")
+                    JunoIconView(.check)
                         .junoFont(size: 11, relativeTo: .caption, weight: .bold)
                         .foregroundStyle(Color.junoAccent)
                         .transition(.junoInline)

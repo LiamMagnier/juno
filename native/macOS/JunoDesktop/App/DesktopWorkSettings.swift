@@ -309,7 +309,7 @@ struct DesktopWorkHostTile: View {
     @ViewBuilder
     private func grantRow(_ grant: WorkGrantSummary) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: Self.grantSymbol(grant))
+            JunoIconView(Self.grantIcon(grant), size: 15)
                 .foregroundStyle(Color.junoMutedForeground)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -350,7 +350,7 @@ struct DesktopWorkHostTile: View {
                 Button {
                     actions.revoke(WorkGrantID(value: grant.grantID))
                 } label: {
-                    JunoIconView(systemImage: "minus.circle")
+                    JunoIconView(.minus, size: 13)
                 }
                 .buttonStyle(.plain)
                 .junoSecondaryInk()
@@ -381,14 +381,9 @@ struct DesktopWorkHostTile: View {
         _ message: String, pane: String, identifier: String
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            Label {
-                Text(message)
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                JunoIconView(systemImage: "lock")
-                    .foregroundStyle(Color.junoCaution)
-            }
+            JunoIconLabel(verbatim: message, icon: .lock, size: 13)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: JunoSpace.snug)
             Button("Open Settings") {
                 if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
@@ -454,10 +449,11 @@ struct DesktopWorkHostTile: View {
             // drive. A standing note about bundle identifiers on a card nobody
             // has turned browser control on for is a note they learn to skip.
             if host.allowsBrowser, !Self.listsADriveableBrowser(host.allowedApps) {
-                Label(
-                    "Driving a browser needs its own identifier here: "
+                JunoIconLabel(
+                    verbatim: "Driving a browser needs its own identifier here: "
                         + Self.driveableBrowserIdentifiers,
-                    systemImage: "info.circle"
+                    icon: .about,
+                    size: 13
                 )
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
@@ -488,9 +484,10 @@ struct DesktopWorkHostTile: View {
             // A standing warning about password managers on a card nobody has
             // added one to is a warning they learn to scroll past.
             if let refused = Self.permanentlyRefused(in: host.allowedApps) {
-                Label(
-                    "\(refused) is never driven automatically, whatever this list says.",
-                    systemImage: "hand.raised"
+                JunoIconLabel(
+                    verbatim: "\(refused) is never driven automatically, whatever this list says.",
+                    icon: .permission,
+                    size: 13
                 )
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
@@ -680,14 +677,12 @@ struct DesktopWorkHostTile: View {
         }
     }
 
-    private static func grantSymbol(_ grant: WorkGrantSummary) -> String {
+    private static func grantIcon(_ grant: WorkGrantSummary) -> JunoIcon {
         switch JunoWorkGrantKind(rawValue: grant.kind) {
-        case .localFolder: "folder"
-        case .localFile: "doc"
-        case .cloudFolder: "folder.badge.gearshape"
-        case .cloudFile: "doc.badge.gearshape"
-        case .connectorScope: "app.connected.to.app.below.fill"
-        case .none: "questionmark.folder"
+        case .localFolder, .cloudFolder: .folderOpen
+        case .localFile, .cloudFile: .file
+        case .connectorScope: .connections
+        case .none: .folderOpen
         }
     }
 
@@ -703,7 +698,7 @@ struct DesktopWorkHostTile: View {
 
     private static func phaseTint(_ phase: DesktopWorkHostModel.Phase) -> Color {
         switch phase {
-        case .off, .announcing: .secondary
+        case .off, .announcing: Color.junoMutedForeground
         case .serving: Color.junoSuccess
         case .failed: Color.junoDanger
         case .stopped: Color.junoCaution
@@ -755,7 +750,7 @@ private struct DesktopWorkCount: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.hairline) {
             Text("\(value)")
-                .font(.system(.title3, design: .default, weight: .semibold))
+                .junoEmptyTitle()
                 .monospacedDigit()
             Text(label)
                 .junoCaption()
@@ -813,7 +808,7 @@ private struct DesktopWorkBundleList: View {
                         Button {
                             remove(identifier)
                         } label: {
-                            JunoIconView(systemImage: "minus.circle")
+                            JunoIconView(.minus, size: 13)
                         }
                         .buttonStyle(.plain)
                         .junoSecondaryInk()

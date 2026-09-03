@@ -467,6 +467,11 @@ struct JunoMobileRootView: View {
       guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
       launchRequests.request(.openConversation(id))
     }
+    .onOpenURL { url in
+      if let request = JunoMobileLaunchRequests.request(for: url) {
+        launchRequests.request(request)
+      }
+    }
   }
 
   /// Acts on one launch request once the shell can — a request that arrives
@@ -502,6 +507,17 @@ struct JunoMobileRootView: View {
       selection = .code
       remoteCodeModel?.selectedDeviceID = deviceID
       remoteCodeModel?.openSession(sessionID)
+    case let .respondToRemoteApproval(deviceID, sessionID, requestID, approved):
+      showingSettings = false
+      selection = .code
+      remoteCodeModel?.selectedDeviceID = deviceID
+      remoteCodeModel?.openSession(sessionID)
+      Task {
+        await remoteCodeModel?.respondToApproval(
+          deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved
+        )
+        JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: requestID)
+      }
     }
   }
 
@@ -597,7 +613,10 @@ struct JunoMobileRootView: View {
       accountID: session.profile.id,
       attachmentContextClient: voiceAttachmentContextClient,
       saveTranscript: voiceSaveAction,
-      close: { voiceSession = nil }
+      close: {
+        JunoMobileLiveActivityCoordinator.shared.endVoice()
+        voiceSession = nil
+      }
     )
     voiceSession = started
     // Chat is where the dock renders, so a call started from anywhere else —
@@ -618,6 +637,7 @@ struct JunoMobileRootView: View {
         return
       }
     #endif
+    JunoMobileLiveActivityCoordinator.shared.beginVoice()
     Task { await started.controller.start() }
   }
 
@@ -990,8 +1010,8 @@ struct JunoMobileRootView: View {
         accountID: currentSession?.profile.id,
         voiceID: memorySettingsModel?.settings?.voiceID,
         requestSender: requestSender,
-        pendingPrompt: $pendingAskPrompt
-        , startDictation: $pendingDictation
+        pendingPrompt: $pendingAskPrompt,
+        startDictation: $pendingDictation
       )
       .transition(.opacity)
     } else {

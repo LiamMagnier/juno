@@ -219,10 +219,10 @@ struct JunoDesktopApp: App {
         } else {
             // Unreachable outside the preview harness: `configuration` is only
             // nil when the preview branch above is taken.
-            ContentUnavailableView(
-                "Juno could not start",
-                systemImage: "exclamationmark.triangle",
-                description: Text("The application runtime was not composed.")
+            JunoEmptyState(
+                title: "Juno could not start",
+                message: "The application runtime was not composed.",
+                icon: .error
             )
         }
     }

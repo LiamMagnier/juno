@@ -177,17 +177,19 @@ enum DesktopArtifactKindLabel {
         }
     }
 
-    /// The web's `ICONS` map, in SF Symbols. Falls through to the code glyph for
-    /// a kind this client does not know, which is honest: an artifact of an
-    /// unrecognised kind is still source.
-    static func symbol(forWireKind kind: String) -> String {
+    /// The web's `ICONS` map (`artifact-inline-card.tsx`), in the website's
+    /// own marks. Falls through to the code glyph for a kind this client does
+    /// not know, which is honest: an artifact of an unrecognised kind is still
+    /// source.
+    static func icon(forWireKind kind: String) -> JunoIcon {
         switch kind.uppercased() {
-        case "HTML": "globe"
-        case "REACT": "curlybraces.square"
-        case "SVG": "square.on.circle"
-        case "MERMAID": "flowchart"
-        case "MARKDOWN": "doc.text"
-        default: "chevron.left.forwardslash.chevron.right"
+        case "HTML": .web
+        case "REACT": .code
+        case "SVG": .image
+        case "MERMAID": .branch
+        case "MARKDOWN": .file
+        case "DESIGN": .penTool
+        default: .fileCode
         }
     }
 
@@ -606,7 +608,7 @@ struct DesktopArtifactCanvas: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             ShareLink(item: resolvedContent, subject: Text(artifact.title)) {
-                headerGlyph("square.and.arrow.up")
+                headerGlyph(.share)
             }
             .buttonStyle(.plain)
             .help("Share this artifact's source")
@@ -630,7 +632,7 @@ struct DesktopArtifactCanvas: View {
                     )
                 }
             } label: {
-                headerGlyph("ellipsis")
+                headerGlyph(.ellipsis)
             }
             // The composer's `addMenu` idiom: a borderless menu with its
             // indicator suppressed is the only way an icon-only menu keeps the
@@ -650,7 +652,7 @@ struct DesktopArtifactCanvas: View {
                 .accessibilityHidden(true)
 
             Button(action: close) {
-                headerGlyph("xmark")
+                headerGlyph(.close)
             }
             .buttonStyle(.plain)
             .help("Close the canvas")
@@ -671,9 +673,8 @@ struct DesktopArtifactCanvas: View {
     /// content is the thing worth looking at, and the frame is what makes the
     /// glyph clickable across the whole 24pt square rather than only where the
     /// ink happens to be.
-    private func headerGlyph(_ symbol: String) -> some View {
-        JunoIconView(systemImage: symbol)
-            .junoFont(size: 12, relativeTo: .body, weight: .medium)
+    private func headerGlyph(_ icon: JunoIcon) -> some View {
+        JunoIconView(icon, size: 14)
             .junoSecondaryInk()
             .frame(width: 24, height: 24)
             .contentShape(.rect)
@@ -750,9 +751,9 @@ struct DesktopArtifactCanvas: View {
                         Button(component.label) { selectedComponent = component }
                     }
                 } label: {
-                    JunoIconLabel(
+                    Label(
                         verbatim: selectedComponent?.shortLabel ?? "Select component",
-                        systemImage: "scope"
+                        icon: .crosshair
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -1017,7 +1018,7 @@ struct DesktopDesignSurface: View {
         if let editError {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(systemImage: "exclamationmark.triangle")
+                    JunoIconView(.triangleAlert, size: 16)
                         .foregroundStyle(Color.junoCaution)
                         .accessibilityHidden(true)
                     Text("This edit can\u{2019}t be saved: \(editError)")

@@ -213,7 +213,7 @@ struct DesktopTasksScreen: View {
     /// web puts it in the flow, directly under the heading it belongs to.
     private func errorNotice(_ message: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "exclamationmark.triangle")
+            JunoIconView(.triangleAlert)
                 .foregroundStyle(Color.junoDanger)
             Text(message)
                 .junoCaption()
@@ -249,7 +249,7 @@ struct DesktopTasksScreen: View {
                         model.lastErrorDescription,
                         fallback: "The scheduled-task service could not be reached."
                     ),
-                symbol: "exclamationmark.triangle",
+                icon: .triangleAlert,
                 actionLabel: "Try Again",
                 action: { Task { await model.refresh() } }
             )
@@ -261,7 +261,7 @@ struct DesktopTasksScreen: View {
                 JunoEmptyState(
                     title: "Tasks are part of Pro",
                     message: "Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson.",
-                    symbol: "lock"
+                    icon: .lock
                 )
             } else if model.tasks.isEmpty {
                 emptyState
@@ -366,7 +366,7 @@ struct DesktopTasksScreen: View {
                     Text(task.modelName)
                         .lineLimit(1)
                     if task.webSearch {
-                        JunoIconView(systemImage: "globe")
+                        JunoIconView(.web)
                             .foregroundStyle(Color.junoMutedForeground)
                             .accessibilityLabel("Web search allowed")
                     }
@@ -450,7 +450,7 @@ struct DesktopTasksScreen: View {
     private var tasksToolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             Button(action: newTask) {
-                JunoIconLabel("New Task", systemImage: "plus")
+                Label("New Task", icon: .plus)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(!canCreate)
@@ -464,7 +464,7 @@ struct DesktopTasksScreen: View {
                 guard let task = selectedTask else { return }
                 surface.editorRequest = DesktopTaskEditorRequest(task: task)
             } label: {
-                JunoIconLabel("Edit Task", systemImage: "pencil")
+                Label("Edit Task", icon: .pencil)
             }
             .keyboardShortcut("e", modifiers: [.command])
             .disabled(selectedTask == nil)
@@ -477,7 +477,7 @@ struct DesktopTasksScreen: View {
             Button {
                 Task { await model.refresh() }
             } label: {
-                JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
+                Label("Refresh", icon: .refresh)
             }
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(model.phase == .loading)
@@ -490,7 +490,7 @@ struct DesktopTasksScreen: View {
             Button {
                 isInspectorShown.toggle()
             } label: {
-                JunoIconLabel("Task Details", systemImage: "sidebar.trailing")
+                Label("Task Details", icon: .panelRight)
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help("Show or hide task details (⌥⌘I)")
@@ -643,7 +643,7 @@ struct DesktopTasksInspector: View {
                 JunoEmptyState(
                     title: "No task selected",
                     message: "Select a task to read its schedule, its last run and its prompt.",
-                    symbol: "list.bullet"
+                    icon: .list
                 )
             }
         }
@@ -697,7 +697,7 @@ private struct DesktopTaskStatusCell: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         } icon: {
-            JunoIconView(systemImage: status.symbol)
+            JunoIconView(status.icon, size: 14)
         }
         .foregroundStyle(status.tint)
         .help(status.help)
@@ -904,7 +904,7 @@ private struct DesktopTaskEditor: View {
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         } icon: {
-                            JunoIconView(systemImage: "exclamationmark.triangle")
+                            JunoIconView(.triangleAlert)
                                 .foregroundStyle(Color.junoDanger)
                         }
                     }
@@ -1105,7 +1105,7 @@ private enum TaskSchedule {
 /// as itself rather than being flattened into a tick.
 private struct TaskStatusLine {
     let text: String
-    let symbol: String
+    let icon: JunoIcon
     let tint: Color
     /// The full sentence, for the cell's tooltip, since the column truncates.
     let help: String
@@ -1121,7 +1121,7 @@ private extension NativeScheduledTask {
             // action rather than as a fact about a row.
             return TaskStatusLine(
                 text: "Running now…",
-                symbol: "circle.dotted",
+                icon: .circleDashed,
                 tint: .junoMutedForeground,
                 help: "A run started \(run.startedAt.formatted(date: .abbreviated, time: .shortened))."
             )
@@ -1129,7 +1129,7 @@ private extension NativeScheduledTask {
         guard enabled else {
             return TaskStatusLine(
                 text: "Paused",
-                symbol: "pause.circle",
+                icon: .circlePause,
                 tint: .junoMutedForeground,
                 help: "Paused — this task will not run."
             )
@@ -1140,7 +1140,7 @@ private extension NativeScheduledTask {
             )
             return TaskStatusLine(
                 text: "First run \(first)",
-                symbol: "clock",
+                icon: .clock,
                 tint: .junoMutedForeground,
                 help: "This task has not run yet."
             )
@@ -1157,7 +1157,7 @@ private extension NativeScheduledTask {
                 ? " · \(NativeScheduledTask.costText(run.costMicroUSD))" : ""
             return TaskStatusLine(
                 text: "Ran \(when)\(cost)",
-                symbol: "checkmark.circle",
+                icon: .circleCheck,
                 tint: .junoMutedForeground,
                 help: "Completed \(exactly)."
             )
@@ -1165,7 +1165,7 @@ private extension NativeScheduledTask {
             let reason = run.errorDescription.map { " — \($0)" } ?? ""
             return TaskStatusLine(
                 text: "Failed \(when)\(reason)",
-                symbol: "exclamationmark.triangle.fill",
+                icon: .triangleAlert,
                 tint: .junoDanger,
                 help: run.errorDescription ?? "Failed \(exactly)."
             )
@@ -1176,7 +1176,7 @@ private extension NativeScheduledTask {
             let reason = run.errorDescription.map { " — \($0)" } ?? ""
             return TaskStatusLine(
                 text: "Skipped \(when)\(reason)",
-                symbol: "exclamationmark.circle",
+                icon: .error,
                 tint: .junoCaution,
                 help: run.errorDescription ?? "Skipped \(exactly)."
             )
@@ -1184,7 +1184,7 @@ private extension NativeScheduledTask {
             let reason = run.errorDescription.map { " — \($0)" } ?? ""
             return TaskStatusLine(
                 text: "\(run.status) \(when)\(reason)",
-                symbol: "questionmark.circle",
+                icon: .circleHelp,
                 tint: .junoMutedForeground,
                 help: run.errorDescription ?? "\(run.status) \(exactly)."
             )

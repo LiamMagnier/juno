@@ -65,6 +65,9 @@ struct DesktopCodeWorkspace: View {
     /// A prompt handed in from the quick-entry panel or the menu bar item,
     /// consumed by the next New task screen.
     @State private var pendingPrompt: String?
+    /// The environment the rail's "Local ▾" picker asked the next task to run
+    /// in, consumed by the next New task screen.
+    @State private var pendingEnvironment: CodeEnvironmentChoice?
     @State private var simulatorHost = DesktopSimulatorHost()
     @State private var isDictating = false
     @State private var previewTarget: CodePreviewTarget?
@@ -162,9 +165,12 @@ struct DesktopCodeWorkspace: View {
             return codeModel.tasks.first { $0.id == id }?.title ?? "Cloud task"
         case .remote(_, let id):
             return remoteModel.sessions.first { $0.sessionID == id }?.title ?? "Remote session"
-        case .allProjects: return "Projects"
+        case .allProjects, .explore: return "Explore"
         case .pulls: return "Pull requests"
         case .design: return "Design"
+        case .scheduled: return "Scheduled"
+        case .plugins: return "Plugins"
+        case .security: return "Security"
         }
     }
 
@@ -211,7 +217,15 @@ struct DesktopCodeWorkspace: View {
                 newSession: { selection.wrappedValue = .repository($0) },
                 rename: beginRename,
                 searchText: sessionSearchText,
-                openPalette: { showingPalette = true }
+                openPalette: { showingPalette = true },
+                beginVoice: {
+                    startVoice(
+                        modelID: controller?.session.configuration.modelID
+                            ?? workbenchModel.availableModels.first?.modelID ?? "",
+                        projectID: targetRepository?.id.value
+                    )
+                },
+                openHelp: { openWindow(id: JunoDesktopWindow.shortcutsID) }
             )
             .junoSidebarColumn()
         } detail: {
@@ -370,19 +384,58 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// The compact strip above the thread: title, project · branch, status,
-    /// elapsed, context, stop. One line for every transport.
+    /// The thread's title bar: project mark, title, its own menu; status and
+    /// elapsed; Share and the rail toggles. One strip for every transport.
     @ViewBuilder
     private var threadHeader: some View {
         switch selection.wrappedValue {
         case .session:
             if let controller {
-                CodeThreadHeader(controller: controller, stop: stop)
+                CodeThreadHeader(
+                    controller: controller,
+                    stop: stop,
+                    share: shareSession,
+                    rails: threadRails
+                ) {
+                    Button("Rename…") { beginRename(controller.session) }
+                        .contentShape(.rect)
+                    Button(controller.session.isFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                        Task { await workbenchModel.toggleFavorite(id: controller.sessionID) }
+                    }
+                    .contentShape(.rect)
+                    if let workspaceID = controller.session.workspaceID {
+                        Button("New Task in This Project") {
+                            selection.wrappedValue = .repository(workspaceID)
+                        }
+                        .contentShape(.rect)
+                    }
+                    Divider()
+                    Button("Open File…") { isOpeningQuickly = true }
+                        .contentShape(.rect)
+                        .disabled(controller.context == nil)
+                    Button("Reveal in Finder") {
+                        guard let root = controller.context?.access.rootURL else { return }
+                        NSWorkspace.shared.activateFileViewerSelecting([root])
+                    }
+                    .contentShape(.rect)
+                    .disabled(controller.context == nil)
+                    Button("Compact Context") {
+                        Task { await controller.compactConversation() }
+                    }
+                    .contentShape(.rect)
+                    Divider()
+                    Button("Delete Thread", role: .destructive) {
+                        let id = controller.sessionID
+                        selection.wrappedValue = nil
+                        Task { await workbenchModel.deleteSession(id: id) }
+                    }
+                    .contentShape(.rect)
+                }
             }
         case .task:
             if let task = selectedTask {
                 CodeThreadHeader(
-                    CodeThreadHeader.Context(
+                    CodeThreadContext(
                         title: task.title,
                         project: task.whereItRuns,
                         branch: task.baseRef,
@@ -395,7 +448,7 @@ struct DesktopCodeWorkspace: View {
         case .remote:
             if let summary = selectedRemoteSummary {
                 CodeThreadHeader(
-                    CodeThreadHeader.Context(
+                    CodeThreadContext(
                         title: summary.title,
                         project: summary.workspaceName ?? "Connected computer",
                         branch: summary.activeBranch,
@@ -408,6 +461,56 @@ struct DesktopCodeWorkspace: View {
         default:
             EmptyView()
         }
+    }
+
+    /// The review pane and the context rail, as the title bar's toggles.
+    private var threadRails: [CodeThreadRailToggle] {
+        [
+            CodeThreadRailToggle(
+                id: "review",
+                icon: .fileDiff,
+                label: "Review",
+                help: reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)",
+                isOn: reviewPresented,
+                isEnabled: controller != nil,
+                toggle: toggleReview
+            ),
+            CodeThreadRailToggle(
+                id: "environment",
+                icon: .sliders,
+                label: "Environment rail",
+                help: inspectorPresentation.wrappedValue ? "Hide the environment rail (⌥⌘I)" : "Show the environment rail (⌥⌘I)",
+                isOn: inspectorPresentation.wrappedValue,
+                isEnabled: controller != nil,
+                toggle: { inspectorPresentation.wrappedValue.toggle() }
+            ),
+        ]
+    }
+
+    /// Copies the thread as text — every prompt and reply — to the pasteboard,
+    /// which is the one share every session can honour. A pull request link,
+    /// when the session has one, is what the Repository pane shares.
+    private func shareSession() {
+        guard let controller else { return }
+        var lines: [String] = ["# \(controller.session.title)", ""]
+        for event in controller.events {
+            switch event.payload {
+            case let .userPrompt(prompt):
+                lines.append("**You:** \(prompt.text)")
+                lines.append("")
+            case let .assistantMessage(message):
+                lines.append(message.text)
+                lines.append("")
+            default:
+                continue
+            }
+        }
+        if let url = controller.lastPullRequestURL {
+            lines.append("Pull request: \(url)")
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
     // MARK: - Detail column
@@ -439,7 +542,7 @@ struct DesktopCodeWorkspace: View {
                 JunoEmptyState(
                     title: "That run is no longer listed",
                     message: "It may have been removed from your account's recent runs.",
-                    symbol: "bolt.horizontal.circle"
+                    icon: .work
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -452,7 +555,7 @@ struct DesktopCodeWorkspace: View {
                 remote: remoteModel
             )
 
-        case .allProjects:
+        case .allProjects, .explore:
             DesktopCodeAllProjects(
                 workbench: workbenchModel,
                 isLoading: isBootstrapping,
@@ -465,6 +568,25 @@ struct DesktopCodeWorkspace: View {
                     ])
                 }
             )
+
+        case .scheduled:
+            scheduledPage
+
+        case .plugins:
+            CodeSettingsView(
+                workbench: workbenchModel,
+                availableModels: workbenchModel.availableModels,
+                scope: .plugins
+            ) { EmptyView() }
+
+        case .security:
+            CodeSettingsView(
+                workbench: workbenchModel,
+                availableModels: workbenchModel.availableModels,
+                scope: .security
+            ) {
+                DesktopCodeRemoteHostTile(host: configuration?.codeHostModel)
+            }
 
         case .draft:
             draft(nil)
@@ -496,6 +618,24 @@ struct DesktopCodeWorkspace: View {
     private var openConnections: (() -> Void)? {
         guard configuration?.connectorModel != nil else { return nil }
         return { DesktopSettingsRouter.open(.connections) }
+    }
+
+    /// The account's scheduled tasks, as the Tasks screen draws them.
+    @ViewBuilder
+    private var scheduledPage: some View {
+        if let configuration, let model = configuration.scheduledTaskModel {
+            DesktopTasksScreen(
+                model: model,
+                modelOptions: configuration.conversationModel?.selectableModels ?? [],
+                openConversation: { _ in product = .chat }
+            )
+        } else {
+            JunoEmptyState(
+                title: "Scheduled",
+                message: "The scheduled-task service is unavailable.",
+                icon: .clock
+            )
+        }
     }
 
     @ViewBuilder
@@ -531,7 +671,8 @@ struct DesktopCodeWorkspace: View {
                 startVoice(modelID: modelID, projectID: record?.id.value)
             },
             voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
-            initialPrompt: pendingPrompt
+            initialPrompt: pendingPrompt,
+            initialEnvironment: pendingEnvironment
         )
         .junoVoiceField(voiceColumn)
     }
@@ -663,7 +804,11 @@ struct DesktopCodeWorkspace: View {
                         guard let root = controller.context?.access.rootURL else { return }
                         NSWorkspace.shared.activateFileViewerSelecting([root])
                     },
-                    createPullRequest: { isCreatingPullRequest = true }
+                    createPullRequest: { isCreatingPullRequest = true },
+                    startTask: { environment in
+                        pendingEnvironment = environment
+                        newSession()
+                    }
                 )
             } else {
                 JunoEmptyState(
@@ -705,8 +850,11 @@ struct DesktopCodeWorkspace: View {
         items.append(CodePaletteItem(id: "action.new-task", kind: .action, title: "New task", icon: .new, shortcut: "⌘N"))
         items.append(CodePaletteItem(id: "action.open-folder", kind: .action, title: "Open folder…", icon: .projects, shortcut: "⌘O"))
         items.append(CodePaletteItem(id: "action.pulls", kind: .action, title: "Pull requests", icon: .pulls))
-        items.append(CodePaletteItem(id: "action.projects", kind: .action, title: "All projects", icon: .projects))
-        items.append(CodePaletteItem(id: "action.settings", kind: .action, title: "Code settings…", icon: .settings, shortcut: "⌘,"))
+        items.append(CodePaletteItem(id: "action.scheduled", kind: .action, title: "Scheduled", icon: .clock))
+        items.append(CodePaletteItem(id: "action.plugins", kind: .action, title: "Plugins", icon: .blocks))
+        items.append(CodePaletteItem(id: "action.security", kind: .action, title: "Security", icon: .shield))
+        items.append(CodePaletteItem(id: "action.projects", kind: .action, title: "Explore projects", icon: .compass))
+        items.append(CodePaletteItem(id: "action.settings", kind: .action, title: "Code settings…", icon: .sliders, shortcut: "⌘,"))
         if controller != nil {
             items.append(CodePaletteItem(id: "action.review", kind: .action, title: reviewPresented ? "Close review" : "Review changes", icon: .branch, shortcut: "⌥⌘R"))
             items.append(CodePaletteItem(id: "action.console", kind: .action, title: consoleVisible ? "Hide console" : "Show console", icon: .terminal, shortcut: "⌥⌘C"))
@@ -790,7 +938,10 @@ struct DesktopCodeWorkspace: View {
         case ("action", "new-task"): newSession()
         case ("action", "open-folder"): isChoosingRepository = true
         case ("action", "pulls"): selection.wrappedValue = .pulls
-        case ("action", "projects"): selection.wrappedValue = .allProjects
+        case ("action", "scheduled"): selection.wrappedValue = .scheduled
+        case ("action", "plugins"): selection.wrappedValue = .plugins
+        case ("action", "security"): selection.wrappedValue = .security
+        case ("action", "projects"): selection.wrappedValue = .explore
         case ("action", "settings"): DesktopSettingsRouter.open(.code)
         case ("action", "review"): toggleReview()
         case ("action", "console"): toggleConsole()
@@ -1138,6 +1289,7 @@ struct DesktopCodeWorkspace: View {
         guard !isStartingSession else { return }
         isStartingSession = true
         pendingPrompt = nil
+        pendingEnvironment = nil
         Task {
             defer { isStartingSession = false }
             guard let session = await workbenchModel.createSession(

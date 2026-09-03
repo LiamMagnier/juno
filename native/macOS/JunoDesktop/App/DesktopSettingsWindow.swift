@@ -7,39 +7,78 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// The sections of the ⌘, window.
+/// The sections of Settings — the website's rail, one for one.
 ///
-/// The account's pages — Usage, Connections — used to be rows in the *Code*
-/// navigation column, so opening Usage replaced the coding surface with a
-/// ledger. They are account pages, and a Mac keeps account pages in the
-/// Settings window: one rail on the left, one page on the right, reachable
-/// from every product with ⌘, and from the account menu in each column's
-/// footer.
+/// `src/components/settings/settings-sections.ts` is the registry this mirrors:
+/// how Juno looks, how it talks, what it remembers, which models it uses, what
+/// it may reach, how it sounds — then the account and the money. Code is the
+/// one addition, because only the Mac has a Code runtime with standing
+/// preferences of its own. Irreversible operations live at the bottom of
+/// Account and Data & privacy rather than in a "danger zone" of their own.
 enum DesktopSettingsSection: String, CaseIterable, Identifiable {
     case general
+    case personalization
+    case memory
+    case models
+    case connectors
+    case voice
     case code
-    case usage
-    case connections
+    case data
+    case account
+    case billing
 
     var id: String { rawValue }
 
     static let storageKey = "juno.desktop.settings.section"
 
+    /// The names older call sites route by. `usage` is the plan's own page now
+    /// and `connections` is what the web calls connectors.
+    static var usage: DesktopSettingsSection { .billing }
+    static var connections: DesktopSettingsSection { .connectors }
+
     var label: String {
         switch self {
         case .general: "General"
+        case .personalization: "Personalization"
+        case .memory: "Memory"
+        case .models: "Models"
+        case .connectors: "Connectors"
+        case .voice: "Voice"
         case .code: "Code"
-        case .usage: "Usage"
-        case .connections: "Connections"
+        case .data: "Data & privacy"
+        case .account: "Account"
+        case .billing: "Plan & billing"
+        }
+    }
+
+    /// The web's one-line description, read out as the rail row's hint.
+    var summary: String {
+        switch self {
+        case .general: "Theme, accent and language."
+        case .personalization: "How Juno writes and what it keeps in mind."
+        case .memory: "What Juno may remember between conversations."
+        case .models: "Which model answers by default, and your favorites."
+        case .connectors: "The apps Juno can read from and act on."
+        case .voice: "How Juno sounds when it reads aloud."
+        case .code: "Permissions, model, environment and hosting for Juno Code."
+        case .data: "Export, shared links and diagnostics."
+        case .account: "Who you are to Juno, and how you sign in."
+        case .billing: "Your plan, what you have used, and the ceiling."
         }
     }
 
     var icon: JunoIcon {
         switch self {
-        case .general: .settings
+        case .general: .sliders
+        case .personalization: .writing
+        case .memory: .memory
+        case .models: .models
+        case .connectors: .connections
+        case .voice: .mic
         case .code: .code
-        case .usage: .usage
-        case .connections: .connections
+        case .data: .shield
+        case .account: .user
+        case .billing: .usage
         }
     }
 }
@@ -68,13 +107,12 @@ enum DesktopSettingsRouter {
     }
 }
 
-/// The ⌘, window: a rail and a page.
+/// The ⌘, window: the rail and the page.
 struct DesktopSettingsWindow: View {
     let configuration: JunoDesktopConfiguration?
 
     @AppStorage(DesktopSettingsSection.storageKey) private var storedSection =
         DesktopSettingsSection.general.rawValue
-    @State private var registry = DesktopWorkbenchRegistry.shared
 
     private var section: Binding<DesktopSettingsSection> {
         Binding(
@@ -84,99 +122,206 @@ struct DesktopSettingsWindow: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            rail
-            Divider().overlay(Color.junoSeparator)
-            page
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if let configuration,
+               let settingsModel = configuration.memorySettingsModel,
+               case .signedIn(let session) = configuration.authModel.phase
+            {
+                DesktopSettingsShell(
+                    configuration: configuration,
+                    settingsModel: settingsModel,
+                    session: session,
+                    section: section
+                )
+            } else {
+                JunoEmptyState(
+                    title: "Sign in to change settings",
+                    message: "Juno's settings belong to your account and sync across your devices.",
+                    icon: .user
+                )
+            }
         }
-        .frame(minWidth: 760, idealWidth: 920, minHeight: 560, idealHeight: 680)
+        .frame(minWidth: 840, idealWidth: 960, minHeight: 600, idealHeight: 700)
         .accessibilityIdentifier("juno.desktop.settings.window")
-    }
-
-    private var rail: some View {
-        List(DesktopSettingsSection.allCases, selection: section) { item in
-            Label {
-                Text(item.label).junoRowLabel()
-            } icon: {
-                JunoIconView(item.icon, size: 15)
-                    .junoSidebarMarkInk(selected: section.wrappedValue == item)
-            }
-            .junoSidebarRowInk()
-            .tag(item)
-            .accessibilityIdentifier("juno.desktop.settings.section.\(item.rawValue)")
-        }
-        .listStyle(.sidebar)
-        .junoSidebarSelectionTint()
-        .frame(width: 176)
-    }
-
-    @ViewBuilder
-    private var page: some View {
-        if let configuration,
-           let settingsModel = configuration.memorySettingsModel,
-           case .signedIn(let session) = configuration.authModel.phase
-        {
-            switch section.wrappedValue {
-            case .general:
-                DesktopSettingsScreen(
-                    model: settingsModel,
-                    authModel: configuration.authModel,
-                    session: session,
-                    accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient,
-                    modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-                    avatarData: configuration.avatarModel?.imageData,
-                    syncModel: configuration.syncModel,
-                    outbox: configuration.outbox,
-                    openUsage: { section.wrappedValue = .usage },
-                    // Hosting moved to the Code section, where the rest of
-                    // Code's standing preferences live.
-                    codeHostModel: nil,
-                    workHostModel: configuration.workHostModel,
-                    learningModel: configuration.memoryLearningModel
-                )
-            case .code:
-                DesktopCodeSettingsScreen(
-                    workbench: registry.workbench,
-                    availableModels: registry.workbench?.availableModels ?? [],
-                    codeHostModel: configuration.codeHostModel
-                )
-            case .usage:
-                DesktopUsageScreen(
-                    session: session,
-                    requestSender: configuration.requestSender,
-                    modelCatalog: configuration.conversationModel?.selectableModels ?? []
-                )
-            case .connections:
-                if let model = configuration.connectorModel {
-                    DesktopConnectionsScreen(model: model)
-                } else {
-                    JunoEmptyState(
-                        title: "Connections",
-                        message: "The connector service is unavailable.",
-                        icon: .error
-                    )
-                }
-            }
-        } else {
-            ContentUnavailableView(
-                "Sign in to change settings",
-                systemImage: "person.crop.circle",
-                description: Text(
-                    "Juno's settings belong to your account and sync across your devices."
-                )
-            )
-        }
     }
 }
 
-/// The Code section: the package's page, with this app's remote-hosting tile
-/// handed in.
+/// The rail and the pane, shared by the ⌘, window and the in-window modal so
+/// the two cannot come to disagree about what Settings contains.
+struct DesktopSettingsShell: View {
+    let configuration: JunoDesktopConfiguration
+    @Bindable var settingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
+    let session: NativeAuthenticatedSession
+    @Binding var section: DesktopSettingsSection
+    /// Present in the modal, where the shell has to offer its own way out.
+    var onDismiss: (() -> Void)? = nil
+
+    @State private var registry = DesktopWorkbenchRegistry.shared
+
+    var body: some View {
+        HStack(spacing: 0) {
+            DesktopSettingsRail(selection: $section, onDismiss: onDismiss)
+                .frame(width: DesktopSettingsMetrics.railWidth)
+            Divider().overlay(Color.junoSeparator)
+            DesktopSettingsScreen(
+                section: section,
+                model: settingsModel,
+                authModel: configuration.authModel,
+                session: session,
+                accountDataClient: configuration.accountDataClient,
+                shareClient: configuration.shareClient,
+                modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+                avatarData: configuration.avatarModel?.imageData,
+                syncModel: configuration.syncModel,
+                outbox: configuration.outbox,
+                connectorModel: configuration.connectorModel,
+                requestSender: configuration.requestSender,
+                codeWorkbench: registry.workbench,
+                codeModels: registry.workbench?.availableModels ?? [],
+                codeHostModel: configuration.codeHostModel,
+                workHostModel: configuration.workHostModel,
+                learningModel: configuration.memoryLearningModel
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .junoReadingCanvas()
+    }
+}
+
+/// The left rail: the website's `SettingsRail` — an inset well holding one row
+/// per section, the active one filled.
+///
+/// A column of buttons rather than a `List(selection:)`. The list would draw
+/// the platform's full-bleed source-list selection in the app accent, which is
+/// exactly the coral slab the sidebar work spent a release removing; the web's
+/// rail is a well with a quietly raised active row, and that is a shape this
+/// can draw directly.
+struct DesktopSettingsRail: View {
+    @Binding var selection: DesktopSettingsSection
+    var onDismiss: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text("Settings")
+                    .junoTitle()
+                    .junoInk()
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                if let onDismiss {
+                    Button(action: onDismiss) {
+                        JunoIconView(.close, size: 13)
+                            .junoSecondaryInk()
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close settings (Esc)")
+                    .accessibilityLabel("Close settings")
+                } else {
+                    Text("⌘,")
+                        .junoCodeSmall()
+                        .junoSecondaryInk()
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, JunoSpace.tight)
+
+            VStack(spacing: 2) {
+                ForEach(DesktopSettingsSection.allCases) { item in
+                    DesktopSettingsRailRow(
+                        section: item,
+                        isSelected: selection == item,
+                        select: { selection = item }
+                    )
+                }
+            }
+            .padding(JunoSpace.tight)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .fill(Color.junoMuted.opacity(0.55))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Settings sections")
+
+            Spacer(minLength: 0)
+        }
+        .padding(JunoSpace.regular)
+        .accessibilityIdentifier("juno.desktop.settings.rail")
+    }
+}
+
+/// One row in the rail: a Lucide mark and a word, filled when selected.
+private struct DesktopSettingsRailRow: View {
+    let section: DesktopSettingsSection
+    let isSelected: Bool
+    let select: () -> Void
+
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var fill: Color {
+        if isSelected { return Color.junoSurface }
+        if isHovering { return Color.junoRowHover }
+        return .clear
+    }
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(section.icon, size: 15)
+                    .foregroundStyle(isSelected ? Color.junoAccent : Color.junoMutedForeground)
+                Text(section.label)
+                    .junoRowLabel()
+                    .fontWeight(isSelected ? .medium : .regular)
+                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoMutedForeground)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(fill)
+                    .shadow(
+                        color: isSelected ? Color.junoCardShadow : .clear,
+                        radius: JunoElevation.cardBlur,
+                        y: JunoElevation.cardOffsetY
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .strokeBorder(isSelected ? Color.junoHairline : .clear, lineWidth: 0.5)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+        }
+        .buttonStyle(.junoPress)
+        .onHover { isHovering = $0 }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: isHovering
+        )
+        .help(section.summary)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
+    }
+}
+
+/// The Code section: the package's page, with this app's two hosting tiles
+/// handed in — remote Code sessions, and Juno Work on this Mac. Both are
+/// "what may another device make this Mac do", which is why they sit
+/// together at the bottom of Code rather than each in a section of its own.
 struct DesktopCodeSettingsScreen: View {
     let workbench: WorkbenchModel?
     let availableModels: [ModelOption]
     let codeHostModel: DesktopCodeHostModel?
+    var workHostModel: DesktopWorkHostModel? = nil
 
     var body: some View {
         CodeSettingsView(
@@ -184,6 +329,9 @@ struct DesktopCodeSettingsScreen: View {
             availableModels: availableModels
         ) {
             DesktopCodeRemoteHostTile(host: codeHostModel)
+            if let workHostModel {
+                DesktopWorkHostTile(host: workHostModel)
+            }
         }
     }
 }

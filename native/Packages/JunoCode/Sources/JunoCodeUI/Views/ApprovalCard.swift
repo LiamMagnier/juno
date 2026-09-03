@@ -107,14 +107,15 @@ public struct ApprovalCard: View {
 
             actions
         }
-        .padding(JunoSpace.cozy)
+        .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .junoPanel()
+        .junoCard(cornerRadius: JunoRadius.card)
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(tint.opacity(0.55), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.approval")
         .accessibilityLabel(
             "Approval required, \(request.risk.rawValue) risk: \(request.summary)"
         )
@@ -272,7 +273,7 @@ struct ApprovalQueueRow: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .frame(minHeight: CodeRowMetrics.minHeight)
-        .junoPanel()
+        .junoPanel(cornerRadius: JunoRadius.well)
         .overlay(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(tint.opacity(0.35), lineWidth: 1)

@@ -47,7 +47,7 @@ struct RepositoryTab: View {
                     JunoEmptyState(
                         title: "Not a Git repository",
                         message: "Juno can still read and edit this folder. Branch, commit and pull-request information needs a repository.",
-                        symbol: "arrow.triangle.branch"
+                        icon: .branch
                     )
                 }
             }
@@ -141,7 +141,7 @@ struct RepositoryTab: View {
     private func branchSection(_ status: GitStatusSummary) -> some View {
         Section("Branch") {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: "arrow.triangle.branch")
+                JunoIconView(.branch)
                     .junoSecondaryInk()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.branch ?? "detached HEAD")
@@ -231,7 +231,7 @@ struct RepositoryTab: View {
                 ForEach(controller.managedWorktrees) { worktree in
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         HStack(spacing: JunoSpace.snug) {
-                            JunoIconView(systemImage: "square.split.2x1")
+                            JunoIconView(.columns)
                                 .foregroundStyle(Color.junoAccent)
                             Text(worktree.branch)
                                 .junoRowLabel()
@@ -240,7 +240,7 @@ struct RepositoryTab: View {
                             Button {
                                 NSWorkspace.shared.open(worktree.rootURL)
                             } label: {
-                                JunoIconView(systemImage: "arrow.up.right.square")
+                                JunoIconView(.external)
                             }
                             .buttonStyle(.borderless)
                             .help("Open isolated worktree")
@@ -248,7 +248,7 @@ struct RepositoryTab: View {
                             Button(role: .destructive) {
                                 Task { await controller.removeIsolatedWorktree(worktree) }
                             } label: {
-                                JunoIconView(systemImage: "trash")
+                                JunoIconView(.trash)
                             }
                             .buttonStyle(.borderless)
                             .help("Remove this isolated worktree")
@@ -271,7 +271,7 @@ struct RepositoryTab: View {
                 Button {
                     creatingWorktree = true
                 } label: {
-                    JunoIconView(systemImage: "plus")
+                    JunoIconView(.plus)
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
@@ -419,7 +419,7 @@ struct RepositoryTab: View {
                     Button {
                         Task { await controller.refreshGitHubPullRequest() }
                     } label: {
-                        JunoIconView(systemImage: "arrow.clockwise")
+                        JunoIconView(.refresh)
                     }
                     .buttonStyle(.borderless)
                     .controlSize(.small)
@@ -442,7 +442,7 @@ struct RepositoryTab: View {
                 Spacer(minLength: JunoSpace.tight)
                 if let url = safeWebURL(pullRequest.url) {
                     Link(destination: url) {
-                        JunoIconView(systemImage: "arrow.up.right.square")
+                        JunoIconView(.external)
                     }
                     .help("Open the pull request on GitHub")
                     .accessibilityLabel("Open pull request in browser")
@@ -468,7 +468,7 @@ struct RepositoryTab: View {
 
     private func checkRow(_ check: GitHubCheckStatus) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: checkSymbol(check.bucket))
+            JunoIconView(checkIcon(check.bucket))
                 .foregroundStyle(checkColor(check.bucket))
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 1) {
@@ -487,7 +487,7 @@ struct RepositoryTab: View {
                 .junoCaption()
             if let link = check.link, let url = safeWebURL(link) {
                 Link(destination: url) {
-                    JunoIconView(systemImage: "arrow.up.right")
+                    JunoIconView(.external)
                         .imageScale(.small)
                 }
                 .accessibilityLabel("Open \(check.name) check")
@@ -660,14 +660,17 @@ struct RepositoryTab: View {
         return url
     }
 
-    private func checkSymbol(_ bucket: String) -> String {
+    /// GitHub's own vocabulary for a check's bucket, in the website's marks —
+    /// a skipped check is the slashed circle GitHub draws for it, not a
+    /// fast-forward glyph.
+    private func checkIcon(_ bucket: String) -> JunoIcon {
         switch bucket.lowercased() {
-        case "pass": "checkmark.circle.fill"
-        case "fail": "xmark.circle.fill"
-        case "pending": "clock.fill"
-        case "skipping": "forward.circle.fill"
-        case "cancel": "minus.circle.fill"
-        default: "circle"
+        case "pass": .circleCheck
+        case "fail": .circleX
+        case "pending": .clock
+        case "skipping": .circleSlash
+        case "cancel": .circleMinus
+        default: .circle
         }
     }
 

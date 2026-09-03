@@ -78,7 +78,10 @@ public struct TranscriptView: View {
                                 TranscriptRow(event: event, context: rowContext)
                                     .id(event.id)
                             case let .workLog(group, events):
-                                ActivityNarrativeView(group: group) {
+                                ActivityNarrativeView(
+                                    group: group,
+                                    subagents: subagents(in: group)
+                                ) {
                                     ForEach(events) { event in
                                         TranscriptRow(event: event, context: rowContext)
                                     }
@@ -149,7 +152,7 @@ public struct TranscriptView: View {
             }
             .overlay(alignment: .bottom) {
                 if !isPinnedToBottom {
-                    TranscriptJumpToLatest {
+                    CodeJumpToLatestChrome {
                         isPinnedToBottom = true
                         withAnimation(
                             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)
@@ -166,6 +169,18 @@ public struct TranscriptView: View {
                 value: isPinnedToBottom
             )
         }
+    }
+
+    /// The agents a work log's `delegate_task` calls asked for, so the opened
+    /// log names them. Matched on the call id the group recorded.
+    private func subagents(in group: ActivityNarrativeGroup) -> [SubagentRun] {
+        let callIDs = Set(
+            group.toolCallRecords
+                .filter { $0.toolName == SubagentDigest.toolName }
+                .map(\.id)
+        )
+        guard !callIDs.isEmpty else { return [] }
+        return controller.subagents.filter { callIDs.contains($0.toolCallID) }
     }
 
     private var context: TranscriptContext {
@@ -397,37 +412,6 @@ struct TranscriptTail: View {
     private func durationText(_ seconds: Double) -> String {
         let total = Int(seconds)
         return String(format: "%d:%02d", total / 60, total % 60)
-    }
-}
-
-/// The way back to the end of a record that is still growing.
-///
-/// The one piece of floating chrome the transcript carries, and therefore the
-/// one thing in this column that is glass. It appears only when the reader has
-/// left the bottom, which is the only moment it says anything they do not
-/// already know.
-struct TranscriptJumpToLatest: View {
-    let jump: () -> Void
-
-    var body: some View {
-        Button(action: jump) {
-            HStack(spacing: JunoSpace.tight) {
-                JunoIconView(.arrowDown, size: 13)
-                    .foregroundStyle(Color.junoAccent)
-                Text("Jump to latest").junoRowLabel()
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(minHeight: CodeRowMetrics.minHeight)
-            .contentShape(.capsule)
-        }
-        .buttonStyle(.junoPress)
-        .background(Color.junoSurface, in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .stroke(Color.junoHairline, lineWidth: 1)
-                .allowsHitTesting(false)
-        }
-        .accessibilityIdentifier("juno.code.transcript.jump-to-latest")
     }
 }
 

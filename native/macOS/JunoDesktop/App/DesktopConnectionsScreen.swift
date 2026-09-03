@@ -97,7 +97,7 @@ struct DesktopConnectionsScreen: View {
                         model.lastErrorDescription,
                         fallback: "Juno could not read this account's connections."
                     ),
-                symbol: "exclamationmark.triangle",
+                icon: .triangleAlert,
                 actionLabel: "Try again",
                 action: { Task { await model.refresh() } }
             )
@@ -218,7 +218,7 @@ struct DesktopConnectionsScreen: View {
                 Button {
                     model.query = ""
                 } label: {
-                    JunoIconView(systemImage: "xmark.circle.fill")
+                    JunoIconView(.circleX)
                         .junoMetaInk()
                 }
                 .buttonStyle(.plain)
@@ -529,7 +529,7 @@ struct DesktopConnectionsScreen: View {
             JunoEmptyState(
                 title: "No apps in this category",
                 message: "The managed catalog returned nothing for this category.",
-                symbol: "square.grid.2x2",
+                icon: .grid,
                 actionLabel: "All categories",
                 action: { model.selectedCategory = nil }
             )
@@ -561,7 +561,7 @@ struct DesktopConnectionsScreen: View {
                             error,
                             fallback: "Juno couldn't refresh your connections."
                         ),
-                        symbol: "exclamationmark.triangle.fill",
+                        icon: .triangleAlert,
                         tint: Color.junoDanger,
                         actionLabel: "Try again"
                     ) {
@@ -576,14 +576,14 @@ struct DesktopConnectionsScreen: View {
                     // stops rather than handing out an instruction they cannot act on.
                     DesktopConnectionsNotice(
                         message: "The managed app directory is off on this server, so only the apps built into Juno are listed.",
-                        symbol: "info.circle",
+                        icon: .about,
                         tint: Color.junoCaution
                     )
                 }
                 if let catalogError = model.catalogErrorDescription {
                     DesktopConnectionsNotice(
                         message: "The managed app directory could not be read: \(catalogError)",
-                        symbol: "exclamationmark.triangle",
+                        icon: .triangleAlert,
                         tint: Color.junoCaution,
                         actionLabel: "Try again"
                     ) {
@@ -630,7 +630,7 @@ struct DesktopConnectionsScreen: View {
                 awaitingAuthorization = nil
                 Task { await model.refresh() }
             } label: {
-                JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
+                Label("Refresh", icon: .refresh)
             }
             .keyboardShortcut("r", modifiers: .command)
             .help("Re-read this account's connections (⌘R)")
@@ -933,14 +933,14 @@ private struct DesktopConnectorStatusPill: View {
 /// one the toolbar already draws.
 private struct DesktopConnectionsNotice: View {
     let message: String
-    let symbol: String
+    let icon: JunoIcon
     let tint: Color
     var actionLabel: String?
     var action: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
+            JunoIconView(icon, size: 16)
                 .foregroundStyle(tint)
                 .accessibilityHidden(true)
             Text(message)

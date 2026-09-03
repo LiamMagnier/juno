@@ -112,7 +112,7 @@ public struct NativeCompareView: View {
 
             HStack(spacing: JunoSpace.snug) {
                 Button(action: addPane) {
-                    JunoIconLabel("Add model", systemImage: "plus")
+                    Label("Add model", icon: .plus)
                         .junoFont(size: 13, relativeTo: .body)
                         .frame(minHeight: 44)
                         .contentShape(.rect)
@@ -147,7 +147,7 @@ public struct NativeCompareView: View {
                         send()
                     }
                 } label: {
-                    JunoIconView(systemImage: model.anyStreaming ? "stop.fill" : "arrow.up")
+                    JunoIconView(model.anyStreaming ? .stop : .arrowUp)
                         .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .frame(width: 30, height: 30)
                         .background(
@@ -329,7 +329,7 @@ struct NativeComparePane: View {
             Spacer(minLength: 0)
             if let remove {
                 Button(action: remove) {
-                    JunoIconView(systemImage: "xmark")
+                    JunoIconView(.close)
                         .junoFont(size: 10, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 22, height: 22)
@@ -419,7 +419,7 @@ struct NativeComparePane: View {
             // rather than offering a button that goes nowhere.
             if run.errorAction == .retry {
                 Button(action: retry) {
-                    JunoIconLabel("Try again", systemImage: "arrow.clockwise")
+                    Label("Try again", icon: .refresh)
                         .junoFont(size: 12, relativeTo: .body, weight: .medium)
                 }
                 .buttonStyle(.plain)

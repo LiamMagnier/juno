@@ -116,115 +116,294 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case trash, pencil, copy, check, close, ellipsis, share, terminal
     case arrowDown, volume, thumbsUp, thumbsDown, eyeOff
 
+    /// Added for the macOS rework: Codex-class Code shell, message actions,
+    /// native lists. Each case has a key in `scripts/generate-native-icons.mjs`.
+    case folderOpen, folderPlus, clock, history, shield, compass, blocks
+    case play, pause, gitCommit, fork, fileDiff, list, grid, image
+    case circleDot, loader, agents, archive, download, filter, eye, message
+    case bell, arrowUp, arrowLeft, arrowRight, minus, box, key, link
+    case sun, moon, monitor, home2
+
+    /// Status and state marks — the web's `StatusIcons` and the handful of
+    /// Lucide glyphs its lists draw beside a row's state. Added so the last SF
+    /// Symbol names still crossing a package boundary resolve to a real mark
+    /// instead of the wrench that ``init(systemImage:)``'s predecessor handed
+    /// out for anything it did not recognise.
+    case triangleAlert, circleCheck, circleX, circleMinus, circleHelp, circleDashed
+    case circleSlash, circle, circlePause, circlePlay, circleStop, badgeCheck
+    case chevronsUpDown, compose, fileSearch, filePlus, fileCode, fileQuestion
+    case clockCheck, clockAlert, calendarCheck, hourglass
+    case octagonX, wifiOff, sparkles, panelRight, panelLeft, columns, appWindow
+    case diff, phoneOff, userCircle, penTool, micOff, lockOpen, monitorOff
+    case crop, crosshair, binoculars, maximize, undo, rotateCcw, quote, brain
+    case chartLine, hand, gauge, shieldCheck, shieldOff, dollar, equal, location
+    case textCursor, listChecks, layoutList, power, upload, cloudOff, unlink
+    case logOut, flag, imageOff, activity, gitMerge, volumeX, ellipsisVertical
+    case squareStack
+    /// The same paperclip as ``attach``, under the name the Code shell reaches
+    /// for. Two names, one asset — a Lucide mark is what it draws, not a role.
+    case paperclip
+
+    /// The last marks the shared packages still spelled as SF Symbol names:
+    /// a Markdown task-list checkbox, and the block headers over a Mermaid
+    /// diagram — each named for what the diagram *is*, so a reader skimming a
+    /// long answer can find the sequence diagram without reading its label.
+    case squareCheck, square, arrowLeftRight, workflow, chartPie, chartGantt, waypoints
+
     /// The asset-catalog name, matching the generator's output.
     public var assetName: String { "nav-\(rawValue)" }
 
-    /// Maps a legacy SF Symbol name to the closest website/Lucide mark.
+    /// The website's mark for an SF Symbol name, or `nil` when no such mark
+    /// exists.
     ///
-    /// A few package boundaries still receive a string from older models. The
-    /// mapping keeps those boundaries source-compatible while ensuring the
-    /// rendered control uses the same generated asset as the web and the rest
-    /// of native Juno.
-    public static func from(systemImage: String) -> JunoIcon {
-        let value = systemImage.lowercased()
-        if value.contains("arrow.up.right") || value.contains("external") || value.contains("link") {
-            return .external
+    /// **An exact table, not a heuristic.** The previous mapping matched
+    /// substrings — `"doc.on.doc"` contained `"doc"` and became a file,
+    /// `"speaker.wave.2"` matched nothing and became a *wrench* — and it was
+    /// why every message's action row on the Mac drew wrenches and arrows.
+    /// A name that is not in this table resolves to nothing.
+    ///
+    /// **No view takes an SF Symbol name any more.** ``JunoIconView`` and
+    /// ``JunoIconLabel`` name a ``JunoIcon`` case, and the compiler checks
+    /// that the mark exists; the string-typed rendering path they used to
+    /// offer drew an empty frame for anything it did not know, and that gap
+    /// was invisible until someone looked at the screen. This lookup stays
+    /// for data that arrives as a symbol name — a model's capability badge,
+    /// a recent-activity kind — where the caller then names the fallback.
+    public init?(systemImage: String) {
+        guard let icon = JunoIcon.systemImageTable[systemImage.lowercased()] else {
+            return nil
         }
-        if value.contains("chevron.left") || value == "arrow.left" {
-            return .chevronLeft
-        }
-        // Down and up have their own glyphs. Every chevron used to resolve to
-        // the right-pointing one, which is how a menu chip's "chevron.down"
-        // came out as "›" — the composer read "Claude Fable 5 ›", and the
-        // disclosure looked like navigation. `chevron.up.chevron.down` is the
-        // pop-up idiom; it wants down, the menu direction.
-        if value.contains("chevron.down") { return .chevronDown }
-        if value.contains("chevron.up") { return .chevronUp }
-        if value.contains("chevron") || value == "arrow.right" { return .chevronRight }
-        if value.contains("trianglehead.pull") || value.contains("pull-request") {
-            return .pulls
-        }
-        if value.contains("square.and.pencil") { return .new }
-        if value.contains("square.and.arrow.up") { return .share }
-        if value.contains("point.3") || value.contains("powerplug") || value.contains("wifi") {
-            return .connections
-        }
-        if value.contains("telescope") || value.contains("doc.text.magnifyingglass") {
-            return .research
-        }
-        if value.contains("binocular") { return .search }
-        if value.contains("books.vertical") { return .library }
-        if value.contains("list.bullet") { return .files }
-        if value.contains("square.grid") || value.contains("grid") { return .artifacts }
-        if value.contains("scope") || value.contains("rectangle.3.group") { return .artifactsTool }
-        if value.contains("slider") || value.contains("sidebar") { return .sliders }
-        if value.contains("shippingbox") || value.contains("desktopcomputer") {
-            return .device
-        }
-        if value.contains("theatermask") { return .appearance }
-        if value.contains("gearshape") { return .settings }
-        if value.contains("checklist") { return .tasks }
-        if value.contains("person.2") { return .user }
-        if value.contains("hand.raised") { return .permission }
-        if value.contains("info.circle") || value == "info" { return .about }
-        if value.contains("macwindow") || value.contains("laptop") { return .device }
-        if value.contains("bolt") { return .work }
-        if value.contains("crop") { return .artifactsTool }
-        if value.contains("text.align") { return .writing }
-        if value.contains("doc.badge") { return .files }
-        if value.contains("square.stack") || value.contains("circle.grid") {
-            return .artifacts
-        }
-        if value.contains("arrow.down.to.line") || value.contains("arrow.down.circle") {
-            return .arrowDown
-        }
-        if value.contains("arrow.up.left") { return .external }
-        if value.contains("phone.down") || value.contains("rectangle.slash") { return .close }
-        if value.contains("mic") { return .mic }
-        if value.contains("arrow.down") { return .arrowDown }
-        if value.contains("arrow.up") { return .send }
-        if value.contains("arrow") {
-            return .external
-        }
-        if value.contains("xmark") || value.contains("trash") || value.contains("minus") {
-            return value.contains("trash") ? .trash : .close
-        }
-        if value.contains("check") { return .check }
-        if value.contains("exclamation") || value.contains("warning") || value.contains("error") {
-            return .error
-        }
-        if value.contains("lock") || value.contains("shield") || value.contains("hand.raised") {
-            return .permission
-        }
-        if value.contains("pause") || value.contains("stop") { return .stop }
-        if value.contains("play") || value.contains("bolt") || value.contains("power") {
-            return .work
-        }
-        if value.contains("clock") || value.contains("refresh") || value.contains("rotate") {
-            return .refresh
-        }
-        if value.contains("magnifyingglass") || value.contains("search") { return .search }
-        if value.contains("doc") || value.contains("file") || value.contains("folder") {
-            return value.contains("folder") ? .projects : .file
-        }
-        if value.contains("photo") || value.contains("camera") || value.contains("image") {
-            return .photos
-        }
-        if value.contains("person") || value.contains("user") { return .user }
-        if value.contains("paperclip") { return .attach }
-        if value.contains("ellipsis") || value.contains("more") { return .ellipsis }
-        if value.contains("plus") { return .plus }
-        if value.contains("copy") { return .copy }
-        if value.contains("pencil") || value.contains("edit") { return .pencil }
-        if value.contains("terminal") || value.contains("cpu") { return .terminal }
-        if value.contains("globe") || value.contains("safari") { return .web }
-        if value.contains("eye") { return .eyeOff }
-        if value.contains("branch") || value.contains("git") { return .branch }
-        if value.contains("sparkle") || value.contains("brain") { return .models }
-        if value.contains("grid") || value.contains("rectangle") { return .artifactsTool }
-        if value.contains("bubble") || value.contains("message") { return .conversation }
-        return .tools
+        self = icon
     }
+
+    /// SF Symbol name → the website's mark. Lower-cased keys.
+    static let systemImageTable: [String: JunoIcon] = [
+        // Alerts and status
+        "exclamationmark.triangle": .triangleAlert,
+        "exclamationmark.triangle.fill": .triangleAlert,
+        "exclamationmark.circle": .error,
+        "exclamationmark.circle.fill": .error,
+        "exclamationmark.shield.fill": .permission,
+        "exclamationmark.arrow.triangle.2.circlepath": .refresh,
+        "checkmark": .check,
+        "checkmark.circle": .circleCheck,
+        "checkmark.circle.fill": .circleCheck,
+        "checkmark.seal": .badgeCheck,
+        "checkmark.seal.fill": .badgeCheck,
+        "checklist": .listChecks,
+        "checklist.checked": .listChecks,
+        "checkmark.square.fill": .squareCheck,
+        "square": .square,
+        "arrow.left.arrow.right": .arrowLeftRight,
+        "point.topleft.down.to.point.bottomright.curvepath": .workflow,
+        "chart.pie": .chartPie,
+        "chart.bar.xaxis": .chartGantt,
+        "circle.hexagongrid": .waypoints,
+        "xmark": .close,
+        "xmark.circle": .circleX,
+        "xmark.circle.fill": .circleX,
+        "xmark.octagon": .octagonX,
+        "xmark.shield": .shieldOff,
+        "xmark.seal.fill": .circleX,
+        "info": .about,
+        "info.circle": .about,
+        "questionmark.circle": .circleHelp,
+        "questionmark.bubble": .circleHelp,
+        "questionmark.diamond": .circleHelp,
+        "questionmark.folder": .projects,
+        "slash.circle": .circleSlash,
+        "minus": .minus,
+        "minus.circle": .circleMinus,
+        "minus.circle.fill": .circleMinus,
+        "plus": .plus,
+        "plus.circle": .plus,
+        "plusminus.circle": .diff,
+        "plus.forwardslash.minus": .diff,
+        "equal": .equal,
+        "circle": .circle,
+        "circle.fill": .circleDot,
+        "circle.inset.filled": .circleDot,
+        "circle.lefthalf.filled": .circleDot,
+        "circle.dotted": .circleDashed,
+        "circle.dashed": .circleDashed,
+        "circle.dotted.circle": .circleDot,
+        "hourglass": .hourglass,
+        "hourglass.circle": .hourglass,
+        "gauge.with.dots.needle.33percent": .gauge,
+        "gauge.with.dots.needle.67percent": .gauge,
+        "gauge.with.dots.needle.100percent": .gauge,
+        "flag.checkered": .flag,
+        "location": .location,
+        "dollarsign.circle": .dollar,
+        "waveform.path.ecg": .activity,
+
+        // Arrows and chevrons
+        "chevron.down": .chevronDown,
+        "chevron.up": .chevronUp,
+        "chevron.left": .chevronLeft,
+        "chevron.right": .chevronRight,
+        "chevron.up.chevron.down": .chevronsUpDown,
+        "arrow.up": .arrowUp,
+        "arrow.up.circle": .arrowUp,
+        "arrow.down": .arrowDown,
+        "arrow.down.circle": .arrowDown,
+        "arrow.left": .arrowLeft,
+        "arrow.right": .arrowRight,
+        "arrow.right.circle": .arrowRight,
+        "arrow.up.right": .external,
+        "arrow.up.right.square": .external,
+        "arrow.up.left.and.arrow.down.right": .maximize,
+        "arrow.down.to.line.compact": .download,
+        "arrow.down.to.line": .download,
+        "laptopcomputer.and.arrow.down": .download,
+        "square.and.arrow.down": .download,
+        "arrow.up.doc": .files,
+        "arrow.clockwise": .refresh,
+        "arrow.triangle.2.circlepath": .refresh,
+        "arrow.counterclockwise": .rotateCcw,
+        "arrow.counterclockwise.circle": .rotateCcw,
+        "arrow.uturn.backward": .undo,
+        "arrow.triangle.branch": .branch,
+        "arrow.trianglehead.merge": .gitMerge,
+        "arrow.trianglehead.pull": .pulls,
+        "square.and.arrow.up": .share,
+
+        // Files, folders, documents
+        "doc": .file,
+        "doc.text": .file,
+        "doc.richtext": .file,
+        "doc.on.doc": .copy,
+        "doc.badge.plus": .filePlus,
+        "doc.badge.arrow.up": .files,
+        "doc.badge.ellipsis": .file,
+        "doc.badge.gearshape": .file,
+        "doc.text.magnifyingglass": .fileSearch,
+        "folder": .projects,
+        "folder.badge.plus": .folderPlus,
+        "folder.badge.questionmark": .projects,
+        "folder.badge.gearshape": .projects,
+        "paperclip": .attach,
+        "paperclip.circle": .paperclip,
+        "photo": .image,
+        "photo.badge.exclamationmark": .imageOff,
+        "books.vertical": .library,
+        "square.stack.3d.up": .artifacts,
+        "square.on.square.dashed": .squareStack,
+        "rectangle.on.rectangle": .copy,
+        "square.grid.2x2": .grid,
+        "circle.grid.cross": .grid,
+        "rectangle.3.group": .artifactsTool,
+        "square.split.2x1": .columns,
+        "rectangle.split.2x1": .columns,
+        "rectangle.topthird.inset.filled": .panelLeft,
+        "sidebar.trailing": .panelRight,
+        "sidebar.leading": .panelLeft,
+        "macwindow": .appWindow,
+        "macwindow.on.rectangle": .appWindow,
+        "list.bullet": .list,
+        "list.bullet.rectangle": .layoutList,
+        "text.alignleft": .writing,
+        "text.magnifyingglass": .search,
+        "magnifyingglass": .search,
+        "binoculars": .binoculars,
+        "character.cursor.ibeam": .textCursor,
+        "crop": .crop,
+        "scope": .crosshair,
+        "trash": .trash,
+        "trash.fill": .trash,
+        "pencil": .pencil,
+        "pencil.tip": .penTool,
+        "square.and.pencil": .compose,
+        "ellipsis": .ellipsis,
+        "ellipsis.circle": .ellipsis,
+        "link": .link,
+        "slider.horizontal.3": .sliders,
+        "line.3.horizontal.decrease": .filter,
+        "line.3.horizontal.decrease.circle": .filter,
+
+        // Time
+        "clock": .clock,
+        "clock.fill": .clock,
+        "clock.badge.checkmark": .clockCheck,
+        "clock.badge.exclamationmark": .clockAlert,
+        "clock.arrow.circlepath": .history,
+        "calendar.badge.clock": .tasks,
+        "bolt.badge.clock": .tasks,
+
+        // Media and voice
+        "play": .play,
+        "play.fill": .play,
+        "play.circle": .circlePlay,
+        "pause": .pause,
+        "pause.fill": .pause,
+        "pause.circle": .circlePause,
+        "stop": .stop,
+        "stop.fill": .stop,
+        "stop.circle": .circleStop,
+        "stop.circle.fill": .circleStop,
+        "mic": .mic,
+        "mic.fill": .mic,
+        "mic.slash": .micOff,
+        "speaker.wave.2": .volume,
+        "speaker.slash": .volumeX,
+        "phone.down.fill": .phoneOff,
+
+        // People, security, devices
+        "person": .user,
+        "person.crop.circle": .userCircle,
+        "person.2": .agents,
+        "hand.raised": .hand,
+        "hand.raised.fill": .hand,
+        "hand.thumbsup": .thumbsUp,
+        "hand.thumbsup.fill": .thumbsUp,
+        "hand.thumbsdown": .thumbsDown,
+        "hand.thumbsdown.fill": .thumbsDown,
+        "lock": .lock,
+        "lock.open": .lockOpen,
+        "lock.slash": .lockOpen,
+        "shield.lefthalf.filled": .shield,
+        "key": .key,
+        "eye": .eye,
+        "eye.slash": .eyeOff,
+        "laptopcomputer": .device,
+        "laptopcomputer.slash": .monitorOff,
+        "laptopcomputer.trianglebadge.exclamationmark": .monitorOff,
+        "desktopcomputer": .monitor,
+        "desktopcomputer.trianglebadge.exclamationmark": .monitorOff,
+        "shippingbox": .box,
+        "wifi.slash": .wifiOff,
+        "wifi.exclamationmark": .wifiOff,
+        "powerplug": .connections,
+        "point.3.connected.trianglepath.dotted": .connections,
+        "app.connected.to.app.below.fill": .connections,
+        "power": .power,
+
+        // Product marks
+        "bubble.left.and.bubble.right": .conversation,
+        "text.bubble": .message,
+        "globe": .web,
+        "safari": .web,
+        "telescope": .research,
+        "sparkles": .sparkles,
+        "brain": .brain,
+        "brain.head.profile": .brain,
+        "cpu": .models,
+        "theatermasks": .appearance,
+        "gearshape": .settings,
+        "wrench.and.screwdriver": .tools,
+        "bolt.horizontal": .work,
+        "bolt.horizontal.fill": .work,
+        "bolt.horizontal.circle": .work,
+        "chart.line.uptrend.xyaxis": .chartLine,
+        "chart.bar.doc.horizontal": .usage,
+        "sun.max": .sun,
+        "moon": .moon,
+        "bell": .bell,
+        "archivebox": .archive,
+        "pin": .pin,
+        "terminal": .terminal,
+        "apple.terminal": .terminal,
+    ]
 }
 
 /// Renders a ``JunoIcon`` at a weight that sits correctly beside SF Symbols.
@@ -233,6 +412,13 @@ public enum JunoIcon: String, CaseIterable, Sendable {
 /// reads slightly heavier than an equivalent SF Symbol, so the default size is
 /// nudged down rather than scaling the artwork up — matching stroke weight
 /// matters more than matching bounding box when the two sit in one list.
+///
+/// **This is the one icon API.** `JunoIconView(.copy, size: 16)` in a view,
+/// `Label("Copy", icon: .copy)` where a label is wanted. Every mark is one of
+/// the website's own, generated from `lucide-react`. There is no SF Symbol
+/// path: the `systemImage:` initialiser this once carried drew an empty frame
+/// for a name it could not resolve, and the gap was invisible until someone
+/// looked at the screen. A mark that is missing is now a compile error.
 public struct JunoIconView: View {
     private let icon: JunoIcon
     private let size: CGFloat
@@ -242,19 +428,28 @@ public struct JunoIconView: View {
         self.size = size
     }
 
-    /// Compatibility initializer for older symbol-backed call sites. It is
-    /// intentionally rendered through the website icon mapping above.
-    public init(systemImage: String, size: CGFloat = 19) {
-        self.icon = .from(systemImage: systemImage)
-        self.size = size
-    }
-
     public var body: some View {
         Image(icon.assetName)
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
+    }
+}
+
+public extension Label where Title == Text, Icon == JunoIconView {
+    /// `Label("Copy", icon: .copy)` — a label whose mark is one of the
+    /// website's, sized for a menu row or a list row rather than at the asset's
+    /// own 24pt.
+    @MainActor
+    init(_ title: LocalizedStringKey, icon: JunoIcon, size: CGFloat = 15) {
+        self.init { Text(title) } icon: { JunoIconView(icon, size: size) }
+    }
+
+    /// The same for a runtime string.
+    @MainActor
+    init(verbatim title: String, icon: JunoIcon, size: CGFloat = 15) {
+        self.init { Text(title) } icon: { JunoIconView(icon, size: size) }
     }
 }
 
@@ -279,21 +474,6 @@ public struct JunoIconLabel: View {
     public init(verbatim title: String, icon: JunoIcon, size: CGFloat = 15) {
         self.title = Text(title)
         self.icon = icon
-        self.size = size
-    }
-
-    /// Source-compatible bridge for older menu labels. The visible glyph still
-    /// comes from Juno's generated Lucide catalog rather than SF Symbols.
-    public init(_ title: LocalizedStringKey, systemImage: String, size: CGFloat = 15) {
-        self.title = Text(title)
-        self.icon = .from(systemImage: systemImage)
-        self.size = size
-    }
-
-    /// String-title counterpart used by runtime status and error messages.
-    public init(verbatim title: String, systemImage: String, size: CGFloat = 15) {
-        self.title = Text(title)
-        self.icon = .from(systemImage: systemImage)
         self.size = size
     }
 

@@ -19,24 +19,27 @@ public struct CodeContextChipLabel: View {
     private let title: String
     private let icon: JunoIcon
     private let tint: Color?
+    private let showsChevron: Bool
 
-    public init(_ title: String, icon: JunoIcon, tint: Color? = nil) {
+    /// - Parameter showsChevron: off for a chip on the composer's control row,
+    ///   where the one disclosure belongs to the model chip.
+    public init(_ title: String, icon: JunoIcon, tint: Color? = nil, showsChevron: Bool = true) {
         self.title = title
         self.icon = icon
         self.tint = tint
+        self.showsChevron = showsChevron
     }
 
     public var body: some View {
         HStack(spacing: JunoSpace.tight) {
-            JunoIconView(icon, size: 14)
+            JunoIconView(icon, size: 13)
             Text(title)
-                .junoRowLabel()
+                .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            // The disclosure is part of the same website icon vocabulary as
-            // the destination mark. Keeping it as a generated Lucide asset
-            // also gives the native and web composers the same optical weight.
-            JunoIconView(.chevronDown, size: 12)
+            if showsChevron {
+                JunoIconView(.chevronDown, size: 12)
+            }
         }
         .foregroundStyle(tint ?? Color.junoMutedForeground)
         .padding(.vertical, JunoSpace.hairline)

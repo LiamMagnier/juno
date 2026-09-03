@@ -138,14 +138,14 @@ struct ActivityTab: View {
             }
 
             Section("Work produced") {
-                metricRow(label: "Changed files", value: "\(controller.changes.count)", symbol: "doc.badge.ellipsis")
-                metricRow(label: "Restorable versions", value: "\(controller.checkpointCount)", symbol: "clock.arrow.circlepath")
+                metricRow(label: "Changed files", value: "\(controller.changes.count)", icon: .file)
+                metricRow(label: "Restorable versions", value: "\(controller.checkpointCount)", icon: .history)
             }
 
             if !controller.subagents.isEmpty {
                 Section("Delegation") {
-                    metricRow(label: "Agents running", value: "\(activeAgents)", symbol: "person.2")
-                    metricRow(label: "Agents finished", value: "\(finishedAgents)", symbol: "checkmark.circle")
+                    metricRow(label: "Agents running", value: "\(activeAgents)", icon: .agents)
+                    metricRow(label: "Agents finished", value: "\(finishedAgents)", icon: .circleCheck)
                 }
             }
 
@@ -294,12 +294,12 @@ struct ActivityTab: View {
         .accessibilityIdentifier("juno.code.activity.awaiting-approval")
     }
 
-    private func metricRow(label: String, value: String, symbol: String) -> some View {
+    private func metricRow(label: String, value: String, icon: JunoIcon) -> some View {
         LabeledContent {
             Text(value).monospacedDigit()
         } label: {
             HStack(spacing: JunoSpace.tight) {
-                JunoIconView(systemImage: symbol, size: 13)
+                JunoIconView(icon, size: 13)
                     .junoSecondaryInk()
                     .frame(width: 16)
                 Text(label)

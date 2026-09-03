@@ -374,7 +374,7 @@ struct DesktopDesignScreen: View {
             JunoEmptyState(
                 title: "No designs yet",
                 message: "Pick a size above to start one, or ask Juno in any chat to design a screen.",
-                symbol: "square.on.square.dashed"
+                icon: .squareStack
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -444,7 +444,7 @@ struct DesktopDesignScreen: View {
             Button {
                 closeDesign()
             } label: {
-                JunoIconLabel("All designs", systemImage: "chevron.left")
+                Label("All designs", icon: .arrowLeft)
             }
             .buttonStyle(.plain)
             .contentShape(.rect)
@@ -488,7 +488,7 @@ struct DesktopDesignScreen: View {
                     requestDelete(design)
                 }
             } label: {
-                JunoIconView(systemImage: "ellipsis")
+                JunoIconView(.ellipsis)
                     .frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)
@@ -682,7 +682,7 @@ private struct DesktopDesignRow: View {
         HStack(spacing: JunoSpace.snug) {
             Button(action: open) {
                 HStack(spacing: JunoSpace.cozy) {
-                    JunoIconView(systemImage: "pencil.tip")
+                    JunoIconView(.penTool)
                         .junoFont(size: 15, relativeTo: .body)
                         .foregroundStyle(Color.junoAccent)
                         .frame(width: 34, height: 34)
@@ -706,7 +706,7 @@ private struct DesktopDesignRow: View {
 
                     Spacer(minLength: JunoSpace.snug)
 
-                    JunoIconView(systemImage: "chevron.right")
+                    JunoIconView(.chevronRight)
                         .font(.caption2)
                         .junoMetaInk()
                         .accessibilityHidden(true)
@@ -719,7 +719,7 @@ private struct DesktopDesignRow: View {
             Menu {
                 Button("Delete design", role: .destructive, action: delete)
             } label: {
-                JunoIconView(systemImage: "ellipsis")
+                JunoIconView(.ellipsis)
                     .frame(width: 28, height: 28)
             }
             .menuStyle(.borderlessButton)

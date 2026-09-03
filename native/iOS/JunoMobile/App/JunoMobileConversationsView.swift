@@ -137,7 +137,8 @@ struct JunoMobileChatDetailScreen: View {
           setMemoryEnabled: setMemoryEnabled,
           tools: tools,
           sendSwell: sendSwell,
-          pendingPrompt: pendingPrompt
+          pendingPrompt: pendingPrompt,
+          startDictation: startDictation
         )
       }
     }
@@ -188,6 +189,9 @@ private struct JunoMobileDraftChat: View {
   /// into a conversation.
   let sendSwell: JunoMobileSendSwell
   var pendingPrompt: Binding<String?> = .constant(nil)
+  /// A Dictate shortcut always begins from a blank draft, where the resulting
+  /// transcript is unambiguously the message being composed.
+  var startDictation: Binding<Bool> = .constant(false)
 
   @State private var prompt = ""
   @State private var selectedModelID = ""
@@ -315,8 +319,8 @@ private struct JunoMobileDraftChat: View {
           sendSwell: sendSwell,
           // The greeting holds the bloom whenever it is on screen, so
           // the composer must not draw a second one.
-          greetingVisible: voiceMessages.isEmpty
-          , startDictation: startDictation
+          greetingVisible: voiceMessages.isEmpty,
+          startDictation: startDictation
         )
       }
       // After the inset, never before it: the camera panel is a sibling

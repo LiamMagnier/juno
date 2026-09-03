@@ -121,7 +121,7 @@ struct DesktopDictation: View {
     private var capsule: some View {
         HStack(spacing: 12) {
             circleButton(
-                systemName: "xmark",
+                icon: .close,
                 label: "Cancel dictation",
                 style: .outline,
                 action: cancel
@@ -131,7 +131,7 @@ struct DesktopDictation: View {
                 .frame(maxWidth: .infinity)
 
             circleButton(
-                systemName: "stop.fill",
+                icon: .stop,
                 label: "Stop and edit",
                 style: .neutral,
                 glyphSize: 12,
@@ -139,7 +139,7 @@ struct DesktopDictation: View {
             )
 
             circleButton(
-                systemName: "arrow.up",
+                icon: .arrowUp,
                 label: "Send dictation",
                 style: .accent,
                 action: send
@@ -164,15 +164,14 @@ struct DesktopDictation: View {
     }
 
     private func circleButton(
-        systemName: String,
+        icon: JunoIcon,
         label: String,
         style: CircleStyle,
-        glyphSize: CGFloat = 14,
+        glyphSize: CGFloat = 15,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            JunoIconView(systemImage: systemName)
-                .junoFont(size: glyphSize, relativeTo: .body, weight: .semibold)
+            JunoIconView(icon, size: glyphSize)
                 .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.junoForeground)
                 .frame(width: 38, height: 38)
                 .background {
@@ -194,15 +193,14 @@ struct DesktopDictation: View {
 
     private func unavailable(_ message: String) -> some View {
         HStack(spacing: 12) {
-            JunoIconView(systemImage: "mic.slash")
-                .junoFont(size: 15, relativeTo: .body)
+            JunoIconView(.micOff, size: 16)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
                 .junoBody()
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
             circleButton(
-                systemName: "xmark",
+                icon: .close,
                 label: "Close dictation",
                 style: .outline,
                 action: onCancel

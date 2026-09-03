@@ -56,7 +56,7 @@ struct DesktopUsageScreen: View {
                 if serverTooOld {
                     DesktopUsageNotice(
                         message: NativeUsageError.notSupportedByServer.localizedDescription,
-                        symbol: "clock.arrow.circlepath",
+                        icon: .history,
                         // Retrying cannot conjure a route the server does not
                         // have; the fix is a deploy, not another request.
                         retry: nil
@@ -83,7 +83,7 @@ struct DesktopUsageScreen: View {
                 Button {
                     Task { await load(force: true) }
                 } label: {
-                    JunoIconLabel("Refresh", systemImage: "arrow.clockwise")
+                    Label("Refresh", icon: .refresh)
                 }
                 .disabled(isLoading)
                 .help("Re-read your usage from the ledger")
@@ -398,7 +398,7 @@ private struct DesktopUsageSurfacesCard: View {
             ForEach(rows) { row in
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                        JunoIconView(systemImage: row.symbol)
+                        JunoIconView(row.icon, size: 14)
                             .font(.caption)
                             .junoSecondaryInk()
                             .frame(width: 16)
@@ -692,7 +692,7 @@ private struct DesktopUsageEmptyState: View {
         JunoEmptyState(
             title: "No usage yet",
             message: "Nothing was spent in the \(range.subtitle). Start a chat or a Code session and it will show up here.",
-            symbol: "chart.line.uptrend.xyaxis"
+            icon: .chartLine
         )
         .frame(maxWidth: .infinity)
         .padding(.vertical, JunoSpace.region)
@@ -701,7 +701,7 @@ private struct DesktopUsageEmptyState: View {
 
 private struct DesktopUsageNotice: View {
     let message: String
-    var symbol: String = "exclamationmark.triangle"
+    var icon: JunoIcon = .triangleAlert
     /// Nil where retrying cannot help — a route the server does not have is
     /// fixed by deploying, not by asking again, and a button that cannot
     /// succeed is worse than no button.
@@ -709,7 +709,7 @@ private struct DesktopUsageNotice: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
+            JunoIconView(icon, size: 16)
                 .foregroundStyle(Color.junoCaution)
                 .accessibilityHidden(true)
             Text(message)

@@ -1,97 +1,122 @@
 import JunoDesignSystem
 import SwiftUI
 
-/// Every keyboard shortcut the app answers, on one page, behind ⌘/.
+/// Every keyboard shortcut the app answers, in one native table, behind ⌘/.
 ///
 /// A window rather than a sheet so it can sit beside the window the reader is
 /// learning — and rather than a link to the website's help page, which is
 /// where this used to point: a list of the keys an app answers belongs in the
 /// app, offline, and in the same words the menu bar uses.
 ///
-/// The table is data, not views, so a shortcut added to a menu can be added
-/// here on the same line and a test can check the page is not empty.
+/// A `Table`, not a hand-drawn list of cards. The platform's table brings the
+/// alternating rows, the column headers, the resizable columns and the
+/// selection the reader already knows from every other Mac app, and it costs
+/// nothing to keep right when the platform moves.
+///
+/// The rows are data, so a shortcut added to a menu can be added here on the
+/// same line and a test can check the page is not empty.
 struct DesktopShortcutsWindow: View {
     struct Shortcut: Identifiable {
         let keys: String
         let action: String
-        var id: String { keys + action }
+        /// Where the shortcut answers: everywhere, or one product.
+        let scope: String
+        var id: String { scope + keys + action }
     }
 
     struct Group: Identifiable {
         let title: String
         let shortcuts: [Shortcut]
         var id: String { title }
+
+        init(title: String, shortcuts: [(String, String)]) {
+            self.title = title
+            self.shortcuts = shortcuts.map { Shortcut(keys: $0.0, action: $0.1, scope: title) }
+        }
     }
 
     static let groups: [Group] = [
         Group(title: "Everywhere", shortcuts: [
-            Shortcut(keys: "⌘1 · ⌘2 · ⌘3", action: "Chat · Code · Work"),
-            Shortcut(keys: "⌘N", action: "New chat, task or run — whichever the window is showing"),
-            Shortcut(keys: "⇧⌘O", action: "New chat"),
-            Shortcut(keys: "⇧⌘N", action: "New incognito window"),
-            Shortcut(keys: "⇧⌘F", action: "Find in Juno"),
-            Shortcut(keys: "⌥Space", action: "Ask Juno from anywhere"),
-            Shortcut(keys: "⌘,", action: "Settings"),
-            Shortcut(keys: "⌘/", action: "This list"),
+            ("⌘1 · ⌘2 · ⌘3", "Chat · Code · Work"),
+            ("⌘N", "New chat, task or run — whichever the window is showing"),
+            ("⇧⌘O", "New chat"),
+            ("⇧⌘N", "New incognito window"),
+            ("⇧⌘F", "Find in Juno"),
+            ("⌥Space", "Ask Juno from anywhere"),
+            ("⌘,", "Settings"),
+            ("⌃⌘S", "Show or hide the sidebar"),
+            ("⌘/", "This list"),
         ]),
         Group(title: "Chat", shortcuts: [
-            Shortcut(keys: "⌘↩", action: "Send"),
-            Shortcut(keys: "⇧↩", action: "New line"),
-            Shortcut(keys: "⌘.", action: "Stop"),
-            Shortcut(keys: "⇧⌘1", action: "Attach a screenshot"),
+            ("⌘↩", "Send"),
+            ("⇧↩", "New line"),
+            ("⌘.", "Stop"),
+            ("⇧⌘1", "Attach a screenshot"),
         ]),
         Group(title: "Code", shortcuts: [
-            Shortcut(keys: "⌘K", action: "Command palette"),
-            Shortcut(keys: "⌘O", action: "Open folder"),
-            Shortcut(keys: "⇧⌘[ · ⇧⌘]", action: "Previous · next session"),
-            Shortcut(keys: "⌘↩", action: "Send, steer or queue"),
-            Shortcut(keys: "⌘.", action: "Stop the run"),
-            Shortcut(keys: "⇧↩ · ⇧⎋", action: "Approve · deny the focused request"),
-            Shortcut(keys: "⌥⌘R", action: "Review pane"),
-            Shortcut(keys: "⌥⌘C", action: "Console"),
-            Shortcut(keys: "⌥⌘I", action: "Context rail"),
-            Shortcut(keys: "⌥⌘P", action: "Preview"),
-            Shortcut(keys: "⌥⇧⌘O", action: "Open file"),
-            Shortcut(keys: "⇧⌘↩", action: "Send review comments to Juno"),
-            Shortcut(keys: "/", action: "Slash commands · /compact folds the context"),
-            Shortcut(keys: "@", action: "Mention a file"),
+            ("⌘K", "Command palette"),
+            ("⌘O", "Open folder"),
+            ("⇧⌘[ · ⇧⌘]", "Previous · next session"),
+            ("⌘↩", "Send, steer or queue"),
+            ("⌘.", "Stop the run"),
+            ("⇧↩ · ⇧⎋", "Approve · deny the focused request"),
+            ("⌥⌘R", "Review pane"),
+            ("⌥⌘C", "Console"),
+            ("⌥⌘I", "Context rail"),
+            ("⌥⌘P", "Preview"),
+            ("⌥⇧⌘O", "Open file"),
+            ("⇧⌘↩", "Send review comments to Juno"),
+            ("/", "Slash commands · /compact folds the context"),
+            ("@", "Mention a file"),
+        ]),
+        Group(title: "Work", shortcuts: [
+            ("↩", "Start the task in the composer"),
+            ("⌘R", "Refresh tasks"),
+            ("↩ · ⎋", "Allow once · refuse the approval in front of you"),
         ]),
     ]
 
+    /// Every row, in group order, for the one table.
+    static let shortcuts: [Shortcut] = groups.flatMap(\.shortcuts)
+
+    @State private var selection: Shortcut.ID?
+
     var body: some View {
-        JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Text("Keyboard shortcuts")
                     .junoPageHeading()
                     .accessibilityAddTraits(.isHeader)
-                ForEach(Self.groups) { group in
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        Text(group.title)
-                            .junoSidebarSection()
-                        VStack(spacing: 0) {
-                            ForEach(Array(group.shortcuts.enumerated()), id: \.element.id) { index, shortcut in
-                                if index > 0 {
-                                    Divider().overlay(Color.junoSeparator)
-                                }
-                                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.regular) {
-                                    Text(shortcut.keys)
-                                        .junoFont(size: 12, relativeTo: .caption, weight: .medium, design: .rounded)
-                                        .junoInk()
-                                        .frame(width: 150, alignment: .leading)
-                                    Text(shortcut.action)
-                                        .junoRowLabel()
-                                        .junoSecondaryInk()
-                                    Spacer(minLength: 0)
-                                }
-                                .padding(.horizontal, JunoSpace.regular)
-                                .padding(.vertical, JunoSpace.snug)
-                                .accessibilityElement(children: .combine)
-                            }
-                        }
-                        .junoCard(cornerRadius: JunoRadius.card)
-                    }
-                }
+                Spacer(minLength: 0)
+                Text("\(Self.shortcuts.count) shortcuts")
+                    .junoCaption()
+                    .monospacedDigit()
             }
+            .padding(.horizontal, JunoSpace.section)
+            .padding(.top, JunoSpace.section)
+            .padding(.bottom, JunoSpace.cozy)
+
+            Table(Self.shortcuts, selection: $selection) {
+                TableColumn("Shortcut") { shortcut in
+                    Text(shortcut.keys)
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                        .junoInk()
+                }
+                .width(min: 120, ideal: 140, max: 180)
+                TableColumn("Action") { shortcut in
+                    Text(shortcut.action)
+                        .junoRowLabel()
+                }
+                TableColumn("Where") { shortcut in
+                    Text(shortcut.scope)
+                        .junoCaption()
+                }
+                .width(min: 80, ideal: 96, max: 120)
+            }
+            .tableStyle(.inset(alternatesRowBackgrounds: true))
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.regular)
         }
         .frame(minWidth: 520, idealWidth: 640, minHeight: 520, idealHeight: 720)
         .junoReadingCanvas()

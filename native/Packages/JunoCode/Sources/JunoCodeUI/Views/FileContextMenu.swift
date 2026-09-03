@@ -76,7 +76,7 @@ struct FileContextMenu: View {
             choose(entry)
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: entry.isDirectory ? "folder" : "doc")
+                JunoIconView(entry.isDirectory ? .projects : .file)
                     .foregroundStyle(entry.isDirectory ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 16)
 

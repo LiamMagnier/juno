@@ -52,9 +52,16 @@ struct DesktopWorkWorkspace: View {
     /// nobody to run it is still a chat, so the way back to one crosses the
     /// product boundary rather than composing an empty task.
     let newChat: () -> Void
+    /// An errand handed over from the quick-entry panel, consumed exactly once
+    /// into the home composer. Same token shape as Chat's unscoped request.
+    var errandRequestID: UUID? = nil
+    var errandPrompt: String? = nil
+    var consumeErrandRequest: (() -> Void)? = nil
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
-    @SceneStorage("juno.desktop.work.automation-selection") private var storedAutomationSelection = false
+    /// Which of the column's fixed pages is open, as its raw name; empty for
+    /// the home or a task. One key for five pages rather than five Bools.
+    @SceneStorage("juno.desktop.work.page") private var storedPage = ""
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
     /// Chat's destination, which this window writes and never reads.
     ///
@@ -127,24 +134,15 @@ struct DesktopWorkWorkspace: View {
                     return .overview
                 }
                 #endif
-                if storedAutomationSelection { return .automations }
+                if let page = DesktopWorkSidebarItem.page(named: storedPage) { return page }
                 return storedSessionID.isEmpty ? .overview : .task(storedSessionID)
             },
             set: {
                 #if DEBUG
                 previewLandingConsumed = true
                 #endif
-                switch $0 {
-                case .automations:
-                    storedAutomationSelection = true
-                    storedSessionID = ""
-                case .overview, .task:
-                    storedAutomationSelection = false
-                    storedSessionID = $0?.taskID ?? ""
-                case nil:
-                    storedAutomationSelection = false
-                    storedSessionID = ""
-                }
+                storedPage = $0?.pageName ?? ""
+                storedSessionID = $0?.taskID ?? ""
             }
         )
     }
@@ -210,7 +208,7 @@ struct DesktopWorkWorkspace: View {
     }
 
     private var windowTitle: String {
-        if case .automations = selection.wrappedValue { return "Automations" }
+        if let title = selection.wrappedValue?.pageTitle { return title }
         return openSession?.title ?? "Juno Work"
     }
 
@@ -253,6 +251,15 @@ struct DesktopWorkWorkspace: View {
         }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         .task { await model.refresh() }
+        // The quick-entry panel's errand lands in the home composer, once.
+        .onChange(of: errandRequestID, initial: true) { _, id in
+            guard id != nil else { return }
+            if let errandPrompt, !errandPrompt.isEmpty {
+                composerDraft = errandPrompt
+            }
+            compose()
+            consumeErrandRequest?()
+        }
         // Following one task at a time is the model's contract: opening a second
         // closes the first one's stream. Driving it from the selection rather
         // than from the row's tap handler means a selection restored from scene
@@ -350,6 +357,29 @@ struct DesktopWorkWorkspace: View {
                 workModel: model,
                 modelOptions: workModelOptions
             )
+        } else if case .schedules = selection.wrappedValue,
+            let automationModel = configuration.workAutomationModel {
+            DesktopWorkSchedulesPage(model: automationModel)
+        } else if case .inbox = selection.wrappedValue {
+            DesktopWorkInboxPage(
+                model: model,
+                sessions: visibleSessions,
+                open: { selection.wrappedValue = .task($0) }
+            )
+        } else if case .skills = selection.wrappedValue {
+            DesktopWorkSkillsPage()
+        } else if case .permissions = selection.wrappedValue {
+            if let hostModel {
+                JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
+                    DesktopWorkHostTile(host: hostModel)
+                }
+            } else {
+                JunoEmptyState(
+                    title: "Permissions",
+                    message: "This window is not hosting Juno Work, so there is nothing to grant here. Tasks still run in the cloud.",
+                    icon: .shield
+                )
+            }
         } else if let session = openSession {
             DesktopWorkThread(
                 model: model,
@@ -363,33 +393,16 @@ struct DesktopWorkWorkspace: View {
                 answerDraft: $answerDraft,
                 instructionDraft: $instructionDraft
             )
-        } else if model.phase == .loading {
+        } else if model.phase == .loading, model.sessions.isEmpty {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let hostModel, let blocker = hostModel.blocker, model.sessions.isEmpty {
-            // Before "No tasks yet", and only while there are none. Somebody
-            // opening Juno Work on a Mac that cannot serve it has two things to
-            // learn, and they are not equally urgent: a task started here would
-            // go nowhere, and there are no tasks yet. Offering "New Task" first
-            // is offering the second answer to the first question.
-            //
-            // Once tasks exist the panel steps aside for them — a Mac that hosts
-            // nothing still runs work in the cloud, and a setup screen in front
-            // of a list of real tasks would be a wall between somebody and the
-            // thing they came back for. The sidebar keeps saying so quietly.
-            DesktopWorkStartPath(host: hostModel, blocker: blocker, compose: compose)
-        } else if model.sessions.isEmpty {
-            JunoEmptyState(
-                title: "No tasks yet",
-                message: "A task is something you hand to Juno to go and do — sort a folder, "
-                    + "pull a report together, work through an inbox. It runs on this Mac or in "
-                    + "the cloud and tells you here what it did.",
-                symbol: "checklist",
-                actionLabel: "New Task",
-                action: compose
-            )
         } else {
+            // The home, in every other state — including "no tasks yet" and "this
+            // Mac is not set up". Both used to be full-page interstitials in
+            // front of the composer, and the composer is the whole product:
+            // what this Mac cannot do is one quiet line under it, with the way
+            // to fix it, rather than a wall between the reader and the box.
             DesktopWorkOverview(
                 model: model,
                 sessions: visibleSessions,
@@ -425,7 +438,7 @@ struct DesktopWorkWorkspace: View {
         // the navigation column, on the column it switches, in every product —
         ToolbarItem(placement: .primaryAction) {
             Button(action: compose) {
-                JunoIconLabel("New task", systemImage: "square.and.pencil")
+                JunoIconLabel("New task", icon: .new)
             }
             .junoToolbarMetrics()
             .help("Describe something for Juno to go and do (⌘N)")
@@ -443,7 +456,7 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.pauseOpenRun() }
                 } label: {
-                    JunoIconLabel("Pause", systemImage: "pause")
+                    JunoIconLabel("Pause", icon: .pause)
                 }
                 .disabled(!canPause)
                 .accessibilityIdentifier("juno.work.pause")
@@ -451,7 +464,7 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.resumeOpenRun() }
                 } label: {
-                    JunoIconLabel("Resume", systemImage: "play")
+                    JunoIconLabel("Resume", icon: .play)
                 }
                 .disabled(!canResume)
                 .accessibilityIdentifier("juno.work.resume")
@@ -459,7 +472,7 @@ struct DesktopWorkWorkspace: View {
                 Button(role: .destructive) {
                     Task { await model.stopOpenRun() }
                 } label: {
-                    JunoIconLabel("Stop", systemImage: "stop")
+                    JunoIconLabel("Stop", icon: .stop)
                 }
                 .disabled(!canStop)
                 .accessibilityIdentifier("juno.work.stop")
@@ -472,7 +485,7 @@ struct DesktopWorkWorkspace: View {
                 // menu item labelled "Try Again" would leave the reader looking
                 // for their original task's second run.
                 Button(action: retryOpenSession) {
-                    JunoIconLabel("Try Again as a New Task", systemImage: "arrow.clockwise")
+                    JunoIconLabel("Try Again as a New Task", icon: .refresh)
                 }
                 .disabled(!canRetry)
                 .accessibilityIdentifier("juno.work.retry")
@@ -480,12 +493,12 @@ struct DesktopWorkWorkspace: View {
                 Button {
                     Task { await model.refresh() }
                 } label: {
-                    JunoIconLabel("Refresh Tasks", systemImage: "arrow.triangle.2.circlepath")
+                    JunoIconLabel("Refresh Tasks", icon: .refresh)
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .accessibilityIdentifier("juno.work.refresh")
             } label: {
-                JunoIconLabel("Task", systemImage: "ellipsis.circle")
+                JunoIconLabel("Task", icon: .ellipsis)
             }
             .junoToolbarMetrics()
             .disabled(model.isMutating)
@@ -604,14 +617,53 @@ struct DesktopWorkWorkspace: View {
 enum DesktopWorkSidebarItem: Hashable {
     case overview
     case automations
+    case inbox
+    case schedules
+    case skills
+    case permissions
     case task(String)
 
-    /// The task this points at, or nil on the overview. The one place the two
-    /// cases are collapsed, so scene storage keeps one key.
+    /// The task this points at, or nil on any page. The one place the cases
+    /// are collapsed, so scene storage keeps one key for tasks.
     var taskID: String? {
         switch self {
-        case .overview, .automations: nil
         case .task(let id): id
+        default: nil
+        }
+    }
+
+    /// The fixed page's scene-storage name; empty for the home and for a task.
+    var pageName: String {
+        switch self {
+        case .automations: "automations"
+        case .inbox: "inbox"
+        case .schedules: "schedules"
+        case .skills: "skills"
+        case .permissions: "permissions"
+        case .overview, .task: ""
+        }
+    }
+
+    static func page(named name: String) -> DesktopWorkSidebarItem? {
+        switch name {
+        case "automations": .automations
+        case "inbox": .inbox
+        case "schedules": .schedules
+        case "skills": .skills
+        case "permissions": .permissions
+        default: nil
+        }
+    }
+
+    /// The window title for a fixed page; nil for the home and for a task.
+    var pageTitle: String? {
+        switch self {
+        case .automations: "Automations"
+        case .inbox: "Inbox"
+        case .schedules: "Schedules"
+        case .skills: "Skills"
+        case .permissions: "Permissions"
+        case .overview, .task: nil
         }
     }
 }
@@ -784,79 +836,6 @@ struct DesktopWorkStatusMark: View {
     }
 }
 
-/// **The selected row's fill, drawn by Juno because the platform's cannot be.**
-///
-/// ``SwiftUI/View/junoSidebarSelectionTint()`` is the documented way to colour a
-/// `.sidebar` `List`'s selection, and on macOS 26 it does not reach the state a
-/// reader actually sees. An `NSTableView` resolves its *emphasized* (key-window,
-/// focused-list) selection against `NSColor.controlAccentColor` — the app's
-/// AccentColor asset, Juno's coral — and ignores the SwiftUI tint, which only
-/// lands on the unemphasized fill. Chat and Code hide this by accident: focus in
-/// those windows usually sits in a composer, so their lists are rarely
-/// emphasized. Work has no composer in its column, so its list is emphasized
-/// from the moment the window opens, and every selected task was a saturated
-/// coral slab carrying its own subtitle in coral-on-coral. The same build, the
-/// same row, captured with focus in the list and again with focus moved off it
-/// by one Tab, is what established that rather than the source.
-///
-/// **The band is full-bleed on purpose, and it is the one thing here not to
-/// "fix".** `listRowBackground` paints *over* the platform's fill; it does not
-/// replace it. So an inset pill — a rounded rectangle with padding, which is the
-/// obvious way to draw a macOS 26 sidebar selection — does not hide the coral,
-/// it frames it: a three-point coral ring appears around the pill on every
-/// selected row, and `focusEffectDisabled()` does not touch it because it is not
-/// a focus ring. A background that covers the whole row rect is what leaves no
-/// coral to expose, and the rounded corners fall outside the column's visible
-/// width. Both were tried and both were captured.
-///
-/// The alternative was to stop passing a selection to the `List` and drive it
-/// from buttons, which would have bought the inset pill and cost arrow-key
-/// navigation and type-select on the only list in this window. The colour was
-/// the defect; the keyboard was not.
-///
-/// Focused and unfocused are distinguished the way the platform distinguishes
-/// them — a stronger fill when the column holds focus — because that is what the
-/// accent ring was saying before it was covered up.
-private struct DesktopWorkRowFill: ViewModifier {
-    let isSelected: Bool
-    let isHovering: Bool
-    /// Whether the column itself holds keyboard focus.
-    let isFocused: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .listRowBackground(Rectangle().fill(fill))
-            // A fill crossfading in place is `Tier.tint`, which survives Reduce
-            // Motion unchanged — nothing here moves.
-            .animation(JunoMotion.fast, value: isHovering)
-    }
-
-    private var fill: Color {
-        if isSelected {
-            return isFocused ? Color.junoSidebarSelection : Color.junoRowSelected
-        }
-        if isHovering { return Color.junoRowHover }
-        return .clear
-    }
-}
-
-private extension View {
-    /// A Work source-list row's own fill. See ``DesktopWorkRowFill``.
-    func junoWorkRow(
-        isSelected: Bool,
-        isHovering: Bool,
-        isFocused: Bool = false
-    ) -> some View {
-        modifier(
-            DesktopWorkRowFill(
-                isSelected: isSelected, isHovering: isHovering, isFocused: isFocused
-            )
-        )
-    }
-}
-
 /// The task list, grouped by what each task wants from the reader.
 ///
 /// **What this replaced, and why.** The column used to carry two navigation
@@ -891,45 +870,52 @@ private struct DesktopWorkSidebar: View {
     /// The Chat · Code · Work switch at the top of the column, the same one
     /// Chat and Code head their columns with. Work shipped without it, which
     /// meant a window that had switched *into* Work had no way back out of it
-    /// short of the menu bar — the column stated one product and offered no
-    /// other.
+    /// short of the menu bar.
     @Binding var product: DesktopProductMode
     let compose: () -> Void
-    /// Opens Juno Design. It is not a page this window can draw — see
-    /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
-    /// than navigating to it.
+    /// Opens Juno Design. Not a page this window can draw — see
+    /// ``DesktopWorkWorkspace/openDesign()``.
     let openDesign: () -> Void
     /// Settings and Usage, for the same reason: both are Chat destinations and
     /// this window has no route to them of its own.
     let openSettings: () -> Void
     let openUsage: () -> Void
 
-    @State private var hovered: DesktopWorkSidebarItem?
-    @State private var newTaskHovered = false
-    /// Whether the column holds keyboard focus, which is what the selected row's
-    /// fill steps up for now that the platform's accent ring is covered.
-    @FocusState private var columnFocused: Bool
+    /// Everything that has not finished, triage order: waiting on the reader
+    /// first, then running, then parked.
+    private var active: [WorkSessionSummary] {
+        DesktopWorkBucket.attention.tasks(in: sessions, model: model)
+            + DesktopWorkBucket.active.tasks(in: sessions, model: model)
+            + DesktopWorkBucket.parked.tasks(in: sessions, model: model)
+    }
 
-    /// The buckets that have anything in them, in triage order.
-    ///
-    /// Empty buckets are omitted rather than drawn with a placeholder line: four
-    /// headings over four apologies is most of a column, and the counts a reader
-    /// wants are the ones above tasks that exist.
-    private var populated: [DesktopWorkBucket] {
-        DesktopWorkBucket.allCases.filter { $0.count(in: sessions, model: model) > 0 }
+    private var finished: [WorkSessionSummary] {
+        DesktopWorkBucket.completed.tasks(in: sessions, model: model)
+    }
+
+    private var waitingCount: Int {
+        DesktopWorkBucket.attention.count(in: sessions, model: model)
     }
 
     var body: some View {
         List(selection: $selection) {
             Section {
-                overviewRow
+                pageRow(.overview, "New task", icon: .new, identifier: "juno.work.sidebar.new-task")
                 if automationModel != nil {
-                    automationsRow
+                    pageRow(.automations, "Automations", icon: .clock, identifier: "juno.work.sidebar.automations")
                 }
-                newTaskRow
+                pageRow(
+                    .inbox, "Inbox", icon: .bell, identifier: "juno.work.sidebar.inbox",
+                    count: waitingCount
+                )
+                if automationModel != nil {
+                    pageRow(.schedules, "Schedules", icon: .history, identifier: "juno.work.sidebar.schedules")
+                }
+                pageRow(.skills, "Skills", icon: .blocks, identifier: "juno.work.sidebar.skills")
+                pageRow(.permissions, "Permissions", icon: .shield, identifier: "juno.work.sidebar.permissions")
             }
 
-            if populated.isEmpty {
+            if active.isEmpty, finished.isEmpty {
                 Section {
                     Text(
                         isSearching
@@ -942,41 +928,41 @@ private struct DesktopWorkSidebar: View {
                 }
             }
 
-            ForEach(populated) { bucket in
+            if !active.isEmpty {
                 Section {
-                    ForEach(bucket.tasks(in: sessions, model: model)) { task in
-                        row(task)
-                    }
+                    ForEach(active) { row($0) }
                 } header: {
-                    header(bucket)
+                    header("Active", count: active.count, identifier: "juno.work.sidebar.section.active")
+                }
+            }
+
+            if !finished.isEmpty {
+                Section {
+                    ForEach(finished) { row($0) }
+                } header: {
+                    header("Finished", count: finished.count, identifier: "juno.work.sidebar.section.completed")
                 }
             }
         }
         .listStyle(.sidebar)
-        .focused($columnFocused)
+        // The selection is still the platform's — only its colour is Juno's.
+        .junoSidebarSelectionTint()
         .junoSidebarProductHeader(product: $product)
-        // `safeAreaBar`, not `safeAreaInset` with `.background(.bar)`.
-        //
-        // Work was the last column in the window still painting an opaque lid
-        // over a vibrant source list — a grey slab on translucency, visible as a
-        // hard-edged bar under the last row, which is the exact defect
-        // `JunoDesktopChrome.junoSidebarScrollEdge()` was written to retire and
-        // which Chat and Code were both migrated off. Switching products changed
-        // the material at the bottom of the same column.
+        // `safeAreaBar`, not `safeAreaInset` with `.background(.bar)`: the bar
+        // variant is what the system's bottom scroll-edge effect is measured
+        // against, and that effect is what lets the footer sit on a translucent
+        // column without an opaque lid painted behind it.
         .safeAreaBar(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                hostLine
                 DesktopSidebarDesignRow(open: openDesign)
-                // The account block Work never had. Chat and Code both pin this
-                // exact component, which is what stops the three columns
-                // describing one account — or one waiting update — three ways.
                 DesktopSidebarFooter(
                     session: session,
                     avatarModel: configuration.avatarModel,
                     syncModel: configuration.syncModel,
                     plan: nil,
                     openUsage: openUsage,
-                    openSettings: openSettings
+                    openSettings: openSettings,
+                    signOut: { Task { await configuration.authModel.signOut() } }
                 )
             }
         }
@@ -986,163 +972,85 @@ private struct DesktopWorkSidebar: View {
 
     // MARK: Fixed rows
 
-    /// Work's landing page, as a row you can select and arrow onto.
-    ///
-    /// The glyph sits in the same fixed gutter the task marks use rather than in
-    /// a `Label`'s icon slot, and that is why: `Label` sizes its slot to the
-    /// glyph, so the two rows at the top of the column stood their titles eight
-    /// points to the right of every task title below them. One column, two left
-    /// edges.
-    private var overviewRow: some View {
+    /// One of the column's pages: a Lucide mark in the same fixed gutter the
+    /// task marks use, and a word. No chevron, no count except on Inbox.
+    private func pageRow(
+        _ item: DesktopWorkSidebarItem,
+        _ title: String,
+        icon: JunoIcon,
+        identifier: String,
+        count: Int = 0
+    ) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "square.grid.2x2")
-                .junoSidebarMarkInk(selected: selection == .overview)
+            JunoIconView(icon, size: 15)
+                .junoSidebarMarkInk(selected: selection == item)
                 .frame(width: DesktopWorkStatusMark.width)
-            Text("Overview")
-                .junoRowLabel()
-        }
-        .junoSidebarRowInk()
-        .junoWorkRow(
-            isSelected: selection == .overview,
-            isHovering: hovered == .overview,
-            isFocused: columnFocused
-        )
-        .tag(DesktopWorkSidebarItem.overview)
-        .onHover { hovering in
-            hovered = hovering ? .overview : (hovered == .overview ? nil : hovered)
-        }
-        .accessibilityIdentifier("juno.work.sidebar.overview")
-    }
-
-    private var automationsRow: some View {
-        HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "clock.badge.checkmark")
-                .junoSidebarMarkInk(selected: selection == .automations)
-                .frame(width: DesktopWorkStatusMark.width)
-            Text("Automations")
+            Text(title)
                 .junoRowLabel()
             Spacer(minLength: JunoSpace.hairline)
-            if let automationModel, !automationModel.schedules.isEmpty {
-                Text(automationModel.schedules.count.formatted())
-                    .junoCaption()
+            if count > 0 {
+                Text(count.formatted())
+                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .monospacedDigit()
+                    .foregroundStyle(Color.junoOnAccent)
+                    .padding(.horizontal, JunoSpace.tight)
+                    .padding(.vertical, 1)
+                    .background(Capsule(style: .continuous).fill(Color.junoAccent))
+                    .accessibilityLabel("\(count) waiting on you")
             }
         }
         .junoSidebarRowInk()
-        .junoWorkRow(
-            isSelected: selection == .automations,
-            isHovering: hovered == .automations,
-            isFocused: columnFocused
-        )
-        .tag(DesktopWorkSidebarItem.automations)
-        .onHover { hovering in
-            hovered = hovering ? .automations : (hovered == .automations ? nil : hovered)
-        }
-        .accessibilityIdentifier("juno.work.sidebar.automations")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .junoSidebarRowSelection(selection == item)
+        .tag(item)
+        .accessibilityIdentifier(identifier)
     }
 
-    /// Not a selectable row: it opens a sheet rather than changing what the
-    /// detail column shows, so it is deliberately outside the list's selection
-    /// and never draws the selected fill.
-    ///
-    /// The mark is stated in the column's ink. A glyph in a `.sidebar` list
-    /// resolves against the *system accent* unless it is told otherwise, which is
-    /// how a lone coral plus ended up at the top of a column that is greyscale
-    /// everywhere else — the exact trap
-    /// ``SwiftUI/View/junoSidebarMarkInk(selected:)`` documents, sprung by the one
-    /// row that never used it.
-    private var newTaskRow: some View {
-        Button(action: compose) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: "plus")
-                    .junoSidebarMarkInk()
-                    .frame(width: DesktopWorkStatusMark.width)
-                Text("New task")
-                    .junoRowLabel()
-            }
-            .junoSidebarRowInk()
-            .junoWorkRow(isSelected: false, isHovering: newTaskHovered)
-        }
-        .buttonStyle(.junoPress)
-        .onHover { newTaskHovered = $0 }
-        .help("Describe something for Juno to go and do (⌘N)")
-        .accessibilityIdentifier("juno.work.sidebar.new-task")
-    }
-
-    /// A bucket's heading, with how many are under it.
-    ///
-    /// The count is on the header rather than on every row's trailing edge,
-    /// which is where the old view rows put it: one number per section says the
-    /// same thing as five numbers scattered down the column, and leaves the rows
-    /// to be titles.
-    private func header(_ bucket: DesktopWorkBucket) -> some View {
+    private func header(_ title: String, count: Int, identifier: String) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            Text(bucket.title)
+            Text(title)
             Spacer(minLength: JunoSpace.hairline)
-            Text(bucket.count(in: sessions, model: model).formatted())
+            Text(count.formatted())
                 .monospacedDigit()
         }
         .junoSidebarSection()
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("juno.work.sidebar.section.\(bucket.rawValue)")
+        .accessibilityIdentifier(identifier)
     }
 
     // MARK: Task rows
 
-    /// One task in the source list.
-    ///
-    /// Two lines and one mark. The title carries a little more weight when the
-    /// task is waiting on the reader, and the second line is the status in the
-    /// product's own words plus when it last moved — the pair somebody scanning
-    /// a column is actually asking for.
+    /// One task in the source list: a status mark, its title, and when it last
+    /// moved. The status word is in the mark's colour and on the thread; a
+    /// second line per row was most of what made the column read as a log.
     private func row(_ session: WorkSessionSummary) -> some View {
         let status = model.displayStatus(of: session)
         let style = DesktopWorkStatusStyle.of(status)
         let wantsYou = session.needsAttention || status.needsAttention
         let item = DesktopWorkSidebarItem.task(session.sessionID)
-        return HStack(alignment: .top, spacing: JunoSpace.snug) {
+        return HStack(alignment: .center, spacing: JunoSpace.snug) {
             DesktopWorkStatusMark(status: status, wantsYou: session.needsAttention)
-                // Sits on the title's cap height rather than floating at the top
-                // of a two-line row.
-                .padding(.top, 1)
-            // `maxWidth: .infinity` rather than a trailing `Spacer`. A `Spacer`
-            // is as flexible as a truncatable `Text`, so an `HStack` splits the
-            // leftover width between them — which cost the titles about forty
-            // points and truncated "Reconcile the Q3 vendor invoices", a title
-            // that had fit.
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.title)
-                    .junoRowLabel()
-                    .fontWeight(wantsYou ? .medium : .regular)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(
-                    "\(style.label) · \(session.lastActivityAt.formatted(.relative(presentation: .named)))"
-                )
-                .junoCaption()
+            Text(session.title.isEmpty ? "Untitled task" : session.title)
+                .junoRowLabel()
+                .fontWeight(wantsYou ? .medium : .regular)
                 .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // The one place coral is spent in this column, and the same mark
-            // Chat's column spends it on. Trailing rather than leading so it
-            // cannot push the titles beside it off one text edge.
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if session.pinned {
                 JunoIconView(.pin, size: 11)
                     .foregroundStyle(Color.junoAccent)
-                    .padding(.top, 3)
                     .accessibilityLabel("Pinned")
             }
+            Text(session.lastActivityAt.formatted(.relative(presentation: .named)))
+                .junoCaption()
+                .lineLimit(1)
         }
         .junoSidebarRowInk()
-        .junoWorkRow(
-            isSelected: selection == item,
-            isHovering: hovered == item,
-            isFocused: columnFocused
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .junoSidebarRowSelection(selection == item)
         .tag(item)
-        .onHover { hovering in
-            hovered = hovering ? item : (hovered == item ? nil : hovered)
-        }
         .contextMenu {
             Button(session.pinned ? "Unpin" : "Pin") {
                 Task { await model.setPinned(!session.pinned, on: session) }
@@ -1155,39 +1063,155 @@ private struct DesktopWorkSidebar: View {
                 Task { await model.delete(session) }
             }
         }
+        .help(style.sentence)
         .accessibilityLabel("\(session.title). \(style.sentence)")
         .accessibilityIdentifier("juno.work.sidebar.task.\(session.sessionID)")
     }
+}
 
-    // MARK: This Mac
+// MARK: - Inbox, Schedules, Skills
 
-    /// One line about this Mac, and the control that answers it.
-    ///
-    /// A task dispatched to a Mac that will not serve it sits queued and looks
-    /// like a slow start, and the sentence explaining that is a setting on this
-    /// machine — so the column that lists the tasks is where it has to appear,
-    /// *and* where the fix has to be reachable. It draws nothing at all when
-    /// there is nothing to report; the pinned block below it is short enough that
-    /// a permanently reserved slot would be most of it.
-    @ViewBuilder
-    private var hostLine: some View {
-        if hostModel?.blocker != nil || model.lastErrorDescription != nil {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                if let hostModel {
-                    DesktopWorkBlockerRow(host: hostModel)
+/// What is waiting on the reader, as a page of its own.
+private struct DesktopWorkInboxPage: View {
+    let model: NativeWorkModel
+    let sessions: [WorkSessionSummary]
+    let open: (String) -> Void
+
+    private var waiting: [WorkSessionSummary] {
+        DesktopWorkBucket.attention.tasks(in: sessions, model: model)
+    }
+
+    var body: some View {
+        if waiting.isEmpty {
+            JunoEmptyState(
+                title: "Nothing is waiting on you",
+                message: "A task that stops to ask something appears here until you answer it.",
+                icon: .bell
+            )
+        } else {
+            JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
+                DesktopWorkHomeSection(
+                    title: DesktopWorkBucket.attention.pageTitle,
+                    hint: DesktopWorkBucket.attention.hint
+                ) {
+                    ForEach(waiting) { task in
+                        DesktopWorkHomeRow(
+                            task: task,
+                            status: model.displayStatus(of: task),
+                            explains: true,
+                            open: { open(task.sessionID) }
+                        )
+                    }
                 }
-                if let error = model.lastErrorDescription {
-                    Text(error)
-                        .junoCaption()
-                        .foregroundStyle(Color.junoDanger)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                .padding(.top, 0)
+            }
+            .accessibilityIdentifier("juno.work.inbox")
+        }
+    }
+}
+
+/// The automations that fire on a clock, and when each fires next.
+///
+/// A read-only view over the same model the Automations page edits: one place
+/// answers "what runs on its own", this one answers "when". Event-driven
+/// automations are absent here on purpose — they have no next time.
+private struct DesktopWorkSchedulesPage: View {
+    let model: NativeWorkAutomationModel
+
+    private static let timedKinds: Set<String> = [
+        "once", "hourly", "daily", "weekdays", "weekly", "monthly", "yearly", "cron",
+    ]
+
+    private var scheduled: [NativeWorkSchedule] {
+        model.schedules
+            .filter { schedule in
+                schedule.triggers.contains { Self.timedKinds.contains($0.kind) }
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.nextRunAt, rhs.nextRunAt) {
+                case (let left?, let right?): left < right
+                case (.some, .none): true
+                case (.none, .some): false
+                case (.none, .none): lhs.name < rhs.name
                 }
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    var body: some View {
+        if scheduled.isEmpty {
+            JunoEmptyState(
+                title: "Nothing is on a clock",
+                message: "Give an automation a daily, weekly or cron trigger and it appears here with its next run.",
+                icon: .history
+            )
+        } else {
+            JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
+                VStack(spacing: JunoSpace.snug) {
+                    ForEach(scheduled) { schedule in
+                        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
+                            JunoIconView(schedule.enabled ? .clock : .pause, size: 15)
+                                .foregroundStyle(schedule.enabled ? Color.junoAccent : Color.junoMutedForeground)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                                Text(schedule.name)
+                                    .junoRowLabel()
+                                    .fontWeight(.medium)
+                                    .junoInk()
+                                    .lineLimit(1)
+                                Text(
+                                    schedule.triggers
+                                        .map { NativeWorkScheduleVocabulary.trigger($0.kind) }
+                                        .joined(separator: " · ")
+                                )
+                                .junoCaption()
+                                .lineLimit(1)
+                            }
+                            Spacer(minLength: JunoSpace.snug)
+                            Text(
+                                schedule.enabled
+                                    ? schedule.nextRunAt.map {
+                                        "Next \($0.formatted(.relative(presentation: .named)))"
+                                    } ?? "Not scheduled"
+                                    : "Paused"
+                            )
+                            .junoCaption()
+                            Button("Run now") {
+                                Task { _ = await model.runNow(id: schedule.id) }
+                            }
+                            .controlSize(.small)
+                        }
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.vertical, JunoSpace.cozy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .junoCard(cornerRadius: JunoRadius.card)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+            .task { await model.refresh() }
+            .accessibilityIdentifier("juno.work.schedules")
         }
+    }
+}
+
+/// Reusable operating instructions. They are written and kept on the web for
+/// now; the Mac says so and opens the page rather than drawing a list it cannot
+/// fill.
+private struct DesktopWorkSkillsPage: View {
+    var body: some View {
+        VStack(spacing: JunoSpace.regular) {
+            JunoEmptyState(
+                title: "Skills",
+                message: "A skill is a set of standing instructions a task can run under. Name one at the front of an errand — /weekly-report — and Juno applies it. Skills are written and edited on the web.",
+                icon: .blocks
+            )
+            Link(destination: URL(string: "\(JunoBackend.productionURLString)/work/skills")!) {
+                JunoIconLabel("Open skills on the web", icon: .external, size: 13)
+            }
+            .junoGlassButton()
+            .padding(.bottom, JunoSpace.region)
+        }
+        .accessibilityIdentifier("juno.work.skills")
     }
 }
 
@@ -1265,16 +1289,14 @@ private struct DesktopWorkOverview: View {
             JunoEmptyState(
                 title: "No matching tasks",
                 message: "Try a different search, or clear it to see everything.",
-                symbol: "magnifyingglass"
+                icon: .search
             )
         } else {
-            // 700, not 920. The web sets this page in `max-w-3xl` and the reason
-            // is legibility rather than restraint: a task's goal is a sentence of
-            // prose, and at 920pt on a wide window it ran to about 150 characters
-            // a line — roughly twice the measure anything is comfortably read at.
-            JunoDetailPage(maxWidth: 700) {
+            // The web's `max-w-3xl`: a task's goal is a sentence of prose, and
+            // wider than this it runs to a measure nothing is comfortably read at.
+            JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
                 VStack(alignment: .leading, spacing: 0) {
-                    hero
+                    greeting
                     DesktopWorkHomeComposer(
                         model: model,
                         draft: $draft,
@@ -1293,51 +1315,42 @@ private struct DesktopWorkOverview: View {
                     )
                     .padding(.top, JunoSpace.section)
 
-                    sections
+                    // One quiet line about this Mac, directly under the box,
+                    // with the control that answers it — never a panel in
+                    // front of the composer.
+                    if let hostModel {
+                        DesktopWorkBlockerRow(
+                            host: hostModel,
+                            confirmsReady: false,
+                            identifier: "juno.work.overview.host"
+                        )
+                        .padding(.top, JunoSpace.cozy)
+                    }
 
-                    hostLine
-                        .padding(.top, JunoSpace.section)
+                    sections
                 }
             }
         }
     }
 
-    // MARK: Hero
+    // MARK: Greeting
 
-    /// The mono eyebrow, the mark and the question — centred, as on the web.
-    private var hero: some View {
-        VStack(spacing: JunoSpace.cozy) {
-            Text("Juno Work")
-                .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
-                .tracking(0.8)
-                .junoSecondaryInk()
-
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-                JunoMark(size: 29)
-                    .junoInk()
-                    // The mark is an image and has no baseline of its own, so it
-                    // has to be given one or it hangs below a 34pt serif line.
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 4 }
-                Text(question)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        // A section's worth of air under the toolbar, on top of the page's own
-        // region inset. The greeting is the largest type on the page and it
-        // sat eight points off the page's top edge; with the toolbar floating
-        // over the scroller, that is close enough to read as *in* it.
-        .padding(.top, JunoSpace.section)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(firstName.map { "Juno Work. What needs doing, \($0)?" }
-            ?? "Juno Work. What needs doing?")
+    /// The serif question, centred, with the reader's name in accent italic —
+    /// the web's own `EmptyGreeting`. Below the toolbar with a region's worth
+    /// of air: the largest type on the page used to sit close enough to the
+    /// floating toolbar to read as *in* it.
+    private var greeting: some View {
+        Text(question)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.top, JunoSpace.region)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityLabel(firstName.map { "What needs doing, \($0)?" } ?? "What needs doing?")
     }
 
-    /// "What needs doing, Liam?" — the name in accent medium italic, exactly the
-    /// web's `font-medium italic text-primary`, built as one `AttributedString`
-    /// so the two halves break as one line rather than as two views that can
-    /// wrap independently.
+    /// "What needs doing, Liam?" — one `AttributedString` so the two halves
+    /// break as one line rather than as two views that can wrap independently.
     private var question: AttributedString {
         var text = AttributedString(firstName == nil ? "What needs doing?" : "What needs doing, ")
         text.font = JunoSerif.font(size: 34, relativeTo: .largeTitle)
@@ -1356,10 +1369,7 @@ private struct DesktopWorkOverview: View {
     private var sections: some View {
         ForEach(DesktopWorkBucket.allCases) { bucket in
             let group = tasks(bucket)
-            // An empty group is absent rather than shown empty. "Nothing is
-            // running" is worth saying on a page whose only content is a list you
-            // asked to be filtered; on a page that shows every group at once it
-            // is four headings of noise around the one thing the reader has.
+            // An empty group is absent rather than shown empty.
             if !group.isEmpty {
                 DesktopWorkHomeSection(
                     title: bucket.pageTitle,
@@ -1370,18 +1380,11 @@ private struct DesktopWorkOverview: View {
                         DesktopWorkHomeRow(
                             task: task,
                             status: model.displayStatus(of: task),
-                            // The status word is not the whole story for the
-                            // three live groups — a task waiting on an approval
-                            // and one waiting on an answer are both "stopped" —
-                            // and it is the whole story for a finished one.
                             explains: bucket != .completed,
                             open: { selection = .task(task.sessionID) }
                         )
                     }
                 }
-                // Named per group so a test can address one. On the container,
-                // not the rows: an identifier here does not shadow the ones the
-                // rows set for themselves.
                 .accessibilityIdentifier("juno.work.overview.\(bucket.rawValue)")
                 .accessibilityElement(children: .contain)
             }
@@ -1398,32 +1401,13 @@ private struct DesktopWorkOverview: View {
     @ViewBuilder
     private func foldAction(for bucket: DesktopWorkBucket, count: Int) -> some View {
         if bucket == .completed, !showsAllFinished, count > Self.finishedPreview {
-            Button {
+            Button("Show all \(count)") {
                 showsAllFinished = true
-            } label: {
-                JunoIconLabel(verbatim: "Show all \(count)", systemImage: "chevron.down")
-                    .junoCodeSmall()
-                    .junoSecondaryInk()
             }
-            .buttonStyle(.junoPress)
+            .buttonStyle(.plain)
+            .junoCaption()
+            .contentShape(.rect)
             .accessibilityIdentifier("juno.work.overview.show-all-finished")
-        }
-    }
-
-    /// One line about this Mac, under everything else.
-    ///
-    /// A line rather than the titled card this used to be. "Local work uses the
-    /// permissions you choose in Settings" was a subtitle explaining a heading
-    /// above a sentence that already explained itself, and three stacked
-    /// explanations is how a status line becomes a section.
-    @ViewBuilder
-    private var hostLine: some View {
-        if let hostModel {
-            DesktopWorkBlockerRow(
-                host: hostModel,
-                confirmsReady: true,
-                identifier: "juno.work.overview.host"
-            )
         }
     }
 }
@@ -1432,27 +1416,13 @@ private struct DesktopWorkOverview: View {
 
 /// Say what you want done, here, on the page.
 ///
-/// **This replaced a sheet, and the replacement is the point.** Starting a task
-/// was `DesktopWorkComposer`: a 560×480 modal with a name field, a goal box, a
-/// target picker and a host picker — a form, opened from three different
-/// buttons, in front of a page whose entire purpose is the sentence you were
-/// about to type. The web has never had one. Its composer is the first thing
-/// under the greeting and the page is built around it, which is why the website
-/// reads as a place you *do* something and the Mac read as a place you
-/// administer something.
-///
-/// What the sheet's four fields became:
-///
-///   * the goal is the box;
-///   * the title is dropped — the server titles a task from its goal, and the
-///     one field somebody had to skip on every task was the one asking them to
-///     name a thing they had not started yet. Renaming stays in the row's
-///     context menu, where the web puts it;
-///   * where it runs is the menu on the control row, defaulted to automatic;
-///   * which Mac is folded into that menu rather than being a second control
-///     that appears when the first one changes;
-///   * connected-app scope and approval posture live in one adjacent context
-///     menu, stay explicit per task, and reset after a successful start.
+/// One quiet surface, the same one every composer in the product draws: the
+/// field at rest, then a single control row. Left, the `+` — files, a skill,
+/// which connected apps the task may reach and how often it should ask, all
+/// inside the one menu, with a coral dot on the trigger when an app is on.
+/// Right, the standing context of the run as flat chips — where it runs, the
+/// model, the thinking depth — then dictation and the coral send. Nothing on
+/// the row wears a chevron; the chip *is* the affordance.
 private struct DesktopWorkHomeComposer: View {
     let model: NativeWorkModel
     @Binding var draft: String
@@ -1474,6 +1444,8 @@ private struct DesktopWorkHomeComposer: View {
     @State private var showingFileImporter = false
     @State private var showingLibrary = false
     @State private var importError: String?
+    @State private var dictating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var trimmed: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1498,96 +1470,93 @@ private struct DesktopWorkHomeComposer: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            TextField(
-                "Give Juno an errand with a finish line…",
-                text: $draft,
-                axis: .vertical
-            )
-            .textFieldStyle(.plain)
-            .font(.system(.body))
-            .lineLimit(2...8)
-            .focused($focused)
-            .onSubmit(start)
-            .accessibilityIdentifier("juno.work.composer.goal")
-
-            if let attachmentModel, !attachmentModel.attachments.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: JunoSpace.tight) {
-                        ForEach(attachmentModel.attachments) { attachment in
-                            DesktopWorkAttachmentChip(
-                                attachment: attachment,
-                                remove: { attachmentModel.remove(attachment.id) },
-                                retry: {
-                                    attachmentModel.retry(attachment.id, conversationID: nil)
-                                }
-                            )
+        JunoDesktopGlass(spacing: JunoSpace.snug) {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                if let attachmentModel, !attachmentModel.attachments.isEmpty {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: JunoSpace.tight) {
+                            ForEach(attachmentModel.attachments) { attachment in
+                                DesktopWorkAttachmentChip(
+                                    attachment: attachment,
+                                    remove: { attachmentModel.remove(attachment.id) },
+                                    retry: {
+                                        attachmentModel.retry(attachment.id, conversationID: nil)
+                                    }
+                                )
+                            }
                         }
                     }
+                    .scrollIndicators(.hidden)
+                    .accessibilityIdentifier("juno.work.composer.attachments")
                 }
-                .scrollIndicators(.hidden)
-                .accessibilityIdentifier("juno.work.composer.attachments")
-            }
 
-            if let importError {
-                JunoIconLabel(verbatim: importError, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(Color.junoDanger)
-                    .lineLimit(2)
+                if let importError {
+                    JunoIconLabel(verbatim: importError, icon: .error, size: 13)
+                        .junoCaption()
+                        .foregroundStyle(Color.junoDanger)
+                        .lineLimit(2)
+                        .transition(.opacity)
+                }
+
+                if dictating {
+                    DesktopDictation(
+                        onCancel: {
+                            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                                dictating = false
+                            }
+                            focused = true
+                        },
+                        onStop: { transcript in
+                            appendDictated(transcript)
+                            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                                dictating = false
+                            }
+                            focused = true
+                        },
+                        onSend: { transcript in
+                            appendDictated(transcript)
+                            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                                dictating = false
+                            }
+                            Task {
+                                await Task.yield()
+                                start()
+                            }
+                        }
+                    )
                     .transition(.opacity)
-            }
+                } else {
+                    TextField(
+                        "Give Juno an errand with a finish line…",
+                        text: $draft,
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.plain)
+                    .junoBody()
+                    .junoInk()
+                    .lineLimit(1...8)
+                    .focused($focused)
+                    .onSubmit(start)
+                    .accessibilityIdentifier("juno.work.composer.goal")
 
-            // Attach · Environment · Model · Effort · Options. Five chips, each
-            // a word and a chevron. The row used to read "Attach ▾ · Wherever
-            // it fits ▾ · No apps · Balanced ▾ · GLM 5.3 › · Instant ›" — six
-            // values in four type treatments, two of them stating defaults
-            // nobody had changed. The connected-app scope and the approval
-            // posture are still per task; they live in Options, where a
-            // setting that is usually left alone belongs.
-            HStack(spacing: JunoSpace.cozy) {
-                attachmentMenu
-                targetMenu
-                if !modelOptions.isEmpty {
-                    modelControl
-                    if let thinkingScale, thinkingScale.isPresentable {
-                        thinkingControl(thinkingScale)
-                    }
+                    controls
                 }
-                optionsMenu
-                Spacer(minLength: JunoSpace.snug)
-                Button(action: start) {
-                    JunoIconView(systemImage: "arrow.up")
-                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
-                        .foregroundStyle(canStart ? Color.junoOnAccent : Color.junoMutedForeground)
-                        .frame(width: 28, height: 28)
-                }
-                .junoCircleAction(active: canStart)
-                .disabled(!canStart)
-                .help("Start this task (↩)")
-                .accessibilityLabel("Start this task")
-                .accessibilityIdentifier("juno.work.composer.start")
             }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.cozy)
+            // Focus belongs to the system focus ring on the field, never to the
+            // material — see `junoFloatingChrome`.
+            .junoFloatingChrome(cornerRadius: JunoRadius.composer)
         }
-        .padding(JunoSpace.regular)
-        // No `isFocused:` and no focus animation beside it. The chrome's
-        // contract is that focus belongs to the system focus ring on the
-        // control inside the glass, never to the material — the accent stroke
-        // and accent shadow that used to express it here flattened the rim's
-        // light scatter, which is the whole reason the ornamented build was
-        // removed. With the chrome ignoring focus, this view has no other
-        // focus-driven visual, so an `.animation(_:value: focused)` would be a
-        // timer attached to nothing.
-        .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer))
         .onAppear { configureModelSelection() }
         .onChange(of: modelOptions) { _, _ in configureModelSelection() }
         .onChange(of: defaultModelID) { _, _ in configureModelSelection() }
         .onChange(of: selectedModelID) { _, _ in configureReasoning() }
-        // The model and Thinking popovers reset themselves — the shared
-        // buttons carry their own `.onDisappear` teardown guards — so only the
-        // presentations this view still owns are reset here.
         .onDisappear {
             showingFileImporter = false
             showingLibrary = false
+            dictating = false
         }
         .fileImporter(
             isPresented: $showingFileImporter,
@@ -1619,28 +1588,118 @@ private struct DesktopWorkHomeComposer: View {
         }
     }
 
-    private var attachmentMenu: some View {
+    /// `+` · Environment · Model · Effort · ─ · mic · send.
+    private var controls: some View {
+        HStack(spacing: JunoSpace.tight) {
+            addMenu
+            targetMenu
+            if !modelOptions.isEmpty {
+                JunoModelSelectorButton(
+                    models: modelOptions.map(\.junoDescriptor),
+                    selectedModelID: $selectedModelID,
+                    accessibilityID: "juno.work.composer.model"
+                )
+                if let thinkingScale, thinkingScale.isPresentable, !thinkingScale.isAutomatic {
+                    JunoThinkingButton(
+                        ladder: thinkingScale.junoLadder,
+                        stopID: Binding(
+                            get: { thinkingScale.stopID(for: reasoningEffort) },
+                            set: { reasoningEffort = thinkingScale.effort(forStopID: $0) }
+                        ),
+                        accessibilityID: "juno.work.composer.thinking"
+                    )
+                }
+            }
+            Spacer(minLength: JunoSpace.snug)
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(width: 1, height: 18)
+                .accessibilityHidden(true)
+            DesktopWorkComposerIconButton(icon: .mic, label: "Dictate") {
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                    dictating = true
+                }
+            }
+            .disabled(model.isMutating)
+            .help("Dictate the errand")
+            .accessibilityIdentifier("juno.work.composer.dictate")
+            Button(action: start) {
+                JunoIconView(.arrowUp, size: 14)
+                    .foregroundStyle(canStart ? Color.junoOnAccent : Color.junoMutedForeground)
+                    .frame(width: 32, height: 32)
+            }
+            .junoCircleAction(active: canStart)
+            .disabled(!canStart)
+            .help("Start this task (↩)")
+            .accessibilityLabel("Start this task")
+            .accessibilityIdentifier("juno.work.composer.start")
+        }
+    }
+
+    /// Everything this task is handed: files, the apps it may reach, and how
+    /// often it should ask. One menu, so the row stays a row.
+    private var addMenu: some View {
         Menu {
-            Button("Attach files…") { showingFileImporter = true }
-                .disabled(attachmentModel?.hasCapacity != true)
-            Button("Choose from Library…") { showingLibrary = true }
-                .disabled(libraryModel == nil || attachmentModel?.hasCapacity != true)
+            Section("Files") {
+                Button("Attach files…") { showingFileImporter = true }
+                    .disabled(attachmentModel?.hasCapacity != true)
+                Button("From your library…") { showingLibrary = true }
+                    .disabled(libraryModel == nil || attachmentModel?.hasCapacity != true)
+            }
+            Section("Connected apps") {
+                if connectorModel == nil {
+                    Text("Connected apps are unavailable")
+                } else if connectedConnectors.isEmpty {
+                    Button("Connect an app…", action: openConnections)
+                } else {
+                    ForEach(connectedConnectors) { connector in
+                        Toggle(
+                            connector.label,
+                            isOn: Binding(
+                                get: { selectedConnectorIDs.contains(connector.id) },
+                                set: { on in
+                                    if on {
+                                        selectedConnectorIDs.insert(connector.id)
+                                    } else {
+                                        selectedConnectorIDs.remove(connector.id)
+                                    }
+                                }
+                            )
+                        )
+                    }
+                    Button("Manage connected apps…", action: openConnections)
+                }
+            }
+            Section("Approvals") {
+                Picker("Approval mode", selection: $permissionPolicy) {
+                    ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
+                        Text(Self.permissionLabel(policy)).tag(policy)
+                    }
+                }
+                .pickerStyle(.inline)
+            }
         } label: {
-            DesktopWorkComposerChip(
-                attachmentModel?.attachments.isEmpty == false
-                    ? "Attached"
-                    : "Attach"
-            )
+            JunoIconView(.plus, size: 15)
+                .junoSecondaryInk()
+                .frame(width: 32, height: 32)
+                .overlay(alignment: .topTrailing) {
+                    if !selectedConnectorIDs.isEmpty {
+                        Circle()
+                            .fill(Color.junoAccent)
+                            .frame(width: 6, height: 6)
+                            .offset(x: -6, y: 6)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(.rect)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Attach files or choose from your Juno Library")
-        .accessibilityLabel("Attach files")
-        .accessibilityValue(
-            attachmentModel.map { "\($0.attachments.count) staged" } ?? "Unavailable"
-        )
-        .accessibilityIdentifier("juno.work.composer.attach")
+        .help("Add files, apps and options to this task")
+        .accessibilityLabel("Add to this task")
+        .accessibilityValue(contextLabel)
+        .accessibilityIdentifier("juno.work.composer.context")
     }
 
     /// Where it runs, and on which Mac — one menu, because the second question
@@ -1657,9 +1716,6 @@ private struct DesktopWorkHomeComposer: View {
             if target == .local {
                 Divider()
                 if model.availableHosts.isEmpty {
-                    // Stated rather than left as an empty submenu. A Mac has to
-                    // be switched on at the Mac itself, and a picker offering
-                    // nothing does not say so.
                     Text("No Mac of yours can take work right now.")
                 } else {
                     Picker("Mac", selection: $preferredHostID) {
@@ -1683,10 +1739,8 @@ private struct DesktopWorkHomeComposer: View {
         .accessibilityIdentifier("juno.work.composer.target")
     }
 
-    /// "Environment" until somebody chooses one. The default is the default;
-    /// a chip reading "Wherever it fits" on every fresh task was stating a
-    /// preference nobody had expressed, in the one row that is meant to be
-    /// scanned rather than read.
+    /// "Environment" until somebody chooses one. A chip reading "Wherever it
+    /// fits" on every fresh task was stating a preference nobody had expressed.
     private var targetLabel: String {
         switch target {
         case .cloud: "Cloud"
@@ -1696,45 +1750,28 @@ private struct DesktopWorkHomeComposer: View {
         }
     }
 
-    /// The same manifest-backed chooser Chat uses — through the same *trigger*
-    /// Code uses, the shared ``JunoModelSelectorButton``. Work's model is part
-    /// of the run contract, so it must be visible before Start rather than only
-    /// appearing later in the run facts.
-    ///
-    /// This replaced a hand-built chip — a stale app-target copy of the
-    /// selector that painted opaque canvas over the popover's glass — behind a
-    /// capsule of its own with a 1.015 hover scale. Growing under the pointer
-    /// is web idiom — a Mac control answers hover with a fill, not by moving —
-    /// and the shared button additionally carries the popover-teardown guard
-    /// the chip lacked. Nothing behavioural is lost: the composer already
-    /// watches `selectedModelID` and re-runs `configureReasoning()` on change.
-    private var modelControl: some View {
-        JunoModelSelectorButton(
-            models: modelOptions.map(\.junoDescriptor),
-            selectedModelID: $selectedModelID,
-            accessibilityID: "juno.work.composer.model"
-        )
+    private var contextLabel: String {
+        let appLabel: String
+        switch selectedConnectorIDs.count {
+        case 0: appLabel = "No apps"
+        case 1: appLabel = "1 app"
+        default: appLabel = "\(selectedConnectorIDs.count) apps"
+        }
+        return "\(appLabel) · \(Self.permissionLabel(permissionPolicy))"
     }
 
-    /// The shared Thinking trigger, on the same stop-id projection Code uses.
-    /// The `isAutomatic` gate keeps Work's existing shape: a router that picks
-    /// its own depth gets no chip at all rather than an inert "Auto" label
-    /// beside the model button (see Chat's composer for why that chip is worse
-    /// than an absent one). The shared control also sizes its popover from the
-    /// ladder, where the hand-built chip pinned it at the captioned height even
-    /// for ladders with no caption.
-    @ViewBuilder
-    private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
-        if !scale.isAutomatic {
-            JunoThinkingButton(
-                ladder: scale.junoLadder,
-                stopID: Binding(
-                    get: { scale.stopID(for: reasoningEffort) },
-                    set: { reasoningEffort = scale.effort(forStopID: $0) }
-                ),
-                accessibilityID: "juno.work.composer.thinking"
-            )
+    private static func permissionLabel(_ policy: JunoWorkPermissionPolicy) -> String {
+        switch policy {
+        case .conservative: "Ask often"
+        case .balanced: "Balanced"
+        case .permissive: "Ask for sensitive"
         }
+    }
+
+    private func appendDictated(_ transcript: String) {
+        let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
+        draft = trimmed.isEmpty ? spoken : "\(draft.trimmingCharacters(in: .whitespacesAndNewlines)) \(spoken)"
     }
 
     private func configureModelSelection() {
@@ -1793,81 +1830,6 @@ private struct DesktopWorkHomeComposer: View {
         }
     }
 
-    /// The task's reach and approval posture are one compact menu: both are
-    /// context for the errand, neither is a second submit action. The menu is
-    /// intentionally explicit about an empty app selection; leaving every app
-    /// off is a deliberate boundary, not an invitation for the planner to open
-    /// whatever happens to be linked to the account.
-    ///
-    /// Labelled "Options" rather than by its values. "No apps · Balanced" was
-    /// two defaults restated on every task; the values are still read out to
-    /// assistive technology and shown as checkmarks inside the menu.
-    private var optionsMenu: some View {
-        Menu {
-            Section("Connected apps") {
-                if connectorModel == nil {
-                    Text("Connected apps are unavailable")
-                } else if connectedConnectors.isEmpty {
-                    Button("Connect an app…", action: openConnections)
-                } else {
-                    ForEach(connectedConnectors) { connector in
-                        Button {
-                            if selectedConnectorIDs.contains(connector.id) {
-                                selectedConnectorIDs.remove(connector.id)
-                            } else {
-                                selectedConnectorIDs.insert(connector.id)
-                            }
-                        } label: {
-                            HStack {
-                                Text(connector.label)
-                                Spacer(minLength: JunoSpace.roomy)
-                                if selectedConnectorIDs.contains(connector.id) {
-                                    JunoIconView(systemImage: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                    Button("Manage connected apps…", action: openConnections)
-                }
-            }
-
-            Divider()
-
-            Picker("Approval mode", selection: $permissionPolicy) {
-                ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
-                    Text(Self.permissionLabel(policy)).tag(policy)
-                }
-            }
-        } label: {
-            DesktopWorkComposerChip("Options")
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Connected apps and approval mode for this task")
-        .accessibilityLabel("Task options")
-        .accessibilityValue(contextLabel)
-        .accessibilityIdentifier("juno.work.composer.context")
-    }
-
-    private var contextLabel: String {
-        let appLabel: String
-        switch selectedConnectorIDs.count {
-        case 0: appLabel = "No apps"
-        case 1: appLabel = "1 app"
-        default: appLabel = "\(selectedConnectorIDs.count) apps"
-        }
-        return "\(appLabel) · \(Self.permissionLabel(permissionPolicy))"
-    }
-
-    private static func permissionLabel(_ policy: JunoWorkPermissionPolicy) -> String {
-        switch policy {
-        case .conservative: "Ask often"
-        case .balanced: "Balanced"
-        case .permissive: "Ask for sensitive"
-        }
-    }
-
     private func start() {
         guard canStart else { return }
         let goal = trimmed
@@ -1901,26 +1863,57 @@ private struct DesktopWorkHomeComposer: View {
     }
 }
 
-/// One chip on the home composer's control row: a word and a chevron, in the
-/// same caption face the shared model and effort triggers use, so the five
-/// controls on the row read as one row.
-private struct DesktopWorkComposerChip: View {
+/// One flat chip on a composer's control row: a word in the UI face, an accent
+/// fill under the pointer, no chevron. The menu behind it is the affordance.
+struct DesktopWorkComposerChip: View {
     let title: String
+
+    @State private var isHovering = false
 
     init(_ title: String) {
         self.title = title
     }
 
     var body: some View {
-        // One `Text`, chevron inline, rather than an `HStack` of word and
-        // glyph. A borderless `Menu` treats a label's image as *its* icon and
-        // hoists it to the leading edge, which put the chevron in front of the
-        // word ("⌄ Attach"). Inline in the text it stays where it is written.
-        Text("\(title) \(Image(systemName: "chevron.down"))")
-            .font(.caption)
+        Text(title)
+            .junoFont(size: 12, relativeTo: .callout, weight: .medium)
             .lineLimit(1)
             .junoSecondaryInk()
-            .contentShape(.rect)
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(isHovering ? Color.junoRowHover : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+            .onHover { isHovering = $0 }
+            .animation(JunoMotion.fast, value: isHovering)
+    }
+}
+
+/// A 32pt flat icon button on a composer row — the mic, the `+`.
+struct DesktopWorkComposerIconButton: View {
+    let icon: JunoIcon
+    let label: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            JunoIconView(icon, size: 15)
+                .junoSecondaryInk()
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .fill(isHovering ? Color.junoRowHover : .clear)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+        }
+        .buttonStyle(.junoPress)
+        .onHover { isHovering = $0 }
+        .animation(JunoMotion.fast, value: isHovering)
+        .accessibilityLabel(label)
     }
 }
 
@@ -1929,12 +1922,12 @@ private struct DesktopWorkAttachmentChip: View {
     let remove: () -> Void
     let retry: () -> Void
 
-    private var symbol: String {
+    private var icon: JunoIcon {
         switch attachment.state {
-        case .preparing: "clock"
-        case .uploading: "arrow.up.circle"
-        case .uploaded: "checkmark.circle.fill"
-        case .failed: "exclamationmark.triangle.fill"
+        case .preparing: .clock
+        case .uploading: .arrowUp
+        case .uploaded: .check
+        case .failed: .error
         }
     }
 
@@ -1948,9 +1941,8 @@ private struct DesktopWorkAttachmentChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            JunoIconView(systemImage: symbol)
+            JunoIconView(icon, size: 12)
                 .foregroundStyle(tint)
-                .imageScale(.small)
             Text(attachment.fileName)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1958,7 +1950,7 @@ private struct DesktopWorkAttachmentChip: View {
                 if retryable {
                     Button("Retry", action: retry)
                         .buttonStyle(.borderless)
-                        .font(.caption.weight(.medium))
+                        .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                 } else {
                     Text(message)
                         .lineLimit(1)
@@ -1966,25 +1958,30 @@ private struct DesktopWorkAttachmentChip: View {
                 }
             }
             Button(action: remove) {
-                JunoIconView(systemImage: "xmark")
-                    .imageScale(.small)
+                JunoIconView(.close, size: 11)
             }
             .buttonStyle(.borderless)
             .help("Remove " + attachment.fileName)
             .accessibilityLabel("Remove " + attachment.fileName)
-            }
-            .font(.caption)
-        .padding(.horizontal, 8)
+        }
+        .junoCaption()
+        .padding(.horizontal, JunoSpace.snug)
         .padding(.vertical, 5)
-        .background(Capsule().fill(Color.junoMuted.opacity(0.7)))
-        .overlay(Capsule().strokeBorder(Color.junoBorder, lineWidth: 0.5))
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoMuted.opacity(0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+        )
         .accessibilityElement(children: .contain)
     }
 }
 
 // MARK: - Home rows
 
-/// A group of tasks under a mono label, as the web sets it.
+/// A group of tasks under a quiet section header, as the web sets it.
 private struct DesktopWorkHomeSection<Content: View, Action: View>: View {
     let title: String
     var hint: String?
@@ -1996,13 +1993,7 @@ private struct DesktopWorkHomeSection<Content: View, Action: View>: View {
             HStack(alignment: .bottom, spacing: JunoSpace.snug) {
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     Text(title)
-                        // Mono with wide tracking, which is the web's `text-label`
-                        // and the one place this product sets a heading in the
-                        // machine face on purpose: these name a *state*, not a
-                        // topic, and the tracking is what stops six characters of
-                        // monospace reading as a code fragment.
-                        .junoCodeSmall()
-                        .tracking(1.2)
+                        .junoFont(size: 12, relativeTo: .caption, weight: .medium)
                         .junoSecondaryInk()
                         .accessibilityAddTraits(.isHeader)
                     if let hint {
@@ -2031,19 +2022,14 @@ extension DesktopWorkHomeSection where Action == EmptyView {
     }
 }
 
-/// One task on the home page.
-///
-/// Its own bordered card rather than a row flush inside a shared panel, which is
-/// the web's arrangement and the reason its list scans: at this measure the gap
-/// between two cards is a stronger boundary than a hairline inside one, and each
-/// card can then carry its own state — the warning wash on a task that has
-/// stopped, and the breathing accent ring on one that is running.
+/// One task on the home page: a card on the radius ladder — `rounded-card`, a
+/// hairline, the one soft throw — with the title, its status, the goal and
+/// when it last moved. No chevron: the whole card is the target.
 private struct DesktopWorkHomeRow: View {
     let task: WorkSessionSummary
     let status: JunoWorkStatus
     /// Renders what the task is *doing* as a sentence. On for the groups where
-    /// the status word is not the whole story; off for finished tasks, whose
-    /// pill has already said everything a list row can honestly say.
+    /// the status word is not the whole story; off for finished tasks.
     let explains: Bool
     let open: () -> Void
 
@@ -2057,92 +2043,74 @@ private struct DesktopWorkHomeRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                        if task.pinned {
-                            JunoIconView(.pin, size: 11)
-                                .foregroundStyle(Color.junoMutedForeground)
-                                .accessibilityLabel("Pinned")
-                        }
-                        Text(task.title.isEmpty ? "Untitled task" : task.title)
-                            .font(.system(.callout, design: .default, weight: .medium))
-                            .junoInk()
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        DesktopWorkStatusPill(status: status)
-                        Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    if task.pinned {
+                        JunoIconView(.pin, size: 11)
+                            .foregroundStyle(Color.junoMutedForeground)
+                            .accessibilityLabel("Pinned")
                     }
-
-                    Text(task.goal)
-                        .junoCaption()
+                    Text(task.title.isEmpty ? "Untitled task" : task.title)
+                        .junoRowLabel()
+                        .fontWeight(.medium)
+                        .junoInk()
                         .lineLimit(1)
                         .truncationMode(.tail)
-
-                    if explains {
-                        Text(style.sentence)
-                            .junoCaption()
-                            // Warning ink is spent only on the rows actually
-                            // holding a decision. A running task explained in the
-                            // same colour as one that has stopped would make the
-                            // two look like one problem, and there are far more of
-                            // the first kind.
-                            .foregroundStyle(
-                                wantsYou ? Color.junoCaution : Color.junoMutedForeground
-                            )
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Text(provenance)
-                        .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
-                        .junoSecondaryInk()
+                    DesktopWorkStatusPill(status: status)
+                    Spacer(minLength: 0)
+                    Text(task.lastActivityAt.formatted(.relative(presentation: .named)))
+                        .junoCaption()
                         .lineLimit(1)
-                        .padding(.top, 1)
                 }
-                JunoIconView(systemImage: "chevron.right")
-                    .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
-                    .foregroundStyle(isHovering ? Color.junoForeground : Color.junoMutedForeground)
-                    .opacity(isHovering ? 1 : 0.55)
-                    .offset(x: isHovering && !reduceMotion ? 2 : 0)
-                    .padding(.top, 3)
+
+                Text(task.goal)
+                    .junoCaption()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if explains {
+                    Text(style.sentence)
+                        .junoCaption()
+                        // Warning ink is spent only on the rows actually
+                        // holding a decision.
+                        .foregroundStyle(
+                            wantsYou ? Color.junoCaution : Color.junoMutedForeground
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.horizontal, JunoSpace.regular)
             .padding(.vertical, JunoSpace.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // The card keeps its raised fill and the caution is a wash laid over
-            // it — not a replacement for it. Filling with the tint alone left
-            // three transparent olive panels sitting on the warm canvas with no
-            // elevation of their own, which is a different surface, not a
-            // cautioned one.
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .fill(Color.junoSurface)
+                    .shadow(
+                        color: Color.junoCardShadow,
+                        radius: JunoElevation.cardBlur,
+                        y: JunoElevation.cardOffsetY
+                    )
             )
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .fill(Color.junoCaution.opacity(wantsYou ? 0.045 : 0))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .strokeBorder(border, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
         }
         .buttonStyle(.junoPress)
         .onHover { isHovering = $0 }
         .animation(JunoMotion.fast, value: isHovering)
         // The web's `work-breathing`: a slow pulse along the edge for as long as
         // the task is executing, and the row's only mark for "running right now".
-        // 2.6s autoreversed is the web's 5.2s cycle — CSS runs 0% → 50% → 100%
-        // through one keyframe pass where this runs there-and-back — so the two
-        // breathe in the same period. Under Reduce Motion the loop stops (the
-        // ambient tier) and `border` below holds the ring at the middle of the
-        // breath instead, because removing it would remove the fact.
         .onAppear { breathing = isExecuting && !reduceMotion }
         .onChange(of: isExecuting) { _, executing in breathing = executing && !reduceMotion }
         .animation(
             JunoMotion.ambient(
-                JunoMotion.outSoft(2.6).repeatForever(autoreverses: true),
+                JunoMotion.outSoft(JunoMotion.Duration.emphasis * 4).repeatForever(autoreverses: true),
                 when: reduceMotion
             ),
             value: breathing
@@ -2154,159 +2122,136 @@ private struct DesktopWorkHomeRow: View {
     private var border: Color {
         if wantsYou { return Color.junoCaution.opacity(isHovering ? 0.55 : 0.35) }
         if isExecuting {
-            // 0.08 ↔ 0.28 is the web ring's 0.05 ↔ 0.22, re-weighed for the
-            // warmer native border. Under Reduce Motion the breath is stopped,
-            // so the ring holds at the middle of that range — the web pins
-            // 0.16 the same way — rather than at the faint end, where the
-            // comment above the animation promised a held breath and the code
-            // delivered an invisible one.
             if reduceMotion { return Color.junoAccent.opacity(0.18) }
             return Color.junoAccent.opacity(breathing ? 0.28 : 0.08)
         }
-        return isHovering ? Color.junoBorder : Color.junoBorder.opacity(0.6)
-    }
-
-    /// When it last moved, and what it left behind. Deliberately not where it
-    /// ran: the summary knows the *requested* target, and a row reading "Cloud"
-    /// for a task that was substituted onto a Mac is the confident wrong detail
-    /// this whole surface exists to avoid. Where it really ran is a fact about
-    /// the run, and the run is one click away.
-    private var provenance: String {
-        task.lastActivityAt.formatted(.relative(presentation: .named))
+        return isHovering ? Color.junoBorder : Color.junoHairline
     }
 }
 
-
 // MARK: - This Mac
 
-/// The one sentence about this Mac, with the control that answers it.
+/// The one sentence about this Mac, with the control that answers it — as a
+/// quiet inline row.
 ///
 /// Lives here rather than with the settings card because it belongs to the
 /// window somebody is actually looking at when they discover the problem — but
 /// the settings card draws the identical row, from the identical model, so the
-/// two surfaces cannot come to describe one state in two vocabularies. That had
-/// already started: settings printed the sentence under a caution mark and the
-/// task column printed it under a different one.
+/// two surfaces cannot come to describe one state in two vocabularies.
 ///
-/// When the host has nothing to report the row draws the ready line instead. A
-/// row that vanishes on success is a row whose absence has to be interpreted,
-/// and "did it work?" is exactly the question somebody has after pressing the
-/// button above it.
+/// A row, not a panel: a hairline card at the card radius, the sentence in the
+/// caption, and a *ghost* button — the folder-grant empty state on the web is
+/// exactly this, and the filled coral button it replaces was the loudest
+/// thing on a page whose point is the composer above it.
 struct DesktopWorkBlockerRow: View {
     let host: DesktopWorkHostModel
     /// Whether to draw the ready line when there is no blocker. The task column
     /// says nothing when all is well — its job is the list — while the settings
     /// card, which exists to be read, confirms it.
     var confirmsReady = false
-    /// The accessibility namespace of the surface drawing this. Passed in rather
-    /// than fixed, because the two callers live in namespaces that already exist
-    /// and the identifiers under them are what a UI test addresses.
+    /// The accessibility namespace of the surface drawing this.
     var identifier = "juno.work.host"
 
     var body: some View {
         if let blocker = host.blocker {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Label {
-                    Text(blocker.sentence)
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                } icon: {
-                    // A spinner for what is settling by itself, a caution mark
-                    // only for what is waiting on the reader. A Mac finishing
-                    // pairing under a warning triangle sends somebody looking for
-                    // a fault that will be gone before they find it.
-                    if blocker.isSettling {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        JunoIconView(systemImage: blocker.symbol)
-                            .foregroundStyle(Color.junoCaution)
-                    }
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
+                // A spinner for what is settling by itself, the state's own mark
+                // for what is waiting on the reader.
+                if blocker.isSettling {
+                    ProgressView().controlSize(.small)
+                        .frame(width: 16, height: 16)
+                } else {
+                    JunoIconView(blocker.icon, size: 15)
+                        .junoSecondaryInk()
+                        .frame(width: 16, height: 16)
                 }
-
+                Text(blocker.sentence)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: JunoSpace.snug)
                 if let title = blocker.actionTitle, host.canTake(blocker) {
-                    Button(title) { host.take(blocker) }
-                        .junoProminentGlassButton()
+                    Button(title) { _ = host.take(blocker) }
+                        .buttonStyle(.plain)
+                        .junoFont(size: 12, relativeTo: .callout, weight: .medium)
+                        .junoInk()
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .frame(height: 28)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                .strokeBorder(Color.junoBorder, lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
+                        .help(blocker.actionDetail ?? title)
                         .accessibilityIdentifier("\(identifier)-action")
                 }
             }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(JunoMotion.standard, value: blocker)
-            .accessibilityIdentifier("\(identifier)-reason")
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(identifier)
         } else if confirmsReady {
-            Label {
-                Text("A task sent to this Mac now would run here.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                JunoIconView(systemImage: "checkmark.circle")
+            HStack(spacing: JunoSpace.cozy) {
+                JunoIconView(.check, size: 15)
                     .foregroundStyle(Color.junoSuccess)
+                    .frame(width: 16, height: 16)
+                Text("This Mac is serving Juno Work.")
+                    .junoCaption()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("\(identifier)-ready")
+            .accessibilityIdentifier(identifier)
         }
     }
 }
 
-/// The path from "Juno Work is switched off on this Mac" to a Mac that serves.
+/// The two consents that let this Mac serve work, as one card of steps.
 ///
-/// Three rows, in the order they have to happen, all of them visible from the
-/// first: hand over the machine, hand over something on it, and then the Mac is
-/// ready. Showing the whole path rather than only the current step is the point.
-/// The sentence on its own answered "why can nothing run here" and left "what
-/// would it take" unanswered, and the honest answer to the second is two
-/// decisions and no more — which is worth knowing *before* making the first one.
-///
-/// What it is not: a wizard. Nothing here advances on its own, nothing is
-/// skippable-with-consequences, and the reader can close the window at any row
-/// and have changed exactly what they pressed.
+/// No longer a page of its own in front of the composer — the home shows the
+/// composer first and ``DesktopWorkBlockerRow`` under it — but kept as the
+/// long-form explanation the settings surface and the snapshot suite draw.
 struct DesktopWorkStartPath: View {
     let host: DesktopWorkHostModel
     let blocker: DesktopWorkBlocker
     /// The way past this panel. A Mac that will not host work can still dispatch
-    /// it to the cloud, so refusing to offer a new task here would be refusing
-    /// the product to somebody who has simply decided not to lend their machine.
+    /// it to the cloud.
     let compose: () -> Void
 
-    /// The reading width. The same measure the rest of the window's centred
-    /// content uses; a card that grows with a 1600pt window is a card whose
-    /// third line the eye cannot find its way back to.
     private static let measure: CGFloat = 460
 
     var body: some View {
         VStack(spacing: JunoSpace.roomy) {
             Spacer(minLength: JunoSpace.section)
 
-            JunoDesktopGlass(spacing: JunoSpace.snug) {
-                VStack(alignment: .leading, spacing: JunoSpace.roomy) {
-                    heading
-                    VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                        step(
-                            1,
-                            title: "Allow Juno Work on this Mac",
-                            detail: DesktopWorkBlocker.switchedOff.actionDetail ?? "",
-                            isDone: host.allowWorkOnThisMac,
-                            blocker: .switchedOff
-                        )
-                        step(
-                            2,
-                            title: "Give it something to work with",
-                            detail: DesktopWorkBlocker.nothingAllowed.actionDetail ?? "",
-                            isDone: !host.policy.advertisedCapabilities.isEmpty,
-                            blocker: .nothingAllowed
-                        )
-                        readyStep
-                    }
+            VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+                heading
+                VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                    step(
+                        1,
+                        title: "Allow Juno Work on this Mac",
+                        detail: DesktopWorkBlocker.switchedOff.actionDetail ?? "",
+                        isDone: host.allowWorkOnThisMac,
+                        blocker: .switchedOff
+                    )
+                    step(
+                        2,
+                        title: "Give it something to work with",
+                        detail: DesktopWorkBlocker.nothingAllowed.actionDetail ?? "",
+                        isDone: !host.policy.advertisedCapabilities.isEmpty,
+                        blocker: .nothingAllowed
+                    )
+                    readyStep
                 }
-                .padding(JunoSpace.roomy)
-                .frame(maxWidth: Self.measure, alignment: .leading)
-                .junoGlass(
-                    in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                )
             }
+            .padding(JunoSpace.roomy)
+            .frame(maxWidth: Self.measure, alignment: .leading)
+            .junoCard(cornerRadius: JunoRadius.card)
 
-            Button("New Task", action: compose)
-                .junoGlassButton()
+            Button("New task", action: compose)
                 .accessibilityIdentifier("juno.work.start-path.new-task")
 
             Spacer(minLength: JunoSpace.section)
@@ -2319,8 +2264,7 @@ struct DesktopWorkStartPath: View {
 
     private var heading: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "laptopcomputer.and.arrow.down")
-                .junoFont(size: 24, relativeTo: .title2)
+            JunoIconView(.device, size: 24)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityHidden(true)
             Text("Set up Juno Work on this Mac")
@@ -2334,12 +2278,6 @@ struct DesktopWorkStartPath: View {
         }
     }
 
-    /// One consent: what it is, what it costs, and the button that gives it.
-    ///
-    /// The button is drawn only on the step that is actually next. Both consents
-    /// on screen at once would let somebody grant a folder to a Mac that is not
-    /// hosting anything — which succeeds, changes nothing they can see, and
-    /// teaches them the panel is decorative.
     @ViewBuilder
     private func step(
         _ number: Int,
@@ -2354,14 +2292,13 @@ struct DesktopWorkStartPath: View {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(title)
                     .junoRowLabel()
-                    .foregroundStyle(isDone || isCurrent ? .primary : .secondary)
+                    .foregroundStyle(isDone || isCurrent ? Color.junoForeground : Color.junoMutedForeground)
                 Text(detail)
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
 
                 if isCurrent, let actionTitle = stepBlocker.actionTitle, host.canTake(stepBlocker) {
-                    Button(actionTitle) { host.take(stepBlocker) }
-                        .junoProminentGlassButton()
+                    Button(actionTitle) { _ = host.take(stepBlocker) }
                         .padding(.top, JunoSpace.tight)
                         .accessibilityIdentifier(
                             "juno.work.start-path.step-\(number)-action"
@@ -2372,12 +2309,6 @@ struct DesktopWorkStartPath: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The third row is the outcome, not a third thing to do.
-    ///
-    /// It carries whichever of the states nobody at this Mac can press their way
-    /// out of — signed out, pairing, starting — so that a reader who has done
-    /// both their parts is told what is now being waited on rather than left in
-    /// front of two ticks and no result.
     private var readyStep: some View {
         let isReady = host.willServeDispatchedWork
         return HStack(alignment: .top, spacing: JunoSpace.cozy) {
@@ -2385,7 +2316,7 @@ struct DesktopWorkStartPath: View {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(isReady ? "This Mac is serving Juno Work" : "This Mac starts serving")
                     .junoRowLabel()
-                    .foregroundStyle(isReady ? .primary : .secondary)
+                    .foregroundStyle(isReady ? Color.junoForeground : Color.junoMutedForeground)
                 Text(
                     isReady
                         ? "A task sent here now runs on this Mac."
@@ -2400,17 +2331,11 @@ struct DesktopWorkStartPath: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The step's own mark: done, in progress, or still ahead.
-    ///
-    /// A fixed 22pt square in every state. The three marks are different glyphs
-    /// with different intrinsic widths, and letting them size themselves put the
-    /// three titles at three different x positions — the ragged left edge this
-    /// repo has a recorded incident about, one column over.
     @ViewBuilder
     private func marker(number: Int, isDone: Bool, isCurrent: Bool) -> some View {
         Group {
             if isDone {
-                JunoIconView(systemImage: "checkmark.circle.fill")
+                JunoIconView(.check, size: 16)
                     .foregroundStyle(Color.junoSuccess)
             } else if isCurrent, blocker.isSettling {
                 ProgressView().controlSize(.small)
@@ -2454,12 +2379,12 @@ private enum DesktopWorkSurface: String, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    var icon: JunoIcon {
         switch self {
-        case .overview: "rectangle.topthird.inset.filled"
-        case .context: "scope"
-        case .activity: "clock.arrow.circlepath"
-        case .files: "folder"
+        case .overview: .list
+        case .context: .sliders
+        case .activity: .history
+        case .files: .folderOpen
         }
     }
 }
@@ -2537,51 +2462,53 @@ private struct DesktopWorkThread: View {
         // longest surface in the app, and a detail column that reports its
         // content height resizes the window's split view rather than being
         // clipped by it.
-        JunoDetailPage(maxWidth: 760) {
+        JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 conversation
-                // The approval sits *in* the conversation, after the last thing
-                // said and before the box for saying more, because that is where
-                // it happens: a run stopping to ask permission is a turn in the
-                // exchange, not a banner over it.
-                //
-                // Drawn only while the model's open task is this one. An Allow
-                // button under one task's title wired to another's approval is
-                // the worst thing this window could do.
-                if let blocking = blockingApproval {
-                    DesktopWorkApprovalCard(
-                        model: model,
-                        approval: blocking.request,
-                        decideLocally: blocking.isLocal
-                            ? { [hostModel] decision in
-                                hostModel?.localApprovalDecider?(
-                                    blocking.request.id,
-                                    decision,
-                                    blocking.request.actionDigest
-                                )
-                            }
-                            : nil
-                    )
-                    .id(blocking.request.id)
-                }
                 surfacePicker
                 selectedSurface
             }
         }
         // Pinned, in every state, exactly as `work-conversation.tsx` pins its
-        // own. It used to be a card in the scroll — one of two, swapped by
-        // `composerMode` — so the way to say something to a running task was
-        // somewhere in the middle of the longest page in the app, and scrolled
-        // off the moment the run wrote anything.
+        // own — and the question the run has stopped on sits directly above
+        // the box, because the next thing the reader does is answer it.
+        //
+        // The approval is drawn only while the model's open task is this one.
+        // An Allow button under one task's title wired to another's approval is
+        // the worst thing this window could do.
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if isFollowing {
-                DesktopWorkThreadComposer(
-                    model: model,
-                    mode: model.composerMode,
-                    answerDraft: $answerDraft,
-                    instructionDraft: $instructionDraft
-                )
+                VStack(spacing: JunoSpace.cozy) {
+                    if let blocking = blockingApproval {
+                        DesktopWorkApprovalCard(
+                            model: model,
+                            approval: blocking.request,
+                            decideLocally: blocking.isLocal
+                                ? { [hostModel] decision in
+                                    hostModel?.localApprovalDecider?(
+                                        blocking.request.id,
+                                        decision,
+                                        blocking.request.actionDigest
+                                    )
+                                }
+                                : nil
+                        )
+                        .id(blocking.request.id)
+                        .transition(.opacity)
+                    }
+                    DesktopWorkThreadComposer(
+                        model: model,
+                        mode: model.composerMode,
+                        answerDraft: $answerDraft,
+                        instructionDraft: $instructionDraft
+                    )
+                }
+                .frame(maxWidth: JunoReadingMeasure.reading)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, JunoSpace.section)
+                .padding(.bottom, JunoSpace.section)
+                .padding(.top, JunoSpace.snug)
             }
         }
         .onChange(of: session.sessionID) { _, _ in
@@ -2634,23 +2561,25 @@ private struct DesktopWorkThread: View {
     /// chrome.
     @ViewBuilder
     private var conversation: some View {
+        let turns = DesktopWorkLog.turns(in: events)
+        let work = DesktopWorkLog.workGroups(in: events)
         VStack(alignment: .leading, spacing: JunoSpace.roomy) {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Text("What you asked for")
-                    .junoCodeSmall()
-                    .tracking(1.2)
-                    .junoSecondaryInk()
-                bubble(session.goal)
-            }
+            bubble(session.goal)
 
-            ForEach(DesktopWorkLog.turns(in: events)) { turn in
+            // The exchange, with what Juno *did* between what it *said* folded
+            // into "Worked for…" groups — the Chat transcript's own shape for
+            // tool activity: a quiet collapsible line, never a log in the
+            // middle of the prose.
+            ForEach(turns) { turn in
+                ForEach(work.filter { $0.beforeTurnID == turn.id }) { group in
+                    DesktopWorkActivityGroup(group: group)
+                }
                 switch turn.role {
                 case .you:
                     VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
                         if turn.unprompted {
                             Text("You added this")
-                                .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
-                                .junoSecondaryInk()
+                                .junoCaption()
                                 .padding(.trailing, JunoSpace.hairline)
                         }
                         bubble(turn.text)
@@ -2662,14 +2591,18 @@ private struct DesktopWorkThread: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            ForEach(work.filter { $0.beforeTurnID == nil }) { group in
+                DesktopWorkActivityGroup(group: group)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("juno.work.conversation")
     }
 
-    /// A turn the reader wrote. `junoMuted` is the web's `bg-secondary`, and the
-    /// bubble is capped at 85% so a long instruction still reads as one side of
-    /// an exchange rather than as the page.
+    /// A turn the reader wrote: the web's inset well — `bg-secondary`, a
+    /// hairline, the card radius — right-aligned and capped so a long
+    /// instruction still reads as one side of an exchange rather than as the
+    /// page.
     private func bubble(_ text: String) -> some View {
         Text(text)
             .junoBody()
@@ -2682,13 +2615,17 @@ private struct DesktopWorkThread: View {
                 RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)
                     .fill(Color.junoMuted)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)
+                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            )
             .frame(maxWidth: 560, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var surfacePicker: some View {
         HStack(spacing: JunoSpace.regular) {
-            JunoIconLabel("Task details", systemImage: surface.symbol)
+            JunoIconLabel("Task details", icon: surface.icon, size: 13)
                 .junoSidebarSection()
                 .labelStyle(.titleAndIcon)
             Spacer(minLength: JunoSpace.snug)
@@ -2778,14 +2715,9 @@ private struct DesktopWorkThread: View {
                     // capabilities missing — and a duplicate `ForEach` id
                     // silently drops every note after the first.
                     ForEach(Array(degradation.enumerated()), id: \.offset) { _, note in
-                        Label {
-                            Text(note.explanation)
-                                .junoCaption()
-                                .fixedSize(horizontal: false, vertical: true)
-                        } icon: {
-                            JunoIconView(systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Color.junoCaution)
-                        }
+                        JunoIconLabel(verbatim: note.explanation, icon: .error, size: 13)
+                            .junoCaption()
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(JunoSpace.cozy)
@@ -2805,17 +2737,17 @@ private struct DesktopWorkThread: View {
 
     private var runFacts: some View {
         HStack(spacing: 0) {
-            fact("Where", value: runningWhere, symbol: "location")
+            fact("Where", value: runningWhere)
             Divider().frame(height: 38)
-            fact("Model", value: effectiveModelLabel, symbol: "cpu")
+            fact("Model", value: effectiveModelLabel)
             Divider().frame(height: 38)
-            fact("Spent", value: spentLabel, symbol: "dollarsign.circle")
+            fact("Spent", value: spentLabel)
             Divider().frame(height: 38)
-            fact("Attempt", value: run.map { $0.attempt.formatted() } ?? "Not started", symbol: "arrow.counterclockwise")
+            fact("Attempt", value: run.map { $0.attempt.formatted() } ?? "Not started")
         }
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
-        .junoCard()
+        .junoCard(cornerRadius: JunoRadius.card)
         .accessibilityIdentifier("juno.work.run-facts")
     }
 
@@ -2836,14 +2768,14 @@ private struct DesktopWorkThread: View {
     /// row spent the accent four times on a strip that is pure metadata — the
     /// web sets exactly this material as mono labels over their values, and
     /// coral there is reserved for the one primary action on a surface.
-    private func fact(_ label: String, value: String, symbol: String) -> some View {
+    private func fact(_ label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
-                .tracking(0.8)
+                .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
                 .junoSecondaryInk()
             Text(value)
-                .font(.system(.callout, design: .default, weight: .medium))
+                .junoRowLabel()
+                .fontWeight(.medium)
                 .junoInk()
                 .lineLimit(2)
                 .truncationMode(.middle)
@@ -2891,7 +2823,8 @@ private struct DesktopWorkThread: View {
             } label: {
                 JunoIconLabel(
                     verbatim: status == .paused ? "Resume" : "Pause",
-                    systemImage: status == .paused ? "play.fill" : "pause.fill"
+                    icon: status == .paused ? .play : .pause,
+                    size: 13
                 )
             }
             .disabled(status.isTerminal || status == .draft)
@@ -2899,7 +2832,7 @@ private struct DesktopWorkThread: View {
             Button(role: .destructive) {
                 Task { await model.stopOpenRun() }
             } label: {
-                JunoIconLabel("Stop", systemImage: "stop.fill")
+                JunoIconLabel("Stop", icon: .stop, size: 13)
             }
             .disabled(status.isTerminal || status == .draft)
 
@@ -3004,7 +2937,7 @@ private struct DesktopWorkThread: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(answer, forType: .string)
                 } label: {
-                    JunoIconLabel("Copy", systemImage: "doc.on.doc")
+                    JunoIconLabel("Copy", icon: .copy, size: 13)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -3027,15 +2960,18 @@ private struct DesktopWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(steps) { step in
-                    Label {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
+                        JunoIconView(step.icon, size: 14)
+                            .foregroundStyle(step.tint)
+                            .frame(width: 16, height: 16)
+                            .padding(.top, 1)
                         Text(step.title)
                             .junoRowLabel()
-                            .foregroundStyle(step.state == .active ? .primary : .secondary)
+                            .foregroundStyle(
+                                step.state == .active ? Color.junoForeground : Color.junoMutedForeground
+                            )
                             .strikethrough(step.state == .skipped)
                             .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        JunoIconView(systemImage: step.symbol)
-                            .foregroundStyle(step.tint)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -3077,7 +3013,7 @@ private struct DesktopWorkThread: View {
                             }
                         }
                     } icon: {
-                        JunoIconView(systemImage: reference.direction == .read ? "link" : "doc")
+                        JunoIconView(reference.direction == .read ? .link : .file, size: 14)
                             .foregroundStyle(Color.junoMutedForeground)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -3144,8 +3080,7 @@ private struct DesktopWorkThread: View {
                         // A column of "xlsx" / "docx" / "pdf" set in monospace
                         // is a directory listing; this section is meant to read
                         // as the things Juno made for you.
-                        JunoIconView(systemImage: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
-                            .junoFont(size: 15, relativeTo: .body)
+                        JunoIconView(DesktopWorkVocabulary.artifactIcon(artifact.kind), size: 16)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
                         VStack(alignment: .leading, spacing: 1) {
@@ -3167,7 +3102,7 @@ private struct DesktopWorkThread: View {
 
                 if let error = model.artifactErrorDescription {
                     HStack(alignment: .top, spacing: JunoSpace.tight) {
-                        JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: error, icon: .error, size: 13)
                             .junoCaption()
                             .foregroundStyle(Color.junoDanger)
                             .fixedSize(horizontal: false, vertical: true)
@@ -3175,7 +3110,7 @@ private struct DesktopWorkThread: View {
                         Button("Retry") {
                             Task { await model.refreshOpenArtifacts() }
                         }
-                        .junoGlassButton()
+                        .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
                 }
@@ -3315,27 +3250,6 @@ private struct DesktopWorkThread: View {
         }
     }
 
-    private func contextFact(_ label: String, value: String, symbol: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
-                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
-                .foregroundStyle(Color.junoMutedForeground)
-                .frame(width: 18, alignment: .center)
-                .accessibilityHidden(true)
-            Text(label)
-                .junoCaption()
-                .frame(width: 118, alignment: .leading)
-            Text(value)
-                .junoRowLabel()
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, JunoSpace.snug)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value)")
-    }
-
     // MARK: Activity
 
     private var activity: some View {
@@ -3360,8 +3274,7 @@ private struct DesktopWorkThread: View {
                 VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     ForEach(entries) { entry in
                         HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                            JunoIconView(systemImage: entry.symbol)
-                                .junoFont(size: 12, relativeTo: .callout)
+                            JunoIconView(entry.icon, size: 13)
                                 .foregroundStyle(entry.tint)
                                 .frame(width: 16, height: 16, alignment: .center)
                                 // Sits on the title's cap height rather than
@@ -3408,8 +3321,7 @@ private struct DesktopWorkArtifactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                JunoIconView(systemImage: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
-                    .junoFont(size: 15, relativeTo: .body)
+                JunoIconView(DesktopWorkVocabulary.artifactIcon(artifact.kind), size: 16)
                     .foregroundStyle(Color.junoAccent)
                     .frame(width: 22, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
@@ -3420,11 +3332,10 @@ private struct DesktopWorkArtifactRow: View {
                     HStack(spacing: JunoSpace.tight) {
                         Text(DesktopWorkVocabulary.artifactKind(artifact.kind))
                         Text("v\(artifact.currentVersion)")
-                        Label(
-                            artifact.validatedAt == nil ? "Needs checking" : "Validated",
-                            systemImage: artifact.validatedAt == nil
-                                ? "exclamationmark.triangle"
-                                : "checkmark.seal"
+                        JunoIconLabel(
+                            verbatim: artifact.validatedAt == nil ? "Needs checking" : "Validated",
+                            icon: artifact.validatedAt == nil ? .error : .check,
+                            size: 11
                         )
                         .foregroundStyle(
                             artifact.validatedAt == nil ? Color.junoCaution : Color.junoSuccess
@@ -3441,10 +3352,11 @@ private struct DesktopWorkArtifactRow: View {
                         if isDownloading {
                             ProgressView().controlSize(.small)
                         } else {
-                            JunoIconLabel("Save", systemImage: "arrow.down.circle")
+                            JunoIconLabel("Save", icon: .download, size: 12)
                         }
                     }
-                    .junoProminentGlassButton()
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
                     .controlSize(.small)
                     .disabled(isDownloading)
                     .help("Save the verified current version")
@@ -3455,10 +3367,11 @@ private struct DesktopWorkArtifactRow: View {
                     } label: {
                         JunoIconLabel(
                             verbatim: isExpanded ? "Hide history" : "History",
-                            systemImage: isExpanded ? "chevron.up" : "clock.arrow.circlepath"
+                            icon: .history,
+                            size: 12
                         )
                     }
-                    .junoGlassButton()
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
                     .accessibilityIdentifier("juno.work.artifact.history.\(artifact.artifactID)")
                 }
@@ -3467,18 +3380,14 @@ private struct DesktopWorkArtifactRow: View {
             if isExpanded {
                 if let detail {
                     if let warning = detail.warning {
-                        JunoIconLabel(verbatim: warning, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: warning, icon: .error, size: 12)
                             .junoCaption()
                             .foregroundStyle(Color.junoCaution)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(detail.versions) { version in
                         HStack(alignment: .top, spacing: JunoSpace.tight) {
-                            Image(
-                                systemName: version.validated
-                                    ? "checkmark.seal"
-                                    : "questionmark.diamond"
-                            )
+                            JunoIconView(version.validated ? .check : .error, size: 13)
                             .foregroundStyle(
                                 version.validated ? Color.junoSuccess : Color.junoCaution
                             )
@@ -3500,7 +3409,7 @@ private struct DesktopWorkArtifactRow: View {
                             }
                             Spacer(minLength: JunoSpace.tight)
                             Button("Save") { download(version.version) }
-                                .junoGlassButton()
+                                .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 .disabled(isDownloading)
                         }
@@ -3615,21 +3524,20 @@ private struct DesktopWorkContextEditor: View {
                 files(context)
 
                 if let change = model.lastContextChange {
-                    Label {
-                        Text(change.explanation)
-                            .junoCaption()
-                            .fixedSize(horizontal: false, vertical: true)
-                    } icon: {
-                        JunoIconView(systemImage: change.effect == "now" ? "checkmark.circle" : "clock")
-                            .foregroundStyle(change.effect == "now" ? Color.junoSuccess : Color.junoAccent)
-                    }
+                    JunoIconLabel(
+                        verbatim: change.explanation,
+                        icon: change.effect == "now" ? .check : .clock,
+                        size: 13
+                    )
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, JunoSpace.tight)
                     .accessibilityIdentifier("juno.work.context.last-change")
                 }
 
                 if let error = model.contextErrorDescription {
                     HStack(alignment: .top, spacing: JunoSpace.tight) {
-                        JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: error, icon: .error, size: 13)
                             .junoCaption()
                             .foregroundStyle(Color.junoDanger)
                             .fixedSize(horizontal: false, vertical: true)
@@ -3642,7 +3550,7 @@ private struct DesktopWorkContextEditor: View {
                 }
             } else if let error = model.contextErrorDescription {
                 VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    JunoIconLabel(verbatim: error, systemImage: "exclamationmark.triangle")
+                    JunoIconLabel(verbatim: error, icon: .error, size: 13)
                         .junoCaption()
                         .foregroundStyle(Color.junoDanger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3696,7 +3604,7 @@ private struct DesktopWorkContextEditor: View {
         contextFact(
             "Where requested",
             value: requestedTargetLabel,
-            symbol: "shippingbox"
+            icon: .device
         )
     }
 
@@ -3710,7 +3618,7 @@ private struct DesktopWorkContextEditor: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 0) {
-            contextControl("Model", symbol: "cpu") {
+            contextControl("Model", icon: .models) {
                 if modelOptions.isEmpty {
                     Text(context?.model ?? "Automatic").junoRowLabel()
                 } else {
@@ -3718,7 +3626,7 @@ private struct DesktopWorkContextEditor: View {
                 }
             }
             Divider()
-            contextControl("Thinking", symbol: "gauge.with.dots.needle.33percent") {
+            contextControl("Thinking", icon: .sliders) {
                 if let thinkingScale, thinkingScale.isPresentable {
                     thinkingControl(thinkingScale)
                 } else {
@@ -3726,7 +3634,7 @@ private struct DesktopWorkContextEditor: View {
                 }
             }
             Divider()
-            contextControl("Approval mode", symbol: "shield.lefthalf.filled") {
+            contextControl("Approval mode", icon: .shield) {
                 permissionControl
             }
         }
@@ -3737,14 +3645,9 @@ private struct DesktopWorkContextEditor: View {
         Button {
             showingModelSelector.toggle()
         } label: {
-            HStack(spacing: JunoSpace.tight) {
-                Text(selectedModel?.displayName ?? context?.model ?? "Automatic")
-                    .lineLimit(1)
-                JunoIconView(systemImage: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-            }
+            DesktopWorkComposerChip(selectedModel?.displayName ?? context?.model ?? "Automatic")
         }
-        .buttonStyle(.junoPress)
+        .buttonStyle(.plain)
         .popover(isPresented: $showingModelSelector, arrowEdge: .bottom) {
             // The shared selector Chat and Settings present, not the stale
             // app-target copy — that one painted opaque `junoCanvas` over the
@@ -3771,13 +3674,9 @@ private struct DesktopWorkContextEditor: View {
         Button {
             showingThinking.toggle()
         } label: {
-            HStack(spacing: JunoSpace.tight) {
-                Text(currentThinkingLabel(in: scale))
-                JunoIconView(systemImage: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-            }
+            DesktopWorkComposerChip(currentThinkingLabel(in: scale))
         }
-        .buttonStyle(.junoPress)
+        .buttonStyle(.plain)
         .popover(isPresented: $showingThinking, arrowEdge: .bottom) {
             JunoThinkingPopover(scale: scale, effort: $reasoningEffort, width: 268)
                 .frame(width: 268, height: 118)
@@ -3796,26 +3695,26 @@ private struct DesktopWorkContextEditor: View {
 
     private var permissionControl: some View {
         Menu {
-            ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
-                Button {
-                    permissionPolicy = policy
-                    save(WorkSessionContextEdit(permissionPolicy: policy))
-                } label: {
-                    HStack {
-                        Text(permissionTitle(policy))
-                        Spacer(minLength: JunoSpace.roomy)
-                        if policy == permissionPolicy { JunoIconView(systemImage: "checkmark") }
+            Picker(
+                "Approval mode",
+                selection: Binding(
+                    get: { permissionPolicy },
+                    set: { policy in
+                        permissionPolicy = policy
+                        save(WorkSessionContextEdit(permissionPolicy: policy))
                     }
+                )
+            ) {
+                ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
+                    Text(permissionTitle(policy)).tag(policy)
                 }
             }
+            .pickerStyle(.inline)
         } label: {
-            HStack(spacing: JunoSpace.tight) {
-                Text(permissionTitle(permissionPolicy))
-                JunoIconView(systemImage: "chevron.up.chevron.down")
-                    .font(.caption2.weight(.semibold))
-            }
+            DesktopWorkComposerChip(permissionTitle(permissionPolicy))
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .accessibilityLabel("Approval mode")
         .accessibilityValue(permissionTitle(permissionPolicy))
         .accessibilityIdentifier("juno.work.context.approvals")
@@ -3824,7 +3723,7 @@ private struct DesktopWorkContextEditor: View {
     private var apps: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack {
-                JunoIconLabel("Connected apps", systemImage: "link")
+                JunoIconLabel("Connected apps", icon: .link, size: 13)
                     .junoSidebarSection()
                 Spacer(minLength: JunoSpace.tight)
                 Menu {
@@ -3834,27 +3733,23 @@ private struct DesktopWorkContextEditor: View {
                         Button("Connect an app…", action: openConnections)
                     } else {
                         ForEach(connectedConnectors) { connector in
-                            Button {
-                                toggleConnector(connector.id)
-                            } label: {
-                                HStack {
-                                    Text(connector.label)
-                                    Spacer(minLength: JunoSpace.roomy)
-                                    if selectedConnectorIDs.contains(connector.id) {
-                                        JunoIconView(systemImage: "checkmark")
-                                    }
-                                }
-                            }
+                            Toggle(
+                                connector.label,
+                                isOn: Binding(
+                                    get: { selectedConnectorIDs.contains(connector.id) },
+                                    set: { _ in toggleConnector(connector.id) }
+                                )
+                            )
                         }
                         Button("Manage connected apps…", action: openConnections)
                     }
                 } label: {
-                    JunoIconLabel(
-                        verbatim: selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected",
-                        systemImage: "slider.horizontal.3"
+                    DesktopWorkComposerChip(
+                        selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected"
                     )
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .accessibilityLabel("Connected apps")
                 .accessibilityValue(selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected")
                 .accessibilityIdentifier("juno.work.context.apps")
@@ -3875,7 +3770,7 @@ private struct DesktopWorkContextEditor: View {
     private func files(_ context: WorkSessionContext) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack {
-                JunoIconLabel("Attached files", systemImage: "paperclip")
+                JunoIconLabel("Attached files", icon: .attach, size: 13)
                     .junoSidebarSection()
                 Spacer(minLength: JunoSpace.tight)
                 Menu {
@@ -3884,9 +3779,10 @@ private struct DesktopWorkContextEditor: View {
                     Button("Choose from Library…") { showingLibrary = true }
                         .disabled(libraryModel == nil || attachmentModel == nil)
                 } label: {
-                    JunoIconLabel("Add", systemImage: "plus")
+                    DesktopWorkComposerChip("Add")
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .accessibilityLabel("Add files to task")
                 .accessibilityIdentifier("juno.work.context.add-files")
             }
@@ -3897,7 +3793,7 @@ private struct DesktopWorkContextEditor: View {
             } else {
                 ForEach(visibleAttachments) { attachment in
                     HStack(spacing: JunoSpace.tight) {
-                        JunoIconView(systemImage: "doc")
+                        JunoIconView(.file, size: 14)
                             .foregroundStyle(Color.junoMutedForeground)
                         Text(attachment.displayName)
                             .junoRowLabel()
@@ -3907,7 +3803,7 @@ private struct DesktopWorkContextEditor: View {
                         Button {
                             removeAttachment(attachment.attachmentID)
                         } label: {
-                            JunoIconView(systemImage: "xmark")
+                            JunoIconView(.close, size: 12)
                         }
                         .buttonStyle(.borderless)
                         .help("Remove \(attachment.displayName) from this task")
@@ -3938,12 +3834,11 @@ private struct DesktopWorkContextEditor: View {
 
     private func contextControl<Content: View>(
         _ label: String,
-        symbol: String,
+        icon: JunoIcon,
         @ViewBuilder content: () -> Content
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
-                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
+            JunoIconView(icon, size: 13)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -3957,10 +3852,9 @@ private struct DesktopWorkContextEditor: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func contextFact(_ label: String, value: String, symbol: String) -> some View {
+    private func contextFact(_ label: String, value: String, icon: JunoIcon) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
-                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
+            JunoIconView(icon, size: 13)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -4105,50 +3999,39 @@ private struct DesktopWorkContextEditor: View {
 
 /// The one action the run has stopped to ask permission for.
 ///
-/// The whole request is handed to the model rather than an identifier, because
-/// the digest of the exact action and its expiry both have to travel with the
-/// answer — the executor recomputes the digest immediately before acting and
-/// refuses on a mismatch, which is what stops an approval shown for one action
-/// authorising a different one.
+/// Sits directly above the composer, pinned with it, because that is where a
+/// question belongs: the next thing the reader does is answer it. The whole
+/// request is handed to the model rather than an identifier, because the digest
+/// of the exact action and its expiry both have to travel with the answer — the
+/// executor recomputes the digest immediately before acting and refuses on a
+/// mismatch, which is what stops an approval shown for one action authorising
+/// a different one.
 private struct DesktopWorkApprovalCard: View {
     let model: NativeWorkModel
     let approval: WorkApprovalRequest
     /// Set when the question was raised by a run executing on this Mac, in which
     /// case the answer goes to the in-process coordinator holding the suspended
-    /// tool rather than to the relay — there is no `WorkApproval` row for the
-    /// relay to update. Nil for a cloud run, which takes the relay path.
+    /// tool rather than to the relay. Nil for a cloud run.
     var decideLocally: ((JunoWorkApprovalDecision) -> Void)?
 
     private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
 
     /// The colour the card is edged and headed in. Irreversible actions are the
     /// only ones that get danger; everything else that reaches a person is
-    /// caution. See ``DesktopWorkVocabulary/riskTint(_:)``.
+    /// caution.
     private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
 
-    /// Whether this action could be covered by a standing "always allow".
-    /// The shared rule checks both risk and always-confirm action identity.
     private var allowsStandingGrant: Bool {
         approval.allowsStandingGrant
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // A tinted header band rather than a tinted hairline.
-            //
-            // The card used to be a plain `junoCard()` with a second 1pt stroke
-            // laid over the border it already draws, at the same radius — two
-            // concentric hairlines that read as one muddy 2pt edge rather than
-            // as a cautioned card. A band states the same thing with one edge:
-            // it gives the card a head, it carries the risk colour at a size
-            // that can actually be seen, and it puts the risk label and the
-            // expiry on a ground of their own instead of loose under the prose.
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: risk?.alwaysRequiresApproval == true
-                    ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
+                JunoIconView(.shield, size: 14)
                     .foregroundStyle(tint)
                 Text(DesktopWorkVocabulary.risk(approval.risk))
-                    .font(.system(.caption, design: .default, weight: .semibold))
+                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
                     .foregroundStyle(tint)
                 Text(DesktopWorkVocabulary.action(approval.action))
                     .junoCaption()
@@ -4161,82 +4044,58 @@ private struct DesktopWorkApprovalCard: View {
                 Text("Expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
                     .junoCaption()
             }
-            .padding(.horizontal, JunoSpace.roomy)
-            .padding(.vertical, JunoSpace.cozy)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tint.opacity(0.10))
 
-            VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                Text("Juno needs your decision")
-                    .junoRowLabel()
-                    .fontWeight(.semibold)
+            // The stored sentence, verbatim. It is what an audit can prove was
+            // on screen.
+            Text(approval.summary)
+                .junoBody()
+                .junoInk()
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
 
-                // The stored sentence, verbatim. It is what an audit can prove
-                // was on screen, and re-describing the action from its
-                // identifier would show the reader something the record does not
-                // contain.
-                Text(approval.summary)
-                    .junoBody()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-
-                // Refuse is separated from the two allows by a spacer, and it is
-                // the plain button while allowing is the bordered one.
-                //
-                // The old row had all three as identical bordered slabs, with
-                // the *escalating* option ("Allow for this task", which grants a
-                // standing permission) sitting immediately beside the one-time
-                // one and looking exactly like it. Weight now matches
-                // consequence: one prominent action, one ordinary one, and a
-                // refusal that is easy to hit and impossible to hit by accident.
-                HStack(spacing: JunoSpace.snug) {
-                    Button("Allow once") { decide(.allowed) }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.junoAccent)
-                        .keyboardShortcut(.defaultAction)
-                        .accessibilityIdentifier("juno.work.approval.allow")
-                    // Offered only where a standing yes is actually possible.
-                    //
-                    // `WorkAlwaysAllowance` has a failable initialiser that
-                    // refuses anything above `command`, and decoding re-applies
-                    // the rule — so a sensitive or irreversible action can never
-                    // be covered by one. The button was drawn regardless, which
-                    // promised a permission the model is built to refuse: the
-                    // reader would press it, get a one-time approval, and be
-                    // asked again on the next identical action with no
-                    // explanation. Hiding it is how that guarantee becomes
-                    // something a person can see rather than something the
-                    // codebase merely honours.
-                    if allowsStandingGrant {
-                        Button("work.approval.allow-always") { decide(.allowedAlways) }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("juno.work.approval.allow-always")
-                    }
-                    Spacer(minLength: JunoSpace.regular)
-                    Button("Refuse", role: .destructive) { decide(.denied) }
+            // Weight matches consequence: one prominent action, one ordinary
+            // one, and a refusal that is easy to hit and impossible to hit by
+            // accident.
+            HStack(spacing: JunoSpace.snug) {
+                Button("Allow once") { decide(.allowed) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("juno.work.approval.allow")
+                // Offered only where a standing yes is actually possible —
+                // `WorkAlwaysAllowance` refuses anything above `command`.
+                if allowsStandingGrant {
+                    Button("work.approval.allow-always") { decide(.allowedAlways) }
                         .buttonStyle(.bordered)
-                        .keyboardShortcut(.cancelAction)
-                        .accessibilityIdentifier("juno.work.approval.deny")
+                        .accessibilityIdentifier("juno.work.approval.allow-always")
                 }
-                .controlSize(.regular)
-                .disabled(model.isMutating)
+                Spacer(minLength: JunoSpace.regular)
+                Button("Refuse", role: .destructive) { decide(.denied) }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("juno.work.approval.deny")
             }
-            .padding(JunoSpace.roomy)
+            .controlSize(.regular)
+            .disabled(model.isMutating)
         }
+        .padding(JunoSpace.regular)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(Color.junoSurface)
                 .shadow(
                     color: .junoCardShadow,
                     radius: JunoElevation.cardBlur,
                     y: JunoElevation.cardOffsetY
                 )
         )
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
+                .fill(tint.opacity(0.06))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(tint.opacity(0.45), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .accessibilityIdentifier("juno.work.approval")
     }
 
@@ -4251,18 +4110,16 @@ private struct DesktopWorkApprovalCard: View {
 
 /// The one box for saying anything to a task.
 ///
-/// **This replaced two cards that were never both on screen.** A question card
-/// and an instruction card sat in the middle of the scroll, swapped by
-/// `composerMode`, so the way to reply to a running task scrolled out of reach
-/// the moment the run wrote anything — and a finished task drew neither, which
-/// left the reader looking for a control that had silently ceased to exist.
-///
 /// One composer, pinned, in every state, which is `work-thread-composer.tsx`'s
-/// own rule. What changes is the placeholder and whether it accepts anything:
-/// `composerMode` is the model's single answer to what this task can be told
-/// right now, shared with the phone and mirroring the web, and a `.closed` task
-/// renders the server's own reason inside the disabled field rather than
-/// vanishing.
+/// own rule — and the same single glass surface Chat's composer is. What
+/// changes is the placeholder and whether it accepts anything: `composerMode`
+/// is the model's single answer to what this task can be told right now, and
+/// a `.closed` task renders the server's own reason inside the disabled field
+/// rather than vanishing.
+///
+/// No plate behind it. It sits at the bottom of the reading canvas with the
+/// page's own gutter around it, the way the web pins its composer: the
+/// transcript is what shows through the glass.
 private struct DesktopWorkThreadComposer: View {
     let model: NativeWorkModel
     let mode: NativeWorkModel.ComposerMode
@@ -4294,13 +4151,13 @@ private struct DesktopWorkThreadComposer: View {
         }
     }
 
-    private var modeSymbol: String {
+    private var modeIcon: JunoIcon {
         switch mode {
-        case .answer: "questionmark.bubble"
-        case .instruction: "text.bubble"
-        case .start: "play.circle"
-        case .restart: "arrow.counterclockwise.circle"
-        case .closed: "lock"
+        case .answer: .message
+        case .instruction: .writing
+        case .start: .play
+        case .restart: .refresh
+        case .closed: .lock
         }
     }
 
@@ -4323,22 +4180,12 @@ private struct DesktopWorkThreadComposer: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            JunoIconLabel(verbatim: modeLabel, systemImage: modeSymbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(
-                    isClosed
-                        ? Color.junoMutedForeground
-                        : isAnswering
-                            ? Color.junoCaution
-                            : Color.junoMutedForeground
-                )
-                .accessibilityIdentifier("juno.work.thread-composer.intent")
-
-            HStack(alignment: .bottom, spacing: JunoSpace.cozy) {
+        JunoDesktopGlass(spacing: JunoSpace.snug) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 TextField(placeholder, text: draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(.body))
+                    .junoBody()
+                    .junoInk()
                     .lineLimit(1...6)
                     .focused($focused)
                     .disabled(isClosed)
@@ -4346,76 +4193,49 @@ private struct DesktopWorkThreadComposer: View {
                     .accessibilityIdentifier(
                         isAnswering ? "juno.work.answer.field" : "juno.work.instruction.field"
                     )
-                Button(action: send) {
-                    JunoIconView(systemImage: "arrow.up")
-                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
-                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                        .frame(width: 28, height: 28)
-                }
-                .junoCircleAction(active: canSend)
-                .disabled(!canSend)
-                .accessibilityLabel(isAnswering ? "Send answer" : "Send instruction")
-                .accessibilityIdentifier(
-                    isAnswering ? "juno.work.answer.send" : "juno.work.instruction.send"
-                )
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-                    .fill(Color.junoSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-                    .strokeBorder(
-                        focused ? Color.junoFocusRing : Color.junoBorder,
-                        lineWidth: focused ? 1 : 0.5
-                    )
-            )
 
-            // The server's sentence, never this window's. The route writes one
-            // for each outcome and it is the same sentence the web shows;
-            // composing a cheerful local "Sent" here would mean a Mac that is
-            // switched off produced a confirmation while the browser beside it
-            // showed an honest warning, for the identical event.
-            if !isAnswering, let outcome = model.lastInstructionOutcome {
-                Label {
-                    Text(outcome.explanation)
+                HStack(spacing: JunoSpace.snug) {
+                    JunoIconLabel(verbatim: modeLabel, icon: modeIcon, size: 12)
+                        .junoFont(size: 11, relativeTo: .caption, weight: .medium)
+                        .foregroundStyle(
+                            isClosed
+                                ? Color.junoMutedForeground
+                                : isAnswering
+                                    ? Color.junoCaution
+                                    : Color.junoMutedForeground
+                        )
+                        .lineLimit(1)
+                        .accessibilityIdentifier("juno.work.thread-composer.intent")
+                    Spacer(minLength: JunoSpace.snug)
+                    Button(action: send) {
+                        JunoIconView(.arrowUp, size: 14)
+                            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                            .frame(width: 32, height: 32)
+                    }
+                    .junoCircleAction(active: canSend)
+                    .disabled(!canSend)
+                    .accessibilityLabel(isAnswering ? "Send answer" : "Send instruction")
+                    .accessibilityIdentifier(
+                        isAnswering ? "juno.work.answer.send" : "juno.work.instruction.send"
+                    )
+                }
+
+                // The server's sentence, never this window's.
+                if !isAnswering, let outcome = model.lastInstructionOutcome {
+                    JunoIconLabel(verbatim: outcome.explanation, icon: outcome.delivered ? .check : .error, size: 12)
                         .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    JunoIconView(systemImage: outcome.delivered
-                        ? "checkmark.circle" : "exclamationmark.triangle")
                         .foregroundStyle(
                             outcome.delivered ? Color.junoMutedForeground : Color.junoCaution
                         )
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("juno.work.instruction.outcome")
                 }
-                .accessibilityIdentifier("juno.work.instruction.outcome")
             }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.top, JunoSpace.regular)
+            .padding(.bottom, JunoSpace.cozy)
+            .junoFloatingChrome(cornerRadius: JunoRadius.composer)
         }
-        .frame(maxWidth: 760)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, JunoSpace.region)
-        .padding(.bottom, JunoSpace.regular)
-        .padding(.top, JunoSpace.snug)
-        // The canvas, not a material. This bar sits over an *opaque* reading
-        // surface, and `JunoSurfaces` reserves glass for chrome that floats over
-        // something worth refracting; painting the same canvas is what makes the
-        // transcript stop where the composer starts. The fade above it is one
-        // line tall — enough to read as depth without borrowing a shadow this
-        // surface does not use.
-        .background(Color.junoCanvas)
-        .overlay(alignment: .top) {
-            LinearGradient(
-                colors: [Color.junoCanvas.opacity(0), Color.junoCanvas],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: JunoSpace.roomy)
-            .offset(y: -JunoSpace.roomy)
-            .allowsHitTesting(false)
-        }
-        .animation(JunoMotion.fast, value: focused)
         .accessibilityIdentifier("juno.work.thread-composer")
     }
 
@@ -4434,14 +4254,86 @@ private struct DesktopWorkThreadComposer: View {
             case .closed:
                 accepted = false
             }
-            // Keep the reader's words on any refusal or transport failure. A
-            // start can succeed while the carried instruction fails, and that
-            // is precisely the case where silently clearing the field would
-            // lose the only useful recovery action.
+            // Keep the reader's words on any refusal or transport failure.
             if accepted, draft.wrappedValue == text {
                 draft.wrappedValue = ""
             }
         }
+    }
+}
+
+// MARK: - Worked for…
+
+/// A stretch of the run's activity, folded into one quiet line between two
+/// turns of the conversation — the Chat transcript's own shape for tool work.
+///
+/// Collapsed by default: what Juno *did* is context for what it *said*, and a
+/// reader catching up reads the prose first. Open, it is the same gutter-aligned
+/// log the Activity surface draws in full, cut to this stretch.
+private struct DesktopWorkActivityGroup: View {
+    let group: DesktopWorkLog.WorkGroup
+
+    @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var summary: String {
+        let count = group.entries.count
+        return "\(group.title) · \(count == 1 ? "1 step" : "\(count) steps")"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Button {
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoIconView(isExpanded ? .chevronDown : .chevronRight, size: 11)
+                        .junoSecondaryInk()
+                    Text(summary)
+                        .junoCaption()
+                        .monospacedDigit()
+                }
+                .frame(minHeight: 24)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(summary)
+            .accessibilityAddTraits(isExpanded ? [.isButton, .isSelected] : .isButton)
+            .accessibilityIdentifier("juno.work.worked-for")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    ForEach(group.entries) { entry in
+                        HStack(alignment: .top, spacing: JunoSpace.snug) {
+                            JunoIconView(entry.icon, size: 12)
+                                .foregroundStyle(entry.tint)
+                                .frame(width: 14, height: 14)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(entry.title)
+                                    .junoCaption()
+                                    .foregroundStyle(Color.junoForeground)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let detail = entry.detail {
+                                    Text(detail)
+                                        .junoCaption()
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: JunoSpace.cozy)
+                            Text(entry.at.formatted(date: .omitted, time: .shortened))
+                                .junoCaption()
+                                .monospacedDigit()
+                        }
+                    }
+                }
+                .padding(.leading, JunoSpace.regular)
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -4536,14 +4428,14 @@ struct DesktopWorkStatusStyle {
                 label: "Draft",
                 sentence: "This task has been written but never started, so nothing is running and nothing is queued.",
                 symbol: "square.and.pencil",
-                tint: .secondary
+                tint: Color.junoMutedForeground
             )
         case .queued:
             DesktopWorkStatusStyle(
                 label: "Queued",
                 sentence: "Waiting for an executor to pick this up.",
                 symbol: "clock",
-                tint: .secondary
+                tint: Color.junoMutedForeground
             )
         case .preparing:
             DesktopWorkStatusStyle(
@@ -4578,7 +4470,7 @@ struct DesktopWorkStatusStyle {
                 label: "Paused",
                 sentence: "You stopped this. It can be resumed.",
                 symbol: "pause.circle",
-                tint: .secondary
+                tint: Color.junoMutedForeground
             )
         case .completed:
             DesktopWorkStatusStyle(
@@ -4599,7 +4491,7 @@ struct DesktopWorkStatusStyle {
                 label: "Cancelled",
                 sentence: "This was cancelled before it finished.",
                 symbol: "slash.circle",
-                tint: .secondary
+                tint: Color.junoMutedForeground
             )
         case .interrupted:
             DesktopWorkStatusStyle(
@@ -4737,19 +4629,19 @@ enum DesktopWorkLog {
         let title: String
         let state: StepState
 
-        var symbol: String {
+        var icon: JunoIcon {
             switch state {
-            case .pending: "circle.dashed"
-            case .active: "circle.dotted"
-            case .done: "checkmark.circle"
-            case .skipped: "minus.circle"
-            case .failed: "xmark.circle"
+            case .pending: .circleDot
+            case .active: .loader
+            case .done: .check
+            case .skipped: .minus
+            case .failed: .close
             }
         }
 
         var tint: Color {
             switch state {
-            case .pending, .skipped: .secondary
+            case .pending, .skipped: Color.junoMutedForeground
             case .active: Color.junoAccent
             case .done: Color.junoSuccess
             case .failed: Color.junoDanger
@@ -5088,7 +4980,7 @@ enum DesktopWorkLog {
         let id: Int
         let title: String
         let detail: String?
-        let symbol: String
+        let icon: JunoIcon
         let tone: Tone
         /// When it happened.
         ///
@@ -5108,8 +5000,8 @@ enum DesktopWorkLog {
 
         var tint: Color {
             switch tone {
-            case .quiet: .secondary
-            case .normal: .primary
+            case .quiet: Color.junoMutedForeground
+            case .normal: Color.junoForeground
             case .warning: Color.junoCaution
             case .bad: Color.junoDanger
             case .good: Color.junoSuccess
@@ -5124,6 +5016,61 @@ enum DesktopWorkLog {
         visible(events)
             .filter { !renderedElsewhere.contains($0.1) }
             .map { describe($0.0, $0.1) }
+    }
+
+    // MARK: Work between turns
+
+    /// A stretch of activity between two things somebody said — what the
+    /// conversation folds into one "Worked for…" line.
+    struct WorkGroup: Identifiable, Equatable, Sendable {
+        let id: Int
+        let entries: [Entry]
+        /// The turn this work led up to, or nil for work after the last turn —
+        /// the run still going, or a run that ended without a closing word.
+        let beforeTurnID: String?
+
+        var duration: TimeInterval {
+            guard let first = entries.first, let last = entries.last else { return 0 }
+            return max(0, last.at.timeIntervalSince(first.at))
+        }
+
+        /// "Worked for 4m" — or "Worked" when everything happened in one second.
+        var title: String {
+            let seconds = Int(duration.rounded())
+            if seconds < 1 { return "Worked" }
+            if seconds < 60 { return "Worked for \(seconds)s" }
+            let minutes = seconds / 60
+            if minutes < 60 { return "Worked for \(minutes)m" }
+            let hours = minutes / 60
+            let rest = minutes % 60
+            return rest == 0 ? "Worked for \(hours)h" : "Worked for \(hours)h \(rest)m"
+        }
+    }
+
+    /// The kinds that become a turn in the conversation, and therefore break a
+    /// group. Mirrors ``turns(in:)`` — a kind added there is added here.
+    private static let turnKinds: Set<JunoWorkEventKind> = [
+        .assistantMessage, .questionAsked, .questionAnswered, .userMessage,
+    ]
+
+    static func workGroups(in events: [WorkEvent]) -> [WorkGroup] {
+        var groups: [WorkGroup] = []
+        var pending: [Entry] = []
+        for (event, kind) in visible(events) {
+            if turnKinds.contains(kind) {
+                if !pending.isEmpty {
+                    groups.append(WorkGroup(id: pending[0].id, entries: pending, beforeTurnID: "\(event.id)"))
+                    pending = []
+                }
+                continue
+            }
+            guard !renderedElsewhere.contains(kind) else { continue }
+            pending.append(describe(event, kind))
+        }
+        if !pending.isEmpty {
+            groups.append(WorkGroup(id: pending[0].id, entries: pending, beforeTurnID: nil))
+        }
+        return groups
     }
 
     /// One event as a sentence a person can read.
@@ -5149,31 +5096,31 @@ enum DesktopWorkLog {
                 string(payload, "target").map {
                     DesktopWorkVocabulary.target($0, hostName: nil)
                 },
-                "play.circle", .quiet
+                .play, .quiet
             )
         case .planCreated:
-            return entry(event, "Wrote a plan", nil, "sparkles", .quiet)
+            return entry(event, "Wrote a plan", nil, .models, .quiet)
         case .planUpdated:
-            return entry(event, "Revised the plan", string(payload, "reason"), "sparkles", .quiet)
+            return entry(event, "Revised the plan", string(payload, "reason"), .models, .quiet)
         case .stepStarted:
             return entry(
                 event, string(payload, "title", "label") ?? "Started a step", nil,
-                "play.circle", .normal
+                .play, .normal
             )
         case .stepFinished:
             return entry(
                 event, string(payload, "title", "label") ?? "Finished a step",
-                string(payload, "summary"), "checkmark", .quiet
+                string(payload, "summary"), .check, .quiet
             )
         case .assistantMessage:
             return entry(
                 event, string(payload, "text", "message") ?? "Said something", nil,
-                "text.bubble", .normal
+                .message, .normal
             )
         case .toolStarted:
             return entry(
                 event, string(payload, "summary") ?? describeTool(string(payload, "tool", "name")),
-                string(payload, "target", "detail"), "wrench.and.screwdriver", .normal
+                string(payload, "target", "detail"), .tools, .normal
             )
         case .toolFinished:
             // Past tense here, present tense on `toolStarted`. One vocabulary
@@ -5183,22 +5130,22 @@ enum DesktopWorkLog {
                 event,
                 string(payload, "summary")
                     ?? DesktopWorkVocabulary.toolPast(string(payload, "tool", "name")),
-                string(payload, "result", "detail"), "checkmark", .quiet
+                string(payload, "result", "detail"), .check, .quiet
             )
         case .toolDenied:
             return entry(
                 event,
                 "Refused: \(DesktopWorkVocabulary.action(string(payload, "tool", "name")))",
-                string(payload, "reason", "explanation"), "hand.raised", .warning
+                string(payload, "reason", "explanation"), .permission, .warning
             )
         case .questionAsked:
             return entry(
                 event, string(payload, "question", "text") ?? "Asked you a question", nil,
-                "questionmark.bubble", .warning
+                .message, .warning
             )
         case .questionAnswered:
             return entry(
-                event, "You answered", string(payload, "text", "answer"), "text.bubble", .quiet
+                event, "You answered", string(payload, "text", "answer"), .message, .quiet
             )
         // Said without being asked, which is why it does not read as an answer.
         // The payload keeps `question_answered`'s field names so a row written
@@ -5206,13 +5153,13 @@ enum DesktopWorkLog {
         // through the same accessor.
         case .userMessage:
             return entry(
-                event, "You added an instruction", string(payload, "text"), "text.bubble", .quiet
+                event, "You added an instruction", string(payload, "text"), .message, .quiet
             )
         case .approvalRequested:
             return entry(
                 event, string(payload, "summary") ?? "Asked for approval",
                 string(payload, "action").map(DesktopWorkVocabulary.action),
-                "shield.lefthalf.filled", .warning
+                .shield, .warning
             )
         case .approvalResolved:
             return entry(
@@ -5221,29 +5168,29 @@ enum DesktopWorkLog {
                     ? "You refused an action" : "You allowed an action",
                 string(payload, "summary")
                     ?? string(payload, "action").map(DesktopWorkVocabulary.action),
-                "shield.lefthalf.filled", .quiet
+                .shield, .quiet
             )
         case .artifactCreated:
             return entry(
                 event, "Created \(string(payload, "title") ?? "a file")",
-                artifactKindPhrase(payload), "doc.badge.plus", .good
+                artifactKindPhrase(payload), .file, .good
             )
         case .artifactUpdated:
             return entry(
                 event, "Updated \(string(payload, "title") ?? "a file")",
-                artifactKindPhrase(payload), "doc", .quiet
+                artifactKindPhrase(payload), .file, .quiet
             )
         case .sourceCited:
             return entry(
                 event, string(payload, "title", "url") ?? "Cited a source",
-                string(payload, "url"), "link", .quiet
+                string(payload, "url"), .link, .quiet
             )
         case .filesChanged:
             let changed = count(payload, "files") ?? count(payload, "count")
             return entry(
                 event,
                 changed.map(fileCount) ?? "Changed files",
-                string(payload, "summary"), "doc", .normal
+                string(payload, "summary"), .file, .normal
             )
         case .batchPreview:
             let size = count(payload, "items") ?? count(payload, "count")
@@ -5251,59 +5198,59 @@ enum DesktopWorkLog {
                 event,
                 size.map { "Prepared \(changeCount($0)) for review" }
                     ?? "Prepared a batch of changes",
-                string(payload, "summary"), "list.bullet.rectangle", .normal
+                string(payload, "summary"), .list, .normal
             )
         case .batchApplied:
             let size = count(payload, "items") ?? count(payload, "count")
             return entry(
                 event,
                 size.map { "Applied \(changeCount($0))" } ?? "Applied a batch of changes",
-                string(payload, "summary"), "checkmark", .good
+                string(payload, "summary"), .check, .good
             )
         case .batchUndone:
             let size = count(payload, "reversedCount") ?? count(payload, "count")
             return entry(
                 event,
                 size.map { "Undid \(changeCount($0))" } ?? "Undid a batch of changes",
-                string(payload, "summary"), "arrow.uturn.backward", .quiet
+                string(payload, "summary"), .arrowLeft, .quiet
             )
         case .subagentUpdate:
             // Never the bare `agentId`. An identifier in the title slot is the
             // one row in the log that is unreadable to the person it is for.
             return entry(
                 event, string(payload, "title") ?? "A sub-agent reported in",
-                string(payload, "status", "summary"), "sparkles", .quiet
+                string(payload, "status", "summary"), .models, .quiet
             )
         case .degraded:
             return entry(
                 event, "Ran with less than you asked for", string(payload, "explanation"),
-                "exclamationmark.triangle", .warning
+                .error, .warning
             )
         case .budgetWarning:
             return entry(
                 event, "Approaching a limit", string(payload, "detail", "explanation"),
-                "gauge.with.dots.needle.67percent", .warning
+                .usage, .warning
             )
         case .hostDisconnected:
             return entry(
                 event, "\(string(payload, "hostName") ?? "The Mac") disconnected",
-                string(payload, "detail"), "laptopcomputer.slash", .warning
+                string(payload, "detail"), .device, .warning
             )
         case .hostReconnected:
             return entry(
                 event, "\(string(payload, "hostName") ?? "The Mac") reconnected", nil,
-                "laptopcomputer", .good
+                .device, .good
             )
         case .paused:
-            return entry(event, "Paused", string(payload, "reason"), "pause.circle", .quiet)
+            return entry(event, "Paused", string(payload, "reason"), .pause, .quiet)
         case .resumed:
-            return entry(event, "Resumed", nil, "play.circle", .quiet)
+            return entry(event, "Resumed", nil, .play, .quiet)
         case .validationResult:
             let passed = payload["ok"]?.boolValue != false
             return entry(
                 event, passed ? "Checked its own work" : "A check did not pass",
                 string(payload, "detail", "summary"),
-                passed ? "checkmark.seal" : "exclamationmark.triangle",
+                passed ? .check : .error,
                 passed ? .quiet : .warning
             )
         case .runFinished:
@@ -5316,12 +5263,12 @@ enum DesktopWorkLog {
             return entry(
                 event, because.map { "Finished because \($0)" } ?? "Finished",
                 string(payload, "detail", "summary"),
-                "flag.checkered", reason == "completed" ? .good : .warning
+                .check, reason == "completed" ? .good : .warning
             )
         case .error:
             return entry(
                 event, "Something went wrong", string(payload, "message", "detail"),
-                "exclamationmark.triangle", .bad
+                .error, .bad
             )
         }
     }
@@ -5330,11 +5277,11 @@ enum DesktopWorkLog {
         _ event: WorkEvent,
         _ title: String,
         _ detail: String?,
-        _ symbol: String,
+        _ icon: JunoIcon,
         _ tone: Entry.Tone
     ) -> Entry {
         Entry(
-            id: event.seq, title: title, detail: detail, symbol: symbol, tone: tone,
+            id: event.seq, title: title, detail: detail, icon: icon, tone: tone,
             at: event.createdAt
         )
     }

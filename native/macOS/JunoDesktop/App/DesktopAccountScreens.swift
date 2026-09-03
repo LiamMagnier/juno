@@ -16,8 +16,20 @@ struct DesktopDestinationView: View {
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
     @Binding var requestedProjectID: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        // One identity per destination, so a change of page is a real
+        // view-hierarchy transition — the web's cross-fade + 6pt rise — rather
+        // than the old page's subviews being reused under the new one.
+        page
+            .id(destination)
+            .transition(.junoPage)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: destination)
+    }
+
+    @ViewBuilder
+    private var page: some View {
         switch destination {
         case .chat:
             DesktopConversationView(
@@ -172,11 +184,7 @@ struct DesktopDestinationView: View {
     }
 
     private func unavailable(_ title: String, _ description: String) -> some View {
-        ContentUnavailableView(
-            title,
-            systemImage: "exclamationmark.triangle",
-            description: Text(description)
-        )
+        JunoEmptyState(title: title, message: description, icon: .triangleAlert)
     }
 }
 
@@ -270,12 +278,7 @@ struct DesktopMemoryScreen: View {
             // page inside it.
             if let back {
                 Button(action: back) {
-                    JunoIconView(systemImage: "chevron.left")
-                        // Scaled with body text, not frozen at 13pt: the glyph
-                        // sits beside the page heading and should grow with the
-                        // page under Dynamic Type. The 24pt frame is the hit
-                        // target, not the glyph, and stays fixed.
-                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
+                    JunoIconView(.arrowLeft, size: 16)
                         .frame(width: 24, height: 24)
                         .contentShape(.rect)
                 }
@@ -362,7 +365,7 @@ struct DesktopMemoryScreen: View {
                         // stop using one, and it reads as a contradiction unless
                         // it is marked.
                         if memory.kind == .suppression {
-                            JunoIconView(systemImage: "hand.raised")
+                            JunoIconView(.hand, size: 14)
                                 .junoSecondaryInk()
                                 .help("Juno has been told never to remember this")
                                 .accessibilityLabel("Never remember")
@@ -550,7 +553,7 @@ struct DesktopMemoryScreen: View {
         }
 
         if let exportError {
-            JunoIconLabel(verbatim: exportError, systemImage: "exclamationmark.circle")
+            Label(verbatim: exportError, icon: .error)
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
                 .fixedSize(horizontal: false, vertical: true)

@@ -95,7 +95,7 @@ struct DesktopSearchScreen: View {
             JunoEmptyState(
                 title: "Nothing to match yet",
                 message: "“\(model.query)” has no letters or numbers in it. Add a word to search for.",
-                symbol: "character.cursor.ibeam"
+                icon: .textCursor
             )
             .accessibilityIdentifier("juno.desktop.search-untokenizable")
         case .failed:
@@ -103,7 +103,7 @@ struct DesktopSearchScreen: View {
                 title: "Search unavailable",
                 message: model.lastErrorDescription
                     ?? "The encrypted account store could not be read on this Mac.",
-                symbol: "exclamationmark.triangle",
+                icon: .triangleAlert,
                 actionLabel: "Try Again",
                 action: { model.setQuery(model.query, debounced: false) }
             )
@@ -142,7 +142,7 @@ struct DesktopSearchScreen: View {
             JunoEmptyState(
                 title: "No \(scope.title.lowercased()) match",
                 message: "“\(model.query)” matches \(elsewhere) \(elsewhere == 1 ? "item" : "items") of other kinds.",
-                symbol: "line.3.horizontal.decrease.circle",
+                icon: .filter,
                 actionLabel: "Search Everything",
                 action: { scope = .everything }
             )
@@ -267,7 +267,7 @@ struct DesktopSearchScreen: View {
         if !researchActivity.isEmpty {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(systemImage: "binoculars")
+                    JunoIconView(.binoculars)
                         .junoSecondaryInk()
                     // The phase is the server's own account of where it is, never
                     // a guess one step ahead of the events — a label that runs
@@ -294,7 +294,7 @@ struct DesktopSearchScreen: View {
                 // Only the first — the rest of a warning burst says the same
                 // thing in different words and would bury the strip.
                 if let warning = run.warnings.first {
-                    JunoIconLabel(verbatim: warning, systemImage: "exclamationmark.triangle")
+                    Label(verbatim: warning, icon: .triangleAlert)
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
                         .lineLimit(2)

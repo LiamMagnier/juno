@@ -2,6 +2,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoCore
+import JunoDesignSystem
 import JunoSync
 import SwiftUI
 
@@ -156,6 +157,20 @@ public struct NativeUsageSurfaceTotals: Identifiable, Equatable, Sendable {
         case "video": "film"
         case "voice": "waveform"
         default: "circle.dashed"
+        }
+    }
+
+    /// The website's mark for this surface — the same `app-icons.ts` glyphs
+    /// the rail draws, so a usage row and the destination it names match.
+    public var icon: JunoIcon {
+        switch surface {
+        case "chat": .conversation
+        case "code": .code
+        case "task": .tasks
+        case "image": .image
+        case "video": .image
+        case "voice": .mic
+        default: .circleDashed
         }
     }
 }

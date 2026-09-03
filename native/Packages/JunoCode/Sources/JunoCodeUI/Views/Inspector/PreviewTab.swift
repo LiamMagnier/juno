@@ -12,7 +12,7 @@ struct PreviewTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: "rectangle.on.rectangle", size: 16)
+                JunoIconView(.appWindow, size: 16)
                     .junoSecondaryInk()
                     .frame(width: 28, height: 28)
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -54,7 +54,7 @@ struct PreviewTab: View {
                 JunoEmptyState(
                     title: "No workspace",
                     message: "Open a local Code session to preview its project.",
-                    symbol: "folder.badge.questionmark"
+                    icon: .projects
                 )
             }
 

@@ -91,7 +91,7 @@ public struct MermaidDiagramView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            JunoAIcssBlockHeader(icon: kind.symbolName, label: kind.label) {
+            JunoAIcssBlockHeader(icon: kind.icon, label: kind.label) {
                 controls
             }
             content
@@ -113,7 +113,7 @@ public struct MermaidDiagramView: View {
                 Button {
                     resetToken += 1
                 } label: {
-                    JunoIconView(systemImage: "arrow.counterclockwise")
+                    JunoIconView(.rotateCcw)
                         .junoFont(size: 12, relativeTo: .footnote)
                         .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 22, height: 22)
@@ -131,7 +131,7 @@ public struct MermaidDiagramView: View {
                     didCopy = false
                 }
             } label: {
-                JunoIconView(systemImage: didCopy ? "checkmark" : "doc.on.doc")
+                JunoIconView(didCopy ? .check : .copy)
                     .junoFont(size: 12, relativeTo: .footnote)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 22, height: 22)
@@ -224,21 +224,20 @@ public struct MermaidDiagramView: View {
 }
 
 extension JunoMermaidDiagramKind {
-    /// The SF Symbol for the block header. Chosen for what the diagram *is*, so
-    /// a reader skimming a long answer can find the sequence diagram without
-    /// reading the labels.
-    var symbolName: String {
+    /// The website's mark for the block header. Chosen for what the diagram
+    /// *is*, so a reader skimming a long answer can find the sequence diagram
+    /// without reading the labels.
+    var icon: JunoIcon {
         switch self {
-        case .flowchart, .stateDiagram, .requirement: "point.topleft.down.to.point.bottomright.curvepath"
-        case .sequence: "arrow.left.arrow.right"
-        case .classDiagram, .entityRelationship: "rectangle.3.group"
-        case .userJourney, .timeline: "timeline.selection"
-        case .gantt: "chart.bar.xaxis"
-        case .pie: "chart.pie"
-        case .quadrant: "square.grid.2x2"
-        case .gitGraph: "arrow.triangle.branch"
-        case .mindmap: "circle.hexagongrid"
-        case .unknown: "scribble.variable"
+        case .flowchart, .stateDiagram, .requirement: .workflow
+        case .sequence: .arrowLeftRight
+        case .classDiagram, .entityRelationship: .blocks
+        case .userJourney, .timeline, .gantt: .chartGantt
+        case .pie: .chartPie
+        case .quadrant: .grid
+        case .gitGraph: .branch
+        case .mindmap: .waypoints
+        case .unknown: .penTool
         }
     }
 }

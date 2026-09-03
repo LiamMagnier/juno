@@ -2,6 +2,7 @@
 
 JUNO_DISPLAY_NAME = Juno
 PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.debug
+JUNO_MOBILE_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.debug
 IPHONEOS_DEPLOYMENT_TARGET = 18.0
 SDKROOT = iphoneos
 SUPPORTED_PLATFORMS = iphoneos iphonesimulator

@@ -1,46 +1,43 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
-/// The website's model selector as one native control: provider rail ·
-/// searchable catalog · model spec sheet.
+/// The website's model picker as one native control: provider rail · searchable
+/// list · spec sheet (`src/components/chat/model-selector.tsx`).
 ///
 /// One implementation, driven by ``JunoModelDescriptor``, so Chat and Code
-/// cannot drift. It used to live in the app target, which meant Juno Code — a
-/// package that cannot import the app — was stuck with a plain `Menu` listing
-/// display names.
+/// cannot drift. The geometry is fixed on purpose — AppKit cannot safely
+/// negotiate an unconstrained popover whose detail column changes with hover —
+/// and it is the web's: a 56pt rail of flat 36pt tiles, rows 56pt tall, a
+/// 300pt spec sheet.
 ///
-/// The fixed size is intentional. AppKit cannot safely negotiate an
-/// unconstrained popover whose detail column changes with hover; the resulting
-/// intrinsic-size feedback can keep the window's constraints dirty forever.
+/// **What a row is.** A provider mark on a small bordered tile, the name, one
+/// line of description, the price glyph right-aligned in mono. Selection is a
+/// coral hairline over the accent fill; the keyboard cursor and the pointer lay
+/// a flat wash. Nothing sparkles, nothing shows an icon per capability — those
+/// are words on the spec sheet's inset well.
 ///
-/// **What a row is.** A name, the price glyph right-aligned in mono, one line
-/// of description. That is all. The rows used to carry a row of capability
-/// glyphs under the description — a brain, an eye, a globe, a wrench — and
-/// the review read that as "a row of spark icons" under every model, which is
-/// what a row of eight-point symbols is once there are sixty of them. The
-/// capabilities are still on the spec sheet, as words. Selection is stated by
-/// the row rising — the Soft UI tile with a coral hairline — and hover by a
-/// flat accent wash; nothing else in a row changes.
+/// **What is deliberately not here.** No "Recently used" block: the list is
+/// the answer, and a second copy of three rows above it padded the catalog
+/// with duplicates. No thinking slider: effort is the composer's own chip, and
+/// a slider inside the picker was a second control for the same value.
 public struct JunoModelSelector: View {
     private let models: [JunoModelDescriptor]
     private let selectedModelID: String
     private let metrics: JunoModelSelectorMetrics
     private let select: (JunoModelDescriptor) -> Void
 
-    // One read for all three switches. The selector draws its fills and
-    // hairlines by hand — a hover fill, a pane tint over the popover's
-    // material — and the system substitutions (opaque backers under Reduce
-    // Transparency, stronger borders under Increase Contrast) cannot reach a
-    // hand-drawn `opacity(…)`, so the fills below consult the preferences
-    // themselves.
     @Environment(\.junoAccessibility) private var accessibility
 
     @State private var query = ""
     @State private var providerID: String?
-    @State private var previewModelID: String?
+    /// The keyboard cursor and the spec sheet's subject: whichever row the
+    /// pointer or the arrow keys last landed on.
+    @State private var cursorID: String?
     @State private var expandedLegacy: Set<String> = []
-    /// The reader's last few choices, newest first. Persisted so the "Recently
-    /// used" section is the same across Chat, Code and Work — it is one reader
-    /// choosing models, not three products remembering separately.
+    /// Still recorded on select, so the web's "recent" ordering elsewhere stays
+    /// in step; no longer drawn as a section. See the type note above.
     @AppStorage(JunoModelRecents.key) private var recentsRaw = ""
 
     public init(
@@ -61,103 +58,81 @@ public struct JunoModelSelector: View {
             Divider()
             modelCatalog
             Divider()
-            modelDetail
+            specSheet
         }
         .frame(width: metrics.width, height: metrics.height)
+        .clipped()
         // The one place in the design system that clamps Dynamic Type, and the
-        // clamp is a consequence of the fixed frame above rather than a
-        // preference about type size. AppKit cannot safely negotiate an
-        // unconstrained popover whose detail column changes with hover, so this
-        // control's size is not negotiable; at AX5 the three columns inside it
-        // would each need roughly twice the width they have and the catalog
-        // would truncate every model name to two words. `.accessibility1` is
-        // the largest step where all three columns still read.
+        // clamp is a consequence of the fixed frame: at AX5 the three columns
+        // would each need roughly twice the width they have.
         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-        // No opaque fill. Letting the presentation's own material through is
-        // what makes the picker read as floating over the window rather than as
-        // a second window pasted on top of it. The panes inside still carry
-        // their own faint tints, and those are *tints* — they modulate what
-        // shows through instead of replacing it.
         .onAppear {
-            if previewModelID == nil {
-                previewModelID = selectedModelID
-            }
+            if cursorID == nil { cursorID = selectedModelID }
         }
         .accessibilityIdentifier("juno.model-selector")
     }
 
     // MARK: Rail
 
+    /// 56pt of flat 36pt tiles: "All" first, a short rule, then one per
+    /// provider. The selected tile carries a coral hairline; nothing is tinted
+    /// because the mark is the colour.
     private var providerRail: some View {
         ScrollView {
-            LazyVStack(spacing: JunoSpace.snug) {
-                providerButton(id: nil, name: "All models", count: models.count)
+            VStack(spacing: JunoSpace.snug) {
+                railTile(id: nil, name: "All providers", count: models.count) {
+                    JunoIconView(.grid, size: 16)
+                }
 
                 Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(width: 24, height: 1)
+                    .fill(Color.junoBorder)
+                    .frame(width: 20, height: 1)
                     .padding(.vertical, 2)
 
                 ForEach(providers, id: \.id) { provider in
-                    providerButton(
-                        id: provider.id,
-                        name: provider.shortName,
-                        count: provider.count
-                    )
+                    railTile(id: provider.id, name: provider.name, count: provider.count) {
+                        JunoProviderMark(providerID: provider.id, providerName: provider.name, size: 18)
+                    }
                 }
             }
-            .padding(.vertical, JunoSpace.cozy)
+            .padding(.vertical, 10)
+            .frame(width: metrics.railWidth)
         }
         .scrollIndicators(.hidden)
         .frame(width: metrics.railWidth)
-        .background(Color.junoForeground.opacity(0.025))
+        .background(Color.junoSidebar)
     }
 
-    /// A 36pt tile with the provider's mark. Selected is the raised tile with
-    /// a coral hairline; nothing is tinted, because the mark is the colour.
-    private func providerButton(
+    private func railTile<Mark: View>(
         id: String?,
         name: String,
-        count: Int
+        count: Int,
+        @ViewBuilder mark: () -> Mark
     ) -> some View {
         let active = providerID == id
         return Button {
-            // The rail's filter change is a content swap in the catalog
-            // column beside it, so it is spatial travel and collapses to a flat
-            // cross-fade under Reduce Motion.
             withAnimation(JunoMotion.reduced(JunoMotion.fast, when: accessibility.reduceMotion)) {
                 providerID = id
+                cursorID = nil
             }
         } label: {
-            Group {
-                if let id {
-                    JunoProviderMark(providerID: id, providerName: name, size: 20)
-                } else {
-                    JunoIconView(systemImage: "square.grid.2x2")
-                        .junoFont(size: 14, relativeTo: .body, weight: .medium)
-                        .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
-                }
-            }
-            .frame(width: 36, height: 36)
-            .background {
-                if active {
+            mark()
+                .foregroundStyle(active ? Color.junoForeground : Color.junoMutedForeground)
+                .frame(width: 36, height: 36)
+                .background(
                     RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .fill(Color.junoSurface)
-                        .shadow(
-                            color: Color.junoCardShadow,
-                            radius: JunoElevation.cardBlur,
-                            y: JunoElevation.cardOffsetY
+                        .fill(active ? Color.junoSurface : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .strokeBorder(
+                            active ? Color.junoAccent.opacity(0.7) : Color.clear,
+                            lineWidth: 1
                         )
-                }
-            }
-            .overlay {
-                if active {
-                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .strokeBorder(Color.junoAccent, lineWidth: 1)
-                }
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(.rect)
+                )
+                // The tile draws at 36; the target is the full 44 around it.
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.junoPress)
         .help("\(name) · \(count)")
@@ -171,7 +146,11 @@ public struct JunoModelSelector: View {
     private var modelCatalog: some View {
         VStack(spacing: 0) {
             JunoModelSearchField(query: $query)
-                .padding(JunoSpace.cozy)
+                .padding(JunoSpace.snug)
+                .onKeyPress(.downArrow) { moveCursor(by: 1); return .handled }
+                .onKeyPress(.upArrow) { moveCursor(by: -1); return .handled }
+                .onKeyPress(.return) { commitCursor() ? .handled : .ignored }
+                .onChange(of: query) { _, _ in cursorID = nil }
 
             Divider()
 
@@ -179,209 +158,221 @@ public struct JunoModelSelector: View {
                 ContentUnavailableView.search(text: query)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
-                        if !recentModels.isEmpty {
-                            recentSection
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                            ForEach(sections) { section in
+                                sectionView(section)
+                            }
                         }
-                        ForEach(sections) { section in
-                            sectionView(section)
-                        }
+                        .padding(JunoSpace.snug)
                     }
-                    .padding(JunoSpace.cozy)
+                    .scrollIndicators(.automatic)
+                    .onChange(of: cursorID) { _, id in
+                        guard let id else { return }
+                        proxy.scrollTo(id, anchor: nil)
+                    }
                 }
-                .scrollIndicators(.automatic)
             }
         }
         .frame(width: metrics.catalogWidth)
     }
 
+    /// The web's `GroupLabel`: a mono label in secondary ink.
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .junoFont(size: 11.5, relativeTo: .caption, weight: .semibold)
+            .junoFont(size: 11, relativeTo: .caption2, weight: .medium, design: .monospaced)
             .junoSecondaryInk()
-            .padding(.horizontal, 3)
-    }
-
-    /// The reader's last few choices, first. Absent while searching — a search
-    /// is a question about the whole catalog — and narrowed by the rail like
-    /// everything else, so "Recently used" under the Anthropic tile lists only
-    /// Anthropic models.
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            sectionHeader("Recently used")
-            ForEach(recentModels) { model in
-                modelRow(model)
-            }
-        }
-        .accessibilityIdentifier("juno.model-selector.recent")
+            .padding(.horizontal, 10)
+            .padding(.top, JunoSpace.hairline)
+            .padding(.bottom, 2)
     }
 
     private func sectionView(_ section: CatalogSection) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            sectionHeader(section.modality.sectionTitle)
+        VStack(alignment: .leading, spacing: 2) {
+            sectionHeader(section.modality.groupTitle)
 
             ForEach(section.current) { model in
                 modelRow(model)
             }
 
             if !section.legacy.isEmpty {
-                DisclosureGroup(
-                    isExpanded: legacyExpansion(section.id)
-                ) {
-                    VStack(spacing: JunoSpace.snug) {
+                DisclosureGroup(isExpanded: legacyExpansion(section.id)) {
+                    VStack(spacing: 2) {
                         ForEach(section.legacy) { model in
                             modelRow(model)
                         }
                     }
-                    .padding(.top, JunoSpace.snug)
+                    .padding(.top, 2)
                 } label: {
-                    Text("Older models · \(section.legacy.count)")
-                        .junoFont(size: 11.5, relativeTo: .footnote, weight: .medium)
+                    Text("Past models · \(section.legacy.count)")
+                        .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
                         .junoSecondaryInk()
                 }
                 .tint(.secondary)
-                .padding(JunoSpace.snug)
-                .background {
-                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                        .fill(Color.junoForeground.opacity(0.025))
-                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, JunoSpace.tight)
             }
         }
     }
 
+    /// One 56pt row. Rest: nothing. Cursor/pointer: a flat wash. Selected: the
+    /// accent fill with a coral hairline. The border is always drawn
+    /// (transparent at rest) so selection moves nothing.
     private func modelRow(_ model: JunoModelDescriptor) -> some View {
         let unavailable = model.unavailabilityReason
         let selected = model.id == selectedModelID
-        let hovered = model.id == previewModelID && !selected
+        let cursor = model.id == cursorID && !selected
 
         return Button {
-            // An unavailable row is still readable — clicking it moves the spec
-            // sheet so the reader can see *why*, instead of doing nothing.
             guard unavailable == nil else {
-                previewModelID = model.id
+                cursorID = model.id
                 return
             }
             recentsRaw = JunoModelRecents.recording(model.id, in: recentsRaw)
             select(model)
         } label: {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            HStack(spacing: 10) {
                 JunoProviderMark(
                     providerID: model.providerID,
                     providerName: model.providerName,
-                    size: 14
+                    size: 16
                 )
-                // A mark is an image and has no baseline; without a guide it
-                // hangs a few points under the name beside it.
-                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                        .fill(Color.junoMuted.opacity(0.7))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                        .strokeBorder(Color.junoBorder.opacity(0.6), lineWidth: 1)
+                )
 
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                         Text(model.displayName)
-                            .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                            .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
                             .junoInk()
                             .lineLimit(1)
-                        if model.choosesThinkingAutomatically {
-                            JunoModelTag("Smart", accent: true)
-                        }
                         Spacer(minLength: JunoSpace.hairline)
-                        if let cost = model.costGlyph {
-                            Text(cost)
-                                .junoFont(size: 10.5, relativeTo: .caption, design: .monospaced)
-                                .junoMetaInk()
-                        }
+                        Text(unavailable != nil ? "Unavailable" : (model.costGlyph ?? ""))
+                            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                            .junoSecondaryInk()
+                            .monospacedDigit()
                     }
-
                     Text(unavailable ?? model.summary ?? "\(model.shortProviderName) model")
-                        .junoFont(size: 11.5, relativeTo: .footnote)
+                        .junoFont(size: 12, relativeTo: .caption)
                         .foregroundStyle(
                             unavailable == nil ? Color.junoMutedForeground : Color.junoCaution
                         )
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
+
+                if selected {
+                    JunoIconView(.check, size: 14)
+                        .foregroundStyle(Color.junoAccent)
+                }
             }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug)
-            .background {
-                // Selected: the raised tile. Hover: a flat accent wash. Rest:
-                // nothing — the rows sit directly on the popover's material,
-                // and only the one the reader chose is lifted off it.
+            .padding(.horizontal, 10)
+            .frame(height: 56)
+            .background(
                 RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(
                         selected
-                            ? Color.junoSurface
-                            : (hovered ? Color.junoAccent.opacity(0.09) : Color.clear)
+                            ? Color.junoMuted
+                            : (cursor ? Color.junoRowHover : Color.clear)
                     )
-                    .shadow(
-                        color: selected ? Color.junoCardShadow : Color.clear,
-                        radius: JunoElevation.cardBlur,
-                        y: JunoElevation.cardOffsetY
-                    )
-            }
-            .overlay {
-                // The coral hairline is the selection. Under Increase Contrast
-                // the resting rows also take a border, one treatment for
-                // strengthened borders across the package.
+            )
+            .overlay(
                 RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(
                         selected
-                            ? Color.junoAccent
+                            ? Color.junoAccent.opacity(0.7)
                             : (accessibility.increaseContrast
                                 ? Color.junoForeground.opacity(0.4)
                                 : Color.clear),
                         lineWidth: 1
                     )
-            }
+            )
             .contentShape(.rect)
-            .opacity(unavailable == nil ? 1 : 0.62)
+            .opacity(unavailable == nil ? 1 : 0.6)
         }
         .buttonStyle(.junoPress)
+        .id(model.id)
         .onHover { hovering in
-            if hovering {
-                previewModelID = model.id
-            }
+            if hovering { cursorID = model.id }
         }
         .accessibilityLabel(
-            [
-                model.displayName,
-                model.providerName,
-                selected ? "selected" : nil,
-                unavailable,
-            ]
-            .compactMap { $0 }
-            .joined(separator: ", ")
+            [model.displayName, model.providerName, selected ? "selected" : nil, unavailable]
+                .compactMap { $0 }
+                .joined(separator: ", ")
         )
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    // MARK: Detail
+    // MARK: Spec sheet
 
-    private var modelDetail: some View {
-        ScrollView {
+    private var specSheet: some View {
+        Group {
             if let previewModel {
-                JunoModelSpecSheet(model: previewModel)
-                    .padding(JunoSpace.regular)
-            } else {
-                ContentUnavailableView(
-                    "Choose a model",
-                    systemImage: "cpu",
-                    description: Text(
-                        "Hover a model to compare its capabilities, context, speed, and cost."
-                    )
+                JunoModelSelectorSpecSheet(
+                    model: previewModel,
+                    isSelected: previewModel.id == selectedModelID,
+                    use: {
+                        recentsRaw = JunoModelRecents.recording(previewModel.id, in: recentsRaw)
+                        select(previewModel)
+                    }
                 )
-                .padding(JunoSpace.regular)
+            } else {
+                Text("Hover or arrow through the list to compare models.")
+                    .junoFont(size: 12, relativeTo: .caption)
+                    .junoSecondaryInk()
+                    .multilineTextAlignment(.center)
+                    .padding(JunoSpace.roomy)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(width: metrics.detailWidth)
-        // Light enough that the material carries through — except under
-        // Reduce Transparency, where "the material carries through" is exactly
-        // what the user has asked to stop: the system makes the popover's
-        // backing opaque, and this hand-drawn tint goes full-alpha with it.
         .background(
             accessibility.usesOpaqueTransientSurfaces
                 ? Color.junoSurface
-                : Color.junoSurface.opacity(0.5)
+                : Color.junoSurface.opacity(0.6)
         )
+    }
+
+    // MARK: Keyboard
+
+    /// Every id in display order — what ↑/↓ walk.
+    private var order: [String] {
+        var ids: [String] = []
+        for section in sections {
+            ids.append(contentsOf: section.current.map(\.id))
+            if isSearching || expandedLegacy.contains(section.id) {
+                ids.append(contentsOf: section.legacy.map(\.id))
+            }
+        }
+        return ids
+    }
+
+    private func moveCursor(by offset: Int) {
+        let ids = order
+        guard !ids.isEmpty else { return }
+        let at = cursorID.flatMap { ids.firstIndex(of: $0) } ?? (offset > 0 ? -1 : ids.count)
+        let next = ((at + offset) % ids.count + ids.count) % ids.count
+        cursorID = ids[next]
+    }
+
+    /// Enter picks the cursor row, or the first row when nothing has been
+    /// walked to yet. False when there is nothing to pick.
+    private func commitCursor() -> Bool {
+        let id = cursorID ?? order.first
+        guard let id, let model = models.first(where: { $0.id == id }),
+              model.unavailabilityReason == nil
+        else { return false }
+        recentsRaw = JunoModelRecents.recording(model.id, in: recentsRaw)
+        select(model)
+        return true
     }
 
     // MARK: Data
@@ -390,11 +381,7 @@ public struct JunoModelSelector: View {
         Binding(
             get: { isSearching || expandedLegacy.contains(id) },
             set: { expanded in
-                if expanded {
-                    expandedLegacy.insert(id)
-                } else {
-                    expandedLegacy.remove(id)
-                }
+                if expanded { expandedLegacy.insert(id) } else { expandedLegacy.remove(id) }
             }
         )
     }
@@ -402,20 +389,9 @@ public struct JunoModelSelector: View {
     private var filteredModels: [JunoModelDescriptor] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return models.filter { model in
-            if let providerID, model.providerID != providerID {
-                return false
-            }
+            if let providerID, model.providerID != providerID { return false }
             return model.matches(needle)
         }
-    }
-
-    private var recentModels: [JunoModelDescriptor] {
-        guard !isSearching else { return [] }
-        let visible = Dictionary(
-            filteredModels.map { ($0.id, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return JunoModelRecents.ids(in: recentsRaw).compactMap { visible[$0] }
     }
 
     private var sections: [CatalogSection] {
@@ -430,34 +406,26 @@ public struct JunoModelSelector: View {
         }
     }
 
-    private var providers:
-        [(id: String, name: String, shortName: String, count: Int)]
-    {
+    private var providers: [(id: String, name: String, count: Int)] {
         var order: [String] = []
         var names: [String: String] = [:]
-        var shortNames: [String: String] = [:]
         var counts: [String: Int] = [:]
         for model in models {
             if counts[model.providerID] == nil {
                 order.append(model.providerID)
-                names[model.providerID] = model.providerName
-                shortNames[model.providerID] = model.shortProviderName
+                names[model.providerID] = model.shortProviderName
             }
             counts[model.providerID, default: 0] += 1
         }
-        return order.map { id in
-            (
-                id,
-                names[id] ?? id,
-                shortNames[id] ?? id,
-                counts[id] ?? 0
-            )
-        }
+        return order.map { (id: $0, name: names[$0] ?? $0, count: counts[$0] ?? 0) }
     }
 
+    /// The sheet's subject: the cursor row, else the selection, else the first
+    /// visible row — the web's `hoveredModel`.
     private var previewModel: JunoModelDescriptor? {
-        guard let previewModelID else { return nil }
-        return models.first { $0.id == previewModelID }
+        if let cursorID, let model = models.first(where: { $0.id == cursorID }) { return model }
+        if let model = models.first(where: { $0.id == selectedModelID }) { return model }
+        return filteredModels.first
     }
 
     private var isSearching: Bool {
@@ -468,23 +436,175 @@ public struct JunoModelSelector: View {
         let modality: JunoModelModality
         let current: [JunoModelDescriptor]
         let legacy: [JunoModelDescriptor]
-
         var id: String { modality.rawValue }
     }
 }
 
-/// The "Recently used" list, as the string `@AppStorage` keeps it.
+private extension JunoModelModality {
+    /// The web's `MODALITY_GROUPS` labels.
+    var groupTitle: String {
+        switch self {
+        case .chat: "Chat & reasoning"
+        case .image: "Image generation"
+        case .video: "Video generation"
+        }
+    }
+}
+
+/// The picker's spec sheet — the web's `ModelDetailPanel`: eyebrow, name,
+/// description, the capabilities as mono tags on an inset well, a two-column
+/// mono table, and one button. No slider, no bars, no icons.
+struct JunoModelSelectorSpecSheet: View {
+    let model: JunoModelDescriptor
+    let isSelected: Bool
+    let use: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        HStack(spacing: JunoSpace.tight) {
+                            JunoProviderMark(
+                                providerID: model.providerID,
+                                providerName: model.providerName,
+                                size: 14
+                            )
+                            Text(model.shortProviderName)
+                                .junoFont(size: 11, relativeTo: .caption2, weight: .medium, design: .monospaced)
+                                .junoSecondaryInk()
+                        }
+                        Text(model.displayName)
+                            .junoFont(size: 18, relativeTo: .title3, weight: .semibold)
+                            .junoInk()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let retires = model.retiresOn.flatMap(JunoModelFormatting.retirementDate) {
+                        Text("Available until \(retires)")
+                            .junoFont(size: 12, relativeTo: .caption)
+                            .foregroundStyle(Color.junoCaution)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, JunoSpace.tight)
+                            .background(
+                                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                    .fill(Color.junoCaution.opacity(0.1))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                    .strokeBorder(Color.junoCaution.opacity(0.4), lineWidth: 1)
+                            )
+                    }
+
+                    Text(model.summary ?? "Capable foundation model.")
+                        .junoFont(size: 13, relativeTo: .subheadline)
+                        .lineSpacing(3)
+                        .junoSecondaryInk()
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !tags.isEmpty {
+                        JunoChipFlow(spacing: 6, lineSpacing: 6) {
+                            ForEach(tags, id: \.self) { tag in
+                                JunoModelTag(tag)
+                            }
+                        }
+                        .padding(JunoSpace.snug)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                .fill(Color.junoCanvas)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                                .strokeBorder(Color.junoHairline, lineWidth: 1)
+                        )
+                    }
+
+                    VStack(spacing: 0) {
+                        Divider()
+                        ForEach(Array(specRows.enumerated()), id: \.offset) { index, row in
+                            if index > 0 { Divider() }
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(row.label)
+                                    .junoSecondaryInk()
+                                Spacer(minLength: JunoSpace.snug)
+                                Text(row.value)
+                                    .junoInk()
+                                    .multilineTextAlignment(.trailing)
+                            }
+                            .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
+                            .monospacedDigit()
+                            .padding(.vertical, JunoSpace.tight)
+                        }
+                    }
+
+                    if let reason = model.unavailabilityReason {
+                        Text(reason)
+                            .junoFont(size: 12, relativeTo: .caption)
+                            .foregroundStyle(Color.junoCaution)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(JunoSpace.regular)
+            }
+
+            Divider()
+
+            Button(action: use) {
+                Text(isSelected ? "Selected" : "Use this model")
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .junoProminentAction()
+            .controlSize(.regular)
+            .disabled(isSelected || model.unavailabilityReason != nil)
+            .padding(JunoSpace.cozy)
+            .accessibilityIdentifier("juno.model-selector.use")
+        }
+    }
+
+    /// The web's `capabilityTags`: words, in the order the site lists them.
+    private var tags: [String] {
+        var tags: [String] = []
+        if model.modality == .image { tags.append("Image") }
+        if model.modality == .video { tags.append("Video") }
+        for capability in model.capabilities {
+            tags.append(capability == .reasoning ? "Thinking" : capability.label)
+        }
+        if let speed = model.speedGrade, speed >= 8 { tags.append("Fast") }
+        if model.choosesThinkingAutomatically { tags.append("Auto") }
+        return tags
+    }
+
+    private var specRows: [(label: String, value: String)] {
+        var rows: [(String, String)] = []
+        if let context = model.contextWindowTokens {
+            rows.append(("Context", JunoModelFormatting.contextWindow(context)))
+        }
+        if let speed = model.speedGrade { rows.append(("Speed", "\(speed)/10")) }
+        if let intelligence = model.intelligenceGrade {
+            rows.append(("Intelligence", "\(intelligence)/10"))
+        }
+        if let price = model.priceDetail {
+            rows.append(("Cost / MTok", price))
+        } else if let glyph = model.costGlyph {
+            rows.append(("Cost", glyph))
+        }
+        rows.append(("Thinking", model.thinking.summary))
+        if let released = model.released { rows.append(("Released", released)) }
+        return rows.map { (label: $0.0, value: $0.1) }
+    }
+}
+
+/// The "Recently used" record, as the string `@AppStorage` keeps it.
 ///
-/// Pure functions over a comma-joined string, so the selector's storage stays
-/// a one-line `@AppStorage` and the ordering rule is testable without a
-/// `UserDefaults` in the test. Model ids never contain commas — they are
-/// `provider/model` slugs — which is what makes the join safe.
+/// Still written on every pick so the ordering the web keeps under
+/// `juno:models:recent` has a native counterpart, and still testable without a
+/// `UserDefaults` — but no longer drawn as a section of the picker.
 public enum JunoModelRecents {
     /// The `UserDefaults` key. Shared by every product's selector on purpose.
     public static let key = "juno.model-selector.recent"
-    /// How many are kept. Four is a hand's worth: enough to hold the two or
-    /// three a reader actually alternates between, few enough that the section
-    /// never becomes a second catalog.
     public static let limit = 4
 
     public static func ids(in raw: String) -> [String] {
@@ -499,11 +619,7 @@ public enum JunoModelRecents {
     }
 }
 
-/// The selector's fixed geometry.
-///
-/// Named numbers rather than literals scattered through the view, because a
-/// popover over a split view has to declare a size and this is the one place
-/// that decision is made. `standard` is the size Chat shipped with.
+/// The selector's fixed geometry — the web's 880×560, clamped to the window.
 public struct JunoModelSelectorMetrics: Equatable, Sendable {
     public let railWidth: CGFloat
     public let catalogWidth: CGFloat
@@ -525,19 +641,43 @@ public struct JunoModelSelectorMetrics: Equatable, Sendable {
     /// Rail + catalog + detail + the two dividers between them.
     public var width: CGFloat { railWidth + catalogWidth + detailWidth + 2 }
 
+    /// 56 · 522 · 300, 560 tall: the website's picker.
     public static let standard = JunoModelSelectorMetrics(
-        railWidth: 62,
-        catalogWidth: 410,
-        detailWidth: 286,
-        height: 520
+        railWidth: 56,
+        catalogWidth: 522,
+        detailWidth: 300,
+        height: 560
     )
+
+    /// These metrics, shrunk to fit inside a window of `size` with a gutter.
+    /// The rail and the spec sheet keep their widths; the catalog and the
+    /// height give.
+    public func clamped(to size: CGSize?, gutter: CGFloat = 48) -> JunoModelSelectorMetrics {
+        guard let size else { return self }
+        let maxWidth = max(railWidth + detailWidth + 240, size.width - gutter)
+        let maxHeight = max(360, size.height - gutter)
+        let catalog = min(catalogWidth, maxWidth - railWidth - detailWidth - 2)
+        return JunoModelSelectorMetrics(
+            railWidth: railWidth,
+            catalogWidth: catalog,
+            detailWidth: detailWidth,
+            height: min(height, maxHeight)
+        )
+    }
+
+    /// ``standard`` clamped to the key window, so the popover is never clipped.
+    @MainActor
+    public static var fitted: JunoModelSelectorMetrics {
+        #if canImport(AppKit)
+        return standard.clamped(to: NSApp?.keyWindow?.contentView?.bounds.size)
+        #else
+        return standard
+        #endif
+    }
 }
 
-/// The composer control that opens the selector.
-///
-/// Ships with the selector so both products get the same trigger — the
-/// provider mark, the model's name and a chevron, nothing else — and so the
-/// popover's explicit frame can never be forgotten at a call site.
+/// The composer control that opens the selector: the provider mark, the
+/// model's name and one chevron — the web's chip, nothing else.
 public struct JunoModelSelectorButton: View {
     private let models: [JunoModelDescriptor]
     @Binding private var selectedModelID: String
@@ -545,7 +685,9 @@ public struct JunoModelSelectorButton: View {
     private let placeholder: String
     private let accessibilityID: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var presented = false
+    @State private var hovered = false
 
     public init(
         models: [JunoModelDescriptor],
@@ -566,11 +708,11 @@ public struct JunoModelSelectorButton: View {
     }
 
     private var label: String {
-        selected?.displayName
-            ?? (selectedModelID.isEmpty ? placeholder : selectedModelID)
+        selected?.displayName ?? (selectedModelID.isEmpty ? placeholder : selectedModelID)
     }
 
     public var body: some View {
+        let lit = hovered || presented
         Button {
             presented = true
         } label: {
@@ -581,64 +723,66 @@ public struct JunoModelSelectorButton: View {
                     size: 14
                 )
                 Text(label)
-                    .font(.caption)
-                    .junoSecondaryInk()
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                JunoIconView(systemImage: "chevron.down", size: 9)
-                    .junoSecondaryInk()
+                JunoIconView(.chevronDown, size: 12)
+                    .opacity(0.6)
+                    .rotationEffect(.degrees(presented ? 180 : 0))
             }
+            .foregroundStyle(lit ? Color.junoForeground : Color.junoForeground.opacity(0.8))
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(lit ? Color.junoRowHover : Color.clear)
+            )
             .contentShape(.rect)
         }
         .buttonStyle(.junoPress)
         .fixedSize()
+        .onHover { hovered = $0 }
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint), value: lit)
         .disabled(models.isEmpty)
         .help("The model this conversation's next turn runs on")
         .accessibilityLabel("Model")
         .accessibilityValue(label)
         .accessibilityIdentifier(accessibilityID)
-        // Dismissed with its anchor, always.
-        //
-        // A `.popover` whose anchor leaves the view hierarchy while it is still
-        // presented makes SwiftUI's `PopoverBridge` re-run `updatePresentations`
-        // and call `showRelativeToRect:` against a window that is already being
-        // ordered — `addChildWindow:` → `_doOrderWindow:` → an uncaught
-        // `NSRemoteView` exception, and the process takes SIGTRAP. It is easy to
-        // hit: open this popover, then click a different sidebar row, which tears
-        // down the composer that owns the anchor.
-        //
-        // Resetting on disappear guarantees the presentation is torn down with
-        // the anchor rather than after it.
+        // Dismissed with its anchor, always: a `.popover` whose anchor leaves
+        // the hierarchy while presented takes the process down with an
+        // `NSRemoteView` exception.
         .onDisappear { presented = false }
         .popover(
             isPresented: $presented,
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
-            // Explicit frame, twice over: the selector sizes itself and the
-            // popover is told the same numbers. A self-sizing popover over a
-            // split view has crashed this app before.
+            let fitted = metrics.clamped(to: windowSize)
             JunoModelSelector(
                 models: models,
                 selectedModelID: selectedModelID,
-                metrics: metrics,
+                metrics: fitted,
                 select: { model in
                     selectedModelID = model.id
                     presented = false
                 }
             )
-            .frame(width: metrics.width, height: metrics.height)
+            .frame(width: fitted.width, height: fitted.height)
         }
+    }
+
+    private var windowSize: CGSize? {
+        #if canImport(AppKit)
+        NSApp?.keyWindow?.contentView?.bounds.size
+        #else
+        nil
+        #endif
     }
 }
 
 /// The catalog's search field: an inset well, focused on appear, because a
 /// popover that opens with 60 models in it is a search box first and a list
 /// second.
-///
-/// A well rather than glass. The field sits *on* the popover's material, and
-/// glass on glass flattens both; the Soft UI inset — the secondary fill with an
-/// inner hairline — is what a text field looks like on a raised surface.
 struct JunoModelSearchField: View {
     @Binding var query: String
     @FocusState private var focused: Bool
@@ -646,11 +790,11 @@ struct JunoModelSearchField: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "magnifyingglass")
-                .junoFont(size: 12, relativeTo: .footnote)
+            JunoIconView(.search, size: 14)
                 .junoSecondaryInk()
-            TextField("Search models", text: $query)
+            TextField("Search models…", text: $query)
                 .textFieldStyle(.plain)
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .focused($focused)
                 .accessibilityIdentifier("juno.model-selector.search")
             if !query.isEmpty {
@@ -658,34 +802,32 @@ struct JunoModelSearchField: View {
                     query = ""
                     focused = true
                 } label: {
-                    JunoIconView(systemImage: "xmark.circle.fill")
+                    JunoIconView(.circleX, size: 14)
                         .junoMetaInk()
-                        .frame(minWidth: 22, minHeight: 22)
+                        .frame(minWidth: 44, minHeight: 44)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.junoPress)
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.horizontal, 10)
         .frame(height: 32)
-        .background {
+        .background(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(
-                    accessibility.usesOpaqueTransientSurfaces
-                        ? Color.junoMuted
-                        : Color.junoMuted.opacity(0.55)
-                )
-        }
-        .overlay {
+                .fill(Color.junoCanvas)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(
-                    accessibility.increaseContrast
-                        ? Color.junoForeground.opacity(0.4)
-                        : Color.junoHairline,
-                    lineWidth: accessibility.increaseContrast ? 1 : 0.5
+                    focused
+                        ? Color.junoForeground.opacity(0.6)
+                        : (accessibility.increaseContrast
+                            ? Color.junoForeground.opacity(0.4)
+                            : Color.junoBorder),
+                    lineWidth: 1
                 )
-        }
+        )
         .onAppear { focused = true }
     }
 }

@@ -478,6 +478,20 @@ public extension AnyTransition {
             removal: .opacity.animation(JunoMotion.exit)
         )
     }
+
+    /// A page or product taking the column: the web's `rise-in` — a cross-fade
+    /// with a 6pt lift on the way in, a plain fade on the way out. Under Reduce
+    /// Motion the lift is the travel that goes; the caller drops it through
+    /// ``JunoMotion/reduced(_:when:tier:)`` on the animation, and the offset
+    /// collapses into the same short cross-fade.
+    static var junoPage: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .offset(y: 6))
+                .animation(JunoMotion.riseIn),
+            removal: .opacity.animation(JunoMotion.exit)
+        )
+    }
 }
 
 // MARK: - Accessibility

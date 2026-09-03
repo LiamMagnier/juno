@@ -225,7 +225,7 @@ public struct ReviewLayoutPicker: View {
     public var body: some View {
         Picker("Diff layout", selection: $review.layout) {
             ForEach(ReviewModel.Layout.allCases) { layout in
-                JunoIconView(systemImage: layout.systemImage)
+                JunoIconView(layout.icon)
                     .accessibilityLabel(layout.label)
                     .tag(layout)
             }

@@ -36,6 +36,9 @@ struct DesktopSidebarFooter: View {
     let plan: DesktopUsagePlan?
     let openUsage: () -> Void
     let openSettings: () -> Void
+    /// Signs the account out, from the account menu. Optional so the two
+    /// columns that have no auth model in reach simply omit the row.
+    var signOut: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,7 +51,9 @@ struct DesktopSidebarFooter: View {
                 session: session,
                 avatarModel: avatarModel,
                 syncModel: syncModel,
-                open: openSettings
+                openSettings: openSettings,
+                openUsage: openUsage,
+                signOut: signOut
             )
         }
         .padding(JunoSpace.snug)
@@ -57,18 +62,33 @@ struct DesktopSidebarFooter: View {
 
 // MARK: - Account
 
-/// Who is signed in, whether this Mac's work has reached them, and the way to
-/// Settings.
+/// Who is signed in, and the account menu: Settings, Plan & billing, Sign out.
+///
+/// The website's `UserMenu`, which is what this row is: one press opens a
+/// short menu rather than jumping straight into Settings, so the two other
+/// things a person does from their name — check the plan, leave — are one
+/// click away too. No chevron on the row; the menu is the affordance, and a
+/// disclosure glyph after every chip is the web's own note on what made the
+/// Mac app read as an experiment.
 struct DesktopSidebarAccountRow: View {
     let session: NativeAuthenticatedSession
     let avatarModel: NativeAvatarModel?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    let open: () -> Void
+    let openSettings: () -> Void
+    let openUsage: () -> Void
+    var signOut: (() -> Void)? = nil
 
     @State private var isHovering = false
+    @State private var isPresented = false
 
     var body: some View {
-        Button(action: open) {
+        // A `Button` and a popover, not a `Menu`. On macOS a `Menu` becomes an
+        // `NSPopUpButton`, which keeps only the *title* of a custom label — the
+        // avatar, the name and the address collapsed to the initials. The
+        // web's `UserMenu` is a popover anyway.
+        Button {
+            isPresented.toggle()
+        } label: {
             HStack(spacing: JunoSpace.cozy) {
                 JunoAvatar(
                     imageData: avatarModel?.imageData,
@@ -78,16 +98,15 @@ struct DesktopSidebarAccountRow: View {
                 )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.profile.name ?? "Juno account")
-                        .font(.callout)
+                        .junoRowLabel()
+                        .junoInk()
                         .lineLimit(1)
                     Text(session.profile.email)
-                        .font(.caption)
-                        .junoSecondaryInk()
+                        .junoCaption()
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.hairline)
-                JunoIconView(.chevronRight, size: 11)
-                    .junoMetaInk()
+                DesktopSidebarSyncDot(syncModel: syncModel)
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
@@ -101,11 +120,107 @@ struct DesktopSidebarAccountRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .animation(JunoMotion.standard, value: isHovering)
+        // Dismissed with its anchor: a popover whose anchor leaves the
+        // hierarchy while presented has crashed this app before.
+        .onDisappear { isPresented = false }
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            DesktopSidebarAccountMenu(
+                session: session,
+                openSettings: { isPresented = false; openSettings() },
+                openUsage: { isPresented = false; openUsage() },
+                signOut: signOut.map { action in { isPresented = false; action() } }
+            )
+        }
         .help("Account and settings")
-        // The launch UI suite finds the window by this button. It is the chat
+        .accessibilityLabel("Account and settings")
+        // The launch UI suite finds the window by this control. It is the chat
         // column's original identifier, kept when the two footers merged so the
         // test did not have to be taught a new name for the same control.
         .accessibilityIdentifier("Account and settings")
+    }
+}
+
+/// The account menu: who, then Settings, Plan & billing, Sign out — the web's
+/// `UserMenu`, as a floating surface on the popover radius.
+private struct DesktopSidebarAccountMenu: View {
+    let session: NativeAuthenticatedSession
+    let openSettings: () -> Void
+    let openUsage: () -> Void
+    var signOut: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.profile.name ?? "Juno account")
+                    .junoRowLabel()
+                    .fontWeight(.medium)
+                    .junoInk()
+                    .lineLimit(1)
+                Text(session.profile.email)
+                    .junoCaption()
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+
+            Divider().overlay(Color.junoSeparator)
+
+            DesktopSidebarAccountMenuRow(title: "Settings…", icon: .settings, shortcut: "⌘,", action: openSettings)
+                .keyboardShortcut(",", modifiers: .command)
+                .accessibilityIdentifier("juno.desktop.account-menu.settings")
+            DesktopSidebarAccountMenuRow(title: "Plan & billing", icon: .usage, action: openUsage)
+                .accessibilityIdentifier("juno.desktop.account-menu.billing")
+
+            if let signOut {
+                Divider().overlay(Color.junoSeparator)
+                DesktopSidebarAccountMenuRow(title: "Sign out", icon: .arrowRight, tone: .destructive, action: signOut)
+                    .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
+            }
+        }
+        .frame(width: 232)
+        .junoPopoverContent(horizontal: JunoSpace.tight, vertical: JunoSpace.tight)
+        .accessibilityIdentifier("juno.desktop.account-menu")
+    }
+}
+
+private struct DesktopSidebarAccountMenuRow: View {
+    enum Tone { case normal, destructive }
+
+    let title: LocalizedStringKey
+    let icon: JunoIcon
+    var shortcut: String? = nil
+    var tone: Tone = .normal
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(icon, size: 14)
+                    .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoMutedForeground)
+                Text(title)
+                    .junoRowLabel()
+                    .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoForeground)
+                Spacer(minLength: JunoSpace.snug)
+                if let shortcut {
+                    Text(shortcut)
+                        .junoCodeSmall()
+                        .junoSecondaryInk()
+                }
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(minHeight: 28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(isHovering ? Color.junoRowHover : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(JunoMotion.fast, value: isHovering)
     }
 }
 

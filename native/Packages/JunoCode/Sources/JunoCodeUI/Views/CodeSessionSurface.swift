@@ -257,15 +257,22 @@ public struct CodeSessionCanvas: View {
             .accessibilityIdentifier("juno.code.review.pane")
     }
 
-    /// The pane's own title strip: what it is, and the way to close it.
+    /// The pane's own title strip: what it is, how big the diff is, and the
+    /// way to close it. Mirrors the thread's title bar beside it — same height,
+    /// same hairline, same quiet ink.
     private var reviewPaneHeader: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(.branch, size: 13)
+            JunoIconView(.fileDiff, size: 14)
                 .junoSecondaryInk()
             Text("Review")
-                .junoRowLabel()
+                .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                .junoInk()
             Text(PathDisplay.fileCount(controller.changes.count))
                 .junoCaption()
+            DiffStat(
+                added: controller.changes.reduce(0) { $0 + $1.linesAdded },
+                removed: controller.changes.reduce(0) { $0 + $1.linesRemoved }
+            )
             Spacer(minLength: 0)
             Button {
                 controller.review.dismiss()
@@ -284,8 +291,10 @@ public struct CodeSessionCanvas: View {
         .padding(.leading, JunoSpace.regular)
         .padding(.trailing, JunoSpace.tight)
         .frame(height: 44)
-        .background(Color.junoRaised)
-        .overlay(alignment: .bottom) { Divider().overlay(Color.junoSeparator) }
+        .background(Color.junoCanvas)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+        }
     }
 
     private var canFitSideBySide: Bool {
@@ -418,19 +427,26 @@ public struct CodeSessionInspector: View {
     private let openSources: (() -> Void)?
     private let openWorkspace: (() -> Void)?
     private let createPullRequest: (() -> Void)?
+    private let startTask: ((CodeEnvironmentChoice) -> Void)?
 
+    /// - Parameter startTask: starts the next task in this project in the
+    ///   chosen environment — the rail's "Local ▾" picker. A session's engine
+    ///   is fixed at creation, so the picker starts a new thread rather than
+    ///   migrating this one.
     public init(
         controller: SessionController,
         openPreview: (() -> Void)? = nil,
         openSources: (() -> Void)? = nil,
         openWorkspace: (() -> Void)? = nil,
-        createPullRequest: (() -> Void)? = nil
+        createPullRequest: (() -> Void)? = nil,
+        startTask: ((CodeEnvironmentChoice) -> Void)? = nil
     ) {
         self.controller = controller
         self.openPreview = openPreview
         self.openSources = openSources
         self.openWorkspace = openWorkspace
         self.createPullRequest = createPullRequest
+        self.startTask = startTask
     }
 
     public var body: some View {
@@ -439,7 +455,8 @@ public struct CodeSessionInspector: View {
             openPreview: openPreview,
             openSources: openSources,
             openWorkspace: openWorkspace,
-            createPullRequest: createPullRequest
+            createPullRequest: createPullRequest,
+            startTask: startTask
         )
     }
 }

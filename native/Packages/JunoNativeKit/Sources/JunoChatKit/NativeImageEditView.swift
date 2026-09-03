@@ -121,7 +121,7 @@ public struct NativeImageEditView: View {
                 .junoFont(size: 11, relativeTo: .body, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             Button(action: close) {
-                JunoIconView(systemImage: "xmark")
+                JunoIconView(.close)
                     .junoFont(size: 11, relativeTo: .body, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 26, height: 26)
@@ -142,7 +142,7 @@ public struct NativeImageEditView: View {
             if let source {
                 imageCanvas(source)
             } else if let loadFailure {
-                unavailable(loadFailure, symbol: "photo.badge.exclamationmark")
+                unavailable(loadFailure, icon: .imageOff)
             } else {
                 ProgressView()
                     .controlSize(.small)
@@ -250,10 +250,9 @@ public struct NativeImageEditView: View {
         .allowsHitTesting(false)
     }
 
-    private func unavailable(_ message: String, symbol: String) -> some View {
+    private func unavailable(_ message: String, icon: JunoIcon) -> some View {
         VStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
-                .junoFont(size: 22, relativeTo: .body)
+            JunoIconView(icon, size: 22)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
                 .junoFont(size: 12, relativeTo: .body)
@@ -285,7 +284,7 @@ public struct NativeImageEditView: View {
             // claiming a selection the reader has not drawn yet.
             HStack(spacing: JunoSpace.snug) {
                 Button { region = nil } label: {
-                    JunoIconLabel("Whole image", systemImage: "photo")
+                    Label("Whole image", icon: .image)
                         .junoFont(size: 12, relativeTo: .body, weight: .medium)
                         .frame(maxWidth: .infinity)
                         .frame(height: 32)
@@ -298,8 +297,8 @@ public struct NativeImageEditView: View {
                 .foregroundStyle(region == nil ? Color.primary : Color.junoMutedForeground)
 
                 Label(
-                    region == nil ? "Drag on the image" : "Selected area",
-                    systemImage: "crop"
+                    verbatim: region == nil ? "Drag on the image" : "Selected area",
+                    icon: .crop
                 )
                 .junoFont(size: 12, relativeTo: .body, weight: .medium)
                 .frame(maxWidth: .infinity)
@@ -327,10 +326,10 @@ public struct NativeImageEditView: View {
 
     private var unsupportedNote: some View {
         Label(
-            editors.isEmpty
+            verbatim: editors.isEmpty
                 ? "No image model on this account can edit an existing image."
                 : "This model can't edit images. Pick one that can.",
-            systemImage: "exclamationmark.triangle"
+            icon: .triangleAlert
         )
         .junoFont(size: 12, relativeTo: .body)
         .foregroundStyle(Color.junoDanger)
@@ -339,8 +338,8 @@ public struct NativeImageEditView: View {
 
     private func guidanceNote(_ editor: NativeChatModelOption) -> some View {
         Label(
-            "\(editor.displayName) uses the selected area as guidance, so nearby detail may also change.",
-            systemImage: "info.circle"
+            verbatim: "\(editor.displayName) uses the selected area as guidance, so nearby detail may also change.",
+            icon: .about
         )
         .junoFont(size: 11, relativeTo: .body)
         .foregroundStyle(Color.junoMutedForeground)

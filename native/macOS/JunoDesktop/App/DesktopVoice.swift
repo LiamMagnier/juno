@@ -621,7 +621,7 @@ struct DesktopVoiceDock: View {
     /// thing with two severities instead of two unrelated boxes.
     private func noticeBanner(_ notice: String) -> some View {
         messageStrip(tint: Color.junoCaution) {
-            JunoIconLabel(verbatim: notice, systemImage: "exclamationmark.circle")
+            Label(verbatim: notice, icon: .error)
                 .junoFont(size: 12, relativeTo: .callout)
                 .lineSpacing(2)
                 .multilineTextAlignment(.center)
@@ -653,7 +653,7 @@ struct DesktopVoiceDock: View {
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.tight)
             .background(tint.opacity(0.07), in: shape)
-            .background(.regularMaterial, in: shape)
+            .background(Color.junoSurface, in: shape)
             .overlay(shape.strokeBorder(tint.opacity(0.3), lineWidth: 1))
             // The third neutral-black throw in this file, and the same fix: warm,
             // adaptive, from the one shadow token rather than a hand-picked alpha.
@@ -666,7 +666,7 @@ struct DesktopVoiceDock: View {
     @ViewBuilder
     private var controls: some View {
         if isRestartable {
-            control("arrow.clockwise", label: "Restart voice", tone: .prominent) {
+            control(.refresh, label: "Restart voice", tone: .prominent) {
                 saveError = nil
                 Task { await controller.start() }
             }
@@ -674,7 +674,7 @@ struct DesktopVoiceDock: View {
         } else {
             if controller.capabilities?.screenInput == true, controller.phase == .live {
                 control(
-                    controller.screenSharing ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle",
+                    controller.screenSharing ? .monitorOff : .monitor,
                     label: controller.screenSharing ? "Stop sharing screen" : "Share screen",
                     tone: controller.screenSharing ? .prominent : .quiet
                 ) {
@@ -688,7 +688,7 @@ struct DesktopVoiceDock: View {
                 .accessibilityIdentifier("juno.desktop.voice-share-screen-dock")
             }
             control(
-                controller.muted ? "mic.slash.fill" : "mic.fill",
+                controller.muted ? .micOff : .mic,
                 label: controller.muted ? "Turn microphone on" : "Turn microphone off",
                 tone: controller.muted ? .prominent : .quiet
             ) {
@@ -724,7 +724,7 @@ struct DesktopVoiceDock: View {
                         controller.switchProvider(provider)
                     } label: {
                         if provider == controller.provider {
-                            JunoIconLabel(verbatim: provider.displayName, systemImage: "checkmark")
+                            Label(verbatim: provider.displayName, icon: .check)
                         } else {
                             Text(provider.displayName)
                         }
@@ -745,15 +745,14 @@ struct DesktopVoiceDock: View {
                     }
                 } label: {
                     Label(
-                        controller.screenSharing ? "Stop sharing screen" : "Share screen",
-                        systemImage: controller.screenSharing ? "rectangle.slash" : "rectangle.on.rectangle"
+                        verbatim: controller.screenSharing ? "Stop sharing screen" : "Share screen",
+                        icon: controller.screenSharing ? .monitorOff : .monitor
                     )
                 }
                 .accessibilityIdentifier("juno.desktop.voice-share-screen")
             }
         } label: {
-            JunoIconView(systemImage: "chevron.down")
-                .junoFont(size: 13, relativeTo: .body, weight: .medium)
+            JunoIconView(.chevronDown, size: 14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     // Full alpha under Reduce Transparency: the system makes
@@ -783,8 +782,7 @@ struct DesktopVoiceDock: View {
                         .controlSize(.small)
                         .tint(.white)
                 } else {
-                    JunoIconView(systemImage: "phone.down.fill")
-                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
+                    JunoIconView(.phoneOff, size: 15)
                         .foregroundStyle(.white)
                 }
             }
@@ -808,14 +806,13 @@ struct DesktopVoiceDock: View {
     }
 
     private func control(
-        _ symbol: String,
+        _ icon: JunoIcon,
         label: String,
         tone: ControlTone,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            JunoIconView(systemImage: symbol)
-                .junoFont(size: 14, relativeTo: .body, weight: .medium)
+            JunoIconView(icon, size: 15)
                 // `Color.junoCanvas`, never the `.background` shape style: that
                 // one resolves against whatever surface the control is sitting
                 // on, and on glass it comes back translucent — a filled black

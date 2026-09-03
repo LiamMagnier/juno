@@ -63,6 +63,8 @@
     <array>
         <string>com.liammagnier.JunoMobile.code-refresh</string>
     </array>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
     <!-- Home Screen quick actions. Handled by `JunoMobileLaunchRequests`. -->
     <key>UIApplicationShortcutItems</key>
     <array>

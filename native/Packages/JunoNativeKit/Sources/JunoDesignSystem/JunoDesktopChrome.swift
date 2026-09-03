@@ -14,12 +14,13 @@ import SwiftUI
 ///    regions are vibrant on macOS. An opaque fill turns a native source list
 ///    into a grey slab, which is precisely the mistake this vocabulary exists to
 ///    make unavailable.
-/// 2. **Selection is the system's.** `List(selection:)` in `.sidebar` style
-///    already draws the focused/unfocused accent states, honours Increase
-///    Contrast and Reduce Transparency, and animates with the platform. A
-///    hand-rolled `RoundedRectangle` filled with `Color.primary.opacity(0.065)`
-///    matches none of that and drifts the moment the platform moves. Juno only
-///    supplies the *colour*, through `junoSidebarSelectionTint()`.
+/// 2. **Selection is the system's; its colour is Juno's.** `List(selection:)`
+///    in `.sidebar` style drives the selection — arrow keys, type-select, the
+///    focus ring, Increase Contrast — and nothing here replaces that. Juno
+///    supplies the colour twice, because the platform will not take it once:
+///    `junoSidebarSelectionTint()` on the list for the states the tint reaches,
+///    and `junoSidebarRowSelection(_:)` on each row for the emphasized state
+///    macOS 26 paints in the system accent regardless.
 /// 3. **Glass is for things that float.** The composer, a transient control
 ///    group, a floating preview control. Never behind a transcript, a diff, a
 ///    terminal or a file's contents.
@@ -51,7 +52,9 @@ public enum JunoSidebarMetrics {
 /// carries labelled values and short prose, not a navigable list.
 public enum JunoInspectorMetrics {
     public static let minimum: CGFloat = 260
-    public static let ideal: CGFloat = 320
+    /// 300, per the desktop spec — the Codex-class inspector rung, not a
+    /// number chosen here.
+    public static let ideal: CGFloat = 300
     public static let maximum: CGFloat = 460
 }
 
@@ -123,10 +126,43 @@ public extension View {
     /// only says what colour the fill is. A `RoundedRectangle` painted behind the
     /// row would match none of that.
     ///
+    /// **On macOS 26 the tint reaches only the unemphasized fill.** An
+    /// `NSTableView` resolves its *emphasized* selection — key window, list
+    /// holds focus — against the system accent and ignores the SwiftUI tint,
+    /// so a focused selected row came out system blue (or coral, depending on
+    /// the reader's accent setting) in every column. The tint stays because it
+    /// is the supported lever for the states it does reach; the fill the reader
+    /// actually sees comes from ``junoSidebarRowSelection(_:)`` on each row.
+    ///
     /// Pair it with ``junoSidebarRowInk()`` on the rows — see there for why the
     /// two are not one modifier.
     func junoSidebarSelectionTint() -> some View {
         tint(Color.junoSidebarSelection)
+    }
+
+    /// The selected row's fill, drawn by Juno because the platform's cannot be
+    /// recoloured in the state that matters.
+    ///
+    /// A row background is composited *above* the platform's own selection
+    /// fill — it does not replace it — so the pill here is inset less than the
+    /// system's (`JunoSpace.tight` against the row edge, where macOS 26 leaves
+    /// roughly ten points) and covers it completely in both the focused and
+    /// the unfocused state. Measured, not inferred: a pill with more inset than
+    /// the platform's frames the accent as a ring around itself, which is what
+    /// the first attempt shipped. Clear while unselected, so an unselected row
+    /// is still nothing but the vibrant column it sits on.
+    ///
+    /// The `List` keeps drawing the selection itself, so arrow keys,
+    /// type-select and the focus ring all keep working; only the colour the
+    /// reader sees is Juno's — the web's `--sidebar-accent`, in both states,
+    /// the way the web draws it. Apply this to every selectable row of a
+    /// `.sidebar` list alongside ``junoSidebarRowInk()``.
+    func junoSidebarRowSelection(_ selected: Bool) -> some View {
+        listRowBackground(
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                .fill(selected ? Color.junoSidebarSelection : Color.clear)
+                .padding(.horizontal, JunoSpace.tight)
+        )
     }
 
     /// Pins a source-list row's ink so a pale selection cannot invert it.
@@ -490,31 +526,14 @@ public struct JunoDetailPage<Content: View>: View {
 public struct JunoEmptyState: View {
     private let title: String
     private let message: String?
-    private let symbol: String
-    private let junoIcon: JunoIcon?
+    private let icon: JunoIcon
     private let actionLabel: String?
     private let perform: (() -> Void)?
 
-    public init(
-        title: String,
-        message: String? = nil,
-        symbol: String,
-        actionLabel: String? = nil,
-        action: (() -> Void)? = nil
-    ) {
-        self.title = title
-        self.message = message
-        self.symbol = symbol
-        self.junoIcon = nil
-        self.actionLabel = actionLabel
-        self.perform = action
-    }
-
-    /// The same state, drawn with one of the website's own marks.
-    ///
-    /// Use this wherever the thing that is missing has a glyph on the web — a
-    /// project, a pull request, a connection — so the empty state names it the
-    /// way every other surface does.
+    /// Drawn with one of the website's own marks — the thing that is missing
+    /// has a glyph on the web (a project, a pull request, a preview), and the
+    /// empty state names it the way every other surface does. The SF Symbol
+    /// initialiser this once had is gone: every caller names a `JunoIcon`.
     public init(
         title: String,
         message: String? = nil,
@@ -524,8 +543,7 @@ public struct JunoEmptyState: View {
     ) {
         self.title = title
         self.message = message
-        self.symbol = ""
-        self.junoIcon = icon
+        self.icon = icon
         self.actionLabel = actionLabel
         self.perform = action
     }
@@ -537,18 +555,12 @@ public struct JunoEmptyState: View {
                 Circle()
                     .fill(Color.junoRaised)
                     .frame(width: 72, height: 72)
-                if let junoIcon {
-                    JunoIconView(junoIcon, size: 28)
-                        .foregroundStyle(Color.junoMutedForeground)
-                } else {
-                    JunoIconView(systemImage: symbol)
-                        // Not scaled with Dynamic Type: this glyph is centred in
-                        // a fixed 72pt plate, so growing it at AX5 would push it
-                        // outside the circle. The empty state's *text* below
-                        // scales, which is where the reading is.
-                        .junoFont(size: 30, relativeTo: .body, weight: .regular)
-                        .foregroundStyle(Color.junoMutedForeground)
-                }
+                // Not scaled with Dynamic Type: this glyph is centred in a
+                // fixed 72pt plate, so growing it at AX5 would push it outside
+                // the circle. The empty state's *text* below scales, which is
+                // where the reading is.
+                JunoIconView(icon, size: 28)
+                    .foregroundStyle(Color.junoMutedForeground)
             }
 
             VStack(spacing: JunoSpace.snug) {

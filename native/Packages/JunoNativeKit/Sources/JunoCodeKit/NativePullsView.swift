@@ -42,7 +42,7 @@ public struct NativePullsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if case .notConnected = unavailable {
                 ContentUnavailableView {
-                    JunoIconLabel("GitHub isn’t connected", systemImage: "point.3.connected.trianglepath.dotted")
+                    JunoIconLabel("GitHub isn’t connected", icon: .connections)
                 } description: {
                     Text("Connect GitHub to see the pull requests Juno Code opens from your sessions.")
                 } actions: {
@@ -55,7 +55,7 @@ public struct NativePullsView: View {
                 }
             } else if case .failed(let message) = unavailable {
                 ContentUnavailableView {
-                    JunoIconLabel("Couldn’t load pull requests", systemImage: "exclamationmark.triangle")
+                    JunoIconLabel("Couldn’t load pull requests", icon: .triangleAlert)
                 } description: {
                     Text(message)
                 } actions: {
@@ -85,7 +85,7 @@ public struct NativePullsView: View {
                 HStack(alignment: .top, spacing: JunoSpace.cozy) {
                     // Colour AND glyph, so draft is legible without either one:
                     // an open PR is a filled arrow, a draft is a hollow one.
-                    JunoIconView(systemImage: pull.isDraft ? "arrow.trianglehead.pull" : "arrow.trianglehead.merge")
+                    JunoIconView(pull.isDraft ? .pulls : .gitMerge)
                         .junoFont(size: 14, relativeTo: .body, weight: .medium)
                         .foregroundStyle(pull.isDraft ? Color.junoMutedForeground : Color.junoSuccess)
                         .frame(width: 20)

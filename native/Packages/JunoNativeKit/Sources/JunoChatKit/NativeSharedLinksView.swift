@@ -32,11 +32,11 @@ public struct NativeSharedLinksView: View {
                 ProgressView().controlSize(.small)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if shares.isEmpty {
-                ContentUnavailableView(
-                    "No shared links",
-                    systemImage: "link",
-                    description: Text("Links you create from a conversation appear here until you revoke them.")
-                )
+                ContentUnavailableView {
+                    Label("No shared links", icon: .link, size: 28)
+                } description: {
+                    Text("Links you create from a conversation appear here until you revoke them.")
+                }
             } else {
                 List {
                     if let errorDescription {
@@ -70,7 +70,7 @@ public struct NativeSharedLinksView: View {
             Spacer(minLength: JunoSpace.snug)
 
             ShareLink(item: share.url) {
-                JunoIconView(systemImage: "square.and.arrow.up")
+                JunoIconView(.share)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.junoMutedForeground)
@@ -82,7 +82,7 @@ public struct NativeSharedLinksView: View {
                 if revoking.contains(share.id) {
                     ProgressView().controlSize(.small)
                 } else {
-                    JunoIconView(systemImage: "trash")
+                    JunoIconView(.trash)
                 }
             }
             .buttonStyle(.plain)

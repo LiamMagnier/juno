@@ -22,7 +22,7 @@ struct ChangesTab: View {
                 JunoEmptyState(
                     title: "No changes yet",
                     message: "Files Juno edits appear here, with the diff one click away.",
-                    symbol: "plusminus.circle"
+                    icon: .diff
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -114,7 +114,7 @@ struct ChangesTab: View {
 
     private var changeSummary: some View {
         HStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "arrow.triangle.2.circlepath", size: 14)
+            JunoIconView(.refresh, size: 14)
                 .junoSecondaryInk()
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(PathDisplay.fileCount(controller.changes.count)).junoRowLabel()

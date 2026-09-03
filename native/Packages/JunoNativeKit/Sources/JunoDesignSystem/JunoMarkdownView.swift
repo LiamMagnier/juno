@@ -261,7 +261,7 @@ private struct JunoMarkdownList: View {
     @ViewBuilder
     private func marker(index: Int, item: JunoMarkdownBlock.Item) -> some View {
         if let isChecked = item.isChecked {
-            JunoIconView(systemImage: isChecked ? "checkmark.square.fill" : "square")
+            JunoIconView(isChecked ? .squareCheck : .square)
                 .font(.callout)
                 .foregroundStyle(isChecked ? Color.junoAccent : Color.junoMutedForeground)
                 .accessibilityLabel(isChecked ? "Done" : "Not done")

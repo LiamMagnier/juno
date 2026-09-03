@@ -3,33 +3,71 @@ import XCTest
 
 @MainActor
 final class JunoBrandTests: XCTestCase {
-    /// The cases mirror the web's icon vocabulary one-for-one, plus the
-    /// directional/navigation marks that native needs for its own controls.
-    /// If the web adds a product mark and native does not, this is where it
-    /// surfaces.
-    func testIconSetMatchesTheWebsitesAppIcons() {
-        XCTAssertEqual(
-            Set(JunoIcon.allCases.map(\.rawValue)),
-            [
-                // AppIcons — the destinations.
-                "home", "work", "code", "library", "artifacts", "projects",
-                "tasks", "connections", "pulls", "conversation", "new", "search",
-                "settings",
-                // CodeIcons — the things Juno Code talks about.
-                "cloud", "device", "branch", "lock", "permission",
-                "pin", "error", "refresh", "external", "file",
-                // ComposerIcons — what the "+" menu adds, and the tools it arms.
-                "attach", "photos", "files", "canvas",
-                "research", "web", "artifactsTool", "memory",
-                // Settings, profile, and feature sections.
-                "usage", "appearance", "writing", "language", "models", "notifications", "about",
-                "user", "tools", "knowledge", "sliders",
-                // Action controls, media, and navigation glyphs.
-                "mic", "send", "stop", "plus", "chevronLeft", "chevronRight", "chevronDown", "chevronUp",
-                "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
-                "arrowDown", "volume", "thumbsUp", "thumbsDown", "eyeOff",
-            ]
-        )
+    /// The web's icon vocabulary (`src/lib/app-icons.ts`) is carried
+    /// one-for-one, and the native set is allowed to extend it — status marks,
+    /// list glyphs, the composer's controls — but never to drop from it. If the
+    /// web adds a product mark and native does not, this is where it surfaces.
+    func testIconSetCarriesTheWebsitesAppIcons() {
+        let web: Set<String> = [
+            // AppIcons — the destinations.
+            "home", "work", "code", "library", "artifacts", "projects",
+            "tasks", "connections", "pulls", "conversation", "new", "search",
+            "settings",
+            // CodeIcons — the things Juno Code talks about.
+            "cloud", "device", "branch", "lock", "permission",
+            "pin", "error", "refresh", "external", "file",
+            // ComposerIcons — what the "+" menu adds, and the tools it arms.
+            "attach", "photos", "files", "canvas",
+            "research", "web", "artifactsTool", "memory",
+            // Settings, profile, and feature sections.
+            "usage", "appearance", "writing", "language", "models", "notifications", "about",
+            "user", "tools", "knowledge", "sliders",
+            // Action controls, media, and navigation glyphs.
+            "mic", "send", "stop", "plus", "chevronLeft", "chevronRight", "chevronDown", "chevronUp",
+            "trash", "pencil", "copy", "check", "close", "ellipsis", "share", "terminal",
+            "arrowDown", "volume", "thumbsUp", "thumbsDown", "eyeOff",
+            // StatusIcons and the message action row.
+            "triangleAlert", "circleCheck", "circleX", "fork", "arrowUp", "quote",
+        ]
+        let native = Set(JunoIcon.allCases.map(\.rawValue))
+        XCTAssertTrue(web.isSubset(of: native), "missing: \(web.subtracting(native).sorted())")
+    }
+
+    /// Every case has a key in `scripts/generate-native-icons.mjs`, and every
+    /// key has a case. A case with no key renders as empty space with no error;
+    /// a key with no case is a dead asset.
+    func testEveryCaseHasAGeneratorKey() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // JunoDesignSystemTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // JunoNativeKit
+            .deletingLastPathComponent()  // Packages
+            .deletingLastPathComponent()  // native
+            .appendingPathComponent("scripts/generate-native-icons.mjs")
+        guard let source = try? String(contentsOf: url, encoding: .utf8) else {
+            throw XCTSkip("generator not reachable from this checkout")
+        }
+        let body = source[source.range(of: "const ICONS = {")!.upperBound...]
+        let table = body[..<body.range(of: "\n};")!.lowerBound]
+        var keys: Set<String> = []
+        for line in table.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("//"), let colon = trimmed.firstIndex(of: ":") else { continue }
+            keys.insert(String(trimmed[..<colon]))
+        }
+        let cases = Set(JunoIcon.allCases.map(\.rawValue))
+        XCTAssertEqual(cases.subtracting(keys), [], "cases with no generated asset")
+        XCTAssertEqual(keys.subtracting(cases), [], "generated assets with no case")
+    }
+
+    /// The string boundary resolves by exact name and refuses the rest — the
+    /// substring heuristic it replaces turned "speaker.wave.2" into a wrench.
+    func testSystemImageBoundaryIsExactAndFailable() {
+        XCTAssertEqual(JunoIcon(systemImage: "speaker.wave.2"), .volume)
+        XCTAssertEqual(JunoIcon(systemImage: "doc.on.doc"), .copy)
+        XCTAssertEqual(JunoIcon(systemImage: "hand.thumbsup"), .thumbsUp)
+        XCTAssertEqual(JunoIcon(systemImage: "arrow.triangle.branch"), .branch)
+        XCTAssertNil(JunoIcon(systemImage: "some.symbol.nobody.mapped"))
     }
 
     /// The marks a Code surface reaches for most, pinned by name so a rename on

@@ -48,7 +48,7 @@ public struct NativeFollowUpStrip: View {
                     ForEach(suggestions, id: \.self) { suggestion in
                         Button { onPick(suggestion) } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                JunoIconView(systemImage: "plus")
+                                JunoIconView(.plus)
                                     .junoFont(size: 11, relativeTo: .body, weight: .semibold)
                                     .foregroundStyle(Color.junoMutedForeground)
                                 Text(suggestion)

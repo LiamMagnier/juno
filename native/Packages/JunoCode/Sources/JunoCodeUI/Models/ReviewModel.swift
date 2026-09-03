@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import JunoCodeCore
+import JunoDesignSystem
 
 /// Which hunk or line a new review note is being written against.
 public struct ReviewCommentTarget: Hashable, Sendable {
@@ -49,10 +50,12 @@ public final class ReviewModel {
             }
         }
 
-        public var systemImage: String {
+        /// The website's mark for the layout: a list for unified, two
+        /// columns for side by side.
+        public var icon: JunoIcon {
             switch self {
-            case .unified: "list.bullet"
-            case .sideBySide: "rectangle.split.2x1"
+            case .unified: .list
+            case .sideBySide: .columns
             }
         }
     }

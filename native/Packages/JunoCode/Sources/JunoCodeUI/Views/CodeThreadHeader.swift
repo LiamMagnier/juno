@@ -2,110 +2,184 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The compact strip above a thread: what is running, where, and how it is
-/// going.
+/// One toggle on the thread's title bar: a rail the reader can open or close.
 ///
-/// One line of orientation and nothing else. The task's title, the project and
-/// branch it is in, its status, how long it has been running, how full the
-/// model's context is, and the way to stop it — the facts the audit found
-/// scattered across a title strip, a goal strip, the transcript's provenance
-/// rows and the inspector's header. The toolbar owns actions; this owns
-/// orientation.
+/// The window owns the state — whether the review pane or the context rail is
+/// up is scene state, not session state — so the header takes the value and
+/// the action and draws a pressed glyph.
+public struct CodeThreadRailToggle: Identifiable {
+    public let id: String
+    public let icon: JunoIcon
+    public let label: String
+    public let help: String
+    public let isOn: Bool
+    public let isEnabled: Bool
+    public let toggle: () -> Void
+
+    public init(
+        id: String,
+        icon: JunoIcon,
+        label: String,
+        help: String,
+        isOn: Bool,
+        isEnabled: Bool = true,
+        toggle: @escaping () -> Void
+    ) {
+        self.id = id
+        self.icon = icon
+        self.label = label
+        self.help = help
+        self.isOn = isOn
+        self.isEnabled = isEnabled
+        self.toggle = toggle
+    }
+}
+
+/// What a thread's title bar states: the title, where it runs, how it is
+/// going. Values rather than a controller so the cloud and relay canvases
+/// draw the same strip from their own records.
+public struct CodeThreadContext: Equatable, Sendable {
+    public var title: String
+    public var project: String?
+    public var branch: String?
+    public var environment: String?
+    public var status: CodeRunStatus?
+    public var startedAt: Date?
+    public var contextTokens: Int?
+    public var contextWindowTokens: Int?
+
+    public init(
+        title: String,
+        project: String? = nil,
+        branch: String? = nil,
+        environment: String? = nil,
+        status: CodeRunStatus? = nil,
+        startedAt: Date? = nil,
+        contextTokens: Int? = nil,
+        contextWindowTokens: Int? = nil
+    ) {
+        self.title = title
+        self.project = project
+        self.branch = branch
+        self.environment = environment
+        self.status = status
+        self.startedAt = startedAt
+        self.contextTokens = contextTokens
+        self.contextWindowTokens = contextWindowTokens
+    }
+}
+
+/// The thread's title bar: which project, which thread, and the rails beside
+/// it.
+///
+/// Left to right: the project's folder mark, the thread's title, and an
+/// ellipsis menu of the thread's own actions; then, quietly, the run's status
+/// and elapsed time and how full the context is; then Share and the rail
+/// toggles on the right. The toolbar above owns window-level actions; this
+/// strip owns the thread.
 ///
 /// It takes values rather than a controller so the cloud and relay canvases,
 /// which have no `SessionController`, draw the same strip from their own
 /// records.
-public struct CodeThreadHeader: View {
-    public struct Context: Equatable, Sendable {
-        public var title: String
-        public var project: String?
-        public var branch: String?
-        public var environment: String?
-        public var status: CodeRunStatus?
-        public var startedAt: Date?
-        public var contextTokens: Int?
-        public var contextWindowTokens: Int?
-
-        public init(
-            title: String,
-            project: String? = nil,
-            branch: String? = nil,
-            environment: String? = nil,
-            status: CodeRunStatus? = nil,
-            startedAt: Date? = nil,
-            contextTokens: Int? = nil,
-            contextWindowTokens: Int? = nil
-        ) {
-            self.title = title
-            self.project = project
-            self.branch = branch
-            self.environment = environment
-            self.status = status
-            self.startedAt = startedAt
-            self.contextTokens = contextTokens
-            self.contextWindowTokens = contextWindowTokens
-        }
-    }
+public struct CodeThreadHeader<ThreadMenu: View>: View {
+    /// Kept so existing call sites that spell `CodeThreadHeader.Context` keep
+    /// compiling; the type itself is ``CodeThreadContext`` so it is the same
+    /// type under every menu.
+    public typealias Context = CodeThreadContext
 
     private let context: Context
     private let stop: (() -> Void)?
+    private let share: (() -> Void)?
+    private let rails: [CodeThreadRailToggle]
+    private let menu: ThreadMenu
 
-    public init(_ context: Context, stop: (() -> Void)? = nil) {
+
+    /// - Parameters:
+    ///   - stop: stops the run; drawn only while one is in flight.
+    ///   - share: the Share action, or nil where the transport offers none.
+    ///   - rails: the panes beside the thread the reader can toggle.
+    ///   - menu: the ellipsis menu's items — rename, delete, stop, reveal.
+    public init(
+        _ context: Context,
+        stop: (() -> Void)? = nil,
+        share: (() -> Void)? = nil,
+        rails: [CodeThreadRailToggle] = [],
+        @ViewBuilder menu: () -> ThreadMenu
+    ) {
         self.context = context
         self.stop = stop
+        self.share = share
+        self.rails = rails
+        self.menu = menu()
     }
 
     /// The same strip, read live off a local session.
-    public init(controller: SessionController, stop: (() -> Void)? = nil) {
+    public init(
+        controller: SessionController,
+        stop: (() -> Void)? = nil,
+        share: (() -> Void)? = nil,
+        rails: [CodeThreadRailToggle] = [],
+        @ViewBuilder menu: () -> ThreadMenu
+    ) {
         self.init(
-            Context(
-                title: controller.session.title,
-                project: controller.workspaceDisplayName,
-                branch: controller.gitStatus?.branch ?? controller.session.gitBranch,
-                environment: controller.session.executionRootPath != nil ? "Worktree" : nil,
-                status: CodeRunStatus(
-                    controller.session.status,
-                    hasPendingApproval: !controller.pendingApprovals.isEmpty
-                ),
-                startedAt: controller.runStartedAt,
-                contextTokens: controller.contextTokens,
-                contextWindowTokens: controller.contextWindowTokens
+            Self.context(for: controller),
+            stop: stop,
+            share: share,
+            rails: rails,
+            menu: menu
+        )
+    }
+
+    static func context(for controller: SessionController) -> Context {
+        Context(
+            title: controller.session.title,
+            project: controller.workspaceDisplayName,
+            branch: controller.gitStatus?.branch ?? controller.session.gitBranch,
+            environment: controller.session.executionRootPath != nil ? "Worktree" : nil,
+            status: CodeRunStatus(
+                controller.session.status,
+                hasPendingApproval: !controller.pendingApprovals.isEmpty
             ),
-            stop: stop
+            startedAt: controller.runStartedAt,
+            contextTokens: controller.contextTokens,
+            contextWindowTokens: controller.contextWindowTokens
         )
     }
 
     private var isRunning: Bool { context.status?.isActive == true }
 
-    public var body: some View {
-        HStack(alignment: .center, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(context.title)
-                    .junoFont(size: 14, relativeTo: .subheadline, weight: .semibold)
-                    .junoInk()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .accessibilityAddTraits(.isHeader)
+    private var hasMenu: Bool { ThreadMenu.self != EmptyView.self }
 
-                if !subtitleParts.isEmpty {
-                    HStack(spacing: JunoSpace.tight) {
-                        ForEach(Array(subtitleParts.enumerated()), id: \.offset) { index, part in
-                            if index > 0 {
-                                Text("·").junoMetaInk()
-                            }
-                            HStack(spacing: JunoSpace.hairline) {
-                                JunoIconView(part.icon, size: 11)
-                                    .junoMetaInk()
-                                    .accessibilityHidden(true)
-                                Text(part.text)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
-                    }
-                    .junoFont(size: 11, relativeTo: .caption2)
-                    .junoSecondaryInk()
+    public var body: some View {
+        HStack(alignment: .center, spacing: JunoSpace.snug) {
+            JunoIconView(.folderOpen, size: 14)
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
+
+            Text(context.title)
+                .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+                .junoInk()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityAddTraits(.isHeader)
+                .help(subtitle)
+
+            if hasMenu {
+                Menu {
+                    menu
+                } label: {
+                    JunoIconView(.ellipsis, size: 14)
+                        .junoSecondaryInk()
+                        .frame(width: 24, height: 24)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Thread actions")
+                .accessibilityLabel("Thread actions")
+                .accessibilityIdentifier("juno.code.thread.menu")
             }
 
             Spacer(minLength: JunoSpace.regular)
@@ -117,7 +191,7 @@ public struct CodeThreadHeader: View {
 
             if let status = context.status {
                 HStack(spacing: JunoSpace.tight) {
-                    CodeStatusGlyph(status, size: 12)
+                    CodeStatusGlyph(status, size: 11)
                     Text(status.label)
                         .junoCaption()
                         .contentTransition(.identity)
@@ -137,22 +211,64 @@ public struct CodeThreadHeader: View {
 
             if isRunning, let stop {
                 Button(action: stop) {
-                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 13)
+                    JunoIconLabel(verbatim: "Stop", icon: .stop, size: 12)
+                        .junoCaption()
+                        .foregroundStyle(Color.junoDanger)
                         .frame(minWidth: 44, minHeight: 44)
                         .contentShape(.rect)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(Color.junoDanger)
+                .buttonStyle(.plain)
                 .keyboardShortcut(".", modifiers: .command)
                 .help("Stop the run (⌘.)")
                 .accessibilityIdentifier("juno.code.stop")
             }
+
+            if let share {
+                Button(action: share) {
+                    HStack(spacing: JunoSpace.hairline) {
+                        JunoIconView(.share, size: 13)
+                        Text("Share")
+                    }
+                    .junoCaption()
+                    .junoInk()
+                    .padding(.horizontal, JunoSpace.snug)
+                    .frame(height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                            .fill(Color.junoMuted.opacity(0.7))
+                    )
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.junoPress)
+                .help("Share this thread")
+                .accessibilityIdentifier("juno.code.thread.share")
+            }
+
+            ForEach(rails) { rail in
+                Button(action: rail.toggle) {
+                    JunoIconView(rail.icon, size: 14)
+                        .foregroundStyle(rail.isOn ? Color.junoForeground : Color.junoMutedForeground)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                                .fill(rail.isOn ? Color.junoMuted : Color.clear)
+                        )
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.junoPress)
+                .disabled(!rail.isEnabled)
+                .help(rail.help)
+                .accessibilityLabel(rail.label)
+                .accessibilityValue(rail.isOn ? "Open" : "Closed")
+                .accessibilityIdentifier("juno.code.thread.rail.\(rail.id)")
+            }
         }
-        .frame(maxWidth: JunoReadingMeasure.reading, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, JunoSpace.roomy)
-        .padding(.vertical, JunoSpace.snug)
+        .padding(.leading, JunoSpace.regular)
+        .padding(.trailing, JunoSpace.snug)
+        .frame(height: 44)
+        .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.junoHairline).frame(height: 1)
         }
@@ -160,28 +276,42 @@ public struct CodeThreadHeader: View {
         .accessibilityIdentifier("juno.code.context-strip")
     }
 
-    private struct SubtitlePart {
-        let icon: JunoIcon
-        let text: String
-    }
-
-    private var subtitleParts: [SubtitlePart] {
-        var parts: [SubtitlePart] = []
-        if let project = context.project, !project.isEmpty {
-            parts.append(SubtitlePart(icon: .projects, text: project))
-        }
+    /// "juno · main · Worktree" — the facts the title used to carry on a second
+    /// line, now the title's tooltip. The rail beside the thread states them
+    /// in full.
+    private var subtitle: String {
+        var parts: [String] = []
+        if let project = context.project, !project.isEmpty { parts.append(project) }
         if let branch = context.branch?.trimmingCharacters(in: .whitespacesAndNewlines), !branch.isEmpty {
-            parts.append(SubtitlePart(icon: .branch, text: branch))
+            parts.append(branch)
         }
-        if let environment = context.environment, !environment.isEmpty {
-            parts.append(SubtitlePart(icon: .device, text: environment))
-        }
-        return parts
+        if let environment = context.environment, !environment.isEmpty { parts.append(environment) }
+        return parts.joined(separator: " · ")
     }
 
     static func elapsed(from start: Date, to now: Date) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(start)))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+extension CodeThreadHeader where ThreadMenu == EmptyView {
+    public init(
+        _ context: Context,
+        stop: (() -> Void)? = nil,
+        share: (() -> Void)? = nil,
+        rails: [CodeThreadRailToggle] = []
+    ) {
+        self.init(context, stop: stop, share: share, rails: rails) { EmptyView() }
+    }
+
+    public init(
+        controller: SessionController,
+        stop: (() -> Void)? = nil,
+        share: (() -> Void)? = nil,
+        rails: [CodeThreadRailToggle] = []
+    ) {
+        self.init(controller: controller, stop: stop, share: share, rails: rails) { EmptyView() }
     }
 }
 

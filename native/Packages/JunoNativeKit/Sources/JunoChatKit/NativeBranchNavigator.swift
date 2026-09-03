@@ -43,7 +43,7 @@ public struct NativeBranchNavigator: View {
     public var body: some View {
         HStack(spacing: 2) {
             step(
-                systemName: "chevron.left",
+                icon: .chevronLeft,
                 label: "Previous revision",
                 offset: -1,
                 available: canGoBack
@@ -56,7 +56,7 @@ public struct NativeBranchNavigator: View {
                 // arrows sideways under the reader's finger.
                 .padding(.horizontal, 2)
             step(
-                systemName: "chevron.right",
+                icon: .chevronRight,
                 label: "Next revision",
                 offset: 1,
                 available: canGoForward
@@ -67,13 +67,13 @@ public struct NativeBranchNavigator: View {
     }
 
     private func step(
-        systemName: String,
+        icon: JunoIcon,
         label: String,
         offset: Int,
         available: Bool
     ) -> some View {
         Button { onStep(offset) } label: {
-            JunoIconView(systemImage: systemName)
+            JunoIconView(icon)
                 .junoFont(size: 10, relativeTo: .body, weight: .semibold)
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())

@@ -44,11 +44,11 @@ public struct NativeMediaGenerationView: View {
                 // and a pitch tuned for that reads as a texture at this size.
                 JunoAIcssImageCanvas(pitch: 14)
                 if isVideo {
-                    JunoIconView(systemImage: "play.fill")
+                    JunoIconView(.play)
                         .junoFont(size: 18, relativeTo: .body)
                         .foregroundStyle(Color.primary.opacity(0.42))
                         .padding(16)
-                        .background(.ultraThinMaterial, in: Circle())
+                        .background(Color.junoSurface.opacity(0.85), in: Circle())
                 }
             }
             .aspectRatio(isVideo ? 16.0 / 9.0 : 1, contentMode: .fit)

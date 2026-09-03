@@ -40,10 +40,23 @@ final class DesktopWorkbenchRegistry {
         let kind: Kind
     }
 
+    /// An errand for Juno Work, from the quick-entry panel: open Work on its
+    /// home with the sentence already in the composer.
+    ///
+    /// Its own token rather than a fourth `Request.Kind`, because the Code
+    /// window switches over the kinds exhaustively and a Work request is not
+    /// something it should ever have to name.
+    struct WorkErrand: Identifiable, Equatable {
+        let id = UUID()
+        let prompt: String?
+    }
+
     private(set) weak var workbench: WorkbenchModel?
     private(set) weak var codeModel: NativeCodeModel?
     /// The request the main window has not yet consumed.
     private(set) var pendingRequest: Request?
+    /// The Work errand the main window has not yet consumed.
+    private(set) var pendingWorkErrand: WorkErrand?
 
     func register(workbench: WorkbenchModel?, codeModel: NativeCodeModel?) {
         self.workbench = workbench
@@ -57,6 +70,15 @@ final class DesktopWorkbenchRegistry {
     func consume(_ request: Request) {
         guard pendingRequest?.id == request.id else { return }
         pendingRequest = nil
+    }
+
+    func requestWorkErrand(prompt: String?) {
+        pendingWorkErrand = WorkErrand(prompt: prompt)
+    }
+
+    func consume(_ errand: WorkErrand) {
+        guard pendingWorkErrand?.id == errand.id else { return }
+        pendingWorkErrand = nil
     }
 
     /// Every session that is still going to change on its own, across the

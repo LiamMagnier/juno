@@ -87,9 +87,9 @@ struct DesktopWorkAutomationsView: View {
                 Button {
                     beginNewAutomation()
                 } label: {
-                    JunoIconLabel("New", systemImage: "plus")
+                    JunoIconLabel("New", icon: .plus, size: 13)
                 }
-                .junoGlassButton()
+                .buttonStyle(.bordered)
                 .help("Create an automation")
                 .accessibilityIdentifier("juno.work.automations.new")
             }
@@ -105,8 +105,7 @@ struct DesktopWorkAutomationsView: View {
                     .padding(.vertical, JunoSpace.cozy)
             } else if model.schedules.isEmpty {
                 VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    JunoIconView(systemImage: "clock.badge.checkmark")
-                        .font(.title2)
+                    JunoIconView(.clock, size: 22)
                         .foregroundStyle(Color.junoAccent)
                     Text("Nothing is scheduled yet")
                         .font(.headline)
@@ -114,7 +113,8 @@ struct DesktopWorkAutomationsView: View {
                         .junoCaption()
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Create an automation", action: beginNewAutomation)
-                        .junoProminentGlassButton()
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
                         .padding(.top, JunoSpace.tight)
                 }
                 .padding(JunoSpace.regular)
@@ -142,12 +142,12 @@ struct DesktopWorkAutomationsView: View {
             Spacer(minLength: 0)
             if let error = model.lastErrorDescription, model.phase != .ready {
                 HStack(alignment: .top, spacing: JunoSpace.tight) {
-                    JunoIconView(systemImage: "wifi.exclamationmark")
+                    JunoIconView(.error, size: 13)
                     Text(error)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button("Retry") { Task { await model.refresh() } }
-                        .junoGlassButton()
+                        .buttonStyle(.bordered)
                 }
                 .font(.caption)
                 .junoSecondaryInk()
@@ -170,8 +170,7 @@ struct DesktopWorkAutomationsView: View {
             Task { await model.loadRuns(for: schedule.id) }
         } label: {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: schedule.enabled ? "clock.badge.checkmark" : "pause.circle")
-                    .font(.body.weight(.medium))
+                JunoIconView(schedule.enabled ? .clock : .pause, size: 15)
                     .foregroundStyle(schedule.enabled ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 22)
                     .padding(.top, 2)
@@ -181,8 +180,7 @@ struct DesktopWorkAutomationsView: View {
                             .font(.system(.body, design: .default, weight: .medium))
                             .lineLimit(1)
                         if schedule.hasUnknownTrigger {
-                            JunoIconView(systemImage: "sparkles")
-                                .font(.caption2)
+                            JunoIconView(.error, size: 11)
                                 .foregroundStyle(Color.junoCaution)
                                 .help("This automation contains a trigger from a newer Juno version.")
                         }
@@ -235,11 +233,7 @@ struct DesktopWorkAutomationsView: View {
             )
         } else {
             VStack(spacing: JunoSpace.snug) {
-                JunoIconView(systemImage: "clock.badge.checkmark")
-                    // Through `junoFont` rather than a frozen `.system(size:)`,
-                    // so the glyph scales with the text below it at
-                    // accessibility sizes — nothing here pins it in a plate.
-                    .junoFont(size: 34, relativeTo: .largeTitle, weight: .light)
+                JunoIconView(.clock, size: 34)
                     .foregroundStyle(Color.junoAccent)
                 Text("Choose an automation")
                     .font(.title3.weight(.semibold))
@@ -317,7 +311,7 @@ private struct DesktopWorkAutomationDetail: View {
                     header
                     if let message = model.lastMutationExplanation {
                         HStack(alignment: .top, spacing: JunoSpace.tight) {
-                            JunoIconView(systemImage: "checkmark.circle.fill")
+                            JunoIconView(.check, size: 14)
                                 .foregroundStyle(Color.junoSuccess)
                             Text(message)
                                 .junoCaption()
@@ -325,7 +319,7 @@ private struct DesktopWorkAutomationDetail: View {
                             Button {
                                 model.clearMutationMessage()
                             } label: {
-                                JunoIconView(systemImage: "xmark")
+                                JunoIconView(.close, size: 12)
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Dismiss message")
@@ -380,17 +374,18 @@ private struct DesktopWorkAutomationDetail: View {
                     Button("Edit Automation", action: onEdit)
                     Button("Delete Automation", role: .destructive, action: onDelete)
                 } label: {
-                    JunoIconView(systemImage: "ellipsis")
+                    JunoIconView(.ellipsis, size: 15)
                         .frame(width: 28, height: 28)
                 }
-                .junoGlassButton()
+                .buttonStyle(.bordered)
                 .accessibilityLabel("Automation actions")
             }
 
             HStack(spacing: JunoSpace.tight) {
                 JunoIconLabel(
                     verbatim: schedule.enabled ? "Active" : "Paused",
-                    systemImage: schedule.enabled ? "checkmark.circle" : "pause.circle"
+                    icon: schedule.enabled ? .check : .pause,
+                    size: 12
                 )
                     .foregroundStyle(schedule.enabled ? Color.junoSuccess : Color.junoMutedForeground)
                 Text("·")
@@ -409,12 +404,11 @@ private struct DesktopWorkAutomationDetail: View {
     }
 
     private var triggerSection: some View {
-        DesktopWorkAutomationSection(title: "Starts when", symbol: "bolt.badge.clock") {
+        DesktopWorkAutomationSection(title: "Starts when", icon: .work) {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 ForEach(schedule.triggers) { trigger in
                     HStack(alignment: .top, spacing: JunoSpace.snug) {
-                        JunoIconView(systemImage: trigger.enabled ? "circle.fill" : "circle")
-                            .font(.caption2)
+                        JunoIconView(.circleDot, size: 11)
                             .foregroundStyle(trigger.enabled ? Color.junoAccent : Color.junoMutedForeground)
                             .padding(.top, 4)
                         VStack(alignment: .leading, spacing: 2) {
@@ -433,7 +427,8 @@ private struct DesktopWorkAutomationDetail: View {
                 if schedule.hasUnknownTrigger {
                     JunoIconLabel(
                         "A newer Juno version added one of these triggers. It will stay intact when you edit this automation.",
-                        systemImage: "info.circle"
+                        icon: .about,
+                        size: 13
                     )
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
@@ -444,14 +439,14 @@ private struct DesktopWorkAutomationDetail: View {
     }
 
     private var contractSection: some View {
-        DesktopWorkAutomationSection(title: "Run contract", symbol: "checklist.checked") {
+        DesktopWorkAutomationSection(title: "Run contract", icon: .shield) {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: JunoSpace.regular) {
-                contractFact("Target", targetText, "arrow.triangle.branch")
-                contractFact("Safety", policyText(schedule.unattendedPolicy), "hand.raised")
-                contractFact("If the Mac is offline", policyText(schedule.hostOfflinePolicy), "desktopcomputer.trianglebadge.exclamationmark")
-                contractFact("Missed fires", policyText(schedule.missedRunPolicy), "calendar.badge.clock")
-                contractFact("Notifications", policyText(schedule.notifyPolicy), "bell")
-                contractFact("Concurrency", "Up to \(schedule.maxConcurrentRuns)", "square.stack.3d.up")
+                contractFact("Target", targetText, .device)
+                contractFact("Safety", policyText(schedule.unattendedPolicy), .permission)
+                contractFact("If the Mac is offline", policyText(schedule.hostOfflinePolicy), .connections)
+                contractFact("Missed fires", policyText(schedule.missedRunPolicy), .clock)
+                contractFact("Notifications", policyText(schedule.notifyPolicy), .bell)
+                contractFact("Concurrency", "Up to \(schedule.maxConcurrentRuns)", .archive)
             }
             if let modelName = schedule.model {
                 Divider()
@@ -475,7 +470,7 @@ private struct DesktopWorkAutomationDetail: View {
     }
 
     private var runHistory: some View {
-        DesktopWorkAutomationSection(title: "Recent runs", symbol: "arrow.triangle.2.circlepath") {
+        DesktopWorkAutomationSection(title: "Recent runs", icon: .history) {
             if runs.isEmpty {
                 Text("No runs yet. Run it once to confirm the contract and see its first result here.")
                     .junoCaption()
@@ -484,7 +479,7 @@ private struct DesktopWorkAutomationDetail: View {
                 VStack(spacing: 0) {
                     ForEach(runs) { run in
                         HStack(spacing: JunoSpace.snug) {
-                            JunoIconView(systemImage: runSymbol(run.status))
+                            JunoIconView(runIcon(run.status), size: 14)
                                 .foregroundStyle(runColor(run.status))
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 2) {
@@ -505,10 +500,10 @@ private struct DesktopWorkAutomationDetail: View {
         }
     }
 
-    private func contractFact(_ title: String, _ value: String, _ symbol: String) -> some View {
+    private func contractFact(_ title: String, _ value: String, _ icon: JunoIcon) -> some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: symbol)
-                .foregroundStyle(Color.junoAccent)
+            JunoIconView(icon, size: 14)
+                .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).junoCaption()
@@ -566,12 +561,12 @@ private struct DesktopWorkAutomationDetail: View {
         }
     }
 
-    private func runSymbol(_ raw: String) -> String {
+    private func runIcon(_ raw: String) -> JunoIcon {
         switch raw {
-        case "completed": return "checkmark.circle.fill"
-        case "failed", "cancelled": return "exclamationmark.circle.fill"
-        case "running", "preparing": return "arrow.triangle.2.circlepath"
-        default: return "clock"
+        case "completed": return .check
+        case "failed", "cancelled": return .error
+        case "running", "preparing": return .loader
+        default: return .clock
         }
     }
 
@@ -587,13 +582,14 @@ private struct DesktopWorkAutomationDetail: View {
 
 private struct DesktopWorkAutomationSection<Content: View>: View {
     let title: String
-    let symbol: String
+    let icon: JunoIcon
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            JunoIconLabel(verbatim: title, systemImage: symbol)
-                .font(.headline)
+            JunoIconLabel(verbatim: title, icon: icon, size: 14)
+                .junoTitle()
+                .junoInk()
             content()
         }
         .padding(JunoSpace.regular)
@@ -640,9 +636,10 @@ private struct DesktopWorkAutomationEditor: View {
                 }
                 Spacer()
                 Button("Cancel", action: onCancel)
-                    .junoGlassButton()
+                    .buttonStyle(.bordered)
                 Button("Save") { save() }
-                    .junoProminentGlassButton()
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
                     .disabled(!draft.isValid)
             }
             .padding(JunoSpace.region)
@@ -656,7 +653,7 @@ private struct DesktopWorkAutomationEditor: View {
                     execution
                     safety
                     if let validationMessage {
-                        JunoIconLabel(verbatim: validationMessage, systemImage: "exclamationmark.triangle")
+                        JunoIconLabel(verbatim: validationMessage, icon: .error, size: 13)
                             .foregroundStyle(Color.junoDanger)
                             .font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
@@ -712,9 +709,9 @@ private struct DesktopWorkAutomationEditor: View {
                         )
                     )
                 } label: {
-                    JunoIconLabel("Add trigger", systemImage: "plus")
+                    JunoIconLabel("Add trigger", icon: .plus, size: 13)
                 }
-                .junoGlassButton()
+                .buttonStyle(.bordered)
             }
 
             ForEach($draft.triggers) { $trigger in
@@ -758,7 +755,8 @@ private struct DesktopWorkAutomationEditor: View {
                 if reachableHosts.isEmpty {
                     JunoIconLabel(
                         "No reachable Mac is available. Turn on Work hosting in Settings or choose Cloud.",
-                        systemImage: "desktopcomputer.trianglebadge.exclamationmark"
+                        icon: .device,
+                        size: 13
                     )
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
@@ -847,7 +845,7 @@ private struct DesktopWorkTriggerEditor: View {
                 Spacer()
                 if canRemove {
                     Button(role: .destructive, action: onRemove) {
-                        JunoIconView(systemImage: "minus.circle")
+                        JunoIconView(.minus, size: 13)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove trigger")
@@ -920,7 +918,8 @@ private struct DesktopWorkTriggerEditor: View {
         default:
             JunoIconLabel(
                 "This trigger listens for an event from a connected source. Use Advanced configuration to edit its filters.",
-                systemImage: "bolt.horizontal"
+                icon: .work,
+                size: 13
             )
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)

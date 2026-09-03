@@ -47,6 +47,11 @@ struct JunoDesktopWorkspaceView: View {
     /// The text a quick-entry or menu bar request asked the new chat to open
     /// with. Consumed with the request.
     @State private var unscopedChatPrompt: String?
+    /// An errand handed to Work from the quick-entry panel, consumed once by
+    /// the Work home composer. Same token shape as the chat request, for the
+    /// same reason.
+    @State private var workErrandRequestID: UUID?
+    @State private var workErrandPrompt: String?
     @State private var registry = DesktopWorkbenchRegistry.shared
 
     var body: some View {
@@ -73,6 +78,13 @@ struct JunoDesktopWorkspaceView: View {
                     product = .code
                 }
             }
+            .onChange(of: registry.pendingWorkErrand, initial: true) { _, errand in
+                guard let errand else { return }
+                workErrandPrompt = errand.prompt
+                workErrandRequestID = UUID()
+                product = .work
+                registry.consume(errand)
+            }
     }
 
     @ViewBuilder
@@ -95,10 +107,10 @@ struct JunoDesktopWorkspaceView: View {
                     }
                 )
             } else {
-                ContentUnavailableView(
-                    "Chat unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("The encrypted conversation store could not be opened.")
+                JunoEmptyState(
+                    title: "Chat unavailable",
+                    message: "The encrypted conversation store could not be opened.",
+                    icon: .error
                 )
             }
 
@@ -122,10 +134,10 @@ struct JunoDesktopWorkspaceView: View {
                     }
                 )
             } else {
-                ContentUnavailableView(
-                    "Code unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("The authenticated Code transport could not be composed.")
+                JunoEmptyState(
+                    title: "Code unavailable",
+                    message: "The authenticated Code transport could not be composed.",
+                    icon: .error
                 )
             }
 
@@ -140,13 +152,19 @@ struct JunoDesktopWorkspaceView: View {
                     newChat: {
                         unscopedChatRequestID = UUID()
                         product = .chat
+                    },
+                    errandRequestID: workErrandRequestID,
+                    errandPrompt: workErrandPrompt,
+                    consumeErrandRequest: {
+                        workErrandRequestID = nil
+                        workErrandPrompt = nil
                     }
                 )
             } else {
-                ContentUnavailableView(
-                    "Juno Work unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("The authenticated Work transport could not be composed.")
+                JunoEmptyState(
+                    title: "Juno Work unavailable",
+                    message: "The authenticated Work transport could not be composed.",
+                    icon: .error
                 )
             }
         }

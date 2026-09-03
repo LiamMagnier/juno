@@ -35,7 +35,7 @@ public struct JunoAIcssCodeBlock: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            JunoAIcssBlockHeader(icon: "chevron.left.forwardslash.chevron.right", label: label) {
+            JunoAIcssBlockHeader(icon: .code, label: label) {
                 Button {
                     JunoPasteboard.copy(source)
                     withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { didCopy = true }
@@ -51,7 +51,7 @@ public struct JunoAIcssCodeBlock: View {
                 } label: {
                     JunoIconLabel(
                         verbatim: didCopy ? "Copied" : "Copy",
-                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
+                        icon: didCopy ? .check : .copy
                     )
                         .junoFont(size: 12, relativeTo: .footnote)
                         .labelStyle(.iconOnly)
@@ -135,7 +135,7 @@ public struct JunoAIcssDiff: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            JunoAIcssBlockHeader(icon: "arrow.left.arrow.right", label: file) {
+            JunoAIcssBlockHeader(icon: .diff, label: file) {
                 HStack(spacing: 8) {
                     Text("+\(added)").foregroundStyle(Color.junoSuccess)
                     Text("-\(removed)").foregroundStyle(Color.junoDanger)
@@ -282,14 +282,14 @@ public func junoAIcssParseUnifiedDiff(_ patch: String) -> [JunoAIcssDiffRow] {
 /// The header both blocks use: an icon, a label, and one trailing control, pulled
 /// out to the frame's edge so the rule beneath it is the card's inlay.
 struct JunoAIcssBlockHeader<Trailing: View>: View {
-    let icon: String
+    let icon: JunoIcon
     let label: String
     @ViewBuilder let trailing: Trailing
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                JunoIconView(systemImage: icon)
+                JunoIconView(icon, size: 13)
                     .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                 Text(label)

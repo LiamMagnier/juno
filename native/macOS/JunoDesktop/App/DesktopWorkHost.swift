@@ -1,6 +1,7 @@
 import Foundation
 import JunoAuth
 import JunoCore
+import JunoDesignSystem
 import JunoWorkKit
 import Observation
 
@@ -93,12 +94,13 @@ enum DesktopWorkBlocker: Equatable, Sendable, CaseIterable {
         }
     }
 
-    var symbol: String {
+    /// The website's mark for this state.
+    var icon: JunoIcon {
         switch self {
-        case .switchedOff: "laptopcomputer.slash"
-        case .signedOut: "person.crop.circle.badge.questionmark"
-        case .pairing, .starting: "laptopcomputer"
-        case .nothingAllowed: "folder.badge.questionmark"
+        case .switchedOff: .device
+        case .signedOut: .user
+        case .pairing, .starting: .device
+        case .nothingAllowed: .folderPlus
         }
     }
 }

@@ -255,17 +255,10 @@ public struct Composer: View {
                 ? "Steer Juno at the next safe point…"
                 : "Queue a follow-up for after this execution…"
         }
-        // The slash hint rides on the placeholder rather than sitting in the bar
-        // as a button. A feature addressed by typing has to be advertised where
-        // the typing happens — and the placeholder is the one piece of chrome
-        // that disappears the moment it has been read, which is exactly the
-        // lifetime a discoverability hint should have.
-        switch controller.session.configuration.behavior {
-        case .ask: return "Ask about this project…  /  for commands"
-        case .survey: return "Map the project and its risks…  /  for commands"
-        case .plan: return "Describe the change to plan…  /  for commands"
-        case .code: return "Ask Juno to build, fix, or investigate…  /  for commands"
-        }
+        // One invitation, whatever the mode. The slash and @ affordances are
+        // discovered by typing them — the menus open on the first character —
+        // and a placeholder that lists them reads as a form label.
+        return "Do anything"
     }
 
     public var body: some View {
@@ -324,57 +317,28 @@ public struct Composer: View {
         ) {
             addMenu
 
-            // Keep the add affordance visually separate from the Code contract
-            // without turning either control into a detached capsule.
-            //
-            // This is an internal control divider, not a border around the glass
-            // shell; the shell itself remains undecorated and keeps its native rim.
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(width: 1, height: 19)
-                .padding(.horizontal, 2)
-
-            // Two chips, two questions. "What should Juno do" and "what may it
-            // touch" were one fused label, and a session could read "Plan ·
-            // read-only" with no way to tell which half the reader had chosen.
-            behaviorChip
-                .disabled(isRunning)
+            // One chip for the contract: what Juno may touch, and — in the
+            // same menu — whether it answers, plans or edits. Coral only when
+            // it stops asking.
             permissionChip
                 .disabled(isRunning)
 
-            CodeModelSelector(
-                selection: Binding(
-                    get: { controller.session.configuration.modelID },
-                    set: { newID in
-                        Task { await controller.setModelID(newID) }
-                    }
-                ),
-                availableModels: availableModels,
-                accessibilityID: "juno.code.composer.model"
+            Spacer(minLength: JunoSpace.snug)
+
+            CodeModelEffortChip(
+                controller: controller,
+                availableModels: availableModels
             )
             .disabled(isRunning)
-            Spacer(minLength: JunoSpace.snug)
 
             if isRunning {
                 instructionKindMenu
-            } else {
-                voiceControl
             }
 
-            Button(action: send) {
-                JunoIconView(.send, size: CodeComposerMetrics.glyph)
-                    .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
-                    .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
-                    .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
-                    .contentShape(.circle)
-            }
-            .junoCircleAction(active: canSend)
-            .disabled(!canSend)
-            .keyboardShortcut(.return, modifiers: .command)
-            .help(sendHelp)
-            .accessibilityLabel(sendLabel)
-            .accessibilityIdentifier("juno.code.composer.send")
+            voiceControl
 
+            // Send and Stop share one slot, so the pointer never has to re-find
+            // the primary action between a turn and the run it started.
             if isRunning {
                 Button {
                     Task { await controller.stop() }
@@ -390,7 +354,22 @@ public struct Composer: View {
                 .help("Stop the agent (⌘.)")
                 .accessibilityLabel("Stop the agent")
                 .accessibilityIdentifier("juno.code.composer.stop")
+                .transition(.junoOverlay)
             }
+
+            Button(action: send) {
+                JunoIconView(.arrowUp, size: CodeComposerMetrics.glyph)
+                    .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+                    .frame(width: CodeComposerMetrics.control, height: CodeComposerMetrics.control)
+                    .frame(minWidth: CodeComposerMetrics.target, minHeight: CodeComposerMetrics.target)
+                    .contentShape(.circle)
+            }
+            .junoCircleAction(active: canSend)
+            .disabled(!canSend)
+            .keyboardShortcut(.return, modifiers: .command)
+            .help(sendHelp)
+            .accessibilityLabel(sendLabel)
+            .accessibilityIdentifier("juno.code.composer.send")
         }
     }
 
@@ -406,82 +385,70 @@ public struct Composer: View {
         return controller.activeInstructionKind == .steer ? "Steer the active task" : "Queue a follow-up"
     }
 
-    /// Ask · Survey · Plan · Code — what Juno does with the next message.
-    private var behaviorChip: some View {
-        let behavior = controller.session.configuration.behavior
-        return Menu {
-            ForEach(AgentBehavior.allCases, id: \.self) { mode in
-                Button {
-                    select(behavior: mode)
-                } label: {
-                    HStack {
-                        JunoIconLabel(verbatim: AgentBehaviorLabel.text(for: mode), icon: AgentBehaviorLabel.junoIcon(for: mode), size: 14)
-                        Spacer(minLength: JunoSpace.regular)
-                        if behavior == mode {
-                            JunoIconView(.check, size: 14).accessibilityHidden(true)
-                        }
-                    }
-                }
-            }
-            Text(AgentBehaviorLabel.explanation(for: behavior))
-        } label: {
-            ComposerChipLabel(
-                AgentBehaviorLabel.text(for: behavior),
-                icon: AgentBehaviorLabel.junoIcon(for: behavior)
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(minHeight: CodeComposerMetrics.target)
-        .help("What Juno does with your next message")
-        .accessibilityLabel("Behavior")
-        .accessibilityValue(AgentBehaviorLabel.text(for: behavior))
-        .accessibilityIdentifier("juno.code.composer.mode")
-    }
-
-    /// The permission level: Read only · Ask before changes · Workspace write ·
-    /// Full access. Ask and Plan are read-only by construction, so the chip
-    /// says so and its menu is disabled rather than hidden — the reader can see
-    /// the level they get back when they return to Code.
+    /// The contract for the next turn, as one chip: the permission level —
+    /// Read-only · Ask before changes · Workspace write · Full access — and,
+    /// in the same menu, whether Juno answers, surveys, plans or edits.
+    ///
+    /// Ask, Survey and Plan are read-only by construction, so under those the
+    /// chip reads "Plan · read-only" and the permission rows are disabled
+    /// rather than hidden — the reader can see the level they get back when
+    /// they return to Code. Coral only for full access: that is the level
+    /// where Juno stops asking, and the one worth a colour.
     private var permissionChip: some View {
         let behavior = controller.session.configuration.behavior
         let stored = controller.session.configuration.permissionMode
         let effective: PermissionMode = behavior == .code ? stored : .readOnly
         let editable = behavior == .code
+        let title = behavior == .code
+            ? PermissionModeLabel.text(for: effective)
+            : "\(AgentBehaviorLabel.text(for: behavior)) · read-only"
         return Menu {
-            ForEach(PermissionMode.allCases, id: \.self) { mode in
-                Button {
-                    select(permission: mode)
-                } label: {
-                    HStack {
-                        JunoIconLabel(verbatim: PermissionModeLabel.text(for: mode), icon: PermissionModeLabel.junoIcon(for: mode), size: 14)
-                        Spacer(minLength: JunoSpace.regular)
-                        if stored == mode {
-                            JunoIconView(.check, size: 14).accessibilityHidden(true)
+            Section("Permissions") {
+                ForEach(PermissionMode.allCases, id: \.self) { mode in
+                    Button {
+                        select(permission: mode)
+                    } label: {
+                        HStack {
+                            JunoIconLabel(verbatim: PermissionModeLabel.text(for: mode), icon: PermissionModeLabel.junoIcon(for: mode), size: 14)
+                            Spacer(minLength: JunoSpace.regular)
+                            if stored == mode {
+                                JunoIconView(.check, size: 14).accessibilityHidden(true)
+                            }
+                        }
+                    }
+                    .disabled(!editable)
+                }
+            }
+            Section("Mode") {
+                ForEach(AgentBehavior.allCases, id: \.self) { mode in
+                    Button {
+                        select(behavior: mode)
+                    } label: {
+                        HStack {
+                            JunoIconLabel(verbatim: AgentBehaviorLabel.text(for: mode), icon: AgentBehaviorLabel.junoIcon(for: mode), size: 14)
+                            Spacer(minLength: JunoSpace.regular)
+                            if behavior == mode {
+                                JunoIconView(.check, size: 14).accessibilityHidden(true)
+                            }
                         }
                     }
                 }
-                .disabled(!editable)
             }
             Text(PermissionModeLabel.explanation(for: effective))
         } label: {
             ComposerChipLabel(
-                PermissionModeLabel.text(for: effective),
+                title,
                 icon: PermissionModeLabel.junoIcon(for: effective),
-                // The one place this row spends hue: full access is the level
-                // where Juno stops asking, and that is worth a colour.
-                tint: effective == .fullAccess ? Color.junoCaution : nil
+                tint: effective == .fullAccess ? Color.junoAccent : nil
             )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(minHeight: CodeComposerMetrics.target)
-        .disabled(!editable)
-        .help(editable ? "What Juno may touch on your next message" : "Ask, Survey and Plan are read-only")
+        .help("What Juno may touch on your next message, and whether it answers, plans or edits")
         .accessibilityLabel("Permissions")
-        .accessibilityValue(PermissionModeLabel.text(for: effective))
+        .accessibilityValue(title)
         .accessibilityIdentifier("juno.code.composer.permission")
     }
 
@@ -1214,8 +1181,9 @@ struct CodeThinkingControl: View {
     }
 }
 
-/// A chip in the composer's control row: a mark, a word, a chevron, at the
-/// row's one control height.
+/// A chip in the composer's control row: a mark and a word, flat, at the
+/// row's one control height. No chevron — the row's one disclosure belongs to
+/// the model chip, and a row of four chevrons reads as four pop-ups.
 struct ComposerChipLabel: View {
     private let title: String
     private let icon: JunoIcon
@@ -1228,17 +1196,153 @@ struct ComposerChipLabel: View {
     }
 
     var body: some View {
-        HStack(spacing: JunoSpace.hairline) {
+        HStack(spacing: JunoSpace.tight) {
             JunoIconView(icon, size: 13)
             Text(title)
-                .junoCaption()
+                .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
                 .lineLimit(1)
-            JunoIconView(.chevronDown, size: 10)
         }
         .foregroundStyle(tint ?? Color.junoMutedForeground)
         .padding(.horizontal, JunoSpace.snug)
         .frame(height: CodeComposerMetrics.control)
-        .background(Color.junoMuted.opacity(0.6), in: Capsule(style: .continuous))
-        .contentShape(.capsule)
+        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
+    }
+}
+
+/// The model the next turn runs on and how hard it thinks, as one chip:
+/// provider mark, model name, "· Medium" in secondary ink, and the row's one
+/// chevron.
+///
+/// Two popovers behind one chip. The name opens the same provider rail,
+/// catalog and spec sheet Chat and the website show; the effort opens the
+/// same thinking panel. Both state an explicit frame — a self-sizing popover
+/// over a split view has crashed this app before — and both are dismissed
+/// with their anchor.
+struct CodeModelEffortChip: View {
+    @Bindable var controller: SessionController
+    let availableModels: [ModelOption]
+
+    @State private var modelPresented = false
+    @State private var effortPresented = false
+
+    private var selectedModel: ModelOption? {
+        availableModels.first { $0.modelID == controller.session.configuration.modelID }
+    }
+
+    private var descriptor: JunoModelDescriptor? { selectedModel?.descriptor }
+
+    private var modelName: String {
+        descriptor?.displayName
+            ?? (controller.session.configuration.modelID.isEmpty
+                ? "Choose model"
+                : controller.session.configuration.modelID)
+    }
+
+    private var ladder: JunoThinkingLadder {
+        selectedModel?.thinkingLadder ?? .code(efforts: ModelOption.contractReasoningEfforts)
+    }
+
+    private var effortStopID: Binding<String?> {
+        Binding(
+            get: {
+                controller.session.configuration.reasoningEffort?.rawValue
+                    ?? JunoThinkingLadder.instantStopID
+            },
+            set: { stopID in
+                guard let stopID else { return }
+                let effort: ReasoningEffort? =
+                    stopID == JunoThinkingLadder.instantStopID ? nil : ReasoningEffort(rawValue: stopID)
+                if stopID != JunoThinkingLadder.instantStopID, effort == nil { return }
+                Task { await controller.setReasoningEffort(effort) }
+            }
+        )
+    }
+
+    private var effortLabel: String {
+        ladder.isAutomatic ? "Auto" : ladder.label(for: effortStopID.wrappedValue)
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            Button {
+                modelPresented = true
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    JunoProviderMark(
+                        providerID: descriptor?.providerID ?? "juno",
+                        providerName: descriptor?.providerName ?? "Juno",
+                        size: 14
+                    )
+                    Text(modelName)
+                        .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
+                        .junoInk()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(height: CodeComposerMetrics.control)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .disabled(availableModels.isEmpty)
+            .help("The model this thread's next turn runs on")
+            .accessibilityLabel("Model")
+            .accessibilityValue(modelName)
+            .accessibilityIdentifier("juno.code.composer.model")
+            .onDisappear { modelPresented = false }
+            .popover(isPresented: $modelPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                JunoModelSelector(
+                    models: availableModels.map(\.descriptor),
+                    selectedModelID: controller.session.configuration.modelID,
+                    metrics: .standard,
+                    select: { model in
+                        modelPresented = false
+                        Task { await controller.setModelID(model.id) }
+                    }
+                )
+                .frame(
+                    width: JunoModelSelectorMetrics.standard.width,
+                    height: JunoModelSelectorMetrics.standard.height
+                )
+            }
+
+            Text("·")
+                .junoMetaInk()
+                .accessibilityHidden(true)
+
+            Button {
+                effortPresented = true
+            } label: {
+                Text(effortLabel)
+                    .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
+                    .junoSecondaryInk()
+                    .lineLimit(1)
+                    .frame(height: CodeComposerMetrics.control)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .disabled(!ladder.isAdjustable)
+            .help("How much thinking the model does before answering")
+            .accessibilityLabel("Thinking")
+            .accessibilityValue(effortLabel)
+            .accessibilityIdentifier("juno.code.composer.effort")
+            .onDisappear { effortPresented = false }
+            .popover(isPresented: $effortPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                JunoThinkingPanel(ladder: ladder, stopID: effortStopID)
+                    .frame(
+                        width: JunoThinkingMetrics.width,
+                        height: JunoThinkingMetrics.height(
+                            caption: ladder.caption != nil,
+                            modeToggles: false
+                        )
+                    )
+            }
+
+            JunoIconView(.chevronDown, size: 10)
+                .junoSecondaryInk()
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(minHeight: CodeComposerMetrics.target)
+        .fixedSize()
     }
 }

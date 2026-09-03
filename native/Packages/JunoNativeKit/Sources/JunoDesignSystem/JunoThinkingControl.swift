@@ -384,7 +384,7 @@ public struct JunoThinkingButton: View {
                 // said nothing "Medium" does not.
                 HStack(spacing: JunoSpace.hairline) {
                     Text(ladder.label(for: stopID)).lineLimit(1)
-                    JunoIconView(systemImage: "chevron.down", size: 9)
+                    JunoIconView(.chevronDown, size: 9)
                 }
                 .font(.caption)
                 .junoSecondaryInk()

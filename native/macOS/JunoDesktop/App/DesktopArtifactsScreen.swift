@@ -397,7 +397,7 @@ struct DesktopArtifactsScreen: View {
 
             HStack(spacing: JunoSpace.cozy) {
                 HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(systemImage: "magnifyingglass")
+                    JunoIconView(.search)
                         .junoSecondaryInk()
                         .accessibilityHidden(true)
                     TextField("Search artifacts", text: $searchText)
@@ -407,7 +407,7 @@ struct DesktopArtifactsScreen: View {
                         Button {
                             searchText = ""
                         } label: {
-                            JunoIconView(systemImage: "xmark.circle.fill")
+                            JunoIconView(.circleX)
                                 .junoMetaInk()
                         }
                         .buttonStyle(.plain)
@@ -435,16 +435,16 @@ struct DesktopArtifactsScreen: View {
                                 kindFilter = kind
                             } label: {
                                 Label(
-                                    DesktopArtifactKindName.plural(kind),
-                                    systemImage: DesktopArtifactKindName.symbol(kind)
+                                    verbatim: DesktopArtifactKindName.plural(kind),
+                                    icon: DesktopArtifactKindName.icon(kind)
                                 )
                             }
                         }
                     }
                 } label: {
                     Label(
-                        kindFilter.map(DesktopArtifactKindName.plural) ?? "All kinds",
-                        systemImage: "line.3.horizontal.decrease"
+                        verbatim: kindFilter.map(DesktopArtifactKindName.plural) ?? "All kinds",
+                        icon: .filter
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -589,7 +589,7 @@ struct DesktopArtifactsScreen: View {
                     .padding(JunoSpace.snug)
                 } else {
                     VStack(spacing: JunoSpace.cozy) {
-                        JunoIconView(systemImage: DesktopArtifactKindName.symbol(artifact.kind))
+                        JunoIconView(DesktopArtifactKindName.icon(artifact.kind), size: 32)
                             .font(.system(.largeTitle, weight: .light))
                         Text(DesktopArtifactKindName.singular(artifact.kind))
                             .junoMono()
@@ -633,7 +633,7 @@ struct DesktopArtifactsScreen: View {
         ) {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                    JunoIconView(systemImage: status.symbol)
+                    JunoIconView(status.icon, size: 16)
                         .foregroundStyle(status.tint)
                         .accessibilityHidden(true)
                     Text(status.message)
@@ -730,7 +730,7 @@ struct DesktopArtifactsScreen: View {
                 title: "Artifacts unavailable",
                 message: model.lastErrorDescription
                     ?? "Check your connection and try again.",
-                symbol: "exclamationmark.triangle",
+                icon: .triangleAlert,
                 actionLabel: "Try Again",
                 action: { Task { await model.reload() } }
             )
@@ -749,7 +749,7 @@ struct DesktopArtifactsScreen: View {
             JunoEmptyState(
                 title: "Version unavailable",
                 message: "Reconnect to load this version's content.",
-                symbol: "clock.arrow.circlepath",
+                icon: .history,
                 actionLabel: "Try Again",
                 action: { Task { await model.openArtifact(id: artifact.id) } }
             )
@@ -1035,7 +1035,7 @@ struct DesktopArtifactsScreen: View {
             JunoEmptyState(
                 title: "No version history",
                 message: "Select an artifact to see how it changed.",
-                symbol: "clock.arrow.circlepath"
+                icon: .history
             )
         }
     }
@@ -1151,7 +1151,7 @@ struct DesktopArtifactsScreen: View {
                 historyVisible = false
                 libraryVisible = true
             } label: {
-                JunoIconLabel("All artifacts", systemImage: "chevron.left")
+                Label("All artifacts", icon: .arrowLeft)
             }
             .buttonStyle(.plain)
             .contentShape(.rect)
@@ -1182,7 +1182,7 @@ struct DesktopArtifactsScreen: View {
             viewSwitch
 
             Toggle(isOn: $showingChanges) {
-                JunoIconLabel("Changes", systemImage: "plus.forwardslash.minus")
+                Label("Changes", icon: .diff)
             }
             .toggleStyle(.button)
             .labelStyle(.iconOnly)
@@ -1195,9 +1195,9 @@ struct DesktopArtifactsScreen: View {
             Button {
                 copyDisplayed()
             } label: {
-                JunoIconLabel(
+                Label(
                     verbatim: showingChanges ? "Copy Changes" : "Copy Source",
-                    systemImage: "doc.on.doc"
+                    icon: .copy
                 )
             }
             .labelStyle(.iconOnly)
@@ -1214,7 +1214,7 @@ struct DesktopArtifactsScreen: View {
             Button {
                 previewReloadID = UUID()
             } label: {
-                JunoIconLabel("Reload preview", systemImage: "arrow.clockwise")
+                Label("Reload preview", icon: .refresh)
             }
             .labelStyle(.iconOnly)
             // The Canvas is reloadable too, and re-running an artifact is the
@@ -1275,7 +1275,7 @@ struct DesktopArtifactsScreen: View {
                 }
                 .disabled(artifact == nil || model.isMutating)
             } label: {
-                JunoIconLabel("Artifact actions", systemImage: "ellipsis")
+                Label("Artifact actions", icon: .ellipsis)
             }
             .labelStyle(.iconOnly)
             .disabled(artifact == nil || model.isExporting)
@@ -1289,7 +1289,7 @@ struct DesktopArtifactsScreen: View {
             Button {
                 historyVisible.toggle()
             } label: {
-                JunoIconLabel("Version history", systemImage: "clock.arrow.circlepath")
+                Label("Version history", icon: .history)
             }
             .labelStyle(.iconOnly)
             .disabled(artifact == nil)
@@ -1540,7 +1540,7 @@ private struct DesktopArtifactDiffCanvas: View {
                 message: baseVersion.map {
                     "v\($0) and v\(targetVersion) have identical content."
                 } ?? "These versions have identical content.",
-                symbol: "equal"
+                icon: .equal
             )
         } else {
             // A diff keeps its horizontal scroll where prose gets a wrap: column
@@ -2036,15 +2036,16 @@ private enum DesktopArtifactKindName {
         }
     }
 
-    static func symbol(_ kind: NativeArtifactKind) -> String {
+    /// The web's `artifact-inline-card.tsx` ICONS map, in the website's marks.
+    static func icon(_ kind: NativeArtifactKind) -> JunoIcon {
         switch kind {
-        case .html: "globe"
-        case .react: "atom"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .markdown: "doc.text"
-        case .svg: "scribble.variable"
-        case .mermaid: "flowchart"
-        case .design: "pencil.and.outline"
+        case .html: .web
+        case .react: .code
+        case .code: .fileCode
+        case .markdown: .file
+        case .svg: .image
+        case .mermaid: .branch
+        case .design: .penTool
         }
     }
 

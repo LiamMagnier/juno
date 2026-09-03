@@ -936,11 +936,11 @@ public struct ArtifactCanvasView: View {
     private var consoleBadges: some View {
         HStack(spacing: 8) {
             if model.errorCount > 0 {
-                JunoIconLabel(verbatim: "\(model.errorCount)", systemImage: "xmark.octagon")
+                Label(verbatim: "\(model.errorCount)", icon: .octagonX)
                     .foregroundStyle(.red)
             }
             if model.warningCount > 0 {
-                JunoIconLabel(verbatim: "\(model.warningCount)", systemImage: "exclamationmark.triangle")
+                Label(verbatim: "\(model.warningCount)", icon: .triangleAlert)
                     .foregroundStyle(.orange)
             }
             Button("Clear") { model.clearConsole() }

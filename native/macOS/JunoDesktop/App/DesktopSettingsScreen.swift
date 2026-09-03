@@ -1,6 +1,8 @@
 import Foundation
+import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
@@ -8,58 +10,32 @@ import JunoSync
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// **Settings** — one page, no sub-navigation.
+/// **Settings** — one section at a time, as a native grouped form.
 ///
-/// The build this replaces was a seven-tab `TabView(.tabBarOnly)` living inside
-/// the window's own sidebar-selected Settings destination: two navigation
-/// systems stacked, two competing `.navigationTitle`s, and the reader made to
-/// guess which of General / Appearance / Memory / Shared links / Account /
-/// Usage / Diagnostics held the switch they came for. Inside each tab was a
-/// grouped `Form` of full-width bordered sections, every one with a header *and*
-/// a footer paragraph — the General tab alone stacked six explanatory
-/// paragraphs, and each section printed its own name twice, once as
-/// `Section("Default model")` and again forty points below as
-/// `Picker("Default model")`.
+/// The website's settings modal is a rail on the left and a pane on the right;
+/// this is that pane. Every section that holds preferences is a `Form` in the
+/// platform's grouped style — real `Toggle`, `Picker` and `TextField` rows,
+/// section headers in the secondary caption, no tile grid, no card-in-a-card,
+/// no chevrons except the ones a native disclosure draws itself. The three
+/// sections that are whole screens elsewhere in the app (Connectors, Plan &
+/// billing, Code) are those screens, wrapped, so there is one of each.
 ///
-/// The website settled this a long time ago and the app now follows it: a serif
-/// heading, the account underneath, and a two-column grid of ``JunoSettingsTile``
-/// cards capped at ``JunoSettingsMetrics/readingWidth``. A card's monospaced
-/// eyebrow *is* the section's name, so no control inside has to introduce
-/// itself. The control vocabulary is the web's too — ``JunoChoiceCard`` for any
-/// choice small enough to show at once (theme, response style), a menu only for
-/// a genuinely long list (the model catalog, the twenty-two interface locales),
-/// switches for booleans, and destructive actions behind a typed confirmation.
+/// Two things this page deliberately does *not* do:
 ///
-/// Three things this page deliberately does *not* do:
-///
-/// - **It does not report an ideal height.** `NavigationSplitView` grows its
-///   AppKit split view to satisfy a detail's ideal size, so a settings pane that
-///   reports the height of its content resizes the *window* — measured once at
-///   1069pt taller than the window, with the sidebar pushed off-screen.
-///   ``JunoDetailPage`` is the packaged fix and every surface here goes through
-///   it.
-/// - **It does not paint the reading canvas.** The detail column already does
-///   (`DesktopChatWorkspace`), and the ⌘, window does it once at scene level.
-///   The old ``DesktopSettingsClamp`` applied `.junoReadingCanvas()` a second
-///   time inside the page.
-/// - **It does not reimplement Usage.** That screen exists, reads
-///   `/api/profile/usage/breakdown`, and is reachable from the sidebar; this page
-///   links to it rather than keeping a thinner second copy with its own wire
-///   types pointed at a different route.
-///
-/// Deep memory management moved out for the same reason it moved out on the web
-/// and on the phone: it is a corpus editor, not a preference. Settings keeps the
-/// switch; ``DesktopMemoryScreen`` is the manager, and this page swaps to it
-/// behind a back control the way `/memory` does on the web.
+/// - **It does not report an ideal height.** A `Form` scrolls and takes the
+///   height it is given, which is what stops a settings pane resizing the
+///   window's split view.
+/// - **It does not paint the reading canvas.** The shell around it does, once.
 struct DesktopSettingsScreen: View {
+    let section: DesktopSettingsSection
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let authModel: NativeAuthModel
     let session: NativeAuthenticatedSession
     let accountDataClient: NativeAccountDataClient?
     /// Lists and revokes the account's public links.
     let shareClient: NativeShareClient?
-    /// The account's model catalog, for the default-model and favourites tiles.
-    /// Empty until the signed-in manifest arrives, and those tiles say so rather
+    /// The account's model catalog, for the default-model and favourites rows.
+    /// Empty until the signed-in manifest arrives, and those rows say so rather
     /// than offering an empty menu.
     var modelCatalog: [NativeChatModelOption] = []
     /// The account photo's bytes, already fetched through the authenticated file
@@ -67,67 +43,292 @@ struct DesktopSettingsScreen: View {
     var avatarData: Data?
     var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     var outbox: (any MutationOutboxRepository)?
-    /// Selects the window's Usage destination. Nil in the ⌘, window, which has no
-    /// sidebar to navigate — the tile is absent there rather than offering a link
-    /// that cannot go anywhere.
-    var openUsage: (() -> Void)?
+    var connectorModel: NativeConnectorModel?
+    var requestSender: (any NativeAuthenticatedRequestSending)?
+    var codeWorkbench: WorkbenchModel?
+    var codeModels: [ModelOption] = []
     /// Hosting for Juno Code Remote. Nil where the window has no host — the
     /// tile is absent rather than showing a switch that controls nothing.
     var codeHostModel: DesktopCodeHostModel?
     /// Whether this Mac serves Juno Work, and on what terms. Nil for the same
-    /// reason `codeHostModel` is: a consent surface for a capability the window
-    /// cannot actually grant is worse than no surface, because the reader would
-    /// leave believing they had granted it.
+    /// reason `codeHostModel` is.
     var workHostModel: DesktopWorkHostModel?
     /// What ``MemoryExtractionEngine`` has proposed and not yet been answered on.
-    ///
-    /// Nil where nothing runs the engine — the DEBUG preview harness, and a launch
-    /// that could not open the local store. The review control is absent in that
-    /// case rather than opening a queue that can never fill.
+    /// Nil where nothing runs the engine, and the review control is absent then.
     var learningModel: MemoryLearningModel<SQLiteAccountRepository>?
 
-    /// Whether the grid has room for two columns. Read from the page's own width
-    /// rather than assumed, because the same view is 520pt wide in the ⌘, window
-    /// and 900pt wide in the workspace.
-    @State private var isWide = true
     @State private var sheet: DesktopSettingsSheet?
-    /// Whether the memory manager has taken over the surface.
-    ///
-    /// One page swapping for another, with a back control, exactly as the web
-    /// does it at `/memory` and the phone does it with a push — *not* a second
-    /// navigation container nested in the window's own. It also means the
-    /// manager is handed the same model object this page is already showing,
-    /// rather than looking the account up a second time somewhere that could
-    /// disagree.
+    /// Whether the memory manager has taken over the pane, behind a back
+    /// control — one page swapping for another, not a nested navigation.
     @State private var isShowingMemory = false
-    /// Whether the proposal-review surface has taken over, on the same terms as
-    /// ``isShowingMemory``: one page swapping for another behind a back control,
-    /// not a nested navigation container.
     @State private var isReviewingProposals = false
 
     var body: some View {
         Group {
-            if isShowingMemory {
+            if section == .memory, isShowingMemory {
                 DesktopMemoryScreen(model: model, back: { isShowingMemory = false })
-            } else if isReviewingProposals, let learningModel {
+            } else if section == .memory, isReviewingProposals, let learningModel {
                 proposalReview(learningModel)
             } else {
-                page
+                pane
             }
         }
+        .overlay(alignment: .bottom) { statusChrome }
+        .sheet(item: $sheet) { sheet in
+            DesktopSettingsSheetHost(sheet: sheet) {
+                switch sheet {
+                case .sharedLinks:
+                    NativeSharedLinksView(client: shareClient, accountID: session.profile.id)
+                case .diagnostics:
+                    NativeDiagnosticsView(
+                        syncModel: syncModel,
+                        outbox: outbox,
+                        accountID: StorageAccountID(session.profile.id.rawValue)
+                    )
+                    .formStyle(.grouped)
+                    .scrollContentBackground(.hidden)
+                }
+            }
+        }
+        // Diagnostics rather than Shared links: it is the taller of the two and
+        // fills the host's fixed frame, which is what makes the ground under the
+        // content — the thing the overlay contract is about — visible at all.
+        .desktopPreviewOverlays(sheet: { sheet = .diagnostics })
         .accessibilityIdentifier("juno.desktop.settings")
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var pane: some View {
+        switch section {
+        case .general:
+            settingsForm { settings in
+                DesktopSettingsGeneralSections(
+                    settings: settings,
+                    disabled: model.isMutating,
+                    update: updateHandler,
+                    openDiagnostics: { sheet = .diagnostics }
+                )
+            }
+        case .personalization:
+            settingsForm { settings in
+                DesktopSettingsPersonalizationSections(
+                    settings: settings,
+                    disabled: model.isMutating,
+                    update: updateHandler
+                )
+            }
+        case .memory:
+            settingsForm { _ in
+                memorySections
+            }
+        case .models:
+            settingsForm { settings in
+                DesktopSettingsModelSections(
+                    settings: settings,
+                    modelCatalog: modelCatalog,
+                    disabled: model.isMutating,
+                    update: updateHandler
+                )
+            }
+        case .voice:
+            settingsForm { settings in
+                DesktopSettingsVoiceSections(
+                    settings: settings,
+                    disabled: model.isMutating,
+                    update: updateHandler
+                )
+            }
+        case .connectors:
+            if let connectorModel {
+                DesktopConnectionsScreen(model: connectorModel)
+            } else {
+                JunoEmptyState(
+                    title: "Connectors",
+                    message: "The connector service is unavailable in this window.",
+                    icon: .connections
+                )
+            }
+        case .code:
+            DesktopCodeSettingsScreen(
+                workbench: codeWorkbench,
+                availableModels: codeModels,
+                codeHostModel: codeHostModel,
+                workHostModel: workHostModel
+            )
+        case .data:
+            DesktopSettingsForm {
+                DesktopSettingsDataSections(
+                    session: session,
+                    accountDataClient: accountDataClient,
+                    showsSharedLinks: shareClient != nil,
+                    openSharedLinks: { sheet = .sharedLinks },
+                    openDiagnostics: { sheet = .diagnostics }
+                )
+            }
+        case .account:
+            settingsForm { settings in
+                DesktopSettingsAccountSections(
+                    settings: settings,
+                    session: session,
+                    avatarData: avatarData,
+                    authModel: authModel,
+                    accountDataClient: accountDataClient,
+                    disabled: model.isMutating,
+                    update: updateHandler
+                )
+            }
+        case .billing:
+            if let requestSender {
+                DesktopUsageScreen(
+                    session: session,
+                    requestSender: requestSender,
+                    modelCatalog: modelCatalog
+                )
+            } else {
+                JunoEmptyState(
+                    title: "Plan & billing",
+                    message: "Usage is unavailable in this window. Open Settings from the application menu (⌘,) to see your plan.",
+                    icon: .usage
+                )
+            }
+        }
+    }
+
+    /// A grouped form over the account's settings record, or the reason it is
+    /// missing with the model's retry attached.
+    @ViewBuilder
+    private func settingsForm<Content: View>(
+        @ViewBuilder _ content: @escaping (NativeAccountSettings) -> Content
+    ) -> some View {
+        DesktopSettingsForm {
+            if let settings = model.settings {
+                content(settings)
+            } else {
+                Section {
+                    LabeledContent {
+                        Button("Reload") { Task { await model.refresh() } }
+                            .accessibilityIdentifier("juno.desktop.settings.reload")
+                    } label: {
+                        Text(settingsUnavailableMessage)
+                            .junoRowLabel()
+                            .junoSecondaryInk()
+                    }
+                } header: {
+                    DesktopSettingsHeader("Preferences")
+                }
+            }
+        }
+    }
+
+    /// Why a settings section has no controls yet, in the model's own words.
+    private var settingsUnavailableMessage: String {
+        switch model.phase {
+        case .idle, .loading:
+            "Loading your account settings…"
+        case .offline:
+            DesktopStatusCopy(subject: "settings", singular: "setting")
+                .humanized(
+                    model.lastErrorDescription,
+                    fallback: "Offline — your settings will appear once Juno reconnects."
+                )
+        case .failed:
+            DesktopStatusCopy(subject: "settings", singular: "setting")
+                .humanized(
+                    model.lastErrorDescription,
+                    fallback: "Juno could not load your settings."
+                )
+        case .ready:
+            "Account settings have not finished synchronizing."
+        }
+    }
+
+    // MARK: - Memory
+
+    /// The switch, the count and the two doors, then who may process what the
+    /// switch enables.
+    @ViewBuilder
+    private var memorySections: some View {
+        Section {
+            Toggle(isOn: memoryBinding) {
+                DesktopSettingsLabel(
+                    "Reference saved memories",
+                    detail: "Juno keeps helpful details from your chats and uses them as context."
+                )
+            }
+            .toggleStyle(.switch)
+            .tint(Color.junoAccent)
+            .disabled(model.isMutating || model.settings == nil)
+            .accessibilityLabel("Reference saved memories")
+            .accessibilityIdentifier("juno.desktop.settings.memory-enabled")
+
+            LabeledContent {
+                Button("Open memory manager") { isShowingMemory = true }
+                    .accessibilityIdentifier("juno.desktop.settings.memory-manager")
+            } label: {
+                DesktopSettingsLabel(
+                    "Saved memories",
+                    detail: "^[\(model.memories.count) saved fact](inflect: true)"
+                )
+            }
+
+            if let learningModel {
+                let waiting = learningModel.proposals.count
+                LabeledContent {
+                    Button(waiting == 0 ? "Review" : "Review (\(waiting))") {
+                        isReviewingProposals = true
+                    }
+                    .accessibilityIdentifier("juno.desktop.settings.memory-proposals")
+                } label: {
+                    DesktopSettingsLabel(
+                        "What Juno noticed",
+                        detail: "Keep or discard details picked up in your chats. Nothing is saved until you keep it."
+                    )
+                }
+            }
+        } header: {
+            DesktopSettingsHeader("Memory")
+        }
+
+        Section {
+            Picker(
+                selection: Binding(
+                    get: { model.settings?.backgroundProviderMode ?? .default },
+                    set: { update(NativeSettingsPatch(backgroundProviderMode: $0)) }
+                )
+            ) {
+                ForEach(BackgroundProviderMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            } label: {
+                DesktopSettingsLabel(
+                    "Background processing",
+                    detail: LocalizedStringKey((model.settings?.backgroundProviderMode ?? .default).explanation)
+                )
+            }
+            .disabled(model.isMutating || model.settings == nil)
+            .accessibilityIdentifier("juno.desktop.settings.background-provider")
+
+            // Only the mode that can actually cross is flagged. A caution on
+            // every option would train the reader to ignore the one that means
+            // something.
+            if (model.settings?.backgroundProviderMode ?? .default).permitsCrossProvider {
+                JunoIconLabel(
+                    "Content may reach a provider you did not pick.",
+                    icon: .error,
+                    size: 13
+                )
+                .junoCaption()
+                .foregroundStyle(Color.junoCaution)
+            }
+        } header: {
+            DesktopSettingsHeader("Who may process your chats")
+        }
     }
 
     /// ``NativeMemoryManagerView``, given the same model this page is already
     /// showing and a way back.
-    ///
-    /// The decision handler is the whole reason this screen exists: `true` writes
-    /// through `NativeMemorySettingsModel.createMemory`, exactly as typing a
-    /// memory by hand does, so an accepted proposal is indistinguishable from a
-    /// hand-typed one everywhere afterwards — same outbox, same reconciliation,
-    /// same delete button. There is no second path a memory can enter this account
-    /// by, which is what makes the manager an honest account of everything Juno
-    /// knows.
     private func proposalReview(
         _ learningModel: MemoryLearningModel<SQLiteAccountRepository>
     ) -> some View {
@@ -136,7 +337,7 @@ struct DesktopSettingsScreen: View {
                 Button {
                     isReviewingProposals = false
                 } label: {
-                    JunoIconLabel("Settings", systemImage: "chevron.left")
+                    JunoIconLabel("Memory", icon: .arrowLeft, size: 13)
                         .junoRowLabel()
                 }
                 .buttonStyle(.plain)
@@ -167,573 +368,11 @@ struct DesktopSettingsScreen: View {
         .accessibilityIdentifier("juno.desktop.memory-proposals")
     }
 
-    private var page: some View {
-        JunoDetailPage(maxWidth: JunoSettingsMetrics.readingWidth) {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                header
-                tiles
-            }
-            // Width only. Changing the column count changes the page's height,
-            // never its width, so this cannot feed back into itself.
-            .onGeometryChange(for: Bool.self) { proxy in
-                proxy.size.width >= JunoSettingsMetrics.twoColumnThreshold
-            } action: { isWide = $0 }
-        }
-        .overlay(alignment: .bottom) { statusChrome }
-        .sheet(item: $sheet) { sheet in
-            DesktopSettingsSheetHost(sheet: sheet) {
-                switch sheet {
-                case .sharedLinks:
-                    NativeSharedLinksView(client: shareClient, accountID: session.profile.id)
-                case .diagnostics:
-                    // The shared pane, not a second copy of it. The whole value
-                    // of Diagnostics is that the Mac, the phone and the server
-                    // report the same facts in the same words.
-                    NativeDiagnosticsView(
-                        syncModel: syncModel,
-                        outbox: outbox,
-                        accountID: StorageAccountID(session.profile.id.rawValue)
-                    )
-                    .formStyle(.grouped)
-                    .scrollContentBackground(.hidden)
-                }
-            }
-        }
-        // Diagnostics rather than Shared links: it is the taller of the two and
-        // fills the host's fixed 560×620, which is what makes the ground under
-        // the content — the thing the overlay contract is about — visible at all.
-        .desktopPreviewOverlays(sheet: { sheet = .diagnostics })
-    }
-
-    // MARK: - Header
-
-    /// The web's header, in the app's voice: an eyebrow, the account in the
-    /// editorial serif, and the address underneath. The photo is here and
-    /// nowhere else on the page — the old Account pane restated name and email
-    /// one scroll below where they already appeared.
-    private var header: some View {
-        HStack(alignment: .center, spacing: JunoSpace.regular) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Settings")
-                    .junoPageHeading()
-                Text("Personalize Juno, manage your account, and choose how the app works for you.")
-                    .junoRowLabel()
-                    .junoSecondaryInk()
-                    .fixedSize(horizontal: false, vertical: true)
-                Text([session.profile.name, session.profile.email].compactMap { $0 }.joined(separator: " · "))
-                    .junoCaption()
-                    .textSelection(.enabled)
-            }
-            Spacer(minLength: JunoSpace.regular)
-            JunoAvatar(
-                imageData: avatarData,
-                imageURL: session.profile.imageURL,
-                name: session.profile.name ?? session.profile.email,
-                size: DesktopSettingsMetrics.avatarSize
-            )
-        }
-    }
-
-    // MARK: - Grid
-
-    /// Two orderings of the same tiles, because the difference between them is
-    /// genuinely only which ones share a row. Building it from an array of
-    /// erased views would cost every tile its identity across the transition.
-    @ViewBuilder
-    private var tiles: some View {
-        if isWide {
-            Grid(
-                horizontalSpacing: JunoSpace.regular,
-                verticalSpacing: JunoSpace.regular
-            ) {
-                if let openUsage {
-                    GridRow { usageTile(openUsage).gridCellColumns(2) }
-                }
-                if let settings = model.settings {
-                    GridRow { appearanceTile(settings).gridCellColumns(2) }
-                    GridRow { defaultModelTile(settings).gridCellColumns(2) }
-                    if !modelCatalog.isEmpty {
-                        GridRow { favoritesTile(settings).gridCellColumns(2) }
-                    }
-                    GridRow {
-                        responseLanguageTile(settings)
-                        interfaceLanguageTile(settings)
-                    }
-                    GridRow { styleTile(settings).gridCellColumns(2) }
-                    GridRow { instructionsTile(settings).gridCellColumns(2) }
-                } else {
-                    GridRow { unavailableTile.gridCellColumns(2) }
-                }
-                GridRow {
-                    memoryTile
-                    accountTile
-                }
-                // Both host tiles are full width and `@ViewBuilder`-guarded, so
-                // the outer `if` is only here to stop an empty `GridRow` from
-                // claiming a row of vertical spacing when the model is nil.
-                if codeHostModel != nil {
-                    GridRow { remoteHostTile.gridCellColumns(2) }
-                }
-                if workHostModel != nil {
-                    GridRow { workHostTile.gridCellColumns(2) }
-                }
-                if let settings = model.settings {
-                    GridRow { notificationsTile(settings).gridCellColumns(2) }
-                }
-                GridRow { aboutTile.gridCellColumns(2) }
-                GridRow { dangerTile.gridCellColumns(2) }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: JunoSpace.regular) {
-                if let openUsage { usageTile(openUsage) }
-                if let settings = model.settings {
-                    appearanceTile(settings)
-                    defaultModelTile(settings)
-                    if !modelCatalog.isEmpty { favoritesTile(settings) }
-                    responseLanguageTile(settings)
-                    interfaceLanguageTile(settings)
-                    styleTile(settings)
-                    instructionsTile(settings)
-                } else {
-                    unavailableTile
-                }
-                memoryTile
-                accountTile
-                remoteHostTile
-                workHostTile
-                if let settings = model.settings { notificationsTile(settings) }
-                aboutTile
-                dangerTile
-            }
-        }
-    }
-
-    /// Why the preference tiles are missing, with the model's retry attached.
-    private var unavailableTile: some View {
-        JunoSettingsTile("Preferences") {
-            JunoIconLabel(verbatim: settingsUnavailableMessage, systemImage: "clock.arrow.circlepath")
-                .junoRowLabel()
-                .junoSecondaryInk()
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Reload settings") { Task { await model.refresh() } }
-                .accessibilityIdentifier("juno.desktop.settings.reload")
-                .contentShape(.rect)
-        }
-    }
-
-    /// Why a settings tile has no controls yet, in the model's own words.
-    private var settingsUnavailableMessage: String {
-        switch model.phase {
-        case .idle, .loading:
-            "Loading your account settings…"
-        case .offline:
-            DesktopStatusCopy(subject: "settings", singular: "setting")
-                .humanized(
-                    model.lastErrorDescription,
-                    fallback: "Offline — your settings will appear once Juno reconnects."
-                )
-        case .failed:
-            DesktopStatusCopy(subject: "settings", singular: "setting")
-                .humanized(
-                    model.lastErrorDescription,
-                    fallback: "Juno could not load your settings."
-                )
-        case .ready:
-            "Account settings have not finished synchronizing."
-        }
-    }
-
-    // MARK: - Tiles
-
-    /// A link, not a second dashboard. The plan, the rolling windows and the
-    /// per-surface breakdown all live on ``DesktopUsageScreen``, which reads the
-    /// ledger route; this page used to read a *different* route and draw its own
-    /// meters beside it, which is two answers to one question.
-    private func usageTile(_ open: @escaping () -> Void) -> some View {
-        JunoSettingsTile("Usage") {
-            DesktopSettingsAction(
-                title: "Plan, limits and spend",
-                detail: "Your rolling windows and what every surface has cost, read from the billing ledger.",
-                symbol: "chart.line.uptrend.xyaxis",
-                action: open
-            )
-            .accessibilityIdentifier("juno.desktop.settings.usage-link")
-        }
-    }
-
-    private func appearanceTile(_ settings: NativeAccountSettings) -> some View {
-        DesktopSettingsAppearanceTile(
-            settings: settings,
-            disabled: model.isMutating,
-            update: updateHandler
-        )
-    }
-
-    private func defaultModelTile(_ settings: NativeAccountSettings) -> some View {
-        DesktopSettingsModelTile(
-            settings: settings,
-            modelCatalog: modelCatalog,
-            disabled: model.isMutating,
-            update: updateHandler
-        )
-    }
-
-    private func favoritesTile(_ settings: NativeAccountSettings) -> some View {
-        DesktopSettingsFavoritesTile(
-            settings: settings,
-            modelCatalog: modelCatalog,
-            disabled: model.isMutating,
-            update: updateHandler
-        )
-    }
-
-    private func responseLanguageTile(_ settings: NativeAccountSettings) -> some View {
-        JunoSettingsTile("Response language") {
-            Text("The language Juno replies in.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-            Picker(
-                "Response language",
-                selection: junoSettingsBinding(
-                    settings, \.responseLanguage, update: updateHandler
-                ) { NativeSettingsPatch(responseLanguage: $0) }
-            ) {
-                ForEach(
-                    junoKnownOrCurrent(
-                        DesktopSettingsCatalog.responseLanguages,
-                        current: settings.responseLanguage
-                    ),
-                    id: \.self
-                ) { language in
-                    Text(language == "auto" ? "Auto-detect" : language).tag(language)
-                }
-            }
-            .labelsHidden()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(model.isMutating)
-            .accessibilityLabel("Response language")
-            .accessibilityIdentifier("juno.desktop.settings.response-language")
-        }
-    }
-
-    /// Twenty-two locales, each naming itself in its own script — a list only a
-    /// menu can hold, which is exactly where the web draws the line too.
-    private func interfaceLanguageTile(_ settings: NativeAccountSettings) -> some View {
-        JunoSettingsTile("Interface language") {
-            Text("The language this app's buttons and menus are in.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-            Picker(
-                "Interface language",
-                selection: junoSettingsBinding(
-                    settings, \.interfaceLocale, update: updateHandler
-                ) { NativeSettingsPatch(interfaceLocale: $0) }
-            ) {
-                ForEach(
-                    junoKnownOrCurrent(
-                        DesktopSettingsCatalog.interfaceLocales,
-                        current: settings.interfaceLocale
-                    ),
-                    id: \.self
-                ) { locale in
-                    Text(DesktopSettingsCatalog.localeLabel(locale)).tag(locale)
-                }
-            }
-            .labelsHidden()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(model.isMutating)
-            .accessibilityLabel("Interface language")
-            .accessibilityIdentifier("juno.desktop.settings.interface-language")
-        }
-    }
-
-    private func styleTile(_ settings: NativeAccountSettings) -> some View {
-        DesktopSettingsStyleTile(
-            settings: settings,
-            disabled: model.isMutating,
-            update: updateHandler
-        )
-    }
-
-    private func instructionsTile(_ settings: NativeAccountSettings) -> some View {
-        DesktopSettingsInstructionsTile(
-            settings: settings,
-            disabled: model.isMutating,
-            update: updateHandler
-        )
-    }
-
-    /// The way in to ``NativeMemoryManagerView`` — the consent surface where
-    /// anything ``MemoryExtractionEngine`` proposed is kept or discarded.
-    ///
-    /// A second control beside "Open memory manager" rather than a badge on it,
-    /// because the two answer different questions. The manager is the corpus
-    /// editor: forty facts in a table with columns you can sort. This is the short
-    /// queue of things Juno noticed and has *not* stored, and it exists as its own
-    /// destination for one reason — a proposal that files itself and turns up
-    /// later is the version of this feature people call creepy.
-    ///
-    /// Absent when no learning model was composed, which is the DEBUG preview
-    /// harness and a failed launch. A button that opens an empty review queue
-    /// because nothing is running would be worse than no button.
-    @ViewBuilder
-    private var reviewControl: some View {
-        if let learningModel {
-            let waiting = learningModel.proposals.count
-            Button {
-                isReviewingProposals = true
-            } label: {
-                Text(
-                    waiting == 0
-                        ? "Review what Juno noticed"
-                        : "Review what Juno noticed (\(waiting))"
-                )
-                .junoWideButtonLabel()
-            }
-            .help("Keep or discard the details Juno picked up in your chats. Nothing here is saved until you keep it.")
-            .accessibilityIdentifier("juno.desktop.settings.memory-proposals")
-            .contentShape(.rect)
-        }
-    }
-
-    /// The switch and the link, as the web has it. A tile whose only control was
-    /// "go and look" cannot answer the question people most often open settings
-    /// with: is memory on?
-    private var memoryTile: some View {
-        JunoSettingsTile("Memory") {
-            Toggle(isOn: memoryBinding) {
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text("Reference saved memories")
-                        .junoRowLabel()
-                    Text("Juno keeps helpful details from your chats and uses them as context.")
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .toggleStyle(.switch)
-            .tint(Color.junoAccent)
-            .disabled(model.isMutating || model.settings == nil)
-            .accessibilityLabel("Reference saved memories")
-            .accessibilityIdentifier("juno.desktop.settings.memory-enabled")
-
-            Spacer(minLength: JunoSpace.snug)
-
-            Text("^[\(model.memories.count) saved fact](inflect: true)")
-                .junoCaption()
-            Button {
-                isShowingMemory = true
-            } label: {
-                Text("Open memory manager").junoWideButtonLabel()
-            }
-            .accessibilityIdentifier("juno.desktop.settings.memory-manager")
-            .contentShape(.rect)
-
-            reviewControl
-
-            Divider()
-
-            // Where the work the switch above enables is allowed to send what
-            // it reads. In the same tile deliberately: the switch decides
-            // *whether* Juno extracts from your chats, and this decides *who
-            // sees them* when it does. Showing the first without the second is
-            // how extraction could go to whichever provider answered fastest
-            // with nothing in the product saying so.
-            Picker(
-                "Background processing",
-                selection: Binding(
-                    get: { model.settings?.backgroundProviderMode ?? .default },
-                    set: { update(NativeSettingsPatch(backgroundProviderMode: $0)) }
-                )
-            ) {
-                ForEach(BackgroundProviderMode.allCases, id: \.self) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .disabled(model.isMutating || model.settings == nil)
-            .accessibilityIdentifier("juno.desktop.settings.background-provider")
-
-            Text((model.settings?.backgroundProviderMode ?? .default).explanation)
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Only the mode that can actually cross is flagged. A caution on
-            // every option would train the reader to ignore the one that means
-            // something.
-            if (model.settings?.backgroundProviderMode ?? .default).permitsCrossProvider {
-                Label(
-                    "Content may reach a provider you did not pick.",
-                    systemImage: "exclamationmark.triangle"
-                )
-                .junoCaption()
-                .foregroundStyle(Color.junoCaution)
-            }
-        }
-    }
-
-    /// Hosting for Juno Code Remote — off until someone at this Mac says
-    /// otherwise.
-    ///
-    /// The switch is the whole feature's consent. Signing in is not consent to
-    /// let a phone run commands here, so the default is off and the only way to
-    /// change it is at the machine that would be doing the work. Turning it off
-    /// takes effect immediately rather than at the next heartbeat, because "I
-    /// have stopped sharing this Mac" is not a thing to be eventually true.
-    @ViewBuilder
-    private var remoteHostTile: some View {
-        if let host = codeHostModel {
-            JunoSettingsTile("Juno Code Remote") {
-                Toggle(
-                    isOn: Binding(
-                        get: { host.servesQueuedTasks },
-                        set: { host.servesQueuedTasks = $0 }
-                    )
-                ) {
-                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        Text("Allow remote Juno Code on this Mac")
-                            .junoRowLabel()
-                        Text(
-                            "Lets your phone and the web start Juno Code sessions that run here, "
-                                + "in the workspaces you have shared. Off, this Mac stays visible "
-                                + "but runs nothing sent to it."
-                        )
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .toggleStyle(.switch)
-                .tint(Color.junoAccent)
-                .accessibilityIdentifier("juno.desktop.settings.remote-host-enabled")
-
-                if host.servesQueuedTasks {
-                    Divider()
-                    Text(
-                        "Remote sessions start in ask-before-changes and cannot be raised from "
-                            + "another device. Approvals still come to this Mac."
-                    )
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-
-                    Button(role: .destructive) {
-                        host.stopServingRemoteWork()
-                    } label: {
-                        Text("Stop serving remote work now").junoWideButtonLabel()
-                    }
-                    .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
-                    .contentShape(.rect)
-                }
-
-                DesktopCodeHostRevokeSection(host: host)
-            }
-        }
-    }
-
-    /// Juno Work's consent surface, which is a whole card of its own.
-    ///
-    /// It lives in ``DesktopWorkHostTile`` rather than inline here for the
-    /// reason the appearance and model tiles moved out: this page is already
-    /// 1600 lines, and a tile carrying eleven controls, two editable lists and a
-    /// confirmation would make the shape of the *page* — the grid, the two
-    /// orderings, the status chrome — impossible to see. The guard stays here so
-    /// the registration below reads identically to `remoteHostTile`'s.
-    @ViewBuilder
-    private var workHostTile: some View {
-        if let workHost = workHostModel {
-            DesktopWorkHostTile(host: workHost)
-        }
-    }
-
-    /// Identity is in the header; this tile is what you can *do* with the
-    /// account. Shared links sits here because a link you handed out is a thing
-    /// the world already has of yours, and it is only safe to hand one out if it
-    /// can be taken back from somewhere findable.
-    private var accountTile: some View {
-        JunoSettingsTile("Account") {
-            DesktopSettingsAccountActions(
-                authModel: authModel,
-                session: session,
-                accountDataClient: accountDataClient,
-                showsSharedLinks: shareClient != nil,
-                openSharedLinks: { sheet = .sharedLinks }
-            )
-        }
-    }
-
-    private func notificationsTile(_ settings: NativeAccountSettings) -> some View {
-        JunoSettingsTile("Email notifications") {
-            DesktopSettingsSwitchRow(
-                title: "Budget alerts",
-                detail: "Email me at 80% of my monthly budget.",
-                isOn: junoSettingsBinding(
-                    settings, \.emailBudgetAlerts, update: updateHandler
-                ) { NativeSettingsPatch(emailBudgetAlerts: $0) }
-            )
-            .disabled(model.isMutating)
-            .accessibilityIdentifier("juno.desktop.settings.budget-alerts")
-
-            Divider()
-
-            DesktopSettingsSwitchRow(
-                title: "Weekly digest",
-                detail: "Usage recap every Monday.",
-                isOn: junoSettingsBinding(
-                    settings, \.emailWeeklyDigest, update: updateHandler
-                ) { NativeSettingsPatch(emailWeeklyDigest: $0) }
-            )
-            .disabled(model.isMutating)
-            .accessibilityIdentifier("juno.desktop.settings.weekly-digest")
-        }
-    }
-
-    /// The build's own identity, and the pane that compares it against the
-    /// server. Nothing here is a preference — it is the answer to "which Juno am
-    /// I running", which is the first question any support conversation asks.
-    private var aboutTile: some View {
-        JunoSettingsTile("About") {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text("Juno for Mac \(JunoBuildInfo.current.displayVersion)")
-                        .junoRowLabel()
-                        .textSelection(.enabled)
-                    Text("Channel \(JunoBuildInfo.current.channel) · contract \(JunoBuildInfo.current.contractVersion)")
-                        .junoCodeSmall()
-                        .junoSecondaryInk()
-                        .textSelection(.enabled)
-                }
-                Spacer(minLength: JunoSpace.snug)
-                Button("Diagnostics…") { sheet = .diagnostics }
-                    .accessibilityIdentifier("juno.desktop.settings.diagnostics")
-                    .contentShape(.rect)
-            }
-        }
-    }
-
-    /// Same calm container as every other tile, with the destructive edge the
-    /// web gives it. The danger lives in the button and in the typed
-    /// confirmation behind it, not in a shouting border.
-    private var dangerTile: some View {
-        JunoSettingsTile("Danger zone") {
-            DesktopSettingsDangerActions(
-                authModel: authModel,
-                session: session,
-                accountDataClient: accountDataClient
-            )
-        }
-        .overlay(
-            RoundedRectangle(
-                cornerRadius: JunoSettingsMetrics.tileRadius,
-                style: .continuous
-            )
-            .strokeBorder(Color.junoDanger.opacity(0.28), lineWidth: 1)
-        )
-    }
-
     // MARK: - Plumbing
 
-    /// A sendable main-actor closure for child tiles. The model is main-actor
+    /// A sendable main-actor closure for child sections. The model is main-actor
     /// isolated, so constructing the handler here keeps that isolation at the
-    /// boundary instead of converting a plain method reference at every tile.
+    /// boundary instead of converting a plain method reference at every row.
     private var updateHandler: @MainActor (NativeSettingsPatch) -> Void {
         let settingsModel = model
         return { patch in
@@ -767,7 +406,7 @@ struct DesktopSettingsScreen: View {
     private var statusChrome: some View {
         if model.conflictedMutationCount > 0 {
             floatingStatus(
-                symbol: "exclamationmark.arrow.triangle.2.circlepath",
+                icon: .refresh,
                 message: "Memory or settings changed on another device."
             ) {
                 Button("Keep mine") {
@@ -790,7 +429,7 @@ struct DesktopSettingsScreen: View {
             let message = model.lastErrorDescription
         {
             floatingStatus(
-                symbol: model.phase == .offline ? "wifi.slash" : "exclamationmark.circle",
+                icon: model.phase == .offline ? .connections : .error,
                 message: DesktopStatusCopy(subject: "settings", singular: "setting")
                     .humanized(
                         message,
@@ -807,13 +446,13 @@ struct DesktopSettingsScreen: View {
     }
 
     private func floatingStatus<Actions: View>(
-        symbol: String,
+        icon: JunoIcon,
         message: String,
         @ViewBuilder actions: () -> Actions
     ) -> some View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.cozy) {
-                JunoIconView(systemImage: symbol)
+                JunoIconView(icon, size: 15)
                     .junoSecondaryInk()
                     .accessibilityHidden(true)
                 Text(message)
@@ -832,14 +471,79 @@ struct DesktopSettingsScreen: View {
     }
 }
 
-// MARK: - Shared furniture
+// MARK: - Form furniture
+
+/// The grouped form every preference section is drawn in.
+///
+/// One place for the style, so the ten sections cannot drift: the platform's
+/// grouped `Form`, its own scroll background hidden so the warm canvas shows
+/// through, capped at the reading measure and centred.
+struct DesktopSettingsForm<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Form {
+            content
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .frame(maxWidth: JunoSettingsMetrics.readingWidth)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// A section header: the secondary caption at 12pt, sentence case — the web's
+/// `SettingsGroup` title.
+struct DesktopSettingsHeader: View {
+    private let title: LocalizedStringKey
+
+    init(_ title: LocalizedStringKey) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+            .junoSecondaryInk()
+            .textCase(nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A row's label: what it is, and one line of explanation — the *only* line of
+/// explanation, so a footer never has to say it a second time.
+struct DesktopSettingsLabel: View {
+    private let title: LocalizedStringKey
+    private let detail: LocalizedStringKey?
+    private let tone: Tone
+
+    enum Tone { case normal, destructive }
+
+    init(_ title: LocalizedStringKey, detail: LocalizedStringKey? = nil, tone: Tone = .normal) {
+        self.title = title
+        self.detail = detail
+        self.tone = tone
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            Text(title)
+                .junoRowLabel()
+                .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoForeground)
+            if let detail {
+                Text(detail)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
 
 /// The two package-owned panes this page hosts rather than restyles.
 ///
 /// Both are shared with the iPhone, which renders the same `Form`. Presenting
 /// them as sheets keeps that code untouched and keeps the settings page itself a
-/// single scroll — the alternative was two more tabs in a tab bar this rebuild
-/// exists to delete.
+/// single scroll.
 private enum DesktopSettingsSheet: String, Identifiable {
     case sharedLinks
     case diagnostics
@@ -886,15 +590,15 @@ private struct DesktopSettingsSheetHost<Content: View>: View {
             height: DesktopSettingsMetrics.sheetHeight
         )
         // Sheet contract: this host is the root of every Settings sheet, so the
-        // warm ground goes on once here rather than in each pane. Without it the
-        // panes stood on the system's neutral window grey while the Settings page
-        // behind them was warm. The platter stays the system's.
+        // warm ground goes on once here rather than in each pane.
         .junoSheetSurface(.fitted)
     }
 }
 
 enum DesktopSettingsMetrics {
-    /// The signed-in account's photo in the page header.
+    /// The rail's width: the web's `md:w-56` (224px) less its gutter.
+    static let railWidth: CGFloat = 216
+    /// The signed-in account's photo in the Account section.
     static let avatarSize: CGFloat = 44
     /// A presented surface's size. Explicit — see ``DesktopSettingsSheetHost``.
     static let sheetWidth: CGFloat = 560
@@ -902,127 +606,12 @@ enum DesktopSettingsMetrics {
     /// The narrow confirmation sheets: a paragraph and a field, nothing more.
     static let confirmWidth: CGFloat = 460
     /// A multi-line editor's floor: enough that a short paragraph is visible
-    /// without scrolling, small enough to fit the 460pt ⌘, window.
+    /// without scrolling.
     static let editorMinHeight: CGFloat = 132
-    /// An accent swatch in the appearance tile.
-    static let swatchSize: CGFloat = 28
+    /// An accent swatch in the appearance row.
+    static let swatchSize: CGFloat = 24
     /// A provider mark beside a model's name.
     static let providerMark: CGFloat = 20
-}
-
-private extension View {
-    /// The small monospaced caps above a page heading — the web's `eyebrow`.
-    func junoSettingsEyebrow() -> some View {
-        junoCodeSmall()
-            .junoSecondaryInk()
-            .textCase(.uppercase)
-    }
-
-    /// A button label that fills its tile, as the web's `w-full` outline buttons
-    /// do. The frame belongs on the *label*: on the button it only widens the hit
-    /// area and leaves the bezel floating in the middle of the card.
-    func junoWideButtonLabel() -> some View {
-        frame(maxWidth: .infinity)
-            .padding(.vertical, 1)
-    }
-}
-
-/// A full-width action row: a glyph, what it does, and a chevron.
-///
-/// Used where a tile's job is to lead somewhere rather than to hold a control,
-/// so those tiles read as one kind of thing instead of each inventing its own
-/// button.
-///
-/// The glyph is neutral. The website's settings page spends `--primary` on
-/// exactly two things — a plan's feature ticks and the tick beside a chosen
-/// option — and never on the icon of a row that merely leads somewhere. A coral
-/// glyph on every navigation row made the accent mean "this is a row" rather
-/// than "this is the one thing to do here", which is the whole job it has.
-private struct DesktopSettingsAction: View {
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
-    let symbol: String
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: JunoSpace.cozy) {
-                JunoIconView(systemImage: symbol)
-                    // Scaled with the row label it leads, so the glyph and the
-                    // title grow together under Dynamic Type instead of the
-                    // glyph staying frozen at 15pt beside growing text.
-                    .junoFont(size: 15, relativeTo: .callout)
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text(title)
-                        .junoRowLabel()
-                        .fontWeight(.medium)
-                        .junoInk()
-                    Text(detail)
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: JunoSpace.snug)
-                JunoIconView(systemImage: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .junoMetaInk()
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug + 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .fill(isHovering ? Color.junoRowHover : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .accessibilityHint(detail)
-    }
-}
-
-/// A switch with one line of explanation — the *only* line of explanation.
-///
-/// The row this replaces printed its own sentence and then let the enclosing
-/// section's footer print a second one, so each email switch was described
-/// twice, in two registers, forty points apart.
-private struct DesktopSettingsSwitchRow: View {
-    let title: LocalizedStringKey
-    let detail: LocalizedStringKey
-    @Binding var isOn: Bool
-
-    var body: some View {
-        Toggle(isOn: $isOn) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text(title)
-                    .junoRowLabel()
-                Text(detail)
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            // The label claims the row so the switch sits on the trailing edge.
-            // Without it a `Toggle` hugs its label, and two rows with different
-            // sentence lengths put their switches at two different x positions.
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .toggleStyle(.switch)
-        .tint(Color.junoAccent)
-        // The explanation is a hint, not part of the name: VoiceOver reads the
-        // name on every focus and the hint only when the reader waits for it.
-        .accessibilityLabel(title)
-        .accessibilityHint(detail)
-    }
 }
 
 /// A binding onto one field of the account's settings record.
@@ -1030,11 +619,9 @@ private struct DesktopSettingsSwitchRow: View {
 /// The patch is only sent when the value actually changes: a `Picker` writes its
 /// selection on every layout pass in some styles, and without this guard the
 /// outbox filled with no-op mutations.
+///
 /// Every piece this captures is `Sendable`, because `Binding`'s accessors are
-/// `@Sendable` in the macOS 26 SDK. Without the constraints the four captures —
-/// the key path, the metatype, and the two closures — are each rejected under
-/// Swift 6. They read as warnings on some toolchains and as errors on the one CI
-/// builds with, which is how this reached `main` looking clean.
+/// `@Sendable` in the macOS 26 SDK.
 private func junoSettingsBinding<Value: Equatable & Sendable>(
     _ settings: NativeAccountSettings,
     _ keyPath: KeyPath<NativeAccountSettings, Value> & Sendable,
@@ -1048,9 +635,6 @@ private func junoSettingsBinding<Value: Equatable & Sendable>(
             // SwiftUI drives a `Binding`'s setter on the main actor, but the
             // accessor itself is non-isolated `@Sendable` in the macOS 26 SDK,
             // so the isolation has to be re-stated rather than inferred.
-            // `assumeIsolated` records that invariant instead of hiding it in a
-            // `Task`, which would also make the write land a turn late — long
-            // enough for a `Picker` to read back its old value and flicker.
             MainActor.assumeIsolated { update(patch(value)) }
         }
     )
@@ -1062,7 +646,7 @@ private func junoKnownOrCurrent(_ known: [String], current: String) -> [String] 
     known.contains(current) ? known : [current] + known
 }
 
-/// The two language lists, mirrored from the website.
+/// The two language lists and the voice list, mirrored from the website.
 private enum DesktopSettingsCatalog {
     static let responseLanguages = [
         "auto", "English", "Spanish", "French", "German", "Portuguese",
@@ -1073,6 +657,25 @@ private enum DesktopSettingsCatalog {
         "auto", "en", "es", "fr", "de", "it", "pt-BR", "nl", "pl", "tr", "ru",
         "uk", "sv", "id", "vi", "th", "hi", "ja", "ko", "zh-Hans", "zh-Hant",
     ]
+
+    /// `src/lib/voices.ts`, verbatim.
+    static let voices: [(id: String, label: String, detail: String)] = [
+        ("alloy", "Alloy", "Neutral and crisp"),
+        ("echo", "Echo", "Even and measured"),
+        ("fable", "Fable", "Bright and expressive"),
+        ("onyx", "Onyx", "Low and steady"),
+        ("nova", "Nova", "Rounded and friendly"),
+        ("shimmer", "Shimmer", "Light and airy"),
+        ("coral", "Coral", "Warm and lively"),
+        ("verse", "Verse", "Animated and varied"),
+        ("ballad", "Ballad", "Soft and unhurried"),
+        ("ash", "Ash", "Firm and direct"),
+        ("sage", "Sage", "Calm and level"),
+        ("marin", "Marin", "Relaxed and conversational"),
+        ("cedar", "Cedar", "Smooth and easy-going"),
+    ]
+
+    static let defaultVoice = "alloy"
 
     /// Each language names itself, as it does on the web — someone looking for
     /// their own language finds it written the way they write it, not translated
@@ -1086,80 +689,155 @@ private enum DesktopSettingsCatalog {
     }
 }
 
-// MARK: - Appearance
+// MARK: - General
 
-/// Theme and accent, the two choices small enough to show whole.
-///
-/// Both were dropdowns-in-a-form before — a segmented control for three themes
-/// and a radio group of five named colours with a dot beside each name. The web
-/// shows the three themes as cards and the accents as the colours themselves,
-/// which is the only version where the reader picks by looking rather than by
-/// reading a word for a colour.
-private struct DesktopSettingsAppearanceTile: View {
+/// Theme, accent, interface language, and which Juno this is.
+private struct DesktopSettingsGeneralSections: View {
     let settings: NativeAccountSettings
     let disabled: Bool
     let update: @MainActor (NativeSettingsPatch) -> Void
+    let openDiagnostics: () -> Void
 
-    private static let themes: [(value: NativeThemePreference, title: LocalizedStringKey, detail: LocalizedStringKey, symbol: String)] = [
-        (.system, "System", "Follows this Mac's appearance.", "circle.lefthalf.filled"),
-        (.light, "Light", "Always the paper canvas.", "sun.max"),
-        (.dark, "Dark", "Always the warm near-black.", "moon"),
+    @State private var updater = DesktopUpdateModel.shared
+
+    private static let themes: [(value: NativeThemePreference, title: String, icon: JunoIcon)] = [
+        (.system, "System", .monitor),
+        (.light, "Light", .sun),
+        (.dark, "Dark", .moon),
     ]
 
     var body: some View {
-        JunoSettingsTile("Appearance") {
-            Text("Theme")
-                .junoCaption()
-            HStack(alignment: .top, spacing: JunoSpace.snug) {
-                ForEach(Self.themes, id: \.value) { theme in
-                    JunoChoiceCard(
-                        title: theme.title,
-                        detail: theme.detail,
-                        isSelected: settings.theme == theme.value,
-                        isEnabled: !disabled,
-                        trailing: {
-                            JunoIconView(systemImage: theme.symbol)
-                                // Scaled with the card title beside it, not
-                                // frozen at 13pt.
-                                .junoFont(size: 13, relativeTo: .callout)
-                                .junoSecondaryInk()
-                        },
-                        select: { update(NativeSettingsPatch(theme: theme.value)) }
-                    )
+        Section {
+            Picker(
+                selection: junoSettingsBinding(settings, \.theme, update: update) {
+                    NativeSettingsPatch(theme: $0)
                 }
+            ) {
+                ForEach(Self.themes, id: \.value) { theme in
+                    JunoIconLabel(verbatim: theme.title, icon: theme.icon, size: 13)
+                        .tag(theme.value)
+                }
+            } label: {
+                DesktopSettingsLabel("Theme", detail: "System follows this Mac's appearance.")
             }
-            .accessibilityElement(children: .contain)
+            .disabled(disabled)
             .accessibilityLabel("Theme")
             .accessibilityIdentifier("juno.desktop.settings.theme")
 
-            Text("Accent color")
-                .junoCaption()
-                .padding(.top, JunoSpace.snug)
-            HStack(spacing: JunoSpace.cozy) {
-                ForEach(JunoAccent.allCases) { accent in
-                    DesktopAccentSwatch(
-                        accent: accent,
-                        isSelected: JunoAccent(setting: settings.accent) == accent
-                            && JunoAccent(rawValue: settings.accent.lowercased()) != nil,
-                        isEnabled: !disabled,
-                        select: { update(NativeSettingsPatch(accent: accent.rawValue)) }
-                    )
+            LabeledContent {
+                HStack(spacing: JunoSpace.snug) {
+                    ForEach(JunoAccent.allCases) { accent in
+                        DesktopAccentSwatch(
+                            accent: accent,
+                            isSelected: JunoAccent(setting: settings.accent) == accent
+                                && JunoAccent(rawValue: settings.accent.lowercased()) != nil,
+                            isEnabled: !disabled,
+                            select: { update(NativeSettingsPatch(accent: accent.rawValue)) }
+                        )
+                    }
                 }
-                Spacer(minLength: 0)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Accent color")
+                .accessibilityIdentifier("juno.desktop.settings.accent")
+            } label: {
+                DesktopSettingsLabel(
+                    "Accent color",
+                    detail: JunoAccent(rawValue: settings.accent.lowercased()) == nil
+                        ? "This account has a custom accent set on the web. Juno for Mac draws it as Coral; choosing one here replaces it."
+                        : "The one saturated colour in the interface."
+                )
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Accent color")
-            .accessibilityIdentifier("juno.desktop.settings.accent")
+        } header: {
+            DesktopSettingsHeader("Appearance")
+        }
 
-            // Said only when it is true. The web can store an arbitrary hex
-            // accent and this app ships five; resolving that to Coral without
-            // saying so would look like the picker had silently changed the
-            // account's colour.
-            if JunoAccent(rawValue: settings.accent.lowercased()) == nil {
-                Text("This account has a custom accent set on the web. Juno for Mac draws it as Coral; choosing one here replaces it.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
+        Section {
+            Picker(
+                selection: junoSettingsBinding(settings, \.interfaceLocale, update: update) {
+                    NativeSettingsPatch(interfaceLocale: $0)
+                }
+            ) {
+                ForEach(
+                    junoKnownOrCurrent(
+                        DesktopSettingsCatalog.interfaceLocales,
+                        current: settings.interfaceLocale
+                    ),
+                    id: \.self
+                ) { locale in
+                    Text(DesktopSettingsCatalog.localeLabel(locale)).tag(locale)
+                }
+            } label: {
+                DesktopSettingsLabel(
+                    "Interface language",
+                    detail: "The language this app's buttons and menus are in."
+                )
             }
+            .disabled(disabled)
+            .accessibilityLabel("Interface language")
+            .accessibilityIdentifier("juno.desktop.settings.interface-language")
+        } header: {
+            DesktopSettingsHeader("Language")
+        }
+
+        Section {
+            LabeledContent {
+                Button(updateActionTitle) { updateAction() }
+                    .disabled(!updateActionEnabled)
+                    .accessibilityIdentifier("juno.desktop.settings.check-updates")
+            } label: {
+                DesktopSettingsLabel(
+                    "Juno for Mac \(JunoBuildInfo.current.displayVersion)",
+                    detail: LocalizedStringKey(updateStatus)
+                )
+            }
+            LabeledContent {
+                Button("Diagnostics…", action: openDiagnostics)
+                    .accessibilityIdentifier("juno.desktop.settings.diagnostics")
+            } label: {
+                DesktopSettingsLabel(
+                    "Diagnostics",
+                    detail: "Channel \(JunoBuildInfo.current.channel) · contract \(JunoBuildInfo.current.contractVersion)"
+                )
+            }
+        } header: {
+            DesktopSettingsHeader("About")
+        }
+    }
+
+    private var updateStatus: String {
+        switch updater.phase {
+        case .idle: "Updates are checked every ten minutes while Juno is open."
+        case .checking: "Checking for updates…"
+        case .current: "Up to date."
+        case .downloading(let version, let fraction):
+            if let fraction {
+                "Downloading \(version) — \(Int((fraction * 100).rounded()))%"
+            } else {
+                "Downloading \(version)…"
+            }
+        case .ready(let version): "Juno \(version) is ready to install."
+        case .failed(let message): message
+        case .unsupported(let reason): reason
+        }
+    }
+
+    private var updateActionTitle: String {
+        if case .ready = updater.phase { return "Install and relaunch" }
+        return "Check for updates"
+    }
+
+    private var updateActionEnabled: Bool {
+        switch updater.phase {
+        case .checking, .downloading, .unsupported: false
+        default: true
+        }
+    }
+
+    private func updateAction() {
+        if case .ready = updater.phase {
+            updater.installAndRelaunch()
+        } else {
+            updater.checkNow()
         }
     }
 }
@@ -1174,8 +852,7 @@ private struct DesktopAccentSwatch: View {
     @State private var isHovering = false
 
     /// One ring, three strengths: full for the chosen accent, faint under the
-    /// pointer, absent at rest. Hover previews the exact shape selection will
-    /// take instead of inventing a second affordance.
+    /// pointer, absent at rest.
     private var ringStrength: Double {
         if isSelected { return 0.85 }
         return isHovering && isEnabled ? 0.3 : 0
@@ -1191,33 +868,18 @@ private struct DesktopAccentSwatch: View {
                 )
                 .overlay {
                     if isSelected {
-                        // On the accent, not white: amber and the lifted dark
-                        // accents fail contrast under a white checkmark, which
-                        // is the whole reason `onAccent` exists.
-                        JunoIconView(systemImage: "checkmark")
-                            .junoFont(size: 12, relativeTo: .caption, weight: .bold)
+                        JunoIconView(.check, size: 12)
                             .foregroundStyle(accent.onAccent)
                     }
                 }
-                // A ring outside the swatch rather than a border on it, so the
-                // colour a reader is judging is never thinned by its own
-                // selection indicator. Hover is the same ring at a whisper —
-                // Mac hover states are fills, not motion, and the swatch used
-                // to grow 8% under the pointer, which is web idiom and also
-                // resized the very colour being compared. A faint ring
-                // previews exactly the shape selection will take, and because
-                // nothing moves it survives Reduce Motion as ordinary
-                // feedback rather than needing a special case.
                 .overlay {
                     Circle()
-                        .strokeBorder(Color.primary.opacity(ringStrength), lineWidth: 2)
+                        .strokeBorder(Color.junoForeground.opacity(ringStrength), lineWidth: 2)
                         .padding(-3)
                 }
                 .animation(JunoMotion.fast, value: isHovering)
                 .contentShape(Circle())
         }
-        // `.junoPress` rather than `.plain`: with the hover growth gone, the
-        // press dip is what answers the pointer on this hand-drawn control.
         .buttonStyle(.junoPress)
         .disabled(!isEnabled)
         .onHover { isHovering = $0 }
@@ -1227,15 +889,124 @@ private struct DesktopAccentSwatch: View {
     }
 }
 
-// MARK: - Default model
+// MARK: - Personalization
 
-/// The account's default model, chosen in the app's own catalog browser.
-///
-/// This used to be a `Picker` of sixty flat rows. ``JunoModelSelector`` — the
-/// provider rail, the searchable catalog and the spec sheet — already ships in
-/// the design system and is what the composer opens; there was never a reason
-/// for settings to offer a worse view of the same manifest.
-private struct DesktopSettingsModelTile: View {
+/// How Juno writes: the response style, the standing instructions, the
+/// language it replies in.
+private struct DesktopSettingsPersonalizationSections: View {
+    let settings: NativeAccountSettings
+    let disabled: Bool
+    let update: @MainActor (NativeSettingsPatch) -> Void
+
+    @State private var draft = ""
+    /// What the field was last handed by the account record. Compared against the
+    /// draft to tell "untouched" from "half-written", so a settings push landing
+    /// mid-sentence cannot erase what is being typed.
+    @State private var baseline: String?
+
+    private var currentStyle: JunoResponseStyle? {
+        JunoResponseStyle.named(settings.personality)
+    }
+
+    var body: some View {
+        Section {
+            Picker(
+                selection: junoSettingsBinding(settings, \.personality, update: update) {
+                    NativeSettingsPatch(personality: $0)
+                }
+            ) {
+                // A preset this build has never heard of stays named and
+                // selected, so a style chosen on the web after this app shipped
+                // is not silently demoted the moment settings are opened.
+                if currentStyle == nil {
+                    Text(settings.personality).tag(settings.personality)
+                }
+                ForEach(JunoResponseStyle.all) { style in
+                    Text(style.localizedLabel).tag(style.id)
+                }
+            } label: {
+                DesktopSettingsLabel(
+                    "Response style",
+                    detail: currentStyle.map { LocalizedStringKey($0.detail) }
+                        ?? "A style Juno for Mac does not ship. Choosing one replaces it."
+                )
+            }
+            .disabled(disabled)
+            .accessibilityLabel("Response style")
+            .accessibilityIdentifier("juno.desktop.settings.personality")
+
+            Picker(
+                selection: junoSettingsBinding(settings, \.responseLanguage, update: update) {
+                    NativeSettingsPatch(responseLanguage: $0)
+                }
+            ) {
+                ForEach(
+                    junoKnownOrCurrent(
+                        DesktopSettingsCatalog.responseLanguages,
+                        current: settings.responseLanguage
+                    ),
+                    id: \.self
+                ) { language in
+                    Text(language == "auto" ? "Auto-detect" : language).tag(language)
+                }
+            } label: {
+                DesktopSettingsLabel("Response language", detail: "The language Juno replies in.")
+            }
+            .disabled(disabled)
+            .accessibilityLabel("Response language")
+            .accessibilityIdentifier("juno.desktop.settings.response-language")
+        } header: {
+            DesktopSettingsHeader("How Juno writes")
+        }
+
+        Section {
+            TextEditor(text: $draft)
+                .junoBody()
+                .junoInk()
+                .frame(minHeight: DesktopSettingsMetrics.editorMinHeight)
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Custom instructions")
+                .accessibilityIdentifier("juno.desktop.settings.instructions")
+
+            HStack(spacing: JunoSpace.snug) {
+                Text("\(draft.count.formatted()) chars")
+                    .junoCodeSmall()
+                    .junoMetaInk()
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+                Button("Revert") { draft = settings.customInstructions }
+                    .disabled(draft == settings.customInstructions)
+                    .contentShape(.rect)
+                Button("Save") {
+                    update(NativeSettingsPatch(customInstructions: draft))
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .help("Save your custom instructions (⌘S)")
+                .disabled(disabled || draft == settings.customInstructions)
+                .accessibilityIdentifier("juno.desktop.settings.save-instructions")
+                .contentShape(.rect)
+            }
+        } header: {
+            DesktopSettingsHeader("Custom instructions")
+        } footer: {
+            Text("Juno keeps these in mind in every conversation on this account. Your response style still applies underneath them.")
+                .junoCaption()
+        }
+        .task(id: settings.customInstructions) {
+            let stored = settings.customInstructions
+            if draft == (baseline ?? "") {
+                draft = stored
+            }
+            baseline = stored
+        }
+    }
+}
+
+// MARK: - Models
+
+/// The account's default model, chosen in the app's own catalog browser, and
+/// the favourites pinned to the top of the composer's menu.
+private struct DesktopSettingsModelSections: View {
     let settings: NativeAccountSettings
     let modelCatalog: [NativeChatModelOption]
     let disabled: Bool
@@ -1251,61 +1022,130 @@ private struct DesktopSettingsModelTile: View {
         descriptors.first { $0.id == settings.defaultModel }
     }
 
-    var body: some View {
-        JunoSettingsTile("Default model") {
-            Text("New chats start here. Any chat can still be moved to another model from the composer.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
+    /// In the account's own order, not the catalog's — the order is the reader's
+    /// ranking and reshuffling it on every render would erase that.
+    private var favorites: [NativeChatModelOption] {
+        settings.favoriteModels.compactMap { id in
+            modelCatalog.first { $0.id == id }
+        }
+    }
 
-            if modelCatalog.isEmpty {
-                Text("Juno is still loading your model catalog. Until it arrives this account uses \(junoDisplayModelName(settings.defaultModel)).")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                trigger
-                if let summary = selected?.summary, !summary.isEmpty {
-                    Text(summary)
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
+    /// Provider name → its models, in catalog order, minus what is already
+    /// favourited. Grouped because a flat menu of sixty is a scroll, not a choice.
+    private var addable: [(provider: String, models: [NativeChatModelOption])] {
+        let remaining = modelCatalog.filter { !settings.favoriteModels.contains($0.id) }
+        var order: [String] = []
+        var grouped: [String: [NativeChatModelOption]] = [:]
+        for option in remaining {
+            if grouped[option.providerName] == nil { order.append(option.providerName) }
+            grouped[option.providerName, default: []].append(option)
+        }
+        return order.map { ($0, grouped[$0] ?? []) }
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                if modelCatalog.isEmpty {
+                    Text(junoDisplayModelName(settings.defaultModel))
+                        .junoRowLabel()
+                        .junoSecondaryInk()
+                } else {
+                    modelTrigger
                 }
+            } label: {
+                DesktopSettingsLabel(
+                    "Default model",
+                    detail: modelCatalog.isEmpty
+                        ? "Juno is still loading your model catalog."
+                        : "New chats start here. Any chat can still be moved to another model from the composer."
+                )
+            }
+        } header: {
+            DesktopSettingsHeader("Defaults")
+        }
+
+        if !modelCatalog.isEmpty {
+            Section {
+                if favorites.isEmpty {
+                    Text("None yet — the menu shows the whole catalog until you pin something.")
+                        .junoCaption()
+                } else {
+                    ForEach(favorites) { option in
+                        LabeledContent {
+                            Button {
+                                setFavorite(option.id, false)
+                            } label: {
+                                JunoIconView(.close, size: 12)
+                                    .junoMetaInk()
+                                    .frame(width: 24, height: 24)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(disabled)
+                            .help("Remove \(option.displayName) from favorites")
+                            .accessibilityLabel("Remove \(option.displayName) from favorites")
+                        } label: {
+                            HStack(spacing: JunoSpace.cozy) {
+                                JunoProviderMark(
+                                    providerID: option.providerID,
+                                    providerName: option.providerName,
+                                    size: DesktopSettingsMetrics.providerMark
+                                )
+                                DesktopSettingsLabel(
+                                    LocalizedStringKey(option.displayName),
+                                    detail: LocalizedStringKey(option.providerName)
+                                )
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("juno.desktop.settings.favorite-models")
+                }
+
+                if !addable.isEmpty {
+                    Menu("Add a favorite…") {
+                        ForEach(addable, id: \.provider) { group in
+                            Menu(group.provider) {
+                                ForEach(group.models) { option in
+                                    Button(option.displayName) { setFavorite(option.id, true) }
+                                }
+                            }
+                        }
+                    }
+                    .fixedSize()
+                    .disabled(disabled)
+                    .accessibilityIdentifier("juno.desktop.settings.add-favorite")
+                    .contentShape(.rect)
+                }
+            } header: {
+                DesktopSettingsHeader("Favorites")
+            } footer: {
+                Text("Favorites sit at the top of the composer's model menu, ahead of the full catalog.")
+                    .junoCaption()
             }
         }
     }
 
-    private var trigger: some View {
+    private var modelTrigger: some View {
         Button {
             isPresented = true
         } label: {
-            HStack(spacing: JunoSpace.cozy) {
+            HStack(spacing: JunoSpace.snug) {
                 JunoProviderMark(
                     providerID: selected?.providerID ?? "juno",
                     providerName: selected?.providerName ?? "Juno",
                     size: DesktopSettingsMetrics.providerMark
                 )
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text(selected?.displayName ?? junoDisplayModelName(settings.defaultModel))
-                        .junoRowLabel()
-                        .fontWeight(.medium)
-                        .junoInk()
-                    Text(selected?.providerName ?? "Not in this account's catalog")
-                        .junoCaption()
-                }
-                Spacer(minLength: JunoSpace.snug)
-                JunoIconView(systemImage: "chevron.up.chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .junoSecondaryInk()
-                    .accessibilityHidden(true)
+                Text(selected?.displayName ?? junoDisplayModelName(settings.defaultModel))
+                    .junoRowLabel()
+                    .junoInk()
+                    .lineLimit(1)
             }
             .padding(.horizontal, JunoSpace.cozy)
-            .padding(.vertical, JunoSpace.snug + 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-            )
+            .padding(.vertical, JunoSpace.tight)
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
         .disabled(disabled)
         .accessibilityLabel("Default model")
         .accessibilityValue(selected?.displayName ?? settings.defaultModel)
@@ -1338,113 +1178,6 @@ private struct DesktopSettingsModelTile: View {
             )
         }
     }
-}
-
-// MARK: - Favorite models
-
-/// The models pinned to the top of the composer's menu.
-///
-/// This was a `Table` with a checkbox column, fixed at 210pt, scrolling inside a
-/// scrolling form — a spreadsheet for a set that is usually three rows long. A
-/// favourite is a short list you curate, so it is drawn as the list: what is in
-/// it, one action to remove each, and a provider-grouped menu to add.
-private struct DesktopSettingsFavoritesTile: View {
-    let settings: NativeAccountSettings
-    let modelCatalog: [NativeChatModelOption]
-    let disabled: Bool
-    let update: @MainActor (NativeSettingsPatch) -> Void
-
-    /// In the account's own order, not the catalog's — the order is the reader's
-    /// ranking and reshuffling it on every render would erase that.
-    private var favorites: [NativeChatModelOption] {
-        settings.favoriteModels.compactMap { id in
-            modelCatalog.first { $0.id == id }
-        }
-    }
-
-    /// Provider name → its models, in catalog order, minus what is already
-    /// favourited. Grouped because a flat menu of sixty is a scroll, not a choice.
-    private var addable: [(provider: String, models: [NativeChatModelOption])] {
-        let remaining = modelCatalog.filter { !settings.favoriteModels.contains($0.id) }
-        var order: [String] = []
-        var grouped: [String: [NativeChatModelOption]] = [:]
-        for option in remaining {
-            if grouped[option.providerName] == nil { order.append(option.providerName) }
-            grouped[option.providerName, default: []].append(option)
-        }
-        return order.map { ($0, grouped[$0] ?? []) }
-    }
-
-    var body: some View {
-        JunoSettingsTile("Favorite models") {
-            Text("Favorites sit at the top of the composer's model menu, ahead of the full catalog.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-
-            if favorites.isEmpty {
-                Text("None yet — the menu shows the whole catalog until you pin something.")
-                    .junoCaption()
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(favorites.enumerated()), id: \.element.id) { index, option in
-                        if index > 0 { Divider() }
-                        row(option)
-                    }
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .padding(.vertical, JunoSpace.hairline)
-                .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .strokeBorder(Color.junoBorder, lineWidth: 1)
-                )
-                .accessibilityIdentifier("juno.desktop.settings.favorite-models")
-            }
-
-            if !addable.isEmpty {
-                Menu("Add a favorite…") {
-                    ForEach(addable, id: \.provider) { group in
-                        Menu(group.provider) {
-                            ForEach(group.models) { option in
-                                Button(option.displayName) { setFavorite(option.id, true) }
-                            }
-                        }
-                    }
-                }
-                .menuStyle(.button)
-                .fixedSize()
-                .disabled(disabled)
-                .accessibilityIdentifier("juno.desktop.settings.add-favorite")
-                .contentShape(.rect)
-            }
-        }
-    }
-
-    private func row(_ option: NativeChatModelOption) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            JunoProviderMark(
-                providerID: option.providerID,
-                providerName: option.providerName,
-                size: DesktopSettingsMetrics.providerMark
-            )
-            Text(option.displayName)
-                .junoRowLabel()
-            Text(option.providerName)
-                .junoCaption()
-            Spacer(minLength: JunoSpace.snug)
-            Button {
-                setFavorite(option.id, false)
-            } label: {
-                JunoIconView(systemImage: "xmark.circle.fill")
-                    .junoMetaInk()
-            }
-            .buttonStyle(.plain)
-            .disabled(disabled)
-            .help("Remove \(option.displayName) from favorites")
-            .accessibilityLabel("Remove \(option.displayName) from favorites")
-            .contentShape(.rect)
-        }
-        .padding(.vertical, JunoSpace.snug)
-    }
 
     private func setFavorite(_ modelID: String, _ isFavorite: Bool) {
         var favorites = settings.favoriteModels
@@ -1459,228 +1192,157 @@ private struct DesktopSettingsFavoritesTile: View {
     }
 }
 
-// MARK: - Response style
+// MARK: - Voice
 
-/// Six presets, all visible. A dropdown would hide five of them and give the
-/// reader no way to compare what they promise, which is the whole content of
-/// the choice.
-private struct DesktopSettingsStyleTile: View {
+/// The voice Juno reads answers in — the web's list, as a picker.
+private struct DesktopSettingsVoiceSections: View {
     let settings: NativeAccountSettings
     let disabled: Bool
     let update: @MainActor (NativeSettingsPatch) -> Void
 
-    private static let columns = [
-        GridItem(.flexible(), spacing: JunoSpace.snug),
-        GridItem(.flexible(), spacing: JunoSpace.snug),
-    ]
+    private var current: String {
+        settings.voiceID ?? DesktopSettingsCatalog.defaultVoice
+    }
+
+    private var currentDetail: String {
+        DesktopSettingsCatalog.voices.first { $0.id == current }?.detail
+            ?? "A voice Juno for Mac does not list. Choosing one replaces it."
+    }
 
     var body: some View {
-        JunoSettingsTile("Response style") {
-            Text("How Juno writes. Your custom instructions still take priority.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-
-            // A preset this build has never heard of stays named and selected,
-            // so a style chosen on the web after this app shipped is not
-            // silently demoted the moment settings are opened.
-            if JunoResponseStyle.named(settings.personality) == nil {
-                Text("This account uses “\(settings.personality)”, a style Juno for Mac does not ship. Choosing one below replaces it.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            LazyVGrid(columns: Self.columns, alignment: .leading, spacing: JunoSpace.snug) {
-                ForEach(JunoResponseStyle.all) { style in
-                    JunoChoiceCard(
-                        title: style.localizedLabel,
-                        detail: style.localizedDetail,
-                        isSelected: settings.personality == style.id,
-                        isEnabled: !disabled,
-                        select: { update(NativeSettingsPatch(personality: style.id)) }
-                    )
+        Section {
+            Picker(
+                selection: Binding(
+                    get: { current },
+                    set: { id in
+                        guard id != current else { return }
+                        update(NativeSettingsPatch(voiceID: .some(id)))
+                    }
+                )
+            ) {
+                if !DesktopSettingsCatalog.voices.contains(where: { $0.id == current }) {
+                    Text(current).tag(current)
                 }
+                ForEach(DesktopSettingsCatalog.voices, id: \.id) { voice in
+                    Text(voice.label).tag(voice.id)
+                }
+            } label: {
+                DesktopSettingsLabel("Voice", detail: LocalizedStringKey(currentDetail))
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Response style")
-            .accessibilityIdentifier("juno.desktop.settings.personality")
+            .disabled(disabled)
+            .accessibilityLabel("Read-aloud voice")
+            .accessibilityIdentifier("juno.desktop.settings.voice")
+        } header: {
+            DesktopSettingsHeader("Read aloud")
+        } footer: {
+            Text("The same voice on every device signed into this account. Dictation uses this Mac's own speech recognition and needs no setting.")
+                .junoCaption()
         }
     }
 }
 
-// MARK: - Custom instructions
+// MARK: - Data & privacy
 
-private struct DesktopSettingsInstructionsTile: View {
-    let settings: NativeAccountSettings
-    let disabled: Bool
-    let update: @MainActor (NativeSettingsPatch) -> Void
-
-    @State private var draft = ""
-    /// What the field was last handed by the account record. Compared against the
-    /// draft to tell "untouched" from "half-written", so a settings push landing
-    /// mid-sentence cannot erase what is being typed.
-    @State private var baseline: String?
-
-    var body: some View {
-        JunoSettingsTile("Custom instructions") {
-            Text("Juno keeps these in mind in every conversation on this account. There is no character cap — the model's context window is the only real limit.")
-                .junoCaption()
-                .fixedSize(horizontal: false, vertical: true)
-
-            ZStack(alignment: .bottomTrailing) {
-                TextEditor(text: $draft)
-                    .junoBody()
-                    .frame(minHeight: DesktopSettingsMetrics.editorMinHeight)
-                    .scrollContentBackground(.hidden)
-                    .padding(JunoSpace.snug)
-                    // Room for the counter, which sits inside the field as it
-                    // does on the web rather than becoming another row of chrome.
-                    .padding(.bottom, JunoSpace.regular)
-                    .junoPanel(cornerRadius: JunoRadius.well)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                            .strokeBorder(Color.junoBorder, lineWidth: 1)
-                    )
-                    .accessibilityLabel("Custom instructions")
-                    .accessibilityIdentifier("juno.desktop.settings.instructions")
-
-                // Not a limit — the one number that tells you a long paste
-                // actually landed.
-                Text("\(draft.count.formatted()) chars")
-                    .junoCodeSmall()
-                    .junoMetaInk()
-                    .padding(.trailing, JunoSpace.cozy)
-                    .padding(.bottom, JunoSpace.snug)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
-
-            HStack(spacing: JunoSpace.snug) {
-                Spacer(minLength: 0)
-                Button("Revert") { draft = settings.customInstructions }
-                    .disabled(draft == settings.customInstructions)
-                    .contentShape(.rect)
-                Button("Save") {
-                    update(NativeSettingsPatch(customInstructions: draft))
-                }
-                .keyboardShortcut("s", modifiers: .command)
-                .help("Save your custom instructions (⌘S)")
-                .disabled(disabled || draft == settings.customInstructions)
-                .accessibilityIdentifier("juno.desktop.settings.save-instructions")
-                .contentShape(.rect)
-            }
-        }
-        .task(id: settings.customInstructions) {
-            let stored = settings.customInstructions
-            if draft == (baseline ?? "") {
-                draft = stored
-            }
-            baseline = stored
-        }
-    }
-}
-
-// MARK: - Account actions
-
-/// What you can do with the account, as opposed to who it is.
-private struct DesktopSettingsAccountActions: View {
-    let authModel: NativeAuthModel
+/// Everything Juno holds for you, in a format you can take elsewhere — and the
+/// links you have handed out.
+private struct DesktopSettingsDataSections: View {
     let session: NativeAuthenticatedSession
     let accountDataClient: NativeAccountDataClient?
     let showsSharedLinks: Bool
     let openSharedLinks: () -> Void
+    let openDiagnostics: () -> Void
 
     @State private var isExporting = false
     @State private var exportDocument: DesktopSettingsExportDocument?
     @State private var exportContentType: UTType = .json
     @State private var exportFilename = ""
     @State private var showingExporter = false
-    @State private var showingSignOut = false
     @State private var exportError: String?
 
     var body: some View {
+        Section {
+            if accountDataClient != nil {
+                LabeledContent {
+                    HStack(spacing: JunoSpace.snug) {
+                        if isExporting {
+                            ProgressView().controlSize(.small)
+                        }
+                        Button("JSON…") { export(.json) }
+                            .disabled(isExporting)
+                            .accessibilityIdentifier("juno.desktop.settings.export-json")
+                            // Attached to the control that starts it rather than
+                            // to the section: two presentations on one view is
+                            // where SwiftUI drops one.
+                            .fileExporter(
+                                isPresented: $showingExporter,
+                                document: exportDocument,
+                                contentType: exportContentType,
+                                defaultFilename: exportFilename
+                            ) { result in
+                                if case .failure(let error) = result {
+                                    exportError = error.localizedDescription
+                                }
+                                exportDocument = nil
+                            }
+                        Button("CSV…") { export(.csv) }
+                            .disabled(isExporting)
+                            .accessibilityIdentifier("juno.desktop.settings.export-csv")
+                    }
+                } label: {
+                    DesktopSettingsLabel(
+                        "Export your data",
+                        detail: "Every conversation, project, file and memory on this account."
+                    )
+                }
+                if let exportError {
+                    JunoIconLabel(verbatim: exportError, icon: .error, size: 13)
+                        .junoCaption()
+                        .foregroundStyle(Color.junoCaution)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("Export is unavailable on this Mac.")
+                    .junoCaption()
+            }
+        } header: {
+            DesktopSettingsHeader("Your data")
+        }
+
         if showsSharedLinks {
-            Button(action: openSharedLinks) {
-                Text("Shared links…").junoWideButtonLabel()
-            }
-            .help("Every public link this account has handed out, and the way to take one back")
-            .accessibilityIdentifier("juno.desktop.settings.shared-links")
-            .contentShape(.rect)
-        }
-
-        // Two buttons rather than one with a menu behind it. There are exactly
-        // two formats, and a dropdown that hides one of two options costs a
-        // click to discover and saves nothing — the same rule that put the
-        // response styles on cards.
-        if accountDataClient != nil {
-            Button { export(.json) } label: {
-                Text("Export your data as JSON…").junoWideButtonLabel()
-            }
-            .disabled(isExporting)
-            .help("Every conversation, project, file and memory on this account")
-            .accessibilityIdentifier("juno.desktop.settings.export-json")
-            // Attached to the control that starts it rather than to the tile:
-            // two presentations on one view is where SwiftUI drops one.
-            .fileExporter(
-                isPresented: $showingExporter,
-                document: exportDocument,
-                contentType: exportContentType,
-                defaultFilename: exportFilename
-            ) { result in
-                if case .failure(let error) = result {
-                    exportError = error.localizedDescription
+            Section {
+                LabeledContent {
+                    Button("Manage…", action: openSharedLinks)
+                        .accessibilityIdentifier("juno.desktop.settings.shared-links")
+                } label: {
+                    DesktopSettingsLabel(
+                        "Shared links",
+                        detail: "What you have made public, and how to take it back."
+                    )
                 }
-                exportDocument = nil
-            }
-            .contentShape(.rect)
-
-            Button { export(.csv) } label: {
-                Text("Export your data as CSV…").junoWideButtonLabel()
-            }
-            .disabled(isExporting)
-            .help("The same export as a spreadsheet")
-            .accessibilityIdentifier("juno.desktop.settings.export-csv")
-            .contentShape(.rect)
-
-            if isExporting {
-                HStack(spacing: JunoSpace.snug) {
-                    ProgressView().controlSize(.small)
-                    Text("Downloading your export…").junoCaption()
-                }
+            } header: {
+                DesktopSettingsHeader("Sharing")
             }
         }
 
-        if let exportError {
-            JunoIconLabel(verbatim: exportError, systemImage: "exclamationmark.circle")
-                .junoCaption()
-                .foregroundStyle(Color.junoCaution)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        Spacer(minLength: JunoSpace.snug)
-
-        Button { showingSignOut = true } label: {
-            Text("Sign out").junoWideButtonLabel()
-        }
-            .accessibilityIdentifier("juno.desktop.settings.sign-out")
-            .confirmationDialog("Sign out of Juno?", isPresented: $showingSignOut) {
-                Button("Sign out", role: .destructive) {
-                    Task { await authModel.signOut() }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Juno removes this Mac's local copy of your conversations and settings. Nothing is deleted on the server.")
+        Section {
+            LabeledContent {
+                Button("Open…", action: openDiagnostics)
+            } label: {
+                DesktopSettingsLabel(
+                    "Diagnostics",
+                    detail: "What this Mac has synced, what is queued, and what failed."
+                )
             }
-            .contentShape(.rect)
+        } header: {
+            DesktopSettingsHeader("On this Mac")
+        }
     }
 
     /// Downloads the export, then hands it to `.fileExporter`.
     ///
     /// Two steps rather than one because the file does not exist until the
     /// request comes back: a save panel opened first would be asking where to
-    /// put something Juno might fail to fetch. The shared client writes the
-    /// response to a temporary file, so the bytes are read back from there —
-    /// that keeps the export rules (row caps, CSV quoting) in the one place both
-    /// apps share.
+    /// put something Juno might fail to fetch.
     private func export(_ format: NativeAccountDataClient.ExportFormat) {
         guard let accountDataClient else { return }
         isExporting = true
@@ -1697,8 +1359,7 @@ private struct DesktopSettingsAccountActions: View {
                 exportDocument = DesktopSettingsExportDocument(data: data)
                 exportContentType = format == .csv ? .commaSeparatedText : .json
                 // Stem only: the save panel appends the extension for the
-                // content type, and passing the client's full file name gave the
-                // sheet "juno-export-2026-07-26.json.json" to save.
+                // content type.
                 exportFilename = URL(fileURLWithPath: format.fileName(on: Date()))
                     .deletingPathExtension()
                     .lastPathComponent
@@ -1710,44 +1371,133 @@ private struct DesktopSettingsAccountActions: View {
     }
 }
 
-// MARK: - Danger zone
+// MARK: - Account
 
-private struct DesktopSettingsDangerActions: View {
-    let authModel: NativeAuthModel
+/// Who you are to Juno, how you leave, what it may email you, and the one
+/// thing that cannot be undone.
+private struct DesktopSettingsAccountSections: View {
+    let settings: NativeAccountSettings
     let session: NativeAuthenticatedSession
+    let avatarData: Data?
+    let authModel: NativeAuthModel
     let accountDataClient: NativeAccountDataClient?
+    let disabled: Bool
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
+    @State private var showingSignOut = false
     @State private var showingDelete = false
     @State private var confirmation = ""
     @State private var isDeleting = false
     @State private var deleteError: String?
 
     var body: some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Delete account")
-                    .junoRowLabel()
-                    .fontWeight(.medium)
-                Text("Permanently removes your account, conversations, projects, files and memories — everywhere, not just on this Mac.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: JunoSpace.snug)
-            if accountDataClient == nil {
-                Text("Unavailable on this Mac")
-                    .junoCaption()
-            } else {
-                Button("Delete account…", role: .destructive) {
-                    confirmation = ""
-                    deleteError = nil
-                    showingDelete = true
+        Section {
+            HStack(spacing: JunoSpace.regular) {
+                JunoAvatar(
+                    imageData: avatarData,
+                    imageURL: session.profile.imageURL,
+                    name: session.profile.name ?? session.profile.email,
+                    size: DesktopSettingsMetrics.avatarSize
+                )
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text(session.profile.name ?? "Juno account")
+                        .junoRowLabel()
+                        .fontWeight(.medium)
+                        .junoInk()
+                    Text(session.profile.email)
+                        .junoCaption()
+                        .textSelection(.enabled)
                 }
-                .disabled(isDeleting)
-                .accessibilityIdentifier("juno.desktop.settings.delete-account")
-                .contentShape(.rect)
+                Spacer(minLength: 0)
             }
+            .padding(.vertical, JunoSpace.hairline)
+        } header: {
+            DesktopSettingsHeader("Profile")
+        } footer: {
+            Text("Your name and photo are changed on the web, and follow you here.")
+                .junoCaption()
         }
-        .sheet(isPresented: $showingDelete) { confirmSheet }
+
+        Section {
+            LabeledContent {
+                Button("Sign out…") { showingSignOut = true }
+                    .accessibilityIdentifier("juno.desktop.settings.sign-out")
+                    .confirmationDialog("Sign out of Juno?", isPresented: $showingSignOut) {
+                        Button("Sign out", role: .destructive) {
+                            Task { await authModel.signOut() }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Juno removes this Mac's local copy of your conversations and settings. Nothing is deleted on the server.")
+                    }
+            } label: {
+                DesktopSettingsLabel(
+                    "This Mac",
+                    detail: "Signed in as \(session.profile.email)."
+                )
+            }
+        } header: {
+            DesktopSettingsHeader("Sign-in")
+        }
+
+        Section {
+            Toggle(
+                isOn: junoSettingsBinding(settings, \.emailBudgetAlerts, update: update) {
+                    NativeSettingsPatch(emailBudgetAlerts: $0)
+                }
+            ) {
+                DesktopSettingsLabel("Budget alerts", detail: "Email me at 80% of my monthly budget.")
+            }
+            .toggleStyle(.switch)
+            .tint(Color.junoAccent)
+            .disabled(disabled)
+            .accessibilityLabel("Budget alerts")
+            .accessibilityIdentifier("juno.desktop.settings.budget-alerts")
+
+            Toggle(
+                isOn: junoSettingsBinding(settings, \.emailWeeklyDigest, update: update) {
+                    NativeSettingsPatch(emailWeeklyDigest: $0)
+                }
+            ) {
+                DesktopSettingsLabel("Weekly digest", detail: "Usage recap every Monday.")
+            }
+            .toggleStyle(.switch)
+            .tint(Color.junoAccent)
+            .disabled(disabled)
+            .accessibilityLabel("Weekly digest")
+            .accessibilityIdentifier("juno.desktop.settings.weekly-digest")
+        } header: {
+            DesktopSettingsHeader("Email notifications")
+        }
+
+        Section {
+            LabeledContent {
+                if accountDataClient == nil {
+                    Text("Unavailable on this Mac")
+                        .junoCaption()
+                } else {
+                    Button("Delete account…", role: .destructive) {
+                        confirmation = ""
+                        deleteError = nil
+                        showingDelete = true
+                    }
+                    .disabled(isDeleting)
+                    .accessibilityIdentifier("juno.desktop.settings.delete-account")
+                    .sheet(isPresented: $showingDelete) { confirmSheet }
+                }
+            } label: {
+                DesktopSettingsLabel(
+                    "Delete account",
+                    detail: "Permanently removes your account, conversations, projects, files and memories — everywhere, not just on this Mac.",
+                    tone: .destructive
+                )
+            }
+        } header: {
+            DesktopSettingsHeader("Danger zone")
+        } footer: {
+            Text("Irreversible. There is no undo and no grace period.")
+                .junoCaption()
+        }
     }
 
     private var confirmSheet: some View {
@@ -1764,7 +1514,7 @@ private struct DesktopSettingsDangerActions: View {
                 .accessibilityLabel("Confirm your email address")
                 .accessibilityIdentifier("juno.desktop.settings.delete-confirm")
             if let deleteError {
-                JunoIconLabel(verbatim: deleteError, systemImage: "exclamationmark.circle")
+                JunoIconLabel(verbatim: deleteError, icon: .error, size: 13)
                     .junoCaption()
                     .foregroundStyle(Color.junoCaution)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1785,12 +1535,8 @@ private struct DesktopSettingsDangerActions: View {
         }
         .padding(JunoSpace.roomy)
         // An explicit width. A presented surface that negotiates its own width
-        // re-lays out the window underneath it while it appears, and that
-        // re-measure is what this shell has previously fallen into a constraint
-        // loop over.
+        // re-lays out the window underneath it while it appears.
         .frame(width: DesktopSettingsMetrics.confirmWidth)
-        // Sheet contract: the warm ground inside the content, the platter left to
-        // the system. `.fitted` honours the explicit width above.
         .junoSheetSurface(.fitted)
     }
 

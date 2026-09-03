@@ -54,7 +54,7 @@ struct JunoDesktopSmokeTests {
     func everyProductModeNamesItself() {
         for mode in DesktopProductMode.allCases {
             #expect(!mode.label.isEmpty, "\(mode.rawValue) has no label")
-            #expect(!mode.symbol.isEmpty, "\(mode.rawValue) has no symbol")
+            #expect(!mode.icon.assetName.isEmpty, "\(mode.rawValue) has no mark")
         }
     }
 

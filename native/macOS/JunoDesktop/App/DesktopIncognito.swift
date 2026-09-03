@@ -34,10 +34,10 @@ struct DesktopIncognitoWindow: View {
         } else {
             // Signed out. The window still opens — ⇧⌘N is a menu item and a menu
             // item that silently does nothing is worse than one that explains.
-            ContentUnavailableView(
-                "Sign in to use incognito",
-                systemImage: "theatermasks",
-                description: Text("Incognito chats are never saved, but they still run on your account.")
+            JunoEmptyState(
+                title: "Sign in to use incognito",
+                message: "Incognito chats are never saved, but they still run on your account.",
+                icon: .eyeOff
             )
         }
     }
@@ -108,10 +108,7 @@ struct DesktopIncognitoChat: View {
     /// not happen — not a marketing line about privacy.
     private var greeting: some View {
         VStack(spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "theatermasks")
-                // Rides the greeting title's Dynamic Type scale: the glyph and
-                // the serif line below it are one lockup and must grow together.
-                .junoFont(size: 34, relativeTo: .title)
+            JunoIconView(.eyeOff, size: 32)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(profileName.map { "Off the record, \($0)" } ?? "Off the record")
                 .font(JunoSerif.font(size: 26, relativeTo: .title, face: .medium))
@@ -201,14 +198,14 @@ struct DesktopIncognitoChat: View {
                 // the approval cards in Code and Work already state it.
                 if model.isStreaming {
                     Button { model.stopGeneration() } label: {
-                        JunoIconLabel("Stop", systemImage: "stop.fill")
+                        Label("Stop", icon: .stop)
                     }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
                 } else {
                     Button { send() } label: {
-                        JunoIconLabel("Send", systemImage: "arrow.up")
+                        Label("Send", icon: .arrowUp)
                     }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
@@ -236,7 +233,7 @@ struct DesktopIncognitoChat: View {
                 .labelsHidden()
                 .frame(maxWidth: 240)
                 Spacer(minLength: 0)
-                JunoIconLabel("Not saved", systemImage: "theatermasks")
+                Label("Not saved", icon: .eyeOff)
                     .junoCaption()
             }
         }

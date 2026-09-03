@@ -13,25 +13,22 @@ import SwiftUI
 /// layer per screen" means in practice.
 ///
 /// What replaced it is one glass element in one shape. The three regions —
-/// where this runs, what you are asking for, and what you can do about it — are
-/// separated by hairlines *inside* that shape rather than by second shapes on
-/// top of it. There is no seam left to mismatch, because there is no second
-/// edge.
+/// where this runs, what you are asking for, and what you can do about it — sit
+/// *inside* that shape with nothing but spacing between them: no hairline, no
+/// second fill, no second edge. The context strip is a row of quiet chips at
+/// the top of the same surface, the way the Codex app puts "repo · Local ·
+/// main" above its field; a thread screen passes none and gets no strip.
 ///
 /// The shell states its corner **once** and publishes it as the container
 /// shape, so anything nested inside — a chip, an attachment thumbnail, an
 /// inline notice — takes `ConcentricRectangle()` and derives its corner from
-/// this one instead of carrying a literal. The composer is the one place in
-/// Juno Code where three levels of rounded container nest, so it is the one
-/// place where getting that wrong is most visible.
+/// this one instead of carrying a literal.
 ///
 /// Note the asymmetry, which is easy to state backwards: the *shell* is a
 /// `RoundedRectangle` and only its *children* are concentric. `containerShape`
 /// requires a `RoundedRectangularShape`, and `ConcentricRectangle` deliberately
 /// is not one — it is the shape that reads a container, never the shape that is
-/// one. `shellShape` below carries the same explanation at the point it
-/// matters. An earlier draft of this paragraph claimed the shell itself was a
-/// `ConcentricRectangle`, which the file then refuted forty lines later.
+/// one.
 @available(macOS 26.0, *)
 public struct CodeComposerShell<Context: View, Input: View, Actions: View>: View {
     private let tint: Color?
@@ -46,8 +43,8 @@ public struct CodeComposerShell<Context: View, Input: View, Actions: View>: View
     ///     luminance and the text on it reads against whatever is behind the
     ///     window. A drag hovering over the composer is its one moment of full
     ///     emphasis.
-    ///   - context: the run's destination — project, branch, where it executes.
-    ///     Drawn as the shell's top region, inside the same glass.
+    ///   - context: the run's destination — project, where it executes, branch
+    ///     — as small chips inside the same glass. Pass `EmptyView()` for none.
     public init(
         tint: Color? = nil,
         maxWidth: CGFloat = 680,
@@ -64,16 +61,11 @@ public struct CodeComposerShell<Context: View, Input: View, Actions: View>: View
 
     /// The shell's outline, and the reference every corner inside it is
     /// concentric *to*.
-    ///
-    /// `containerShape` takes a `RoundedRectangularShape`, which
-    /// ``ConcentricRectangle`` deliberately is not — it is the shape that
-    /// *reads* a container rather than one that can be a container. So the
-    /// shell states its corner once, here, and hands it down through
-    /// `containerShape`; nested content then draws `ConcentricRectangle()` and
-    /// derives its own corner from this one.
     private var shellShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
     }
+
+    private var hasContext: Bool { Context.self != EmptyView.self }
 
     public var body: some View {
         // One container, one participant. The container is what tells the
@@ -82,18 +74,12 @@ public struct CodeComposerShell<Context: View, Input: View, Actions: View>: View
         // approaches the shell's edge.
         GlassEffectContainer(spacing: JunoSpace.snug) {
             VStack(spacing: 0) {
-                context
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.snug)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                // A hairline, not a `Divider`: `Divider` inside a glass surface
-                // draws the platform's opaque separator, which is a painted
-                // line on a material that is already carrying its own edge.
-                Rectangle()
-                    .fill(Color.junoHairline)
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
+                if hasContext {
+                    context
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.top, JunoSpace.cozy)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
                 input
 
@@ -105,5 +91,39 @@ public struct CodeComposerShell<Context: View, Input: View, Actions: View>: View
             .junoGlass(in: shellShape, tint: tint)
             .containerShape(shellShape)
         }
+    }
+}
+
+/// One fact about where a task lands — "juno", "Local", "main" — as a quiet
+/// chip inside the composer's context strip. A menu when the fact can be
+/// changed, plain text when it cannot.
+public struct CodeContextChip: View {
+    private let title: String
+    private let icon: JunoIcon
+    private let tint: Color?
+
+    public init(_ title: String, icon: JunoIcon, tint: Color? = nil) {
+        self.title = title
+        self.icon = icon
+        self.tint = tint
+    }
+
+    public var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            JunoIconView(icon, size: 12)
+            Text(title)
+                .junoFont(size: 12, relativeTo: .caption, weight: .medium)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(tint ?? Color.junoMutedForeground)
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(height: 24)
+        .background(
+            Color.junoMuted.opacity(0.55),
+            in: RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+        )
+        .frame(minHeight: 44)
+        .contentShape(RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous))
     }
 }

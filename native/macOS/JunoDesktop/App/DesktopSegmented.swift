@@ -3,22 +3,18 @@ import SwiftUI
 
 // MARK: - Segmented control
 
-/// The view switcher: a quiet inset track with one raised thumb that slides.
+/// The view switcher: a flat inset track with one raised thumb that slides.
 ///
 /// Replaces `Picker(...).pickerStyle(.segmented)`, whose AppKit chrome is the
 /// wrong weight for a control sitting *inside* content — hard dividers and a
 /// slab that announces itself louder than the thing it switches.
 ///
-/// **Tonal, not glass.** This used to carry a Liquid Glass knob inside a
-/// `GlassEffectContainer`, morphing between segments with `glassEffectID`. On
-/// the sidebar's vibrant material the glass had nothing honest to refract, so
-/// the knob read as a smeared highlight with a halo, and the morph — the knob
-/// stretching and re-forming — was the "bounce" the review called out. The
-/// Soft UI direction (`docs/design/SOFT_UI.md` §4) states depth on Apple as
-/// tonal: a `junoSurface` tile with a hairline and a very soft shadow, on a
-/// `junoWell` inset. That is exactly what a thumb on a track is, so the thumb
-/// is now that tile, carried between segments by `matchedGeometryEffect` on
-/// `JunoMotion.spring`. It slides; it does not stretch.
+/// **Tonal, not glass.** The Soft UI direction (`docs/design/SOFT_UI.md` §4)
+/// states depth on Apple as tonal: a `junoSurface` tile with a hairline and a
+/// very soft shadow, on a `junoWell` inset. That is exactly what a thumb on a
+/// track is, so the thumb is that tile, carried between segments by
+/// `matchedGeometryEffect` on `JunoMotion.spring`. It slides; it does not
+/// stretch, and no glyph bounces.
 ///
 /// Three things happen on a switch, and they are deliberately separate:
 ///
@@ -26,36 +22,28 @@ import SwiftUI
 /// * the label **ink cross-fades** — a tint-tier change that survives Reduce
 ///   Motion, because a word changing colour is feedback, not movement;
 /// * the pressed segment **dips** — `JunoMotion.press`, the 70ms rung, on the
-///   label alone. Nothing scales the thumb, and no symbol bounces.
+///   label alone.
 ///
 /// **The container must not be `.focusable()`.** SwiftUI hands initial focus
 /// to the first focusable view, so a focusable switcher wears a permanent
 /// accent ring that reads as an error badge on a freshly opened window. The
 /// segments are ordinary Buttons, so Full Keyboard Access still tabs to them
-/// and Space activates them, each drawing the system ring only when focus is
-/// really on it. Arrow keys between segments are the cost; VoiceOver keeps the
-/// equivalent through the adjustable action below, and there is a
-/// `CommandMenu("Product")` for the keyboard.
-///
-/// The phone's `JunoMobileSegmented` is the same control; the two are separate
-/// only because the apps share no view layer.
+/// and Space activates them. VoiceOver keeps arrow-style traversal through the
+/// adjustable action below, and there is a `CommandMenu("Product")` for the
+/// keyboard.
 struct DesktopSegmented<Value: Hashable>: View {
     struct Option: Identifiable {
         let value: Value
         let title: String
-        /// An optional SF Symbol shown before the title.
-        ///
-        /// Optional because not every segmented control wants a mark — a
-        /// two-word filter reads better as two words, and the product switch
-        /// reads better as three. A symbol here is a plain glyph in the label's
-        /// ink; it never animates on its own.
-        let symbol: String?
+        /// An optional website mark shown before the title. A plain glyph in
+        /// the label's ink; it never animates on its own.
+        let icon: JunoIcon?
         var id: Value { value }
 
-        init(_ value: Value, _ title: String, symbol: String? = nil) {
+        init(_ value: Value, _ title: String, icon: JunoIcon? = nil) {
             self.value = value
             self.title = title
-            self.symbol = symbol
+            self.icon = icon
         }
     }
 
@@ -63,6 +51,10 @@ struct DesktopSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     var accessibilityLabel: String
     var optionAccessibilityIdentifier: ((Value) -> String)? = nil
+    /// Whether the segments share the track's width equally rather than sizing
+    /// to their labels. The product switch at the top of a sidebar fills the
+    /// column; a filter inside a page hugs its words.
+    var fills = false
 
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -77,14 +69,17 @@ struct DesktopSegmented<Value: Hashable>: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        if let symbol = option.symbol {
-                            JunoIconView(systemImage: symbol)
-                                .junoFont(size: 11, relativeTo: .body, weight: .medium)
+                        if let icon = option.icon {
+                            JunoIconView(icon, size: 12)
                                 .accessibilityHidden(true)
                         }
                         Text(option.title)
+                            .junoFont(size: 12, relativeTo: .body, weight: .medium)
+                            // A segment never truncates. A label that cannot fit
+                            // is a layout bug to fix at the call site.
+                            .lineLimit(1)
+                            .fixedSize()
                     }
-                    .junoFont(size: 12, relativeTo: .body, weight: .medium)
                     .foregroundStyle(
                         selected ? Color.junoForeground : Color.junoMutedForeground
                     )
@@ -94,12 +89,8 @@ struct DesktopSegmented<Value: Hashable>: View {
                         JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
                         value: selected
                     )
-                    // A segment never truncates. A label that cannot fit is a
-                    // layout bug to fix at the call site, not an ellipsis to
-                    // ship — four "…" buttons in a row is what this replaces.
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, option.symbol == nil ? 12 : 10)
+                    .padding(.horizontal, option.icon == nil ? 12 : 10)
+                    .frame(maxWidth: fills ? .infinity : nil)
                     .frame(height: 28)
                     .background {
                         if selected {
@@ -154,8 +145,7 @@ struct DesktopSegmented<Value: Hashable>: View {
 ///
 /// One view, one `matchedGeometryEffect` id, present under whichever segment
 /// is selected. That is what the layout reads as "the same tile, moved", which
-/// is the sliding thumb. Give each segment its own thumb and they would fade in
-/// place instead, which is a different control.
+/// is the sliding thumb.
 private struct DesktopSegmentThumb: View {
     var body: some View {
         Capsule(style: .continuous)

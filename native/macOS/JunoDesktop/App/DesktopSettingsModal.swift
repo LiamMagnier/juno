@@ -8,7 +8,17 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// The pop-up Settings modal dialog on macOS.
+/// Settings presented inside a product window — as a sheet from the sidebar's
+/// account menu, or as the Chat column's Settings destination.
+///
+/// The same rail and pane the ⌘, window draws (``DesktopSettingsShell``), so
+/// there is one Settings and not two. The modal's only additions are its own
+/// close control in the rail's header and a fixed frame: a presented surface
+/// that negotiates its own size re-lays out the window underneath it, which
+/// this shell has fallen into a constraint loop over before.
+///
+/// The init keeps the individual models its callers already hand over; the
+/// shell reads the rest from the configuration.
 struct DesktopSettingsModal: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let authModel: NativeAuthModel
@@ -26,55 +36,60 @@ struct DesktopSettingsModal: View {
     var learningModel: MemoryLearningModel<SQLiteAccountRepository>?
     let onDismiss: () -> Void
 
+    @AppStorage(DesktopSettingsSection.storageKey) private var storedSection =
+        DesktopSettingsSection.general.rawValue
+    @State private var registry = DesktopWorkbenchRegistry.shared
+
+    private var section: Binding<DesktopSettingsSection> {
+        Binding(
+            get: { DesktopSettingsSection(rawValue: storedSection) ?? .general },
+            set: { storedSection = $0.rawValue }
+        )
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Settings")
-                    .font(.headline)
-                    .foregroundStyle(Color.junoForeground)
-                Spacer()
-                Button(action: onDismiss) {
-                    JunoIconView(systemImage: "xmark")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.junoForeground)
-                        .frame(width: 24, height: 24)
-                        .background(Color.junoMuted.opacity(0.5), in: Circle())
+        Group {
+            if let configuration {
+                DesktopSettingsShell(
+                    configuration: configuration,
+                    settingsModel: model,
+                    session: session,
+                    section: section,
+                    onDismiss: onDismiss
+                )
+            } else {
+                HStack(spacing: 0) {
+                    DesktopSettingsRail(selection: section, onDismiss: onDismiss)
+                        .frame(width: DesktopSettingsMetrics.railWidth)
+                    Divider().overlay(Color.junoSeparator)
+                    DesktopSettingsScreen(
+                        section: section.wrappedValue,
+                        model: model,
+                        authModel: authModel,
+                        session: session,
+                        accountDataClient: accountDataClient,
+                        shareClient: shareClient,
+                        modelCatalog: modelCatalog,
+                        avatarData: avatarData,
+                        syncModel: syncModel,
+                        outbox: outbox,
+                        connectorModel: nil,
+                        requestSender: nil,
+                        codeWorkbench: registry.workbench,
+                        codeModels: registry.workbench?.availableModels ?? [],
+                        codeHostModel: codeHostModel,
+                        workHostModel: workHostModel,
+                        learningModel: learningModel
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .buttonStyle(.plain)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Circle())
-                .keyboardShortcut(.cancelAction)
-                .help("Close settings (Esc)")
-                .accessibilityLabel("Close settings")
+                .junoReadingCanvas()
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.snug)
-            .background(Color.junoRaised.opacity(0.5))
-
-            Divider()
-                .overlay(Color.junoSeparator)
-
-            DesktopSettingsScreen(
-                model: model,
-                authModel: authModel,
-                session: session,
-                accountDataClient: accountDataClient,
-                shareClient: shareClient,
-                modelCatalog: modelCatalog,
-                avatarData: avatarData,
-                syncModel: syncModel,
-                outbox: outbox,
-                openUsage: {
-                    onDismiss()
-                    openUsage?()
-                },
-                codeHostModel: codeHostModel,
-                workHostModel: workHostModel,
-                learningModel: learningModel
-            )
-            .background(Color.junoCanvas)
         }
-        .frame(minWidth: 780, idealWidth: 840, maxWidth: 960, minHeight: 560, idealHeight: 640, maxHeight: 780)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous))
+        .frame(minWidth: 860, idealWidth: 960, maxWidth: 1040, minHeight: 600, idealHeight: 700, maxHeight: 820)
+        .clipShape(
+            RoundedRectangle(cornerRadius: JunoSettingsMetrics.tileRadius, style: .continuous)
+        )
+        .accessibilityIdentifier("juno.desktop.settings.modal")
     }
 }

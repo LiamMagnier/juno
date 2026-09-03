@@ -338,6 +338,14 @@ struct JunoMobileComposer: View {
     .onChange(of: prompt) { _, text in
       if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
     }
+    .onChange(of: startDictation.wrappedValue, initial: true) { _, requested in
+      guard requested, !dictating else { return }
+      // Clear the one-shot request before presenting the recorder: returning
+      // to this view after a send must not immediately reopen it.
+      startDictation.wrappedValue = false
+      composerFocused.wrappedValue = false
+      setDictating(true)
+    }
     // A refusal explains a turn that is no longer being attempted, so it
     // goes with the call it belonged to rather than sitting over the next
     // typed message.

@@ -159,7 +159,7 @@ struct ReviewFileHeader: View {
                 }
             }
         } label: {
-            JunoIconView(systemImage: "clock.arrow.circlepath")
+            JunoIconView(.history)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -350,7 +350,7 @@ struct ReviewFileBody: View {
 
             if let failure = review.revertFailures[hunk.reviewIdentifier] {
                 HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(systemImage: "exclamationmark.triangle.fill")
+                    JunoIconView(.triangleAlert)
                         .foregroundStyle(Color.junoCaution)
                     Text(failure).junoCaption()
                     Spacer(minLength: JunoSpace.snug)
@@ -544,7 +544,7 @@ private struct ReviewNoteRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: JunoSpace.snug) {
-            JunoIconView(systemImage: "text.bubble")
+            JunoIconView(.message)
                 .foregroundStyle(Color.junoAccent)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
@@ -557,7 +557,7 @@ private struct ReviewNoteRow: View {
             }
             Spacer(minLength: JunoSpace.snug)
             Button(role: .destructive, action: onDelete) {
-                JunoIconView(systemImage: "trash")
+                JunoIconView(.trash)
             }
             .buttonStyle(.borderless)
             .controlSize(.small)

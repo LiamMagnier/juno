@@ -56,7 +56,7 @@ struct JunoDisplayMath: View {
             } label: {
                 Label(
                     showsSource ? "Hide LaTeX" : "Show LaTeX",
-                    systemImage: showsSource ? "chevron.down" : "chevron.right"
+                    icon: showsSource ? .chevronDown : .chevronRight
                 )
                 .junoCaption()
             }

@@ -60,13 +60,13 @@ struct SubagentPane: View {
             LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                 section(
                     "Active",
-                    symbol: "bolt.horizontal.fill",
+                    icon: .work,
                     tint: Color.junoAccent,
                     runs: active
                 )
                 section(
                     "Done",
-                    symbol: "checkmark.circle.fill",
+                    icon: .circleCheck,
                     tint: .junoMutedForeground,
                     runs: done
                 )
@@ -80,14 +80,14 @@ struct SubagentPane: View {
     @ViewBuilder
     private func section(
         _ title: String,
-        symbol: String,
+        icon: JunoIcon,
         tint: Color,
         runs: [SubagentRun]
     ) -> some View {
         if !runs.isEmpty {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 HStack(spacing: JunoSpace.tight) {
-                    JunoIconView(systemImage: symbol)
+                    JunoIconView(icon)
                         .imageScale(.small)
                         .foregroundStyle(tint)
                     Text(title)
@@ -144,7 +144,7 @@ struct SubagentPane: View {
 private struct SubagentEmptyState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            JunoIconView(systemImage: "person.2")
+            JunoIconView(.agents)
                 .junoFont(size: 18, relativeTo: .body, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 36, height: 36)
@@ -193,7 +193,7 @@ private struct SubagentListRow: View {
                             .layoutPriority(1)
                         Spacer(minLength: JunoSpace.tight)
                         SubagentElapsed(run: run)
-                        JunoIconView(systemImage: "chevron.right")
+                        JunoIconView(.chevronRight)
                             .imageScale(.small)
                             .junoMetaInk()
                     }
@@ -239,7 +239,7 @@ private struct SubagentStatusBadge: View {
 
     var body: some View {
         HStack(spacing: JunoSpace.hairline) {
-            JunoIconView(systemImage: statusSymbol)
+            JunoIconView(statusIcon)
                 .imageScale(.small)
             Text(SubagentFormatting.listLabel(status))
                 .lineLimit(1)
@@ -256,15 +256,15 @@ private struct SubagentStatusBadge: View {
         .accessibilityLabel(SubagentFormatting.label(status))
     }
 
-    private var statusSymbol: String {
+    private var statusIcon: JunoIcon {
         switch status {
-        case .queued, .preparing: "clock"
-        case .running: "bolt.horizontal.fill"
-        case .waitingForApproval: "hand.raised.fill"
-        case .completed: "checkmark"
-        case .failed: "xmark"
-        case .cancelled: "stop.fill"
-        case .interrupted: "bolt.horizontal"
+        case .queued, .preparing: .clock
+        case .running: .work
+        case .waitingForApproval: .hand
+        case .completed: .check
+        case .failed: .close
+        case .cancelled: .stop
+        case .interrupted: .work
         }
     }
 }
@@ -333,7 +333,7 @@ private struct SubagentDetailPane: View {
                         SubagentInspectorStateCard(
                             title: "Problem",
                             message: error,
-                            symbol: "exclamationmark.triangle.fill",
+                            icon: .triangleAlert,
                             tint: SubagentFormatting.tint(run.status)
                         )
                     }
@@ -348,7 +348,7 @@ private struct SubagentDetailPane: View {
                             message: run.isActive
                                 ? "This sub-agent is still working and has not written a result yet."
                                 : "The sub-agent finished without a result summary.",
-                            symbol: run.isActive ? "hourglass" : "doc.text.magnifyingglass",
+                            icon: run.isActive ? .hourglass : .fileSearch,
                             tint: run.isActive ? Color.junoAccent : .junoMutedForeground,
                             showsProgress: run.isActive
                         )
@@ -471,11 +471,11 @@ private struct SubagentDetailPane: View {
                                 .controlSize(.small)
                                 .tint(Color.junoAccent)
                         } else if pendingApprovals.isEmpty {
-                            JunoIconView(systemImage: "clock")
+                            JunoIconView(.clock)
                                 .imageScale(.small)
                                 .junoSecondaryInk()
                         } else {
-                            JunoIconView(systemImage: "hand.raised.fill")
+                            JunoIconView(.hand)
                                 .imageScale(.small)
                                 .foregroundStyle(Color.junoCaution)
                         }
@@ -709,7 +709,7 @@ private struct SubagentDetailPane: View {
             if isApplying {
                 ProgressView().controlSize(.small)
             } else if compact {
-                JunoIconView(systemImage: "arrow.down.to.line.compact")
+                JunoIconView(.download)
             } else {
                 JunoIconLabel("Apply", icon: .arrowDown)
             }
@@ -729,7 +729,7 @@ private struct SubagentDetailPane: View {
             if isDiscarding {
                 ProgressView().controlSize(.small)
             } else if compact {
-                JunoIconView(systemImage: "trash")
+                JunoIconView(.trash)
             } else {
                 JunoIconLabel("Discard", icon: .trash)
             }
@@ -809,7 +809,7 @@ private struct SubagentDetailPane: View {
             SubagentInspectorStateCard(
                 title: "Loading steps",
                 message: "Reading the sub-agent's activity…",
-                symbol: "arrow.triangle.2.circlepath",
+                icon: .refresh,
                 tint: Color.junoAccent,
                 showsProgress: true
             )
@@ -819,7 +819,7 @@ private struct SubagentDetailPane: View {
                 message: run.childSessionID == nil
                     ? "This sub-agent never opened a session, so it recorded no steps."
                     : "Juno could not read this sub-agent's session from the store.",
-                symbol: run.childSessionID == nil ? "doc.text" : "exclamationmark.triangle",
+                icon: run.childSessionID == nil ? .file : .triangleAlert,
                 tint: run.childSessionID == nil ? .junoMutedForeground : Color.junoDanger
             )
         case let .loaded(detail):
@@ -838,7 +838,7 @@ private struct SubagentDetailPane: View {
                     } else {
                         ForEach(detail.steps) { step in
                             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                                JunoIconView(systemImage: SubagentFormatting.glyph(step.status))
+                                JunoIconView(SubagentFormatting.glyph(step.status))
                                     .imageScale(.small)
                                     .foregroundStyle(SubagentFormatting.tint(step.status))
                                 Text(step.summary)
@@ -907,7 +907,7 @@ private struct SubagentDetailPane: View {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(child.value, forType: .string)
                         } label: {
-                            JunoIconView(systemImage: "doc.on.doc")
+                            JunoIconView(.copy)
                         }
                         .buttonStyle(.borderless)
                         .controlSize(.small)
@@ -944,7 +944,7 @@ private struct SubagentDetailPane: View {
 private struct SubagentInspectorStateCard: View {
     let title: String
     let message: String
-    let symbol: String
+    let icon: JunoIcon
     let tint: Color
     var showsProgress = false
 
@@ -955,7 +955,7 @@ private struct SubagentInspectorStateCard: View {
                     .controlSize(.small)
                     .tint(tint)
             } else {
-                JunoIconView(systemImage: symbol)
+                JunoIconView(icon)
                     .imageScale(.small)
                     .foregroundStyle(tint)
                     .frame(width: 16)
@@ -1144,15 +1144,15 @@ enum SubagentFormatting {
         return parts.joined(separator: ", ")
     }
 
-    static func glyph(_ status: ToolCompletionStatus?) -> String {
+    static func glyph(_ status: ToolCompletionStatus?) -> JunoIcon {
         switch status {
-        case .succeeded: "checkmark.circle.fill"
-        case .failed: "xmark.circle.fill"
-        case .denied: "hand.raised.fill"
-        case .cancelled: "stop.circle.fill"
+        case .succeeded: .circleCheck
+        case .failed: .circleX
+        case .denied: .hand
+        case .cancelled: .circleStop
         // A proposed step with no completion event: the call is either still
         // open or the transcript ends mid-step.
-        case nil: "circle.dotted"
+        case nil: .circleDashed
         }
     }
 

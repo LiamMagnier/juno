@@ -36,7 +36,7 @@ enum DesktopArtifactLoadPhase: Equatable {
 /// screen instead of each inventing its own wording for the same 404.
 struct DesktopArtifactStatus: Equatable {
     let message: String
-    let symbol: String
+    let icon: JunoIcon
     let isRetryable: Bool
     /// `.caution` for the ordinary "try again" cases, `.mutedForeground` for
     /// offline — being offline is a state, not a fault, and colouring it like an
@@ -57,7 +57,7 @@ struct DesktopArtifactStatus: Equatable {
         // retried by reloading the whole collection.
         if let localError, !localError.isEmpty {
             message = copy.humanized(localError, fallback: copy.genericLocal)
-            symbol = "exclamationmark.triangle"
+            icon = .triangleAlert
             isRetryable = false
             tint = .junoCaution
             return
@@ -66,20 +66,20 @@ struct DesktopArtifactStatus: Equatable {
         switch phase {
         case .offline:
             message = copy.offline
-            symbol = "wifi.slash"
+            icon = .wifiOff
             // Nothing to retry: the sync layer reconnects on its own, and a
             // button that cannot succeed is worse than no button.
             isRetryable = false
             tint = .junoMutedForeground
         case .failed:
             message = copy.humanized(serverError, fallback: copy.genericLoad)
-            symbol = "exclamationmark.triangle"
+            icon = .triangleAlert
             isRetryable = true
             tint = .junoCaution
         case .idle, .loading, .ready:
             guard let serverError, !serverError.isEmpty else { return nil }
             message = copy.humanized(serverError, fallback: copy.genericLoad)
-            symbol = "exclamationmark.triangle"
+            icon = .triangleAlert
             isRetryable = true
             tint = .junoCaution
         }

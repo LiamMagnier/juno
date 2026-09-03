@@ -1303,7 +1303,7 @@ public struct CodePreviewWindowView: View {
             Divider().frame(height: JunoSpace.regular).overlay(Color.junoSeparator)
 
             Button { model.reload() } label: {
-                JunoIconView(systemImage: "arrow.clockwise")
+                JunoIconView(.refresh)
             }
             .buttonStyle(.borderless)
             .disabled(model.address == nil)
@@ -1328,7 +1328,7 @@ public struct CodePreviewWindowView: View {
                 .accessibilityIdentifier("juno.code.preview.open")
 
             Button { model.openInBrowser() } label: {
-                JunoIconView(systemImage: "safari")
+                JunoIconView(.web)
             }
             .buttonStyle(.borderless)
             .disabled(model.address == nil)
@@ -1338,7 +1338,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 isLogVisible.toggle()
             } label: {
-                JunoIconView(systemImage: "text.alignleft")
+                JunoIconView(.writing)
             }
             .buttonStyle(.borderless)
             .background(
@@ -1464,7 +1464,7 @@ public struct CodePreviewWindowView: View {
             JunoEmptyState(
                 title: "The server is running",
                 message: "It is serving \(url.absoluteString), which is not open in this window.",
-                symbol: "macwindow",
+                icon: .appWindow,
                 actionLabel: "Open",
                 action: { model.openDetectedAddress() }
             )
@@ -1625,7 +1625,7 @@ public struct CodePreviewWindowView: View {
                 Button {
                     model.stop()
                 } label: {
-                    JunoIconView(systemImage: "stop.fill")
+                    JunoIconView(.stop)
                         .imageScale(.small)
                 }
                 .buttonStyle(.borderless)
@@ -1720,7 +1720,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 copyLog()
             } label: {
-                JunoIconView(systemImage: "doc.on.doc")
+                JunoIconView(.copy)
             }
             .buttonStyle(.borderless)
             .disabled(model.log.isEmpty)
@@ -1730,7 +1730,7 @@ public struct CodePreviewWindowView: View {
             Button {
                 isLogVisible = false
             } label: {
-                JunoIconView(systemImage: "chevron.down")
+                JunoIconView(.chevronDown)
             }
             .buttonStyle(.borderless)
             .help("Hide the server log")
@@ -1865,14 +1865,14 @@ public struct CodePreviewDock: View {
                     Button {
                         openInWindow()
                     } label: {
-                        JunoIconView(systemImage: "macwindow.on.rectangle")
+                        JunoIconView(.appWindow)
                     }
                     .buttonStyle(.borderless)
                     .help("Open the preview in a separate window")
                     .accessibilityLabel("Open preview in separate window")
                 }
                 Button(action: close) {
-                    JunoIconView(systemImage: "xmark")
+                    JunoIconView(.close)
                 }
                 .buttonStyle(.borderless)
                 .help("Close the preview pane")
@@ -1886,7 +1886,7 @@ public struct CodePreviewDock: View {
                 Button {
                     model.reload()
                 } label: {
-                    JunoIconView(systemImage: "arrow.clockwise")
+                    JunoIconView(.refresh)
                 }
                 .buttonStyle(.borderless)
                 .disabled(model.address == nil)
@@ -1898,7 +1898,7 @@ public struct CodePreviewDock: View {
                 Button {
                     isLogVisible.toggle()
                 } label: {
-                    JunoIconView(systemImage: "text.alignleft")
+                    JunoIconView(.writing)
                 }
                 .buttonStyle(.borderless)
                 .background(

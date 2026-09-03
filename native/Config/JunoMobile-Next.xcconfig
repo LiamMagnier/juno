@@ -2,6 +2,7 @@
 
 JUNO_DISPLAY_NAME = Juno Next
 PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.next
+JUNO_MOBILE_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.next
 IPHONEOS_DEPLOYMENT_TARGET = 18.0
 SDKROOT = iphoneos
 SUPPORTED_PLATFORMS = iphoneos iphonesimulator

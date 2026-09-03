@@ -169,40 +169,51 @@ struct TranscriptRow: View {
 
     // MARK: - Messages
 
-    /// The reader's own turn. It is an actor-labeled entry in the work log rather
-    /// than a chat bubble; the task is the subject here, not a sequence of
-    /// floating message pills.
+    /// The reader's own turn: a small centred timestamp, then their words as a
+    /// quiet bubble on the right — a secondary fill, no shadow, no coral — so
+    /// the two voices in the thread are told apart by side and depth rather
+    /// than by a coloured pill.
     private func userRow(_ text: String) -> some View {
-        Text(text)
-            .junoBody()
-            .textSelection(.enabled)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
-            .junoInsetWell()
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("You said: \(text)")
+        VStack(spacing: JunoSpace.snug) {
+            TranscriptTimestamp(date: event.timestamp)
+            HStack(spacing: 0) {
+                Spacer(minLength: JunoSpace.region)
+                Text(text)
+                    .junoBody()
+                    .junoInk()
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.cozy)
+                    .junoInsetWell()
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("You said: \(text)")
     }
 
     private func instructionRow(_ instruction: UserInstructionEvent) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(spacing: JunoSpace.tight) {
-                Text("You")
-                    .font(.caption.weight(.semibold))
-                Text(instruction.kind == .steer ? "Steering" : "Queued follow-up")
-                    .junoCaption()
-                    .junoSecondaryInk()
+        VStack(spacing: JunoSpace.snug) {
+            TranscriptTimestamp(date: event.timestamp)
+            HStack(spacing: 0) {
+                Spacer(minLength: JunoSpace.region)
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    Text(instruction.kind == .steer ? "Steering" : "Queued follow-up")
+                        .junoCaption()
+                        .junoSecondaryInk()
+                    Text(instruction.text)
+                        .junoBody()
+                        .junoInk()
+                        .textSelection(.enabled)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
+                .junoInsetWell()
             }
-            Text(instruction.text)
-                .junoBody()
-                .textSelection(.enabled)
-                .multilineTextAlignment(.leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.vertical, JunoSpace.cozy)
-        .junoInsetWell()
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(instruction.kind == .steer ? "Steering instruction" : "Queued follow-up"): \(instruction.text)"
@@ -345,11 +356,11 @@ struct TranscriptRow: View {
         .padding(JunoSpace.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .fill(Color.junoRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
         .accessibilityElement(children: .contain)
@@ -1320,15 +1331,32 @@ extension View {
     /// The brief's one depth cue for the transcript: agent prose is flat on
     /// the canvas, a user prompt is a gently inset well — a secondary fill with
     /// an inner hairline, no shadow — so the two voices are told apart by
-    /// depth rather than by a coloured bubble.
+    /// depth rather than by a coloured bubble. Card radius, so the bubble and
+    /// the composer it came from share a curve.
     func junoInsetWell() -> some View {
         background(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .fill(Color.junoMuted.opacity(0.7))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
+    }
+}
+
+/// A small centred monospaced time above the reader's turn — the one
+/// timestamp a thread needs, since everything between two prompts is the
+/// agent's reply to the first.
+struct TranscriptTimestamp: View {
+    let date: Date
+
+    var body: some View {
+        Text(date, format: .dateTime.hour().minute())
+            .junoCodeSmall()
+            .junoMetaInk()
+            .monospacedDigit()
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
     }
 }
