@@ -51,20 +51,28 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Opens the main window when SwiftUI declined to.
+    /// Opens the main window when SwiftUI declines to.
     ///
     /// AppKit hands every bare command-line token it cannot read as a `-key
     /// value` default to the app as a document to open — `code` in
     /// `--juno-ui-preview --juno-preview-tab code`, or any file dropped on the
-    /// icon. Juno has no document type, and on macOS 27 an open request at
-    /// launch is enough for SwiftUI to withhold the default `WindowGroup`: the
-    /// app came up with a menu bar, a status item and no window. Neither
-    /// answering the request from the delegate, claiming it with
-    /// `handlesExternalEvents`, nor `defaultLaunchBehavior(.presented)` changed
-    /// that; the one thing that does is the same action the reader has — File ›
-    /// New Window, which `JunoDesktopCommands` offers exactly while no window
-    /// is focused. Invoked once, a turn after launch, and only when no main
-    /// window exists, so an ordinary launch is untouched.
+    /// icon. Juno has no document type, and on the macOS 27 seeds this was
+    /// written against, an open request at launch was enough for SwiftUI to
+    /// withhold the default `WindowGroup`: the app came up with a menu bar, a
+    /// status item and no window. Neither answering the request from the
+    /// delegate, claiming it with `handlesExternalEvents`, nor
+    /// `defaultLaunchBehavior(.presented)` changed that; the one thing that did
+    /// is the same action the reader has — File › New Window, which
+    /// `JunoDesktopCommands` offers exactly while no window is focused.
+    ///
+    /// Re-probed 2026-09-03 on Xcode 27.0 (27A5252f): the withholding no longer
+    /// reproduces — a plain launch carrying `--juno-ui-preview
+    /// --juno-preview-tab code` presents the WindowGroup with this recovery
+    /// disabled, and adding `.defaultLaunchBehavior(.presented)` presents it
+    /// too. macOS 27 is still in seed, so the recovery stays: invoked once, a
+    /// turn after launch, and only when no main window exists, it is a no-op on
+    /// every system that presents correctly and the difference between a working
+    /// preview harness and a menu bar with no window on one that does not.
     @MainActor
     private static func presentMainWindowIfWithheld() {
         let hasMainWindow = NSApp.windows.contains {

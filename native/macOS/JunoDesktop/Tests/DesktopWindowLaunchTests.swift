@@ -3,17 +3,18 @@ import Testing
 
 /// Guards the launch fallback in `JunoDesktopAppDelegate`.
 ///
-/// When SwiftUI withholds the default `WindowGroup` — extra launch arguments
-/// are treated as documents on macOS 27, so a `--juno-ui-preview` launch came
-/// up with a menu bar and no window — the delegate recovers one turn later by
-/// invoking File › New Window *by its menu title*. That only works while the
-/// title the delegate searches for and the title `JunoDesktopCommands`
-/// declares stay one shared constant: a literal edited on either side
-/// silently breaks every launch that carries arguments, which includes the
-/// preview-harness launches visual QA depends on. Neither
-/// `defaultLaunchBehavior(.presented)` nor `handlesExternalEvents` changes the
-/// withholding on the current SDK, so the fallback stands and this pins the
-/// constant it stands on.
+/// On the macOS 27 seeds this was written against, extra launch arguments were
+/// treated as documents and SwiftUI withheld the default `WindowGroup` — a
+/// `--juno-ui-preview` launch came up with a menu bar and no window — and the
+/// delegate recovers one turn later by invoking File › New Window *by its menu
+/// title*. That only works while the title the delegate searches for and the
+/// title `JunoDesktopCommands` declares stay one shared constant: a literal
+/// edited on either side silently breaks every launch that carries arguments,
+/// which includes the preview-harness launches visual QA depends on.
+///
+/// Re-probed 2026-09-03 on Xcode 27.0 (27A5252f): the withholding no longer
+/// reproduces, and the fallback is kept as a no-op safety net for other seeds.
+/// This test still pins the constant it would stand on.
 struct DesktopWindowLaunchTests {
     @Test
     func newWindowMenuTitleIsTheFileMenuItemTheFallbackInvokes() {
