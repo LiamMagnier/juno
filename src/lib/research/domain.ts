@@ -28,11 +28,25 @@
  */
 export const RESEARCH_WORKING_STATES = [
   "planning",
-  "searching",
-  "browsing",
-  "reading_documents",
-  "checking_coverage",
-  "resolving_conflicts",
+  /**
+   * Workers are out: a round of parallel sub-agents, each with its own brief
+   * and its own tool loop, searching and reading against the shared corpus.
+   * The former `searching` / `browsing` / `reading_documents` trio collapsed
+   * into this one state because none of the three was a decision point any
+   * more — the worker decides what to search and what to open, and the only
+   * boundary a driver needs is "a round is running" versus "a round is over".
+   * Pinned sources are still read first, inside the round, so `browsing`'s one
+   * guarantee (the user's own URLs are in the corpus) survives the merge.
+   */
+  "investigating",
+  /**
+   * The lead is between rounds: scoring every sub-question against what the
+   * workers brought back, naming the contradictions, and either writing the
+   * next round's briefs or deciding the corpus is ready. Replaces
+   * `checking_coverage` and `resolving_conflicts`, which were a token-overlap
+   * heuristic and an identical-hash check — neither was a judgement.
+   */
+  "reviewing",
   "synthesizing",
   "validating_citations",
 ] as const;
@@ -145,54 +159,29 @@ const TRANSITIONS: Record<ResearchState, readonly ResearchState[]> = {
     "awaiting_plan_confirmation",
     // Straight past confirmation when the caller pre-confirmed the plan — a
     // chat turn where the user already opted into research per-send.
-    "searching",
+    "investigating",
     "paused",
     "cancelled",
     "failed",
     "partially_completed",
   ],
-  awaiting_plan_confirmation: ["planning", "searching", "paused", "cancelled", "failed"],
-  searching: [
-    "browsing",
-    "paused",
-    "awaiting_user_input",
-    "cancelled",
-    "failed",
-    "partially_completed",
-  ],
-  browsing: [
-    "reading_documents",
-    "paused",
-    "awaiting_user_input",
-    "cancelled",
-    "failed",
-    "partially_completed",
-  ],
-  reading_documents: [
-    "checking_coverage",
-    // Steering pinned a source mid-run: back to gathering so it is actually
-    // fetched, rather than recorded in the plan and never read.
-    "searching",
-    "paused",
-    "awaiting_user_input",
-    "cancelled",
-    "failed",
-    "partially_completed",
-  ],
-  checking_coverage: [
-    "resolving_conflicts",
-    // Coverage came back thin: go round again with the queries steering added.
-    "searching",
-    "paused",
-    "awaiting_user_input",
-    "cancelled",
-    "failed",
-    "partially_completed",
-  ],
-  resolving_conflicts: [
+  awaiting_plan_confirmation: ["planning", "investigating", "paused", "cancelled", "failed"],
+  investigating: [
+    "reviewing",
+    // A round that found the tier's wall clock or page ceiling already spent
+    // has nothing left to review: it goes straight to the writer with what the
+    // earlier rounds established, rather than paying for a review of nothing.
     "synthesizing",
-    /** Same steering path as `reading_documents`. */
-    "searching",
+    "paused",
+    "awaiting_user_input",
+    "cancelled",
+    "failed",
+    "partially_completed",
+  ],
+  reviewing: [
+    // Gaps remain and the budget allows another round of workers on them.
+    "investigating",
+    "synthesizing",
     "paused",
     "awaiting_user_input",
     "cancelled",
@@ -241,6 +230,18 @@ export interface ResearchProgress {
   readCount: number;
   passageCount: number;
   hasReport: boolean;
+  /**
+   * Rounds of workers that have finished, as `plan.rounds` records them.
+   *
+   * Additive: a store written before rounds existed reports none, and the run
+   * resumes into a fresh round — which is what it would have done anyway.
+   */
+  roundsCompleted?: number;
+  /** True when the newest finished round has not yet been reviewed by the lead. */
+  pendingReview?: boolean;
+  /** Wall clock spent investigating so far, against the tier's ceiling. */
+  elapsedMs?: number;
+  wallClockMs?: number | null;
 }
 
 /**
@@ -252,46 +253,60 @@ export interface ResearchProgress {
  * the persisted rows, not a `pausedFrom` column written by the process that
  * then disappeared. Deriving it also means a run steered while paused resumes
  * into the stage the new constraint belongs in rather than the stage it left.
+ *
+ * The round ledger is what makes this honest under the agent loop. A run that
+ * died with a round finished but unreviewed must resume in `reviewing`, not
+ * spawn another round on top of findings nobody has scored; and a run whose
+ * tier wall clock has already run out resumes at the writer, because more
+ * investigation is exactly what the clock forbids.
  */
 export function resumeStateFor(progress: ResearchProgress): ResearchWorkingState {
   if (!progress.planConfirmed || progress.queryCount === 0) return "planning";
-  if (progress.sourceCount === 0) return "searching";
-  if (progress.readCount === 0) return "browsing";
-  if (progress.passageCount === 0) return "reading_documents";
-  if (!progress.hasReport) return "checking_coverage";
-  return "validating_citations";
+  if (progress.hasReport) return "validating_citations";
+  if (wallClockExceeded(progress) && progress.sourceCount > 0) return "synthesizing";
+  if ((progress.roundsCompleted ?? 0) > 0 && progress.pendingReview) return "reviewing";
+  return "investigating";
+}
+
+/** True once the tier's wall clock has been used up, when the run has one. */
+export function wallClockExceeded(progress: Pick<ResearchProgress, "elapsedMs" | "wallClockMs">): boolean {
+  return (
+    typeof progress.wallClockMs === "number" &&
+    progress.wallClockMs > 0 &&
+    (progress.elapsedMs ?? 0) >= progress.wallClockMs
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Stages — what the user is shown
 // ---------------------------------------------------------------------------
 
-export const RESEARCH_STAGES = ["plan", "gather", "read", "crosscheck", "write", "done"] as const;
+export const RESEARCH_STAGES = ["plan", "investigate", "review", "write", "done"] as const;
 export type ResearchStage = (typeof RESEARCH_STAGES)[number];
 
 /**
  * The state → stage collapse.
  *
- * Eight working states is an implementation detail; a person watching wants to
+ * Working states are an implementation detail; a person watching wants to
  * know whether Juno is still finding things or already writing. The panel
  * groups by stage for the same reason the chat timeline shows phases instead
  * of raw tool calls — the earlier version of this surface streamed every
  * query and every fetch as its own line, and a fifty-line wall of "Searching
  * the web" reads as noise, not as progress.
+ *
+ * `validating_citations` sits under `write`: to a reader it is the tail of
+ * writing — the draft exists and is being checked — not a return to review.
  */
 const STAGE_OF: Record<ResearchState, ResearchStage> = {
   accepted: "plan",
   planning: "plan",
   awaiting_plan_confirmation: "plan",
-  searching: "gather",
-  browsing: "gather",
-  reading_documents: "read",
-  checking_coverage: "crosscheck",
-  resolving_conflicts: "crosscheck",
-  validating_citations: "crosscheck",
+  investigating: "investigate",
+  reviewing: "review",
   synthesizing: "write",
-  awaiting_user_input: "gather",
-  paused: "gather",
+  validating_citations: "write",
+  awaiting_user_input: "investigate",
+  paused: "investigate",
   completed: "done",
   partially_completed: "done",
   failed: "done",
@@ -305,9 +320,8 @@ export function stageForState(state: ResearchState): ResearchStage {
 /** Stage headings. Written as copy because the panel renders them verbatim. */
 export const RESEARCH_STAGE_LABEL: Record<ResearchStage, string> = {
   plan: "Planning",
-  gather: "Finding sources",
-  read: "Reading sources",
-  crosscheck: "Cross-checking",
+  investigate: "Investigating",
+  review: "Reviewing the evidence",
   write: "Writing the report",
   done: "Finished",
 };
@@ -317,11 +331,8 @@ export const RESEARCH_STATE_MESSAGE: Record<ResearchState, string> = {
   accepted: "Getting ready",
   planning: "Working out what to look up",
   awaiting_plan_confirmation: "Waiting for you to confirm the plan",
-  searching: "Searching the web",
-  browsing: "Opening the most promising results",
-  reading_documents: "Reading the sources in full",
-  checking_coverage: "Checking the plan is covered",
-  resolving_conflicts: "Working out where sources disagree",
+  investigating: "Researchers are searching and reading",
+  reviewing: "Reviewing what the researchers found",
   synthesizing: "Writing the report",
   validating_citations: "Checking every citation against its source",
   awaiting_user_input: "Waiting for your answer",
@@ -367,6 +378,21 @@ export const RESEARCH_EVENT_KINDS = [
   "report_repaired",
   "report_revision",
   "worker_lease_acquired",
+  /*
+   * The agent loop. One `worker_spawned` per delegation brief, one
+   * `worker_tool_call` per tool the worker used (query or URL, and how long it
+   * took), one `worker_finished` with what it brought back. The console draws
+   * its parallel lanes from exactly these three.
+   */
+  "worker_spawned",
+  "worker_tool_call",
+  "worker_finished",
+  /** The lead's verdict between rounds: coverage per sub-question, gaps, decision. */
+  "round_reviewed",
+  /** A page was condensed by the worker model on first open; `chars` is the summary's length. */
+  "page_summarized",
+  /** Pages, tool calls, tokens, money and wall clock against the tier, at each round boundary. */
+  "budget_checkpoint",
   /** A constraint or a source the user added while the run was going. */
   "steering_applied",
   "spend_recorded",
@@ -679,11 +705,229 @@ export interface ResearchPlan {
   followUpRound?: number;
   /** Number of citation-driven report rewrites already scheduled. */
   revisionRound?: number;
-  /** Last deterministic coverage matrix written by the controller. */
+  /** Last coverage matrix written by the lead's round review. */
   coverage?: ResearchCoverageEntry[];
   /** Conflicts found while gathering or validating evidence. */
   conflicts?: ResearchConflict[];
+  /**
+   * The lead's research brief: what the question actually contains, restated
+   * for the workers. Every delegation brief quotes it, so a worker never sees
+   * only its own sub-question and drifts away from the goal.
+   */
+  brief?: string;
+  /** How hard the run works — see `RESEARCH_TIERS`. Absent on runs older than tiers. */
+  effort?: ResearchEffort;
+  /** The tier's ceilings, frozen on the run so a later edit to the table cannot move a live run's limits. */
+  budget?: ResearchBudget;
+  /** One entry per round of workers, in order. The engine resumes from its length. */
+  rounds?: ResearchRound[];
 }
+
+// ---------------------------------------------------------------------------
+// Effort tiers
+// ---------------------------------------------------------------------------
+
+/**
+ * How hard a run works.
+ *
+ * The four names are the ones the product surfaces use, so they are the
+ * vocabulary here rather than a number: a caller asks for "deep", not for
+ * eight workers, and the table below is what "deep" means this release.
+ */
+export const RESEARCH_EFFORTS = ["quick", "standard", "deep", "max"] as const;
+export type ResearchEffort = (typeof RESEARCH_EFFORTS)[number];
+
+export function isResearchEffort(value: unknown): value is ResearchEffort {
+  return typeof value === "string" && (RESEARCH_EFFORTS as readonly string[]).includes(value);
+}
+
+/**
+ * What a tier is allowed to spend, in every unit the run can run out of.
+ *
+ * Pages, tool calls, tokens and wall clock are each a real ceiling, because
+ * each is a different way for an agent loop to go wrong: a worker that keeps
+ * searching without opening anything burns tool calls and no pages; a page
+ * that summarises to nothing burns tokens and no findings; a site that answers
+ * in thirty seconds a fetch burns the clock and nothing else. Money is the
+ * ceiling the account already had (`ResearchRun.budgetMicroUsd`); the tier
+ * does not add a second one, it sizes itself to fit inside the first.
+ */
+export interface ResearchTier {
+  effort: ResearchEffort;
+  /** Workers dispatched in parallel per round. */
+  workers: number;
+  /** Rounds of workers before the run must write. */
+  rounds: number;
+  /** Tool calls one worker may make before it is told to wrap up. */
+  toolCallsPerWorker: number;
+  /** Pages the whole run may read in full. */
+  pages: number;
+  /** Model tokens (input + output) the workers may consume across the run. */
+  tokens: number;
+  /** Wall clock from the first worker to the writer, in milliseconds. */
+  wallClockMs: number;
+  /** Wall clock one worker gets before it is stopped. */
+  workerWallClockMs: number;
+  /** Judge calls the citation audit may make on this tier's report. */
+  judgeCalls: number;
+}
+
+const MINUTE_MS = 60_000;
+
+/**
+ * The tier table.
+ *
+ * Sized from the published shape of the deep-research products this engine is
+ * measured against — a quick pass reads a couple of dozen pages in a few
+ * minutes; a deep one runs a team for half an hour and reads a few hundred.
+ * The page figures are the ones a user actually feels, and are what the
+ * `deep` tier's $8 default budget is checked against in
+ * tests/research-agents.test.ts: a tier that cannot afford its own page count
+ * under the cost model below is a tier that stops early and says "budget".
+ */
+export const RESEARCH_TIERS: Record<ResearchEffort, ResearchTier> = {
+  quick: {
+    effort: "quick",
+    workers: 1,
+    rounds: 1,
+    toolCallsPerWorker: 25,
+    pages: 20,
+    tokens: 400_000,
+    wallClockMs: 5 * MINUTE_MS,
+    workerWallClockMs: 4 * MINUTE_MS,
+    judgeCalls: 24,
+  },
+  standard: {
+    effort: "standard",
+    workers: 4,
+    rounds: 2,
+    toolCallsPerWorker: 40,
+    pages: 80,
+    tokens: 1_500_000,
+    wallClockMs: 12 * MINUTE_MS,
+    workerWallClockMs: 5 * MINUTE_MS,
+    judgeCalls: 48,
+  },
+  deep: {
+    effort: "deep",
+    workers: 8,
+    rounds: 3,
+    toolCallsPerWorker: 60,
+    pages: 320,
+    tokens: 6_000_000,
+    wallClockMs: 30 * MINUTE_MS,
+    workerWallClockMs: 8 * MINUTE_MS,
+    judgeCalls: 96,
+  },
+  max: {
+    effort: "max",
+    workers: 12,
+    rounds: 3,
+    toolCallsPerWorker: 80,
+    pages: 480,
+    tokens: 12_000_000,
+    wallClockMs: 60 * MINUTE_MS,
+    workerWallClockMs: 12 * MINUTE_MS,
+    judgeCalls: 160,
+  },
+};
+
+/** The tier a run that named none is given. Chat and REST override it separately. */
+export const DEFAULT_RESEARCH_EFFORT: ResearchEffort = "standard";
+
+/**
+ * The ceilings as frozen on the run, plus when investigation began.
+ *
+ * Frozen rather than looked up, so a deploy that retunes `RESEARCH_TIERS`
+ * cannot change what a run already in flight is allowed to do — the user was
+ * shown one plan and one budget, and those are the ones the engine enforces.
+ */
+export interface ResearchBudget {
+  effort: ResearchEffort;
+  workers: number;
+  rounds: number;
+  toolCallsPerWorker: number;
+  pages: number;
+  tokens: number;
+  wallClockMs: number;
+  workerWallClockMs: number;
+  judgeCalls: number;
+  /** ISO instant the first round started; the wall clock is measured from it. */
+  startedAt?: string;
+}
+
+export function budgetForEffort(effort: ResearchEffort): ResearchBudget {
+  const tier = RESEARCH_TIERS[effort];
+  return {
+    effort,
+    workers: tier.workers,
+    rounds: tier.rounds,
+    toolCallsPerWorker: tier.toolCallsPerWorker,
+    pages: tier.pages,
+    tokens: tier.tokens,
+    wallClockMs: tier.wallClockMs,
+    workerWallClockMs: tier.workerWallClockMs,
+    judgeCalls: tier.judgeCalls,
+  };
+}
+
+/** A delegation brief: what one worker is sent to find. */
+export interface ResearchDelegation {
+  /** Stable within the run: `w<round>-<n>`. */
+  workerId: string;
+  /** The sub-question this worker serves; joins to `ResearchObjective.id`. */
+  objectiveId: string;
+  objective: string;
+  /** What to find, in the lead's words — a paragraph, not a query. */
+  whatToFind: string;
+  /** What NOT to spend time on, so two workers do not read the same thing. */
+  boundaries: string;
+}
+
+/** One round of workers, as the plan records it. */
+export interface ResearchRound {
+  round: number;
+  /** The briefs that were dispatched. */
+  delegations: ResearchDelegation[];
+  /** Pages read in full by the whole run when the round ended. */
+  pagesRead: number;
+  toolCalls: number;
+  tokens: number;
+  /** Findings noted by this round's workers. */
+  claims: number;
+  /** Of those, findings on pages no earlier round had cited. */
+  newClaims: number;
+  startedAt: string;
+  finishedAt?: string;
+  /** Written by the lead review; absent while the round awaits one. */
+  review?: ResearchRoundReview;
+}
+
+/** What the lead concluded from one round. */
+export interface ResearchRoundReview {
+  /** 0..1 per sub-question, keyed by objective id. */
+  coverage: Record<string, number>;
+  /** Sub-questions still open, each with the brief to send after it. */
+  gaps: Array<{ objectiveId: string; reason: string }>;
+  contradictions: number;
+  decision: "continue" | "synthesize";
+  reason: string;
+}
+
+/** A sub-question counts as answered at or above this coverage. */
+export const COVERAGE_TARGET = 0.8;
+/**
+ * A round that added fewer new claims than this share of the total has
+ * saturated: the corpus is telling the workers what they already know, and
+ * another round would pay to hear it again.
+ */
+export const SATURATION_NEW_CLAIM_SHARE = 0.1;
+/** Rounds one plan may record. A ceiling on the ledger, not a target. */
+export const MAX_RESEARCH_ROUNDS = 6;
+/** Delegations one round may hold. */
+export const MAX_DELEGATIONS_PER_ROUND = 16;
+export const MAX_BRIEF_CHARS = 2_000;
+export const MAX_DELEGATION_CHARS = 1_200;
 
 export const EMPTY_PLAN: ResearchPlan = {
   queries: [],
@@ -750,6 +994,7 @@ export function parsePlan(value: unknown): ResearchPlan {
   const queries = cleanList(raw.queries, MAX_PLAN_QUERIES, MAX_QUERY_CHARS);
   const steps = cleanList(raw.steps, MAX_PLAN_STEPS, MAX_STEP_CHARS);
   const parsedObjectives = parseObjectives(raw.objectives);
+  const budget = parseBudget(raw.budget);
   return {
     // Omitted rather than stored empty, so "this plan predates steps" and "this
     // planner returned none" stay the same shape to every consumer.
@@ -771,6 +1016,126 @@ export function parsePlan(value: unknown): ResearchPlan {
       : {}),
     ...(Array.isArray(raw.coverage) ? { coverage: parseCoverage(raw.coverage) } : {}),
     ...(Array.isArray(raw.conflicts) ? { conflicts: parseConflicts(raw.conflicts) } : {}),
+    ...(typeof raw.brief === "string" && raw.brief.trim() ? { brief: raw.brief.trim().slice(0, MAX_BRIEF_CHARS) } : {}),
+    ...(isResearchEffort(raw.effort) ? { effort: raw.effort } : {}),
+    ...(budget ? { budget } : {}),
+    ...(Array.isArray(raw.rounds) ? { rounds: parseRounds(raw.rounds) } : {}),
+  };
+}
+
+/**
+ * The tier's ceilings for a plan, whether or not the plan has frozen them.
+ *
+ * A plan written before tiers existed has neither `effort` nor `budget`; it
+ * gets the default tier so a resumed legacy run is bounded like a new one.
+ */
+export function planBudget(plan: ResearchPlan): ResearchBudget {
+  return plan.budget ?? budgetForEffort(plan.effort ?? DEFAULT_RESEARCH_EFFORT);
+}
+
+/** Wall clock spent since the first round began, or zero before it did. */
+export function investigationElapsedMs(plan: ResearchPlan, now: Date): number {
+  const started = plan.budget?.startedAt ? Date.parse(plan.budget.startedAt) : NaN;
+  return Number.isFinite(started) ? Math.max(0, now.getTime() - started) : 0;
+}
+
+function parseDelegations(value: unknown): ResearchDelegation[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResearchDelegation[] = [];
+  for (const raw of value.slice(0, MAX_DELEGATIONS_PER_ROUND)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    const workerId = typeof item.workerId === "string" ? item.workerId.slice(0, 40) : "";
+    const objective = typeof item.objective === "string" ? item.objective.trim().slice(0, MAX_QUERY_CHARS) : "";
+    if (!workerId || !objective) continue;
+    out.push({
+      workerId,
+      objectiveId: typeof item.objectiveId === "string" ? item.objectiveId.slice(0, 80) : "",
+      objective,
+      whatToFind: typeof item.whatToFind === "string" ? item.whatToFind.slice(0, MAX_DELEGATION_CHARS) : "",
+      boundaries: typeof item.boundaries === "string" ? item.boundaries.slice(0, MAX_DELEGATION_CHARS) : "",
+    });
+  }
+  return out;
+}
+
+function parseRoundReview(value: unknown): ResearchRoundReview | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const coverage: Record<string, number> = {};
+  if (raw.coverage && typeof raw.coverage === "object" && !Array.isArray(raw.coverage)) {
+    for (const [key, score] of Object.entries(raw.coverage as Record<string, unknown>)) {
+      if (typeof score === "number" && Number.isFinite(score)) coverage[key.slice(0, 80)] = Math.max(0, Math.min(1, score));
+    }
+  }
+  const gaps = Array.isArray(raw.gaps)
+    ? raw.gaps
+        .filter((gap): gap is Record<string, unknown> => !!gap && typeof gap === "object" && !Array.isArray(gap))
+        .map((gap) => ({
+          objectiveId: typeof gap.objectiveId === "string" ? gap.objectiveId.slice(0, 80) : "",
+          reason: typeof gap.reason === "string" ? gap.reason.slice(0, 400) : "",
+        }))
+        .filter((gap) => gap.objectiveId)
+        .slice(0, MAX_RESEARCH_OBJECTIVES)
+    : [];
+  return {
+    coverage,
+    gaps,
+    contradictions:
+      typeof raw.contradictions === "number" ? Math.max(0, Math.floor(raw.contradictions)) : 0,
+    decision: raw.decision === "continue" ? "continue" : "synthesize",
+    reason: typeof raw.reason === "string" ? raw.reason.slice(0, 400) : "",
+  };
+}
+
+const count = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+
+function parseRounds(value: unknown): ResearchRound[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResearchRound[] = [];
+  for (const raw of value.slice(0, MAX_RESEARCH_ROUNDS)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    const review = parseRoundReview(item.review);
+    out.push({
+      round: count(item.round) || out.length + 1,
+      delegations: parseDelegations(item.delegations),
+      pagesRead: count(item.pagesRead),
+      toolCalls: count(item.toolCalls),
+      tokens: count(item.tokens),
+      claims: count(item.claims),
+      newClaims: count(item.newClaims),
+      startedAt: typeof item.startedAt === "string" ? item.startedAt : "",
+      ...(typeof item.finishedAt === "string" ? { finishedAt: item.finishedAt } : {}),
+      ...(review ? { review } : {}),
+    });
+  }
+  return out;
+}
+
+function parseBudget(value: unknown): ResearchBudget | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  if (!isResearchEffort(raw.effort)) return undefined;
+  // Any ceiling the stored blob lacks falls back to the tier's current value —
+  // a budget written by a build with fewer ceilings must still bound the run.
+  const base = budgetForEffort(raw.effort);
+  const pick = (key: keyof Omit<ResearchBudget, "effort" | "startedAt">) => {
+    const stored = raw[key];
+    return typeof stored === "number" && Number.isFinite(stored) && stored > 0 ? Math.floor(stored) : base[key];
+  };
+  return {
+    effort: raw.effort,
+    workers: pick("workers"),
+    rounds: pick("rounds"),
+    toolCallsPerWorker: pick("toolCallsPerWorker"),
+    pages: pick("pages"),
+    tokens: pick("tokens"),
+    wallClockMs: pick("wallClockMs"),
+    workerWallClockMs: pick("workerWallClockMs"),
+    judgeCalls: pick("judgeCalls"),
+    ...(typeof raw.startedAt === "string" ? { startedAt: raw.startedAt } : {}),
   };
 }
 
@@ -911,6 +1276,27 @@ export const JUDGE_OUTPUT_TOKENS = 200;
  */
 export const MAX_JUDGE_CALLS = 24;
 /**
+ * The judge cap for a tier's report.
+ *
+ * A quick run's report has a dozen claims; a max run's has a hundred and
+ * cites four hundred pages. Auditing both at 24 calls left most of the deep
+ * report `unverified`, which the finish rule below then had to treat as fine
+ * — so the cap scales with the tier, and `unverified` no longer gets a pass.
+ */
+export function judgeCallsForEffort(effort: ResearchEffort | undefined): number {
+  return effort ? RESEARCH_TIERS[effort].judgeCalls : MAX_JUDGE_CALLS;
+}
+/**
+ * The share of claims the audit may leave unchecked before the run stops
+ * calling itself `completed`.
+ *
+ * `unverified` used to be free: a report whose audit ran out of judge calls
+ * after two claims finished `completed`, identical to one whose every claim
+ * was checked. Past this share the run is `partially_completed`, which is the
+ * state that already means "usable, not fully verified".
+ */
+export const MAX_UNVERIFIED_SHARE = 0.2;
+/**
  * Everything the judge prompt carries besides the passage itself: the claim
  * (bounded at 600 characters by `MAX_CLAIM_CHARS` in claim-analysis.ts), the
  * source title TWICE — once on the `SOURCE:` line, once as the untrusted
@@ -929,12 +1315,105 @@ export const JUDGE_PROMPT_OVERHEAD_CHARS = 2_000;
  * of the model, which for synthesis is a function of the corpus and therefore
  * has to be passed in rather than baked into a constant.
  */
-export function modelCallEstimateMicroUsd(promptChars: number, maxOutputTokens: number): number {
+export function modelCallEstimateMicroUsd(
+  promptChars: number,
+  maxOutputTokens: number,
+  rates: ResearchModelRates = REFERENCE_MODEL_RATES
+): number {
   const promptTokens = Math.ceil(Math.max(0, promptChars) / CHARS_PER_TOKEN);
   const raw =
-    promptTokens * REFERENCE_INPUT_MICRO_USD_PER_TOKEN +
-    Math.max(0, maxOutputTokens) * REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN;
+    promptTokens * rates.inputMicroUsdPerToken + Math.max(0, maxOutputTokens) * rates.outputMicroUsdPerToken;
   return Math.ceil(raw * MODEL_ESTIMATE_MARGIN);
+}
+
+/**
+ * What a model charges, in the unit the estimates are computed in.
+ *
+ * Micro-USD per token equals dollars per million tokens, so a model's
+ * `inputUsdPerMTok` from `getModelMetrics` IS this figure. The engine never
+ * looks a model up itself — `tools.ts` chooses the models and reports their
+ * rates through `ResearchDeps.modelRates`, so a cheap worker model is priced
+ * as the cheap model it is rather than at the reference ceiling.
+ */
+export interface ResearchModelRates {
+  inputMicroUsdPerToken: number;
+  outputMicroUsdPerToken: number;
+}
+
+export const REFERENCE_MODEL_RATES: ResearchModelRates = {
+  inputMicroUsdPerToken: REFERENCE_INPUT_MICRO_USD_PER_TOKEN,
+  outputMicroUsdPerToken: REFERENCE_OUTPUT_MICRO_USD_PER_TOKEN,
+};
+
+/*
+ * The agent stages, and how their ceilings are derived.
+ *
+ * A worker is a tool loop: every call re-sends the whole conversation, so the
+ * bound on one call's prompt is the bound on the conversation, and the worker
+ * runner enforces it by compacting old tool results once the transcript
+ * passes `WORKER_CONTEXT_CHARS`. That cap is what makes the per-worker
+ * estimate arithmetic rather than a guess: at most `toolCallsPerWorker + 1`
+ * model calls, each at most the context cap in, each at most
+ * `WORKER_OUTPUT_TOKENS` out, plus one vendor fee per tool call at the dearer
+ * of the two fees.
+ */
+/** Characters of transcript a worker may carry into one model call. */
+export const WORKER_CONTEXT_CHARS = 80_000;
+/** A worker's reply cap per call: a tool call and a line of reasoning, or its final summary. */
+export const WORKER_OUTPUT_TOKENS = 700;
+/** Characters of a search digest returned to a worker. */
+export const SEARCH_DIGEST_CHARS = 3_000;
+/** Characters of a page digest (summary + chunk index) returned to a worker. */
+export const PAGE_DIGEST_CHARS = 6_000;
+/** Characters of a `find_in_page` reply. */
+export const FIND_DIGEST_CHARS = 3_000;
+/** Page characters the summariser is shown. Past this a page is summarised from its head. */
+export const SUMMARY_PROMPT_CHARS = 24_000;
+export const SUMMARY_OUTPUT_TOKENS = 320;
+/** Findings characters the lead review is shown. */
+export const REVIEW_PROMPT_CHARS = 48_000;
+export const REVIEW_OUTPUT_TOKENS = 2_048;
+/** Compressed findings characters the writer is shown, on top of the cited chunks. */
+export const SYNTHESIS_FINDINGS_CHARS = 120_000;
+
+/** One worker's worst case: its whole tool loop, priced at the worker model's rates. */
+export function workerEstimateMicroUsd(
+  budget: Pick<ResearchBudget, "toolCallsPerWorker">,
+  rates: ResearchModelRates
+): number {
+  const calls = budget.toolCallsPerWorker + 1;
+  const model = calls * modelCallEstimateMicroUsd(WORKER_CONTEXT_CHARS + SYSTEM_PROMPT_CHARS, WORKER_OUTPUT_TOKENS, rates);
+  const vendor = budget.toolCallsPerWorker * Math.max(SEARCH_FEE_MICRO_USD, PAGE_FETCH_FEE_MICRO_USD) * VENDOR_ESTIMATE_MARGIN;
+  return model + vendor;
+}
+
+/** One page open: the fetch fee and the summary the worker model writes for it. */
+export function pageOpenEstimateMicroUsd(rates: ResearchModelRates): number {
+  return (
+    PAGE_FETCH_FEE_MICRO_USD * VENDOR_ESTIMATE_MARGIN +
+    modelCallEstimateMicroUsd(SUMMARY_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, SUMMARY_OUTPUT_TOKENS, rates)
+  );
+}
+
+/** The lead's round review: one call over the compressed findings. */
+export function reviewEstimateMicroUsd(rates: ResearchModelRates): number {
+  return modelCallEstimateMicroUsd(REVIEW_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, REVIEW_OUTPUT_TOKENS, rates);
+}
+
+/**
+ * Inline citation markers, `[n]`, as the report's own numbering.
+ *
+ * Three digits, not two: a deep run numbers several hundred sources, and the
+ * old `\d{1,2}` silently missed every `[100]` and above — a dangling citation
+ * to source 250 of a 200-source corpus passed the check. Fenced code blocks
+ * are skipped because `[1]` inside a code sample is an array index, and a
+ * report about software would otherwise fail its own audit.
+ */
+export function citedMarkers(report: string): Set<number> {
+  const cited = new Set<number>();
+  const prose = report.replace(/```[\s\S]*?```/g, " ");
+  for (const match of prose.matchAll(/\[(\d{1,3})\]/g)) cited.add(Number(match[1]));
+  return cited;
 }
 
 // ---------------------------------------------------------------------------

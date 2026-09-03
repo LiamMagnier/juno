@@ -17,6 +17,7 @@ import {
   clientSubmissionMetadataIssue,
 } from "@/lib/chat-origin";
 import { REASONING_TIERS } from "@/lib/model-metrics";
+import { RESEARCH_EFFORTS } from "@/lib/research/domain";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 
 const clarificationAnswerValueSchema = z.union([
@@ -105,6 +106,9 @@ export const chatBodySchema = z
     // Deep research mode: plan → search → read → cited report (saved chats only;
     // ignored in private mode, where the toggle is hidden client-side).
     deepResearch: z.boolean().optional(),
+    // How hard a deep-research turn works (quick | standard | deep | max).
+    // Optional; the research adapter's default applies when absent.
+    researchEffort: z.enum(RESEARCH_EFFORTS).optional(),
     // Built from REASONING_TIERS, never repeated literals: this enum listed only
     // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
     // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,

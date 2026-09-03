@@ -192,7 +192,6 @@ struct JunoDesktopApp: App {
         // opening Usage never replaces the surface the reader was working in.
         Settings {
             DesktopSettingsWindow(configuration: configuration)
-                .junoReadingCanvas()
                 .junoAccountAppearance(configuration)
         }
 

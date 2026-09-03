@@ -87,6 +87,7 @@ export async function POST(req: Request) {
     goal: parsed.data.goal,
     conversationId: parsed.data.conversationId ?? null,
     budgetMicroUsd: parsed.data.budgetMicroUsd ? BigInt(parsed.data.budgetMicroUsd) : null,
+    effort: parsed.data.effort,
     confirmation: "required",
     constraints: parsed.data.constraints,
     pinnedSources: parsed.data.pinnedSources,

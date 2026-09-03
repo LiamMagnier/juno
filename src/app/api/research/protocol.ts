@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 import {
+  RESEARCH_EFFORTS,
   MAX_CONSTRAINT_CHARS,
   MAX_PINNED_SOURCES,
   MAX_PLAN_CONSTRAINTS,
@@ -55,6 +56,11 @@ export const startResearchSchema = z.object({
     .optional(),
   constraints: z.array(constraint).max(MAX_PLAN_CONSTRAINTS).optional(),
   pinnedSources: z.array(sourceUrl).max(MAX_PINNED_SOURCES).optional(),
+  /**
+   * How hard the run works — see `RESEARCH_TIERS`. Optional: a caller that
+   * names none lets the planner size the tier from the goal.
+   */
+  effort: z.enum(RESEARCH_EFFORTS).optional(),
 });
 
 export const decidePlanSchema = z.object({

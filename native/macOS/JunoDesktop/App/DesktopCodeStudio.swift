@@ -108,8 +108,8 @@ enum DesktopCodeSessionFilter: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .all: "All"
-        case .running: "Running"
-        case .needsYou: "Needs you"
+        case .running: "Run"
+        case .needsYou: "Needs"
         case .done: "Done"
         }
     }
@@ -117,7 +117,12 @@ enum DesktopCodeSessionFilter: String, CaseIterable, Identifiable {
     /// The label as the sidebar's pull-down states it: "All" alone, at the top
     /// of a column of sessions, does not say all of *what*.
     var menuLabel: String {
-        self == .all ? "All sessions" : label
+        switch self {
+        case .all: "All sessions"
+        case .running: "Running"
+        case .needsYou: "Needs your attention"
+        case .done: "Done"
+        }
     }
 
     func includes(_ status: CodeRunStatus) -> Bool {
@@ -385,6 +390,11 @@ struct DesktopCodeSidebar: View {
             }
 
             Section {
+                DesktopCodeSessionFilterButton(filter: $filter)
+                    .selectionDisabled()
+            }
+
+            Section {
                 if groups.isEmpty {
                     emptyProjects
                 }
@@ -406,7 +416,6 @@ struct DesktopCodeSidebar: View {
                 HStack(spacing: JunoSpace.tight) {
                     Text("Projects")
                     Spacer(minLength: JunoSpace.hairline)
-                    DesktopCodeSessionFilterButton(filter: $filter)
                 }
             }
 
@@ -538,6 +547,18 @@ struct DesktopCodeSidebar: View {
             .accessibilityIdentifier("juno.code.sidebar-search")
 
             bellMenu
+
+            Button {
+                NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+            } label: {
+                JunoIconView(.panelLeft, size: 14)
+                    .junoSidebarMarkInk()
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.junoPress)
+            .help("Collapse sidebar")
+            .accessibilityLabel("Collapse sidebar")
         }
         // On the strip's own inset, so the mark, the switcher's pill and the
         // search field below share one left edge.
@@ -888,54 +909,24 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
-    /// A transient workspace notice, a staged update, then the account, Voice
-    /// and help on one row. Nothing here paints a background: the column is a
-    /// vibrant region to its bottom edge.
+    /// A transient workspace notice followed by the shared native footer.
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 0) {
             workspaceStatus
-            DesktopUpdateReadyRow()
-            HStack(spacing: JunoSpace.tight) {
-                if let session {
-                    accountButton(session)
+            if let session {
+                DesktopSidebarDesignRow(isActive: selection == .design) {
+                    selection = .design
                 }
-                Spacer(minLength: JunoSpace.hairline)
-                Button(action: beginVoice) {
-                    HStack(spacing: JunoSpace.hairline) {
-                        JunoIconView(.mic, size: 12)
-                        Text("Voice")
-                    }
-                    .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-                    .junoInk()
-                    .padding(.horizontal, JunoSpace.snug)
-                    .frame(height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-                            .fill(Color.junoSidebarSelection)
-                    )
-                    .frame(minHeight: 44)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.junoPress)
-                .help("Start a voice conversation")
-                .accessibilityLabel("Voice")
-                .accessibilityIdentifier("juno.code.sidebar.voice")
-
-                Button(action: openHelp) {
-                    JunoIconView(.circleHelp, size: 14)
-                        .junoSidebarMarkInk()
-                        .frame(width: 26, height: 26)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.junoPress)
-                .help("Keyboard shortcuts (⌘/)")
-                .accessibilityLabel("Help")
-                .accessibilityIdentifier("juno.code.sidebar.help")
+                DesktopSidebarFooter(
+                    session: session,
+                    avatarModel: avatarModel,
+                    syncModel: syncModel,
+                    plan: plan,
+                    openUsage: { DesktopSettingsRouter.open(.usage) },
+                    openSettings: { DesktopSettingsRouter.open(.general) }
+                )
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.bottom, JunoSpace.tight)
         }
         .frame(maxWidth: .infinity)
     }
@@ -1069,67 +1060,22 @@ private struct DesktopCodeThreadRow: View {
     }
 }
 
-/// The column's thread filter: the current choice, opening a short popover of
-/// the four choices.
-///
-/// Drawn entirely by SwiftUI — a plain button and a popover — rather than a
-/// `Menu` or a `.menu` `Picker`. Both of those are AppKit menu buttons, and
-/// inside a `.sidebar` list header on the column's vibrant material each
-/// painted its title in the emphasised (white) ink: the first was unreadable,
-/// the second invisible. A `Button` in the same row draws its label in the
-/// column's own ink.
+/// The exclusive session filter uses the platform segmented picker so its
+/// selected state, keyboard navigation, and accessibility semantics are native.
 private struct DesktopCodeSessionFilterButton: View {
     @Binding var filter: DesktopCodeSessionFilter
-    @State private var presented = false
 
     var body: some View {
-        Button {
-            presented = true
-        } label: {
-            Text(filter == .all ? "All" : filter.label)
-                .junoFont(size: 11, relativeTo: .caption2, weight: .medium)
-                .junoSecondaryInk()
-                .lineLimit(1)
-                .fixedSize()
-                .frame(minHeight: 24)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.junoPress)
-        .help("Which threads the column shows")
-        .accessibilityLabel("Thread filter")
-        .accessibilityValue(filter.menuLabel)
-        .accessibilityIdentifier("juno.code.sidebar-filter")
-        // Dismissed with its anchor, always — the same guard every popover in
-        // the app carries, for the crash documented on the model selector.
-        .onDisappear { presented = false }
-        .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(DesktopCodeSessionFilter.allCases) { option in
-                    Button {
-                        filter = option
-                        presented = false
-                    } label: {
-                        HStack(spacing: JunoSpace.snug) {
-                            Text(option.menuLabel)
-                                .junoFont(size: 12.5, relativeTo: .body, weight: option == filter ? .semibold : .regular)
-                            Spacer(minLength: JunoSpace.regular)
-                            if option == filter {
-                                JunoIconView(.check, size: 11)
-                                    .foregroundStyle(Color.junoAccent)
-                            }
-                        }
-                        .padding(.horizontal, JunoSpace.cozy)
-                        .frame(minWidth: 160, minHeight: 28, alignment: .leading)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.junoPress)
+        Picker("Thread filter", selection: $filter) {
+            ForEach(DesktopCodeSessionFilter.allCases) { option in
+                Text(option.label)
+                    .tag(option)
                     .accessibilityIdentifier("juno.code.filter.\(option.rawValue)")
-                    .accessibilityAddTraits(option == filter ? .isSelected : [])
-                }
             }
-            .padding(JunoSpace.tight)
-            .frame(width: 200, height: CGFloat(DesktopCodeSessionFilter.allCases.count) * 30 + 12)
         }
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .accessibilityIdentifier("juno.code.sidebar-filter")
     }
 }
 

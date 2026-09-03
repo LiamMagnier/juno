@@ -53,14 +53,15 @@ struct DesktopIncognitoChat: View {
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
     @FocusState private var composerFocused: Bool
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
-            transcript
+            incognitoHeader
+            transcriptCard
             composer
         }
         .background(Color.junoCanvas)
-        .navigationTitle("Incognito")
         .task(id: accountID.rawValue) {
             model.start(for: accountID)
         }
@@ -81,6 +82,36 @@ struct DesktopIncognitoChat: View {
     }
 
     // MARK: - Transcript
+
+    private var incognitoHeader: some View {
+        HStack(spacing: JunoSpace.snug) {
+            JunoIconView(.eyeOff, size: 16)
+                .foregroundStyle(Color.junoMutedForeground)
+            Text("Incognito chat")
+                .junoTitle()
+            Spacer(minLength: 0)
+            Button { dismiss() } label: {
+                JunoIconView(.close, size: 15)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .help("Close incognito chat")
+            .accessibilityLabel("Close incognito chat")
+        }
+        .padding(.horizontal, JunoSpace.region)
+        .frame(height: 44)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var transcriptCard: some View {
+        transcript
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .junoCard(cornerRadius: JunoRadius.card)
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.top, JunoSpace.snug)
+    }
 
     @ViewBuilder
     private var transcript: some View {
@@ -110,10 +141,11 @@ struct DesktopIncognitoChat: View {
         VStack(spacing: JunoSpace.snug) {
             JunoIconView(.eyeOff, size: 32)
                 .foregroundStyle(Color.junoMutedForeground)
-            Text(profileName.map { "Off the record, \($0)" } ?? "Off the record")
-                .font(JunoSerif.font(size: 26, relativeTo: .title, face: .medium))
-            Text("Nothing here is saved, synced, or titled. Closing this window erases it.")
-                .junoCaption()
+            Text("You're incognito")
+                .junoScreenTitle()
+            Text("Chats aren't saved, added to memory, or used to train models.")
+                .junoBody()
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
         }
         .padding(JunoSpace.region)
@@ -131,7 +163,7 @@ struct DesktopIncognitoChat: View {
                     .padding(.vertical, JunoSpace.snug + 1)
                     .background(
                         RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)
-                            .fill(Color.junoRaised)
+                            .fill(Color.junoMuted)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)

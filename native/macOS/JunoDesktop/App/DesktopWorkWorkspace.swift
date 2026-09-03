@@ -436,7 +436,7 @@ struct DesktopWorkWorkspace: View {
     private var detailToolbar: some ToolbarContent {
         // The product switch is deliberately absent. It now sits at the top of
         // the navigation column, on the column it switches, in every product —
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button(action: compose) {
                 JunoIconLabel("New task", icon: .new)
             }
@@ -451,7 +451,9 @@ struct DesktopWorkWorkspace: View {
         // on the page that is meant to be read, with a caption pasted across
         // it. The thread's status is the thread header's job and the home
         // page has no status; the toolbar keeps the three things that act.
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+
+        ToolbarItemGroup(placement: .primaryAction) {
             Menu {
                 Button {
                     Task { await model.pauseOpenRun() }

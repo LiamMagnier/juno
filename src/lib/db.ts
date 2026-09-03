@@ -113,6 +113,7 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ResearchRun", "userId"],
   ["ResearchSource", "userId"],
   ["ResearchPassage", "userId"],
+  ["ResearchFinding", "userId"],
   ["ResearchClaim", "userId"],
   ["ResearchEvent", "userId"],
   ["ResearchReportRevision", "userId"],

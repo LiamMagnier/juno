@@ -36,6 +36,7 @@ import {
   writeResearchReport,
 } from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
+import { canonicalUrl } from "@/lib/search/url-safety";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -301,12 +302,12 @@ export function createPrismaResearchStore(): ResearchStore {
       composite,
       sourceType,
     }) {
-      // No unique index on (runId, url) to upsert against, so this is a read
-      // then a write. The race it leaves is two rows for one URL, which costs a
-      // duplicate line in the sources list — acceptable, and far cheaper than
-      // adding an index to a landed schema.
+      const canonical = canonicalUrl(url);
+      // The database also owns this invariant through @@unique(runId,
+      // canonicalUrl). Checking first keeps the normal path cheap; the unique
+      // index prevents concurrent workers from creating duplicate corpus rows.
       const existing = await prisma.researchSource.findFirst({
-        where: { runId, userId, url },
+        where: { runId, userId, canonicalUrl: canonical },
         select: { id: true, snapshot: true },
       });
       if (existing) {
@@ -350,6 +351,7 @@ export function createPrismaResearchStore(): ResearchStore {
           runId,
           userId,
           url,
+          canonicalUrl: canonical,
           title: (title || url).slice(0, 500),
           publishedAt: publishedAt ?? null,
           contentHash: contentHash ?? null,

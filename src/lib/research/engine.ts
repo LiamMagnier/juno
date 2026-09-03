@@ -11,6 +11,7 @@ import {
   budgetAllows,
   budgetExhausted,
   budgetStopState,
+  budgetForEffort,
   isBlockedResearchState,
   isPausable,
   isResearchState,
@@ -18,6 +19,7 @@ import {
   isWorkingResearchState,
   parsePlan,
   planIsConfirmed,
+  planBudget,
   resumeStateFor,
   transitionAllowed,
   BRIEF_OUTPUT_TOKENS,
@@ -43,6 +45,7 @@ import {
   type ResearchCoverageEntry,
   type ResearchConflict,
   type ResearchPlan,
+  type ResearchEffort,
   type ResearchProgress,
   type ResearchState,
   type ResearchTerminalState,
@@ -899,6 +902,8 @@ export interface StartRunInput {
   goal: string;
   conversationId?: string | null;
   budgetMicroUsd?: bigint | null;
+  /** Frozen into the plan with its page/tool/time ceilings at creation. */
+  effort?: ResearchEffort;
   /** `auto` skips the confirmation gate — see `ResearchPlan.confirmation`. */
   confirmation?: "auto" | "required";
   constraints?: string[];
@@ -1155,11 +1160,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
     const reloaded = (await store.loadRun(run.id, run.userId)) ?? run;
     if (planIsConfirmed(next)) {
-      const moved = await advance(reloaded, "searching", undefined, [
+      const moved = await advance(reloaded, "investigating", undefined, [
         { kind: "plan_drafted", payload: { queries } },
         { kind: "plan_confirmed", payload: { by: "auto" } },
       ]);
-      return moved ? { kind: "advanced", state: "searching" } : { kind: "raced" };
+      return moved ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
     }
     const moved = await advance(reloaded, "awaiting_plan_confirmation", undefined, [
       { kind: "plan_drafted", payload: { queries } },
@@ -1212,7 +1217,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let cursor = 0;
     while (cursor < pending.length) {
       const fresh = await store.loadRun(current.id, current.userId);
-      if (!fresh || fresh.state !== "searching") return { kind: "raced" };
+      if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
       current = fresh;
       // A long sweep can outlast the worker lease on its own, and a lease that
       // expires mid-step is a second worker adopting a run that is still being
@@ -1298,8 +1303,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         });
       }
     }
-    const moved = await advance(current, "browsing");
-    return moved ? { kind: "advanced", state: "browsing" } : { kind: "raced" };
+    // Searching, pinned-source ingestion and reading are one investigation
+    // round now. The coordinator below calls the remaining two legs before it
+    // hands the corpus to the lead for review.
+    return { kind: "advanced", state: "investigating" };
   };
 
   /**
@@ -1317,12 +1324,12 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     let current = run;
-    for (const url of plan.pinnedSources.slice(0, MAX_PINNED_SOURCES)) {
+    for (const url of plan.pinnedSources.slice(0, Math.min(MAX_PINNED_SOURCES, planBudget(plan).pages))) {
       if (!(await affordable(current, READ_ESTIMATE_MICRO_USD))) {
         return stopForBudget(current, READ_ESTIMATE_MICRO_USD);
       }
       const fresh = await store.loadRun(current.id, current.userId);
-      if (!fresh || fresh.state !== "browsing") return { kind: "raced" };
+      if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
       current = fresh;
       await heartbeat?.();
 
@@ -1374,8 +1381,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         passages: splitPassages(text),
       });
     }
-    const moved = await advance(current, "reading_documents");
-    return moved ? { kind: "advanced", state: "reading_documents" } : { kind: "raced" };
+    return { kind: "advanced", state: "investigating" };
   };
 
   /**
@@ -1404,7 +1410,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     signal?: AbortSignal,
     heartbeat?: () => Promise<void>
   ): Promise<{ run: ResearchRunRow; outcome?: StepOutcome; added: number; fetched: number; passages: number }> => {
-    const room = Math.min(MAX_HOP_SOURCES, MAX_SOURCES - existing.length);
+    const room = Math.min(MAX_HOP_SOURCES, MAX_SOURCES - existing.length, Math.max(0, planBudget(parsePlan(run.plan)).pages - existing.length));
     if (discovered.length === 0 || room <= 0) return { run, added: 0, fetched: 0, passages: 0 };
 
     const plan = parsePlan(run.plan);
@@ -1447,7 +1453,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
 
     for (const wave of waves(targets, READ_CONCURRENCY)) {
       const fresh = await store.loadRun(current.id, current.userId);
-      if (!fresh || fresh.state !== "reading_documents") return { run: current, outcome: { kind: "raced" }, added, fetched, passages };
+      if (!fresh || fresh.state !== "investigating") return { run: current, outcome: { kind: "raced" }, added, fetched, passages };
       current = fresh;
       await heartbeat?.();
 
@@ -1561,10 +1567,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     /** Outbound links from pages this stage actually opened, for the hop below. */
     const discovered: Array<{ from: string; link: ResearchPageLink }> = [];
 
-    const targets = sources.slice(0, MAX_READ_SOURCES);
+    const targets = sources.slice(0, Math.min(MAX_READ_SOURCES, planBudget(parsePlan(run.plan)).pages));
     for (const wave of waves(targets, READ_CONCURRENCY)) {
       const fresh = await store.loadRun(current.id, current.userId);
-      if (!fresh || fresh.state !== "reading_documents") return { kind: "raced" };
+      if (!fresh || fresh.state !== "investigating") return { kind: "raced" };
       current = fresh;
       // A wave of eight fetches at a 25s timeout each can outlive the two-minute
       // worker lease on its own; without this the sweeper adopts a run that is
@@ -1726,8 +1732,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         },
       },
     ]);
-    const moved = await advance(current, "checking_coverage");
-    return moved ? { kind: "advanced", state: "checking_coverage" } : { kind: "raced" };
+    const moved = await advance(current, "reviewing");
+    return moved ? { kind: "advanced", state: "reviewing" } : { kind: "raced" };
   };
 
   /**
@@ -1780,7 +1786,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
      * what it is, it is skipped rather than fatal when the budget is tight, and
      * a failure falls through to the templates rather than ending the round.
      */
-    let followUps = round < MAX_FOLLOW_UP_ROUNDS ? computed.followUps.slice(0, availableSlots) : [];
+    const roundLimit = Math.min(MAX_FOLLOW_UP_ROUNDS, Math.max(0, planBudget(plan).rounds - 1));
+    let followUps = round < roundLimit ? computed.followUps.slice(0, availableSlots) : [];
     if (
       deps.expandQueries &&
       followUps.length > 0 &&
@@ -1848,12 +1855,12 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       ]);
       const searching = await advance(
         (await store.loadRun(run.id, run.userId)) ?? run,
-        "searching"
+        "investigating"
       );
-      return searching ? { kind: "advanced", state: "searching" } : { kind: "raced" };
+      return searching ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
     }
-    const moved = await advance(run, "resolving_conflicts");
-    return moved ? { kind: "advanced", state: "resolving_conflicts" } : { kind: "raced" };
+    const moved = await advance(run, "synthesizing");
+    return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
   };
 
   /**
@@ -1879,6 +1886,36 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     }
     const moved = await advance(run, "synthesizing");
     return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
+  };
+  // Duplicate-content receipts remain useful for compatibility with existing
+  // transcripts; lead review owns the decision to continue or synthesize.
+  void doConflicts;
+
+  /**
+   * One durable investigation round.
+   *
+   * The prior engine persisted separate `searching`, `browsing`, and
+   * `reading_documents` states. Those are implementation details of a worker
+   * round, not user-visible decision points. Keep the proven ingestion code,
+   * but execute its three legs under the single `investigating` lease and only
+   * expose the handoff to the lead as `reviewing`.
+   */
+  const doInvestigating = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
+    const searched = await doSearching(run, signal, heartbeat);
+    if (searched.kind === "raced" || searched.kind === "finished" || searched.kind === "blocked") return searched;
+    const freshAfterSearch = (await store.loadRun(run.id, run.userId)) ?? run;
+    if (freshAfterSearch.state !== "investigating") return { kind: "raced" };
+
+    const browsed = await doBrowsing(freshAfterSearch, signal, heartbeat);
+    if (browsed.kind === "raced" || browsed.kind === "finished" || browsed.kind === "blocked") return browsed;
+    const freshAfterBrowse = (await store.loadRun(run.id, run.userId)) ?? freshAfterSearch;
+    if (freshAfterBrowse.state !== "investigating") return { kind: "raced" };
+
+    return doReading(freshAfterBrowse, signal, heartbeat);
   };
 
   const doSynthesis = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
@@ -2023,8 +2060,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         ]);
       }
     }
-    const cited = new Set<number>();
-    for (const match of report.matchAll(/\[(\d{1,2})\]/g)) cited.add(Number(match[1]));
+    const cited = new Set<number>(citationMarkersOutsideCode(report));
     const dangling = [...cited].filter((n) => n < 1 || n > Math.min(sources.length, MAX_SOURCES));
     if (dangling.length > 0) {
       await append(run.id, run.userId, [
@@ -2116,16 +2152,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     switch (run.state) {
       case "planning":
         return doPlanning(run, signal);
-      case "searching":
-        return doSearching(run, signal, heartbeat);
-      case "browsing":
-        return doBrowsing(run, signal, heartbeat);
-      case "reading_documents":
-        return doReading(run, signal, heartbeat);
-      case "checking_coverage":
+      case "investigating":
+        return doInvestigating(run, signal, heartbeat);
+      case "reviewing":
         return doCoverage(run, signal);
-      case "resolving_conflicts":
-        return doConflicts(run);
       case "synthesizing":
         return doSynthesis(run, signal);
       case "validating_citations":
@@ -2137,6 +2167,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     async start(input) {
       const plan: ResearchPlan = {
         ...EMPTY_PLAN,
+        effort: input.effort ?? "standard",
+        budget: budgetForEffort(input.effort ?? "standard"),
         confirmation: input.confirmation ?? "required",
         constraints: (input.constraints ?? []).slice(0, MAX_PLAN_CONSTRAINTS),
         pinnedSources: (input.pinnedSources ?? []).slice(0, MAX_PINNED_SOURCES),
@@ -2279,14 +2311,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       });
       const saved = await store.savePlan({ runId, userId, plan: edited });
       await store.recordQueries({ runId, userId, queries: edited.queries });
-      const moved = await advance(saved ?? run, "searching", undefined, [
+      const moved = await advance(saved ?? run, "investigating", undefined, [
         {
           kind: "plan_confirmed",
           payload: { by: "user", queries: edited.queries, edited: queries !== undefined },
         },
       ]);
       return moved
-        ? { ok: true, state: "searching" }
+        ? { ok: true, state: "investigating" }
         : { ok: false, state: run.state, reason: "not_awaiting_plan" };
     },
 
@@ -2327,8 +2359,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       // go back to gathering from here, and a steering path that wrote the
       // state directly would be the one caller allowed to make illegal moves.
       if (sourceUrl && REFETCH_FROM.includes(run.state as ResearchState)) {
-        const moved = await advance(run, "searching");
-        if (moved) return { ok: true, state: "searching" };
+        const moved = await advance(run, "investigating");
+        if (moved) return { ok: true, state: "investigating" };
       }
       return { ok: true, state: run.state };
     },
@@ -2430,9 +2462,7 @@ const RESEARCH_CANCELLABLE: ResearchState[] = [...RESEARCH_LIVE_STATES];
  * the run is left alone — see `steer`.
  */
 const REFETCH_FROM: ResearchState[] = [
-  "reading_documents",
-  "checking_coverage",
-  "resolving_conflicts",
+  "reviewing",
 ];
 
 /**
@@ -2463,4 +2493,19 @@ export function splitPassages(
     if (out.length >= MAX_PASSAGES_PER_SOURCE) break;
   }
   return out;
+}
+
+/**
+ * Citation markers that a reader can actually see.
+ *
+ * Code fences frequently contain examples such as `const source = "[100]"`.
+ * Treating those as report citations creates a false partial-completion result;
+ * strip fenced blocks before matching, while allowing the three-digit source
+ * indices that deep runs can legitimately produce.
+ */
+export function citationMarkersOutsideCode(markdown: string): number[] {
+  const visible = markdown.replace(/(^|\n)```[\s\S]*?```(?=\n|$)/g, "$1");
+  const markers = new Set<number>();
+  for (const match of visible.matchAll(/\[(\d{1,3})\]/g)) markers.add(Number(match[1]));
+  return [...markers];
 }

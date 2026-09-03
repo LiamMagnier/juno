@@ -103,6 +103,7 @@ model User {
   researchPassages            ResearchPassage[]
   researchClaims              ResearchClaim[]
   researchEvents              ResearchEvent[]
+  researchFindings            ResearchFinding[]
   researchReportRevisions     ResearchReportRevision[]
   actionApprovalGrants        ActionApprovalGrant[]
   workSessions                WorkSession[]
@@ -2955,10 +2956,9 @@ model ResearchRun {
   userId             String
   conversationId     String?
   goal               String    @db.Text
-  /// accepted | planning | awaiting_plan_confirmation | searching | browsing |
-  /// reading_documents | checking_coverage | resolving_conflicts | synthesizing |
-  /// validating_citations | awaiting_user_input | paused | completed |
-  /// partially_completed | failed | cancelled
+  /// accepted | planning | awaiting_plan_confirmation | investigating | reviewing |
+  /// synthesizing | validating_citations | awaiting_user_input | paused |
+  /// completed | partially_completed | failed | cancelled
   state              String    @default("accepted")
   /// The editable plan, and the queries actually issued.
   plan               Json?
@@ -2985,6 +2985,7 @@ model ResearchRun {
   sources          ResearchSource[]
   claims           ResearchClaim[]
   events           ResearchEvent[]
+  findings         ResearchFinding[]
   reportRevisions  ResearchReportRevision[]
   assistantMessage Message?                 @relation("ResearchRunAssistantMessage", fields: [assistantMessageId], references: [id], onDelete: SetNull)
 
@@ -2999,10 +3000,17 @@ model ResearchSource {
   userId        String
   runId         String
   url           String    @db.Text
+  /// `canonicalUrl(url)` — the dedup key across the whole run, so two engines
+  /// or two workers returning the same page with different tracking params
+  /// share one row. Nullable only for rows written before it existed.
+  canonicalUrl  String?
   title         String    @db.Text
   /// Hash of the fetched body, so a report stays auditable after the page changes.
   contentHash   String?
   snapshot      String?   @db.Text
+  /// The worker model's condensation of the page, written on first open and
+  /// served to every later `open_page` instead of the text.
+  summary       String?   @db.Text
   /// Publication date as claimed by the source, distinct from the date of the
   /// event it describes — §8.2 requires telling those apart.
   publishedAt   DateTime?
@@ -3024,9 +3032,42 @@ model ResearchSource {
   user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   run      ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
   passages ResearchPassage[]
+  findings ResearchFinding[]
 
+  @@unique([runId, canonicalUrl])
   @@index([runId, fetchedAt])
   @@index([userId, runId])
+}
+
+/// One claim a worker noted while reading, with the quote that carries it.
+/// Findings are the compressed product of a round — what the lead reviews and
+/// what the writer is given — so they are rows rather than a blob on the plan:
+/// a deep run notes hundreds, and a crash mid-round must not lose the ones
+/// already made.
+model ResearchFinding {
+  id          String   @id @default(cuid())
+  userId      String
+  runId       String
+  sourceId    String?
+  /// `w<round>-<n>`, the worker that noted it.
+  workerId    String
+  round       Int
+  /// The sub-question it serves; joins to the plan's objectives.
+  objectiveId String?
+  claim       String   @db.Text
+  quote       String   @db.Text
+  /// `chunk:<ordinal>` into the source's passages.
+  locator     String?
+  /// 0..1 as the worker judged it.
+  confidence  Float?
+  createdAt   DateTime @default(now())
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run    ResearchRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source ResearchSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([runId, round])
+  @@index([sourceId])
 }
 
 model ResearchPassage {

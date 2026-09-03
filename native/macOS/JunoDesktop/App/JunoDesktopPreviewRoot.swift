@@ -124,6 +124,14 @@ private struct JunoDesktopPreviewWorkspace: View {
             scenario: CodePreviewScenario.fromArguments(CommandLine.arguments)
         )
         _product = State(initialValue: Self.requestedProduct)
+        // `--juno-preview-settings-route <section>` lands Settings on that
+        // section. Written to the same key the ⌘, window and the sheet read,
+        // which is how every other caller routes to a section too.
+        if let route = JunoPreviewEnvironment.initialSettingsRoute,
+           let section = DesktopSettingsSection(rawValue: route)
+        {
+            DesktopSettingsRouter.select(section)
+        }
     }
 
     /// The product `--juno-preview-tab` asks for.

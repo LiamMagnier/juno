@@ -5,8 +5,7 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// A staged update, who is signed in, how much of the week's allowance is gone,
-/// and the way to all three — pinned to the bottom of the navigation column.
+/// The account footer shared by the product sidebars.
 ///
 /// **One footer, both columns.** Chat and Code each carried their own copy of
 /// this, and the copies had already drifted: two accessibility identifiers for
@@ -42,10 +41,8 @@ struct DesktopSidebarFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DesktopUpdateReadyRow()
             if let plan {
                 DesktopSidebarQuotaMeter(plan: plan, open: openUsage)
-                    .transition(.opacity)
             }
             DesktopSidebarAccountRow(
                 session: session,
@@ -78,8 +75,8 @@ struct DesktopSidebarAccountRow: View {
     let openUsage: () -> Void
     var signOut: (() -> Void)? = nil
 
-    @State private var isHovering = false
     @State private var isPresented = false
+    @State private var updater = DesktopUpdateModel.shared
 
     var body: some View {
         // A `Button` and a popover, not a `Menu`. On macOS a `Menu` becomes an
@@ -94,38 +91,41 @@ struct DesktopSidebarAccountRow: View {
                     imageData: avatarModel?.imageData,
                     imageURL: session.profile.imageURL,
                     name: session.profile.name ?? session.profile.email,
-                    size: 26
+                    size: 28
                 )
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.profile.name ?? "Juno account")
                         .junoRowLabel()
                         .junoInk()
                         .lineLimit(1)
-                    Text(session.profile.email)
+                    Text("Owner · Pro")
                         .junoCaption()
+                        .junoMetaInk()
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.hairline)
-                DesktopSidebarSyncDot(syncModel: syncModel)
+                if case .ready = updater.phase {
+                    JunoIconView(.refresh, size: 13)
+                        .foregroundStyle(Color.junoAccent)
+                        .accessibilityLabel("Update ready")
+                } else {
+                    DesktopSidebarSyncDot(syncModel: syncModel)
+                }
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(isHovering ? Color.junoSidebarSelection : .clear)
-            )
+            .junoSidebarRowSelection(isPresented)
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(JunoMotion.standard, value: isHovering)
         // Dismissed with its anchor: a popover whose anchor leaves the
         // hierarchy while presented has crashed this app before.
         .onDisappear { isPresented = false }
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             DesktopSidebarAccountMenu(
                 session: session,
+                updater: updater,
                 openSettings: { isPresented = false; openSettings() },
                 openUsage: { isPresented = false; openUsage() },
                 signOut: signOut.map { action in { isPresented = false; action() } }
@@ -144,6 +144,7 @@ struct DesktopSidebarAccountRow: View {
 /// `UserMenu`, as a floating surface on the popover radius.
 private struct DesktopSidebarAccountMenu: View {
     let session: NativeAuthenticatedSession
+    let updater: DesktopUpdateModel
     let openSettings: () -> Void
     let openUsage: () -> Void
     var signOut: (() -> Void)?
@@ -165,62 +166,39 @@ private struct DesktopSidebarAccountMenu: View {
 
             Divider().overlay(Color.junoSeparator)
 
-            DesktopSidebarAccountMenuRow(title: "Settings…", icon: .settings, shortcut: "⌘,", action: openSettings)
+            Button(action: openSettings) {
+                JunoIconLabel("Settings…", icon: .settings, size: 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
                 .keyboardShortcut(",", modifiers: .command)
                 .accessibilityIdentifier("juno.desktop.account-menu.settings")
-            DesktopSidebarAccountMenuRow(title: "Plan & billing", icon: .usage, action: openUsage)
+            Button(action: openUsage) {
+                JunoIconLabel("Plan & billing", icon: .usage, size: 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.desktop.account-menu.billing")
+
+            if case .ready(let version) = updater.phase {
+                Divider().overlay(Color.junoSeparator)
+                Button("Install update…") { updater.installAndRelaunch() }
+                    .accessibilityLabel("Install Juno \(version)")
+                    .accessibilityIdentifier("juno.desktop.update-ready")
+            }
 
             if let signOut {
                 Divider().overlay(Color.junoSeparator)
-                DesktopSidebarAccountMenuRow(title: "Sign out", icon: .arrowRight, tone: .destructive, action: signOut)
-                    .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
+                Button(role: .destructive, action: signOut) {
+                    JunoIconLabel("Sign out", icon: .arrowRight, size: 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("juno.desktop.account-menu.sign-out")
             }
         }
         .frame(width: 232)
         .junoPopoverContent(horizontal: JunoSpace.tight, vertical: JunoSpace.tight)
         .accessibilityIdentifier("juno.desktop.account-menu")
-    }
-}
-
-private struct DesktopSidebarAccountMenuRow: View {
-    enum Tone { case normal, destructive }
-
-    let title: LocalizedStringKey
-    let icon: JunoIcon
-    var shortcut: String? = nil
-    var tone: Tone = .normal
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(icon, size: 14)
-                    .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoMutedForeground)
-                Text(title)
-                    .junoRowLabel()
-                    .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoForeground)
-                Spacer(minLength: JunoSpace.snug)
-                if let shortcut {
-                    Text(shortcut)
-                        .junoCodeSmall()
-                        .junoSecondaryInk()
-                }
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(minHeight: 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(isHovering ? Color.junoRowHover : .clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(JunoMotion.fast, value: isHovering)
     }
 }
 
@@ -323,8 +301,6 @@ struct DesktopSidebarQuotaMeter: View {
     let plan: DesktopUsagePlan
     let open: () -> Void
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: open) {
             VStack(alignment: .leading, spacing: JunoSpace.tight) {
@@ -345,26 +321,16 @@ struct DesktopSidebarQuotaMeter: View {
                         .lineLimit(1)
                         .contentTransition(.numericText())
                 }
-                if !plan.isBrowseOnly {
-                    DesktopSidebarDotFillBar(
-                        fraction: fraction,
-                        tint: tint,
-                        dimmed: plan.isUnlimited
-                    )
-                }
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .tint(.junoAccent)
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(isHovering ? Color.junoSidebarSelection : .clear)
-            )
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .animation(JunoMotion.standard, value: isHovering)
         .help(help)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(plan.planName) plan, \(readout). Opens Usage.")

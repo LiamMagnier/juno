@@ -232,8 +232,16 @@ export function htmlToCleanText(
   }
 }
 
-/** How much of one page is kept. The research engine truncates again, tighter. */
+/**
+ * How much of one page is kept by default.
+ *
+ * Callers with a bigger appetite pass `maxChars`: the research corpus stores
+ * pages in full (60k) because its workers grep them chunk by chunk, while a
+ * chat-side fetch that lands the whole thing in one prompt keeps this cap.
+ */
 const EXTRACT_CHARS = 16_000;
+/** The most any caller may ask for; bounds a hostile page's cost in memory. */
+const MAX_EXTRACT_CHARS = 200_000;
 /** HTML is untrusted network input; bound bytes before decoding/parsing it. */
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
@@ -245,7 +253,12 @@ const MAX_HTML_BYTES = 4 * 1024 * 1024;
  * PDF is an arbitrary binary chosen by a page we do not control — so the parser
  * is treated as something that will fail, not something that might.
  */
-async function extractPdfDocumentFrom(res: Response, url: string, signal?: AbortSignal): Promise<ExtractOutcome> {
+async function extractPdfDocumentFrom(
+  res: Response,
+  url: string,
+  signal: AbortSignal | undefined,
+  maxChars: number
+): Promise<ExtractOutcome> {
   const bytes = await readBodyBounded(res, MAX_PDF_BYTES);
   if (!bytes) return { ok: false, failure: { reason: "pdf_unreadable", detail: "too_large" } };
   // Checked here as well as inside the parser so a mislabelled HTML error page —
@@ -253,7 +266,7 @@ async function extractPdfDocumentFrom(res: Response, url: string, signal?: Abort
   // never pays for the pdf.js import at all.
   if (!looksLikePdf(bytes)) return { ok: false, failure: { reason: "pdf_unreadable", detail: "not_a_pdf" } };
 
-  const parsed = await extractPdfText(bytes, { maxChars: EXTRACT_CHARS, signal });
+  const parsed = await extractPdfText(bytes, { maxChars, signal });
   if (!parsed.ok) {
     // A scan is a valid document that simply holds no text, which is exactly
     // what `empty_document` already means for a JS-rendered HTML page — same
@@ -293,8 +306,13 @@ async function extractPdfDocumentFrom(res: Response, url: string, signal?: Abort
  * majority of results are; it ends in a wildcard at q=0.7, so a server with a
  * PDF still offers it and no header change was needed to start reading them.
  */
-export async function extractUrlDocument(url: string, signal?: AbortSignal): Promise<ExtractOutcome> {
+export async function extractUrlDocument(
+  url: string,
+  signal?: AbortSignal,
+  opts: { maxChars?: number } = {}
+): Promise<ExtractOutcome> {
   if (!url || isDisallowedHost(url)) return { ok: false, failure: { reason: "blocked_host" } };
+  const maxChars = Math.max(1, Math.min(MAX_EXTRACT_CHARS, opts.maxChars ?? EXTRACT_CHARS));
 
   try {
     const fetched = await fetchSafePublicUrl(url, {
@@ -315,7 +333,7 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
 
     // The response URL, not the requested one — redirects are followed, and it is
     // the landing address whose extension means anything.
-    if (responseIsPdf(baseType, finalUrl)) return await extractPdfDocumentFrom(res, finalUrl, signal);
+    if (responseIsPdf(baseType, finalUrl)) return await extractPdfDocumentFrom(res, finalUrl, signal, maxChars);
 
     if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
       // Everything this build genuinely has no parser for — images, archives,
@@ -336,7 +354,7 @@ export async function extractUrlDocument(url: string, signal?: AbortSignal): Pro
       ok: true,
       page: {
         title: parsed.title ?? url,
-        text: parsed.text.slice(0, EXTRACT_CHARS),
+        text: parsed.text.slice(0, maxChars),
         author: parsed.author,
         publishedAt: parsed.publishedAt,
         links: parsed.links,

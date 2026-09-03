@@ -2,8 +2,17 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LayoutGrid, Search } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import {
+  Brain,
+  ChevronDown,
+  Eye,
+  Image as ImageIcon,
+  LayoutGrid,
+  Search,
+  Video,
+  Zap,
+} from "lucide-react";
+import { ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import {
   Popover,
   PopoverContent,
@@ -18,7 +27,7 @@ import {
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
-import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
+import { resolveModel, type ModelId, type ModelInfo, type Modality } from "@/lib/models";
 import {
   AUTO_MODEL_ID,
   AUTO_MODEL_INFO,
@@ -28,6 +37,8 @@ import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
 import {
+  contextScore,
+  expensivenessScore,
   formatContext,
   formatPrice,
   getModelMetrics,
@@ -40,20 +51,17 @@ import { cn } from "@/lib/utils";
 type Filter = "all" | Provider;
 
 /**
- * The model picker: provider rail · list · spec sheet.
+ * The model picker: lab rail · list · detail panel.
  *
- * A fixed 880×560 float above the composer chip, clamped to the viewport with
- * a 16px margin and never clipped: the rail is 56px, the spec sheet a 300px
- * column with its own scroll, and the list scrolls between them. Under `md`
- * the sheet folds away (two panes); under `sm` the rail goes too (one pane).
- *
- * Calm on purpose. Every capability used to wear its own icon chip on every
- * row — brains, bolts, eyes — so the list read as a wall of badges and the one
- * thing that mattered (which model, at what cost) was the hardest to find. A
- * row is a mark, a name, one line of note and a price glyph; the sheet on the
- * right carries the capabilities as plain mono tags and the numbers as a small
- * table, and ends in the one button that matters. Thinking effort is not in
- * here at all — it is its own chip on the composer row.
+ * A 760×480 float above the composer chip, clamped to the viewport with a
+ * 16px margin and never clipped. The list is grouped by AI lab in the rail's
+ * order; inside a lab the rows run text → image → video, newest and strongest
+ * generation first (the catalog's canonical order), with superseded
+ * generations folded behind "Past models". A row is deliberately small — a
+ * mark, a name, a modality tag when it is not a text model, and a price
+ * glyph — because everything else about a model lives in the detail panel on
+ * the right: description, capabilities, the four metric bars, pricing.
+ * Thinking effort is not in here at all; it is its own chip on the composer.
  */
 
 /** Most recently chosen models, newest first. Per browser, like a draft. */
@@ -61,6 +69,8 @@ const RECENT_KEY = "juno:models:recent";
 const RECENT_MAX = 3;
 /** Below this many rows the list is the answer; a "Recent" copy only pads it. */
 const RECENT_MIN_LIST = 8;
+
+const MODALITY_ORDER: Modality[] = ["chat", "image", "video"];
 
 function readRecent(): string[] {
   try {
@@ -90,18 +100,6 @@ function isFastModel(m: ModelInfo) {
   return getModelMetrics(m).speed >= 8;
 }
 
-function capabilityTags(m: ModelInfo): string[] {
-  const tags: string[] = [];
-  if (m.modality === "image") tags.push("Image");
-  if (m.modality === "video") tags.push("Video");
-  if (m.reasoning) tags.push("Thinking");
-  if (m.vision) tags.push("Vision");
-  if (m.webSearch) tags.push("Search");
-  if (m.agenticTools) tags.push("Tools");
-  if (isFastModel(m)) tags.push("Fast");
-  return tags;
-}
-
 /** "Anthropic · Claude" → "Anthropic". */
 function providerName(p: Provider): string {
   return PROVIDERS[p]?.label.split(" · ")[0] ?? p;
@@ -116,63 +114,83 @@ function formatRetirementDate(iso: string): string {
   return name ? `${Number(day)} ${name} ${year}` : iso;
 }
 
-/** The one-line note under a row's name. */
-function rowNote(m: ModelInfo): string {
-  if (isAutoModelId(m.id)) return "Routes each message to the model that fits it";
-  if (m.status === "deprecated")
-    return m.retiresOn ? `Retiring ${formatRetirementDate(m.retiresOn)}` : "Retiring soon";
-  if (m.description) return m.description;
-  return m.modality === "image"
-    ? "Image generation"
-    : m.modality === "video"
-      ? "Video generation"
-      : providerName(m.provider);
+/** Text → image → video, then the catalog's own order (generation, date, power). */
+function sortByModality<T extends ModelInfo>(models: T[]): T[] {
+  return [...models].sort(
+    (a, b) => MODALITY_ORDER.indexOf(a.modality ?? "chat") - MODALITY_ORDER.indexOf(b.modality ?? "chat"),
+  );
 }
 
-/** A sentence-case label over a group of rows. aria-hidden: the group carries it. */
+/** A lab label over a group of rows. aria-hidden: the group carries it. */
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div aria-hidden className="px-2.5 pb-1 pt-2 font-mono text-caption text-muted-foreground">
+    <div aria-hidden className="px-2.5 pb-1 pt-2.5 font-mono text-caption text-muted-foreground">
       {children}
     </div>
   );
 }
 
-/**
- * A capability tag: mono caption on the spec sheet's inset well. 22px tall,
- * no icon — the word is the whole message.
- */
-function Tag({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "primary" }) {
+/** A modality divider inside a lab: "Image" / "Video" with its own mark. */
+function ModalityLabel({ modality }: { modality: Modality }) {
+  const Icon = modality === "image" ? ImageIcon : Video;
+  const label = modality === "image" ? "Image" : "Video";
   return (
-    <span
-      className={cn(
-        "inline-flex h-[22px] shrink-0 items-center rounded-xs border px-1.5 font-mono text-caption leading-none",
-        tone === "primary"
-          ? "border-primary/40 bg-primary/8 text-primary-ink"
-          : "border-border/70 bg-card text-muted-foreground",
-      )}
-    >
-      {children}
+    <div aria-hidden className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-1.5 font-mono text-micro text-muted-foreground/80">
+      <Icon className="size-3" />
+      {label}
+    </div>
+  );
+}
+
+/**
+ * Ten segments, filled in the brand accent. Not the provider's accent: OpenAI's
+ * is near-black, which on the dark ground made a filled bar and an empty one
+ * the same colour.
+ */
+function MetricBars({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between">
+        <span className="font-mono text-micro text-muted-foreground">{label}</span>
+        <span className="font-mono text-micro tabular-nums text-muted-foreground/70">{value}/10</span>
+      </div>
+      <div className="flex gap-1">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <span
+            key={i}
+            className={cn(
+              "h-3 w-full rounded-full ring-1 ring-inset ring-foreground/10 transition-colors duration-base ease-out-soft",
+              i < value ? "bg-primary" : "bg-muted",
+            )}
+            aria-hidden
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CapabilityChip({
+  icon: Icon,
+  label,
+}: {
+  icon: typeof Brain;
+  label: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-muted/25 px-1.5 py-0.5 text-micro leading-none text-muted-foreground">
+      <Icon className="size-2.5 text-muted-foreground/80" />
+      <span>{label}</span>
     </span>
   );
 }
 
-/** One line of the spec table: label left, value right, both mono. */
-function SpecRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[auto_1fr] items-baseline gap-3 py-1.5">
-      <dt className="font-mono text-caption text-muted-foreground">{label}</dt>
-      <dd className="text-right font-mono text-caption tabular-nums text-foreground">{value}</dd>
-    </div>
-  );
-}
-
 /**
- * The spec sheet. A fixed 300px column with its own scroll; the "Use this
+ * The detail panel. A fixed 272px column with its own scroll; the "Use this
  * model" button is pinned at the foot so it is reachable however long the
  * description runs.
  */
-function SpecSheet({
+function DetailPanel({
   model,
   selected,
   locked,
@@ -183,13 +201,13 @@ function SpecSheet({
   locked: boolean;
   onUse: () => void;
 }) {
-  const shell = "hidden w-[300px] shrink-0 flex-col border-l border-border/50 bg-card/60 md:flex";
+  const shell = "hidden w-[272px] shrink-0 flex-col border-l border-border/50 bg-card/70 md:flex";
 
   if (!model) {
     return (
       <div className={cn(shell, "items-center justify-center p-5")}>
         <p className="text-center text-caption text-muted-foreground">
-          Hover or arrow through the list to compare models.
+          Hover a model to compare intelligence, speed, context and cost.
         </p>
       </div>
     );
@@ -211,94 +229,156 @@ function SpecSheet({
   if (auto) {
     body = (
       <>
-        <div>
-          <div className="flex items-center gap-2 font-mono text-caption text-muted-foreground">
-            <JunoMark className="size-3.5" />
-            Juno
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-base font-semibold leading-tight tracking-tight">Auto</h3>
+            <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-micro font-semibold text-primary-ink">
+              Recommended
+            </span>
           </div>
-          <div className="mt-1 flex items-center gap-2">
-            <h3 className="text-body-lg font-semibold leading-tight tracking-tight">Auto</h3>
-            <Tag tone="primary">Recommended</Tag>
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-control bg-primary/15 text-primary">
+            <JunoMark className="size-4.5" />
           </div>
         </div>
-        <p className="text-ui leading-relaxed text-muted-foreground">
-          Routes each message to the model and thinking depth that fit it — fast
-          for the everyday, deep when it counts — within your plan.
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Routes each message to the{" "}
+          <span className="font-medium text-foreground">optimal model</span> and{" "}
+          <span className="font-medium text-foreground">thinking depth</span> for
+          speed, intelligence and cost.
         </p>
-        <dl className="surface-inset rounded-control px-3 py-1">
-          <SpecRow label="Everyday" value="Fast models" />
-          <SpecRow label="Coding, analysis" value="Mid tier" />
-          <SpecRow label="Deep reasoning" value="Flagship" />
-        </dl>
-        <p className="text-caption leading-snug text-muted-foreground">
-          Respects image needs and web search settings.
+        <ul className="space-y-2 text-label leading-snug text-muted-foreground">
+          <li className="flex gap-2">
+            <span className="font-mono font-bold text-primary-ink">1</span>
+            Everyday prompt → Fast models · Instant
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono font-bold text-primary-ink">2</span>
+            Coding & analysis → Mid tier · Balanced
+          </li>
+          <li className="flex gap-2">
+            <span className="font-mono font-bold text-primary-ink">3</span>
+            Deep reasoning → Flagship · Deep thinking
+          </li>
+        </ul>
+        <p className="border-t border-border/40 pt-3 text-caption leading-snug text-muted-foreground/80">
+          Respects your plan limits, image needs, and web search settings.
         </p>
       </>
     );
   } else {
     const metrics = getModelMetrics(model);
     const free = metrics.inputUsdPerMTok === 0 && metrics.outputUsdPerMTok === 0;
-    const tags = capabilityTags(model);
+    const generative = model.modality === "image" || model.modality === "video";
+    const bars = generative
+      ? [
+          { label: "Quality", value: metrics.intelligence },
+          { label: "Speed", value: metrics.speed },
+          { label: "Cost", value: expensivenessScore(metrics) },
+        ]
+      : [
+          { label: "Intelligence", value: metrics.intelligence },
+          { label: "Speed", value: metrics.speed },
+          { label: "Context", value: contextScore(metrics.contextTokens) },
+          { label: "Cost", value: expensivenessScore(metrics) },
+        ];
+    const hasChips =
+      model.vision || model.reasoning || model.webSearch || isFastModel(model) || generative;
     body = (
       <>
         <div>
-          <div className="flex items-center gap-2 font-mono text-caption text-muted-foreground">
-            <ProviderLogo provider={model.provider} className="size-3.5" />
-            {providerName(model.provider)}
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-semibold leading-tight tracking-tight">{model.name}</h3>
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-control border border-border/60 bg-muted/40">
+              <ProviderLogo provider={model.provider} className="size-4" />
+            </div>
           </div>
-          <h3 className="mt-1 text-body-lg font-semibold leading-tight tracking-tight">{model.name}</h3>
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro text-muted-foreground">
+            <span>{providerName(model.provider)}</span>
+            {!generative && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="font-mono">{formatContext(metrics.contextTokens)} context</span>
+              </>
+            )}
+            {model.released && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="font-mono">{model.released}</span>
+              </>
+            )}
+          </div>
         </div>
 
         {model.status === "deprecated" && (
-          <div className="flex items-start gap-1.5 rounded-control border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-caption text-warning-foreground">
-            <StatusIcons.warning className="mt-px size-3 shrink-0" />
+          <div className="flex items-start gap-1.5 rounded-control border border-warning/40 bg-warning/10 px-2 py-1.5 text-caption font-medium text-warning-foreground">
+            <StatusIcons.warning className="mt-0.5 size-3 shrink-0" />
             <span>
               {model.retiresOn ? `Available until ${formatRetirementDate(model.retiresOn)}` : "Retiring soon"}
             </span>
           </div>
         )}
 
-        <p className="text-ui leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {model.description ?? "Capable foundation model."}
         </p>
 
-        {tags.length > 0 && (
-          <div className="surface-inset flex flex-wrap gap-1.5 rounded-control p-2">
-            {tags.map((t) => (
-              <Tag key={t}>{t}</Tag>
-            ))}
+        {hasChips && (
+          <div className="flex flex-wrap gap-1">
+            {model.modality === "image" && <CapabilityChip icon={ImageIcon} label="Image" />}
+            {model.modality === "video" && <CapabilityChip icon={Video} label="Video" />}
+            {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
+            {model.reasoning && <CapabilityChip icon={Brain} label="Thinking" />}
+            {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
+            {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
+            {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
           </div>
         )}
 
-        <dl className="divide-y divide-border/50 border-y border-border/50">
-          <SpecRow label="Context" value={formatContext(metrics.contextTokens)} />
-          <SpecRow label="Speed" value={`${metrics.speed}/10`} />
-          <SpecRow label="Intelligence" value={`${metrics.intelligence}/10`} />
-          <SpecRow
-            label="Cost in / out"
-            value={free ? "Free" : `${formatPrice(metrics.inputUsdPerMTok)} / ${formatPrice(metrics.outputUsdPerMTok)} per MTok`}
-          />
-        </dl>
-        {hasLiveBenchmark(model) && (
-          <p className="font-mono text-micro text-muted-foreground/70">
-            Scores by{" "}
-            <a
-              href="https://artificialanalysis.ai"
-              target="_blank"
-              rel="noreferrer"
-              className="underline decoration-dotted hover:text-muted-foreground"
-            >
-              Artificial Analysis
-            </a>
-          </p>
-        )}
+        <div className="space-y-2 border-t border-border/40 pt-2.5">
+          {bars.map((b) => (
+            <MetricBars key={b.label} label={b.label} value={b.value} />
+          ))}
+          {hasLiveBenchmark(model) && (
+            <p className="font-mono text-micro text-muted-foreground/60">
+              Scores by{" "}
+              <a
+                href="https://artificialanalysis.ai"
+                target="_blank"
+                rel="noreferrer"
+                className="underline decoration-dotted hover:text-muted-foreground"
+              >
+                Artificial Analysis
+              </a>
+            </p>
+          )}
+        </div>
+
+        <div className="border-t border-dashed border-border/50 pt-2.5">
+          <div className="mb-0.5 font-mono text-micro text-muted-foreground">Pricing</div>
+          {free ? (
+            <p className="text-xs font-semibold">Free</p>
+          ) : (
+            <p className="flex flex-wrap items-baseline gap-x-1 text-xs tabular-nums">
+              <span className="font-semibold">{formatPrice(metrics.inputUsdPerMTok)}</span>
+              <span className="text-caption text-muted-foreground">in</span>
+              <span className="text-muted-foreground/50" aria-hidden>·</span>
+              <span className="font-semibold">{formatPrice(metrics.outputUsdPerMTok)}</span>
+              <span className="text-caption text-muted-foreground">out / MTok</span>
+            </p>
+          )}
+          {locked && (
+            <p className="mt-1 text-caption text-muted-foreground">
+              Requires the {PLANS[effectiveMinPlan(model.minPlan)].name} plan.
+            </p>
+          )}
+        </div>
       </>
     );
   }
 
   return (
     <div className={shell}>
-      <div key={model.id} className="min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain p-4">
+      <div key={model.id} className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
         {body}
       </div>
       <div className="shrink-0 border-t border-border/50 p-3">
@@ -317,9 +397,8 @@ function SpecSheet({
 }
 
 /**
- * A 36px flat tile on the provider rail. No raised or inset chrome: the
- * selected one is the coral hairline over the accent fill, the rest are bare
- * marks that take the fill on hover.
+ * A 32px flat tile on the lab rail. The selected one is the coral hairline
+ * over the accent fill, the rest are bare marks that take the fill on hover.
  */
 function RailTile({
   active,
@@ -343,7 +422,7 @@ function RailTile({
           onClick={onClick}
           aria-pressed={active}
           className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-control transition-[background-color,color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+            "flex size-8 shrink-0 items-center justify-center rounded-control transition-[background-color,color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
             active
               ? "bg-accent text-foreground ring-1 ring-inset ring-primary/60"
               : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -358,7 +437,7 @@ function RailTile({
   );
 }
 
-/** One group of rows in the list, with its label. */
+/** One lab's rows: current models (already text → image → video) and its past ones. */
 type Group = { key: string; label: string; models: ModelInfo[]; legacy: ModelInfo[] };
 
 export function ModelSelector({
@@ -401,8 +480,8 @@ export function ModelSelector({
   );
   const filterConfigured = providerFilter ? configuredProviders.has(providerFilter) : true;
 
-  // Typing filters across every provider: a query clears the rail's filter
-  // rather than searching inside one lab.
+  // Typing filters across every lab: a query clears the rail's filter rather
+  // than searching inside one lab.
   const visible: ModelInfo[] = React.useMemo(
     () =>
       sortModelsForDisplay(
@@ -428,32 +507,21 @@ export function ModelSelector({
     (!q || ["auto", "cheap", "route", "smart", "default"].some((w) => w.includes(q)));
 
   /**
-   * The groups, in display order. "All" groups by provider; a provider filter
-   * is one flat list. Recents come first only in the unfiltered view, only up
-   * to three, only when the list is long enough that they save a scroll, and
-   * never a model already sitting in the first group on screen — a row that
-   * appears twice within one viewport is noise, not a shortcut.
+   * One group per lab, in the rail's order, whether the view is "All" or one
+   * lab. Recents come first only in the unfiltered view, only up to three,
+   * only when the list is long enough that they save a scroll, and never a
+   * model already sitting in the first lab on screen.
    */
   const groups = React.useMemo<Group[]>(() => {
     const out: Group[] = [];
-    const grouped = filter === "all" || !!q;
-    if (grouped) {
-      for (const p of PROVIDER_LIST) {
-        const mine = visible.filter((m) => m.provider === p);
-        if (mine.length === 0) continue;
-        out.push({
-          key: p,
-          label: providerName(p),
-          models: mine.filter((m) => !m.legacy),
-          legacy: mine.filter((m) => m.legacy),
-        });
-      }
-    } else if (visible.length > 0) {
+    for (const p of PROVIDER_LIST) {
+      const mine = visible.filter((m) => m.provider === p);
+      if (mine.length === 0) continue;
       out.push({
-        key: "flat",
-        label: "",
-        models: visible.filter((m) => !m.legacy),
-        legacy: visible.filter((m) => m.legacy),
+        key: p,
+        label: providerName(p),
+        models: sortByModality(mine.filter((m) => !m.legacy)),
+        legacy: sortByModality(mine.filter((m) => m.legacy)),
       });
     }
     if (!q && filter === "all" && visible.length >= RECENT_MIN_LIST) {
@@ -475,8 +543,8 @@ export function ModelSelector({
       for (const m of g.models) ids.push(m.id);
       if (q) for (const m of g.legacy) ids.push(m.id);
     }
-    // A recent row and its group row are distinct buttons, so an id may
-    // appear twice; the cursor visits each once.
+    // A recent row and its lab row are distinct buttons, so an id may appear
+    // twice; the cursor visits each once.
     return Array.from(new Set(ids));
   }, [showAutoRow, groups, q]);
 
@@ -535,6 +603,7 @@ export function ModelSelector({
     const soon = !!m.comingSoon;
     const locked = isLocked(m);
     const cursor = cursorId === m.id;
+    const deprecated = m.status === "deprecated";
 
     return (
       <button
@@ -556,7 +625,7 @@ export function ModelSelector({
           // Flat at rest. The cursor (pointer or arrow keys) lays the accent
           // fill; the SELECTED row is the fill plus a coral hairline. Both are
           // drawn with an inset ring so selection moves nothing.
-          "group flex h-14 w-full items-center gap-3 rounded-control px-2.5 text-left outline-none transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+          "group flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-left outline-none transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
           active
             ? "bg-accent ring-1 ring-inset ring-primary/60"
             : cursor
@@ -565,19 +634,46 @@ export function ModelSelector({
           soon && "cursor-not-allowed opacity-45",
         )}
       >
-        <span className="flex size-6 shrink-0 items-center justify-center">
+        <span className="flex size-5 shrink-0 items-center justify-center">
           {auto ? <JunoMark className="size-4" /> : <ProviderLogo provider={m.provider} className="size-4" />}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-ui font-medium text-foreground">{m.name}</span>
-          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{rowNote(m)}</span>
+        <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground">
+          {m.name}
+          {auto && (
+            <span className="ml-1.5 rounded-full bg-primary/12 px-1.5 py-px font-mono text-micro font-medium text-primary-ink">
+              Smart
+            </span>
+          )}
         </span>
+        {deprecated && (
+          <span
+            title={m.deprecationNote ?? "Deprecated by the provider"}
+            className="shrink-0 font-mono text-micro text-warning-foreground"
+          >
+            {m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
+          </span>
+        )}
         <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
           {soon ? "Soon" : locked ? PLANS[effectiveMinPlan(m.minPlan)].name : auto ? "" : priceGlyph(m)}
         </span>
         {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
       </button>
     );
+  };
+
+  /** A lab's rows with a divider each time the modality changes. */
+  const renderRows = (list: ModelInfo[], keyPrefix = "") => {
+    const out: React.ReactNode[] = [];
+    let lastModality: Modality | null = null;
+    for (const m of list) {
+      const modality = m.modality ?? "chat";
+      if (modality !== "chat" && modality !== lastModality) {
+        out.push(<ModalityLabel key={`${keyPrefix}label:${modality}`} modality={modality} />);
+      }
+      lastModality = modality;
+      out.push(renderRow(m, keyPrefix));
+    }
+    return out;
   };
 
   return (
@@ -613,19 +709,19 @@ export function ModelSelector({
         collisionPadding={16}
         avoidCollisions
         onKeyDown={onNavKeyDown}
-        // Fixed 880×560, clamped to the viewport by Radix's available-height
+        // Fixed 760×480, clamped to the viewport by Radix's available-height
         // var and a 16px margin on every side (collisionPadding does the
         // horizontal clamp by shifting the box, never by clipping it).
         style={{
-          width: "min(880px, calc(100vw - 2rem))",
-          height: "min(560px, var(--radix-popover-content-available-height))",
+          width: "min(760px, calc(100vw - 2rem))",
+          height: "min(480px, var(--radix-popover-content-available-height))",
         }}
         className="flex max-w-none flex-col overflow-hidden rounded-popover p-0"
       >
         <div className="flex min-h-0 flex-1">
-          {/* Provider rail — 56px, folds under `sm`. */}
-          <div className="hidden w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border/50 p-2.5 sm:flex">
-            <RailTile active={filter === "all"} title="All providers" onClick={() => setFilter("all")}>
+          {/* Lab rail — 48px, folds under `sm`. */}
+          <div className="hidden w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border/50 p-2 sm:flex">
+            <RailTile active={filter === "all"} title="All labs" onClick={() => setFilter("all")}>
               <LayoutGrid className="size-4" />
             </RailTile>
             <div className="my-1 h-px w-5 shrink-0 bg-border/70" />
@@ -637,7 +733,7 @@ export function ModelSelector({
                 title={providerName(p)}
                 onClick={() => setFilter(p)}
               >
-                <ProviderLogo provider={p} className="size-4.5" />
+                <ProviderLogo provider={p} className="size-4" />
               </RailTile>
             ))}
           </div>
@@ -687,16 +783,16 @@ export function ModelSelector({
                       </div>
                     )}
                     {groups.map((g) => (
-                      <div key={g.key} role="group" aria-label={g.label || "Models"}>
-                        {g.label && <GroupLabel>{g.label}</GroupLabel>}
-                        {g.models.map((m) => renderRow(m, g.key === "recent" ? "recent:" : ""))}
+                      <div key={g.key} role="group" aria-label={g.label}>
+                        <GroupLabel>{g.label}</GroupLabel>
+                        {renderRows(g.models, g.key === "recent" ? "recent:" : "")}
                         {g.legacy.length > 0 && (
                           <details key={q ? "open" : "closed"} open={!!q} className="group/legacy pt-0.5">
-                            <summary className="flex h-9 cursor-pointer items-center justify-between rounded-control px-2.5 font-mono text-caption text-muted-foreground transition-colors duration-fast hover:bg-accent">
+                            <summary className="flex h-8 cursor-pointer items-center justify-between rounded-control px-2.5 font-mono text-caption text-muted-foreground transition-colors duration-fast hover:bg-accent">
                               <span>Past models · {g.legacy.length}</span>
                               <ChevronDown className="size-3 transition-transform duration-base group-open/legacy:rotate-180" />
                             </summary>
-                            <div className="pt-0.5">{g.legacy.map((m) => renderRow(m))}</div>
+                            <div className="pt-0.5">{renderRows(g.legacy)}</div>
                           </details>
                         )}
                       </div>
@@ -707,8 +803,8 @@ export function ModelSelector({
             </ScrollFade>
           </div>
 
-          {/* Spec sheet — 300px, folds under `md`. */}
-          <SpecSheet
+          {/* Detail panel — 272px, folds under `md`. */}
+          <DetailPanel
             model={sheetModel}
             selected={!!sheetModel && (isAutoModelId(sheetModel.id) ? autoSelected : value === sheetModel.id)}
             locked={!!sheetModel && isLocked(sheetModel)}

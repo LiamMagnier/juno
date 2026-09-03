@@ -1700,7 +1700,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             incognito cluster at its right. 56px in flow, no plate. Below md
             the shell's mobile bar carries navigation and this band does not
             exist. */}
-        {topActionsSlotOwner && !topActionsSlot && (
+        {/* In incognito the switcher is gone (Work is not a private surface)
+            and the share / ghost cluster is invisible, so the band would be
+            56px of nothing above the incognito header. Drop it entirely. */}
+        {topActionsSlotOwner && !topActionsSlot && !privateMode && (
           <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
             <ChatWorkSwitcher />
             <div className="absolute right-3 top-1/2 -translate-y-1/2 md:right-4">{topActionsCluster}</div>

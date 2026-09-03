@@ -111,7 +111,7 @@ const MAX_SOURCES = 250;
  */
 const CHAT_RUN_BUDGET_MICRO_USD = (() => {
   const raw = Number(process.env.RESEARCH_CHAT_BUDGET_USD?.trim());
-  const usd = Number.isFinite(raw) && raw > 0 ? Math.min(25, raw) : 2;
+  const usd = Number.isFinite(raw) && raw > 0 ? Math.min(40, raw) : 8;
   return BigInt(Math.round(usd * 1_000_000));
 })();
 
@@ -255,6 +255,7 @@ export async function runDeepResearch(opts: {
         goal: prompt,
         conversationId: opts.conversationId ?? null,
         budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
+        effort: "deep",
         // The per-send research toggle IS this user's confirmation (see
         // `ResearchPlan.confirmation`): the run must flow planning → searching
         // on its own, because a run that parks at the plan gate waits forever

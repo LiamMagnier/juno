@@ -142,9 +142,11 @@ export function stageYields(run: ResearchRunView): StageYield {
   const satisfied = coverage.filter((entry) => entry.status === "satisfied").length;
   return {
     plan: queries > 0 ? `${queries} ${queries === 1 ? CONSOLE_COPY.oneQuery : CONSOLE_COPY.queries}` : null,
-    gather: run.sources.length > 0 ? `${run.sources.length} ${CONSOLE_COPY.found}` : null,
-    read: read > 0 ? `${read} ${CONSOLE_COPY.read}` : null,
-    crosscheck: coverage.length > 0 ? `${satisfied}/${coverage.length} ${CONSOLE_COPY.checked}` : null,
+    investigate:
+      run.sources.length > 0
+        ? `${run.sources.length} ${CONSOLE_COPY.found}${read > 0 ? ` · ${read} ${CONSOLE_COPY.read}` : ""}`
+        : null,
+    review: coverage.length > 0 ? `${satisfied}/${coverage.length} ${CONSOLE_COPY.checked}` : null,
     write: null,
   };
 }

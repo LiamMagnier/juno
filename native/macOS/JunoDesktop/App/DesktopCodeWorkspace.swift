@@ -1008,17 +1008,18 @@ struct DesktopCodeWorkspace: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button(action: newSession) {
                 JunoIconLabel(verbatim: "New task", icon: .new, size: 15)
             }
+            .junoToolbarMetrics()
             .help("Start a new task (⌘N)")
             .accessibilityIdentifier("juno.code.new-session")
         }
 
         ToolbarSpacer(.fixed, placement: .primaryAction)
 
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button(action: toggleReview) {
                 JunoIconLabel(
                     verbatim: "Review",
@@ -1026,6 +1027,7 @@ struct DesktopCodeWorkspace: View {
                     size: 15
                 )
             }
+            .junoToolbarMetrics()
             .disabled(controller == nil)
             .help(reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)")
             .accessibilityIdentifier("juno.code.review.toggle")
@@ -1034,19 +1036,20 @@ struct DesktopCodeWorkspace: View {
 
         ToolbarSpacer(.fixed, placement: .primaryAction)
 
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Button {
                 showingPalette = true
             } label: {
                 JunoIconLabel(verbatim: "Commands", icon: .search, size: 15)
             }
+            .junoToolbarMetrics()
             .help("Command palette (⌘K)")
             .accessibilityIdentifier("juno.code.palette")
         }
 
         ToolbarSpacer(.fixed, placement: .primaryAction)
 
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .primaryAction) {
             Menu {
                 Section("Session") {
                     Button(action: openPreview) {
@@ -1117,6 +1120,7 @@ struct DesktopCodeWorkspace: View {
             } label: {
                 JunoIconLabel(verbatim: "Task actions", icon: .ellipsis, size: 15)
             }
+            .junoToolbarMetrics()
             .accessibilityIdentifier("juno.code.more")
             .accessibilityLabel("Task actions")
             .accessibilityRepresentation {

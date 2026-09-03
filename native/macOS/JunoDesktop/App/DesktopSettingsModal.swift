@@ -11,14 +11,15 @@ import SwiftUI
 /// Settings presented inside a product window — as a sheet from the sidebar's
 /// account menu, or as the Chat column's Settings destination.
 ///
-/// The same rail and pane the ⌘, window draws (``DesktopSettingsShell``), so
-/// there is one Settings and not two. The modal's only additions are its own
-/// close control in the rail's header and a fixed frame: a presented surface
-/// that negotiates its own size re-lays out the window underneath it, which
-/// this shell has fallen into a constraint loop over before.
+/// The same source list and page the ⌘, window draws (``DesktopSettingsShell``),
+/// so there is one Settings and not two. The modal's only additions are the
+/// toolbar's Done button and a fixed frame: a presented surface that
+/// negotiates its own size re-lays out the window underneath it, which this
+/// shell has fallen into a constraint loop over before.
 ///
-/// The init keeps the individual models its callers already hand over; the
-/// shell reads the rest from the configuration.
+/// The init keeps the individual models its callers already hand over; with a
+/// configuration the page reads the rest from it, and without one it works
+/// from what it was given.
 struct DesktopSettingsModal: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let authModel: NativeAuthModel
@@ -48,47 +49,39 @@ struct DesktopSettingsModal: View {
     }
 
     var body: some View {
-        Group {
+        DesktopSettingsShell(section: section, onDismiss: onDismiss) { section in
             if let configuration {
-                DesktopSettingsShell(
+                DesktopSettingsScreen(
+                    section: section,
                     configuration: configuration,
                     settingsModel: model,
-                    session: session,
-                    section: section,
-                    onDismiss: onDismiss
+                    session: session
                 )
             } else {
-                HStack(spacing: 0) {
-                    DesktopSettingsRail(selection: section, onDismiss: onDismiss)
-                        .frame(width: DesktopSettingsMetrics.railWidth)
-                    Divider().overlay(Color.junoSeparator)
-                    DesktopSettingsScreen(
-                        section: section.wrappedValue,
-                        model: model,
-                        authModel: authModel,
-                        session: session,
-                        accountDataClient: accountDataClient,
-                        shareClient: shareClient,
-                        modelCatalog: modelCatalog,
-                        avatarData: avatarData,
-                        syncModel: syncModel,
-                        outbox: outbox,
-                        connectorModel: nil,
-                        requestSender: nil,
-                        codeWorkbench: registry.workbench,
-                        codeModels: registry.workbench?.availableModels ?? [],
-                        codeHostModel: codeHostModel,
-                        workHostModel: workHostModel,
-                        learningModel: learningModel
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .junoReadingCanvas()
+                DesktopSettingsScreen(
+                    section: section,
+                    model: model,
+                    authModel: authModel,
+                    session: session,
+                    accountDataClient: accountDataClient,
+                    shareClient: shareClient,
+                    modelCatalog: modelCatalog,
+                    avatarData: avatarData,
+                    syncModel: syncModel,
+                    outbox: outbox,
+                    connectorModel: nil,
+                    requestSender: nil,
+                    codeWorkbench: registry.workbench,
+                    codeModels: registry.workbench?.availableModels ?? [],
+                    codeHostModel: codeHostModel,
+                    workHostModel: workHostModel,
+                    learningModel: learningModel
+                )
             }
         }
-        .frame(minWidth: 860, idealWidth: 960, maxWidth: 1040, minHeight: 600, idealHeight: 700, maxHeight: 820)
-        .clipShape(
-            RoundedRectangle(cornerRadius: JunoSettingsMetrics.tileRadius, style: .continuous)
+        .frame(
+            width: DesktopSettingsMetrics.modalSize.width,
+            height: DesktopSettingsMetrics.modalSize.height
         )
         .accessibilityIdentifier("juno.desktop.settings.modal")
     }

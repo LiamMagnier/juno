@@ -216,7 +216,7 @@ struct DesktopSettingsScreen: View {
                             .junoSecondaryInk()
                     }
                 } header: {
-                    DesktopSettingsHeader("Preferences")
+                    Text("Preferences")
                 }
             }
         }
@@ -288,7 +288,7 @@ struct DesktopSettingsScreen: View {
                 }
             }
         } header: {
-            DesktopSettingsHeader("Memory")
+            Text("Memory")
         }
 
         Section {
@@ -323,7 +323,7 @@ struct DesktopSettingsScreen: View {
                 .foregroundStyle(Color.junoCaution)
             }
         } header: {
-            DesktopSettingsHeader("Who may process your chats")
+            Text("Who may process your chats")
         }
     }
 
@@ -492,26 +492,14 @@ struct DesktopSettingsForm<Content: View>: View {
     }
 }
 
-/// A section header: the secondary caption at 12pt, sentence case — the web's
-/// `SettingsGroup` title.
-struct DesktopSettingsHeader: View {
-    private let title: LocalizedStringKey
-
-    init(_ title: LocalizedStringKey) {
-        self.title = title
-    }
-
-    var body: some View {
-        Text(title)
-            .junoFont(size: 12, relativeTo: .caption, weight: .medium)
-            .junoSecondaryInk()
-            .textCase(nil)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
 /// A row's label: what it is, and one line of explanation — the *only* line of
 /// explanation, so a footer never has to say it a second time.
+///
+/// Two `Text`s and nothing else, on purpose. A grouped `Form` on macOS reads a
+/// label made of several texts as a title over a secondary subtitle — the
+/// treatment every row in System Settings has — and a `VStack` of styled
+/// texts is what stopped this from getting it. The tone is the only thing
+/// stated here: a destructive row's title is the danger colour.
 struct DesktopSettingsLabel: View {
     private let title: LocalizedStringKey
     private let detail: LocalizedStringKey?
@@ -526,15 +514,10 @@ struct DesktopSettingsLabel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-            Text(title)
-                .junoRowLabel()
-                .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoForeground)
-            if let detail {
-                Text(detail)
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        Text(title)
+            .foregroundStyle(tone == .destructive ? Color.junoDanger : Color.junoForeground)
+        if let detail {
+            Text(detail)
         }
     }
 }
@@ -560,9 +543,11 @@ private enum DesktopSettingsSheet: String, Identifiable {
 
 /// A sheet with a title and one way out.
 ///
-/// The frame is explicit on purpose: a presented surface that negotiates its own
-/// size re-lays out the window underneath it as it appears, and this shell has
-/// fallen into a constraint loop over exactly that.
+/// A `NavigationStack` so the title and the Done button are the sheet's own
+/// toolbar rather than a header row painted into it. The frame is explicit on
+/// purpose: a presented surface that negotiates its own size re-lays out the
+/// window underneath it as it appears, and this shell has fallen into a
+/// constraint loop over exactly that.
 private struct DesktopSettingsSheetHost<Content: View>: View {
     let sheet: DesktopSettingsSheet
     @ViewBuilder var content: Content
@@ -570,20 +555,16 @@ private struct DesktopSettingsSheetHost<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(sheet.title)
-                    .junoTitle()
-                Spacer(minLength: JunoSpace.regular)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .contentShape(.rect)
-            }
-            .padding(.horizontal, JunoSpace.roomy)
-            .padding(.vertical, JunoSpace.cozy)
-            Divider()
+        NavigationStack {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle(sheet.title)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
         }
         .frame(
             width: DesktopSettingsMetrics.sheetWidth,
@@ -596,8 +577,20 @@ private struct DesktopSettingsSheetHost<Content: View>: View {
 }
 
 enum DesktopSettingsMetrics {
-    /// The rail's width: the web's `md:w-56` (224px) less its gutter.
-    static let railWidth: CGFloat = 216
+    /// The sections column's resize range. Narrower than the product sidebar:
+    /// ten one-word rows and a search field, nothing a reader arranges. `ideal`
+    /// is the web's `md:w-56` (224px) less its gutter.
+    static let railMinimum: CGFloat = 200
+    static let railWidth: CGFloat = 220
+    static let railMaximum: CGFloat = 260
+    /// The ⌘, window. The minimum still fits the reading measure beside the
+    /// column at its narrowest; the ideal is what a fresh window opens at.
+    static let windowMinimum = CGSize(width: 820, height: 560)
+    static let windowIdeal = CGSize(width: 960, height: 680)
+    /// The in-window sheet: a fixed frame, because a presented surface that
+    /// negotiates its own size re-lays out the window underneath it, and this
+    /// shell has fallen into a constraint loop over exactly that.
+    static let modalSize = CGSize(width: 960, height: 640)
     /// The signed-in account's photo in the Account section.
     static let avatarSize: CGFloat = 44
     /// A presented surface's size. Explicit — see ``DesktopSettingsSheetHost``.
@@ -748,7 +741,7 @@ private struct DesktopSettingsGeneralSections: View {
                 )
             }
         } header: {
-            DesktopSettingsHeader("Appearance")
+            Text("Appearance")
         }
 
         Section {
@@ -776,7 +769,7 @@ private struct DesktopSettingsGeneralSections: View {
             .accessibilityLabel("Interface language")
             .accessibilityIdentifier("juno.desktop.settings.interface-language")
         } header: {
-            DesktopSettingsHeader("Language")
+            Text("Language")
         }
 
         Section {
@@ -800,7 +793,7 @@ private struct DesktopSettingsGeneralSections: View {
                 )
             }
         } header: {
-            DesktopSettingsHeader("About")
+            Text("About")
         }
     }
 
@@ -850,6 +843,7 @@ private struct DesktopAccentSwatch: View {
     let select: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// One ring, three strengths: full for the chosen accent, faint under the
     /// pointer, absent at rest.
@@ -877,7 +871,10 @@ private struct DesktopAccentSwatch: View {
                         .strokeBorder(Color.junoForeground.opacity(ringStrength), lineWidth: 2)
                         .padding(-3)
                 }
-                .animation(JunoMotion.fast, value: isHovering)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                    value: isHovering
+                )
                 .contentShape(Circle())
         }
         .buttonStyle(.junoPress)
@@ -956,7 +953,7 @@ private struct DesktopSettingsPersonalizationSections: View {
             .accessibilityLabel("Response language")
             .accessibilityIdentifier("juno.desktop.settings.response-language")
         } header: {
-            DesktopSettingsHeader("How Juno writes")
+            Text("How Juno writes")
         }
 
         Section {
@@ -987,10 +984,9 @@ private struct DesktopSettingsPersonalizationSections: View {
                 .contentShape(.rect)
             }
         } header: {
-            DesktopSettingsHeader("Custom instructions")
+            Text("Custom instructions")
         } footer: {
             Text("Juno keeps these in mind in every conversation on this account. Your response style still applies underneath them.")
-                .junoCaption()
         }
         .task(id: settings.customInstructions) {
             let stored = settings.customInstructions
@@ -1062,7 +1058,7 @@ private struct DesktopSettingsModelSections: View {
                 )
             }
         } header: {
-            DesktopSettingsHeader("Defaults")
+            Text("Defaults")
         }
 
         if !modelCatalog.isEmpty {
@@ -1118,10 +1114,9 @@ private struct DesktopSettingsModelSections: View {
                     .contentShape(.rect)
                 }
             } header: {
-                DesktopSettingsHeader("Favorites")
+                Text("Favorites")
             } footer: {
                 Text("Favorites sit at the top of the composer's model menu, ahead of the full catalog.")
-                    .junoCaption()
             }
         }
     }
@@ -1233,10 +1228,9 @@ private struct DesktopSettingsVoiceSections: View {
             .accessibilityLabel("Read-aloud voice")
             .accessibilityIdentifier("juno.desktop.settings.voice")
         } header: {
-            DesktopSettingsHeader("Read aloud")
+            Text("Read aloud")
         } footer: {
             Text("The same voice on every device signed into this account. Dictation uses this Mac's own speech recognition and needs no setting.")
-                .junoCaption()
         }
     }
 }
@@ -1305,7 +1299,7 @@ private struct DesktopSettingsDataSections: View {
                     .junoCaption()
             }
         } header: {
-            DesktopSettingsHeader("Your data")
+            Text("Your data")
         }
 
         if showsSharedLinks {
@@ -1320,7 +1314,7 @@ private struct DesktopSettingsDataSections: View {
                     )
                 }
             } header: {
-                DesktopSettingsHeader("Sharing")
+                Text("Sharing")
             }
         }
 
@@ -1334,7 +1328,7 @@ private struct DesktopSettingsDataSections: View {
                 )
             }
         } header: {
-            DesktopSettingsHeader("On this Mac")
+            Text("On this Mac")
         }
     }
 
@@ -1392,30 +1386,28 @@ private struct DesktopSettingsAccountSections: View {
 
     var body: some View {
         Section {
-            HStack(spacing: JunoSpace.regular) {
-                JunoAvatar(
-                    imageData: avatarData,
-                    imageURL: session.profile.imageURL,
-                    name: session.profile.name ?? session.profile.email,
-                    size: DesktopSettingsMetrics.avatarSize
-                )
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text(session.profile.name ?? "Juno account")
-                        .junoRowLabel()
-                        .fontWeight(.medium)
-                        .junoInk()
-                    Text(session.profile.email)
-                        .junoCaption()
-                        .textSelection(.enabled)
+            LabeledContent {
+                Text(session.profile.email)
+                    .junoMono()
+                    .junoSecondaryInk()
+                    .textSelection(.enabled)
+            } label: {
+                HStack(spacing: JunoSpace.cozy) {
+                    JunoAvatar(
+                        imageData: avatarData,
+                        imageURL: session.profile.imageURL,
+                        name: session.profile.name ?? session.profile.email,
+                        size: DesktopSettingsMetrics.avatarSize
+                    )
+                    DesktopSettingsLabel(
+                        LocalizedStringKey(session.profile.name ?? "Juno account"),
+                        detail: "Your name and photo are changed on the web, and follow you here."
+                    )
                 }
-                Spacer(minLength: 0)
             }
             .padding(.vertical, JunoSpace.hairline)
         } header: {
-            DesktopSettingsHeader("Profile")
-        } footer: {
-            Text("Your name and photo are changed on the web, and follow you here.")
-                .junoCaption()
+            Text("Profile")
         }
 
         Section {
@@ -1433,11 +1425,11 @@ private struct DesktopSettingsAccountSections: View {
             } label: {
                 DesktopSettingsLabel(
                     "This Mac",
-                    detail: "Signed in as \(session.profile.email)."
+                    detail: "Signs this Mac out of Juno. Your account and everything in it stay on the server."
                 )
             }
         } header: {
-            DesktopSettingsHeader("Sign-in")
+            Text("Sign-in")
         }
 
         Section {
@@ -1467,7 +1459,7 @@ private struct DesktopSettingsAccountSections: View {
             .accessibilityLabel("Weekly digest")
             .accessibilityIdentifier("juno.desktop.settings.weekly-digest")
         } header: {
-            DesktopSettingsHeader("Email notifications")
+            Text("Email notifications")
         }
 
         Section {
@@ -1493,10 +1485,9 @@ private struct DesktopSettingsAccountSections: View {
                 )
             }
         } header: {
-            DesktopSettingsHeader("Danger zone")
+            Text("Danger zone")
         } footer: {
             Text("Irreversible. There is no undo and no grace period.")
-                .junoCaption()
         }
     }
 

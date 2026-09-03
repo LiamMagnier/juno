@@ -234,6 +234,21 @@ public struct JunoThinkingLadder: Equatable, Sendable {
 
 // MARK: - Model
 
+/// A model's list prices in USD per million tokens — the two numbers the web's
+/// `ModelMetrics` carries and every other pricing figure is derived from.
+public struct JunoModelPrice: Equatable, Sendable {
+    public let inputPerMillion: Double
+    public let outputPerMillion: Double
+
+    public init(inputPerMillion: Double, outputPerMillion: Double) {
+        self.inputPerMillion = inputPerMillion
+        self.outputPerMillion = outputPerMillion
+    }
+
+    /// Both rates published as zero: the web's `free` case.
+    public var isFree: Bool { inputPerMillion == 0 && outputPerMillion == 0 }
+}
+
 /// Everything the selector can show about one model.
 ///
 /// Values arrive formatted where the formatting is the product's business
@@ -259,6 +274,12 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
     /// published no pricing. Never inferred from the price detail.
     public let costGlyph: String?
     public let priceDetail: String?
+    /// The published list prices, when the product has them as numbers rather
+    /// than only as the formatted `priceDetail` line. The picker's Cost meter
+    /// and its "in · out / MTok" pricing line are computed from these exactly
+    /// as the web computes them; without them the meter falls back to the
+    /// cost tier and the line to `priceDetail`.
+    public let price: JunoModelPrice?
     public let speedGrade: Int?
     public let intelligenceGrade: Int?
     public let capabilities: [JunoModelCapability]
@@ -294,7 +315,8 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
         unavailabilityReason: String? = nil,
         deprecationNote: String? = nil,
         retiresOn: String? = nil,
-        choosesThinkingAutomatically: Bool = false
+        choosesThinkingAutomatically: Bool = false,
+        price: JunoModelPrice? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -316,6 +338,7 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
         self.deprecationNote = deprecationNote
         self.retiresOn = retiresOn
         self.choosesThinkingAutomatically = choosesThinkingAutomatically
+        self.price = price
     }
 
     public var isSelectable: Bool { unavailabilityReason == nil }

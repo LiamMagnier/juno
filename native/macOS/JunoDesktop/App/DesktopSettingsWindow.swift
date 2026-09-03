@@ -81,6 +81,48 @@ enum DesktopSettingsSection: String, CaseIterable, Identifiable {
         case .billing: .usage
         }
     }
+
+    /// The labels of the rows the section's form holds, for the sidebar's
+    /// search field. A static table rather than a walk of the live form: the
+    /// rows are known at build time, and a search that reads the view tree
+    /// would have to build every section to answer one keystroke.
+    var searchTerms: [String] {
+        switch self {
+        case .general:
+            ["Appearance", "Theme", "Light", "Dark", "Accent color", "Interface language", "Updates", "Version", "Diagnostics", "About"]
+        case .personalization:
+            ["Response style", "Response language", "Custom instructions", "Personality"]
+        case .memory:
+            ["Saved memories", "Memory manager", "What Juno noticed", "Background processing", "Provider"]
+        case .models:
+            ["Default model", "Favorites", "Catalog"]
+        case .connectors:
+            ["Connections", "Integrations", "Apps", "OAuth"]
+        case .voice:
+            ["Read aloud", "Dictation", "Speech"]
+        case .code:
+            ["Permissions", "Environment", "MCP", "Hooks", "Skills", "Agents", "Remote", "Juno Work", "Hosting", "Pair"]
+        case .data:
+            ["Export", "JSON", "CSV", "Shared links", "Diagnostics", "Sync"]
+        case .account:
+            ["Profile", "Email", "Sign out", "Budget alerts", "Weekly digest", "Notifications", "Delete account"]
+        case .billing:
+            ["Plan", "Usage", "Budget", "Spend", "Limit", "Upgrade"]
+        }
+    }
+
+    /// The sections a search string leaves visible — all of them for an empty
+    /// string. Matched against the name, the summary and the row labels, case-
+    /// and diacritic-insensitively, so "colour" still finds "Accent color".
+    static func matching(_ query: String) -> [DesktopSettingsSection] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return allCases }
+        return allCases.filter { section in
+            ([section.label, section.summary] + section.searchTerms).contains { term in
+                term.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            }
+        }
+    }
 }
 
 /// Opens the Settings window on a section, from anywhere in the app.
@@ -107,7 +149,7 @@ enum DesktopSettingsRouter {
     }
 }
 
-/// The ⌘, window: the rail and the page.
+/// The ⌘, window: a source list of sections beside the section's form.
 struct DesktopSettingsWindow: View {
     let configuration: JunoDesktopConfiguration?
 
@@ -127,189 +169,200 @@ struct DesktopSettingsWindow: View {
                let settingsModel = configuration.memorySettingsModel,
                case .signedIn(let session) = configuration.authModel.phase
             {
-                DesktopSettingsShell(
-                    configuration: configuration,
-                    settingsModel: settingsModel,
-                    session: session,
-                    section: section
-                )
+                DesktopSettingsShell(section: section) { section in
+                    DesktopSettingsScreen(
+                        section: section,
+                        configuration: configuration,
+                        settingsModel: settingsModel,
+                        session: session
+                    )
+                }
             } else {
                 JunoEmptyState(
                     title: "Sign in to change settings",
                     message: "Juno's settings belong to your account and sync across your devices.",
                     icon: .user
                 )
+                .junoReadingCanvas()
             }
         }
-        .frame(minWidth: 840, idealWidth: 960, minHeight: 600, idealHeight: 700)
+        .frame(
+            minWidth: DesktopSettingsMetrics.windowMinimum.width,
+            idealWidth: DesktopSettingsMetrics.windowIdeal.width,
+            minHeight: DesktopSettingsMetrics.windowMinimum.height,
+            idealHeight: DesktopSettingsMetrics.windowIdeal.height
+        )
         .accessibilityIdentifier("juno.desktop.settings.window")
     }
 }
 
-/// The rail and the pane, shared by the ⌘, window and the in-window modal so
-/// the two cannot come to disagree about what Settings contains.
-struct DesktopSettingsShell: View {
-    let configuration: JunoDesktopConfiguration
-    @Bindable var settingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
-    let session: NativeAuthenticatedSession
+/// The shape of Settings — System Settings' shape — shared by the ⌘, window
+/// and the in-window sheet so the two cannot come to disagree about what
+/// Settings contains.
+///
+/// A `NavigationSplitView`: the sections are a real source list on the left,
+/// so arrow keys, type-select, the focus ring and Increase Contrast are the
+/// platform's, and the selected section's name and one-line summary are the
+/// window's own title and subtitle rather than a heading painted into the
+/// page. The sidebar column is vibrant, as every Mac source list is; only the
+/// detail paints the reading canvas, and it paints it once here so no page
+/// has to. The sidebar toggle is removed because a settings window with its
+/// sections hidden is a window nobody can use.
+///
+/// `detail` builds the page for a section. The window hands over the whole
+/// configuration; the modal has to work from the individual models its
+/// callers already pass it, which is why the shell does not build the page
+/// itself.
+struct DesktopSettingsShell<Detail: View>: View {
     @Binding var section: DesktopSettingsSection
     /// Present in the modal, where the shell has to offer its own way out.
     var onDismiss: (() -> Void)? = nil
+    @ViewBuilder let detail: (DesktopSettingsSection) -> Detail
 
-    @State private var registry = DesktopWorkbenchRegistry.shared
+    @State private var query = ""
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        HStack(spacing: 0) {
-            DesktopSettingsRail(selection: $section, onDismiss: onDismiss)
-                .frame(width: DesktopSettingsMetrics.railWidth)
-            Divider().overlay(Color.junoSeparator)
-            DesktopSettingsScreen(
-                section: section,
-                model: settingsModel,
-                authModel: configuration.authModel,
-                session: session,
-                accountDataClient: configuration.accountDataClient,
-                shareClient: configuration.shareClient,
-                modelCatalog: configuration.conversationModel?.selectableModels ?? [],
-                avatarData: configuration.avatarModel?.imageData,
-                syncModel: configuration.syncModel,
-                outbox: configuration.outbox,
-                connectorModel: configuration.connectorModel,
-                requestSender: configuration.requestSender,
-                codeWorkbench: registry.workbench,
-                codeModels: registry.workbench?.availableModels ?? [],
-                codeHostModel: configuration.codeHostModel,
-                workHostModel: configuration.workHostModel,
-                learningModel: configuration.memoryLearningModel
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        NavigationSplitView(columnVisibility: $columns) {
+            DesktopSettingsSidebar(selection: $section, query: $query)
+        } detail: {
+            detail(section)
+                .navigationTitle(section.label)
+                .navigationSubtitle(section.summary)
+                .junoReadingCanvas()
         }
-        .junoReadingCanvas()
+        .toolbar(removing: .sidebarToggle)
+        .toolbar {
+            if let onDismiss {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDismiss)
+                        .keyboardShortcut(.defaultAction)
+                        // The one primary action on the sheet, in Juno's
+                        // accent rather than whatever the system's is.
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
+                        .help("Close settings")
+                        .accessibilityIdentifier("juno.desktop.settings.done")
+                }
+            }
+        }
+        // Esc still leaves, as it did when the rail drew its own close control.
+        .onExitCommand { onDismiss?() }
     }
 }
 
-/// The left rail: the website's `SettingsRail` — an inset well holding one row
-/// per section, the active one filled.
+/// The sections, as the platform's own source list.
 ///
-/// A column of buttons rather than a `List(selection:)`. The list would draw
-/// the platform's full-bleed source-list selection in the app accent, which is
-/// exactly the coral slab the sidebar work spent a release removing; the web's
-/// rail is a well with a quietly raised active row, and that is a shape this
-/// can draw directly.
-struct DesktopSettingsRail: View {
+/// Once hand-drawn, because a `List(selection:)` painted the platform's
+/// full-bleed accent selection — a coral slab. The main sidebar has since
+/// solved that with the pair in `JunoDesktopChrome`: the tint on the list for
+/// the states it reaches, and the row's own fill for the emphasized state
+/// macOS 26 paints in the system accent regardless. With that solved, there
+/// is no reason left to draw a list by hand.
+///
+/// The search field filters the sections by their name, their summary and
+/// the labels of the rows each form holds, so "accent" finds General and
+/// "digest" finds Account without either word being in the section's name.
+struct DesktopSettingsSidebar: View {
     @Binding var selection: DesktopSettingsSection
-    var onDismiss: (() -> Void)? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                Text("Settings")
-                    .junoTitle()
-                    .junoInk()
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                if let onDismiss {
-                    Button(action: onDismiss) {
-                        JunoIconView(.close, size: 13)
-                            .junoSecondaryInk()
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.cancelAction)
-                    .help("Close settings (Esc)")
-                    .accessibilityLabel("Close settings")
-                } else {
-                    Text("⌘,")
-                        .junoCodeSmall()
-                        .junoSecondaryInk()
-                        .accessibilityHidden(true)
-                }
-            }
-            .padding(.horizontal, JunoSpace.tight)
-
-            VStack(spacing: 2) {
-                ForEach(DesktopSettingsSection.allCases) { item in
-                    DesktopSettingsRailRow(
-                        section: item,
-                        isSelected: selection == item,
-                        select: { selection = item }
-                    )
-                }
-            }
-            .padding(JunoSpace.tight)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .fill(Color.junoMuted.opacity(0.55))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
-                    .strokeBorder(Color.junoHairline, lineWidth: 0.5)
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Settings sections")
-
-            Spacer(minLength: 0)
-        }
-        .padding(JunoSpace.regular)
-        .accessibilityIdentifier("juno.desktop.settings.rail")
-    }
-}
-
-/// One row in the rail: a Lucide mark and a word, filled when selected.
-private struct DesktopSettingsRailRow: View {
-    let section: DesktopSettingsSection
-    let isSelected: Bool
-    let select: () -> Void
-
-    @State private var isHovering = false
+    @Binding var query: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var fill: Color {
-        if isSelected { return Color.junoSurface }
-        if isHovering { return Color.junoRowHover }
-        return .clear
+    private var visible: [DesktopSettingsSection] {
+        DesktopSettingsSection.matching(query)
+    }
+
+    /// `List(selection:)` wants an optional. Deselecting — ⌘-click on the
+    /// selected row — is not a state Settings has, so nil keeps what was there.
+    private var listSelection: Binding<DesktopSettingsSection?> {
+        Binding(
+            get: { selection },
+            set: { if let section = $0 { selection = section } }
+        )
     }
 
     var body: some View {
-        Button(action: select) {
-            HStack(spacing: JunoSpace.snug) {
-                JunoIconView(section.icon, size: 15)
-                    .foregroundStyle(isSelected ? Color.junoAccent : Color.junoMutedForeground)
-                Text(section.label)
-                    .junoRowLabel()
-                    .fontWeight(isSelected ? .medium : .regular)
-                    .foregroundStyle(isSelected ? Color.junoForeground : Color.junoMutedForeground)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+        List(selection: listSelection) {
+            ForEach(visible) { section in
+                row(section)
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .fill(fill)
-                    .shadow(
-                        color: isSelected ? Color.junoCardShadow : .clear,
-                        radius: JunoElevation.cardBlur,
-                        y: JunoElevation.cardOffsetY
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                    .strokeBorder(isSelected ? Color.junoHairline : .clear, lineWidth: 0.5)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
-        .buttonStyle(.junoPress)
-        .onHover { isHovering = $0 }
-        .animation(
-            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-            value: isHovering
+        .listStyle(.sidebar)
+        // The selection is still the platform's — only its colour is Juno's.
+        .junoSidebarSelectionTint()
+        .searchable(text: $query, placement: .sidebar, prompt: "Search settings")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
+        .navigationSplitViewColumnWidth(
+            min: DesktopSettingsMetrics.railMinimum,
+            ideal: DesktopSettingsMetrics.railWidth,
+            max: DesktopSettingsMetrics.railMaximum
         )
+        .accessibilityLabel("Settings sections")
+        .accessibilityIdentifier("juno.desktop.settings.rail")
+    }
+
+    private func row(_ section: DesktopSettingsSection) -> some View {
+        // The ink is stated on the mark as well as on the label: a `Label` in a
+        // `.sidebar` list resolves its icon slot against the system accent, and
+        // an inherited `foregroundStyle` does not reach it. The rail is
+        // greyscale, as the web's is — the mark rests on the sidebar ink and
+        // lifts with its label when selected.
+        let selected = selection == section
+        let ink = selected ? Color.junoForeground : Color.junoSidebarForeground
+
+        return Label {
+            Text(section.label)
+        } icon: {
+            JunoIconView(section.icon, size: 16)
+                .foregroundStyle(ink)
+        }
+        .foregroundStyle(ink)
+        // A colour crossfade in place — tint-tier motion, which Reduce Motion
+        // leaves alone, so it is deliberately not gated behind the preference.
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
+            value: selected
+        )
+        .junoSidebarRowSelection(selected)
+        .tag(section)
         .help(section.summary)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityIdentifier("juno.desktop.settings.section.\(section.rawValue)")
+    }
+}
+
+extension DesktopSettingsScreen {
+    /// The page for a section, with everything it reads taken from the window's
+    /// configuration.
+    init(
+        section: DesktopSettingsSection,
+        configuration: JunoDesktopConfiguration,
+        settingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>,
+        session: NativeAuthenticatedSession
+    ) {
+        let workbench = DesktopWorkbenchRegistry.shared.workbench
+        self.init(
+            section: section,
+            model: settingsModel,
+            authModel: configuration.authModel,
+            session: session,
+            accountDataClient: configuration.accountDataClient,
+            shareClient: configuration.shareClient,
+            modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+            avatarData: configuration.avatarModel?.imageData,
+            syncModel: configuration.syncModel,
+            outbox: configuration.outbox,
+            connectorModel: configuration.connectorModel,
+            requestSender: configuration.requestSender,
+            codeWorkbench: workbench,
+            codeModels: workbench?.availableModels ?? [],
+            codeHostModel: configuration.codeHostModel,
+            workHostModel: configuration.workHostModel,
+            learningModel: configuration.memoryLearningModel
+        )
     }
 }
 

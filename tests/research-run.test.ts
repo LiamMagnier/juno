@@ -36,6 +36,7 @@ import {
 import {
   CITATION_AUDIT_ESTIMATE_MICRO_USD,
   createResearchEngine,
+  citationMarkersOutsideCode,
   EXPANSION_ESTIMATE_MICRO_USD,
   pageSkipMessage,
   PLAN_ESTIMATE_MICRO_USD,
@@ -355,10 +356,10 @@ test("a paused run resumes into the stage its persisted work reached", () => {
     hasReport: false,
   };
   assert.equal(resumeStateFor({ ...base, planConfirmed: false }), "planning");
-  assert.equal(resumeStateFor({ ...base, sourceCount: 0 }), "searching");
-  assert.equal(resumeStateFor({ ...base, readCount: 0 }), "browsing");
-  assert.equal(resumeStateFor({ ...base, passageCount: 0 }), "reading_documents");
-  assert.equal(resumeStateFor(base), "checking_coverage");
+  assert.equal(resumeStateFor({ ...base, sourceCount: 0 }), "investigating");
+  assert.equal(resumeStateFor({ ...base, readCount: 0 }), "investigating");
+  assert.equal(resumeStateFor({ ...base, passageCount: 0 }), "investigating");
+  assert.equal(resumeStateFor(base), "investigating");
   assert.equal(resumeStateFor({ ...base, hasReport: true }), "validating_citations");
 });
 
@@ -366,6 +367,13 @@ test("every state maps to a stage the panel can render", () => {
   for (const state of RESEARCH_STATES) {
     assert.ok(stageForState(state), `${state} has no stage`);
   }
+});
+
+test("citation marker parsing accepts [100] and ignores fenced examples", () => {
+  assert.deepEqual(
+    citationMarkersOutsideCode("Visible [100].\n```ts\nconst example = '[99]';\n```\nAlso [7]."),
+    [100, 7]
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -428,7 +436,7 @@ test("a resumed run does not replay the events it already emitted", async () => 
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
   // Stop it partway: pause lands wherever the first few steps got to.
-  await engine.drive({ runId: run.id, userId: run.userId, until: "reading_documents" });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "reviewing" });
   const paused = await engine.pause({ runId: run.id, userId: run.userId });
   assert.equal(paused.ok, true);
 
@@ -471,7 +479,7 @@ test("a worker lease fences a concurrent driver and can be reclaimed after expir
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
 
-  await engine.drive({ runId: run.id, userId: run.userId, workerId: "worker-a", until: "reading_documents" });
+  await engine.drive({ runId: run.id, userId: run.userId, workerId: "worker-a", until: "reviewing" });
   assert.ok(events.some((event) => event.runId === run.id && event.kind === "worker_lease_acquired"));
 
   const competing = await store.claimRun!({ runId: run.id, userId: run.userId, workerId: "worker-b" });
@@ -580,7 +588,7 @@ test("a cancelled run stays cancelled — a late driver cannot revive it", async
   const { store } = memoryStore();
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
-  await engine.drive({ runId: run.id, userId: run.userId, until: "searching" });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "investigating" });
   assert.equal((await engine.cancel({ runId: run.id, userId: run.userId })).ok, true);
 
   await engine.drive({ runId: run.id, userId: run.userId });
@@ -608,7 +616,7 @@ test("a paused run does no work until it is resumed", async () => {
     },
   });
   const run = await started(engine);
-  await engine.drive({ runId: run.id, userId: run.userId, until: "searching" });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "investigating" });
   assert.equal((await engine.pause({ runId: run.id, userId: run.userId })).ok, true);
   const searchesAtPause = searches;
 
@@ -868,7 +876,7 @@ test("a constraint added mid-run survives into the plan without a restart", asyn
   const { store, events } = memoryStore();
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
-  await engine.drive({ runId: run.id, userId: run.userId, until: "reading_documents" });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "reviewing" });
 
   const steered = await engine.steer({
     runId: run.id,
@@ -878,7 +886,7 @@ test("a constraint added mid-run survives into the plan without a restart", asyn
   assert.equal(steered.ok, true);
   assert.equal(
     steered.state,
-    "reading_documents",
+    "reviewing",
     "a constraint alone must not throw away work already done"
   );
   assert.deepEqual(parsePlan((await store.loadRun(run.id, run.userId))?.plan).constraints, [
@@ -894,14 +902,14 @@ test("a source pinned after the reading stage sends the run back to fetch it", a
   const { store } = memoryStore();
   const engine = createResearchEngine(deps(store));
   const run = await started(engine);
-  await engine.drive({ runId: run.id, userId: run.userId, until: "reading_documents" });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "reviewing" });
 
   const steered = await engine.steer({
     runId: run.id,
     userId: run.userId,
     sourceUrl: "https://example.org/the-primary-source",
   });
-  assert.equal(steered.state, "searching");
+  assert.equal(steered.state, "investigating");
 
   await engine.drive({ runId: run.id, userId: run.userId });
   const urls = (await store.listSources(run.id, run.userId)).map((source) => source.url);

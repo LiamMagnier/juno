@@ -17,6 +17,10 @@ struct DesktopDestinationView: View {
     @Binding var draftPrompt: String?
     @Binding var requestedProjectID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// A sheet needs a false → true presentation transition. This is separate
+    /// from `destination` so `--juno-preview-tab settings` works when Settings
+    /// is the initial destination, rather than only after a sidebar tap.
+    @State private var presentsSettings = false
 
     var body: some View {
         // One identity per destination, so a change of page is a real
@@ -142,26 +146,37 @@ struct DesktopDestinationView: View {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
         case .settings:
+            // The sheet the account menu presents, presented from here instead
+            // of drawn into the column. Settings is a `NavigationSplitView` of
+            // its own now, and one split view nested in another's detail is
+            // not a shape macOS draws well — so the destination is the empty
+            // canvas with the same sheet over it, and closing the sheet goes
+            // back to Chat. This is the path the preview harness's `settings`
+            // tab takes; the sidebar's footer presents the sheet directly.
             if let model = configuration.memorySettingsModel {
-                DesktopSettingsModal(
-                    model: model,
-                    authModel: configuration.authModel,
-                    session: session,
-                    configuration: configuration,
-                    accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient,
-                    modelCatalog: conversationModel.selectableModels,
-                    avatarData: configuration.avatarModel?.imageData,
-                    syncModel: configuration.syncModel,
-                    outbox: configuration.outbox,
-                    openUsage: { destination = .usage },
-                    codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel,
-                    learningModel: configuration.memoryLearningModel,
-                    onDismiss: { destination = .chat }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(JunoSpace.regular)
+                Color.clear
+                    .onAppear { presentsSettings = true }
+                    .sheet(isPresented: $presentsSettings, onDismiss: {
+                        if destination == .settings { destination = .chat }
+                    }) {
+                        DesktopSettingsModal(
+                            model: model,
+                            authModel: configuration.authModel,
+                            session: session,
+                            configuration: configuration,
+                            accountDataClient: configuration.accountDataClient,
+                            shareClient: configuration.shareClient,
+                            modelCatalog: conversationModel.selectableModels,
+                            avatarData: configuration.avatarModel?.imageData,
+                            syncModel: configuration.syncModel,
+                            outbox: configuration.outbox,
+                            openUsage: { destination = .usage },
+                            codeHostModel: configuration.codeHostModel,
+                            workHostModel: configuration.workHostModel,
+                            learningModel: configuration.memoryLearningModel,
+                            onDismiss: { destination = .chat }
+                        )
+                    }
             } else {
                 unavailable("Settings", "Account settings could not be loaded.")
             }

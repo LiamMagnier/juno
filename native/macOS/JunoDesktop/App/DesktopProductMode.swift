@@ -1,4 +1,3 @@
-import AppKit
 import JunoDesignSystem
 import SwiftUI
 
@@ -43,142 +42,35 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// The top-level Chat / Code / Work switch, in the app's own segmented control.
+/// The top-level Chat / Code / Work switch, using the platform segmented control.
 ///
 /// **All three products, in every column.** One control, `allCases`, and the
 /// Product menu (⌘1 · ⌘2 · ⌘3) for the keyboard — the menu is also the answer
 /// while the sidebar is collapsed, which the control itself cannot be.
 ///
-/// **Motion.** The switch animates its own thumb, on its own curve
-/// (``DesktopSegmented``), and this wrapper stays out of it. The workspace on
-/// the other side of the binding reacts in `onChange`, not to an animated value.
 struct DesktopProductSwitcher: View {
     @Binding var selection: DesktopProductMode
 
     var body: some View {
-        DesktopSegmented(
-            options: DesktopProductMode.allCases.map { .init($0, $0.label, icon: $0.icon) },
-            selection: $selection,
-            accessibilityLabel: "Juno product",
-            optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" },
-            fills: true
-        )
+        Picker("Juno product", selection: $selection) {
+            ForEach(DesktopProductMode.allCases) { product in
+                JunoIconLabel(verbatim: product.label, icon: product.icon, size: 16)
+                    .tag(product)
+                    .accessibilityIdentifier("juno.product-brand.\(product.rawValue)")
+            }
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.large)
         .accessibilityIdentifier("Juno product")
     }
 }
 
-/// Shared measurements for the strip above the three native source lists.
-/// Keeping this here prevents Chat, Code and Work from drifting when one of
-/// their sidebars is refreshed.
-enum DesktopSidebarChromeMetrics {
-    /// The switch's own row: the 32pt pill and the air above and below it. The
-    /// Chat and Code columns reserve exactly this much above their lists.
-    static let productSwitcherRow: CGFloat = 44
-}
-
 extension View {
-    /// Puts the product switch above this source list.
-    ///
-    /// **Above, not inset into.** An inset is measured against the *content's*
-    /// safe area, and each column's list resolves that differently — Chat's
-    /// begins with an unheaded `Section`, Code's with bare rows — so the one
-    /// control that must occupy the same spot in every product was being
-    /// positioned by whatever its list happened to start with. Laid out above
-    /// the list, all three agree by construction, and a `.sidebar` List's
-    /// pinned section headers can never reach the strip.
-    ///
-    /// **Inside the safe area, never ignoring it — and measured against the
-    /// window, because the safe area lies.** After a product switch a freshly
-    /// built column can report a top safe area shorter than the titlebar it is
-    /// drawn under, and the strip would land across the traffic lights. So the
-    /// strip also asks AppKit where the window's chrome ends
-    /// (`contentLayoutRect`) and pads by whatever the safe area left short.
+    /// Pins the native product switch inside the List's top safe area so source
+    /// list content scrolls beneath it and the window chrome owns its placement.
     func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
-        modifier(DesktopSidebarProductHeaderLayout(product: product))
-    }
-}
-
-/// The strip above the list, corrected against the window's own chrome.
-///
-/// Two readings, both cheap: the strip's own top in window space (a
-/// `GeometryReader` behind the stack, whose top is fixed by the safe area and
-/// so does not move when the padding inside it changes), and the height of
-/// the window's titlebar-plus-toolbar band from AppKit. The difference, when
-/// positive, is how far the safe area fell short.
-private struct DesktopSidebarProductHeaderLayout: ViewModifier {
-    let product: Binding<DesktopProductMode>
-
-    @State private var chromeHeight: CGFloat = 0
-    @State private var stripTop: CGFloat = 0
-
-    private var shortfall: CGFloat {
-        max(0, (chromeHeight - stripTop).rounded())
-    }
-
-    func body(content: Content) -> some View {
-        VStack(spacing: 0) {
+        safeAreaInset(edge: .top, spacing: 0) {
             DesktopSidebarProductHeader(product: product)
-                .padding(.top, shortfall)
-            content
-        }
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onChange(of: proxy.frame(in: .global).minY, initial: true) { _, top in
-                        stripTop = top
-                    }
-            }
-        }
-        .background(DesktopWindowChromeReader(height: $chromeHeight))
-    }
-}
-
-/// Reports how tall the window's titlebar-and-toolbar band is, from the
-/// window itself: the content view's height less its `contentLayoutRect`,
-/// which is exactly the region AppKit reserves for chrome above the content.
-private struct DesktopWindowChromeReader: NSViewRepresentable {
-    @Binding var height: CGFloat
-
-    func makeNSView(context: Context) -> NSView {
-        let view = ChromeObservingView()
-        view.report = { height = $0 }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? ChromeObservingView)?.report = { height = $0 }
-        (nsView as? ChromeObservingView)?.measure()
-    }
-
-    final class ChromeObservingView: NSView {
-        var report: ((CGFloat) -> Void)?
-        private var observer: NSObjectProtocol?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if let observer {
-                NotificationCenter.default.removeObserver(observer)
-                self.observer = nil
-            }
-            guard let window else { return }
-            observer = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResizeNotification, object: window, queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.measure() }
-            }
-            measure()
-        }
-
-        override func layout() {
-            super.layout()
-            measure()
-        }
-
-        func measure() {
-            guard let window, let contentView = window.contentView else { return }
-            let chrome = contentView.bounds.maxY - window.contentLayoutRect.maxY
-            let value = max(0, chrome.rounded())
-            report?(value)
         }
     }
 }
@@ -209,7 +101,7 @@ struct DesktopSidebarSearchField: NSViewRepresentable {
         let field = NSSearchField()
         field.delegate = context.coordinator
         field.placeholderString = prompt
-        field.controlSize = .large
+        field.controlSize = .regular
         field.sendsSearchStringImmediately = true
         field.sendsWholeSearchString = false
         field.setAccessibilityLabel(prompt)
@@ -253,7 +145,7 @@ struct DesktopSidebarSearchField: NSViewRepresentable {
     }
 }
 
-/// The Chat / Code / Work switch, in the 44pt strip above a source list.
+/// The Chat / Code / Work switch in a List-owned safe-area inset.
 ///
 /// **The strip paints nothing.** The column is a vibrant region and stays one
 /// all the way up; an opaque band here would be a grey slab on translucency,
@@ -268,7 +160,7 @@ struct DesktopSidebarProductHeader: View {
     var body: some View {
         DesktopProductSwitcher(selection: $product)
             .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: DesktopSidebarChromeMetrics.productSwitcherRow)
+            .padding(.vertical, JunoSpace.snug)
             .frame(maxWidth: .infinity)
     }
 }

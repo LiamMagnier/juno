@@ -89,7 +89,10 @@ public extension NativeChatModelOption {
             unavailabilityReason: NativeModelPresentation.unavailabilityReason(self),
             deprecationNote: deprecationNote,
             retiresOn: retiresOn,
-            choosesThinkingAutomatically: choosesReasoningAutomatically
+            choosesThinkingAutomatically: choosesReasoningAutomatically,
+            price: pricing.map {
+                JunoModelPrice(inputPerMillion: $0.inputPerMillion, outputPerMillion: $0.outputPerMillion)
+            }
         )
     }
 }
