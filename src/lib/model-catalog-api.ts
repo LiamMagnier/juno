@@ -1,10 +1,10 @@
 import { discoverModels } from "@/lib/model-discovery";
 import { getModelMetrics, withSupersededMarked } from "@/lib/model-metrics";
-import { GEN_MODELS, type ModelInfo } from "@/lib/models";
+import { GEN_MODELS, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import type { ModelCapabilityProbe } from "@prisma/client";
 import { modelCanRoute } from "@/lib/model-capability";
 import { isWorkCapableModel } from "@/lib/work/models";
-import { configuredProviders, PROVIDERS } from "@/lib/providers";
+import { configuredProviders, PROVIDER_LIST, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
 
@@ -14,13 +14,23 @@ import { isVideoGenSupported } from "@/lib/video-gen";
 export { nativeModelCatalog } from "@/lib/native-model-manifest";
 
 export async function loadAvailableModels(): Promise<ModelInfo[]> {
-  // Refresh stale provider verdicts in the background. Never awaited: this
-  // function is on the critical path of /api/v1/bootstrap, and probing 14
-  // providers inline would stall app load.
-  ensureProviderHealthFresh();
+  // Deterministic E2E smoke mode: no real provider keys exist, so live
+  // discovery would 401 against every lab and a health probe would record
+  // failures nobody can act on. Skip both and treat every lab as configured
+  // so the model pickers still have a catalog — generation itself is replaced
+  // by the smoke provider (see api/chat), which never dials out. The bundled
+  // MODEL_LIST is the same catalog the client falls back to, so the pickers
+  // exercise real grouping/marking code against it.
+  const smokeProvider = process.env.JUNO_E2E_SMOKE_PROVIDER === "1";
+  if (!smokeProvider) {
+    // Refresh stale provider verdicts in the background. Never awaited: this
+    // function is on the critical path of /api/v1/bootstrap, and probing 14
+    // providers inline would stall app load.
+    ensureProviderHealthFresh();
+  }
 
-  const configured = new Set(configuredProviders());
-  const chat = await discoverModels();
+  const configured = new Set(smokeProvider ? PROVIDER_LIST : configuredProviders());
+  const chat = smokeProvider ? MODEL_LIST : await discoverModels();
   const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);

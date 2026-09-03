@@ -1,5 +1,9 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+// prismaUnguarded is deliberate here: collaboration means the project's owner
+// is not always the requesting user, so the lookups by project id alone are
+// intentionally account-global. Every one of them is gated by the role /
+// membership checks in this module.
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 
 export type ProjectRole = "OWNER" | "EDITOR" | "VIEWER";
 
@@ -20,7 +24,10 @@ export interface ProjectMemberInfo {
  * Returns null if the user has no access.
  */
 export async function getProjectRole(userId: string, projectId: string): Promise<ProjectRole | null> {
-  const project = await prisma.project.findUnique({
+  // By id alone on purpose: a collaborator is not the owner, so a userId-scoped
+  // query would hide every shared project from the very people they are shared
+  // with. Access is decided by the OWNER / member checks below.
+  const project = await prismaUnguarded.project.findUnique({
     where: { id: projectId },
     select: { userId: true },
   });
@@ -65,7 +72,8 @@ export async function listProjectMembers(userId: string, projectId: string): Pro
   if (!allowed) throw new Error("Unauthorized to view project members.");
 
   const [project, members] = await Promise.all([
-    prisma.project.findUnique({
+    // Access already checked above; see the module-head note on unguarded use.
+    prismaUnguarded.project.findUnique({
       where: { id: projectId },
       include: { user: { select: { id: true, name: true, email: true, image: true } } },
     }),
@@ -136,7 +144,9 @@ export async function addProjectMember(
     throw new Error("User not found.");
   }
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  // Access already checked by this function's caller contract (owner path);
+  // see the module-head note on unguarded use.
+  const project = await prismaUnguarded.project.findUnique({ where: { id: projectId } });
   if (!project) throw new Error("Project not found.");
   if (targetUser.id === project.userId) {
     throw new Error("Cannot add project owner as a member.");

@@ -1,8 +1,50 @@
-import type { Plan } from "@prisma/client";
+import { Prisma, type Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { PLANS } from "@/lib/plans";
 import { currentPeriod } from "@/lib/utils";
 import { isOwnerEmail } from "@/lib/owner";
+
+/**
+ * Swallow the unique-constraint race on the period row's first insert. Two
+ * concurrent turns for an account with no usage row yet (new month, new
+ * account, web + app in parallel) both run the same "ensure the row exists"
+ * upsert; the loser surfaces P2002, which is not an error here — the winner
+ * created exactly the row the upsert was for. Prisma cannot promise an atomic
+ * upsert for this compound-unique shape, so the race is handled instead of
+ * 500-ing the chat that lost it. Exported because the whole point is a race
+ * only a concurrent caller can trigger: tests/usage-period-row.test.ts
+ * characterizes it with a fake executor, since no test database exists under
+ * `npm test`.
+ *
+ * The executor parameter is a minimal structural shape (rather than
+ * `Prisma.TransactionClient`) so the fake executors in that test satisfy it
+ * too — the real client and transaction handles are assignable to it.
+ */
+type UsageUpsertExecutor = {
+  usage: {
+    upsert: (args: {
+      where: { userId_period: { userId: string; period: string } };
+      create: { userId: string; period: string; messageCount: number };
+      update: Record<string, never>;
+    }) => Promise<unknown>;
+  };
+};
+
+export async function ensureUsageRow(
+  executor: UsageUpsertExecutor,
+  userId: string,
+  period: string
+): Promise<void> {
+  try {
+    await executor.usage.upsert({
+      where: { userId_period: { userId, period } },
+      create: { userId, period, messageCount: 0 },
+      update: {},
+    });
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+  }
+}
 
 export interface QuotaStatus {
   plan: Plan;
@@ -44,11 +86,7 @@ export async function consumeMessage(
   const limit = PLANS[plan].monthlyMessages;
 
   // Ensure the period row exists without incrementing.
-  await prisma.usage.upsert({
-    where: { userId_period: { userId, period } },
-    create: { userId, period, messageCount: 0 },
-    update: {},
-  });
+  await ensureUsageRow(prisma, userId, period);
 
   if (limit == null) {
     // Unlimited plan: increment for accounting, never block.
@@ -94,11 +132,7 @@ export async function reserveCodeMessage(
   const period = currentPeriod();
   const limit = PLANS[plan].monthlyMessages;
   return prisma.$transaction(async (tx) => {
-    await tx.usage.upsert({
-      where: { userId_period: { userId, period } },
-      create: { userId, period, messageCount: 0 },
-      update: {},
-    });
+    await ensureUsageRow(tx, userId, period);
 
     let used: number;
     if (limit == null) {

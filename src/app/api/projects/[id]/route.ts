@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+// prismaUnguarded is deliberate in this route: every handler verifies the
+// caller's project role first (shared/collaborator projects are legitimately
+// not owned by the requesting user), then acts on the project by id alone.
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
 import { checkProjectAccess } from "@/lib/project-collaboration";
@@ -21,7 +24,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { allowed } = await checkProjectAccess(user.id, id, "VIEWER");
   if (!allowed) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const project = await prisma.project.findUnique({
+  // Access verified above (VIEWER+); by-id is intentional — see the import note.
+  const project = await prismaUnguarded.project.findUnique({
     where: { id },
     include: {
       conversations: {
@@ -120,7 +124,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ...projectPatch,
       ...(projectPatch.name != null ? { nameSource: "manual" } : {}),
     };
-    await prisma.project.update({ where: { id }, data });
+    // Access verified above (EDITOR+); by-id is intentional — see the import note.
+    await prismaUnguarded.project.update({ where: { id }, data });
   }
   if (workspace === null) {
     await prisma.projectWorkspace.deleteMany({ where: { projectId: id, userId: user.id } });
@@ -150,6 +155,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!allowed) return NextResponse.json({ error: "Not found or only the owner can delete the project" }, { status: 403 });
 
   // Conversations are kept (projectId set null); project files cascade-delete.
-  await prisma.project.delete({ where: { id } });
+  // Access verified above (OWNER); by-id is intentional — see the import note.
+  await prismaUnguarded.project.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

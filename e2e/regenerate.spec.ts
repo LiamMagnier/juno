@@ -38,10 +38,19 @@ test.describe("Regenerate with a switched model", () => {
     const lastAssistant = page.locator(".prose-juno").last();
     await lastAssistant.hover();
     await page.getByRole("button", { name: "Regenerate" }).click();
-    await page.getByRole("menuitem", { name: "Switch model" }).hover();
+    // Click the sub-trigger: a bare hover raced Radix's submenu mount, and the
+    // menu-item scan below then only ever saw the outer menu (where every
+    // entry carries an icon) and skipped switching entirely.
+    await page.getByRole("menuitem", { name: "Switch model" }).click();
 
-    // The current model carries the check mark; any other entry is a switch.
-    const options = page.locator('[role="menu"] [role="menuitem"]');
+    // Radix portals each open menu into its own container in open order: the
+    // outer Regenerate menu first, the model submenu second. Scoping to the
+    // second keeps the outer entries (Try again / More concise / …, all with
+    // icons) out of the scan; inside the submenu only the current model's row
+    // carries the check-mark svg.
+    const menus = page.locator('[role="menu"]');
+    await expect(menus).toHaveCount(2, { timeout: 10_000 });
+    const options = menus.nth(1).getByRole("menuitem");
     const count = await options.count();
     expect(count).toBeGreaterThan(1);
     let switched = false;

@@ -69,6 +69,9 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
+      // The smoke flag also makes the server-side model catalog treat every
+      // lab as configured (see loadAvailableModels), so the "Switch model"
+      // submenu has entries without any real provider keys in this env.
       ...(useDeterministicSmokeProvider ? { JUNO_E2E_SMOKE_PROVIDER: "1" } : {}),
     },
   },

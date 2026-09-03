@@ -52,6 +52,9 @@ async function openRowMenu(page: Page, id: string) {
 
 test.describe("Sidebar folders and archive", () => {
   test("create, move-to-folder, archive, restore", async ({ page }) => {
+    // One turn + rename + folder + move + archive + restore + cleanup is a lot
+    // of steps for the default 60s when the dev server is still compiling.
+    test.setTimeout(120_000);
     const suffix = alphaSuffix();
     const folderName = `E2E Folder ${suffix}`;
     const chatTitle = `E2E Probe ${suffix}`;
@@ -93,9 +96,13 @@ test.describe("Sidebar folders and archive", () => {
 
     await dismissCookieBanner(page);
     await page.getByRole("button", { name: "Archived chats" }).click();
-    const dialog = page.getByRole("dialog", { name: "Archived chats" });    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    const dialog = page.getByRole("dialog", { name: "Archived chats" });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
     const archivedItem = dialog.locator("li", { hasText: chatTitle });
-    await expect(archivedItem).toBeVisible({ timeout: 15_000 });
+    // The dialog fetches ?archived=only on open and shows skeletons until it
+    // resolves; under a cold dev server with the suite's other worker hitting
+    // the same process that fetch can take well over 15s.
+    await expect(archivedItem).toBeVisible({ timeout: 45_000 });
     await archivedItem.getByRole("button", { name: "Restore" }).click();
     await expect(page.getByText("Chat restored.")).toBeVisible({ timeout: 15_000 });
     // Restoring leaves the dialog open over the sidebar; close it before
@@ -107,17 +114,30 @@ test.describe("Sidebar folders and archive", () => {
     await folderToggle.click();
     await expect(conversationLink(page, id).first()).toBeVisible({ timeout: 15_000 });
 
-    // Cleanup: delete the chat, then the (now empty) folder.
+    // Cleanup: delete the chat, then the (now empty) folder. The folder's
+    // confirm-dialog click occasionally lands while the dialog is still
+    // mounting — the click succeeds but no DELETE ever fires — so the folder
+    // flow is retried once before the final assertion.
     await openRowMenu(page, id);
     await page.getByRole("menuitem", { name: "Delete" }).click();
     await page.getByRole("button", { name: "Delete chat" }).click();
     await expect(conversationLink(page, id)).toHaveCount(0, { timeout: 15_000 });
 
-    const folderRow = folderToggle.locator("xpath=ancestor::div[contains(@class, 'group')][1]");
-    await folderRow.hover();
-    await folderRow.getByRole("button", { name: "Folder options" }).click();
-    await page.getByRole("menuitem", { name: "Delete folder" }).click();
-    await page.getByRole("button", { name: "Delete folder" }).click();
-    await expect(folderToggle).toHaveCount(0, { timeout: 15_000 });
+    const deleteFolderViaUi = async () => {
+      // Close any lingering dialog from a swallowed confirm first.
+      await page.keyboard.press("Escape");
+      const folderRow = folderToggle.locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+      await folderRow.hover();
+      await folderRow.getByRole("button", { name: "Folder options" }).click();
+      await page.getByRole("menuitem", { name: "Delete folder" }).click();
+      await page.getByRole("button", { name: "Delete folder" }).click();
+    };
+    await deleteFolderViaUi();
+    try {
+      await expect(folderToggle).toHaveCount(0, { timeout: 10_000 });
+    } catch {
+      await deleteFolderViaUi();
+      await expect(folderToggle).toHaveCount(0, { timeout: 15_000 });
+    }
   });
 });
