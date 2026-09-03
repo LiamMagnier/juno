@@ -2,6 +2,49 @@
 
 Initial handoff snapshot: 2026-07-21.
 
+## Re-audit — 2026-09-03 (v1.5.0 Soft UI)
+
+The product-parity table below (§Product parity) is the historical 2026-07-21
+baseline and still marks shipped native UI as **Missing**. Do not read it as a
+live inventory. The live state is `docs/design/REVIEW_2026-09-02.md` (website /
+iOS / macOS findings + resolutions) at release v1.5.0:
+
+- iOS shipped since the baseline: date-grouped drawer with search, swipe
+  pin/archive/delete and full context menu (`JunoMobileDrawer.swift`,
+  `JunoMobileArchivedView.swift`); image parts + pinch-zoom viewer with share
+  (`JunoMobileMessageImages.swift`); `sensoryFeedback` on
+  send/stop/copy/pin/delete/approve/voice + zoom pushes + glass composer chrome;
+  full-screen voice with background audio, interruption / route handling and a
+  navigation-surviving session (`JunoMobileVoiceFullScreen.swift`); Code remote
+  hosts strip → filtered sessions → thread with work-log groups, approval
+  cards, hunk diff viewer, live terminal, queued steering, Stop and background
+  approval notifications (`JunoMobileCodeRemote.swift`,
+  `JunoMobileCodeNotifications.swift`); native `List`/`Form` Projects leaves
+  with detail tabs + three-page onboarding (`JunoMobileWorkspaceViews.swift`,
+  `JunoMobileOnboarding.swift`); App Intents + `AppShortcutsProvider`, quick
+  actions and Spotlight indexing (`JunoMobileIntents.swift`,
+  `JunoMobileSpotlight.swift`). Still open: revoke-a-paired-Mac server route,
+  widgets / Live Activities extension targets, iPad screenshots.
+- macOS shipped since the baseline: project-grouped Code sessions column with
+  All · Running · Needs you · Done filters; one New-task screen; review as a
+  resizable split pane (`ReviewModel` single source of truth); approval queue
+  with ⇧↵ / ⇧⎋, inline errors and work-log groups; Code settings (permissions,
+  model, environment, MCP, hooks, skills, agents, remote), `/compact` +
+  context meter, `gh pr create` sheet, real PTY, ⌘K palette, `MenuBarExtra`,
+  ⌥Space quick entry, ⇧⌘1 screenshot to composer (`DesktopScreenshotCapture.swift`,
+  `DesktopQuickEntry.swift`, `DesktopMenuBarExtra.swift`); one `JunoMotion`,
+  one `JunoReadingMeasure`. Still open: tonal pass on Library / Artifacts /
+  Connections / Tasks / Usage / Memory, manual screenshot-picker run,
+  target-size ratchet at 351.
+- Chat / conversations / projects / library / artifacts / memory / settings /
+  search / sync all have production native UI backed by the encrypted store and
+  the `/api/v1` + bearer chat/upload/stream contracts (see
+  `docs/native/STATUS.md` "Actually completed" and `TESTING.md` gates). Rows
+  below that still say **Missing** for macOS / iOS on those capabilities are
+  stale; the remaining gaps are the per-row "Required next gate" items (typed
+  Cloud/Remote contracts, revocation UI, StoreKit, signed release), not the
+  absence of the screen.
+
 ## Current re-audit — 2026-08-08
 
 The matrix below is the historical handoff baseline. This re-audit records the

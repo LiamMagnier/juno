@@ -31,6 +31,10 @@ requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "previewTarget = CodePreviewTarget(",
   "sessionID: controller?.sessionID",
   "openPreviewWindow(previewTarget)",
+]);
+// ⌥⌘P moved from the workspace toolbar into the app's menu bar commands so it
+// is discoverable in the View menu and the ⌘/ shortcuts sheet.
+requireText("native/macOS/JunoDesktop/App/DesktopCommands.swift", [
   "keyboardShortcut(\"p\", modifiers: [.command, .option])",
 ]);
 requireText("native/macOS/JunoDesktop/App/DesktopCodePreviewDock.swift", [

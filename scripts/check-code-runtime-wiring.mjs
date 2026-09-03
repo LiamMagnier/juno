@@ -39,29 +39,35 @@ requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "controller: controller,",
   "openPreview: openPreview,",
   "if inspectorPresentation.wrappedValue {",
-  ".frame(width: DesktopCodeInspectorMetrics.ideal)",
+  ".frame(width: JunoInspectorMetrics.ideal)",
   "computerUseIndicator(controller)",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkspaceContext.swift", [
   "self.mcpRegistry = try MCPToolRegistry(",
-  "public func mcpTools() async -> [any CodeTool]",
+  "public func mcpTools(excludingServers disabled: Set<String> = []) async -> [any CodeTool]",
   "ComputerScreenshotTool(computer: computerUse)",
   "self.worktrees = WorktreeManager(",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/SessionController.swift", [
-  "tools.append(contentsOf: await context.mcpTools())",
+  "contentsOf: await context.mcpTools(",
+  "excludingServers: CodeDefaults.shared.disabledMCPServers",
   "DelegateTaskTool(",
   "WorkspaceAgentHooks(",
-  "context.makeInteractiveTerminal(allowsNetwork: true)",
+  // The reader's terminal is the real PTY, owned by the session controller.
+  "private var interactiveTerminalService: NativeTerminalSession?",
+  "public func startInteractiveTerminal(_ command: String) async {",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/AgentOrchestrator.swift", [
   "lifecycleHooks?.sessionStarted",
+  "lifecycleHooks?.sessionStopped",
+]);
+// Per-tool hooks run inside the scheduler every tool call goes through.
+requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/ToolScheduler.swift", [
   "lifecycleHooks.beforeTool",
   "lifecycleHooks?.afterTool",
-  "lifecycleHooks?.sessionStopped",
 ]);
 
 console.log("[code-runtime] shipping JunoDesktop composes MCP, hooks, computer use, subagents, terminal, Work, and the native inspector");

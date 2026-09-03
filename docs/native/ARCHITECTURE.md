@@ -38,31 +38,25 @@ platform ownership, security assumptions, and tests are understood. The legacy
 
 ```text
 native/
-  macOS/JunoMac/
-    JunoMac.xcodeproj
-    App/
+  macOS/JunoDesktop/          # JunoDesktop app (macOS composition root)
+    JunoDesktop.xcodeproj
+    App/                      # DesktopChatWorkspace, DesktopCodeWorkspace,
+                              # DesktopAccountScreens, preview harness entry
     Resources/
-    Tests/
-    UITests/
-  iOS/JunoMobile/
+    Tests/                    # JunoDesktopTests
+    UITests/                  # JunoDesktopUITests (preview-harness driven)
+  iOS/JunoMobile/             # JunoMobile app (iOS/iPadOS composition root)
     JunoMobile.xcodeproj
-    App/
+    App/                      # RootView, Drawer, CodeRemote, Intents, …
     Resources/
-    Tests/
+    Tests/                    # JunoMobileTests
     UITests/
-  Packages/
-    JunoCore/
-    JunoAPI/
-    JunoAuth/
-    JunoStorage/
-    JunoSync/
-    JunoSearch/
-    JunoDesignSystem/
-    JunoChatKit/
-    JunoCodeKit/
-    JunoVoiceKit/
+  Packages/                   # three umbrella Swift packages (not ten flat ones)
+    JunoNativeKit/            # shared cross-platform kit (macOS 14 / iOS 17)
+    JunoCode/                 # macOS Code agent (macOS 26)
+    JunoWork/                 # Work engine core/local/runtime/automation
   Config/
-  Scripts/
+  Scripts/                    # generate-projects.sh (XcodeGen)
 ```
 
 Each application is a composition root. It owns its lifecycle, scenes,
@@ -71,24 +65,38 @@ release settings. Neither app imports the other app target.
 
 ## Package graph
 
-Dependencies point down this list and never back up:
+Three umbrella packages. Dependencies point down and never back up:
 
-1. `JunoCore`: value types, identifiers, clocks, errors, feature flags, and
-   platform-neutral protocols. It imports no UI, persistence, or network layer.
-2. `JunoAPI`: generated `/api/v1` DTOs, request construction, SSE/WebSocket
-   framing, MIME/size validation, and an injected HTTP transport.
-3. `JunoAuth`: PKCE, device-session lifecycle, Keychain-backed token storage,
-   refresh coordination, revocation, and platform-specific browser adapters.
-4. `JunoStorage`: versioned, transactional, per-account stores and migrations.
-   It implements repository protocols defined below the feature layer.
-5. `JunoSync`: bootstrap, change feed, atomic cursor application, tombstones,
-   encrypted mutation outbox, idempotency, retries, and visible conflicts. It is
-   an actor and receives API, auth, storage, clock, and connectivity dependencies.
-6. `JunoSearch`: local account-scoped indexing over repositories, never a second
-   source of truth.
-7. `JunoDesignSystem`: semantic tokens and reusable native controls only.
-8. `JunoChatKit`, `JunoCodeKit`, and `JunoVoiceKit`: feature-domain state and
-   reusable views built on the lower packages.
+- `JunoNativeKit` (`native/Packages/JunoNativeKit`, macOS 14 / iOS 17) — the
+  shared kit. Libraries, lowest-first:
+  1. `JunoCore`: value types, identifiers, clocks, errors, feature flags, and
+     platform-neutral protocols. No UI, persistence, or network.
+  2. `JunoAPI`: generated `/api/v1` DTOs, request construction, SSE/WebSocket
+     framing, MIME/size validation, injected HTTP transport.
+  3. `JunoAuth`: PKCE, device-session lifecycle, Keychain token storage,
+     refresh coordination, revocation, platform browser adapters.
+  4. `JunoStorage`: versioned, transactional, per-account stores and migrations.
+  5. `JunoSync`: bootstrap, change feed, atomic cursor application, tombstones,
+     encrypted mutation outbox, idempotency, retries, visible conflicts (actor).
+  6. `JunoSearch`: local account-scoped indexing, never a second source of truth.
+  7. `JunoDesignSystem`: semantic tokens and reusable native controls only
+     (`junoFont`, `JunoMotion`, `junoCard`, Liquid Glass chrome helpers).
+  8. `JunoDesignKit`: dependency-free design-document contract + JS bridge.
+  9. `JunoChatKit`, `JunoCodeKit`, `JunoWorkKit`, `JunoVoiceKit`: feature-domain
+     state and reusable views built on the lower packages.
+  10. `JunoPreviewSupport` (`#if DEBUG` only, contributes nothing to Release):
+      fixture world + `JunoPreviewEnvironment` flags behind `--juno-ui-preview`
+      / `JUNO_UI_PREVIEW=1` (see `TESTING.md` "How to screenshot each platform").
+- `JunoCode` (`native/Packages/JunoCode`, macOS 26 only) — the macOS Code agent:
+  `JunoCodeCore` (pure values) → `JunoCodeLocal` (only filesystem touchpoint) →
+  `JunoCodeRuntime` (tools, approval gate, executor) → `JunoCodeUI` (workbench)
+  + `JunoCodeBridge` (remote-command protocols; UI depends on the bridge, never
+  the reverse) + `JunoSimulator` (Xcode/simctl discovery, headless-testable).
+- `JunoWork` (`native/Packages/JunoWork`, macOS 14 / iOS 17; Core decodes on
+  both so the phone can watch) — `JunoWorkCore` (pure values, no deps) →
+  `JunoWorkLocal` (Core only) → `JunoWorkRuntime` (same approval gate for local
+  and remote instructions) → `JunoWorkAutomation` (browser/AX/screen control
+  behind the same gate + kill switch).
 
 Concrete clients are injected at the two app roots. Mutable process-wide
 singletons such as the prototype's `AuthSession.shared`, `SyncService.shared`,

@@ -71,7 +71,7 @@ const provider = read(
   "native/Packages/JunoCode/Sources/JunoCodeUI/Remote/NativeCodeTaskRemoteSessionProvider.swift",
 );
 const monitor = read(
-  "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskMonitorView.swift",
+  "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskDetailView.swift",
 );
 const desktopWorkspace = read(
   "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift",
