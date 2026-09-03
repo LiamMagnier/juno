@@ -77,6 +77,7 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["Settings", "userId"],
   ["Connection", "userId"],
   ["CodeDevice", "userId"],
+  ["DevicePushToken", "userId"],
   ["CodeTask", "userId"],
   ["ApiSpend", "userId"],
   ["ChatFirstSubmissionReceipt", "userId"],

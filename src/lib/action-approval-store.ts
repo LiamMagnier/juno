@@ -322,6 +322,22 @@ async function recoverOrCreateReceipt(input: {
         createdAt: issuedAt,
       },
     });
+
+    if (input.status === "pending") {
+      void import("@/lib/apns")
+        .then(({ sendCodeApprovalPushNotification }) =>
+          sendCodeApprovalPushNotification({
+            userId: request.userId,
+            sessionId: request.sessionId,
+            approvalId: row.id,
+            toolName: request.toolName,
+            prompt: preview,
+            workspace: request.projectId ?? undefined,
+          })
+        )
+        .catch(() => {});
+    }
+
     return { row, conflict: false };
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;

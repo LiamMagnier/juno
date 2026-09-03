@@ -672,7 +672,7 @@ struct DesktopVoiceDock: View {
             }
             .accessibilityIdentifier("juno.desktop.voice-restart")
         } else {
-            if controller.capabilities?.screenInput == true, controller.phase == .live {
+            if (controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true), controller.phase == .live {
                 control(
                     controller.screenSharing ? .monitorOff : .monitor,
                     label: controller.screenSharing ? "Stop sharing screen" : "Share screen",
@@ -735,7 +735,7 @@ struct DesktopVoiceDock: View {
             // Only Gemini and Qwen accept a screen; OpenAI does not. Gated on
             // what the relay actually said in `session.ready` rather than on a
             // list kept here, which would be a second copy to drift.
-            if controller.capabilities?.screenInput == true {
+            if controller.capabilities?.screenInput == true || controller.capabilities?.videoInput == true {
                 Divider()
                 Button {
                     if controller.screenSharing {

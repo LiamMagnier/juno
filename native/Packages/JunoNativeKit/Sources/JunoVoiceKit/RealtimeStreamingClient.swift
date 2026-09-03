@@ -967,7 +967,8 @@ public actor RealtimeStreamingClient {
     /// megabyte on that assumption is a frame that is billed and discarded.
     @discardableResult
     public func sendVideoFrame(base64JPEG: String) async -> Bool {
-        guard machine.phase.isLive, machine.capabilities?.videoInput == true,
+        guard machine.phase.isLive,
+            (machine.capabilities?.videoInput == true || machine.capabilities?.screenInput == true),
             !base64JPEG.isEmpty, base64JPEG.utf8.count < 2_000_000
         else { return false }
         return await send(.videoFrame(jpegBase64: base64JPEG))

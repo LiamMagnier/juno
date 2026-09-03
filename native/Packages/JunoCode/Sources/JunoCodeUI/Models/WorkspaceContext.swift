@@ -116,6 +116,7 @@ public final class WorkspaceContext: Sendable {
                 ComputerTypeTool(computer: computerUse),
                 ComputerKeyTool(computer: computerUse),
                 ComputerScrollTool(computer: computerUse),
+                InspectEditorBufferTool(reader: AccessibilityEditorBufferReader.shared),
             ]
         )
     }

@@ -352,3 +352,26 @@ struct CodeSlashActionTests {
         #expect(merged.command(named: "compact")?.action == nil)
     }
 }
+
+struct CodeBuiltInCommandsVerificationTests {
+    @Test
+    func builtInLibraryContainsGoalBoostAndTeamworkPreview() {
+        let library = CodeSlashCommandLibrary.builtIn
+        let goal = library.command(named: "goal")
+        let boost = library.command(named: "boost")
+        let teamworkPreview = library.command(named: "teamwork-preview")
+
+        #expect(goal != nil)
+        #expect(goal?.summary.contains("goal") == true)
+        #expect(goal?.prompt.contains("update_goal") == true)
+
+        #expect(boost != nil)
+        #expect(boost?.summary.contains("Boost") == true)
+        #expect(boost?.prompt.contains("maximum rigor") == true)
+
+        #expect(teamworkPreview != nil)
+        #expect(teamworkPreview?.summary.contains("worktrees") == true)
+        #expect(teamworkPreview?.prompt.contains("worktrees") == true)
+    }
+}
+

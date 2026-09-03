@@ -293,6 +293,31 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
                 """,
             behavior: .code
         ),
+        CodeSlashCommand(
+            name: "boost",
+            summary: "Boost reasoning depth, verification thoroughness, and effort",
+            prompt: """
+                Approach the following task with maximum rigor and boosted reasoning effort. \
+                Analyze the problem from first principles, explore counterexamples and failure modes, \
+                verify every assumption with real command or test execution, and do not mark it done \
+                until thoroughly verified.
+
+                $ARGUMENTS
+                """,
+            behavior: .code
+        ),
+        CodeSlashCommand(
+            name: "teamwork-preview",
+            summary: "Preview collaborative multi-agent worktrees and staging",
+            prompt: """
+                Inspect active multi-agent worktrees and staging areas. Summarize ongoing work, \
+                detect any file or semantic conflicts between concurrent subagents, and generate \
+                a unified progress report before committing or merging.
+
+                $ARGUMENTS
+                """,
+            behavior: .code
+        ),
     ]
 
     /// Workspace commands layered over the built-ins, workspace winning.

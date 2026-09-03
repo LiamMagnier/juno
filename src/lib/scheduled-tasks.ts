@@ -386,6 +386,19 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     where: { id: run.id },
     data: { status: "done", messageId: assistant.id, costMicroUsd, finishedAt: new Date() },
   });
+
+  void import("@/lib/apns")
+    .then(({ sendTaskCompletionPushNotification }) =>
+      sendTaskCompletionPushNotification({
+        userId: task.userId,
+        taskId: task.id,
+        title: task.name,
+        status: "completed",
+        summary: full.slice(0, 140),
+      })
+    )
+    .catch(() => {});
+
   await advance(conversationId !== task.conversationId ? conversationId : undefined);
   return { status: "done", costMicroUsd };
 }

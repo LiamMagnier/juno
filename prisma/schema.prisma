@@ -123,6 +123,7 @@ model User {
   importObjects               ImportObject[]
   notifications               Notification[]
   projectMemberships          ProjectMember[]
+  devicePushTokens            DevicePushToken[]
 
   @@index([image])
 }
@@ -1037,19 +1038,60 @@ model ArtifactVersion {
 // ----------------------------------------------------------------------------
 
 model Subscription {
-  id                   String    @id @default(cuid())
-  userId               String    @unique
-  plan                 Plan      @default(FREE)
-  status               SubStatus @default(ACTIVE)
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
-  stripePriceId        String?
-  currentPeriodEnd     DateTime?
-  cancelAtPeriodEnd    Boolean   @default(false)
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  id                            String                 @id @default(cuid())
+  userId                        String                 @unique
+  plan                          Plan                   @default(FREE)
+  status                        SubStatus              @default(ACTIVE)
+  stripeCustomerId              String?                @unique
+  stripeSubscriptionId          String?                @unique
+  stripePriceId                 String?
+  appStoreOriginalTransactionId String?                @unique
+  appStoreProductId             String?
+  appStoreEnvironment           String?
+  currentPeriodEnd              DateTime?
+  cancelAtPeriodEnd             Boolean                @default(false)
+  createdAt                     DateTime               @default(now())
+  updatedAt                     DateTime               @updatedAt
+
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appStoreTransactions AppStoreTransaction[]
+}
+
+model AppStoreTransaction {
+  id                    String       @id @default(cuid())
+  subscriptionId        String
+  transactionId         String       @unique
+  originalTransactionId String
+  productId             String
+  purchaseDate          DateTime
+  expiresDate           DateTime?
+  revocationDate        DateTime?
+  environment           String       @default("Production")
+  rawPayload            String?      @db.Text
+  createdAt             DateTime     @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([originalTransactionId])
+  @@index([subscriptionId])
+}
+
+model DevicePushToken {
+  id          String    @id @default(cuid())
+  userId      String
+  token       String    @unique
+  platform    String    // "ios" | "macos"
+  bundleId    String?
+  environment String    @default("production") // "production" | "sandbox"
+  active      Boolean   @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@index([token])
 }
 
 // Monthly usage counter for quota enforcement. `period` is "YYYY-MM".

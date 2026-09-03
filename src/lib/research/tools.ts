@@ -354,7 +354,8 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   };
 };
 
-import { extractUrlDocument, isSearchEngineAvailable, searchWithEngineReport } from "@/lib/search/search-engine";
+import { isSearchEngineAvailable, searchWithEngineReport } from "@/lib/search/search-engine";
+import { crawlResearchPage } from "@/lib/research/crawler";
 
 /** True when a search engine is available. */
 export function researchSearchConfigured(): boolean {
@@ -422,19 +423,13 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
   if (!url) return null;
   const box = timeboxSignal(signal, FETCH_TIMEOUT_MS);
   try {
-    const outcome = await extractUrlDocument(url, box.signal);
+    const outcome = await crawlResearchPage(url, { signal: box.signal, maxChars: PAGE_CONTENT_CHARS });
+
     if (!outcome.ok) {
       const failure = outcome.failure;
       return {
         skipped: failure.reason,
-        ...(failure.reason === "unsupported_content_type" ? { detail: failure.contentType } : {}),
-        ...(failure.reason === "http_error" ? { detail: String(failure.httpStatus) } : {}),
-        ...(failure.reason === "response_too_large" ? { detail: String(failure.limitBytes) } : {}),
-        // Which PDF gave up and how: "encrypted", "malformed", "too_large",
-        // "not_a_pdf". Without it every unreadable PDF looks the same in the
-        // timeline, and a password-protected filing and a truncated download
-        // want completely different things from the user.
-        ...(failure.reason === "pdf_unreadable" ? { detail: failure.detail } : {}),
+        ...(failure.detail ? { detail: failure.detail } : {}),
       };
     }
     if (!outcome.page.text) return null;

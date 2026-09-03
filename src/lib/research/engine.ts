@@ -1023,6 +1023,19 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
         },
       },
     ]);
+
+    void import("@/lib/apns")
+      .then(({ sendTaskCompletionPushNotification }) =>
+        sendTaskCompletionPushNotification({
+          userId: run.userId,
+          taskId: run.id,
+          title: run.goal || "Deep Research",
+          status: to === "failed" ? "failed" : "completed",
+          summary: detail.error || (to === "failed" ? "Research task failed" : "Research report complete"),
+        })
+      )
+      .catch(() => {});
+
     return moved;
   };
 

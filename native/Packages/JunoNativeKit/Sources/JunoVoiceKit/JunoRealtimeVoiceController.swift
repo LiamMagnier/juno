@@ -1037,7 +1037,7 @@ public final class JunoRealtimeVoiceController {
     /// iPhone's camera — so a session that is not live, or a provider that cannot
     /// see, has to cost nothing rather than produce a notice a second.
     public func sendVideoFrame(_ jpeg: Data) {
-        guard phase == .live, socket != nil, capabilities?.videoInput == true else { return }
+        guard phase == .live, socket != nil, (capabilities?.videoInput == true || capabilities?.screenInput == true) else { return }
         guard let encoded = Self.relayFrame(jpeg) else { return }
         send(.videoFrame(jpegBase64: encoded))
     }
@@ -1234,7 +1234,7 @@ public final class JunoRealtimeVoiceController {
     /// fifty-nine — holding a surface queue and a capture pipeline open for the
     /// whole conversation to do it.
     public func startScreenShare() {
-        guard phase == .live, capabilities?.screenInput == true, !screenSharing else { return }
+        guard phase == .live, (capabilities?.screenInput == true || capabilities?.videoInput == true), !screenSharing else { return }
         screenShareEpoch += 1
         let epoch = screenShareEpoch
         screenShareTask?.cancel()
@@ -1272,7 +1272,7 @@ public final class JunoRealtimeVoiceController {
             return
         }
         guard screenShareEpoch == epoch, !Task.isCancelled, phase == .live,
-            capabilities?.screenInput == true
+            (capabilities?.screenInput == true || capabilities?.videoInput == true)
         else { return }
         guard let display = content.displays.first else {
             showNotice("No display is available to share right now.")
@@ -1296,7 +1296,7 @@ public final class JunoRealtimeVoiceController {
 
         while !Task.isCancelled {
             guard screenShareEpoch == epoch, phase == .live,
-                capabilities?.screenInput == true, socket != nil
+                (capabilities?.screenInput == true || capabilities?.videoInput == true), socket != nil
             else { break }
             if let image = try? await SCScreenshotManager.captureImage(
                 contentFilter: filter,
