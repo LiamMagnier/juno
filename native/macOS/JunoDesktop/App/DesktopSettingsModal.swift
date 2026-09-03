@@ -21,6 +21,9 @@ struct DesktopSettingsModal: View {
     var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     var outbox: (any MutationOutboxRepository)?
     var openUsage: (() -> Void)?
+    /// Selects the Chat shell's Memory destination. Nil where there is no
+    /// sidebar to select with — the ⌘, window swaps pages inside itself instead.
+    var openMemory: (() -> Void)?
     var codeHostModel: DesktopCodeHostModel?
     var workHostModel: DesktopWorkHostModel?
     var learningModel: MemoryLearningModel<SQLiteAccountRepository>?
@@ -67,6 +70,9 @@ struct DesktopSettingsModal: View {
                 openUsage: {
                     onDismiss()
                     openUsage?()
+                },
+                openMemory: openMemory.map { open in
+                    { onDismiss(); open() }
                 },
                 codeHostModel: codeHostModel,
                 workHostModel: workHostModel,

@@ -411,18 +411,25 @@ struct DesktopArtifactsScreen: View {
                                 .junoMetaInk()
                         }
                         .buttonStyle(.plain)
+                        .contentShape(.rect)
                         .accessibilityLabel("Clear artifact search")
                     }
                 }
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 32)
                 .background(
-                    // Pure #FFFFFF in light aqua, exactly as the Projects search
-                    // field was. Both fields are the same control doing the same
-                    // job, so both now stand on the card token rather than on a
-                    // white the rest of the palette does not contain.
-                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
-                        .fill(Color.junoSurface)
+                    // The inset well, not a raised tile: an input is recessed
+                    // into the page, so it takes the secondary fill and the
+                    // inner hairline (`SOFT_UI` §4's `junoWell`) rather than a
+                    // card's lift. It used to sit on `junoSurface` — the raised
+                    // token — with no edge at all, which read as a hole of
+                    // nothing in particular.
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .fill(Color.junoMuted)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .strokeBorder(Color.junoHairline, lineWidth: 1)
                 )
                 .frame(maxWidth: 420)
 
@@ -449,6 +456,7 @@ struct DesktopArtifactsScreen: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .contentShape(.rect)
                 .accessibilityIdentifier("juno.artifact-kind-filter")
 
                 Spacer(minLength: 0)
@@ -457,7 +465,7 @@ struct DesktopArtifactsScreen: View {
         .padding(.horizontal, JunoSpace.region)
         .padding(.top, JunoSpace.section)
         .padding(.bottom, JunoSpace.roomy)
-        .frame(maxWidth: 1152)
+        .frame(maxWidth: DesktopArtifactMetrics.pageWidth)
         .frame(maxWidth: .infinity)
     }
 
@@ -504,7 +512,7 @@ struct DesktopArtifactsScreen: View {
             }
             .padding(.horizontal, JunoSpace.region)
             .padding(.vertical, JunoSpace.section)
-            .frame(maxWidth: 1152)
+            .frame(maxWidth: DesktopArtifactMetrics.pageWidth)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -647,12 +655,14 @@ struct DesktopArtifactsScreen: View {
                             localErrorDescription = nil
                         }
                         .controlSize(.small)
+                        .contentShape(.rect)
                     } else if status.isRetryable {
                         Button("Try Again") {
                             localErrorDescription = nil
                             Task { await model.reload() }
                         }
                         .controlSize(.small)
+                        .contentShape(.rect)
                         .disabled(model.phase == .loading)
                     }
                 }
@@ -738,7 +748,9 @@ struct DesktopArtifactsScreen: View {
             JunoEmptyState(
                 title: "No artifacts yet",
                 message: "When Juno builds a page, a component or a diagram in a chat, it is kept here — every version of it.",
-                icon: .artifacts
+                icon: .artifacts,
+                actionLabel: "Refresh",
+                action: { Task { await model.reload() } }
             )
         }
     }
@@ -811,7 +823,10 @@ struct DesktopArtifactsScreen: View {
         version: Int,
         @ViewBuilder body: () -> Body
     ) -> some View {
-        JunoDetailPage {
+        // Prose takes the reading rung of the shared measure pair — the same
+        // 768 the Memory page and the web's `measure="reading"` use — rather
+        // than ``JunoDetailPage``'s ad-hoc 720 default.
+        JunoDetailPage(maxWidth: JunoReadingMeasure.reading) {
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
                 documentHeader(artifact, version: version)
                 body()
@@ -996,6 +1011,7 @@ struct DesktopArtifactsScreen: View {
                             .foregroundStyle(Color.junoAccent)
                     }
                     .buttonStyle(.plain)
+                    .contentShape(.rect)
                     .disabled(model.isMutating)
                     .help("Save this version's content as a new version")
                 }
@@ -1125,6 +1141,7 @@ struct DesktopArtifactsScreen: View {
             Button("Restore This Version") {
                 Task { await restore(artifact, version: targetVersion) }
             }
+            .contentShape(.rect)
             .disabled(isLatest || model.isMutating)
             .help("Save this version's content as a new version")
             .accessibilityIdentifier("juno.artifact-restore")
@@ -1201,6 +1218,7 @@ struct DesktopArtifactsScreen: View {
                 )
             }
             .labelStyle(.iconOnly)
+            .contentShape(.rect)
             .disabled(targetEntry == nil)
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .help(
@@ -1217,6 +1235,7 @@ struct DesktopArtifactsScreen: View {
                 JunoIconLabel("Reload preview", systemImage: "arrow.clockwise")
             }
             .labelStyle(.iconOnly)
+            .contentShape(.rect)
             // The Canvas is reloadable too, and re-running an artifact is the
             // most useful thing this button does there: `documentWillLoad` clears
             // the console, so a fixed artifact stops carrying the last run's
@@ -1229,6 +1248,7 @@ struct DesktopArtifactsScreen: View {
                 guard let artifact else { return }
                 Task { await save(artifact) }
             }
+            .contentShape(.rect)
             .disabled(!isDirty || model.isMutating)
             .keyboardShortcut("s", modifiers: .command)
             .help("Save your edit as a new version (⌘S)")
@@ -1278,6 +1298,7 @@ struct DesktopArtifactsScreen: View {
                 JunoIconLabel("Artifact actions", systemImage: "ellipsis")
             }
             .labelStyle(.iconOnly)
+            .contentShape(.rect)
             .disabled(artifact == nil || model.isExporting)
             .help("Rename, export or delete this artifact")
             .accessibilityLabel("Artifact actions")
@@ -1292,6 +1313,7 @@ struct DesktopArtifactsScreen: View {
                 JunoIconLabel("Version history", systemImage: "clock.arrow.circlepath")
             }
             .labelStyle(.iconOnly)
+            .contentShape(.rect)
             .disabled(artifact == nil)
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help("Show version history (⌥⌘I)")
@@ -1377,8 +1399,10 @@ struct DesktopArtifactsScreen: View {
                 Spacer()
                 Button("Cancel") { renaming = false }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button("Rename") { commitRename() }
                     .keyboardShortcut(.defaultAction)
+                    .contentShape(.rect)
                     .disabled(
                         renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
@@ -1504,6 +1528,11 @@ private enum DesktopArtifactMetrics {
     /// The index row's leading glyph tile — the web's `size-8`. Not in
     /// `JunoSpace`, because it is the size of a *thing*, not a gap between two.
     static let tile: CGFloat = 32
+    /// The library's page measure — ``JunoReadingMeasure/wide``, the rung the
+    /// brief gives a page of tiles. It replaces the ad-hoc 1152 this page shared
+    /// with the old Library measure, so every tile grid in the product reads at
+    /// the same width.
+    static let pageWidth: CGFloat = JunoReadingMeasure.wide
 }
 
 // MARK: - Diff canvas

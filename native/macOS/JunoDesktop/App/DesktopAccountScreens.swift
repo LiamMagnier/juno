@@ -125,7 +125,11 @@ struct DesktopDestinationView: View {
             )
         case .memory:
             if let model = configuration.memorySettingsModel {
-                DesktopMemoryScreen(model: model, back: { destination = .chat })
+                // No `back`: the sidebar *is* the way back from here, and a
+                // second control saying so is clutter — see
+                // ``DesktopMemoryScreen/back``. The ⌘, Settings window, which
+                // has no sidebar to return through, still passes one.
+                DesktopMemoryScreen(model: model, back: nil)
             } else {
                 unavailable("Memory", "The synchronized settings store is unavailable.")
             }
@@ -143,6 +147,7 @@ struct DesktopDestinationView: View {
                     syncModel: configuration.syncModel,
                     outbox: configuration.outbox,
                     openUsage: { destination = .usage },
+                    openMemory: { destination = .memory },
                     codeHostModel: configuration.codeHostModel,
                     workHostModel: configuration.workHostModel,
                     learningModel: configuration.memoryLearningModel,
@@ -273,13 +278,16 @@ struct DesktopMemoryScreen: View {
                     JunoIconView(systemImage: "chevron.left")
                         // Scaled with body text, not frozen at 13pt: the glyph
                         // sits beside the page heading and should grow with the
-                        // page under Dynamic Type. The 24pt frame is the hit
-                        // target, not the glyph, and stays fixed.
+                        // page under Dynamic Type. The 24pt frame is the glyph's
+                        // box; the 44pt frame below is the hit target, and it
+                        // stays fixed.
                         .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .frame(width: 24, height: 24)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
                 .keyboardShortcut("[", modifiers: .command)
                 .help("Back to settings (⌘[)")
                 .accessibilityLabel("Back to settings")
@@ -332,6 +340,7 @@ struct DesktopMemoryScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: JunoSpace.snug)
             Button("Refresh") { Task { await model.refresh() } }
+                .contentShape(.rect)
                 .disabled(model.isRefreshingSummary)
                 .accessibilityIdentifier("juno.desktop.memory.refresh-summary")
         }
@@ -352,7 +361,9 @@ struct DesktopMemoryScreen: View {
     @ViewBuilder
     private var factsTile: some View {
         if model.memories.isEmpty {
-            Text("Nothing saved yet. What Juno learns in chats appears here.")
+            // One line that says what to do next, pointing at the field below —
+            // the same rule the brief gives every empty state.
+            Text("Nothing saved yet — type what Juno should remember below and choose Add.")
                 .junoCaption()
         } else {
             Table(model.memories, selection: $selection) {
@@ -417,9 +428,25 @@ struct DesktopMemoryScreen: View {
 
         HStack(spacing: JunoSpace.snug) {
             TextField("Something Juno should remember", text: $newMemory)
+                .textFieldStyle(.plain)
+                // The inset well — the secondary fill and the inner hairline
+                // (`SOFT_UI` §4) — because a field is recessed into the page,
+                // not raised above it. It used to be a bare field floating in
+                // the tile, the only input on the page with no surface at all.
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.tight)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .fill(Color.junoMuted)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .strokeBorder(Color.junoHairline, lineWidth: 1)
+                )
                 .onSubmit(addMemory)
                 .accessibilityIdentifier("juno.desktop.memory.field")
             Button("Add", action: addMemory)
+                .contentShape(.rect)
                 .disabled(model.isMutating || trimmedNewMemory.isEmpty)
                 .accessibilityIdentifier("juno.desktop.memory.add")
             // The same two actions the context menu offers, as buttons, because
@@ -428,9 +455,11 @@ struct DesktopMemoryScreen: View {
                 guard let memory = singleMemory(in: selection) else { return }
                 beginEditing(memory)
             }
+            .contentShape(.rect)
             .disabled(model.isMutating || singleMemory(in: selection) == nil)
             .accessibilityIdentifier("juno.desktop.memory.edit")
             Button("Remove") { pendingDeletion = selection }
+                .contentShape(.rect)
                 .disabled(model.isMutating || selection.isEmpty)
                 .help("Delete the selected memories (⌘⌫)")
                 .keyboardShortcut(.delete, modifiers: .command)
@@ -454,10 +483,16 @@ struct DesktopMemoryScreen: View {
                 .frame(minHeight: DesktopSettingsMetrics.editorMinHeight)
                 .scrollContentBackground(.hidden)
                 .padding(JunoSpace.snug)
-                .junoPanel(cornerRadius: JunoRadius.well)
+                // The inset well, not a raised panel: an editor is somewhere
+                // text is put in, so it recesses with the secondary fill and
+                // the inner hairline like every other field on the page.
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                        .fill(Color.junoMuted)
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .strokeBorder(Color.junoBorder, lineWidth: 1)
+                        .strokeBorder(Color.junoHairline, lineWidth: 1)
                 )
                 .accessibilityLabel("Memory")
                 .accessibilityIdentifier("juno.desktop.memory.edit-field")
@@ -467,12 +502,14 @@ struct DesktopMemoryScreen: View {
                 Spacer()
                 Button("Cancel") { editingMemoryID = nil }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button("Save") {
                     guard let id = editingMemoryID else { return }
                     editingMemoryID = nil
                     Task { await model.updateMemory(id: id, content: editingContent) }
                 }
                 .keyboardShortcut(.defaultAction)
+                .contentShape(.rect)
                 .disabled(
                     model.isMutating
                         || editingContent
@@ -514,6 +551,7 @@ struct DesktopMemoryScreen: View {
             // web's Export button produces — no request, so it works offline and
             // cannot report a success it did not have.
             Button("Export memory…", action: exportMemory)
+                .contentShape(.rect)
                 .disabled(!hasContent)
                 .accessibilityIdentifier("juno.desktop.memory.export")
                 // Attached to the button, not to the screen: the delete dialog
@@ -532,6 +570,7 @@ struct DesktopMemoryScreen: View {
                 }
 
             Button("Erase all memory…", role: .destructive) { showingEraseAll = true }
+                .contentShape(.rect)
                 .disabled(model.isErasing || !hasContent)
                 .accessibilityIdentifier("juno.desktop.memory.erase")
                 .confirmationDialog(

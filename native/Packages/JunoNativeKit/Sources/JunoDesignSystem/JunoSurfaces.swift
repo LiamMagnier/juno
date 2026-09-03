@@ -44,11 +44,11 @@ public extension JunoColorToken {
     static let sidebarForegroundLight = JunoGeneratedColors.sidebarForeground.light
     static let sidebarForegroundDark = JunoGeneratedColors.sidebarForeground.dark
 
-    // The ambient throw under a raised card, from the web's `--shadow-soft`
-    // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
+    // The ambient throw under a raised card — SOFT_UI §4's own numbers:
+    // opacity 0.05 light / 0.35 dark. Warm rather than neutral black: a grey
     // shadow on a warm canvas reads as dirt.
-    static let cardShadowLight = JunoColorToken(unchecked: 0.20, 0.19, 0.18, 0.07)
-    static let cardShadowDark = JunoColorToken(unchecked: 0, 0, 0, 0.42)
+    static let cardShadowLight = JunoColorToken(unchecked: 0.20, 0.19, 0.18, 0.05)
+    static let cardShadowDark = JunoColorToken(unchecked: 0, 0, 0, 0.35)
 
     // Hairlines. Two weights: one that separates regions, one that outlines.
     static let separatorLight = JunoColorToken(unchecked: 0, 0, 0, 0.08)
@@ -130,10 +130,12 @@ public extension Color {
 /// web has exactly one raised elevation (`--shadow-soft`) and the app should not
 /// grow a second one page by page.
 public enum JunoElevation {
-    /// The blur of a raised card's ambient throw.
-    public static let cardBlur: CGFloat = 6
+    /// The blur of a raised card's ambient throw. SOFT_UI §4: "radius 10,
+    /// y 3, opacity 0.05 light / 0.35 dark" — a very soft throw, the one
+    /// elevation the product has.
+    public static let cardBlur: CGFloat = 10
     /// How far that throw falls below the card.
-    public static let cardOffsetY: CGFloat = 2
+    public static let cardOffsetY: CGFloat = 3
 }
 
 public extension View {

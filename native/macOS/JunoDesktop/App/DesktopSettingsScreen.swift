@@ -49,8 +49,11 @@ import UniformTypeIdentifiers
 ///
 /// Deep memory management moved out for the same reason it moved out on the web
 /// and on the phone: it is a corpus editor, not a preference. Settings keeps the
-/// switch; ``DesktopMemoryScreen`` is the manager, and this page swaps to it
-/// behind a back control the way `/memory` does on the web.
+/// switch; ``DesktopMemoryScreen`` is the manager. Where a sidebar destination
+/// exists (the Chat shell), the tile's button selects it through `openMemory`
+/// and the modal steps aside; the ⌘, window, which has no sidebar to select
+/// with, keeps the page-swap behind a back control the way `/memory` does on
+/// the web.
 struct DesktopSettingsScreen: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let authModel: NativeAuthModel
@@ -71,6 +74,9 @@ struct DesktopSettingsScreen: View {
     /// sidebar to navigate — the tile is absent there rather than offering a link
     /// that cannot go anywhere.
     var openUsage: (() -> Void)?
+    /// Selects the Chat shell's Memory destination. Nil in the ⌘, window for the
+    /// same reason `openUsage` is: there, the page-swap below is the way in.
+    var openMemory: (() -> Void)?
     /// Hosting for Juno Code Remote. Nil where the window has no host — the
     /// tile is absent rather than showing a switch that controls nothing.
     var codeHostModel: DesktopCodeHostModel?
@@ -99,6 +105,10 @@ struct DesktopSettingsScreen: View {
     /// manager is handed the same model object this page is already showing,
     /// rather than looking the account up a second time somewhere that could
     /// disagree.
+    ///
+    /// Only reached from the ⌘, window now: where the Chat shell's sidebar
+    /// exists, ``openMemory`` selects the Memory destination instead, so the
+    /// manager is one page of that shell rather than a swap inside a modal.
     @State private var isShowingMemory = false
     /// Whether the proposal-review surface has taken over, on the same terms as
     /// ``isShowingMemory``: one page swapping for another behind a back control,
@@ -522,7 +532,11 @@ struct DesktopSettingsScreen: View {
             Text("^[\(model.memories.count) saved fact](inflect: true)")
                 .junoCaption()
             Button {
-                isShowingMemory = true
+                if let openMemory {
+                    openMemory()
+                } else {
+                    isShowingMemory = true
+                }
             } label: {
                 Text("Open memory manager").junoWideButtonLabel()
             }
@@ -975,7 +989,10 @@ private struct DesktopSettingsAction: View {
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug + 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // `minHeight: 44` — the row's stated target. It used to reach only
+            // whatever the glyph's 22pt box proposed, which made a row a
+            // pointer has to land on one of the smallest targets in the app.
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(isHovering ? Color.junoRowHover : Color.clear)
