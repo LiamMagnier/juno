@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { AppPage } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
 
 /**
@@ -14,8 +15,7 @@ export default function AdminAnnouncementsLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading announcements">
-      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+    <AppPage measure="wide" contentClassName="flex flex-col gap-6" role="status" aria-label="Loading announcements">
         {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
             heading, its lede and the rule that closes the block. Anything looser here
             and the whole page steps sideways at the moment the real header lands
@@ -44,7 +44,6 @@ export default function AdminAnnouncementsLoading() {
             />
           ))}
         </div>
-      </div>
-    </div>
+    </AppPage>
   );
 }

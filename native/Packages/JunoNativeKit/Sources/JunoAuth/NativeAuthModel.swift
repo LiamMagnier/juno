@@ -186,3 +186,23 @@ public final class NativeAuthModel {
         }
     }
 }
+
+#if DEBUG
+extension NativeAuthModel {
+    /// A signed-out model with no runtime behind it, for the UI preview
+    /// harness.
+    ///
+    /// The harness used to hand the signed-out shell an `.unavailable` model,
+    /// and the sign-in form hides its credentials card and browser button on
+    /// `.unavailable` — correctly, since nothing could act on them. The result
+    /// was a front door with no door: a title, a description and a banner
+    /// reading "UI Preview". This one is `.signedOut`; its actions return
+    /// without doing anything, because there is no runtime to do it with.
+    public static func previewSignedOut() -> NativeAuthModel {
+        let model = NativeAuthModel(configurationErrorDescription: "")
+        model.phase = .signedOut
+        model.lastErrorDescription = nil
+        return model
+    }
+}
+#endif

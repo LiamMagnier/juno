@@ -138,7 +138,7 @@ export function UserMenu({
               <span className="min-w-0 truncate text-sm font-medium text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
-              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-caption font-medium uppercase leading-none text-primary-ink">
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-caption font-medium leading-none text-primary-ink">
                 {plan.name}
               </span>
             </div>
@@ -152,7 +152,7 @@ export function UserMenu({
             where a fill begins to exist, so the quota block had no block. */}
         <div className="mx-1 rounded-control bg-secondary px-2.5 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-mono text-caption uppercase text-muted-foreground">Messages</span>
+            <span className="font-mono text-caption text-muted-foreground">Messages</span>
             {/* tabular-nums: this counter changes in place as messages are sent,
                 and proportional digits make the whole readout shuffle sideways
                 when 9 becomes 10. */}

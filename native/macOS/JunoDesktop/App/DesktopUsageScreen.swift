@@ -194,9 +194,9 @@ struct DesktopUsageScreen: View {
 // MARK: - Metrics
 
 private enum DesktopUsageMetrics {
-    /// Wider than the 720pt reading measure the settings panes use: this page is
-    /// a dashboard of side-by-side cards, not a column of prose.
-    static let readingWidth: CGFloat = 960
+    /// The wide measure, not the reading one: this page is a dashboard of
+    /// side-by-side cards, not a column of prose.
+    static let readingWidth: CGFloat = JunoReadingMeasure.wide
     /// One day in the activity grid, and the gap between two.
     static let activityCell: CGFloat = 11
     static let activityGap: CGFloat = 3

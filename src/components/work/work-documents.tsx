@@ -165,7 +165,7 @@ function KindBadge({ extension }: { extension: string }) {
     // none here — the parity that file's comment claims was only ever applied to
     // its own side. 9px was also the smallest type anywhere in Work, two rungs
     // under `caption`, for three letters lifted off a filename.
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground">
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro text-muted-foreground">
       {extension}
     </span>
   );

@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { AppPage } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
 
 /**
@@ -16,8 +17,7 @@ export default function KnowledgeDocumentLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading document">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading" role="status" aria-label="Loading document">
         <Skeleton className="h-5 w-24 rounded-control" />
         <Skeleton className="mt-4 h-16 w-2/3 rounded-control" style={staggerDelay(1, "loose")} />
         <Skeleton className="mt-6 h-24 w-full rounded-card" style={staggerDelay(2, "loose")} />
@@ -31,7 +31,6 @@ export default function KnowledgeDocumentLoading() {
             />
           ))}
         </div>
-      </div>
-    </div>
+    </AppPage>
   );
 }

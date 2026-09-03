@@ -342,6 +342,7 @@ function MobileItemMenu({
   onRestore,
   onVersions,
   triggerClassName,
+  triggerVariant,
 }: {
   item: LibItem;
   onRename: () => void;

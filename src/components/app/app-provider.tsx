@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
@@ -170,6 +170,15 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // making changes from iPhone, iPad, Mac, or another browser visible without a
   // manual reload. Cursor events can arrive in bursts for one user action, so
   // coalesce them into one refresh while retaining the latest cursor.
+  const pathname = usePathname();
+  const deferredRefreshRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!deferredRefreshRef.current) return;
+    if (window.__junoSoftRoutePath && window.location.pathname === window.__junoSoftRoutePath) return;
+    deferredRefreshRef.current = false;
+    React.startTransition(() => router.refresh());
+  }, [pathname, router]);
+
   React.useEffect(() => {
     const stream = new EventSource("/api/sync/stream");
     let lastCursor: string | null = null;
@@ -178,8 +187,17 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
     const refresh = () => {
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
-        React.startTransition(() => router.refresh());
         refreshTimer = null;
+        // A brand-new chat rewrites its URL to /chat/<id> with replaceState
+        // while the /chat page stays mounted. Refreshing there resolves the
+        // URL to the [id] page file and remounts ChatView mid-conversation,
+        // so the refresh waits for the next real route change instead.
+        const soft = window.__junoSoftRoutePath;
+        if (soft && window.location.pathname === soft) {
+          deferredRefreshRef.current = true;
+          return;
+        }
+        React.startTransition(() => router.refresh());
       }, 120);
     };
 

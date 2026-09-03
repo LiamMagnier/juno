@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AlertTriangle, MoreHorizontal, PenTool, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
@@ -127,8 +127,7 @@ export default function DesignPage() {
   const empty = !loading && !error && items.length === 0;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading">
         <AppPageHeader
           eyebrow="Design"
           heading="Design"
@@ -157,8 +156,9 @@ export default function DesignPage() {
                 // dropped `transform` off the list — the press dipped to scale(0.97)
                 // in a single frame instead of easing, on the four biggest buttons
                 // on this page. .pressable already animates colour and border.
-                "pressable group flex flex-col items-start gap-0.5 rounded-menu border border-border/60 bg-card px-3 py-2.5 text-left",
-                "hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                // The house tile: cut from the control material (raised at
+                // rest, lifted on hover, pressed while held) at the card rung.
+                "control-neu pressable group flex flex-col items-start gap-0.5 rounded-card px-3 py-2.5 text-left",
                 creating !== null && "opacity-60"
               )}
             >
@@ -285,7 +285,6 @@ export default function DesignPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
-    </div>
+    </AppPage>
   );
 }

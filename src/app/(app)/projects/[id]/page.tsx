@@ -1,5 +1,6 @@
 "use client";
 
+import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -562,7 +563,7 @@ export default function ProjectDetailPage() {
     // Mirrors the real header rhythm (eyebrow · title · meta) so the page doesn't
     // reflow when data lands.
     return (
-      <div className="app-page-content max-w-6xl">
+      <AppPage measure="wide">
         <div className="skeleton mb-8 h-8 w-28 rounded-field" />
         <div className="skeleton mb-3 h-3 w-20 rounded-sm" />
         <div className="skeleton mb-3 h-10 w-72 rounded-md" />
@@ -571,7 +572,7 @@ export default function ProjectDetailPage() {
           <div className="skeleton h-40 w-full rounded-card" />
           <div className="skeleton h-64 w-full rounded-card" />
         </div>
-      </div>
+      </AppPage>
     );
   }
 
@@ -581,8 +582,7 @@ export default function ProjectDetailPage() {
   const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-6xl">
+    <AppPage measure="wide">
         {/* A real link, not router.push on a button: this one is not cmd- or
             middle-clickable and announces itself as a button. Same defect
             AppPageHeader's docblock item 2 exists to kill. */}
@@ -1033,7 +1033,6 @@ export default function ProjectDetailPage() {
             </div>
           </TabsContent>
         </Tabs>
-      </div>
 
       {/* Shared hidden file input — used by both tabs */}
       <input
@@ -1200,7 +1199,7 @@ export default function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }
 

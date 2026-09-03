@@ -7,12 +7,20 @@ import JunoCodeCore
 /// starts with what they say.
 @MainActor
 struct CodeDefaultsTests {
-    private func store() -> UserDefaults {
+    /// A throwaway suite. Every test's writes are removed again when the
+    /// suite goes away, so a run leaves no `juno.tests.code-defaults.*`
+    /// plist behind in `~/Library/Preferences`.
+    private final class Suite {
         let name = "juno.tests.code-defaults.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
+        let defaults: UserDefaults
+        init() {
+            defaults = UserDefaults(suiteName: name)!
+            defaults.removePersistentDomain(forName: name)
+        }
+        deinit { defaults.removePersistentDomain(forName: name) }
     }
+
+    private func store() -> UserDefaults { Suite().defaults }
 
     @Test
     func valuesPersistAcrossInstances() {
@@ -22,7 +30,6 @@ struct CodeDefaultsTests {
         first.modelID = "anthropic:claude-opus-4-8"
         first.reasoningEffort = .high
         first.environment = .worktree
-        first.worktreeLocation = "/tmp/worktrees"
         first.setMCPServer("github", enabled: false)
         first.setHook("claude:1", enabled: false)
         first.setSkill("juno:review", enabled: false)
@@ -32,7 +39,6 @@ struct CodeDefaultsTests {
         #expect(second.modelID == "anthropic:claude-opus-4-8")
         #expect(second.reasoningEffort == .high)
         #expect(second.environment == .worktree)
-        #expect(second.worktreeLocation == "/tmp/worktrees")
         #expect(!second.isMCPServerEnabled("github"))
         #expect(second.isMCPServerEnabled("linear"))
         #expect(!second.isHookEnabled("claude:1"))

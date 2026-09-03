@@ -209,7 +209,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
           past that ceiling, where uppercase micro-labels stop grouping into
           words — and it is the same defect `WorkPreflightCard` already fixed on
           its own two badges. */}
-      <dt className="font-mono text-label uppercase text-muted-foreground">
+      <dt className="font-mono text-label text-muted-foreground">
         {label}
       </dt>
       <dd className="mt-0.5 text-caption leading-relaxed text-muted-foreground">{children}</dd>

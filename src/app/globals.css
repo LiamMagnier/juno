@@ -316,11 +316,15 @@
        is why every `.surface-*` utility also draws a hairline in --border and
        why the primary action keeps real colour. Depth is a texture, never the
        only edge. */
-    --neu-light: 0 0% 100% / 0.85;
-    --neu-dark: 46 18% 20% / 0.10;
+    --neu-light: 0 0% 100% / 0.9;
+    --neu-dark: 46 18% 20% / 0.14;
+    /* The large throw's ink: a card that stands higher casts a denser shadow
+       as well as a longer one, or the two rungs read as the same card at two
+       blur radii. */
+    --neu-dark-lg: 46 18% 20% / 0.2;
     --shadow-raised: -2px -2px 6px hsl(var(--neu-light)), 3px 4px 10px hsl(var(--neu-dark));
-    --shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark));
-    --shadow-inset: inset 2px 2px 5px hsl(var(--neu-dark)), inset -2px -2px 5px hsl(var(--neu-light));
+    --shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark-lg));
+    --shadow-inset: inset 2px 2px 6px hsl(var(--neu-dark)), inset -2px -2px 6px hsl(var(--neu-light));
     --shadow-pressed: inset 1px 1px 3px hsl(var(--neu-dark)), inset -1px -1px 3px hsl(var(--neu-light));
     /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
        crisp contact shadow, a long soft throw pulled in by negative spread so
@@ -486,9 +490,16 @@
      * cannot turn into a light patch. Same geometry as light; only the inks
      * change, which is what makes the two themes one material.
      */
-    --neu-light: 45 20% 96% / 0.06;
-    --neu-dark: 0 0% 0% / 0.55;
+    --neu-light: 45 20% 96% / 0.07;
+    --neu-dark: 0 0% 0% / 0.6;
+    --neu-dark-lg: 0 0% 0% / 0.72;
     --shadow-ink: 0 0% 0%;
+    /* Dark raised surfaces add the sheen along their top edge: on charcoal the
+       up-left highlight alone is too faint to say "lit", and a 1px rim light
+       is what every dark ChatGPT/Claude card uses to separate from the ground.
+       Same geometry as light otherwise; the inks are the only difference. */
+    --shadow-raised: inset 0 1px 0 hsl(var(--sheen)), -2px -2px 6px hsl(var(--neu-light)), 3px 4px 12px hsl(var(--neu-dark));
+    --shadow-raised-lg: inset 0 1px 0 hsl(var(--sheen)), -4px -4px 12px hsl(var(--neu-light)), 6px 8px 22px hsl(var(--neu-dark-lg));
     --shadow-float: 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(0 0% 0% / 0.7), inset 0 1px 0 hsl(var(--sheen));
     --shadow-glass: 0 2px 8px hsl(0 0% 0% / 0.3), 0 16px 38px -24px hsl(0 0% 0% / 0.64), inset 0 1px 0 hsl(var(--sheen));
 
@@ -1744,27 +1755,37 @@
    * carries the shape on the light theme, where a one-rung fill difference is
    * nearly invisible.
    */
+  /* The composer's controls (+, model, effort) are cut from the control
+     material (SOFT_UI.md §3 — "a raised chip for the model trigger"): raised
+     at rest on the shell, lifted a rung on hover, and pressed INTO the shell
+     while open or held. They used to be a flat secondary wash, which on a
+     raised shell read as a stain rather than a key. */
   .composer-chip {
-    background-color: hsl(var(--secondary) / .7);
-    border: 1px solid hsl(var(--border) / .55);
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / .6);
+    box-shadow: var(--shadow-raised);
     transition:
       background-color var(--dur-fast) var(--ease-out-soft),
       border-color     var(--dur-fast) var(--ease-out-soft),
+      box-shadow       var(--dur-fast) var(--ease-out-soft),
       color            var(--dur-fast) var(--ease-out-soft),
       transform        var(--dur-press) var(--ease-out-soft);
   }
   @media (hover: hover) {
     .composer-chip:hover {
-      background-color: hsl(var(--accent));
+      background-color: hsl(var(--card));
       border-color: hsl(var(--border));
+      box-shadow: var(--shadow-raised-lg);
     }
   }
-  /* Open is not a louder hover. Hover says "this is pressable", open says "the
-     panel you are looking at belongs to THIS chip" — so it takes the brighter
-     edge, which is the one thing hover deliberately does not do. */
-  .composer-chip[data-state="open"] {
-    background-color: hsl(var(--accent));
-    border-color: hsl(var(--foreground) / .22);
+  /* Open is not a louder hover. Hover lifts; open goes DOWN into the shell,
+     the same gesture as holding it, so the chip whose panel you are looking at
+     is the one that is visibly pressed. */
+  .composer-chip[data-state="open"],
+  .composer-chip:active {
+    background-color: hsl(var(--secondary));
+    border-color: hsl(var(--border) / .8);
+    box-shadow: var(--shadow-pressed);
     color: hsl(var(--foreground));
   }
   .composer-chip:active {
@@ -3261,7 +3282,8 @@
     background-color: hsl(var(--sidebar));
     box-shadow:
       inset -1px 0 0 hsl(var(--sidebar-border)),
-      inset -6px 0 10px -8px hsl(var(--neu-dark));
+      inset -14px 0 18px -12px hsl(var(--neu-dark)),
+      inset 0 14px 16px -14px hsl(var(--neu-dark));
   }
   /* At md–lg the expanded panel floats over the content (app-shell.tsx):
      it takes the floating rung's throw so it reads as lifted, not as a wider

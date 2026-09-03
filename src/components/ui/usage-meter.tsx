@@ -51,7 +51,7 @@ export function UsageMeter({
           <div className="h-1.5 w-12 overflow-hidden rounded-full bg-secondary">
             <div
               className={cn(
-                "h-full transition-all duration-base",
+                "h-full transition-[width,background-color] duration-base ease-out-soft",
                 isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary"
               )}
               style={{ width: `${percentage}%` }}
@@ -73,7 +73,7 @@ export function UsageMeter({
   return (
     <div
       className={cn(
-        "rounded-card border border-border/80 bg-card p-3 shadow-soft transition-all",
+        "rounded-card border border-border/80 bg-card p-3 shadow-soft transition-[border-color,box-shadow] duration-fast ease-out-soft",
         isExhausted && "border-destructive/40 bg-destructive/5",
         className
       )}
@@ -115,7 +115,7 @@ export function UsageMeter({
         <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
           <div
             className={cn(
-              "h-full transition-all duration-base",
+              "h-full transition-[width,background-color] duration-base ease-out-soft",
               isExhausted ? "bg-destructive" : isHigh ? "bg-warning" : "bg-primary"
             )}
             style={{ width: `${percentage}%` }}

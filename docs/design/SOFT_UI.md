@@ -47,12 +47,13 @@ Foreground, primary (coral), success/warning/destructive/source stay as they are
 ### 2.2 Depth kit (new, replaces the dead `.neumorphic-*` rules)
 
 ```
---neu-light : 0 0% 100% / 0.85   (dark: 45 20% 96% / 0.06)
---neu-dark  : 46 18% 20% / 0.10  (dark: 0 0% 0% / 0.55)
+--neu-light   : 0 0% 100% / 0.9    (dark: 45 20% 96% / 0.07)
+--neu-dark    : 46 18% 20% / 0.14  (dark: 0 0% 0% / 0.6)
+--neu-dark-lg : 46 18% 20% / 0.2   (dark: 0 0% 0% / 0.72 — the large throw's denser ink)
 
 --shadow-raised : -2px -2px 6px hsl(var(--neu-light)),  3px  4px 10px hsl(var(--neu-dark))
---shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark))
---shadow-inset  : inset 2px 2px 5px hsl(var(--neu-dark)), inset -2px -2px 5px hsl(var(--neu-light))
+--shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark-lg))
+--shadow-inset  : inset 2px 2px 6px hsl(var(--neu-dark)), inset -2px -2px 6px hsl(var(--neu-light))
 --shadow-pressed: inset 1px 1px 3px hsl(var(--neu-dark)), inset -1px -1px 3px hsl(var(--neu-light))
 --shadow-float  : 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(46 18% 20% / 0.28), inset 0 1px 0 hsl(var(--sheen))
 ```

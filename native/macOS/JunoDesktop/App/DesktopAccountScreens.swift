@@ -643,9 +643,9 @@ struct DesktopMemoryScreen: View {
 }
 
 private enum DesktopMemoryMetrics {
-    /// Narrower than the settings grid: this page is one column of prose and one
-    /// table, not a two-column grid of tiles.
-    static let readingWidth: CGFloat = 760
+    /// One column of prose and one table, on the reading measure every other
+    /// prose page uses.
+    static let readingWidth: CGFloat = JunoReadingMeasure.reading
     /// The facts table. Taller than the 210pt it had as an embedded form row —
     /// it is the reason this screen exists, so it gets the room.
     static let tableHeight: CGFloat = 320

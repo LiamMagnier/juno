@@ -80,7 +80,7 @@ export function AppPageHeader({
         {/* The mono kicker this component's own prop doc promises. It was set in
             the UI face at `text-xs`, which is neither the eyebrow treatment the
             rest of the shell uses nor a rung on the type scale. */}
-        <span className="font-mono text-label uppercase text-muted-foreground">{eyebrow}</span>
+        <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">

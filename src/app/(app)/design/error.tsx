@@ -11,6 +11,7 @@
  * one identifier worth showing.
  */
 
+import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import Link from "next/link";
 
@@ -30,8 +31,7 @@ export default function DesignError({
   }, [error]);
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading">
         <EmptyState
           tone="error"
           icon={StatusIcons.error}
@@ -56,7 +56,6 @@ export default function DesignError({
             Reference {error.digest}
           </p>
         )}
-      </div>
-    </div>
+    </AppPage>
   );
 }

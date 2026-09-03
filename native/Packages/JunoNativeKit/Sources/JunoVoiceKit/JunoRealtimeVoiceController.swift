@@ -2196,3 +2196,61 @@ private enum RealtimeAudioSetupError: LocalizedError {
     }
 }
 #endif
+
+#if DEBUG
+extension JunoRealtimeVoiceController {
+    /// A live-looking session with no relay behind it, for the UI preview
+    /// harness.
+    ///
+    /// The orb, the captions and the call controls are the one surface of the
+    /// phone that could not be looked at without a server, a token and a
+    /// microphone: every fixture launch of full-screen voice showed "Voice
+    /// unavailable" over an empty captions box. This puts the controller
+    /// straight into ``Phase/live`` with a transcript, capabilities that
+    /// unlock the camera controls, a running cost, and a synthetic level that
+    /// moves the way a voice does. `end()` tears it down like any session.
+    /// Debug-only, like the harness it exists for.
+    public func beginPreviewSession(
+        lines: [(role: JunoVoiceTranscriptRole, text: String)],
+        assistantSpeaking speaking: Bool = true
+    ) {
+        closedByUser = false
+        reconnectAttempted = false
+        record.reset()
+        for line in lines {
+            record.upsert(role: line.role, text: line.text, final: true)
+            // The record files a question that arrives after an answer began
+            // *above* that answer — right for a live call, where the reader's
+            // words are transcribed late. Seeded lines are already in order,
+            // so each answer closes its turn before the next line lands.
+            if line.role == .assistant { record.beginAnswer() }
+        }
+        capabilities = JunoVoiceCapabilities(
+            videoInput: true, screenInput: true, trueS2S: true,
+            needsClientTranscript: false, maxSessionSec: 1800
+        )
+        usage = JunoVoiceUsage(
+            provider: provider, audioInSec: 48, audioOutSec: 71, estCostUsd: 0.034
+        )
+        notice = nil
+        session = RealtimeSessionMachine(provider: provider)
+        phase = .live
+        assistantSpeaking = speaking
+        sessionPhase = speaking ? .responding : .listening
+        meterTask?.cancel()
+        meterTask = Task { @MainActor [weak self] in
+            let started = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(40))
+                guard let self, !Task.isCancelled else { return }
+                let t = Date().timeIntervalSince(started)
+                // Two slow envelopes under a fast tremor: reads as speech, not
+                // as a metronome.
+                let envelope = 0.5 + 0.5 * sin(t * 1.7) * sin(t * 0.6 + 1)
+                let tremor = 0.5 + 0.5 * sin(t * 11)
+                level = self.muted ? 0 : 0.18 + 0.55 * envelope * (0.6 + 0.4 * tremor)
+            }
+        }
+    }
+}
+#endif

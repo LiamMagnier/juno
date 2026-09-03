@@ -497,7 +497,6 @@ function RunRow({
   onReview: () => void;
 }) {
   const state = runState(run, reachable);
-  const meta = RUN_STATE_META[state];
   const isolation = isolationLabel(run);
   /*
    * The title is the run's own headline: the API derives it from the first

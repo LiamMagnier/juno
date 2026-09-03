@@ -132,7 +132,7 @@ export function AgentStatusBadge({
       role="status"
       aria-label={`Status: ${displayLabel}${subtext ? ` — ${subtext}` : ""}`}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 transition-all duration-base",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 transition-[color,background-color,border-color] duration-base ease-out-soft",
         config.bgClass,
         config.borderClass,
         config.textClass,

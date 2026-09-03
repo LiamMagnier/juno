@@ -120,7 +120,7 @@ function ModelField({
           ) : (
             groups.map((g) => (
               <div key={g.p} className="mb-1.5 last:mb-0">
-                <p className="px-2 pb-1 pt-1.5 font-mono text-caption uppercase text-muted-foreground">
+                <p className="px-2 pb-1 pt-1.5 font-mono text-caption text-muted-foreground">
                   {PROVIDERS[g.p]?.label ?? g.p}
                 </p>
                 {/* rounded-xs (6px) — the shell is rounded-menu (12px) and the
@@ -380,7 +380,7 @@ export function Onboarding() {
 
         {/* header: step label + dot pager */}
         <div className="relative flex items-center justify-between px-7 pt-6">
-          <span className="font-mono text-label uppercase text-muted-foreground">
+          <span className="font-mono text-label text-muted-foreground">
             {STEP_LABELS[step]}
           </span>
           <div className="flex items-center gap-1.5">
@@ -421,7 +421,7 @@ export function Onboarding() {
               A thoughtful AI for chat, code, and everything between.
             </p>
             {models.length > 1 && (
-              <p className="mt-3 font-mono text-label uppercase text-muted-foreground/80">
+              <p className="mt-3 font-mono text-label text-muted-foreground/80">
                 {models.length} models · {labCount} {labCount === 1 ? "lab" : "labs"} · one place
               </p>
             )}
@@ -470,7 +470,7 @@ export function Onboarding() {
 
             <div className="mt-5 space-y-5">
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Accent</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Accent</p>
                 <div className="flex gap-2.5">
                   {ACCENTS.map((a) => {
                     const color = swatches[a.id] ?? a.color;
@@ -506,7 +506,7 @@ export function Onboarding() {
               </div>
 
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Theme</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Theme</p>
                 {/* One control, one implementation: this is the Settings page's
                     Theme picker, which is already `<Pressable kind="tile">` in a
                     radiogroup. What stood here was a hand-rolled `pressable …
@@ -542,7 +542,7 @@ export function Onboarding() {
               </div>
 
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Default model</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Default model</p>
                 <ModelField models={chatModels} valueId={currentModelId} onPick={(id) => save({ defaultModel: id })} />
               </div>
             </div>
@@ -565,7 +565,7 @@ export function Onboarding() {
           <div key="plan" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Choose a plan</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-caption text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -604,12 +604,12 @@ export function Onboarding() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-serif text-body-lg font-medium leading-none">{plan.name}</h3>
                         {popular && (
-                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-caption uppercase text-primary-foreground">
+                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-caption text-primary-foreground">
                             Popular
                           </span>
                         )}
                         {isCurrent && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
+                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-caption text-muted-foreground">
                             Current
                           </span>
                         )}
@@ -673,7 +673,7 @@ export function Onboarding() {
           <div key="memory" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Bring your memory</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-caption text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -684,7 +684,7 @@ export function Onboarding() {
             <div className="mt-5 space-y-4">
               {/* step 1 — copy prompt */}
               <div>
-                <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+                <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
                   <span className="grid size-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     1
                   </span>
@@ -714,7 +714,7 @@ export function Onboarding() {
 
               {/* step 2 — paste results */}
               <div>
-                <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+                <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
                   <span className="grid size-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     2
                   </span>

@@ -521,22 +521,10 @@ struct JunoMobileComposer: View {
         addMenu
       }
 
-      JunoMobileModelControl(
-        models: model.modelCatalog,
-        selectedModelID: $selectedModelID,
-        fallbackName: junoDisplayModelName(conversation?.model ?? "")
-      )
-      .layoutPriority(1)
-
-      if let thinkingScale {
-        JunoMobileThinkingControl(
-          scale: thinkingScale,
-          effort: $reasoningEffort,
-          fastMode: $tools.fastMode,
-          proMode: $tools.proMode
-        )
-        .layoutPriority(2)
-      }
+      // Laid out before the spacer and after the fixed-size buttons, so the
+      // pair is offered exactly the width the row has left.
+      chips
+        .layoutPriority(1)
 
       Spacer(minLength: 2)
 
@@ -556,6 +544,51 @@ struct JunoMobileComposer: View {
       }
 
       composerActionButton
+    }
+  }
+
+  /// Model · Thinking, at whatever length the row has room for.
+  ///
+  /// A phone's row leaves the pair about 170pt, and "Claude Opus 4.8" with
+  /// "Instant" beside it wants 210. Truncation was the previous answer, and
+  /// with the Thinking chip winning the model's name was the only thing left
+  /// to give — the chip read as a provider mark and an ellipsis. So the pair
+  /// is tried at four lengths, in order: both in full; the model name without
+  /// its vendor word; then Thinking as a glyph; and, last, the same with
+  /// truncation allowed so the row can never overflow. The first three hold
+  /// their width, which is what lets `ViewThatFits` measure them honestly.
+  private var chips: some View {
+    ViewThatFits(in: .horizontal) {
+      chipPair(name: .full, thinking: .label, holdsWidth: true)
+      chipPair(name: .short, thinking: .label, holdsWidth: true)
+      chipPair(name: .short, thinking: .icon, holdsWidth: true)
+      chipPair(name: .short, thinking: .icon, holdsWidth: false)
+    }
+  }
+
+  private func chipPair(
+    name: JunoMobileModelControl.NameStyle,
+    thinking: JunoMobileThinkingControl.Style,
+    holdsWidth: Bool
+  ) -> some View {
+    HStack(spacing: JunoSpace.tight) {
+      JunoMobileModelControl(
+        models: model.modelCatalog,
+        selectedModelID: $selectedModelID,
+        fallbackName: junoDisplayModelName(conversation?.model ?? ""),
+        nameStyle: name,
+        holdsWidth: holdsWidth
+      )
+      if let thinkingScale {
+        JunoMobileThinkingControl(
+          scale: thinkingScale,
+          effort: $reasoningEffort,
+          fastMode: $tools.fastMode,
+          proMode: $tools.proMode,
+          style: thinking,
+          holdsWidth: holdsWidth
+        )
+      }
     }
   }
 

@@ -9,6 +9,7 @@ import {
   AudioLines,
   Blocks,
   NotebookPen,
+  Brain,
   ChevronDown,
   Cpu,
   FileUp,
@@ -2157,8 +2158,8 @@ export function Composer({
                 chips.push({ key: "research", icon: <ComposerIcons.research />, label: "Deep research", onRemove: () => setResearch(false) });
               if (!privateMode && canvasEnabled && modality === "chat")
                 chips.push({ key: "canvas", icon: <LayoutTemplate />, label: "Canvas", onRemove: () => onToggleCanvas(false) });
-              if (modality === "image") chips.push({ key: "image", icon: <ComposerIcons.image />, label: "Image" });
-              if (modality === "video") chips.push({ key: "video", icon: <ComposerIcons.image />, label: "Video" });
+              if (modality === "image") chips.push({ key: "image", icon: <ComposerIcons.photos />, label: "Image" });
+              if (modality === "video") chips.push({ key: "video", icon: <ComposerIcons.photos />, label: "Video" });
               if (showConnectors)
                 for (const c of connectors.filter((c) => connectorsEnabled.includes(c.id)))
                   chips.push({ key: `c:${c.id}`, icon: <ConnectorMark id={c.id} className="size-3.5" />, label: c.label, onRemove: () => pickConnector(c.id) });
@@ -2934,6 +2935,7 @@ export function Composer({
                                     : "text-foreground",
                                 )}
                               >
+                                <Brain className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
                                 <span className="min-w-0 flex-1 truncate text-center">
                                   {compactEffortLabel}
                                 </span>

@@ -6,7 +6,7 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { toast } from "sonner";
 import { Camera, Loader2, MessageSquare } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";

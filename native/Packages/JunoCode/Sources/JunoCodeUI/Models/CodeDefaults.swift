@@ -58,9 +58,8 @@ public enum CodeEnvironmentChoice: String, CaseIterable, Identifiable, Sendable,
 /// should start with.
 ///
 /// Backed by `UserDefaults` rather than the account's synced settings, because
-/// a worktree location is a path on this Mac and a disabled MCP server is a
-/// decision about this machine's processes. Neither means anything on the
-/// phone.
+/// a disabled MCP server or hook is a decision about this machine's processes,
+/// and means nothing on the phone.
 @MainActor
 @Observable
 public final class CodeDefaults {
@@ -71,7 +70,6 @@ public final class CodeDefaults {
         public static let modelID = "juno.code.defaults.model-id"
         public static let reasoningEffort = "juno.code.defaults.reasoning-effort"
         public static let environment = "juno.code.defaults.environment"
-        public static let worktreeLocation = "juno.code.defaults.worktree-location"
         public static let disabledMCPServers = "juno.code.defaults.disabled-mcp-servers"
         public static let disabledHooks = "juno.code.defaults.disabled-hooks"
         public static let disabledSkills = "juno.code.defaults.disabled-skills"
@@ -89,7 +87,6 @@ public final class CodeDefaults {
             .flatMap(ReasoningEffort.init(rawValue:))
         environment = store.string(forKey: Key.environment)
             .flatMap(CodeEnvironmentChoice.init(rawValue:)) ?? .local
-        worktreeLocation = store.string(forKey: Key.worktreeLocation) ?? ""
         disabledMCPServers = Set(store.stringArray(forKey: Key.disabledMCPServers) ?? [])
         disabledHooks = Set(store.stringArray(forKey: Key.disabledHooks) ?? [])
         disabledSkills = Set(store.stringArray(forKey: Key.disabledSkills) ?? [])
@@ -128,12 +125,6 @@ public final class CodeDefaults {
             }
             store.set(environment.rawValue, forKey: Key.environment)
         }
-    }
-
-    /// Where isolated worktrees are created. Empty means beside the checkout,
-    /// which is what `WorktreeManager` does when told nothing.
-    public var worktreeLocation: String {
-        didSet { store.set(worktreeLocation, forKey: Key.worktreeLocation) }
     }
 
     /// MCP servers the reader switched off, by name. A server a repository

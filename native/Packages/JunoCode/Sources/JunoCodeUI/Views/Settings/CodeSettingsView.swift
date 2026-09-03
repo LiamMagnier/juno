@@ -46,8 +46,8 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
 
 /// The Code section of Settings.
 ///
-/// Defaults first — permission, model and effort, environment, worktree
-/// location — because those decide what every new task starts as. Then the
+/// Defaults first — permission, model and effort, environment — because
+/// those decide what every new task starts as. Then the
 /// per-project lists, behind a project picker, because a hook or an MCP server
 /// belongs to a repository and the page has to say which one it is showing.
 /// Remote hosting stays the tile it was; it is handed in by the host because
@@ -61,7 +61,6 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
     @State private var selectedWorkspaceID: WorkspaceID?
     @State private var extensions: CodeWorkspaceExtensions?
     @State private var isLoadingExtensions = false
-    @State private var isChoosingWorktreeLocation = false
 
     public init(
         defaults: CodeDefaults = .shared,
@@ -190,34 +189,17 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
             Divider()
 
             LabeledContent("Worktree location") {
-                HStack(spacing: JunoSpace.snug) {
-                    Text(
-                        defaults.worktreeLocation.isEmpty
-                            ? "Beside each checkout"
-                            : (defaults.worktreeLocation as NSString).abbreviatingWithTildeInPath
-                    )
-                    .junoCaption()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    Button("Choose…") { isChoosingWorktreeLocation = true }
-                        .controlSize(.small)
-                        .contentShape(.rect)
-                    if !defaults.worktreeLocation.isEmpty {
-                        Button("Reset") { defaults.worktreeLocation = "" }
-                            .controlSize(.small)
-                            .buttonStyle(.borderless)
-                            .contentShape(.rect)
-                    }
-                }
+                Text(".juno/worktrees inside each project")
+                    .junoCodeSmall()
+                    .junoSecondaryInk()
             }
-            .fileImporter(
-                isPresented: $isChoosingWorktreeLocation,
-                allowedContentTypes: [.folder]
-            ) { result in
-                if case let .success(url) = result {
-                    defaults.worktreeLocation = url.path
-                }
-            }
+            // Not a chooser. Every worktree Juno makes stays inside the folder
+            // the reader granted — `WorktreeManager` refuses any destination
+            // outside it — so a location elsewhere on the disk would be a
+            // promise the runtime cannot keep.
+            Text("Worktrees are created inside the project you granted, so Juno never writes outside it. Branches are named juno/<base>-<stamp>.")
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

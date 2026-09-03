@@ -104,8 +104,8 @@ function WorkHomeFrame({ children }: { children: React.ReactNode }) {
   return (
     <AppPage measure="wide">
       <AppPageHeader
-        eyebrow="Work"
-        heading="Tasks"
+        eyebrow="Juno Work"
+        heading="Work"
         lede="Hand Juno an errand with a finish line. It plans the work, shows you every step, and asks before anything it cannot undo."
         icon={AppIcons.work}
       />

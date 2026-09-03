@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { staggerDelay } from "@/lib/motion";
 
@@ -106,8 +106,7 @@ export default function KnowledgeDocumentPage() {
   // screens in this product feel like moving between two products.
   if (failed) {
     return (
-      <div className="app-page-scroll">
-        <div className="app-page-content max-w-3xl">
+      <AppPage measure="reading">
           <Link href="/library" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground">
             <ArrowLeft className="size-4" /> Library
           </Link>
@@ -123,15 +122,13 @@ export default function KnowledgeDocumentPage() {
               </Button>
             }
           />
-        </div>
-      </div>
+      </AppPage>
     );
   }
 
   if (loading && document === null) {
     return (
-      <div className="app-page-scroll">
-        <div className="app-page-content max-w-3xl">
+      <AppPage measure="reading">
           {/* One block per surface it stands in for: the header, the metadata
               card, the filter row, then the passage list. */}
           <Skeleton className="h-5 w-24 rounded-control" />
@@ -146,16 +143,14 @@ export default function KnowledgeDocumentPage() {
               <Skeleton key={i} className="h-28 w-full rounded-card" style={staggerDelay(i, "loose", 240)} />
             ))}
           </div>
-        </div>
-      </div>
+      </AppPage>
     );
   }
 
   if (!document) return null;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading">
         <AppPageHeader
           eyebrow="Document inspector"
           heading={<span className="truncate">{document.fileName}</span>}
@@ -166,7 +161,7 @@ export default function KnowledgeDocumentPage() {
           backLabel="Back to library"
           actions={
             <span
-              className={`rounded-full border px-2.5 py-1 font-mono text-caption uppercase ${statusClass(document.state)}`}
+              className={`rounded-full border px-2.5 py-1 font-mono text-caption ${statusClass(document.state)}`}
             >
               {document.state}
             </span>
@@ -241,7 +236,6 @@ export default function KnowledgeDocumentPage() {
             ))}
           </ol>
         )}
-      </div>
-    </div>
+    </AppPage>
   );
 }

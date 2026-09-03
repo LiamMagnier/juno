@@ -114,7 +114,7 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
           {/* `text-label` supplies 0.10em, the config's stated editorial maximum
               for caps. The two badges on this card were hand-tracked at 0.16em and
               0.14em — past the ceiling, and disagreeing with each other. */}
-          <p className="font-mono text-label uppercase text-muted-foreground">
+          <p className="font-mono text-label text-muted-foreground">
             Before it starts
           </p>
           {/* Says what the card is for in the one sentence that makes accepting
@@ -188,7 +188,7 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
                         // The word Cowork uses, in Juno's smallest mono. It is a
                         // label on the option rather than a sentence under it,
                         // so the row can be read in one pass.
-                        <span className="shrink-0 font-mono text-label uppercase text-muted-foreground">
+                        <span className="shrink-0 font-mono text-label text-muted-foreground">
                           Recommended
                         </span>
                       )}

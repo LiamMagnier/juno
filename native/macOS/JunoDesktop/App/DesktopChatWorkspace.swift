@@ -106,6 +106,8 @@ struct DesktopChatWorkspace: View {
     @State private var requestedProjectID: String?
     @State private var sharing = false
     @State private var showingSettingsModal = false
+    /// Why the last ⇧⌘1 screenshot did not land in the composer.
+    @State private var screenshotFailure: String?
 
     /// One line under the toolbar after a Share, so the copy is acknowledged.
     @State private var shareNotice: String?
@@ -214,16 +216,12 @@ struct DesktopChatWorkspace: View {
             }
         }
         .inspector(isPresented: inspectorPresentation) { inspector }
-        .focusedSceneValue(
-            \.junoWorkspaceActions,
-            DesktopWorkspaceActions(
-                newItem: beginDraft,
-                newChat: beginDraft,
-                openSearch: { destination.wrappedValue = .search },
-                switchProduct: { product = $0 },
-                currentProduct: product
-            )
-        )
+        .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
+        .alert("Screenshot unavailable", isPresented: screenshotFailurePresented) {
+            Button("OK", role: .cancel) { screenshotFailure = nil }
+        } message: {
+            Text(screenshotFailure ?? "Juno could not take a screenshot.")
+        }
         // Column visibility is restored by hand rather than through
         // `@SceneStorage` directly: `NavigationSplitViewVisibility` is not
         // `RawRepresentable`, so it cannot be stored, and a window that always
@@ -387,6 +385,50 @@ struct DesktopChatWorkspace: View {
         } catch {
             shareNotice = "The conversation couldn’t be published. Try again in a moment."
         }
+    }
+
+    /// What the menu bar can do to this window while it is focused.
+    private var workspaceActions: DesktopWorkspaceActions {
+        var screenshot: (() -> Void)?
+        if configuration.attachmentModel != nil {
+            screenshot = { attachScreenshot() }
+        }
+        return DesktopWorkspaceActions(
+            newItem: beginDraft,
+            newChat: beginDraft,
+            openSearch: { destination.wrappedValue = .search },
+            switchProduct: { product = $0 },
+            currentProduct: product,
+            attachScreenshot: screenshot
+        )
+    }
+
+    private var screenshotFailurePresented: Binding<Bool> {
+        Binding(
+            get: { screenshotFailure != nil },
+            set: { if !$0 { screenshotFailure = nil } }
+        )
+    }
+
+    /// ⇧⌘1. The system picker chooses the window or display; the frame lands
+    /// in the composer as a picture attachment on the open conversation, or on
+    /// the draft when there is none.
+    private func attachScreenshot() {
+        guard let attachmentModel = configuration.attachmentModel else { return }
+        let conversationID = model.selectedConversationID
+        DesktopScreenshotCapture.shared.capture(
+            completion: { data in
+                let stamp = Int(Date().timeIntervalSince1970)
+                attachmentModel.add(
+                    data: data,
+                    fileName: "Screenshot \(stamp).png",
+                    mimeType: "image/png",
+                    conversationID: conversationID,
+                    isImage: true
+                )
+            },
+            failure: { message in screenshotFailure = message }
+        )
     }
 
     private func beginDraft() {
@@ -1131,8 +1173,8 @@ private struct DesktopChatDisclaimer: View {
 /// way any control's does. A measure and a control's padding are different
 /// things; only the measure was ever in disagreement.
 enum DesktopChatMeasure {
-    /// The web's `max-w-3xl`.
-    static let reading: CGFloat = 768
+    /// The web's `max-w-3xl` — the one reading measure every product shares.
+    static let reading: CGFloat = JunoReadingMeasure.reading
     /// The gutter the column keeps from the window edge before the measure binds.
     static let gutter: CGFloat = JunoSpace.region
 }

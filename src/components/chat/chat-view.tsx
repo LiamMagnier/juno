@@ -215,6 +215,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       `chat-mount-${typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`
     );
   }, []);
+  React.useEffect(() => () => { window.__junoSoftRoutePath = null; }, []);
   // Tracks a conversation created on the new-chat page so we can switch to its
   // real /chat/[id] route once the first reply finishes streaming.
   const createdIdRef = React.useRef<string | null>(null);
@@ -397,6 +398,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         setActiveConversationId(id);
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", `/chat/${id}`);
+          window.__junoSoftRoutePath = `/chat/${id}`;
         }
         const convo: ClientConversation = {
           id,
@@ -435,6 +437,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         createdIdRef.current = null;
         if (typeof window !== "undefined") {
           window.history.replaceState(null, "", `/chat/${id}`);
+          window.__junoSoftRoutePath = `/chat/${id}`;
         }
       }
     },
@@ -461,6 +464,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     createdIdRef.current = null;
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", `/chat/${id}`);
+      window.__junoSoftRoutePath = `/chat/${id}`;
     }
   }, [chat.status, privateMode, conversationId]);
 
@@ -861,6 +865,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       chat.send(initialPrompt, [], initialPromptResearch ? { deepResearch: true } : undefined);
       // Clear ?q= so a refresh doesn't resend.
       window.history.replaceState({}, "", "/chat");
+      window.__junoSoftRoutePath = null;
     }
     // Deliberately fires only on the prompt arriving. autoSentRef already makes
     // this once-only, and depending on `chat` would re-run it every time the
@@ -1251,7 +1256,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           width: "min(750px, 94%)",
           height: "270px",
           blur: "115px",
-          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, #8b5cf6 36%, #a855f7 64%, transparent 78%)",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 36%, hsl(var(--primary) / 0.45) 64%, transparent 78%)",
         };
       case "xhigh":
         return {
@@ -1532,6 +1537,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             setActiveConversationId(data.conversationId);
             if (typeof window !== "undefined") {
               window.history.replaceState(null, "", `/chat/${data.conversationId}`);
+              window.__junoSoftRoutePath = `/chat/${data.conversationId}`;
             }
           }
         } else {
@@ -1808,7 +1814,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
                 <AppIcons.projects className="size-3 text-primary" />
               </span>
-              <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
+              <span className="hidden font-mono text-label text-muted-foreground sm:inline">
                 Project
               </span>
               <span aria-hidden className="hidden h-3 w-px shrink-0 bg-border/70 sm:block" />
@@ -1873,7 +1879,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <span aria-hidden className="absolute inline-flex size-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring" />
                 <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
               </span>
-              <span className="font-mono text-label uppercase text-muted-foreground">Memory updated</span>
+              <span className="font-mono text-label text-muted-foreground">Memory updated</span>
             </span>
           </div>
         )}
@@ -1893,7 +1899,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   <span className="min-w-0 truncate">
                     Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
                   </span>
-                  <span className="shrink-0 font-mono text-label uppercase text-muted-foreground">
+                  <span className="shrink-0 font-mono text-label text-muted-foreground">
                     {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
                   </span>
                 </div>
@@ -1909,7 +1915,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   e.stopPropagation();
                   exitPrivateMode();
                 }}
-                className="relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground active:scale-95 transition-all duration-fast pointer-events-auto"
+                className="relative z-30 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-accent hover:text-foreground active:scale-95 transition-[color,background-color,transform] duration-fast ease-out-soft pointer-events-auto"
                 aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
               >
                 <ActionIcons.dismiss className="size-4" />
@@ -1991,7 +1997,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 {!privateMode && !voiceOpen && (
                   <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                    className="pointer-events-none absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 -z-10 rounded-full transition-[opacity,width,height] duration-emphasis ease-out-soft motion-reduce:transition-none"
                     style={{
                       opacity: thinkingGlow.opacity,
                       width: thinkingGlow.width,
@@ -2092,7 +2098,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     {!privateMode && !voiceOpen && (
                       <div
                         aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-full transition-[opacity,width,height] duration-emphasis ease-out-soft motion-reduce:transition-none"
                         style={{
                           opacity: thinkingGlow.opacity,
                           width: thinkingGlow.width,

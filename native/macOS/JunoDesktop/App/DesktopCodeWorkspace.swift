@@ -1047,7 +1047,9 @@ struct DesktopCodeWorkspace: View {
             toggleReview: toggleReview,
             toggleConsole: toggleConsole,
             toggleInspector: { inspectorPresentation.wrappedValue.toggle() },
+            togglePreview: openPreview,
             openFile: { isOpeningQuickly = true },
+            openFolder: { isChoosingRepository = true },
             createPullRequest: controller?.pullRequestUnavailableReason == nil
                 ? { isCreatingPullRequest = true }
                 : nil,

@@ -206,6 +206,7 @@ struct JunoMobileVoiceDock: View {
     @State private var endHaptic = JunoMobileHapticTrigger()
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var controller: JunoRealtimeVoiceController { session.controller }
     private var camera: JunoMobileVoiceCamera { session.camera }
@@ -280,14 +281,23 @@ struct JunoMobileVoiceDock: View {
         .accessibilityIdentifier("juno.mobile.voice")
     }
 
+    /// A phone holds status, mute, camera, full screen, options and hang up:
+    /// 112pt of words and five 44pt targets, which is what a 402pt screen
+    /// has room for. Speaker and screen share move into the options menu
+    /// there — with a provider that can see, the eight-control pill ran to
+    /// 420pt, and `safeAreaBar` widened the whole chat column to carry it,
+    /// so the transcript behind the call was clipped on both sides. iPad
+    /// keeps every control in the pill.
+    private var showsEveryControl: Bool { sizeClass == .regular }
+
     private var pill: some View {
         HStack(spacing: 0) {
             status
             controls
             #if os(iOS)
-            speakerButton
+            if showsEveryControl { speakerButton }
             cameraButton
-            screenShareButton
+            if showsEveryControl { screenShareButton }
             #endif
             expandButton
             optionsMenu
@@ -644,6 +654,32 @@ struct JunoMobileVoiceDock: View {
                     .disabled(provider == controller.provider)
                 }
             }
+            #if os(iOS)
+            // The two controls a phone's pill has no room for; see `pill`.
+            if !showsEveryControl {
+                Section {
+                    Button {
+                        controller.toggleSpeaker()
+                    } label: {
+                        JunoIconLabel(
+                            controller.speakerOutput ? "voice.speaker.on" : "voice.speaker.off",
+                            icon: .volume
+                        )
+                    }
+                    if canSee {
+                        Button {
+                            toggleScreenShare()
+                        } label: {
+                            JunoIconLabel(
+                                screenShare.isLive ? "Stop screen sharing" : "Start screen sharing",
+                                icon: .artifactsTool
+                            )
+                        }
+                        .disabled(!session.isLive || screenShare.isBusy)
+                    }
+                }
+            }
+            #endif
             Section {
                 Toggle(isOn: $pushToTalk) {
                     Label("Push to talk", systemImage: "hand.tap")
@@ -657,7 +693,9 @@ struct JunoMobileVoiceDock: View {
                 }
             }
         } label: {
-            JunoIconView(.chevronDown, size: 15)
+            // An ellipsis, not a chevron: beside the full-screen chevron a
+            // second one read as "collapse", and it opened a menu.
+            JunoIconView(.ellipsis, size: 15)
                 .foregroundStyle(Color.primary.opacity(0.75))
                 .frame(width: 34, height: 34)
                 .frame(width: 44, height: 44)

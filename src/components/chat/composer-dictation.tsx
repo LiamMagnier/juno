@@ -364,7 +364,7 @@ export function ComposerDictation({
         <div
           ref={auraGlowRef}
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-28 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-2xl transition-transform duration-75 will-change-transform"
+          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-28 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-2xl transition-transform duration-fast will-change-transform"
           style={{
             background: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.85) 0%, hsl(var(--primary) / 0.35) 45%, transparent 75%)",
           }}
@@ -380,14 +380,14 @@ export function ComposerDictation({
           <div
             ref={previewRef}
             aria-live="off"
-            className="absolute bottom-full left-1/2 mb-3.5 max-h-40 w-[94%] -translate-x-1/2 overflow-y-auto rounded-popover border border-border/80 bg-card/95 px-4 py-3 text-sm leading-relaxed shadow-float backdrop-blur-xl transition-all"
+            className="absolute bottom-full left-1/2 mb-3.5 max-h-40 w-[94%] -translate-x-1/2 surface-float overlay-glass overflow-y-auto rounded-popover px-4 py-3 text-sm leading-relaxed transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-none"
           >
             <div className="mb-1.5 flex items-center gap-2">
               <span className="relative flex size-2">
                 <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex size-2 rounded-full bg-primary" />
               </span>
-              <span className="text-caption font-medium tracking-wide uppercase text-primary">
+              <span className="text-caption font-medium text-primary">
                 {transcribing ? "Transcribing with precision…" : "Listening…"}
               </span>
             </div>

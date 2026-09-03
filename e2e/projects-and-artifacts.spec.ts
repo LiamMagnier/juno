@@ -7,7 +7,7 @@ test.describe("Projects, Work and Library", () => {
   test("signed-in navigation reaches Projects, Work and Library routes", async ({ page }) => {
     for (const [path, heading] of [
       ["/projects", /projects/i],
-      ["/work", /What needs doing/i],
+      ["/work", /work/i],
       ["/library", /files/i],
     ] as const) {
       await page.goto(path);

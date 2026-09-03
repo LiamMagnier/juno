@@ -224,7 +224,7 @@ export function ComposerClarificationPopover({
             {/* text-micro is the mono eyebrow floor; its 0.02em tracking replaces
                 the hand-tuned 0.16em, which sat above the 0.10em ceiling the type
                 scale documents for caps. */}
-            <span className="font-mono text-micro font-medium uppercase text-muted-foreground">
+            <span className="font-mono text-micro font-medium text-muted-foreground">
               {multi ? `Question ${index + 1} of ${questions.length}` : "One quick question"}
             </span>
             {pending.result.title ? (
@@ -392,7 +392,7 @@ export function ComposerClarificationPopover({
             )}
           >
             {/* Same eyebrow voice as the header's — text-micro, one tracking. */}
-            <span className="font-mono text-micro font-medium uppercase text-muted-foreground">
+            <span className="font-mono text-micro font-medium text-muted-foreground">
               {active.elseLabel || "Or write your own"}
             </span>
             {customIsLong ? (

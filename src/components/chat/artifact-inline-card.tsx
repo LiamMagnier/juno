@@ -47,7 +47,7 @@ function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
         {/* text-micro carries its own 0.02em tracking — the hand-written 0.08em
             it replaces was above the rung's documented ceiling, where mono caps
             stop grouping into a word. */}
-        <span className="font-mono text-micro uppercase text-muted-foreground">Console</span>
+        <span className="font-mono text-micro text-muted-foreground">Console</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
         {entries.length === 0 ? (

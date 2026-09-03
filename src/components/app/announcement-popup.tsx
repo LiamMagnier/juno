@@ -188,7 +188,7 @@ export function AnnouncementPopup() {
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
                   {announcement.modelName && (
-                    <div className="mb-2 font-mono text-label uppercase text-muted-foreground">{announcement.modelName}</div>
+                    <div className="mb-2 font-mono text-label text-muted-foreground">{announcement.modelName}</div>
                   )}
                   {/* `font-serif text-title` — the scale's rung for a modal
                       heading, and the family every sibling modal already uses.

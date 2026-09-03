@@ -22,7 +22,7 @@ import {
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -169,8 +169,7 @@ export default function RoadmapPage() {
   const empty = !loading && requests.length === 0;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-6xl">
+    <AppPage measure="wide">
         <AppPageHeader
           eyebrow="Roadmap"
           heading={<>What we’re <span className="italic text-primary">building</span></>}
@@ -377,10 +376,9 @@ export default function RoadmapPage() {
             </div>
           </>
         )}
-      </div>
 
       <SubmitDialog open={submitOpen} onOpenChange={setSubmitOpen} onCreated={(id) => router.push(`/roadmap/${id}`)} />
-    </div>
+    </AppPage>
   );
 }
 

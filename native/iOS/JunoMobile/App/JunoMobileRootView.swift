@@ -597,6 +597,20 @@ struct JunoMobileRootView: View {
     // today only the DEBUG launch flag — has to land there or it opens with
     // no surface to appear on.
     selection = .chat
+    #if DEBUG
+      if previewSession != nil {
+        // No relay in the harness: a live-looking call with a transcript, so
+        // the dock and the full-screen mode can be looked at.
+        started.controller.beginPreviewSession(
+          lines: [
+            (role: .user, text: "What's the quickest way to check the sync monitor's reconnect path?"),
+            (role: .assistant, text: "Run the JunoSync tests with the reconnect filter — I can kick that off on your Mac if you like."),
+            (role: .user, text: "Yes, do that, and tell me if anything fails."),
+          ]
+        )
+        return
+      }
+    #endif
     Task { await started.controller.start() }
   }
 

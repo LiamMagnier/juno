@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import type { ClientAnnouncement } from "@/lib/announcements";
@@ -474,8 +474,7 @@ export function AnnouncementsAdmin() {
   };
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+    <AppPage measure="wide" contentClassName="flex flex-col gap-6">
         <AppPageHeader
           className="mb-0"
           eyebrow="Owner"
@@ -669,7 +668,7 @@ export function AnnouncementsAdmin() {
                         was text-sm against text-body. An editor was choosing
                         copy length against type that ships two sizes off. */}
                     <div>
-                      {draft.modelName && <p className="mb-2 font-mono text-label uppercase text-muted-foreground">{draft.modelName}</p>}
+                      {draft.modelName && <p className="mb-2 font-mono text-label text-muted-foreground">{draft.modelName}</p>}
                       <h2 className="font-serif text-title leading-tight text-foreground">{draft.title || "[model] just got released"}</h2>
                       <p className="mt-2 text-body leading-relaxed text-muted-foreground">
                         {draft.description || "Write a short release description for users here."}
@@ -808,7 +807,6 @@ export function AnnouncementsAdmin() {
             </Card>
           </div>
         </div>
-      </div>
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className="max-w-sm">
@@ -826,6 +824,6 @@ export function AnnouncementsAdmin() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

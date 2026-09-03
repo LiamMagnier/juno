@@ -180,9 +180,7 @@ struct JunoMobileApp: App {
 
     #if DEBUG
     @MainActor
-    private static let previewAuthModel = NativeAuthModel(
-        configurationErrorDescription: "UI Preview"
-    )
+    private static let previewAuthModel = NativeAuthModel.previewSignedOut()
     #endif
 
     @MainActor

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +76,7 @@ function severityClass(severity: string): string {
 }
 
 const CHIP = "rounded-full px-2 py-0.5 font-mono text-caption font-semibold";
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium uppercase text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
 
 export function ModerationAdmin() {
   const [filter, setFilter] = React.useState<Filter>("all");
@@ -203,8 +203,7 @@ export function ModerationAdmin() {
   const pageCount = Math.max(1, Math.ceil(total / (data?.pageSize ?? 50)));
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+    <AppPage measure="wide" contentClassName="flex flex-col gap-6">
         <AppPageHeader
           className="mb-0"
           eyebrow="Owner"
@@ -440,7 +439,6 @@ export function ModerationAdmin() {
             </div>
           </div>
         </Card>
-      </div>
 
       <Dialog open={!!banTarget} onOpenChange={(open) => !open && !banning && (setBanTarget(null), setBanReason(""))}>
         <DialogContent className="max-w-md">
@@ -472,6 +470,6 @@ export function ModerationAdmin() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

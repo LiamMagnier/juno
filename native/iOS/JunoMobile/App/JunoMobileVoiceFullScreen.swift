@@ -47,7 +47,9 @@ struct JunoMobileVoiceFullScreen: View {
         orb
         status
         Spacer(minLength: 0)
-        if captions { captionsPanel }
+        // Nothing to caption before the call is up, or after it is down: an
+        // empty well under "Connecting…" is a box with nothing in it.
+        if captions, session.isLive || !controller.transcript.isEmpty { captionsPanel }
         JunoMobileVoiceSelfView(camera: session.camera) { session.camera.stop() }
           .padding(.bottom, JunoSpace.cozy)
         controls

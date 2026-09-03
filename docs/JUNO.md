@@ -195,8 +195,10 @@ lightness-clamped per theme, then written as inline CSS vars (see
 (`body::after`, `opacity 0.022`, SVG fractal noise, light theme only).
 
 **The depth kit.** Light comes from the top-left. Two inks — `--neu-light`
-(`0 0% 100% / .85` light, `45 20% 96% / .06` dark) and `--neu-dark`
-(`46 18% 20% / .10` light, `0 0% 0% / .55` dark) — make five shadows:
+(`0 0% 100% / .9` light, `45 20% 96% / .07` dark) and `--neu-dark`
+(`46 18% 20% / .14` light, `0 0% 0% / .6` dark; the large throw uses the
+denser `--neu-dark-lg`, `.2` / `.72`) — make five shadows. Dark raised
+surfaces also carry `--sheen` as a 1px rim light along the top edge:
 
 | Token | Recipe | Tailwind |
 |---|---|---|

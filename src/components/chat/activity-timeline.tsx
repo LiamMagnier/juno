@@ -209,7 +209,12 @@ export function ActivityTimeline({
   ]
     .filter(Boolean)
     .join(" · ");
-  const detail = restingDetail || "See how this response was made";
+  // A settled run with no reasoning, no searches, no sources and no tool calls
+  // has nothing to open: the row would read "Run · See how this response was
+  // made" over a panel that is empty. ChatGPT and Claude show no trace line for
+  // a plain completion, and neither does this. Live runs always render — the
+  // shimmering status IS the feedback while the first token is on its way.
+  if (!streaming && !hasReasoning && !restingDetail) return null;
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
   const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
@@ -263,13 +268,17 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
-          "group/thought relative -mx-2 w-[calc(100%+1rem)] overflow-hidden rounded-field px-2 py-1.5",
-          "transition-colors duration-base ease-out-soft motion-reduce:transition-none coarse:min-h-14",
-          streaming ? "min-h-10 gap-3" : "min-h-12 gap-3",
+          "group/thought relative -mx-2 w-[calc(100%+1rem)] overflow-hidden rounded-field px-2 py-1",
+          "transition-colors duration-base ease-out-soft motion-reduce:transition-none coarse:min-h-11",
+          // One compact line, directly above the answer it describes. The
+          // resting row used to be a two-line block at min-h-12 with a 12px
+          // margin, which put a 60px hole between the user's turn and the
+          // reply on every answer that had a trace.
+          streaming ? "min-h-9 gap-3" : "min-h-8 gap-2.5",
           // The gap to the answer belongs to whatever is last. With live blocks
           // below, this row's own margin would open a hole between the label and
           // the trace it labels.
-          hasLiveBlocks ? "mb-0.5" : "mb-3"
+          hasLiveBlocks ? "mb-0.5" : "mb-1.5"
         )}
       >
         {/* aria-hidden: see `label`. The button is named by aria-label, so this
@@ -302,24 +311,18 @@ export function ActivityTimeline({
           </>
         ) : (
           <>
-            <span aria-hidden="true" className="flex w-9 shrink-0 items-center justify-center">
+            <span aria-hidden="true" className="flex w-5 shrink-0 items-center justify-center">
               <span className="size-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
             </span>
-            <span aria-hidden="true" className="min-w-0 flex-1">
-              {/* "Thought process" only when there WAS one. Plenty of models
-                  emit no reasoning at all, and labelling their turn with a
-                  thought process invites the reader to open a panel that has
-                  nothing in it — and quietly implies the model reasoned when it
-                  did not. `hasReasoning` is already computed above. */}
-              {/* `ui`'s size with the serif face — the 0.8125rem here was the
-                  rung spelled out longhand before the rung had a name. */}
-              <span className="block font-serif text-ui font-medium leading-4 tracking-[0.01em] text-muted-foreground">
-                {hasReasoning ? "Thought process" : "Run"}
-              </span>
-              <span className="block truncate text-body leading-5 text-foreground/80">
-                {detail}
-                {run.note && <span className="text-warning"> · {run.note}</span>}
-              </span>
+            {/* One line: the label, then the nouns. "Thought process" only when
+                there WAS one — plenty of models emit no reasoning at all, and
+                labelling their turn with a thought process invites the reader to
+                open a panel that has nothing in it. `hasReasoning` is computed
+                above; a run with neither reasoning nor nouns returned early. */}
+            <span aria-hidden="true" className="min-w-0 flex-1 truncate text-ui leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground/80">{hasReasoning ? "Thought process" : "Run"}</span>
+              {restingDetail && <span> · {restingDetail}</span>}
+              {run.note && <span className="text-warning"> · {run.note}</span>}
             </span>
             {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground">{formatSpan(run.elapsedMs)}</span>}
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />

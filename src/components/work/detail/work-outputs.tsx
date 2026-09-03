@@ -174,7 +174,7 @@ function FileMark({ name }: { name: string }) {
       // of thing. `rounded-lg` is 24px in this config, not a small rung.
       // 10px, not 9px — 9px was the smallest type anywhere in Work, two rungs
       // under caption, for a three-letter extension.
-      className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro text-muted-foreground"
       aria-hidden="true"
     >
       {extension ?? <CodeIcons.file className="size-3.5" />}

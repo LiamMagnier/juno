@@ -17,6 +17,17 @@ struct JunoMobileThinkingControl: View {
     @Binding var effort: NativeReasoningEffort?
     @Binding var fastMode: Bool
     @Binding var proMode: Bool
+    /// The word, or just a glyph where the row has no room for the word. The
+    /// value is still on the control for VoiceOver and one tap away in the
+    /// popover.
+    var style: Style = .label
+    /// Refuses to truncate; see the model chip's `holdsWidth`.
+    var holdsWidth = false
+
+    enum Style {
+        case label
+        case icon
+    }
 
     @State private var presented = false
     /// Bumped every time the ladder lands on its deepest stop, so the flourish
@@ -49,8 +60,13 @@ struct JunoMobileThinkingControl: View {
                 presented = true
             } label: {
                 HStack(spacing: JunoSpace.tight) {
-                    JunoMobileThinkingLabel(text: label, ultra: atTopTier, pop: topArrivals)
-                    if scale.isAdjustable {
+                    if style == .icon {
+                        JunoIconView(.sliders, size: 14)
+                    } else {
+                        JunoMobileThinkingLabel(text: label, ultra: atTopTier, pop: topArrivals)
+                            .fixedSize(horizontal: holdsWidth, vertical: false)
+                    }
+                    if scale.isAdjustable, style == .label {
                         JunoIconView(.chevronUp, size: 11)
                             .junoSecondaryInk()
                             // Turns over while the picker is up, as the web's

@@ -262,7 +262,7 @@ export function CompareView() {
         <div>
           {/* text-label already carries 0.10em — the arbitrary tracking-[0.08em]
               was fighting the scale it sat on. */}
-          <p className="text-label font-semibold uppercase text-muted-foreground">
+          <p className="font-mono text-label text-muted-foreground">
             One prompt · {panes.length} models
           </p>
           {/* The same heading metrics AppPageHeader gives every other app page.
@@ -285,7 +285,8 @@ export function CompareView() {
         {/* focus-within lands on the ring token, not foreground/35: a near-white
             border on the true-black ground read as the halo the shadow rebase
             just removed, and it was the only focus affordance the composer had. */}
-        <div className="flex w-full flex-col rounded-composer border border-border/75 bg-card transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-reduce:transition-none">
+        <div className="composer-surface flex w-full flex-col rounded-panel transition-[border-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none">
+          <div className="composer-field">
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -299,8 +300,9 @@ export function CompareView() {
             // the box under the caret animating its own height is the single most
             // literal case of "an interface that moves", and it was the one
             // transition in this composer without the escape.
-            className="max-h-[160px] min-h-[56px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-4"
+            className="max-h-[160px] min-h-[56px] w-full resize-none bg-transparent px-3.5 py-3 text-base leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 motion-reduce:transition-none sm:px-4"
           />
+          </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
             <Tooltip>
               <TooltipTrigger asChild>

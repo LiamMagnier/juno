@@ -584,7 +584,12 @@ struct JunoMobileCodeRemoteThreadView: View {
       .frame(maxWidth: 768)
       .frame(maxWidth: .infinity)
     }
-    .defaultScrollAnchor(.bottom)
+    // Bottom for where it opens and for what arrives; top for how a short
+    // thread sits. One `.defaultScrollAnchor(.bottom)` did all three, and a
+    // session with two items floated them to the foot of an empty screen.
+    .defaultScrollAnchor(.bottom, for: .initialOffset)
+    .defaultScrollAnchor(.bottom, for: .sizeChanges)
+    .defaultScrollAnchor(.top, for: .alignment)
     .scrollPosition($scrollPosition)
     .scrollDismissesKeyboard(.interactively)
     .modifier(JunoMobileSoftBottomEdge())
@@ -1406,7 +1411,9 @@ struct JunoMobileTerminalView: View {
         .textSelection(.enabled)
       }
       .background(Color.junoTerminal)
-      .defaultScrollAnchor(.bottom)
+      .defaultScrollAnchor(.bottom, for: .initialOffset)
+      .defaultScrollAnchor(.bottom, for: .sizeChanges)
+      .defaultScrollAnchor(.top, for: .alignment)
       .scrollPosition($scrollPosition)
       .onScrollGeometryChange(for: Bool.self) { geometry in
         geometry.contentSize.height <= geometry.containerSize.height

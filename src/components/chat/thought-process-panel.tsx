@@ -531,7 +531,7 @@ const SECTION_FIRST = "";
 
 function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <h3 id={id} className="font-mono text-label uppercase text-muted-foreground">
+    <h3 id={id} className="font-mono text-label text-muted-foreground">
       {children}
     </h3>
   );
@@ -958,7 +958,7 @@ export function ThoughtProcessPanel({
             <span
               key={statusEyebrow}
               className={cn(
-                "font-mono text-label uppercase motion-safe:animate-fade-in",
+                "font-mono text-label motion-safe:animate-fade-in",
                 streaming ? "text-primary" : "text-muted-foreground",
               )}
             >
@@ -1012,7 +1012,7 @@ export function ThoughtProcessPanel({
                thing in it. 5% is still right over light paper. */
             className="-mx-5 border-l-2 border-warning/35 bg-warning/5 px-5 py-3 motion-safe:animate-fade-in-up dark:bg-warning/10"
           >
-            <h3 id={`${id}-notice`} className="font-mono text-label uppercase text-warning">
+            <h3 id={`${id}-notice`} className="font-mono text-label text-warning">
               Notice
             </h3>
             <ul className="mt-1.5 space-y-1">
@@ -1050,7 +1050,7 @@ export function ThoughtProcessPanel({
         {showElapsed && (
           <section aria-labelledby={`${id}-elapsed`} className={cn(rule("elapsed"), "motion-safe:animate-fade-in-up")}>
             <dl className={LEDGER}>
-              <dt id={`${id}-elapsed`} className="col-span-2 font-mono text-label uppercase text-muted-foreground">
+              <dt id={`${id}-elapsed`} className="col-span-2 font-mono text-label text-muted-foreground">
                 Elapsed
               </dt>
               <Figure className={FIG_TOTAL}>{formatSpan(run.elapsedMs as number, { live: streaming })}</Figure>
@@ -1087,7 +1087,7 @@ export function ThoughtProcessPanel({
         {showCost && (
           <section aria-labelledby={`${id}-cost`} className={cn(rule("cost"), "motion-safe:animate-fade-in-up")}>
             <dl className={LEDGER}>
-              <dt id={`${id}-cost`} className="col-span-2 font-mono text-label uppercase text-muted-foreground">
+              <dt id={`${id}-cost`} className="col-span-2 font-mono text-label text-muted-foreground">
                 Cost
               </dt>
               <dd className={FIG_TOTAL}>{money}</dd>
@@ -1117,7 +1117,7 @@ export function ThoughtProcessPanel({
             {showMemoryReceipt && (
               <div className="mt-5 border-t border-border/45 pt-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="font-mono text-label uppercase text-muted-foreground">Memory used</h4>
+                  <h4 className="font-mono text-label text-muted-foreground">Memory used</h4>
                   <a
                     href="/memory"
                     className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"

@@ -1120,6 +1120,8 @@ private struct JunoMobileProjectDetail: View {
           } label: {
             JunoIconLabel("New chat", icon: .new, size: 13)
               .fontWeight(.semibold)
+              .lineLimit(1)
+              .minimumScaleFactor(0.85)
               .frame(maxWidth: .infinity)
           }
           .junoProminentAction()
@@ -1131,6 +1133,8 @@ private struct JunoMobileProjectDetail: View {
             showingImporter = true
           } label: {
             JunoIconLabel("Add file", icon: .attach, size: 13)
+              .lineLimit(1)
+              .minimumScaleFactor(0.85)
               .frame(maxWidth: .infinity)
           }
           .modifier(JunoMobileWorkspaceActionStyle())
@@ -1143,6 +1147,8 @@ private struct JunoMobileProjectDetail: View {
             showingInstructions = true
           } label: {
             JunoIconLabel("Edit", icon: .pencil, size: 13)
+              .lineLimit(1)
+              .minimumScaleFactor(0.85)
               .frame(maxWidth: .infinity)
           }
           .modifier(JunoMobileWorkspaceActionStyle())

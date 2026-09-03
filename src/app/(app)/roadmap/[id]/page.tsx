@@ -1,5 +1,6 @@
 "use client";
 
+import { AppPage } from "@/components/app/app-page";
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -129,8 +130,7 @@ export default function RoadmapDetailPage() {
     // title block, then the description — rather than two anonymous bars that
     // reflow the whole column the moment data lands.
     return (
-      <div className="app-page-scroll">
-        <div className="app-page-content max-w-3xl">
+      <AppPage measure="reading">
           <div className="skeleton mb-4 h-8 w-28 rounded-control" />
           <div className="flex gap-4">
             <div className="skeleton h-14 w-12 shrink-0 rounded-control" />
@@ -149,16 +149,14 @@ export default function RoadmapDetailPage() {
             <div className="skeleton h-4 w-11/12 rounded-control" style={staggerDelay(5, "loose")} />
             <div className="skeleton h-4 w-2/3 rounded-control" style={staggerDelay(6, "loose")} />
           </div>
-        </div>
-      </div>
+      </AppPage>
     );
   }
 
   const { request: r, comments, events, isOwner } = data;
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading">
         <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 gap-1.5 text-muted-foreground">
           <ArrowLeft className="size-4" /> Roadmap
         </Button>
@@ -310,8 +308,7 @@ export default function RoadmapDetailPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </AppPage>
   );
 }
 

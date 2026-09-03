@@ -38,6 +38,9 @@ interface ProjectWorkspaceHeaderProps {
   stats: {
     chatCount: number;
     fileCount: number;
+    workCount?: number;
+    codeCount?: number;
+    artifactCount?: number;
   };
   isStarred: boolean;
   onToggleStar: () => void;

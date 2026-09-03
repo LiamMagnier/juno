@@ -109,7 +109,7 @@ export function DiffSummary({
                   {file.status && file.status !== "modified" && (
                     <span
                       className={cn(
-                        "rounded-sm px-1.5 py-0.2 font-mono text-micro uppercase tracking-wider",
+                        "rounded-sm px-1.5 py-0.2 font-mono text-micro",
                         file.status === "added" && "bg-success/15 text-success-ink",
                         file.status === "deleted" && "bg-destructive/15 text-destructive-ink",
                         file.status === "renamed" && "bg-warning/15 text-warning-foreground"

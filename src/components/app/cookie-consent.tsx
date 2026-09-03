@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getConsent, onConsentChange, setConsent } from "@/lib/consent";
 
 /**
- * Cookie-consent toast — a compact `.surface-float` card at the bottom centre,
+ * Cookie-consent toast — a compact `.surface-float` card in the bottom-right corner,
  * shown until a choice is stored (`juno:consent:v1`). Juno only sets essential sign-in
  * cookies today; the recorded choice gates any analytics added later (which
  * must check `getConsent()` from `@/lib/consent`).
@@ -59,12 +59,12 @@ export function CookieConsent() {
       // fifth entrance curve of its own.
       data-state={closing ? "closed" : "open"}
       onAnimationEnd={() => closing && setVisible(false)}
-      // A compact toast at the bottom centre, on the floating rung at the
-      // toast radius (`rounded-card`), so it sits where every other transient
-      // notice does and never covers the sidebar's footer. Centred with
-      // inset-x + mx-auto rather than a translate, so the pop-in/out keyframes
-      // keep `transform` to themselves.
-      className="surface-float fixed inset-x-3 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-popper mx-auto flex w-fit max-w-[min(40rem,100%)] flex-col gap-3 rounded-card px-4 py-3 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none sm:flex-row sm:items-center"
+      // A compact toast in the bottom-right corner — where Sonner's toasts
+      // land — on the floating rung at the toast radius (`rounded-card`).
+      // Bottom-centre put it on top of the composer's controls on every
+      // conversation; the corner clears the composer's column at every width
+      // the app supports and never covers the sidebar's footer.
+      className="surface-float fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 z-toast flex w-[min(21rem,calc(100vw-2rem))] flex-col gap-3 rounded-card px-4 py-3.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
     >
       <p className="text-sm leading-snug text-muted-foreground">
         <span className="font-medium text-foreground">Cookies.</span> Only the essential ones, to keep you signed in — no analytics, no trackers.{" "}
@@ -75,7 +75,7 @@ export function CookieConsent() {
           Privacy policy
         </Link>
       </p>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center justify-end gap-2">
         <Button size="sm" variant="outline" onClick={() => choose(false)}>
           Essential only
         </Button>

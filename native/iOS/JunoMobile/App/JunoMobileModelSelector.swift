@@ -18,6 +18,40 @@ struct JunoMobileModelControl: View {
     /// conversation's own model rather than sitting empty.
     let fallbackName: String
     var onSelect: (NativeChatModelOption) -> Void = { _ in }
+    /// How much of the name the chip shows; see ``NameStyle``.
+    var nameStyle: NameStyle = .full
+    /// Refuses to truncate. Set by the composer's `ViewThatFits`, which needs
+    /// each candidate row to report its real width rather than a width it
+    /// could be squeezed into.
+    var holdsWidth = false
+
+    /// The chip's name, at two lengths.
+    ///
+    /// `short` drops a leading vendor word the provider mark beside it
+    /// already says — "Claude Opus 4.8" is "Opus 4.8" next to the Anthropic
+    /// mark — and leaves names where the vendor *is* the name ("GPT 5.6")
+    /// alone. A phone's control row has about 170pt for this chip and the
+    /// Thinking chip together, and the full name of a frontier model is most
+    /// of that on its own.
+    enum NameStyle {
+        case full
+        case short
+    }
+
+    private static let vendorWords: Set<String> = [
+        "claude", "anthropic", "openai", "google", "meta", "mistral", "xai", "deepseek",
+    ]
+
+    static func shortName(_ name: String) -> String {
+        let words = name.split(separator: " ")
+        guard words.count >= 2, vendorWords.contains(words[0].lowercased()) else { return name }
+        return words.dropFirst().joined(separator: " ")
+    }
+
+    private var chipName: String {
+        let full = selected?.displayName ?? fallbackName
+        return nameStyle == .short ? Self.shortName(full) : full
+    }
 
     @State private var presented = false
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -37,7 +71,7 @@ struct JunoMobileModelControl: View {
                     providerName: selected?.providerName ?? "Juno",
                     size: 15
                 )
-                Text(selected?.displayName ?? fallbackName)
+                Text(chipName)
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     // The name yields first when the row runs out of room; the
@@ -45,6 +79,7 @@ struct JunoMobileModelControl: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
+                    .fixedSize(horizontal: holdsWidth, vertical: false)
                     // Keyed on the model, so picking a different one *replaces*
                     // the name in place rather than mutating it letter by letter
                     // — the web's `<span key={current.id} className="animate-fade-in">`.

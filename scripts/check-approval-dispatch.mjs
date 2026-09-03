@@ -582,13 +582,26 @@ requireSwiftOrder(
   ["awaitauthorizeInvocation(", "awaitexecuteAuthorized("]
 );
 
+// The orchestrator no longer executes tools itself: every call goes through
+// `ToolScheduler.executeCall`, which owns the hook → authorize → execute →
+// receipt order. The orchestrator must delegate, and the scheduler must keep
+// that order.
 const orchestratorPath = "native/Packages/JunoCode/Sources/JunoCodeRuntime/AgentOrchestrator.swift";
 const orchestrator = swiftTokens(orchestratorPath);
 requireSwiftOrder(
   orchestratorPath,
   "executeToolCall()",
   section(orchestrator, "privatefuncexecuteToolCall(", ["privatefuncdeniedReason(", "privatefuncfirstLine("]),
-  ["awaitregistry.authorizeInvocation(", "awaitregistry.executeAuthorized("]
+  ["awaitToolScheduler.executeCall("]
+);
+
+const schedulerPath = "native/Packages/JunoCode/Sources/JunoCodeRuntime/ToolScheduler.swift";
+const scheduler = swiftTokens(schedulerPath);
+requireSwiftOrder(
+  schedulerPath,
+  "executeCall()",
+  section(scheduler, "publicstaticfuncexecuteCall(", ["privatestaticfuncdeniedReason(", "privatestaticfuncfirstLine("]),
+  ["awaitlifecycleHooks.beforeTool(", "awaitregistry.authorizeInvocation(", "awaitregistry.executeAuthorized("]
 );
 
 const nativeMcpPath = "native/Packages/JunoCode/Sources/JunoCodeRuntime/MCP/MCPToolRegistry.swift";
@@ -648,8 +661,8 @@ for (const relativePath of productionSwift) {
 if (nativeClientCallers.length !== 1 || nativeClientCallers[0] !== nativeMcpPath) {
   fail(`native client.callTool inventory changed; expected only ${nativeMcpPath}, found ${nativeClientCallers.join(", ") || "none"}`);
 }
-if (nativeAuthorizedCallers.length !== 1 || nativeAuthorizedCallers[0] !== orchestratorPath) {
-  fail(`native executeAuthorized caller inventory changed; expected only ${orchestratorPath}, found ${nativeAuthorizedCallers.join(", ") || "none"}`);
+if (nativeAuthorizedCallers.length !== 1 || nativeAuthorizedCallers[0] !== schedulerPath) {
+  fail(`native executeAuthorized caller inventory changed; expected only ${schedulerPath}, found ${nativeAuthorizedCallers.join(", ") || "none"}`);
 }
 const expectedNativeToolCallers = [codeRegistryPath, workRegistryPath].sort();
 if (

@@ -20,6 +20,9 @@ struct DesktopWorkspaceActions {
     var openSearch: () -> Void
     var switchProduct: (DesktopProductMode) -> Void
     var currentProduct: DesktopProductMode
+    /// ⇧⌘1: a screenshot into the composer. Chat's only; the other products
+    /// leave it nil and the menu item disables.
+    var attachScreenshot: (() -> Void)? = nil
 }
 
 /// What the Code window adds to the menu bar while it is focused.
@@ -34,7 +37,10 @@ struct DesktopCodeActions {
     var toggleReview: () -> Void
     var toggleConsole: () -> Void
     var toggleInspector: () -> Void
+    var togglePreview: () -> Void
     var openFile: () -> Void
+    /// ⌘O: grant a folder as a project.
+    var openFolder: () -> Void
     var createPullRequest: (() -> Void)?
     var hasSession: Bool
 }
@@ -93,7 +99,7 @@ struct JunoDesktopCommands: Commands {
                     }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
 
-                    Button("New Window") {
+                    Button(JunoDesktopWindow.newWindowMenuTitle) {
                         openWindow(id: JunoDesktopWindow.mainID)
                     }
                     .keyboardShortcut("n", modifiers: [.command])
@@ -110,6 +116,20 @@ struct JunoDesktopCommands: Commands {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(actions == nil)
+            }
+            Section {
+                // ⌘O in Code, where the column's help text and the New task
+                // screen's keycap both promise it.
+                Button("Open Folder…") { codeActions?.openFolder() }
+                    .keyboardShortcut("o", modifiers: [.command])
+                    .disabled(codeActions == nil)
+            }
+            Section {
+                Button("Attach Screenshot…") {
+                    actions?.attachScreenshot?()
+                }
+                .keyboardShortcut("1", modifiers: [.command, .shift])
+                .disabled(actions?.attachScreenshot == nil)
             }
             Section {
                 Button("Find in Juno…") {
@@ -159,6 +179,9 @@ struct JunoDesktopCommands: Commands {
                     .disabled(codeActions?.hasSession != true)
                 Button("Toggle Context Rail") { codeActions?.toggleInspector() }
                     .keyboardShortcut("i", modifiers: [.command, .option])
+                    .disabled(codeActions?.hasSession != true)
+                Button("Toggle Preview") { codeActions?.togglePreview() }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
                     .disabled(codeActions?.hasSession != true)
                 Button("Open File…") { codeActions?.openFile() }
                     .keyboardShortcut("o", modifiers: [.command, .shift, .option])

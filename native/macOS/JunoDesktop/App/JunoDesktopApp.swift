@@ -14,6 +14,10 @@ enum JunoDesktopWindow {
     static let incognitoID = "juno.incognito"
     /// The ⌘/ list of every shortcut the app answers.
     static let shortcutsID = "juno.shortcuts"
+    /// The File menu's item that opens another main window. Named here because
+    /// ``JunoDesktopAppDelegate`` invokes it by title when a launch comes up
+    /// with no window at all.
+    static let newWindowMenuTitle = "New Window"
 }
 
 /// Two things only AppKit can tell us: the app finished launching, and the app
@@ -25,6 +29,7 @@ enum JunoDesktopWindow {
 private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
+            DispatchQueue.main.async { Self.presentMainWindowIfWithheld() }
             #if DEBUG
             if JunoPreviewEnvironment.isActive {
                 // The harness never polls, downloads or stages anything. It only
@@ -44,6 +49,35 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
             // use so the shortcut exists before any window does.
             DesktopQuickEntryController.shared.installHotkey()
         }
+    }
+
+    /// Opens the main window when SwiftUI declined to.
+    ///
+    /// AppKit hands every bare command-line token it cannot read as a `-key
+    /// value` default to the app as a document to open — `code` in
+    /// `--juno-ui-preview --juno-preview-tab code`, or any file dropped on the
+    /// icon. Juno has no document type, and on macOS 27 an open request at
+    /// launch is enough for SwiftUI to withhold the default `WindowGroup`: the
+    /// app came up with a menu bar, a status item and no window. Neither
+    /// answering the request from the delegate, claiming it with
+    /// `handlesExternalEvents`, nor `defaultLaunchBehavior(.presented)` changed
+    /// that; the one thing that does is the same action the reader has — File ›
+    /// New Window, which `JunoDesktopCommands` offers exactly while no window
+    /// is focused. Invoked once, a turn after launch, and only when no main
+    /// window exists, so an ordinary launch is untouched.
+    @MainActor
+    private static func presentMainWindowIfWithheld() {
+        let hasMainWindow = NSApp.windows.contains {
+            $0.identifier?.rawValue.hasPrefix(JunoDesktopWindow.mainID) == true
+        }
+        guard !hasMainWindow,
+            let item = NSApp.mainMenu?.items
+                .compactMap(\.submenu)
+                .flatMap(\.items)
+                .first(where: { $0.title == JunoDesktopWindow.newWindowMenuTitle }),
+            let action = item.action
+        else { return }
+        NSApp.sendAction(action, to: item.target, from: item)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

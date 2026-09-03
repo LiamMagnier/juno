@@ -78,7 +78,7 @@ export function SubagentTree({
   return (
     <div
       className={cn(
-        "group/subagents rounded-card border border-border/80 bg-secondary/40 shadow-soft transition-all duration-base",
+        "group/subagents rounded-card border border-border/80 bg-secondary/40 shadow-soft transition-[border-color,box-shadow,background-color] duration-base ease-out-soft",
         className
       )}
     >
@@ -151,7 +151,7 @@ export function SubagentTree({
                 <div
                   key={sub.id}
                   className={cn(
-                    "relative rounded-field border border-border/70 bg-card p-3 transition-all duration-fast",
+                    "relative rounded-field border border-border/70 bg-card p-3 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft",
                     isSelected && "border-primary/50 shadow-soft"
                   )}
                 >

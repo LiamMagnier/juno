@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminNav } from "@/components/admin/admin-nav";
-import { AppPageHeader } from "@/components/app/app-page-header";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { PLANS } from "@/lib/plans";
 import { staggerDelay } from "@/lib/motion";
@@ -67,7 +67,7 @@ function formatDate(iso: string): string {
 // `text-caption` is exactly the 11px this used to spell out by hand, and it is
 // the rung the rest of the product's mono metadata sits on — the arbitrary value
 // meant admin was the only surface whose table headers could drift off the scale.
-const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium uppercase text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium text-muted-foreground";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [query, setQuery] = React.useState("");
@@ -238,8 +238,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   const pageCount = Math.max(1, Math.ceil(total / (data?.pageSize ?? 50)));
 
   return (
-    <div className="app-page-scroll">
-      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+    <AppPage measure="wide" contentClassName="flex flex-col gap-6">
         {/* The shared app header, not a fourth hand-built one. text-3xl (30px)
             was not a rung on the Juno scale, and the three admin pages were the
             only app pages with no back affordance at all. */}
@@ -499,7 +498,6 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
             </div>
           </div>
         </Card>
-      </div>
 
       <Dialog open={!!banTarget} onOpenChange={(open) => !open && !banning && (setBanTarget(null), setBanReason(""))}>
         <DialogContent className="max-w-md">
@@ -570,6 +568,6 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPage>
   );
 }

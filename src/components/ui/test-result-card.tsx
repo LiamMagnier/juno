@@ -38,7 +38,7 @@ export function TestResultCard({
   return (
     <div
       className={cn(
-        "rounded-card border bg-card shadow-soft overflow-hidden transition-all duration-base",
+        "rounded-card border bg-card shadow-soft overflow-hidden transition-[border-color,box-shadow] duration-base ease-out-soft",
         failed > 0 ? "border-destructive/40 bg-destructive/5" : "border-border/80",
         className
       )}

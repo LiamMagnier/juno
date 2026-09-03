@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { AppPage } from "@/components/app/app-page";
 import { staggerDelay } from "@/lib/motion";
 
 /**
@@ -15,8 +16,7 @@ export default function RoadmapRequestLoading() {
   return (
     // role="status" with a label, not aria-hidden: a screen-reader user is owed
     // the same "this is loading" the sighted reader gets from the shimmer.
-    <div className="app-page-scroll" role="status" aria-label="Loading request">
-      <div className="app-page-content max-w-3xl">
+    <AppPage measure="reading" role="status" aria-label="Loading request">
         <Skeleton className="mb-4 h-8 w-28 rounded-control" />
         <div className="flex gap-4">
           <Skeleton className="h-14 w-12 shrink-0 rounded-control" />
@@ -31,7 +31,6 @@ export default function RoadmapRequestLoading() {
           <Skeleton className="h-4 w-11/12 rounded-control" style={staggerDelay(5, "loose")} />
           <Skeleton className="h-4 w-2/3 rounded-control" style={staggerDelay(6, "loose")} />
         </div>
-      </div>
-    </div>
+    </AppPage>
   );
 }

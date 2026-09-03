@@ -164,7 +164,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
               <ChevronDown className="size-3.5" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-56 p-1">
-              <DropdownMenuLabel className="font-mono text-micro uppercase text-muted-foreground">Voice Engine</DropdownMenuLabel>
+              <DropdownMenuLabel className="font-mono text-micro text-muted-foreground">Voice Engine</DropdownMenuLabel>
               {VOICE_PROVIDERS.map((provider) => (
                 <DropdownMenuItem
                   key={provider}

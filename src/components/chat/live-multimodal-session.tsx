@@ -604,7 +604,7 @@ export function LiveMultimodalSession({
                 )}
                 <div
                   className={cn(
-                    "flex size-20 items-center justify-center rounded-full border transition-all duration-base",
+                    "flex size-20 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-out-soft",
                     isSpeaking
                       ? "border-primary/80 bg-primary/10 shadow-lg scale-110"
                       : isListening
@@ -615,19 +615,19 @@ export function LiveMultimodalSession({
                   <div className="flex items-center gap-1">
                     <span
                       className={cn(
-                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        "w-1 rounded-full bg-primary transition-[height,opacity] duration-base ease-out-soft",
                         isSpeaking ? "h-6 animate-pulse" : isListening ? "h-3" : "h-1.5 opacity-40"
                       )}
                     />
                     <span
                       className={cn(
-                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        "w-1 rounded-full bg-primary transition-[height,opacity] duration-base ease-out-soft",
                         isSpeaking ? "h-8 animate-pulse [animation-delay:150ms]" : isListening ? "h-4" : "h-1.5 opacity-40"
                       )}
                     />
                     <span
                       className={cn(
-                        "w-1 rounded-full bg-primary transition-all duration-base",
+                        "w-1 rounded-full bg-primary transition-[height,opacity] duration-base ease-out-soft",
                         isSpeaking ? "h-5 animate-pulse [animation-delay:300ms]" : isListening ? "h-2.5" : "h-1.5 opacity-40"
                       )}
                     />
@@ -675,7 +675,7 @@ export function LiveMultimodalSession({
             onClick={toggleMute}
             aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
             className={cn(
-              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-[color,background-color,border-color]",
               isAudioMuted
                 ? "border-destructive/60 bg-destructive/15 text-destructive"
                 : "border-border/80 bg-secondary text-foreground hover:bg-accent"
@@ -689,7 +689,7 @@ export function LiveMultimodalSession({
             onClick={toggleVideo}
             aria-label={isVideoEnabled ? "Turn off camera" : "Turn on camera"}
             className={cn(
-              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-[color,background-color,border-color]",
               isVideoEnabled
                 ? "border-primary/60 bg-primary/15 text-primary"
                 : "border-border/80 bg-secondary text-foreground hover:bg-accent"
@@ -703,7 +703,7 @@ export function LiveMultimodalSession({
             onClick={toggleScreenShare}
             aria-label={isScreenShareEnabled ? "Stop screen sharing" : "Share screen"}
             className={cn(
-              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-all",
+              "pressable inline-flex size-10 items-center justify-center rounded-full border transition-[color,background-color,border-color]",
               isScreenShareEnabled
                 ? "border-primary/60 bg-primary/15 text-primary"
                 : "border-border/80 bg-secondary text-foreground hover:bg-accent"
