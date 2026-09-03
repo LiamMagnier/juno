@@ -495,7 +495,7 @@ export function DesignEditor({
     return (
       <div className="flex h-full items-center justify-center p-6 text-center">
         <div className="max-w-sm">
-          <p className="font-serif text-heading">This design can’t be opened</p>
+          <p className="font-sans text-heading">This design can’t be opened</p>
           <p className="pt-1 text-sm text-muted-foreground">{state.loadError}</p>
         </div>
       </div>

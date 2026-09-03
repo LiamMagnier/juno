@@ -190,12 +190,12 @@ export function AnnouncementPopup() {
                   {announcement.modelName && (
                     <div className="mb-2 font-mono text-label text-muted-foreground">{announcement.modelName}</div>
                   )}
-                  {/* `font-serif text-title` — the scale's rung for a modal
+                  {/* `font-sans text-title` — the scale's rung for a modal
                       heading, and the family every sibling modal already uses.
                       `xl`/`2xl` are Tailwind defaults, not rungs on this
                       project's scale, and this was the one modal title in the
                       shell set in the UI face. */}
-                  <DialogTitle className="font-serif text-title leading-tight text-foreground">
+                  <DialogTitle className="font-sans text-title leading-tight text-foreground">
                     {announcement.title}
                   </DialogTitle>
                 </div>

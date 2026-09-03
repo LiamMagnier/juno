@@ -309,12 +309,7 @@ export function CodeSessionComposer({
                 <>
                   {onModelChange && (
                     <div className="min-w-0 shrink-0">
-                      <ModelSelector
-                        value={model}
-                        onChange={onModelChange}
-                        reasoningEffort={reasoningEffort}
-                        onReasoningChange={onReasoningChange}
-                      />
+                      <ModelSelector value={model} onChange={onModelChange} />
                     </div>
                   )}
 

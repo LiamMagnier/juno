@@ -349,7 +349,7 @@ export function CompareView() {
             {/* The serif display rung, the product's voice for a human moment —
                 this was a hand-set text-xl/2xl with its own tracking, which is the
                 one heading in the app that never landed on the scale. */}
-            <h2 className="text-balance font-serif text-display">
+            <h2 className="text-balance font-sans text-display">
               Same prompt, different minds
             </h2>
             <p className="max-w-md text-pretty text-sm leading-6 text-muted-foreground">

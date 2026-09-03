@@ -82,6 +82,9 @@ native/**/*.xcodeproj/xcuserdata/
 native/**/*.xcodeproj/project.xcworkspace/xcuserdata/
 native/**/*.xcodeproj/-Xcc/
 native/**/.build/
+# `xcodebuild` run from inside an app directory drops its DerivedData next
+# to the project instead of in the shared cache.
+native/**/build/
 # A SwiftPM scratch directory at the repo ROOT, which the pattern above does not
 # match. `swift build` run from the checkout root rather than with
 # --package-path puts one here, and it is only ever two files (CACHEDIR.TAG and

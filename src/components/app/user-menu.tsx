@@ -110,7 +110,8 @@ export function UserMenu({
           <Pressable
             kind="icon"
             size="lg"
-            className="group hover:bg-sidebar-accent"
+            // The collapsed rail: a 44px target like every other icon on it.
+            className="group size-11 hover:bg-sidebar-accent"
             aria-label="Account menu"
             title={user.name ?? user.email ?? "Account"}
           >

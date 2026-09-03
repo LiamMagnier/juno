@@ -111,7 +111,7 @@ export function DownloadMenu({ className }: { className?: string }) {
           {/* On the scale (`body`), not a hand-typed 0.8125rem with its own
               0.01em tracking — this is the same menu-header role the rest of the
               shell sets, and it was the only one carrying bespoke metrics. */}
-          <p className="font-serif text-body font-medium leading-tight text-foreground">
+          <p className="font-sans text-body font-medium leading-tight text-foreground">
             Juno on your desktop
           </p>
           <p className="mt-0.5 text-caption text-muted-foreground">

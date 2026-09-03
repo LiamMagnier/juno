@@ -101,7 +101,7 @@ export function SharedLinksCard() {
           {/* The product's heading voice. This was `text-base font-semibold` —
               16px sans, a Tailwind default on no Juno rung, for a role every
               other empty state in the tree sets in serif. */}
-          <p className="font-serif text-heading">Nothing shared yet</p>
+          <p className="font-sans text-heading">Nothing shared yet</p>
           <p className="mt-1 text-body text-muted-foreground">
             Links you create from a chat or artifact appear here, with view counts.
           </p>

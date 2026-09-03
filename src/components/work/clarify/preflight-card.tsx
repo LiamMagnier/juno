@@ -150,7 +150,7 @@ export function WorkPreflightCard({ questions, disabled, onAccept, onSkip }: Pre
                   stepped up to Tailwind's `text-base` — a size the Juno scale
                   does not have. `leading-snug` stays: these are questions, and
                   the rung's 1.6 is a reading measure. */}
-              <p className="font-serif text-body font-medium leading-snug text-foreground sm:text-body-lg">
+              <p className="font-sans text-body font-medium leading-snug text-foreground sm:text-body-lg">
                 {question.question}
               </p>
               <div className="mt-2 flex flex-col gap-1.5">

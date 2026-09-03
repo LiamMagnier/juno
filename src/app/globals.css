@@ -541,9 +541,10 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    /* The interface voice. Serif is no longer inherited — it is asked for, by
-       `font-serif` or by .prose-juno below. Anything that reads at UI size
-       (controls, menus, tables, metadata) gets the grotesque. */
+    /* The interface voice. Serif is never inherited — it is asked for, by
+       `font-serif` (Newsreader, the greeting's face). Anything that reads at
+       UI size (controls, menus, tables, metadata) and the transcript prose
+       get the grotesque. */
     font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
     font-optical-sizing: auto;
     /* Both families now carry a real weight axis, so never let a client fake one. */
@@ -1334,15 +1335,12 @@
   }
 
   /*
-   * The greeting reads ON the aura, and its name is set in the very accent the
-   * aura is made of — same hue, close luminance, which is the worst case there
-   * is for legibility. Both fixes leave the type itself alone.
-   *
-   * The halo is the page's own background shaped to the glyphs: it restores
-   * local contrast without a plate, a blur, or a second colour, and it costs
-   * nothing when there is no glow behind the text. The name then takes a step
-   * in lightness AWAY from the light behind it — up on dark paper, down on
-   * light — so accent type and accent glow can never meet in the middle. It
+   * The greeting's name is set in the very accent the voice aura is made of —
+   * same hue, close luminance, which is the worst case there is for
+   * legibility. The fix leaves the type itself alone: the name takes a step in
+   * lightness AWAY from the light behind it — up on dark paper, down on light
+   * — so accent type and accent glow can never meet in the middle. No halo,
+   * no text-shadow: the transcript's flat law applies to the greeting too. It
    * lives behind @supports so a browser without relative colour keeps plain
    * text-primary rather than losing the colour entirely.
    *
@@ -1353,15 +1351,6 @@
    * longer as violet. A fixed distance moves every accent equally and the
    * ceiling stops any of them reaching the foreground.
    */
-  .empty-greeting {
-    text-shadow:
-      0 0 10px hsl(var(--background) / .8),
-      0 0 30px hsl(var(--background) / .55);
-  }
-  /* Scoped through the parent on purpose: the span keeps `text-primary` as its
-     fallback, and that utility ties this rule on specificity — so a bare
-     .empty-greeting__name loses on source order and the step silently does
-     nothing. The descendant selector buys the one point that settles it. */
   @supports (color: hsl(from red h s l)) {
     .empty-greeting .empty-greeting__name {
       color: hsl(from hsl(var(--primary)) h calc(s * .94) calc(l * .82));
@@ -2438,11 +2427,14 @@
 
   /* Markdown prose used in chat messages */
   .prose-juno {
-    /* The assistant's reply is the one long-form reading surface in the product,
-       so it keeps the serif that `body` no longer hands down. This declaration
-       must never be separated from the body change above: without it, flipping
-       body silently demotes the core reading experience to sans. */
-    font-family: var(--font-serif), ui-serif, Georgia, "Times New Roman", serif;
+    /* The assistant's reply reads in the interface face, like everything else
+       (docs/JUNO.md §3.2: Archivo is headings AND reading text). Stated
+       explicitly rather than inherited: this used to ask for `--font-serif`
+       at a time when nothing defined it, so the declaration was invalid and
+       the prose fell back to `body` by accident. Now that the greeting loads
+       Newsreader on that variable, leaving the old line in place would have
+       silently flipped every transcript to serif. */
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
     line-height: 1.65;
     word-break: break-word;
     /* 45–75ch is the readability band and the transcript runs about 104ch, so
@@ -2880,10 +2872,6 @@
     .app-page-content {
       padding-block: 1.25rem 2.5rem;
     }
-  }
-
-  [data-juno-chat-root] .empty-greeting {
-    text-shadow: none;
   }
 
   /* Menu glyphs do not gesture, anywhere — a decision, not an accident, and

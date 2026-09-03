@@ -422,7 +422,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             {/* `text-display` already IS this role — a clamped 2rem→3rem with its
               own tracking — so the hand-rolled responsive pair and the tracking
               override were a private copy of a scale rung. */}
-          <p className="font-serif text-display font-medium leading-none text-foreground">
+          <p className="font-sans text-display font-medium leading-none text-foreground">
               {formatLifetimeCost(costMicroUsd)}
             </p>
             {rate !== 1 && costUsd > 0 ? (

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, JetBrains_Mono } from "next/font/google";
+import { Archivo, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import { Providers } from "@/components/providers";
@@ -13,9 +13,17 @@ import { getRequestLocale } from "@/lib/i18n-server";
 // legible grotesque for controls, headings and reading text; hierarchy comes
 // from weight, measure and spacing rather than switching to an editorial font.
 // JetBrains Mono stays for labels/metadata + the dot/ASCII signature layer.
+// Newsreader is the one human moment — the empty-chat greeting — and is loaded
+// in roman and italic so the name can be set in true italics, not a slant.
 const sans = Archivo({
   subsets: ["latin"],
   variable: "--font-sans",
+  display: "swap",
+});
+const serif = Newsreader({
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+  variable: "--font-serif",
   display: "swap",
 });
 const mono = JetBrains_Mono({
@@ -90,7 +98,7 @@ export default async function RootLayout({
       dir={directionOf(locale)}
       data-accent={accent}
       suppressHydrationWarning
-      className={`${sans.variable} ${mono.variable}`}
+      className={`${sans.variable} ${serif.variable} ${mono.variable}`}
     >
       <body className="min-h-dvh antialiased">
         <Providers

@@ -897,7 +897,7 @@ export default function ProjectDetailPage() {
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <CardEyebrow>System instructions</CardEyebrow>
-                    <h2 className="mt-1 font-serif text-heading text-foreground">How Juno behaves in this project</h2>
+                    <h2 className="mt-1 font-sans text-heading text-foreground">How Juno behaves in this project</h2>
                     <p className="mt-1 text-body text-muted-foreground">
                       Prepended to every chat, work run, and code session in this project.
                     </p>

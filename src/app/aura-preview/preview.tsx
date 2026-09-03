@@ -51,7 +51,7 @@ export function AuraPreview() {
       <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
         <div className="relative flex w-full flex-col items-center justify-center">
           <div className="mb-5 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-6">
-            <p className="font-serif text-3xl text-foreground sm:text-4xl">Can&apos;t sleep?, Liam</p>
+            <p className="font-sans text-3xl text-foreground sm:text-4xl">Can&apos;t sleep?, Liam</p>
           </div>
 
           <div

@@ -56,7 +56,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const showSurfaceSwitcher = pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
+  // Work's header row. Chat draws the same switcher itself, inside its own
+  // column, so it stays centred over the transcript when a canvas opens
+  // beside it — a full-width row here would leave it centred over both.
+  const showSurfaceSwitcher = !!pathname?.startsWith("/work");
 
   const [collapsed, setCollapsed] = React.useState(false);
   // md–lg: the expanded panel FLOATS over the content instead of pushing it,

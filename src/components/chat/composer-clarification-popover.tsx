@@ -302,7 +302,7 @@ export function ComposerClarificationPopover({
             leading are overridden because this is the serif voice, not a UI head. */}
         <h3
           id="clarification-question"
-          className="font-serif text-heading font-medium leading-snug tracking-[-0.02em] text-foreground"
+          className="font-sans text-heading font-medium leading-snug tracking-[-0.02em] text-foreground"
         >
           {active.question}
         </h3>

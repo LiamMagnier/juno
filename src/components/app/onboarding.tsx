@@ -409,7 +409,7 @@ export function Onboarding() {
 
         {step === 0 && (
           <div key="intro" className="relative px-7 pb-7 pt-2 text-center motion-safe:animate-fade-in-up">
-            <h2 className="mt-3 font-serif text-title font-medium leading-tight">
+            <h2 className="mt-3 font-sans text-title font-medium leading-tight">
               Welcome to Juno
               {firstName ? (
                 <>
@@ -463,7 +463,7 @@ export function Onboarding() {
 
         {step === 1 && (
           <div key="personalize" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
-            <h2 className="font-serif text-heading font-medium">Make Juno yours</h2>
+            <h2 className="font-sans text-heading font-medium">Make Juno yours</h2>
             <p className="mt-1 text-caption text-muted-foreground">
               Tune the look and pick a default — change anything later in settings.
             </p>
@@ -564,7 +564,7 @@ export function Onboarding() {
         {step === 2 && (
           <div key="plan" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
-              <h2 className="font-serif text-heading font-medium">Choose a plan</h2>
+              <h2 className="font-sans text-heading font-medium">Choose a plan</h2>
               <span className="rounded-full border px-2 py-0.5 font-mono text-caption text-muted-foreground">
                 Optional
               </span>
@@ -602,7 +602,7 @@ export function Onboarding() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-serif text-body-lg font-medium leading-none">{plan.name}</h3>
+                        <h3 className="font-sans text-body-lg font-medium leading-none">{plan.name}</h3>
                         {popular && (
                           <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-caption text-primary-foreground">
                             Popular
@@ -617,7 +617,7 @@ export function Onboarding() {
                       <p className="mt-1 text-caption text-muted-foreground">{msgs}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1.5">
-                      <div className="font-serif text-heading font-medium leading-none">
+                      <div className="font-sans text-heading font-medium leading-none">
                         {plan.price === 0 ? (
                           "Free"
                         ) : (
@@ -672,7 +672,7 @@ export function Onboarding() {
         {step === 3 && (
           <div key="memory" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
-              <h2 className="font-serif text-heading font-medium">Bring your memory</h2>
+              <h2 className="font-sans text-heading font-medium">Bring your memory</h2>
               <span className="rounded-full border px-2 py-0.5 font-mono text-caption text-muted-foreground">
                 Optional
               </span>

@@ -105,7 +105,7 @@ export function RequestCard({
           <StatusBadge status={req.status} />
           <CategoryChip category={req.category} />
         </div>
-        <h3 className="mt-2 truncate font-serif text-heading font-medium">{req.title}</h3>
+        <h3 className="mt-2 truncate font-sans text-heading font-medium">{req.title}</h3>
         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{req.description}</p>
         <div className="mt-3 flex items-center gap-3 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">

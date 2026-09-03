@@ -50,11 +50,11 @@ function pickGreeting(): string {
 
 /** The serif greeting + signature mark — sits above the centered composer.
  *
- *  Layout: three equal side columns (`1fr auto 1fr`). The text lives only in
- *  the middle, so it stays on the true screen center. The mark sits in the
- *  left column, end-aligned, so it flanks the text without shifting it — and
- *  never gets clipped the way an absolute `right-full` mark did inside the
- *  chat overflow container.
+ *  One line of Newsreader at `text-display`: the phrase in the roman, the name
+ *  in true italics and the accent. Nothing under it — the composer's
+ *  placeholder already says what to do, and a subtitle repeating it was the
+ *  one thing on the empty page that read as filler. The mark above is small
+ *  (20px) and quiet; it is a signature, not a logo lock-up.
  */
 export function EmptyGreeting() {
   const { user } = useApp();
@@ -72,33 +72,35 @@ export function EmptyGreeting() {
 
   return (
     <div className="flex w-full max-w-lg flex-col items-center">
-      <div className="flex flex-col items-center gap-2.5 text-center">
+      <div className="flex flex-col items-center gap-3 text-center">
         <button
           type="button"
           aria-label="Juno"
           onClick={() => setPopping(true)}
           onAnimationEnd={() => setPopping(false)}
           className={cn(
-            // The GLYPH is 1.32rem (21px) at mobile size, which is the visual
-            // weight the greeting wants. The TARGET must not be: WCAG 2.2 2.5.8
-            // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
-            // where it was and grows only the hit area around it, so nothing
-            // moves and the button becomes tappable.
+            // The GLYPH is 20px, which is the visual weight the greeting wants.
+            // The TARGET must not be: WCAG 2.2 2.5.8 asks for 24x24 CSS px.
+            // grid + place-items keeps the mark exactly where it is and grows
+            // only the hit area around it, so nothing moves and the button
+            // becomes tappable.
             "grid size-10 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "block size-7",
-              "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
+              // Quieter than the sidebar's mark: 20px and at 70% ink, back to
+              // full on hover — a signature above the line, not a badge.
+              "block size-5 opacity-70",
+              "transition-[transform,opacity] duration-base ease-out-strong hover:opacity-100 motion-reduce:transition-none",
               !popping &&
                 "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
           />
         </button>
         <h1
-          className="empty-greeting text-center font-sans text-title font-semibold leading-tight tracking-[-0.025em] sm:text-page-title"
+          className="empty-greeting text-balance text-center font-serif text-display font-normal text-foreground"
           suppressHydrationWarning
         >
           {/* The greeting and the name rise as two beats rather than one block.
@@ -118,15 +120,12 @@ export function EmptyGreeting() {
           {firstName ? (
             <>
               {" "}
-              <span className="empty-greeting__name inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+              <span className="empty-greeting__name inline-block font-normal italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
                 {firstName}
               </span>
             </>
           ) : null}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Ask anything. Juno is here to help.
-        </p>
       </div>
     </div>
   );

@@ -174,7 +174,7 @@ export default function RoadmapDetailPage() {
                 </span>
               )}
             </div>
-            <h1 className="mt-2 font-serif text-title font-medium">{r.title}</h1>
+            <h1 className="mt-2 font-sans text-title font-medium">{r.title}</h1>
             <p className="mt-1 flex items-center gap-2 text-caption text-muted-foreground">
               <DotIdenticon seed={r.author.id} className="size-4 shrink-0" />
               {r.author.name ?? "Someone"} · {timeAgo(r.createdAt)}

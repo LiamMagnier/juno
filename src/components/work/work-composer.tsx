@@ -1046,13 +1046,7 @@ export function WorkComposer({
                   <div
                     className={cn("min-w-0 shrink-0", submitting && "pointer-events-none")}
                   >
-                    <ModelSelector
-                      value={model}
-                      onChange={changeModel}
-                      reasoningEffort={reasoningEffort}
-                      onReasoningChange={setReasoningEffort}
-                      filter={isWorkCapableModel}
-                    />
+                    <ModelSelector value={model} onChange={changeModel} filter={isWorkCapableModel} />
                   </div>
 
                   <WorkEffortChip

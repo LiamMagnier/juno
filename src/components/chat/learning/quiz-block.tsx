@@ -143,7 +143,7 @@ export function QuizInteraction({
                   {right ? <RightMark /> : <WrongMark />}
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="font-serif text-body leading-6 text-foreground/90">{question.question}</span>
+                  <span className="font-sans text-body leading-6 text-foreground/90">{question.question}</span>
                   {!right && correctLabel && (
                     <span className="text-ui leading-5 text-muted-foreground">
                       Answer: <span className="text-foreground/80">{correctLabel}</span>
@@ -244,7 +244,7 @@ export function QuizInteraction({
                   LETTERS[index] ?? index + 1
                 )}
               </span>
-              <span className="min-w-0 font-serif text-body leading-6 text-foreground">{option.label}</span>
+              <span className="min-w-0 font-sans text-body leading-6 text-foreground">{option.label}</span>
             </button>
           );
         })}
@@ -254,7 +254,7 @@ export function QuizInteraction({
         <div className="flex flex-col">
           <TextToggle open={hintOpen} onToggle={() => setHintOpen((value) => !value)} label="Hint" controls={hintId} />
           <Reveal open={hintOpen} id={hintId}>
-            <p className="px-2 pb-1 pt-1 font-serif text-body italic leading-6 text-muted-foreground">{q.hint}</p>
+            <p className="px-2 pb-1 pt-1 font-sans text-body italic leading-6 text-muted-foreground">{q.hint}</p>
           </Reveal>
         </div>
       )}
@@ -265,7 +265,7 @@ export function QuizInteraction({
         {answered && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-t border-border/50 pt-3">
             <p className="min-w-0 flex-1 basis-64 text-sm leading-6 text-muted-foreground">
-              <span className={cn("font-serif text-body font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
+              <span className={cn("font-sans text-body font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
                 {isCorrect ? "Correct —" : "Not quite —"}
               </span>{" "}
               {explanation ?? (isCorrect ? "well spotted." : `the answer is ${LETTERS[correctIndex] ?? correctIndex + 1}.`)}

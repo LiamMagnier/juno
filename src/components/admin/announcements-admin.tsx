@@ -669,7 +669,7 @@ export function AnnouncementsAdmin() {
                         copy length against type that ships two sizes off. */}
                     <div>
                       {draft.modelName && <p className="mb-2 font-mono text-label text-muted-foreground">{draft.modelName}</p>}
-                      <h2 className="font-serif text-title leading-tight text-foreground">{draft.title || "[model] just got released"}</h2>
+                      <h2 className="font-sans text-title leading-tight text-foreground">{draft.title || "[model] just got released"}</h2>
                       <p className="mt-2 text-body leading-relaxed text-muted-foreground">
                         {draft.description || "Write a short release description for users here."}
                       </p>

@@ -223,7 +223,7 @@ export function ResearchConsole({
           {/* The question, in the serif, whole. It used to be
               `truncate(goal, 100)` inside a one-line clamp — the thing the run
               exists to answer, cut off mid-word, in the most prominent slot. */}
-          <h3 className="mt-2 text-balance font-serif text-title text-foreground">{run.goal}</h3>
+          <h3 className="mt-2 text-balance font-sans text-title text-foreground">{run.goal}</h3>
         </div>
 
         <div className="flex shrink-0 items-center gap-3">

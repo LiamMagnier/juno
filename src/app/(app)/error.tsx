@@ -17,7 +17,7 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
     <div className="flex min-h-full flex-1 flex-col items-center justify-center px-4 py-16 text-center">
       <JunoMark className="size-9 opacity-70" />
       <p className="mt-6 font-mono text-label text-muted-foreground">Something broke</p>
-      <h1 className="mt-2 font-serif text-heading font-medium">This view couldn&rsquo;t load</h1>
+      <h1 className="mt-2 font-sans text-heading font-medium">This view couldn&rsquo;t load</h1>
       <p className="mt-3 max-w-sm text-sm text-muted-foreground">
         Nothing was lost. Retry the view, or head back to your chats if it keeps failing.
       </p>

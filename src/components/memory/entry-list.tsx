@@ -258,7 +258,7 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
       className="overflow-hidden rounded-panel border border-border/60 bg-card"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 pb-2 pt-4">
-        <h2 id="memory-entries-heading" className="font-serif text-heading">
+        <h2 id="memory-entries-heading" className="font-sans text-heading">
           Individual facts
         </h2>
         {/* Forgetting or deleting a fact removes a row and changes nothing

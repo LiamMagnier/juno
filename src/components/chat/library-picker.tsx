@@ -127,7 +127,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               <FolderOpen className="size-4.5" />
             </div>
             <div>
-              <DialogTitle className="font-serif text-xl font-normal tracking-tight text-foreground">
+              <DialogTitle className="font-sans text-xl font-normal tracking-tight text-foreground">
                 Add from your library
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
@@ -185,7 +185,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               <div className="surface-raised flex size-11 items-center justify-center rounded-full text-muted-foreground">
                 <FolderOpen className="size-5" />
               </div>
-              <h3 className="mt-3 font-serif text-base font-normal text-foreground">Nothing here yet</h3>
+              <h3 className="mt-3 font-sans text-base font-normal text-foreground">Nothing here yet</h3>
               <p className="mt-1 max-w-xs text-xs text-muted-foreground">
                 Files and images you send in conversations collect here for quick reuse.
               </p>

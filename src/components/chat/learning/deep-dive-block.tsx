@@ -33,7 +33,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
           <LessonKicker accent="bg-source" className="text-source">
             Deep dive
           </LessonKicker>
-          <span className="font-serif text-body font-medium leading-6 text-foreground">{deepDive.title}</span>
+          <span className="font-sans text-body font-medium leading-6 text-foreground">{deepDive.title}</span>
           {showSummary && (
             <span
               className={cn(

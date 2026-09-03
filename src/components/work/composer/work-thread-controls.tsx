@@ -104,24 +104,13 @@ export function WorkThreadModelControl({ context }: { context: WorkThreadContext
     [context, effort]
   );
 
-  const changeEffort = React.useCallback(
-    (next: ReasoningEffort) => context.change({ reasoningEffort: next }),
-    [context]
-  );
-
   return (
     // Only the models the Work runner can drive. A plan-locked one stays in the
     // list wearing its lock and sending the reader to /upgrade — the picker's
     // own behaviour, and the reason this is that component rather than a smaller
     // one written for a strip.
     <div className={cn("min-w-0 shrink-0", held && "pointer-events-none opacity-60")}>
-      <ModelSelector
-        value={context.model}
-        onChange={changeModel}
-        reasoningEffort={effort}
-        onReasoningChange={changeEffort}
-        filter={isWorkCapableModel}
-      />
+      <ModelSelector value={context.model} onChange={changeModel} filter={isWorkCapableModel} />
     </div>
   );
 }

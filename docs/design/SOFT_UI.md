@@ -100,7 +100,8 @@ Concentric rule: outer radius = inner radius + padding. Remove `lg/surface` dual
   (380/32) before it scrolls. Focus darkens the edge to `foreground/40` and
   lifts the shadow one notch over `duration-fast`; nothing else changes. Under
   the text, one controls row: left `+` (32px flat icon button, accent on hover,
-  a coral dot when a tool is on); right model chip · effort chip · thin rule ·
+  never a dot or badge — the bar says nothing about tool state); right model
+  chip · effort chip · thin rule ·
   mic · send. Chips are flat `font-sans text-ui` text with `rounded-control`,
   accent fill on hover, the same fill with darker ink while open — never raised
   or pressed. Send is a 32px flat coral circle that cross-morphs (scale .9→1 +
@@ -109,7 +110,13 @@ Concentric rule: outer radius = inner radius + padding. Remove `lg/surface` dual
   text inside the same surface, entering with `pop-in`; the `+` menu pops in
   from its trigger corner. The one `+` menu holds every tool as a toggle row
   (Web search, Canvas, Memory, Deep research, connectors, project) — nothing
-  about tool state shows on the bar except the dot; `@` mentions; `/` commands.
+  about tool state shows on the bar; `@` mentions; `/` commands. The `+` menu
+  is one `.surface-float` popover (`rounded-popover`, p-1.5) of 36px rows —
+  glyph + label, sections split by a hairline with no eyebrows, tools as rows
+  with a trailing Switch, Project and Connectors as concentric sub-panels
+  drawn in the same box — and pops in from the trigger corner. The model chip
+  opens the picker (provider rail · list · spec sheet) above it; effort is its
+  own chip and never lives inside the picker.
   Every composer (chat, Code, Compare, Work) draws this box through
   `ComposerShell`; surfaces with extra context (target, permission, project)
   put those chips on the same row, never on a second stacked strip. In an empty

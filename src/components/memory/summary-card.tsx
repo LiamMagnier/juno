@@ -18,7 +18,7 @@ function SummarySections({ sections, className }: { sections: SummarySection[]; 
     <div className={className}>
       {sections.map((s) => (
         <section key={s.title}>
-          <h3 className="font-serif text-heading">{s.title}</h3>
+          <h3 className="font-sans text-heading">{s.title}</h3>
           <Markdown content={s.body} className="mt-1.5 text-sm text-foreground/90" />
         </section>
       ))}
@@ -135,7 +135,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           </div>
         ) : (
           <div className="pb-12 pt-1">
-            <p className="font-serif text-heading">Nothing here yet</p>
+            <p className="font-sans text-heading">Nothing here yet</p>
             <p className="mt-1 max-w-md text-sm text-muted-foreground">
               Juno builds this from your chats and projects as you go. You can also just tell it something with the
               pencil below — “remember that I prefer short answers”, for instance.

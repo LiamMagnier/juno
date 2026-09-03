@@ -939,7 +939,7 @@ export function CanvasPanel({
               ) : (
                 <div className="flex h-full items-center justify-center p-6 text-center">
                   <div>
-                    <p className="font-serif text-heading">No changes</p>
+                    <p className="font-sans text-heading">No changes</p>
                     <p className="pt-1 text-sm text-muted-foreground">v{baseVersion} and v{targetVersion} are identical.</p>
                   </div>
                 </div>

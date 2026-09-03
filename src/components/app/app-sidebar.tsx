@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, FolderPlus, Pin, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, FolderPlus, Pencil, Pin, Plus } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { DownloadMenu } from "@/components/app/download-menu";
 import { UserMenu } from "@/components/app/user-menu";
@@ -37,6 +37,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useApp } from "@/components/app/app-provider";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ShareDialog } from "@/components/share/share-dialog";
@@ -511,7 +512,7 @@ export function AppSidebar({
               href="/chat"
               onClick={() => setSidebarOpen(false)}
               aria-label="Juno home"
-              className={cn("group/brand flex items-center gap-2 rounded-control", collapsed ? "size-9 justify-center" : "pl-1")}
+              className={cn("group/brand flex items-center gap-2 rounded-control", collapsed ? "size-11 justify-center" : "pl-1")}
             >
               <JunoMark className="h-[21px] w-[21px] shrink-0" />
               <AnimatePresence initial={false}>
@@ -537,7 +538,7 @@ export function AppSidebar({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="group hidden md:inline-flex"
+                    className={cn("group hidden md:inline-flex", collapsed && "size-11")}
                     onClick={onToggleCollapse}
                     aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                     aria-keyshortcuts="Meta+Shift+S"
@@ -568,32 +569,6 @@ export function AppSidebar({
             )}
           </motion.div>
         </motion.div>
-
-        {/* ── Search + New chat ────────────────────────────────────────── */}
-        <div className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")}>
-          <NavRow
-            collapsed={collapsed}
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
-            icon={<SidebarMotionIcon kind="search" />}
-            label="Search"
-            trailing={<Kbd>⌘K</Kbd>}
-            layoutId="nav-search"
-            transition={layoutTransition}
-          />
-          <NavRow
-            collapsed={collapsed}
-            onClick={newChat}
-            icon={
-              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-              </span>
-            }
-            label="New chat"
-            trailing={<Kbd>⌘⇧O</Kbd>}
-            layoutId="nav-new"
-            transition={layoutTransition}
-          />
-        </div>
 
         {/* ── Chat / Code product switch ───────────────────────────────── */}
         <AnimatePresence initial={false}>
@@ -626,17 +601,41 @@ export function AppSidebar({
           )}
         </AnimatePresence>
 
+        {/* ── Search + New chat ────────────────────────────────────────── */}
+        <div className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")}>
+          <NavRow
+            collapsed={collapsed}
+            onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
+            icon={<SidebarMotionIcon kind="search" />}
+            label="Search"
+            trailing={<Kbd>⌘K</Kbd>}
+            layoutId="nav-search"
+            transition={layoutTransition}
+          />
+          <NavRow
+            collapsed={collapsed}
+            onClick={newChat}
+            icon={
+              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
+                <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
+              </span>
+            }
+            label="New chat"
+            trailing={<Kbd>⌘⇧O</Kbd>}
+            layoutId="nav-new"
+            transition={layoutTransition}
+          />
+        </div>
+
         {/* ── Destinations ─────────────────────────────────────────────── */}
+        {/* Library · Projects · Artifacts, then More for the rest. The rail
+            keeps the same order icon-only; More opens the same flyout. */}
         <nav className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")} aria-label="Primary">
           {(
             [
-              { href: "/assistants", kind: "assistants", label: "Assistants", active: pathname === "/assistants" },
-              { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
               { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
+              { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
               { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },
-              { href: "/connections", kind: "connections", label: "Connections", active: pathname === "/connections" },
-              { href: "/tasks", kind: "tasks", label: "Tasks", active: pathname === "/tasks" },
-              { href: "/design", kind: "design", label: "Design", active: pathname === "/design" },
             ] as const
           ).map((item) => (
             <NavRow
@@ -651,6 +650,12 @@ export function AppSidebar({
               transition={layoutTransition}
             />
           ))}
+          <MoreFlyout
+            collapsed={collapsed}
+            pathname={pathname}
+            onNavigate={() => setSidebarOpen(false)}
+            onOpenArchived={() => setArchivedOpen(true)}
+          />
           {collapsed && (
             <NavRow
               collapsed
@@ -820,10 +825,12 @@ export function AppSidebar({
         >
           <NavRow
             collapsed={collapsed}
-            onClick={() => setArchivedOpen(true)}
-            icon={<Archive className="size-[17px]" />}
-            label="Archived chats"
-            layoutId="nav-archived"
+            href="/design"
+            active={pathname === "/design"}
+            onClick={() => setSidebarOpen(false)}
+            icon={<Pencil className="size-[17px]" />}
+            label="Design"
+            layoutId="nav-design"
             transition={layoutTransition}
           />
           {collapsed ? (
@@ -835,7 +842,7 @@ export function AppSidebar({
                     size="lg"
                     aria-label="Settings"
                     onClick={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
-                    className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+                    className="group size-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
                   >
                     <AppIcons.settings className="size-[18px]" />
                   </Pressable>
@@ -992,13 +999,7 @@ function NavRow({
   layoutId: string;
   transition: object;
 }) {
-  const cls = cn(
-    "group relative flex min-h-9 w-full items-center rounded-control text-sm font-medium transition-[background-color,color,box-shadow,border-color] duration-fast ease-out-soft",
-    collapsed ? "size-9 justify-center px-0" : "gap-2.5 px-2.5 py-1.5",
-    active
-      ? "surface-raised border-border/60 font-semibold text-foreground"
-      : "border border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
-  );
+  const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
       <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
@@ -1035,6 +1036,115 @@ function NavRow({
         {trailing && <span className="ml-1.5 inline-flex">{trailing}</span>}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/** The sidebar row recipe, shared by NavRow and the More trigger. */
+function navRowClass(collapsed: boolean, active: boolean) {
+  return cn(
+    "group relative flex min-h-9 w-full items-center rounded-control text-sm font-medium transition-[background-color,color,box-shadow,border-color] duration-fast ease-out-soft",
+    // The rail: a 44px target around the same 22px glyph, so every icon is
+    // one tap and the row's tooltip names it.
+    collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2.5 py-1.5",
+    active
+      ? "surface-raised border-border/60 font-semibold text-foreground"
+      : "border border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+  );
+}
+
+/**
+ * More: the destinations that do not earn a top-level row, in a
+ * `.surface-float` flyout to the right of the sidebar (ChatGPT's "More").
+ * The same flyout from the rail, where the trigger is an icon with a tooltip.
+ * Archived chats lives here too — it opens the dialog rather than a route.
+ */
+function MoreFlyout({
+  collapsed,
+  pathname,
+  onNavigate,
+  onOpenArchived,
+}: {
+  collapsed: boolean;
+  pathname: string | null;
+  onNavigate: () => void;
+  onOpenArchived: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const items = [
+    { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
+    { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
+    { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
+  ];
+  const anyActive = items.some((item) => item.active);
+  const rowClass =
+    "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-sm font-medium text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+  const trigger = (
+    <button
+      type="button"
+      aria-label={collapsed ? "More" : undefined}
+      aria-haspopup="menu"
+      className={cn(navRowClass(collapsed, false), open && "bg-sidebar-accent text-foreground", anyActive && "text-foreground")}
+    >
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+        <SidebarMotionIcon kind="more" />
+      </span>
+      {!collapsed && <span className="min-w-0 flex-1 truncate text-left">More</span>}
+    </button>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <div className={cn(collapsed && "flex justify-center")}>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="right">More</TooltipContent>
+          </Tooltip>
+        ) : (
+          <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+        )}
+      </div>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={12}
+        collisionPadding={16}
+        role="menu"
+        aria-label="More"
+        className="w-56 p-1.5"
+      >
+        {items.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            role="menuitem"
+            aria-current={item.active ? "page" : undefined}
+            onClick={() => {
+              setOpen(false);
+              onNavigate();
+            }}
+            className={cn(rowClass, item.active && "bg-accent font-semibold")}
+          >
+            <SidebarMotionIcon kind={item.kind} className="size-4 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          </Link>
+        ))}
+        <div role="separator" aria-hidden="true" className="my-1 h-px bg-border/70" />
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setOpen(false);
+            onOpenArchived();
+          }}
+          className={rowClass}
+        >
+          <Archive className="size-4 text-muted-foreground" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate text-left">Archived chats</span>
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

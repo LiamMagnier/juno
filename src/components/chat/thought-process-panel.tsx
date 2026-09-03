@@ -572,7 +572,7 @@ function Prose({ text, className }: { text: string; className?: string }) {
         <p
           key={i}
           style={{ contentVisibility: "auto", containIntrinsicSize: "0 96px" }}
-          className="whitespace-pre-wrap break-words font-serif text-[0.9375rem] leading-[1.72] text-foreground/80"
+          className="whitespace-pre-wrap break-words font-sans text-[0.9375rem] leading-[1.72] text-foreground/80"
         >
           {p}
         </p>
@@ -1172,7 +1172,7 @@ export function ThoughtProcessPanel({
             <SectionHeading id={`${id}-sources`}>Sources</SectionHeading>
 
             {/* Newsreader italic: the query is text the model wrote. */}
-            {run.query && <p className="mt-3 font-serif text-body italic text-muted-foreground">“{run.query}”</p>}
+            {run.query && <p className="mt-3 font-sans text-body italic text-muted-foreground">“{run.query}”</p>}
             {countLine && <p className="mt-1 font-mono text-caption text-muted-foreground">{countLine}</p>}
 
             {run.sources.length > 0 ? (

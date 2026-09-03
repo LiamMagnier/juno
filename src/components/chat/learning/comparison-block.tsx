@@ -109,7 +109,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
       {comparison.verdict && (
         <footer className="mt-3 flex flex-col gap-1.5 border-t border-border/50 pt-3">
           <Microcap className="text-primary">Verdict</Microcap>
-          <p className="border-l-2 border-primary/70 pl-4 font-serif text-body italic leading-7 text-foreground/85">
+          <p className="border-l-2 border-primary/70 pl-4 font-sans text-body italic leading-7 text-foreground/85">
             {comparison.verdict}
           </p>
         </footer>

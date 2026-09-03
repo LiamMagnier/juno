@@ -206,7 +206,7 @@ function TokenizationVisual({ step }: { step: StepLabStep }) {
     // indicator than the one the rest of the product uses, forked twelve ways in
     // one component. The global rule draws it.
     <div className="flex flex-col gap-2.5">
-      <p className="font-serif text-body leading-6 text-muted-foreground">&ldquo;{input}&rdquo;</p>
+      <p className="font-sans text-body leading-6 text-muted-foreground">&ldquo;{input}&rdquo;</p>
       <div className="flex flex-wrap items-center gap-y-1 font-mono text-ui leading-8" role="group" aria-label="Tokens" onKeyDown={onKeyDown}>
         {tokens.map((token, index) => (
           <button
@@ -566,7 +566,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
                   : "border-border/40 border-l-transparent hover:bg-accent/30"
               )}
             >
-              <span className="font-serif text-sm font-medium text-foreground">{item.name}</span>
+              <span className="font-sans text-sm font-medium text-foreground">{item.name}</span>
               <span className="font-mono text-micro text-muted-foreground">{item.role}</span>
             </button>
           ))}
@@ -722,7 +722,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
           the stylesheet and silently resets them at equal specificity. The token
           is hidden-at-rest only under motion-safe, so reduced-motion users see
           it statically. */}
-      <p className="font-serif text-body-lg leading-8 text-foreground">
+      <p className="font-sans text-body-lg leading-8 text-foreground">
         {prompt}{" "}
         <span
           aria-hidden
@@ -807,7 +807,7 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
           )}
           <div className={cn("flex flex-col gap-1", "border-l border-border/50 pl-4 sm:border-l-0 sm:pl-0")}>
             <Microcap className={cn("text-micro", station.capTone)}>{station.cap}</Microcap>
-            <p className="font-serif text-body leading-6 text-foreground">{station.value}</p>
+            <p className="font-sans text-body leading-6 text-foreground">{station.value}</p>
           </div>
         </React.Fragment>
       ))}
@@ -956,7 +956,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
           {/* The heading rung at serif weight 500 — font-medium outranks the
               rung's built-in 600 (fontWeight utilities compile after fontSize),
               keeping the step title a rank below the lab's BlockTitle. */}
-          <h5 className="font-serif text-heading font-medium leading-tight">{selected.title}</h5>
+          <h5 className="font-sans text-heading font-medium leading-tight">{selected.title}</h5>
           <p className="text-body leading-7 text-foreground/80">{selected.summary}</p>
         </div>
 
@@ -965,7 +965,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
         {selected.notice && (
           <p className="flex gap-2 text-sm leading-6">
             <Microcap className="shrink-0 pt-0.5 text-primary">Notice</Microcap>
-            <span className="min-w-0 font-serif italic text-foreground/75">{selected.notice}</span>
+            <span className="min-w-0 font-sans italic text-foreground/75">{selected.notice}</span>
           </p>
         )}
 
@@ -999,7 +999,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
 
         {completed && onLast && (
           <div className="flex flex-col gap-2">
-            <p className="flex items-baseline gap-2 font-serif text-body italic leading-6 text-foreground/85">
+            <p className="flex items-baseline gap-2 font-sans text-body italic leading-6 text-foreground/85">
               {/* The registry's tick, not a "✓" in a font-mono span: a text glyph
                   carries the text weight instead of the optical stroke ladder and
                   resolves against whatever fallback font has the code point.
@@ -1012,7 +1012,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
               Lab complete
             </p>
             {lab.takeaway && (
-              <p className="border-l-2 border-primary/70 pl-4 font-serif text-body-lg italic leading-7 text-foreground/85 motion-safe:animate-fade-in-up">
+              <p className="border-l-2 border-primary/70 pl-4 font-sans text-body-lg italic leading-7 text-foreground/85 motion-safe:animate-fade-in-up">
                 {lab.takeaway}
               </p>
             )}

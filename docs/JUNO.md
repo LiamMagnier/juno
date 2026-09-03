@@ -245,11 +245,13 @@ Skeleton, EmptyState (inset dashed well), Pressable (row/tile/chip/icon on
 
 ### 3.2 Typography
 
-Two families only. **Archivo** (`next/font/google`, `--font-sans`) is the whole
-interface — Tailwind's `font-sans` *and* `font-serif` both resolve to it, the
-serif alias surviving only for older semantic call sites — and **JetBrains Mono**
-(`--font-mono`) is labels, metadata, ids and code. Hierarchy comes from size,
-weight, measure and spacing, not from switching faces. The scale:
+**Archivo** (`next/font/google`, `--font-sans`) is the whole interface —
+controls, headings and the transcript prose — and **JetBrains Mono**
+(`--font-mono`) is labels, metadata, ids and code. **Newsreader**
+(`--font-serif`, Tailwind `font-serif`, roman + italic) is reserved for the
+human moments — the empty-chat greeting, where the name is set in italic — and
+never appears at UI size. Hierarchy otherwise comes from size, weight, measure
+and spacing, not from switching faces. The scale:
 `text-hero`, `text-display`, `text-page-title` (the app `<h1>`), `text-title`
 (22px), `text-heading` (18px), `text-body-lg` (17px), `text-body` (15px),
 `text-ui` (13px, dense rows and chips), `text-label` (12px eyebrow, 0.10em),

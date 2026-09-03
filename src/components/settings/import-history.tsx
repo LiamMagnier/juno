@@ -172,7 +172,7 @@ export function ImportHistoryCard() {
         >
           {phase.name === "uploading" ? (
             <div className="mx-auto max-w-xs">
-              <p className="font-serif text-heading">Uploading your export</p>
+              <p className="font-sans text-heading">Uploading your export</p>
               {/* duration-base ease-out-soft: the visually identical meters on
                   the profile page run on those rungs, and this one was on the
                   browser's 150ms `ease` — two progress bars in the same product
@@ -197,13 +197,13 @@ export function ImportHistoryCard() {
           ) : phase.name === "importing" ? (
             <div className="mx-auto max-w-sm">
               <Loader2 className="mx-auto mb-2 size-6 animate-spin text-muted-foreground/70" />
-              <p className="font-serif text-heading">Importing conversations</p>
+              <p className="font-sans text-heading">Importing conversations</p>
               <p className="pt-1 text-sm text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
             </div>
           ) : phase.name === "done" ? (
             <div className="mx-auto max-w-sm">
               <StatusIcons.success className="mx-auto mb-2 size-6 text-primary" />
-              <p className="font-serif text-heading">
+              <p className="font-sans text-heading">
                 {phase.imported > 0
                   ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
                   : "Nothing new to import"}
@@ -220,7 +220,7 @@ export function ImportHistoryCard() {
           ) : (
             <div className="mx-auto max-w-sm">
               <FileUp className="mx-auto mb-2 size-6 text-muted-foreground/70" />
-              <p className="font-serif text-heading">Import your history</p>
+              <p className="font-sans text-heading">Import your history</p>
               <p className="pt-1 text-sm text-muted-foreground">
                 ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.
               </p>

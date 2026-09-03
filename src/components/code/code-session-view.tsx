@@ -789,7 +789,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
                         that is not on the product type scale, and pinning it
                         below sm defeated the token, whose clamp already does the
                         responsive work. */}
-                    <h1 className="font-serif text-display font-normal tracking-tight text-foreground">
+                    <h1 className="font-sans text-display font-normal tracking-tight text-foreground">
                       {sessionTitle}
                     </h1>
                     <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">

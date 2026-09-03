@@ -312,7 +312,7 @@ function NameField({ value, onCommit }: { value: string; onCommit: (next: string
         // switch tools or delete the selection.
         event.stopPropagation();
       }}
-      className="min-w-0 max-w-xs flex-initial truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 font-serif text-heading outline-none transition-colors hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
+      className="min-w-0 max-w-xs flex-initial truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 font-sans text-heading outline-none transition-colors hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
     />
   );
 }

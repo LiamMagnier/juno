@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { GitFork, GripVertical, Loader2 } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
@@ -15,6 +15,7 @@ import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
+import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -202,6 +203,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     models,
   } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
   const tts = useTts();
   const layoutRef = React.useRef<HTMLDivElement>(null);
   // A browser-visible mount marker makes route/remount regressions observable
@@ -1628,6 +1630,50 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     />
   );
 
+  /* Share + the incognito ghost. On chat routes these sit at the right of
+   * the column header band below, on the same Y as the Chat/Work switcher;
+   * when a host shell renders `#juno-top-actions-slot` (Work's header row)
+   * they portal there instead. Either way the cluster is written once. */
+  const topActionsSlotOwner = pathname === "/" || !!pathname?.startsWith("/chat");
+  const actionsContent = (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
+        privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
+        (openArtifact || thoughtOpenId) && "hidden"
+      )}
+    >
+      {/* Share — saved, non-private chats with at least one message. */}
+      {!privateMode && currentConversationId && hasMessages && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Pressable
+              kind="icon"
+              size="lg"
+              aria-label="Share chat"
+              onClick={() => setShareOpen(true)}
+              className="text-foreground/75"
+            >
+              <ActionIcons.share className="size-4.5" />
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent>Share chat</TooltipContent>
+        </Tooltip>
+      )}
+      <PrivateChatToggle
+        active={privateMode}
+        disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
+        onToggle={togglePrivateMode}
+      />
+    </div>
+  );
+
+  const topActionsCluster = (
+    <div className={cn("hidden items-center gap-1.5 md:flex", privateMode && "pointer-events-none")}>
+      {actionsContent}
+    </div>
+  );
+
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
     <div
@@ -1636,70 +1682,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       data-juno-chat-mount-id={chatMountId}
       className="relative flex h-full min-h-0 w-full overflow-hidden"
     >
-      {/* Share + model parameters + the incognito ghost, on the same Y grid as
-          the Chat/Work switcher — which they now genuinely are: the shell
-          renders `#juno-top-actions-slot` in that header row and this portals
-          into it. Before the slot existed this fell through to its own
-          `absolute right-3 top-2.5`, i.e. three buttons floating over the top of
-          the transcript (and over the canvas's own header, when one was open)
-          under a header bar that had room for them and was otherwise empty. The
-          fallback stays for the case the slot is absent — never in the shipping
-          shell, but this component must not depend on a node it does not own. */}
-      {(() => {
-        const actionsContent = (
-          <div
-            className={cn(
-              "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
-              privateMode ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100",
-              (openArtifact || thoughtOpenId) && "hidden"
-            )}
-          >
-            {/* Share — saved, non-private chats with at least one message. */}
-            {!privateMode && currentConversationId && hasMessages && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Pressable
-                    kind="icon"
-                    size="lg"
-                    aria-label="Share chat"
-                    onClick={() => setShareOpen(true)}
-                    className="text-foreground/75"
-                  >
-                    <ActionIcons.share className="size-4.5" />
-                  </Pressable>
-                </TooltipTrigger>
-                <TooltipContent>Share chat</TooltipContent>
-              </Tooltip>
-            )}
-            <PrivateChatToggle
-              active={privateMode}
-              disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
-              onToggle={togglePrivateMode}
-            />
-          </div>
-        );
-
-        /* ONE wrapper for both destinations, so the visibility rule is written
-         * once: `hidden md:flex` is the cluster's own gate (below md the mobile
-         * bar in AppShell carries navigation and this row does not exist), and
-         * the fallback adds only the positioning it needs. Two separately
-         * classed branches drifted the moment the shell grew a slot — the
-         * portalled copy would have shown up on a phone, where nothing is
-         * arranged for it. */
-        const cluster = (
-          <div
-            className={cn(
-              "hidden items-center gap-1.5 md:flex",
-              !topActionsSlot && "absolute right-3 top-2.5 z-20",
-              privateMode && "pointer-events-none"
-            )}
-          >
-            {actionsContent}
-          </div>
-        );
-
-        return topActionsSlot ? createPortal(cluster, topActionsSlot) : cluster;
-      })()}
+      {topActionsSlot && createPortal(topActionsCluster, topActionsSlot)}
 
       {/* Chat column */}
       {/* Below lg the canvas replaces the chat entirely — a split there leaves the
@@ -1711,6 +1694,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           (openArtifact || thoughtOpenId) && "hidden lg:flex"
         )}
       >
+        {/* The column's header band: the Chat ⇄ Work switcher centred over
+            THIS column — not over the whole main area — so it travels with
+            the transcript when the canvas opens beside it, and the share /
+            incognito cluster at its right. 56px in flow, no plate. Below md
+            the shell's mobile bar carries navigation and this band does not
+            exist. */}
+        {topActionsSlotOwner && !topActionsSlot && (
+          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
+            <ChatWorkSwitcher />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 md:right-4">{topActionsCluster}</div>
+          </div>
+        )}
+
         {/* Project scope indicator — persistent while this chat is filed in a
             project. Brand-new chats use the composer chip until they exist.
 
@@ -1727,7 +1723,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           // Below sm the pill also has to leave room for the top-right action
           // cluster (share / params / incognito ≈ 9rem incl. coarse targets)
           // sharing the same row — 18rem alone overlaps it under ~450px.
-          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
+          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-[4.5rem]">
             {/* `bg-popover`, opaque. This pill is absolutely positioned over the
                 live transcript, and `bg-card/70` behind a blur resolves to ~4.6%
                 on the black ground with nothing for the blur to smear — message
@@ -1819,7 +1815,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <div className="inline-flex min-w-0 items-center gap-2 font-medium">
                   <GitFork className="size-4 shrink-0 text-primary" />
                   <span className="min-w-0 truncate">
-                    Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
+                    Branched from <span className="font-sans italic">&ldquo;{forkedFrom.title}&rdquo;</span>
                   </span>
                   <span className="shrink-0 font-mono text-label text-muted-foreground">
                     {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}

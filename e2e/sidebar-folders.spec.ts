@@ -82,7 +82,11 @@ test.describe("Sidebar folders and archive", () => {
     await page.getByRole("menuitem", { name: "Move to folder" }).hover();
     await page.getByRole("menuitem", { name: folderName }).click();
     await expect(folderToggle).toContainText("1", { timeout: 15_000 });
-    await folderToggle.click();
+    // A folder that receives the active chat expands on its own; clicking the
+    // toggle then would fold it back up mid-transition. Open it only if it is
+    // still closed, and wait for the expanded state rather than the row.
+    if ((await folderToggle.getAttribute("aria-expanded")) !== "true") await folderToggle.click();
+    await expect(folderToggle).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 });
     await expect(conversationLink(page, id).first()).toBeVisible({ timeout: 15_000 });
 
     // Archive removes it from the sidebar; the Archived dialog restores it.
@@ -92,7 +96,9 @@ test.describe("Sidebar folders and archive", () => {
     await expect(conversationLink(page, id)).toHaveCount(0, { timeout: 15_000 });
 
     await dismissCookieBanner(page);
-    await page.getByRole("button", { name: "Archived chats" }).click();
+    // Archived chats lives in the sidebar's More flyout.
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("menuitem", { name: "Archived chats" }).click();
     const dialog = page.getByRole("dialog", { name: "Archived chats" });    await expect(dialog).toBeVisible({ timeout: 15_000 });
     const archivedItem = dialog.locator("li", { hasText: chatTitle });
     await expect(archivedItem).toBeVisible({ timeout: 15_000 });

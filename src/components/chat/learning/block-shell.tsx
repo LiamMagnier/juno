@@ -83,7 +83,7 @@ export function LessonKicker({
  */
 export function BlockTitle({ className, children, ...props }: React.ComponentPropsWithoutRef<"h4">) {
   return (
-    <h4 className={cn("font-serif text-body font-medium leading-tight tracking-[-0.01em]", className)} {...props}>
+    <h4 className={cn("font-sans text-body font-medium leading-tight tracking-[-0.01em]", className)} {...props}>
       {children}
     </h4>
   );
@@ -98,7 +98,7 @@ export function BlockTitle({ className, children, ...props }: React.ComponentPro
  */
 export function BlockLead({ className, children, ...props }: React.ComponentPropsWithoutRef<"p">) {
   return (
-    <p className={cn("font-serif text-body font-medium leading-snug tracking-[-0.01em]", className)} {...props}>
+    <p className={cn("font-sans text-body font-medium leading-snug tracking-[-0.01em]", className)} {...props}>
       {children}
     </p>
   );

@@ -397,7 +397,7 @@ export function ArtifactInlineCard({
           <div className="flex flex-col items-center gap-3 text-center">
             <ThinkingDots className="text-primary" />
             <div>
-              <p className="font-serif text-heading">Writing artifact</p>
+              <p className="font-sans text-heading">Writing artifact</p>
               <p className="pt-0.5 text-sm text-muted-foreground">The source will stream in here.</p>
             </div>
           </div>

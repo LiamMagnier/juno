@@ -75,7 +75,7 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      <h1 className="text-center font-serif text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
+      <h1 className="text-center font-sans text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
         What are we building today{firstName ? `, ${firstName}` : ""}?
       </h1>
       <p className="mt-2 max-w-lg text-sm text-muted-foreground">
@@ -594,12 +594,7 @@ export default function NewCodeSessionPage() {
                     trailing={
                       <>
                         <div className="min-w-0 shrink-0">
-                          <ModelSelector
-                            value={model}
-                            onChange={changeModel}
-                            reasoningEffort={reasoningEffort}
-                            onReasoningChange={changeReasoning}
-                          />
+                          <ModelSelector value={model} onChange={changeModel} />
                         </div>
 
                         {isAuto && (

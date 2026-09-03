@@ -63,7 +63,7 @@ export function VoiceGallery() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
-      <h1 className="font-serif text-[2.4rem] leading-tight">Voice aura</h1>
+      <h1 className="font-sans text-[2.4rem] leading-tight">Voice aura</h1>
       <p className="mt-2 max-w-2xl text-muted-foreground">
         Waves along the bottom and up both sides of the chat column, behind the composer. Your turn
         is the accent; Juno&rsquo;s turn is a companion hue derived from it, so both follow the

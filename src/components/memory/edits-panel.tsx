@@ -139,7 +139,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                     className="rounded-card border border-border/60 bg-card p-4 shadow-soft motion-safe:animate-rise-in"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <p className="font-serif text-sm italic text-foreground/90">“{edit.instruction}”</p>
+                      <p className="font-sans text-sm italic text-foreground/90">“{edit.instruction}”</p>
                       {/* role=status so pending → applied/rejected flips are announced. */}
                       <span role="status" className="shrink-0">
                         <Badge variant="outline" className={STATUS_CHIP[edit.status].className}>

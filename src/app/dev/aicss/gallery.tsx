@@ -64,7 +64,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="font-serif text-heading text-foreground">{title}</h2>
+        <h2 className="font-sans text-heading text-foreground">{title}</h2>
         {note && <p className="mt-0.5 max-w-2xl text-body text-muted-foreground">{note}</p>}
       </div>
       <div className="flex flex-col gap-5 rounded-card border border-border/55 bg-card/60 p-5">{children}</div>
@@ -101,7 +101,7 @@ export function AicssGallery() {
     <div className="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-10">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-serif text-display text-foreground">AIcss blocks</h1>
+          <h1 className="font-sans text-display text-foreground">AIcss blocks</h1>
           <p className="mt-1 max-w-2xl text-body text-muted-foreground">
             Ported from aicss.dev onto Juno&apos;s tokens. Geometry and easing are theirs; every colour is a
             token and dark mode is <code className="font-mono text-caption">.dark</code>, not the OS preference.

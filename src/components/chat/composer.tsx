@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   AudioLines,
-  Blocks,
   NotebookPen,
   ChevronDown,
   Cpu,
@@ -14,7 +13,6 @@ import {
   Loader2,
   MessageSquarePlus,
   Mic,
-  Paperclip,
   Plug,
   Plus,
   Search,
@@ -50,16 +48,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  PlusMenu,
+  PlusMenuRow,
+  PlusMenuSeparator,
+  type PlusMenuItem,
+  type PlusMenuSection,
+} from "@/components/chat/composer-plus-menu";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import {
   Popover,
@@ -1498,6 +1492,7 @@ export function Composer({
 
   React.useEffect(() => {
     if (plusOpen && !privateMode && !voiceActive) loadProjects();
+    if (!plusOpen) setConnectorQuery("");
   }, [plusOpen, privateMode, voiceActive, loadProjects]);
 
   const refreshConnectors = React.useCallback(
@@ -1752,49 +1747,251 @@ export function Composer({
   const activeToolCount = armedTools.length;
   const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
 
-  // Deep research — per-send, so it reads as a toggle that announces its own
-  // expiry. Gating matches the toolbar chip this replaced exactly: hidden
-  // without a Tavily key, in private chat, and on non-chat models; disabled
-  // with an upgrade hint on Free. Shared by both menus because the old chip
-  // lived on the toolbar, which voice mode also renders.
-  const researchMenuItem = researchAvailable ? (
-    <DropdownMenuItem
-      role="menuitemcheckbox"
-      aria-checked={research && planAllowsResearch}
-      disabled={!planAllowsResearch}
-      className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
-      onSelect={(event) => {
-        event.preventDefault();
-        setResearch((v) => !v);
-      }}
-    >
-      <div className="flex min-w-0 flex-1 items-center">
-        <ComposerIcons.research className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-        <span className="truncate font-medium">Deep research</span>
-      </div>
-      {planAllowsResearch ? (
-        <Switch
-          checked={research}
-          tabIndex={-1}
-          aria-hidden
-          className="pointer-events-none shrink-0"
-        />
-      ) : (
-        <span className="text-micro font-medium text-muted-foreground">
-          Pro
-        </span>
-      )}
-    </DropdownMenuItem>
-  ) : null;
-
-  // Voice mode's TOOLS group is a single row (research), so it stays a plain
-  // label — a disclosure over one item is just a lid.
-  const toolsLabel = (
-    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label">
-      <Blocks className="size-3.5" />
-      Tools
-    </DropdownMenuLabel>
+  /**
+   * The + menu, as data. Three sections: what to add, which tools are on, and
+   * where this chat sits (project, connectors) — see composer-plus-menu.tsx
+   * for the box itself. A row that cannot be used right now stays visible
+   * with the reason on it rather than vanishing, so "why is web search
+   * missing" never has to be asked.
+   */
+  const projectPanel = ({ close }: { close: () => void }) => (
+    <>
+      <ScrollFade className="min-h-0 flex-1" viewportClassName="max-h-64">
+        {loadingProjects && projects.length === 0 ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          </div>
+        ) : projects.length === 0 ? (
+          <p className="px-2.5 py-3 text-center text-caption text-muted-foreground">
+            No projects yet.
+          </p>
+        ) : (
+          projects.map((project) => {
+            const active = selectedProjectId === project.id;
+            return (
+              <PlusMenuRow
+                key={project.id}
+                role="menuitemradio"
+                aria-checked={active}
+                icon={AppIcons.projects}
+                onClick={() => {
+                  onPickProject?.(active ? null : project.id);
+                  close();
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                  {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
+                </span>
+              </PlusMenuRow>
+            );
+          })
+        )}
+      </ScrollFade>
+      <PlusMenuSeparator />
+      <PlusMenuRow
+        icon={Plus}
+        disabled={creatingProject}
+        onClick={() => void createProjectAndPick()}
+        className="text-primary-ink"
+      >
+        {creatingProject ? "Creating…" : "New project"}
+      </PlusMenuRow>
+    </>
   );
+
+  const connectorsPanel = ({ close }: { close: () => void }) => (
+    <>
+      <div className="px-0.5 pb-1.5 pt-0.5">
+        <label className="relative block">
+          {/* Raw `Search`: this filters the connector list in place.
+              `AppIcons.search` is the app's search destination, which this
+              never opens. */}
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={connectorQuery}
+            onChange={(event) => setConnectorQuery(event.target.value)}
+            placeholder="Search apps…"
+            aria-label="Search apps"
+            data-menu-autofocus=""
+            className="surface-inset h-8 w-full rounded-control border border-input pl-8 pr-2 text-ui outline-none transition-[border-color] duration-base ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
+          />
+        </label>
+      </div>
+      <div className="max-h-56 overflow-y-auto overscroll-contain">
+        {connectorsLoading && connectors.length === 0 ? (
+          <div className="flex flex-col gap-1 p-1">
+            {[0, 1, 2].map((row) => (
+              <span key={row} className="skeleton h-9 rounded-control" />
+            ))}
+          </div>
+        ) : connectors.length === 0 ? (
+          <PlusMenuRow
+            icon={Plug}
+            onClick={() => {
+              close();
+              router.push("/connections");
+            }}
+          >
+            Connect an app
+          </PlusMenuRow>
+        ) : visibleConnectors.length === 0 ? (
+          <p className="px-2.5 py-3 text-center text-caption text-muted-foreground">
+            No apps match “{connectorQuery.trim()}”.
+          </p>
+        ) : (
+          visibleConnectors.map((connector) => (
+            <PlusMenuRow
+              key={connector.id}
+              checked={connectorsEnabled.includes(connector.id)}
+              onClick={() => pickConnector(connector.id)}
+              leading={
+                <ConnectorMark id={connector.id} className="size-4 shrink-0 text-foreground" />
+              }
+            >
+              {connector.label}
+            </PlusMenuRow>
+          ))
+        )}
+      </div>
+      <PlusMenuSeparator />
+      <div className="flex items-center justify-between px-2.5 py-1 font-mono text-caption text-muted-foreground">
+        <span>{activeConnectorCount} of {MAX_CHAT_CONNECTORS} on</span>
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            router.push("/connections");
+          }}
+          className="rounded-xs text-primary-ink hover:underline"
+        >
+          Manage
+        </button>
+      </div>
+    </>
+  );
+
+  const researchRow: PlusMenuItem | null =
+    researchAvailable
+      ? {
+          kind: "toggle",
+          id: "research",
+          label: "Deep research",
+          icon: ComposerIcons.research,
+          checked: research && planAllowsResearch,
+          disabled: !planAllowsResearch,
+          note: planAllowsResearch ? undefined : "Pro",
+          onToggle: () => setResearch((v) => !v),
+        }
+      : null;
+
+  const plusSections: PlusMenuSection[] = voiceActive
+    ? [
+        [
+          {
+            kind: "action",
+            id: "photos",
+            label: "Photos",
+            icon: ComposerIcons.photos,
+            disabled: !canAttach,
+            onSelect: () => imageInputRef.current?.click(),
+          },
+        ],
+        researchRow ? [researchRow] : [],
+      ]
+    : [
+        [
+          {
+            kind: "action",
+            id: "files",
+            label: "Attach files",
+            icon: ComposerIcons.files,
+            disabled: !canAttach,
+            onSelect: () => fileInputRef.current?.click(),
+          },
+          {
+            kind: "action",
+            id: "photos",
+            label: "Photos",
+            icon: ComposerIcons.photos,
+            disabled: !canAttach,
+            onSelect: () => imageInputRef.current?.click(),
+          },
+          {
+            kind: "action",
+            id: "library",
+            label: "Library",
+            icon: AppIcons.library,
+            disabled: !canAttach,
+            onSelect: () => setLibraryOpen(true),
+          },
+          {
+            kind: "action",
+            id: "canvas",
+            label: "New canvas",
+            icon: ComposerIcons.canvas,
+            disabled: privateMode,
+            onSelect: startCanvas,
+          },
+        ],
+        [
+          {
+            kind: "toggle",
+            id: "search",
+            label: "Web search",
+            icon: ComposerIcons.web,
+            checked: canWebSearch && webSearchEnabled,
+            disabled: !canWebSearch,
+            note: canWebSearch ? undefined : modality === "chat" ? "Not on this model" : "Chat only",
+            onToggle: () => onToggleWebSearch?.(!webSearchEnabled),
+          },
+          {
+            kind: "toggle",
+            id: "canvas-tool",
+            label: "Canvas",
+            icon: LayoutTemplate,
+            checked: !privateMode && canvasEnabled,
+            disabled: privateMode,
+            note: privateMode ? "Incognito" : undefined,
+            onToggle: () => onToggleCanvas(!canvasEnabled),
+          },
+          {
+            kind: "toggle",
+            id: "memory",
+            label: "Memory",
+            icon: NotebookPen,
+            checked: settings.memoryEnabled,
+            onToggle: () => toggleMemory(!settings.memoryEnabled),
+          },
+          ...(researchRow ? [researchRow] : []),
+        ],
+        [
+          ...(!privateMode
+            ? [
+                {
+                  kind: "sub" as const,
+                  id: "project",
+                  label: "Project",
+                  icon: AppIcons.projects,
+                  detail: selectedProject?.name,
+                  render: projectPanel,
+                },
+              ]
+            : []),
+          ...(showConnectors
+            ? [
+                {
+                  kind: "sub" as const,
+                  id: "connectors",
+                  label: "Connectors",
+                  icon: Plug,
+                  detail: activeConnectorCount > 0 ? String(activeConnectorCount) : undefined,
+                  render: connectorsPanel,
+                },
+              ]
+            : []),
+        ],
+      ];
 
   return (
     <div
@@ -1834,7 +2031,7 @@ export function Composer({
           instead; the chip only announces where a brand-new chat will land. */}
       {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
-          <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-2.5 py-1 text-caption text-muted-foreground shadow-soft">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-caption text-muted-foreground">
             <AppIcons.projects className="size-3 text-primary" />
             <span>
               {"New chat in "}
@@ -1969,7 +2166,7 @@ export function Composer({
                 className={cn(
                   // `rounded-field`, like the collapsed-draft card that shares this
                   // slot — the two attachment cards were on two radii for no reason.
-                  "mx-3 mt-3 flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/5 px-3 py-2 shadow-soft",
+                  "mx-3 mt-3 flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/5 px-3 py-2",
                   quoteRemoving
                     ? "pointer-events-none motion-safe:animate-pop-out"
                     : "motion-safe:animate-rise-in",
@@ -2320,371 +2517,14 @@ export function Composer({
             )
           }
           leading={
-                <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={
-                            armedSummary ? `Add — ${armedSummary}` : "Add"
-                          }
-                          disabled={controlsLocked}
-                          className={cn(composerIconButtonClass, "group relative")}
-                        >
-                          <Plus
-                            aria-hidden="true"
-                            className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-                          />
-                          {/* The only trace a tool leaves on the bar: one dot.
-                              What is on is named inside the menu (and in the
-                              button's own label), not on the composer. */}
-                          {activeToolCount > 0 && (
-                            <span
-                              aria-hidden="true"
-                              className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary ring-2 ring-card"
-                            />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {armedSummary
-                        ? `Add — ${armedSummary}`
-                        : "Add files, tools and integrations"}
-                    </TooltipContent>
-                  </Tooltip>
-
-                  <DropdownMenuContent
-                    align="start"
-                    side="top"
-                    sideOffset={8}
-                    collisionPadding={24}
-                    avoidCollisions={true}
-                    className="w-64 max-h-[var(--radix-dropdown-menu-content-available-height,360px)] overflow-y-auto p-1.5"
-                  >
-                    {voiceActive ? (
-                      <>
-                        <DropdownMenuItem
-                          disabled={!features.storage || privateMode}
-                          onSelect={() => fileInputRef.current?.click()}
-                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                          <span className="flex-1 font-medium">
-                            Add files or photos
-                          </span>
-                        </DropdownMenuItem>
-                        {researchMenuItem && (
-                          <>
-                            <DropdownMenuSeparator className="my-1" />
-                            {toolsLabel}
-                            {researchMenuItem}
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
-                        <DropdownMenuItem
-                          disabled={!canAttach}
-                          onSelect={() => fileInputRef.current?.click()}
-                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                          <span className="flex-1 font-medium">
-                            Add files or photos
-                          </span>
-                        </DropdownMenuItem>
-
-                        <DropdownMenuItem
-                          onSelect={() => setLibraryOpen(true)}
-                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <AppIcons.library className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                          <span className="flex-1 font-medium">Library</span>
-                        </DropdownMenuItem>
-
-                        <DropdownMenuItem
-                          disabled={privateMode}
-                          onSelect={() => startCanvas()}
-                          className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <SquarePen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                          <span className="flex-1 font-medium">New canvas</span>
-                        </DropdownMenuItem>
-
-                        <DropdownMenuSeparator className="my-1" />
-                        {toolsLabel}
-
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={canWebSearch && webSearchEnabled}
-                          disabled={!canWebSearch}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            onToggleWebSearch?.(!webSearchEnabled);
-                          }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <div className="flex min-w-0 flex-1 items-center">
-                            <ComposerIcons.web className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                            <span className="truncate font-medium">
-                              Web search
-                            </span>
-                          </div>
-                          {canWebSearch ? (
-                            <Switch
-                              checked={webSearchEnabled}
-                              tabIndex={-1}
-                              aria-hidden
-                              className="pointer-events-none shrink-0"
-                            />
-                          ) : (
-                            <span className="text-micro font-medium text-muted-foreground">
-                              Off
-                            </span>
-                          )}
-                        </DropdownMenuItem>
-
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={!privateMode && canvasEnabled}
-                          disabled={privateMode}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            onToggleCanvas(!canvasEnabled);
-                          }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <div className="flex min-w-0 flex-1 items-center">
-                            <LayoutTemplate className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                            <span className="truncate font-medium">
-                              Canvas editor
-                            </span>
-                          </div>
-                          <Switch
-                            checked={!privateMode && canvasEnabled}
-                            tabIndex={-1}
-                            aria-hidden
-                            className="pointer-events-none shrink-0"
-                          />
-                        </DropdownMenuItem>
-
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={settings.memoryEnabled}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            toggleMemory(!settings.memoryEnabled);
-                          }}
-                          className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 cursor-pointer text-xs"
-                        >
-                          <div className="flex min-w-0 flex-1 items-center">
-                            <NotebookPen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                            <span className="truncate font-medium">Memory</span>
-                          </div>
-                          <Switch
-                            checked={settings.memoryEnabled}
-                            tabIndex={-1}
-                            aria-hidden
-                            className="pointer-events-none shrink-0"
-                          />
-                        </DropdownMenuItem>
-
-                        {researchMenuItem}
-
-                        {(!privateMode || showConnectors) && (
-                          <>
-                            <DropdownMenuSeparator className="my-1" />
-                            <DropdownMenuLabel className="font-mono text-label">Context</DropdownMenuLabel>
-                          </>
-                        )}
-
-                        {!privateMode && (
-                          <DropdownMenuSub>
-                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs">
-                              <AppIcons.projects className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                              <span className="flex-1 font-medium">
-                                Project
-                              </span>
-                              {selectedProject && (
-                                <span className="font-mono text-micro text-primary truncate max-w-[80px] mr-1">
-                                  {selectedProject.name}
-                                </span>
-                              )}
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1.5">
-                              <ScrollFade
-                                className="min-h-0 flex-1"
-                                viewportClassName="space-y-0.5"
-                              >
-                                {loadingProjects && projects.length === 0 ? (
-                                  <div className="flex items-center justify-center py-4">
-                                    <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-                                  </div>
-                                ) : projects.length === 0 ? (
-                                  <p className="px-2 py-3 text-center text-micro text-muted-foreground">
-                                    No projects yet.
-                                  </p>
-                                ) : (
-                                  projects.map((project) => {
-                                    const active =
-                                      selectedProjectId === project.id;
-                                    return (
-                                      <DropdownMenuItem
-                                        key={project.id}
-                                        onSelect={() =>
-                                          pickProject(
-                                            active ? null : project.id,
-                                          )
-                                        }
-                                        className="h-9 rounded-control px-2.5 text-xs"
-                                      >
-                                        <AppIcons.projects
-                                          className={cn(
-                                            "size-3.5 mr-2",
-                                            active
-                                              ? "text-primary"
-                                              : "text-muted-foreground",
-                                          )}
-                                        />
-                                        <span className="flex-1 truncate">
-                                          {project.name}
-                                        </span>
-                                        {active && (
-                                          <StatusIcons.success className="size-3 text-primary" />
-                                        )}
-                                      </DropdownMenuItem>
-                                    );
-                                  })
-                                )}
-                              </ScrollFade>
-                              <div className="mt-1 shrink-0 border-t border-foreground/12 pt-1">
-                                <DropdownMenuItem
-                                  disabled={creatingProject}
-                                  onSelect={(e) => {
-                                    e.preventDefault();
-                                    void createProjectAndPick();
-                                  }}
-                                  className="h-9 rounded-control px-2.5 text-xs font-medium text-primary"
-                                >
-                                  {creatingProject ? (
-                                    <Loader2 className="size-3 animate-spin mr-1.5" />
-                                  ) : (
-                                    <Plus className="size-3 mr-1.5" />
-                                  )}
-                                  <span>New project</span>
-                                </DropdownMenuItem>
-                              </div>
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                        )}
-
-                        {showConnectors && (
-                          <DropdownMenuSub
-                            onOpenChange={(open) =>
-                              !open && setConnectorQuery("")
-                            }
-                          >
-                            <DropdownMenuSubTrigger className="flex h-9 items-center rounded-control px-2.5 cursor-pointer text-xs">
-                              <Plug className="size-4 text-muted-foreground mr-2.5 shrink-0" />
-                              <span className="flex-1 font-medium">
-                                Connectors
-                              </span>
-                              {activeConnectorCount > 0 && (
-                                <span className="font-mono text-micro text-primary mr-1">
-                                  {activeConnectorCount}
-                                </span>
-                              )}
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-64 p-1.5">
-                              <div className="pb-1.5">
-                                <label className="relative block">
-                                  {/* Raw `Search`: this filters the connector list in
-                                  place. `AppIcons.search` is the app's search
-                                  destination, which this never opens. */}
-                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                                  <input
-                                    value={connectorQuery}
-                                    onChange={(event) =>
-                                      setConnectorQuery(event.target.value)
-                                    }
-                                    onKeyDown={(event) =>
-                                      event.stopPropagation()
-                                    }
-                                    placeholder="Search apps…"
-                                    aria-label="Search apps"
-                                    className="surface-inset h-8 w-full rounded-control border border-input pl-7 pr-2 text-xs outline-none transition-[border-color] duration-base ease-out-soft placeholder:text-muted-foreground focus:border-foreground/60"
-                                  />
-                                </label>
-                              </div>
-                              <div className="max-h-52 space-y-0.5 overflow-y-auto">
-                                {connectorsLoading &&
-                                connectors.length === 0 ? (
-                                  <div className="flex flex-col gap-1 p-1">
-                                    {[0, 1, 2].map((row) => (
-                                      <span
-                                        key={row}
-                                        className="skeleton h-9 rounded-control"
-                                      />
-                                    ))}
-                                  </div>
-                                ) : connectors.length === 0 ? (
-                                  <DropdownMenuItem
-                                    onSelect={() => router.push("/connections")}
-                                    className="h-9 rounded-control px-2.5 text-xs"
-                                  >
-                                    <Plug className="size-3.5 text-muted-foreground mr-2" />
-                                    <span className="flex-1">
-                                      Connect an app
-                                    </span>
-                                  </DropdownMenuItem>
-                                ) : visibleConnectors.length === 0 ? (
-                                  <div className="px-2 py-3 text-center text-micro text-muted-foreground">
-                                    No apps match “{connectorQuery.trim()}”.
-                                  </div>
-                                ) : (
-                                  visibleConnectors.map((connector) => {
-                                    const selected = connectorsEnabled.includes(
-                                      connector.id,
-                                    );
-                                    return (
-                                      <DropdownMenuItem
-                                        key={connector.id}
-                                        onSelect={(event) => {
-                                          event.preventDefault();
-                                          pickConnector(connector.id);
-                                        }}
-                                        className="h-9 rounded-control px-2.5 cursor-pointer text-xs"
-                                      >
-                                        <ConnectorMark
-                                          id={connector.id}
-                                          className="size-3.5 mr-2"
-                                        />
-                                        <span className="min-w-0 flex-1 truncate">
-                                          {connector.label}
-                                        </span>
-                                        <Switch
-                                          checked={selected}
-                                          tabIndex={-1}
-                                          aria-hidden
-                                          className="pointer-events-none shrink-0"
-                                        />
-                                      </DropdownMenuItem>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                        )}
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            <PlusMenu
+              open={plusOpen}
+              onOpenChange={setPlusOpen}
+              disabled={controlsLocked}
+              label={armedSummary ? `Add — ${armedSummary}` : "Add"}
+              tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
+              sections={plusSections}
+            />
           }
           trailing={
             <>
@@ -2693,12 +2533,7 @@ export function Composer({
                   className={cn("min-w-0", controlsLocked && "pointer-events-none")}
                   aria-disabled={controlsLocked}
                 >
-                  <ModelSelector
-                    value={model}
-                    onChange={changeModel}
-                    reasoningEffort={reasoningEffort}
-                    onReasoningChange={onReasoningChange}
-                  />
+                  <ModelSelector value={model} onChange={changeModel} />
                 </div>
 
                 {/* Thinking effort */}

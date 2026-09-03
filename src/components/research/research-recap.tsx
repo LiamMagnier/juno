@@ -118,7 +118,7 @@ export function ResearchRecap({
               <p className="text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
             )}
           </div>
-          <h3 className="mt-2 text-balance font-serif text-title text-foreground">{title ?? run.goal}</h3>
+          <h3 className="mt-2 text-balance font-sans text-title text-foreground">{title ?? run.goal}</h3>
           <p className="mt-2 text-ui text-muted-foreground">{provenance.join(" · ")}</p>
         </div>
 

@@ -26,9 +26,9 @@ const ARTICLE = [
   "pb-16 text-body leading-relaxed text-foreground/90",
   // Headings on Juno's own scale (display / title / heading). The tokens carry
   // weight and tracking, so nothing is restated beside them.
-  "[&_h1]:text-balance [&_h1]:font-serif [&_h1]:text-display [&_h1]:text-foreground",
-  "[&_h2]:mt-10 [&_h2]:font-serif [&_h2]:text-title [&_h2]:text-foreground",
-  "[&_h3]:mt-6 [&_h3]:font-serif [&_h3]:text-heading [&_h3]:text-foreground",
+  "[&_h1]:text-balance [&_h1]:font-sans [&_h1]:text-display [&_h1]:text-foreground",
+  "[&_h2]:mt-10 [&_h2]:font-sans [&_h2]:text-title [&_h2]:text-foreground",
+  "[&_h3]:mt-6 [&_h3]:font-sans [&_h3]:text-heading [&_h3]:text-foreground",
   // Body rhythm.
   "[&_p]:mt-4 [&_ul]:mt-4 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-6 [&_li]:pl-1",
   "[&_strong]:font-semibold [&_strong]:text-foreground",
