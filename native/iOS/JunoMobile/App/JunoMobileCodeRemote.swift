@@ -565,8 +565,16 @@ struct JunoMobileCodeRemoteThreadView: View {
     .junoHaptic(JunoMobileHaptic.stop, trigger: stopHaptic)
     .junoHaptic(JunoMobileHaptic.attention, trigger: attentionHaptic)
     .task(id: session.sessionID) { await follow() }
-    .onChange(of: thread.pendingApproval?.requestID) { _, id in
-      if id != nil { attentionHaptic.fire() }
+    .onChange(of: thread.pendingApproval?.requestID) { oldID, id in
+      if let oldID, oldID != id {
+        JunoMobileLiveActivityCoordinator.shared.resolveApproval(requestID: oldID)
+      }
+      guard let approval = thread.pendingApproval, approval.requestID == id else { return }
+      attentionHaptic.fire()
+      JunoMobileLiveActivityCoordinator.shared.presentApproval(
+        deviceID: session.deviceID, sessionID: session.sessionID,
+        requestID: approval.requestID, summary: approval.summary, risk: approval.risk
+      )
     }
     .accessibilityIdentifier("juno.mobile.code-remote-thread")
   }

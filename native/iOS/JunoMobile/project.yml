@@ -65,6 +65,8 @@ targets:
       # contributes nothing to Stable/Release builds.
       - package: JunoNativeKit
         product: JunoPreviewSupport
+      - target: JunoMobileWidgets
+        embed: true
     configFiles:
       Debug: ../../Config/JunoMobile-Debug.xcconfig
       Stable: ../../Config/JunoMobile-Stable.xcconfig
@@ -74,6 +76,34 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Resources/JunoMobile.entitlements
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Info.plist
+  JunoMobileWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes:
+          - Info.plist
+      - path: App/JunoMobileLiveActivities.swift
+    configFiles:
+      Debug: ../../Config/JunoMobile-Debug.xcconfig
+      Stable: ../../Config/JunoMobile-Stable.xcconfig
+      Next: ../../Config/JunoMobile-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Widgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: $(JUNO_MOBILE_BUNDLE_IDENTIFIER).widgets
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: WIDGET_EXTENSION
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: 1,2
+    dependencies:
+      - sdk: ActivityKit.framework
+      - sdk: WidgetKit.framework
+      # The widget tiles and Live Activity cards are cut from the same tokens
+      # as the app's surfaces, so they track the palette instead of baking in
+      # one appearance's colors.
+      - package: JunoNativeKit
+        product: JunoDesignSystem
   JunoMobileTests:
     type: bundle.unit-test
     platform: iOS
@@ -110,6 +140,7 @@ schemes:
     build:
       targets:
         JunoMobile: all
+        JunoMobileWidgets: all
         JunoMobileTests: [test]
         JunoMobileUITests: [test]
     run:

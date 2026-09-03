@@ -23,6 +23,7 @@ final class JunoMobileLaunchRequests {
     case ask(String)
     case openConversation(String)
     case openRemoteSession(deviceID: String, sessionID: String)
+    case respondToRemoteApproval(deviceID: String, sessionID: String, requestID: String, approved: Bool)
   }
 
   /// The request waiting to be acted on. Cleared by whoever handles it.
@@ -49,6 +50,39 @@ final class JunoMobileLaunchRequests {
   func handle(remoteDeviceID deviceID: String?, sessionID: String?) {
     guard let deviceID, let sessionID else { return }
     pending = .openRemoteSession(deviceID: deviceID, sessionID: sessionID)
+  }
+
+  /// Parses a widget or Live Activity deep link back into a launch request.
+  ///
+  /// The routes are the exact, explicit set ``JunoMobileWidgetRoute`` builds.
+  /// Parsing nothing else — including the OAuth callback that shares the
+  /// scheme — keeps a malicious link from creating a Code command or deciding
+  /// an approval that was never shown.
+  static func request(for url: URL) -> Request? {
+    guard url.scheme == JunoMobileWidgetRoute.scheme, url.host == JunoMobileWidgetRoute.host
+    else { return nil }
+    let path = url.pathComponents.filter { $0 != "/" }
+    switch path {
+    case ["chat"]: return .newChat
+    case ["voice"]: return .voice
+    case ["dictate"]: return .dictate
+    case ["code"]: return .code
+    case ["code", "approval"]:
+      let values = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+      let value = { (name: String) in values.first(where: { $0.name == name })?.value }
+      guard let deviceID = value("deviceID"), let sessionID = value("sessionID"),
+        let requestID = value("requestID"), let approved = value("approved")
+      else { return nil }
+      return .respondToRemoteApproval(
+        deviceID: deviceID, sessionID: sessionID, requestID: requestID, approved: approved == "true"
+      )
+    default:
+      // The session route cannot be a case: an array literal in pattern
+      // position is an expression pattern, and `let` bindings cannot ride
+      // inside one.
+      guard path.count == 4, path[0] == "code", path[1] == "session" else { return nil }
+      return .openRemoteSession(deviceID: path[2], sessionID: path[3])
+    }
   }
 }
 

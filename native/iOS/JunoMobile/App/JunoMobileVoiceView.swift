@@ -279,6 +279,19 @@ struct JunoMobileVoiceDock: View {
                 }
         )
         .accessibilityIdentifier("juno.mobile.voice")
+        // The Live Activity outlives the app's windows, so it learns about
+        // the call from the same view that draws the call — the dock is on
+        // screen whenever the full-screen mode is not.
+        .onChange(of: controller.phase) { _, phase in
+          JunoMobileLiveActivityCoordinator.shared.updateVoice(
+            phase: phase.liveActivityStatus, muted: controller.muted
+          )
+        }
+        .onChange(of: controller.muted) { _, muted in
+          JunoMobileLiveActivityCoordinator.shared.updateVoice(
+            phase: controller.phase.liveActivityStatus, muted: muted
+          )
+        }
     }
 
     /// A phone holds status, mute, camera, full screen, options and hang up:
@@ -867,4 +880,19 @@ struct JunoMobileVoiceField: View {
 struct JunoMobileVoiceTranscript {
     let sessionID: UUID
     let turns: [NativeVoiceTranscriptClient.Turn]
+}
+
+/// The call's one-word state outside the app. The Live Activity updates on
+/// phase and mute only — not on speaking flips, which change several times a
+/// minute and would spend ActivityKit's update budget on nothing.
+extension JunoRealtimeVoiceController.Phase {
+    var liveActivityStatus: String {
+        switch self {
+        case .idle, .connecting: "Connecting…"
+        case .live: "Live"
+        case .reconnecting: "Reconnecting…"
+        case .error: "Unavailable"
+        case .ended: "Ended"
+        }
+    }
 }

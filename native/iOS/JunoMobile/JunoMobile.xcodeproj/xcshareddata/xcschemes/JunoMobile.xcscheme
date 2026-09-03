@@ -49,6 +49,20 @@
                ReferencedContainer = "container:JunoMobile.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "61C45D2C1F0D7AE8F6AF3871"
+               BuildableName = "JunoMobileWidgets.appex"
+               BlueprintName = "JunoMobileWidgets"
+               ReferencedContainer = "container:JunoMobile.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

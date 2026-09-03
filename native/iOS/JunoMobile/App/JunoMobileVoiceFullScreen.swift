@@ -86,6 +86,19 @@ struct JunoMobileVoiceFullScreen: View {
       if live, pushToTalk, !controller.muted { controller.setMuted(true) }
     }
     .accessibilityIdentifier("juno.mobile.voice-fullscreen")
+    // The full screen is the one surface watching the call while it is
+    // looked at, so it keeps the Live Activity current while it is up; the
+    // dock does the same when it is not.
+    .onChange(of: controller.phase) { _, phase in
+      JunoMobileLiveActivityCoordinator.shared.updateVoice(
+        phase: phase.liveActivityStatus, muted: controller.muted
+      )
+    }
+    .onChange(of: controller.muted) { _, muted in
+      JunoMobileLiveActivityCoordinator.shared.updateVoice(
+        phase: controller.phase.liveActivityStatus, muted: muted
+      )
+    }
   }
 
   // MARK: - Top
