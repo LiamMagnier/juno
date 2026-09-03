@@ -100,10 +100,12 @@ struct DesktopLibraryScreen: View {
     @State private var hoveredID: NativeLibraryItem.ID?
     @AppStorage("juno.desktop.library-view") private var storedPresentation = Presentation.grid.rawValue
 
-    /// The web shell's `max-w-6xl`. Without it a maximised window stretches one
-    /// file name across two thousand points and the page loses the measure the
-    /// website reads at.
-    private static let contentWidth: CGFloat = 1152
+    /// The page measure — ``JunoReadingMeasure/wide``, the rung the brief gives
+    /// a page of tiles and a table. The web shell's `max-w-6xl` was the same
+    /// intent at an ad-hoc 1152; one number from the shared pair keeps this page
+    /// on the same measure as Artifacts, Connections and Tasks, and a maximised
+    /// window no longer stretches one file name across two thousand points.
+    private static let contentWidth: CGFloat = JunoReadingMeasure.wide
     /// A grid tile's range. The floor keeps a long name legible on two lines'
     /// worth of width; the ceiling stops four columns from becoming two slabs on
     /// a wide display.
@@ -234,6 +236,7 @@ struct DesktopLibraryScreen: View {
                         .junoInk()
                     Button("Clear") { clearSelection() }
                         .buttonStyle(.link)
+                        .contentShape(.rect)
                         .accessibilityIdentifier("juno.desktop.library-clear-selection")
                 }
             }
@@ -360,6 +363,7 @@ struct DesktopLibraryScreen: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .contentShape(.rect)
         .help("Remove a document from this Mac's search index")
         .accessibilityIdentifier("juno.desktop.library-document-index-manage")
     }
@@ -392,6 +396,7 @@ struct DesktopLibraryScreen: View {
                 index.clearError()
             }
             .buttonStyle(.borderless)
+            .contentShape(.rect)
         }
         .accessibilityIdentifier("juno.desktop.library-document-index-error")
     }
@@ -650,6 +655,12 @@ struct DesktopLibraryScreen: View {
             .font(.title2)
         }
         .buttonStyle(.plain)
+        // The 44pt frame is the target, not the glyph: a hover-revealed check
+        // box has to be findable and clickable without landing on three
+        // anti-aliased pixels, and an invisible frame in the tile's corner is
+        // how the target matches the affordance rather than the ink.
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(.rect)
         .accessibilityLabel(isSelected ? "Deselect \(item.fileName)" : "Select \(item.fileName)")
     }
 
@@ -908,6 +919,7 @@ struct DesktopLibraryScreen: View {
                         .lineLimit(2)
                     Button("Retry", action: refresh)
                         .buttonStyle(.borderless)
+                        .contentShape(.rect)
                         .disabled(model.isLoading)
                         .accessibilityIdentifier("juno.desktop.library-retry")
                 }

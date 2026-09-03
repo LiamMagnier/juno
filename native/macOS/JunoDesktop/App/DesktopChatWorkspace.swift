@@ -208,6 +208,7 @@ struct DesktopChatWorkspace: View {
                     syncModel: configuration.syncModel,
                     outbox: configuration.outbox,
                     openUsage: { destination.wrappedValue = .usage },
+                    openMemory: { destination.wrappedValue = .memory },
                     codeHostModel: configuration.codeHostModel,
                     workHostModel: configuration.workHostModel,
                     learningModel: nil,

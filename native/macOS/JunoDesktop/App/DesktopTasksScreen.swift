@@ -163,6 +163,12 @@ struct DesktopTasksScreen: View {
                 // how a page ends up sizing the split view.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // One page measure: ``JunoReadingMeasure/wide``, the rung the brief
+        // gives a table. A records page that filled the window stretched its
+        // columns across a maximised display; clamped, the table reads at the
+        // same width as the Library's and the toolbar keeps the extra.
+        .frame(maxWidth: JunoReadingMeasure.wide)
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Header
@@ -223,6 +229,7 @@ struct DesktopTasksScreen: View {
             Spacer(minLength: JunoSpace.snug)
             Button("Try Again") { Task { await model.refresh() } }
                 .controlSize(.small)
+                .contentShape(.rect)
         }
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
@@ -916,10 +923,12 @@ private struct DesktopTaskEditor: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .contentShape(.rect)
                 Button(isEditing ? "Save Changes" : "Create Task", action: save)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)
+                    .contentShape(.rect)
                     .disabled(!draft.isValid || isSaving || modelOptions.isEmpty)
                     .accessibilityIdentifier("juno.desktop.task-save")
             }

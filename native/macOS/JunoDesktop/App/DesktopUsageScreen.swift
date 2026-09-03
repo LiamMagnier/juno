@@ -36,7 +36,7 @@ struct DesktopUsageScreen: View {
     @State private var isLoading = false
 
     var body: some View {
-        JunoDetailPage(maxWidth: DesktopUsageMetrics.readingWidth) {
+        JunoDetailPage(maxWidth: DesktopUsageMetrics.pageWidth) {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
 
@@ -194,9 +194,9 @@ struct DesktopUsageScreen: View {
 // MARK: - Metrics
 
 private enum DesktopUsageMetrics {
-    /// The wide measure, not the reading one: this page is a dashboard of
-    /// side-by-side cards, not a column of prose.
-    static let readingWidth: CGFloat = JunoReadingMeasure.wide
+    /// The page measure — ``JunoReadingMeasure/wide``: this page is a dashboard
+    /// of side-by-side cards, not a column of prose.
+    static let pageWidth: CGFloat = JunoReadingMeasure.wide
     /// One day in the activity grid, and the gap between two.
     static let activityCell: CGFloat = 11
     static let activityGap: CGFloat = 3
@@ -720,6 +720,7 @@ private struct DesktopUsageNotice: View {
             if let retry {
                 Button("Retry", action: retry)
                     .controlSize(.small)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)

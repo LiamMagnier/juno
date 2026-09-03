@@ -222,6 +222,7 @@ struct DesktopConnectionsScreen: View {
                         .junoMetaInk()
                 }
                 .buttonStyle(.plain)
+                .contentShape(.rect)
                 .help("Clear the search")
                 .accessibilityLabel("Clear search")
                 .accessibilityIdentifier("connections.search.clear")
@@ -229,17 +230,17 @@ struct DesktopConnectionsScreen: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .frame(height: DesktopConnectorGrid.chipHeight)
-        // Raised and bordered, not a filled pill: the chips below are filters and
-        // read as one control each, while this is somewhere to type. `junoCard`
-        // would be wrong for the same reason — it throws a shadow, and an input
-        // is not a card floating over the page.
+        // The inset well, not a raised tile: an input is recessed into the page,
+        // so it takes the secondary fill and the inner hairline (`SOFT_UI` §4's
+        // `junoWell`). It used to stand on `junoRaised` — the raised token —
+        // which is the wrong direction for somewhere you type.
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .fill(Color.junoRaised)
+                .fill(Color.junoMuted)
         )
         .overlay(
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
         .frame(maxWidth: DesktopConnectorGrid.searchFieldWidth, alignment: .leading)
     }
@@ -464,6 +465,7 @@ struct DesktopConnectionsScreen: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
+        .contentShape(.rect)
     }
 
     @ViewBuilder
@@ -482,6 +484,7 @@ struct DesktopConnectionsScreen: View {
                     }
                 }
                 .buttonStyle(.bordered)
+                .contentShape(.rect)
                 .disabled(model.isLoadingCatalog)
                 .accessibilityLabel("Load more apps")
                 .accessibilityIdentifier("connections.load-more")
@@ -783,9 +786,11 @@ private enum DesktopConnectorState: Equatable {
 /// number that decides how many columns a window shows deserves to say what it is
 /// for, and the alternative is the same literal drifting apart in four places.
 private enum DesktopConnectorGrid {
-    /// The web's `max-w-5xl` reading measure, so a wide window keeps three columns
-    /// of readable cards rather than stretching them across the whole display.
-    static let pageWidth: CGFloat = 1024
+    /// The page measure — ``JunoReadingMeasure/wide``, the rung the brief gives
+    /// a directory of cards (the web's `max-w-5xl` was the same intent), so a
+    /// wide window keeps three columns of readable cards rather than stretching
+    /// them across the whole display.
+    static let pageWidth: CGFloat = JunoReadingMeasure.wide
     /// Narrow enough that the sidebar can stay open on a laptop and still show two
     /// columns; wide enough that a card never becomes a banner on a large display.
     static let minimumCardWidth: CGFloat = 268
@@ -951,6 +956,7 @@ private struct DesktopConnectionsNotice: View {
             if let actionLabel, let action {
                 Button(actionLabel, action: action)
                     .controlSize(.small)
+                    .contentShape(.rect)
             }
         }
         .padding(JunoSpace.cozy)
