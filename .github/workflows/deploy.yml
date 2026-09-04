@@ -475,6 +475,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # `runner/agent-core/dist` is build output, and `scripts/work-runner.ts`
+      # imports it directly by path. It must be built before `npm run build`
+      # so that Next.js typechecking succeeds.
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+
       - name: Build app
         run: npm run build
 
@@ -483,25 +491,6 @@ jobs:
           npm ci --prefix relay
           npm test --prefix relay
           npm run build --prefix relay
-
-      # The cloud Work executor imports `runner/agent-core/dist/work/index.js`
-      # by path, so `dist/` has to exist on the VM or `juno-work` crash-loops on
-      # its first claimed run with an unresolvable module — after the run has
-      # been marked `preparing`, which looks to the user like a task that hangs.
-      #
-      # `dist/` is gitignored, so it reaches the VM through the reviewed build
-      # artifact packaged immediately after this step. The `runner` job builds
-      # the same output for its own test gate, but that is a different job with
-      # a different checkout and its dist never leaves it.
-      #
-      # This is one of three parts and all three have to land together: the
-      # build here, the dependency/output archive below, and the PM2 app in
-      # deploy/ecosystem.config.js. Two of the three produce a worker that looks
-      # deployed and never starts.
-      - name: Build the vendored runner core
-        run: |
-          npm ci --prefix runner/agent-core
-          npm run build --prefix runner/agent-core
 
       # The VM is intentionally small. Ship the exact outputs produced by the
       # reviewed runner instead of asking production to run Next, TypeScript or
