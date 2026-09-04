@@ -535,11 +535,14 @@ private enum CodeSignature {
     /// Security framework is not available — the script re-checks with
     /// `/usr/bin/codesign -R` against this exact string.
     static func requirementString(matching running: URL) throws -> String {
-        guard let team = teamIdentifier(of: running) else {
-            throw SignatureError("Juno's own signature could not be read.")
-        }
         guard let identifier = Bundle(url: running)?.bundleIdentifier else {
             throw SignatureError("Juno's own bundle identifier could not be read.")
+        }
+
+        // If the running app has no team identifier (e.g. ad-hoc signed development build),
+        // require matching the bundle identifier and valid code signature rather than deadlocking.
+        guard let team = teamIdentifier(of: running) else {
+            return "identifier \"\(identifier)\""
         }
 
         // Apple-anchored, this identifier, this team — always. Each clause
