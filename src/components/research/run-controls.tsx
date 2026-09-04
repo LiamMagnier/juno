@@ -99,18 +99,15 @@ export function PlanReview({
     <div>
       <p className="text-ui text-muted-foreground">{hasSteps ? PLAN_COPY.lede : PLAN_COPY.ledeFallback}</p>
 
-      <ol className="mt-3.5 flex flex-col gap-0.5">
+      <ol className="mt-3.5 flex flex-col gap-2">
         {primary.map((value, i) => (
           <li key={i} className="flex items-start gap-3">
-            {/* A hollow node per step, echoing the spine the run draws once it
-                is going — the gate is the same five acts before they happen. */}
             <span
               aria-hidden
-              className="mt-[13px] size-[7px] shrink-0 rounded-full border border-border bg-transparent"
-            />
-            {/* Chromeless at rest, an input on focus. A full-chrome field per
-                row draws five boxes where the reader needs one list — the plan
-                is to be READ first and edited second. */}
+              className="mt-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-secondary/60 text-caption font-mono font-medium text-muted-foreground"
+            >
+              {i + 1}
+            </span>
             <textarea
               value={value}
               rows={1}
@@ -128,9 +125,9 @@ export function PlanReview({
                 el.style.height = `${el.scrollHeight}px`;
               }}
               className={cn(
-                "min-w-0 flex-1 resize-none rounded-control bg-transparent px-2 py-1.5 outline-none",
+                "min-w-0 flex-1 resize-none rounded-control border border-border/50 bg-secondary/30 px-3 py-2 outline-none",
                 "text-body leading-relaxed text-foreground/90",
-                "transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:bg-secondary/60 motion-reduce:transition-none"
+                "transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:border-primary/40 focus-visible:bg-secondary/60 motion-reduce:transition-none"
               )}
             />
           </li>

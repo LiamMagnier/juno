@@ -320,9 +320,9 @@ export function stageForState(state: ResearchState): ResearchStage {
 /** Stage headings. Written as copy because the panel renders them verbatim. */
 export const RESEARCH_STAGE_LABEL: Record<ResearchStage, string> = {
   plan: "Planning",
-  investigate: "Investigating",
-  review: "Reviewing the evidence",
-  write: "Writing the report",
+  investigate: "Gathering sources",
+  review: "Analyzing evidence",
+  write: "Synthesizing report",
   done: "Finished",
 };
 

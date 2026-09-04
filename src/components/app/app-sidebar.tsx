@@ -1082,7 +1082,7 @@ function Disclosure({ open, children }: { open: boolean; children: React.ReactNo
     >
       <div
         className={cn(
-          "-mx-2 min-h-0 overflow-hidden px-2 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          "min-h-0 overflow-hidden transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
           !open && "opacity-0"
         )}
       >
@@ -1114,7 +1114,7 @@ function InlineNameInput({
     onCommit(draft);
   };
   return (
-    <div className={cn("flex items-center gap-1 py-0.5 pl-1 pr-1", nested && "pl-5")}>
+    <div className={cn("flex min-h-9 items-center gap-1 py-0.5 pr-1.5", nested ? "pl-5" : "pl-2.5")}>
       <Input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -1227,9 +1227,11 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-control border pr-1 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
-        nested ? "pl-5" : "pl-2",
-        active ? "surface-raised border-border/60 text-foreground" : "border-transparent hover:bg-sidebar-accent"
+        "group relative flex min-h-9 items-center rounded-control border pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
+        nested ? "pl-5" : "pl-2.5",
+        active
+          ? "surface-raised border-border/60 font-semibold text-foreground"
+          : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
       )}
     >
       <Link
@@ -1242,13 +1244,13 @@ function ConversationRow({
         }}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 font-medium text-sidebar-foreground/90 hover:text-foreground",
-          nested ? "text-ui" : "text-sm",
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground transition-colors duration-fast ease-out-soft hover:text-foreground",
+          nested && "text-ui",
           active && "font-semibold text-foreground"
         )}
         title={conversation.title}
       >
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
           <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
         <AnimatedTitle title={conversation.title || "New chat"} animate={conversation.titleSource === "ai"} className="min-w-0 flex-1" />
@@ -1348,8 +1350,10 @@ function ProjectRow({
     <div>
       <div
         className={cn(
-          "group relative flex items-center rounded-control border pl-2 pr-1 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
-          active ? "surface-raised border-border/60 text-foreground" : "border-transparent hover:bg-sidebar-accent"
+          "group relative flex min-h-9 items-center rounded-control border pl-2.5 pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
+          active
+            ? "surface-raised border-border/60 font-semibold text-foreground"
+            : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
         )}
       >
         <Link
@@ -1357,12 +1361,12 @@ function ProjectRow({
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground/90 hover:text-foreground",
+            "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground transition-colors duration-fast ease-out-soft hover:text-foreground",
             active && "font-semibold text-foreground"
           )}
           title={project.name}
         >
-          <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
             <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
@@ -1417,7 +1421,7 @@ function ProjectRow({
       </div>
       {hasChats && (
         <Disclosure open={expanded}>
-          <div className="mt-0.5 flex flex-col">
+          <div className="mt-0.5 space-y-0.5">
             {visibleChats.map((c) => (
               <Link
                 key={c.id}
@@ -1426,14 +1430,18 @@ function ProjectRow({
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
                 title={c.title}
                 className={cn(
-                  "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-ui transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
-                  activePath === `/chat/${c.id}` ? "bg-sidebar-accent font-medium text-foreground" : "text-sidebar-foreground/70 hover:text-foreground"
+                  "group group/pc flex min-h-8 items-center gap-2 rounded-control border py-1 pl-8 pr-2 text-ui transition-[color,background-color,border-color] duration-fast ease-out-soft",
+                  activePath === `/chat/${c.id}`
+                    ? "surface-raised border-border/60 font-medium text-foreground"
+                    : "border-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
                 )}
               >
-                <SidebarMotionIcon
-                  kind="conversation"
-                  className="size-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground"
-                />
+                <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground [.surface-raised_&]:text-foreground">
+                  <SidebarMotionIcon
+                    kind="conversation"
+                    className="size-3.5 shrink-0"
+                  />
+                </span>
                 <span dir="auto" className="min-w-0 flex-1 truncate">
                   {c.title || "New chat"}
                 </span>

@@ -1174,6 +1174,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Work"
   },
   {
+    "id": "1078bd2dc1424fe9",
+    "source": "Gathering sources"
+  },
+  {
     "id": "1081cf374f5306cd",
     "source": "Open Juno"
   },
@@ -1406,10 +1410,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "On drag"
   },
   {
-    "id": "13e3869dfd816830",
-    "source": "Investigating"
-  },
-  {
     "id": "1404a07c7fb4878f",
     "source": "Could not delete the artifact."
   },
@@ -1504,10 +1504,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1509f561f2416598",
     "source": "Save"
-  },
-  {
-    "id": "1520bb523f66cd79",
-    "source": "The first results land within a few seconds."
   },
   {
     "id": "15606396d1358a58",
@@ -1990,16 +1986,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not update chat."
   },
   {
-    "id": "1c565093a84a7200",
-    "source": "How it worked"
-  },
-  {
     "id": "1c608b3ca6267582",
     "source": "List the user's iCloud Mail mailboxes (folders)."
   },
   {
     "id": "1c7f897b7d04bfa2",
     "source": "It disappears from your list and can no longer run. The versions themselves are kept, because runs from before today recorded which one they followed and that has to stay answerable."
+  },
+  {
+    "id": "1c81491a0b0bbf53",
+    "source": "Input needed"
   },
   {
     "id": "1c83b838c87d53aa",
@@ -2272,6 +2268,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "20bad0a82682cc6e",
     "source": "Request a secure password-reset link for your Juno account."
+  },
+  {
+    "id": "20cb36ff34ff3cdd",
+    "source": "Found leads"
   },
   {
     "id": "20cd938a2ea64f61",
@@ -3188,10 +3188,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2da98b8570910f39",
     "source": "A skill blocked by its security scan cannot be enabled."
-  },
-  {
-    "id": "2daf57370a899663",
-    "source": "Found, not read"
   },
   {
     "id": "2db54f592d548729",
@@ -5334,6 +5330,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This Juno export is incomplete because its message cap was reached. Export the full account again before importing."
   },
   {
+    "id": "4d4c51485d81a33b",
+    "source": "Initial search results land within a few seconds."
+  },
+  {
     "id": "4d5c5fd482f67348",
     "source": "Delete this task?"
   },
@@ -5836,6 +5836,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "55490a4bf3a8e8cb",
     "source": "Up"
+  },
+  {
+    "id": "555f48911704d396",
+    "source": "Inspect methodology & sources"
   },
   {
     "id": "556c0160ba71373d",
@@ -6854,6 +6858,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "/learn-demo"
   },
   {
+    "id": "645978287991a6f4",
+    "source": "Lead"
+  },
+  {
     "id": "646a456e9b2986ce",
     "source": "A run is handed its files when it starts, so anything added now is for the next attempt."
   },
@@ -6872,6 +6880,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "648a2ef491ba918c",
     "source": "Posting…"
+  },
+  {
+    "id": "649e8b225605125a",
+    "source": "Plan review"
   },
   {
     "id": "64a7ac4263420195",
@@ -7072,6 +7084,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "66f4804ee23ddc09",
     "source": "Archive"
+  },
+  {
+    "id": "66f6a530388597ca",
+    "source": "Research complete"
   },
   {
     "id": "66fa41f5bd6fa382",
@@ -8558,10 +8574,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Decoration"
   },
   {
-    "id": "7b3a385bb41d5a98",
-    "source": "Reviewing the evidence"
-  },
-  {
     "id": "7b60f56d1d57b638",
     "source": "on the server."
   },
@@ -9482,10 +9494,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The model requested tools, but no tool flow is enabled for this request."
   },
   {
-    "id": "89d39de69330d74c",
-    "source": "these could not be cited"
-  },
-  {
     "id": "89db19f651b18285",
     "source": "(required)"
   },
@@ -9572,6 +9580,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8b38835a684ef792",
     "source": "The directory didn’t come back. No plan, role or ban has been changed by the attempt."
+  },
+  {
+    "id": "8b47045eb7b8ca42",
+    "source": "cancelled"
   },
   {
     "id": "8b64e0946531f61c",
@@ -10408,6 +10420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "973420f51104f963",
     "source": "Task failed"
+  },
+  {
+    "id": "974a34a753629228",
+    "source": "Harvested candidates pending reading"
   },
   {
     "id": "9750ec0cf665cd6f",
@@ -11360,6 +11376,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a2fb7ff049b95b0c",
     "source": "The /artifacts toolbar · every type present"
+  },
+  {
+    "id": "a3165c42a4ccbcf6",
+    "source": "Synthesizing report"
   },
   {
     "id": "a318f18a21e74c9b",
@@ -13182,6 +13202,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Define the role, how it should reason about the work, output conventions, boundaries, and what it should ask before doing."
   },
   {
+    "id": "bd0b19aea344551e",
+    "source": "Harvesting sources from the web…"
+  },
+  {
     "id": "bd10bc3280a0d76d",
     "source": "You've reached your monthly limit."
   },
@@ -13428,6 +13452,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c099142bc3186ded",
     "source": "results"
+  },
+  {
+    "id": "c09c57ba846df935",
+    "source": "Deep research report"
   },
   {
     "id": "c0acecedfcc4b189",
@@ -14262,6 +14290,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "saving"
   },
   {
+    "id": "ccccfc984a6b7fad",
+    "source": "Hide methodology & sources"
+  },
+  {
     "id": "ccd277a665c4c4bf",
     "source": "Sign in with Apple Music"
   },
@@ -14332,10 +14364,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cda28699a510f244",
     "source": "You've reached your monthly usage limit. Upgrade your plan to keep using Juno Code."
-  },
-  {
-    "id": "cda4184aff61e95a",
-    "source": "Hide how it worked"
   },
   {
     "id": "cdb9acda3abe6c16",
@@ -15148,6 +15176,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d8386a59456ccfe9",
     "source": "a message, from your account"
+  },
+  {
+    "id": "d84681c79c89366d",
+    "source": "Analyzing evidence"
   },
   {
     "id": "d86793732bc9a818",
@@ -17098,10 +17130,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno always asks first"
   },
   {
-    "id": "f221d2c87cad3f91",
-    "source": "Looking for sources"
-  },
-  {
     "id": "f240081b57e1934e",
     "source": "Web search unavailable"
   },
@@ -17972,6 +18000,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ff4d7beb624c562e",
     "source": "Only the essential ones, to keep you signed in — no analytics, no trackers."
+  },
+  {
+    "id": "ff747e402ca94c68",
+    "source": "awaiting_user_input"
   },
   {
     "id": "ff8059dc6752afdd",

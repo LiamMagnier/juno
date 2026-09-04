@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Clock, Compass, HelpCircle, Link2, Pause, Sparkles } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { EvidencePanel } from "@/components/research/evidence-panel";
@@ -204,77 +204,124 @@ export function ResearchConsole({
     <section
       aria-label={CONSOLE_COPY.kicker}
       className={cn(
-        "relative overflow-hidden rounded-surface border border-border/50 bg-card px-5 py-5 shadow-soft sm:px-6",
+        "surface-raised-lg relative overflow-hidden rounded-panel border border-border/60 bg-card p-5 shadow-raised transition-all duration-base sm:p-6",
         className
       )}
     >
-      {/* The only "this is alive" decoration on the card, and it is light: one
-          soft wash of the accent bleeding in from the top-left corner while a
-          worker is actually spending. It leaves the moment the run stops, which
-          is the point — a finished run should not glow. */}
+      {/* Soft top ambient wash when active */}
       {working && (
-        <span
+        <div
           aria-hidden
-          className="pointer-events-none absolute -left-24 -top-28 size-64 rounded-full bg-primary/[0.07] blur-3xl motion-safe:animate-status-glow"
+          className="pointer-events-none absolute inset-x-0 top-0 h-36 rounded-t-panel bg-gradient-to-b from-primary/[0.08] via-primary/[0.02] to-transparent motion-safe:animate-status-glow"
         />
       )}
 
-      <header className="relative flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          {/* Sentence case, and no `text-label`. That rung carries 0.10em of
-              tracking because it was drawn for caps, and letterspacing applied
-              to lowercase is what makes a word look like a machine printed it.
-              Nothing in this product is set in full uppercase. */}
-          <p className="text-caption font-medium text-primary">{CONSOLE_COPY.kicker}</p>
-          {/* The question, in the serif, whole. It used to be
-              `truncate(goal, 100)` inside a one-line clamp — the thing the run
-              exists to answer, cut off mid-word, in the most prominent slot. */}
-          <h3 className="mt-2 text-balance font-sans text-title text-foreground">{run.goal}</h3>
+      <header className="relative flex flex-col gap-3 sm:gap-4">
+        {/* Top metadata & status bar */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider",
+                state === "paused"
+                  ? "border-warning/30 bg-warning/15 text-warning-foreground"
+                  : state === "awaiting_user_input"
+                  ? "border-warning/30 bg-warning/15 text-warning-foreground"
+                  : "border-primary/25 bg-primary/10 text-primary"
+              )}
+            >
+              {state === "paused" ? (
+                <>
+                  <Pause className="size-3" />
+                  Paused
+                </>
+              ) : state === "awaiting_user_input" ? (
+                <>
+                  <HelpCircle className="size-3" />
+                  Input needed
+                </>
+              ) : awaitingPlan ? (
+                <>
+                  <Compass className="size-3" />
+                  Plan review
+                </>
+              ) : working ? (
+                <>
+                  <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" />
+                  {CONSOLE_COPY.kicker}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="size-3 text-primary" />
+                  {CONSOLE_COPY.kicker}
+                </>
+              )}
+            </span>
+
+            {!awaitingPlan && run.plan.followUpRound ? (
+              <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
+                {CONSOLE_COPY.round} {run.plan.followUpRound} {CONSOLE_COPY.of4}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {elapsed && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-foreground">
+                <Clock className="size-3 text-muted-foreground" />
+                {elapsed}
+              </span>
+            )}
+            <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
+              {formatMicroUsd(run.costMicroUsd)}
+            </span>
+            {onDismiss && !run.live && (
+              <button
+                type="button"
+                onClick={onDismiss}
+                aria-label={CONSOLE_COPY.collapse}
+                className="pressable inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <ActionIcons.dismiss className="size-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="hidden text-right leading-tight sm:block">
-            {elapsed && <p className="text-ui tabular-nums text-foreground/80">{elapsed}</p>}
-            <p className="text-caption tabular-nums text-muted-foreground">{formatMicroUsd(run.costMicroUsd)}</p>
-          </div>
-          {onDismiss && !run.live && (
-            <button
-              type="button"
-              onClick={onDismiss}
-              aria-label={CONSOLE_COPY.collapse}
-              className="pressable inline-flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <ActionIcons.dismiss className="size-3.5" />
-            </button>
-          )}
+        {/* The research question */}
+        <div className="border-l-2 border-primary/50 pl-3.5">
+          <h3 className="text-balance font-sans text-base font-semibold leading-snug tracking-tight text-foreground sm:text-lg">
+            {run.goal}
+          </h3>
         </div>
       </header>
 
+      {/* Constraints and pinned sources */}
       {(constraints.length > 0 || pinnedSources.length > 0) && (
-        <div className="relative mt-3 border-l border-primary/30 pl-3 text-ui text-muted-foreground">
-          <span className="font-medium text-foreground">{CONSOLE_COPY.focus}: </span>
-          {constraints.join(" · ")}
-          {constraints.length > 0 && pinnedSources.length > 0 ? " · " : ""}
-          {pinnedSources.length > 0
-            ? `${pinnedSources.length} ${CONSOLE_COPY.pinnedSources}`
-            : null}
+        <div className="relative mt-3.5 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+            <Compass className="size-3 text-primary" /> {CONSOLE_COPY.focus}:
+          </span>
+          {constraints.map((c, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center rounded-full border border-border/60 bg-secondary/60 px-2 py-0.5 text-xs text-foreground/90"
+            >
+              {c}
+            </span>
+          ))}
+          {pinnedSources.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs font-medium text-primary">
+              <Link2 className="size-3" />
+              {pinnedSources.length} {CONSOLE_COPY.pinnedSources}
+            </span>
+          )}
         </div>
       )}
 
-      {/* Follow-up rounds are a fact about gathering that has already happened,
-          so they cannot be true at the gate — a plan waiting for approval has
-          run nothing. */}
-      {!awaitingPlan && run.plan.followUpRound ? (
-        <p className="relative mt-1.5 text-caption tabular-nums text-muted-foreground">
-          {CONSOLE_COPY.round} {run.plan.followUpRound} {CONSOLE_COPY.of4}
-        </p>
-      ) : null}
-
       {awaitingPlan ? (
-        // The gate pre-empts everything. Nothing expensive has happened yet and
-        // these are the queries that will actually be issued.
         <div className="relative mt-5">
-            <PlanReview
+          <PlanReview
             steps={run.plan.steps ?? []}
             queries={run.plan.queries}
             constraints={constraints}
@@ -288,27 +335,33 @@ export function ResearchConsole({
         <>
           <RunSpine state={state} live={run.live} detail={detail} yields={yields} className="relative mt-5" />
 
-          <div className="relative mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <SourceRail sources={run.sources} />
+          <div className="relative mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/50 pt-4">
+            <SourceRail
+              sources={run.sources}
+              onOpenSources={() => {
+                setOpen(true);
+                setTab("sources");
+              }}
+            />
             {run.live && !needsYou && (
-              // Said once, quietly. It is what stops a person sitting on the
-              // page for four minutes wondering whether closing the tab throws
-              // the money away.
-              <p className="text-caption text-muted-foreground/70">{CONSOLE_COPY.leaveHint}</p>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground/80">
+                <Sparkles className="size-3 shrink-0 text-primary/70" />
+                <span>{CONSOLE_COPY.leaveHint}</span>
+              </div>
             )}
           </div>
         </>
       )}
 
       {!awaitingPlan && (
-        <div className="relative mt-5 flex items-center justify-between gap-3">
+        <div className="relative mt-5 flex items-center justify-between gap-3 border-t border-border/40 pt-3">
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
             aria-expanded={open}
-            className="pressable -ml-1 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground"
+            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
           >
-            {open ? CONSOLE_COPY.hide : CONSOLE_COPY.show}
+            <span>{open ? CONSOLE_COPY.hide : CONSOLE_COPY.show}</span>
             <ChevronDown
               aria-hidden
               className={cn(
@@ -325,7 +378,7 @@ export function ResearchConsole({
               options={tabs}
               ariaLabel={CONSOLE_COPY.details}
               className="shrink-0"
-              optionClassName="px-2.5 py-1 text-ui"
+              optionClassName="px-2.5 py-1 text-xs font-medium"
             />
           )}
         </div>
@@ -351,7 +404,6 @@ export function ResearchConsole({
           {run.error ?? notice}
         </p>
       )}
-
     </section>
   );
 }

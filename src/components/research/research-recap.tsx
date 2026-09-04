@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ChevronDown } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Clock, ShieldCheck } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { auditHeadline } from "@/components/chat/citation-audit";
 import { SourceRail } from "@/components/research/source-rail";
 import { formatMicroUsd, runDuration } from "@/components/research/run-format";
@@ -12,46 +12,28 @@ import { RESEARCH_STATE_MESSAGE, isResearchState, type ResearchState } from "@/l
 import type { ResearchRunView } from "@/components/research/use-research-run";
 
 /**
- * What a finished run leaves in the conversation: a cover, not a dashboard.
+ * What a finished run leaves in the conversation: an elevated, authoritative report cover.
  *
- * The panel this replaces did not change when the run ended — a completed run
- * went on rendering its stage ladder, objective list, evidence scatter, step log
- * and eighteen source rows, the entire machinery of an investigation that was
- * over, parked above the answer it produced. The first rewrite fixed that and
- * replaced it with a four-column stat block, which was the same mistake in
- * nicer clothes: a grid of big mono numbers over little grey nouns is what every
- * analytics screen in the world looks like, and none of those four numbers is
- * what a reader wants from a finished piece of research.
- *
- * What they want is the DOCUMENT. So this is shaped like the cover of one: the
- * report's own title in the serif, one quiet line of provenance under it, the
- * publishers it rests on, the citation verdict, and a single wide action that
- * opens it. The numbers are still all here — they are a sentence now instead of
- * a scoreboard, which is the correct weight for them.
- *
- * The prose recap is deliberately NOT in this card. RESEARCH_OUTPUT_CONTRACT
- * already makes the model answer in 100–200 words of flowing prose in the thread
- * itself, which is the right place for it: the finding belongs in the
- * conversation, in the reading order the question was asked in. Restating it
- * inside a card would be the summary twice, and card-shaped prose is the exact
- * reflex this redesign exists to remove. What this adds beside that prose is
- * everything the prose cannot say about itself.
+ * Designed according to ChatGPT Deep Research and Claude Research standards:
+ * - Clear verification & completion status badge
+ * - Prominent document title and duration
+ * - Provenance pills (sources read, objectives covered)
+ * - Trustworthy citation audit verdict
+ * - Distinct, prominent CTA to open the full report
+ * - Collapsible provenance machinery (sources deck, evidence panel, timeline)
  */
 
-/**
- * Composed with counts at runtime, so the fixed halves live in a `COPY` const —
- * template literals are invisible to scripts/generate-i18n-catalog.mjs.
- */
 const RECAP_COPY = {
-  kicker: "Deep research",
+  kicker: "Deep research report",
+  complete: "Research complete",
   sources: "sources",
   oneSource: "source",
   read: "read in full",
   covered: "objectives answered",
   openReport: "Read the full report",
   noReport: "This run stopped before it wrote a report.",
-  showWork: "How it worked",
-  hideWork: "Hide how it worked",
+  showWork: "Inspect methodology & sources",
+  hideWork: "Hide methodology & sources",
   dismiss: "Hide this research receipt",
 } as const;
 
@@ -63,10 +45,8 @@ export function ResearchRecap({
   className,
 }: {
   run: ResearchRunView;
-  /** Opens the report document. Absent when the run produced no report. */
   onOpenReport?: () => void;
   onDismiss?: () => void;
-  /** The run's machinery, rendered only once the reader asks for it. */
   work?: React.ReactNode;
   className?: string;
 }) {
@@ -79,102 +59,118 @@ export function ResearchRecap({
   const covered = objectives.filter((objective) => objective.status === "covered").length;
   const elapsed = runDuration(run.createdAt ?? "", run.finishedAt ?? null);
 
-  // The report's OWN title, not the question. A finished document is referred to
-  // by its name; the question that produced it is already three lines up the
-  // transcript, in the user's own message.
   const title = run.report ? reportTitle(run.report) : null;
-
   const audit = run.auditSummary;
   const auditClean = audit ? audit.contradicted + audit.unsupported === 0 : false;
-
-  /** The provenance line: everything the old stat grid said, as one sentence. */
-  const provenance = [
-    `${run.sources.length} ${run.sources.length === 1 ? RECAP_COPY.oneSource : RECAP_COPY.sources}`,
-    `${read} ${RECAP_COPY.read}`,
-    objectives.length > 0 ? `${covered}/${objectives.length} ${RECAP_COPY.covered}` : null,
-    elapsed,
-    formatMicroUsd(run.costMicroUsd),
-  ].filter(Boolean) as string[];
 
   return (
     <section
       aria-label={RECAP_COPY.kicker}
       className={cn(
-        "relative rounded-surface border border-border/50 bg-card px-5 py-5 shadow-soft sm:px-6",
+        "surface-raised-lg relative overflow-hidden rounded-panel border border-border/60 bg-card p-5 shadow-raised transition-all duration-base sm:p-6",
         className
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-            {/* Sentence case. See the note on the same line in
-                research-console.tsx: nothing here is set in full uppercase,
-                and `text-label`'s 0.10em tracking exists for caps only. */}
-            <p className="text-caption font-medium text-primary">{RECAP_COPY.kicker}</p>
-            {/* A run that did not simply finish says so here, in words, at the
-                size of an aside — not as a coloured pill. "Stopped early" is a
-                fact about the document below it, not a status chip. */}
-            {!clean && (
-              <p className="text-caption text-muted-foreground">{RESEARCH_STATE_MESSAGE[state]}</p>
-            )}
-          </div>
-          <h3 className="mt-2 text-balance font-sans text-title text-foreground">{title ?? run.goal}</h3>
-          <p className="mt-2 text-ui text-muted-foreground">{provenance.join(" · ")}</p>
+      {/* Top Header: Status badge & metadata */}
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {clean ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-success-ink">
+              <CheckCircle2 className="size-3.5 text-success-ink" />
+              {RECAP_COPY.complete}
+            </span>
+          ) : state === "failed" ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-destructive">
+              <AlertCircle className="size-3.5 text-destructive" />
+              {RESEARCH_STATE_MESSAGE[state]}
+            </span>
+          ) : state === "cancelled" ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Cancelled
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-warning-foreground">
+              {RESEARCH_STATE_MESSAGE[state]}
+            </span>
+          )}
         </div>
 
-        {onDismiss && (
-          <button
-            type="button"
-            onClick={onDismiss}
-            aria-label={RECAP_COPY.dismiss}
-            className="pressable inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <ActionIcons.dismiss className="size-3.5" />
-          </button>
+        <div className="flex items-center gap-2">
+          {elapsed && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-foreground">
+              <Clock className="size-3 text-muted-foreground" />
+              {elapsed}
+            </span>
+          )}
+          <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
+            {formatMicroUsd(run.costMicroUsd)}
+          </span>
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label={RECAP_COPY.dismiss}
+              className="pressable inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <ActionIcons.dismiss className="size-3.5" />
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Report Document Title */}
+      <div className="mt-3.5 border-l-2 border-success/50 pl-3.5">
+        <h3 className="text-balance font-sans text-lg font-bold leading-snug tracking-tight text-foreground sm:text-xl">
+          {title ?? run.goal}
+        </h3>
+      </div>
+
+      {/* Provenance Badges */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 font-mono text-xs text-foreground/90 tabular-nums">
+          {run.sources.length} {run.sources.length === 1 ? RECAP_COPY.oneSource : RECAP_COPY.sources} ({read} {RECAP_COPY.read})
+        </span>
+        {objectives.length > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 font-mono text-xs text-foreground/90 tabular-nums">
+            {covered}/{objectives.length} {RECAP_COPY.covered}
+          </span>
         )}
       </div>
 
-      {run.sources.length > 0 && <SourceRail sources={run.sources} className="mt-4" />}
-
-      {/* The citation verdict — the single best answer to "should I believe
-          this". It was already being fetched on every poll and rendered as an
-          11px mono line at the bottom of a five-section stack. */}
-      {audit && (
-        <p className="mt-4 flex min-w-0 items-start gap-2 text-ui">
-          <span
-            aria-hidden
-            className={cn(
-              "mt-[3px] flex size-4 shrink-0 items-center justify-center rounded-full",
-              auditClean ? "bg-success/15 text-success-ink" : "bg-warning/15 text-warning-foreground"
-            )}
-          >
-            {auditClean ? <StatusIcons.success className="size-2.5" /> : <StatusIcons.warning className="size-2.5" />}
-          </span>
-          <span className="min-w-0 flex-1 text-muted-foreground">{auditHeadline(audit)}</span>
-        </p>
+      {/* Publishers Rail */}
+      {run.sources.length > 0 && (
+        <div className="mt-4 border-t border-border/50 pt-3.5">
+          <SourceRail sources={run.sources} onOpenSources={() => setWorkOpen(true)} />
+        </div>
       )}
 
-      {/* One wide door, not a row of buttons. The report is the thing this card
-          is a cover for, and every competing action on it is a reason not to
-          open it. */}
+      {/* Citation Audit Verdict Banner */}
+      {audit && (
+        <div className="mt-4 flex items-center gap-2.5 rounded-card border border-border/60 bg-secondary/30 p-3 text-xs">
+          <ShieldCheck className={cn("size-4 shrink-0", auditClean ? "text-success" : "text-warning-foreground")} />
+          <span className="flex-1 font-medium text-foreground/90">{auditHeadline(audit)}</span>
+        </div>
+      )}
+
+      {/* Primary Report CTA */}
       {onOpenReport ? (
         <button
           type="button"
           onClick={onOpenReport}
           className={cn(
-            "group mt-5 flex w-full items-center justify-between gap-3 rounded-field border border-border/70 bg-secondary/40 px-4 py-3 text-left",
-            "transition-colors duration-fast ease-out-soft hover:border-primary/40 hover:bg-primary/[0.06] motion-reduce:transition-none",
+            "group mt-4 flex w-full items-center justify-between gap-3 rounded-field border border-primary/30 bg-primary/10 px-4 py-3.5 text-left text-primary transition-all duration-fast",
+            "hover:border-primary/50 hover:bg-primary/15 hover:shadow-xs motion-reduce:transition-none",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
         >
-          <span className="min-w-0 text-body font-medium text-foreground">{RECAP_COPY.openReport}</span>
+          <span className="text-body font-semibold">{RECAP_COPY.openReport}</span>
           <ArrowRight
             aria-hidden
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 group-hover:text-primary motion-reduce:transition-none"
+            className="size-4 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-1"
           />
         </button>
       ) : (
-        <p className="mt-5 text-ui text-muted-foreground">{RECAP_COPY.noReport}</p>
+        <p className="mt-4 text-xs text-muted-foreground">{RECAP_COPY.noReport}</p>
       )}
 
       {run.error && (
@@ -183,15 +179,16 @@ export function ResearchRecap({
         </p>
       )}
 
+      {/* Inspect Methodology Drawer */}
       {work && (
-        <div className="mt-4">
+        <div className="mt-4 border-t border-border/40 pt-3">
           <button
             type="button"
             aria-expanded={workOpen}
             onClick={() => setWorkOpen((value) => !value)}
-            className="pressable -ml-1 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground"
+            className="pressable inline-flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
           >
-            {workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}
+            <span>{workOpen ? RECAP_COPY.hideWork : RECAP_COPY.showWork}</span>
             <ChevronDown
               aria-hidden
               className={cn(
@@ -206,3 +203,4 @@ export function ResearchRecap({
     </section>
   );
 }
+
