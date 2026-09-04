@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 055751dff0240133
+// tokens-digest: f497f4b877356134
 //
 
 import CoreGraphics
@@ -150,14 +150,20 @@ public enum JunoGeneratedColors {
 
     /// `--neu-dark`
     public static let neuDark = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.236, 0.2192, 0.164, 0.1),
-        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.55)
+        light: JunoColorToken(unchecked: 0.236, 0.2192, 0.164, 0.14),
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.6)
+    )
+
+    /// `--neu-dark-lg`
+    public static let neuDarkLg = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.236, 0.2192, 0.164, 0.2),
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.72)
     )
 
     /// `--neu-light`
     public static let neuLight = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.85),
-        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.06)
+        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.9),
+        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.07)
     )
 
     /// `--popover`
