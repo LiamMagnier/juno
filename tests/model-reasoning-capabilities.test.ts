@@ -7,6 +7,15 @@ import { getModel } from "@/lib/models";
 import { toModelInfo } from "@/lib/model-discovery-core";
 
 const gemini = getModel("google:gemini-3.7-flash")!;
+const astra = getModel("openai:gpt-6-astra")!;
+
+test("GPT-6 Astra exposes Low through Max without a fabricated Instant tier", () => {
+  assert.deepEqual(reasoningCaps(astra), {
+    tiers: ["low", "medium", "high", "xhigh", "max"], canDisable: false, onOff: false, defaultLevel: "medium",
+  });
+  assert.deepEqual(reasoningOptions(astra).map((option) => option.label), ["Low", "Medium", "High", "Extra high", "Max"]);
+  assert.equal(defaultReasoning(astra), "medium");
+});
 
 test("Gemini 3.7 exposes exactly Low, Medium and High with Medium default", () => {
   assert.deepEqual(reasoningCaps(gemini), {

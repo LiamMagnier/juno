@@ -1,0 +1,115 @@
+name: Sync provider models
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: model-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SYNC_BRANCH: model-sync/${{ github.run_id }}
+      GH_TOKEN: ${{ github.token }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+      MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+      MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
+      DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+      LONGCAT_API_KEY: ${{ secrets.LONGCAT_API_KEY }}
+      META_API_KEY: ${{ secrets.META_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Reconcile configured provider catalogs
+        id: provider-sync
+        shell: bash
+        run: |
+          set +e
+          npm run sync:models:write
+          status=$?
+          set -e
+          if [ "$status" -eq 2 ]; then
+            echo "::error::Every provider failed to respond; refusing to change the catalog."
+            exit 2
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Some providers failed; successful providers were still reconciled safely."
+          fi
+
+      - name: Refresh public benchmark metadata
+        run: npm run sync:benchmarks
+
+      - name: Scan the wider industry catalog
+        run: npm run radar:models -- --out /tmp/model-radar-report.md
+
+      - name: Validate generated catalog
+        run: npm run validate:models
+
+      - name: Stop when nothing changed
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit model updates on an isolated branch
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          git switch -c "$SYNC_BRANCH"
+          git config user.name "juno-model-bot"
+          git config user.email "juno-model-bot@users.noreply.github.com"
+          git add src/lib/models.generated.ts src/lib/benchmarks.generated.ts scripts/model-radar-seen.json
+          git commit -m "chore(models): sync provider catalogs"
+          git push origin "$SYNC_BRANCH"
+
+      - name: Open reviewable model update
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          gh pr create \
+            --base main \
+            --head "$SYNC_BRANCH" \
+            --title "chore(models): automated provider sync" \
+            --body "Automated provider catalog, pricing benchmark, and industry-radar update. Validation passed; review inferred capabilities before merging."
+
+      - name: Open model-watch issue for newly announced models
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          if [ -s /tmp/model-radar-report.md ]; then
+            gh issue create \
+              --title "Model watch: new provider releases detected" \
+              --label model-watch \
+              --body-file /tmp/model-radar-report.md
+          fi

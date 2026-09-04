@@ -277,6 +277,11 @@ const CURATED: ModelInfo[] = [
   // See RETIRED_MODELS below.
 
   // —— OpenAI ——
+  // GPT-6 Astra (GA rollout 2026-09-03). OpenAI documents both Chat
+  // Completions and Responses support, so the ordinary chat adapter remains
+  // usable by Chat, Code and Work. Unlike GPT-5.6, Astra does not document a
+  // separate reasoning.mode="pro" axis; its deepest setting is effort="max".
+  def({ provider: "openai", id: "gpt-6-astra", name: "GPT-6 Astra", family: "gpt-named-flagship", status: "current", released: "2026-09", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's most capable model — built for hard end-to-end reasoning, coding, research, and computer-use work." }),
   // GPT-5.6 family (GA 2026-07-09): three tiers named Sol / Terra / Luna, all
   // 1.05M context, vision + reasoning, chat/completions. The bare "gpt-5.6"
   // API alias routes to Sol (see RETIRED_MODELS mapping below).

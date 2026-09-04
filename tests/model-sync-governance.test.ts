@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 
 const syncUrl = new URL("../.github/workflows/sync-models.yml", import.meta.url);
 const SYNC = existsSync(syncUrl) ? readFileSync(syncUrl, "utf8") : "";
+const SYNC_SCRIPT = readFileSync(new URL("../scripts/sync-models.ts", import.meta.url), "utf8");
 const DEPLOY = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 
 /** Every `git push` in the workflow, less its indentation. */
@@ -59,4 +60,11 @@ test("nothing about what the watch detects was weakened", (t) => {
   assert.match(SYNC, /npm run validate:models/);
   assert.match(SYNC, /Every provider failed to respond/);
   assert.match(SYNC, /cron: "17 4 \* \* \*"/);
+});
+
+test("a no-op provider sync does not create timestamp-only pull requests", () => {
+  assert.match(SYNC_SCRIPT, /attempted\.length === 0/);
+  assert.match(SYNC_SCRIPT, /added\.length === 0 && pruneDelta === 0/);
+  assert.match(SYNC_SCRIPT, /generated catalog left unchanged/);
+  assert.match(SYNC_SCRIPT, /no generated catalog changes to write/);
 });

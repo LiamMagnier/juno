@@ -71,6 +71,13 @@ const gpt56 = {
   description: "test",
 } as ModelInfo;
 
+const astra = {
+  ...gpt56,
+  id: "openai:gpt-6-astra",
+  providerModel: "gpt-6-astra",
+  name: "GPT-6 Astra",
+} as ModelInfo;
+
 test("resolveBillableTokens floors on answer+reasoning chars when usage is missing", () => {
   const t = resolveBillableTokens({
     completionChars: 400,
@@ -234,6 +241,22 @@ test("GPT-5.6 cache read is 0.1× input", () => {
   assert.equal(r.input, 5);
   assert.equal(r.cacheRead, 0.5);
   assert.equal(r.cacheWrite, 6.25); // 1.25×
+});
+
+test("GPT-6 Astra uses official standard, cache, fast and long-context rates", () => {
+  const standard = tokenRate(astra);
+  assert.deepEqual(
+    { input: standard.input, output: standard.output, cacheRead: standard.cacheRead, cacheWrite: standard.cacheWrite },
+    { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }
+  );
+  const fast = tokenRate(astra, true);
+  assert.equal(fast.input, 20);
+  assert.equal(fast.output, 100);
+
+  const short = estimateCostUsd(astra, { input: 272_000, output: 100_000 });
+  assert.ok(Math.abs(short - 7.72) < 0.000001, `short-context cost ${short}`);
+  const long = estimateCostUsd(astra, { input: 272_001, output: 100_000 });
+  assert.ok(Math.abs(long - 12.94002) < 0.000001, `long-context cost ${long}`);
 });
 
 test("reasoning lift does not double-count when already inside output", () => {

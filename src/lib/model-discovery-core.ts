@@ -54,6 +54,7 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Claude Haiku", family: "haiku", match: /haiku/i, minPlan: "FREE", vision: true },
   ],
   openai: [
+    { label: "GPT-6 Astra", family: "gpt-named-flagship", match: /^gpt-6-astra/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.6 Sol", family: "gpt", match: /^gpt-5\.6-sol/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.6 Terra", family: "gpt-value", match: /^gpt-5\.6-terra/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.6 Luna", family: "gpt-luna", match: /^gpt-5\.6-luna/i, minPlan: "FREE", vision: true },
@@ -84,6 +85,12 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "GPT Codex", family: "gpt-codex", match: /^gpt-\d+(?:\.\d+)?-codex/i, minPlan: "PRO", vision: true },
     { label: "GPT Mini", family: "gpt-mini", match: /^gpt-\d+(?:\.\d+)?-mini/i, minPlan: "FREE", vision: true },
     { label: "GPT Nano", family: "gpt-nano", match: /^gpt-\d+(?:\.\d+)?-nano/i, minPlan: "FREE", vision: true },
+    // A new named GPT flagship must not disappear just because OpenAI changes
+    // the suffix again (Astra was the first such break from Sol/Terra/Luna).
+    // Specific tier/Codex rules above claim their ids first; this final rule is
+    // deliberately restricted to generation 6+ so it does not resurrect old
+    // specialty models that the curated registry intentionally omits.
+    { label: "GPT", family: "gpt-named-flagship", match: /^gpt-(?:[6-9]|\d{2,})(?:\.\d+)?-[a-z][a-z0-9-]*$/i, minPlan: "PRO", vision: true },
     { label: "GPT", family: "gpt", match: /^gpt-\d+(?:\.\d+)?$/i, minPlan: "PRO", vision: true },
   ],
   google: [

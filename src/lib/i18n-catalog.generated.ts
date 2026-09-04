@@ -422,6 +422,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Minimal"
   },
   {
+    "id": "058f7f72b5b4f099",
+    "source": "OpenAI's most capable model — built for hard end-to-end reasoning, coding, research, and computer-use work."
+  },
+  {
     "id": "0596591336cd91b4",
     "source": "Repository to run in the cloud"
   },
@@ -1896,6 +1900,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1b2c08a8733d7ff1",
     "source": "Quality"
+  },
+  {
+    "id": "1b3c7f8e637e1454",
+    "source": "GPT-6 Astra"
   },
   {
     "id": "1b52aafbc5600b7a",
