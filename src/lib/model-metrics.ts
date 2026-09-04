@@ -62,6 +62,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["haiku"], metric: official(1, 5, 200_000, 6, 5) }, // II 29.6 (reasoning) · 94 tok/s
   ],
   openai: [
+    { hints: ["gpt-6-astra"], metric: official(10, 50, 1_050_000, 4, 10) }, // official price/context; speed is positioning-based pending benchmark coverage
     { hints: ["gpt-5.6-sol"], metric: official(5, 30, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s
     { hints: ["gpt-5.6-terra"], metric: official(2, 12, 1_050_000, 8, 9) }, // II 55.0 · 141 tok/s — repriced 2026-07-30 (was $2.50/$15)
     { hints: ["gpt-5.6-luna"], metric: official(0.2, 1.2, 1_050_000, 9, 8) }, // II 51.2 · 204 tok/s — repriced 2026-07-30, −80% (was $1/$6); best value in the OpenAI lineup
@@ -621,6 +622,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Opus 4.7/4.8, Sonnet 4.6/5: adaptive + full effort ladder.
       return caps(LMHXM, true);
     case "openai":
+      // Astra: low|medium|high|xhigh|max. The official model page does not
+      // list `none`, so do not offer an Instant option that the API rejects.
+      if (id.includes("gpt-6-astra")) return caps(LMHXM, false);
       // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
       // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.
       // Verified on /v1/responses: none|minimal|low all 400 with "Supported

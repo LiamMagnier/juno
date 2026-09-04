@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 
 const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
 const patterns = [
-  ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
+  // Require a PEM body and matching footer. Source code that constructs a PEM
+  // wrapper around an environment variable must not look like a committed key.
+  [
+    "private key",
+    /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]{40,}-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+  ],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{32,}\b/],
   ["GitHub token", /\b(?:ghp|github_pat)_[0-9A-Za-z_]{30,}\b/],

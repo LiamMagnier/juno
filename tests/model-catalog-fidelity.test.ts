@@ -5,6 +5,14 @@ import { providerRequestModel } from "../src/lib/model-request";
 
 const ALL_MODELS = [...MODEL_LIST, ...GEN_MODELS];
 
+test("GPT-6 Astra is selectable with the exact documented API id", () => {
+  const astra = MODEL_LIST.find((model) => model.id === "openai:gpt-6-astra");
+  assert.ok(astra);
+  assert.equal(astra.providerModel, "gpt-6-astra");
+  assert.equal(astra.contextWindow, 1_050_000);
+  assert.equal(astra.status, "current");
+});
+
 test("model catalog fidelity: every displayed model has matching providerModel", () => {
   for (const m of ALL_MODELS) {
     assert.ok(m.id, "Model must have an id");

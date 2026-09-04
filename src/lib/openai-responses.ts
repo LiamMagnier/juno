@@ -119,8 +119,9 @@ function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefin
     return "high"; // pro's own default; it has no none/low
   }
   if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
-  // "max" exists on gpt-5.6 only; older Responses models top out at xhigh.
-  if (effort === "max" && !id.includes("gpt-5.6")) return "xhigh";
+  // "max" exists on GPT-5.6 and GPT-6 Astra; older Responses models top out
+  // at xhigh.
+  if (effort === "max" && !id.includes("gpt-5.6") && !id.includes("gpt-6-astra")) return "xhigh";
   return effort;
 }
 

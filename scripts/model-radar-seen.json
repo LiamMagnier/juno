@@ -276,6 +276,7 @@
  "openai/gpt-5.6-terra-pro:batch",
  "openai/gpt-5.6-terra:batch",
  "openai/gpt-5:batch",
+ "openai/gpt-6-astra",
  "openai/gpt-audio",
  "openai/gpt-audio-mini",
  "openai/gpt-chat-latest",

@@ -29,6 +29,7 @@ describe("openai-prompt-cache", () => {
   it("detects GPT-5.6 as modern cache family", () => {
     assert.equal(isOpenAIModernCacheModel(fake("gpt-5.6-sol")), true);
     assert.equal(isOpenAIModernCacheModel(fake("gpt-5.6-luna")), true);
+    assert.equal(isOpenAIModernCacheModel(fake("gpt-6-astra")), true);
     assert.equal(isOpenAIModernCacheModel(fake("gpt-5.5")), false);
     assert.equal(isOpenAIModernCacheModel(fake("gpt-4o")), false);
   });

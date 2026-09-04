@@ -176,6 +176,7 @@ describe("discovery families", () => {
       ["anthropic", "claude-haiku-5", "anthropic:claude-haiku-4-5"],
       ["openai", "gpt-5.7-sol", "openai:gpt-5.6-sol"],
       ["openai", "gpt-5.7-luna", "openai:gpt-5.6-luna"],
+      ["openai", "gpt-7-nebula", "openai:gpt-6-astra"],
       ["openai", "gpt-6-codex", "openai:gpt-5.3-codex"],
       ["google", "models/gemini-3.8-flash", "google:gemini-3.7-flash"],
       ["zhipu", "glm-6", "zhipu:glm-5.2"],
@@ -221,6 +222,7 @@ describe("discovery families", () => {
     // would have shipped into every picker with the thinking control missing.
     const rule = { label: "GPT Sol", family: "gpt", match: /sol/i, minPlan: "PRO" as const, vision: true };
     assert.equal(toModelInfo("openai", "gpt-6-sol", rule).reasoning, true);
+    assert.equal(toModelInfo("openai", "gpt-7-nebula", rule).reasoning, true);
     assert.equal(toModelInfo("xai", "grok-5", rule).reasoning, true);
     assert.equal(toModelInfo("moonshot", "kimi-k4", rule).reasoning, true);
   });

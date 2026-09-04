@@ -168,7 +168,7 @@ export interface DiscoveredModel {
   name: string;
 }
 
-/** ISO timestamp of the last successful \`--write\` sync (null = never synced). */
+/** ISO timestamp of the last sync that changed generated catalog state. */
 export const SYNC_STAMP: string | null = ${JSON.stringify(stamp)};
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
@@ -278,6 +278,18 @@ async function main(): Promise<number> {
           `sync time and make a total outage indistinguishable from a night with no changes.`
       );
       return 2;
+    }
+    // A successful check with no catalog delta is a no-op. Rewriting only the
+    // timestamp made the scheduled job open an empty-churn PR every night; an
+    // environment with no configured keys was even worse, because it stamped
+    // a "successful" sync without having contacted a provider.
+    if (attempted.length === 0 || (added.length === 0 && pruneDelta === 0)) {
+      console.log(
+        attempted.length === 0
+          ? "no configured provider credentials — generated catalog left unchanged."
+          : "provider APIs checked — no generated catalog changes to write."
+      );
+      return failures.length ? 1 : 0;
     }
     let unavailable = [...UNAVAILABLE];
     if (PRUNE) {

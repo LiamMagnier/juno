@@ -106,6 +106,7 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
+      if (pm.includes("gpt-6-astra")) return { input: 10, output: 50 };
       // Terra/Luna were cut on 2026-07-30 (Terra −20%, Luna −80%) from their
       // 2026-07-09 launch rates of $2.50/$15 and $1/$6. Sol was not repriced.
       if (pm.includes("gpt-5.6-terra")) return { input: 2, output: 12 };
@@ -211,6 +212,7 @@ export function fastModeMultiplier(model: ModelInfo): number | null {
   if (model.provider === "anthropic") return pm.includes("opus-4-8") ? 2 : null;
   if (model.provider === "openai") {
     if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
+    if (pm.includes("gpt-6-astra")) return 2;
     if (pm.includes("gpt-5.6")) return 2; // sol / terra / luna
     if (pm.includes("gpt-5.5")) return 2.5;
     if (pm.includes("gpt-5.4")) return 2;
@@ -258,8 +260,12 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
       cacheWrite1h: input,
     };
   }
-  if (model.provider === "openai" && model.providerModel.toLowerCase().includes("gpt-5.6")) {
-    // GPT-5.6 family: 90% cached-input discount; cache writes 1.25× uncached.
+  if (
+    model.provider === "openai" &&
+    (model.providerModel.toLowerCase().includes("gpt-5.6") ||
+      model.providerModel.toLowerCase().includes("gpt-6-astra"))
+  ) {
+    // GPT-5.6+ family: 90% cached-input discount; cache writes 1.25× uncached.
     return {
       input,
       output,
@@ -325,8 +331,19 @@ function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
     writeCost = n.cacheWrite * r.cacheWrite;
   }
 
+  // Astra's long-context rate applies to the whole request once input exceeds
+  // 272K tokens: 2x input/cache and 1.5x output. This cannot live in tokenRate
+  // because the threshold depends on request usage, not only the model.
+  const astraLongContext =
+    model.provider === "openai" &&
+    model.providerModel.toLowerCase().includes("gpt-6-astra") &&
+    n.totalInput > 272_000;
+  const inputMultiplier = astraLongContext ? 2 : 1;
+  const outputMultiplier = astraLongContext ? 1.5 : 1;
   const cost =
-    (n.freshInput * r.input + n.cacheRead * r.cacheRead + writeCost + n.output * r.output) / 1_000_000;
+    ((n.freshInput * r.input + n.cacheRead * r.cacheRead + writeCost) * inputMultiplier +
+      n.output * r.output * outputMultiplier) /
+    1_000_000;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }
 

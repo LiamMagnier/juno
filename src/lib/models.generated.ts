@@ -9,7 +9,7 @@ export interface DiscoveredModel {
   name: string;
 }
 
-/** ISO timestamp of the last successful `--write` sync (null = never synced). */
+/** ISO timestamp of the last sync that changed generated catalog state. */
 export const SYNC_STAMP: string | null = "2026-08-07T05:52:33.750Z";
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
