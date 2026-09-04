@@ -47,7 +47,19 @@ public actor MCPStdioTransport: MCPLineTransport {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        var environment = ProcessInfo.processInfo.environment
+        // Never hand a repository-declared program Juno's complete process
+        // environment. In particular, API tokens and deployment credentials
+        // may be present on the desktop process even though this MCP definition
+        // came from an untrusted checkout. Keep only normal execution locale /
+        // path values, then add the values the reader reviewed in the config.
+        let inherited = ProcessInfo.processInfo.environment
+        var environment: [String: String] = [:]
+        for key in ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL"] {
+            if let value = inherited[key], !value.isEmpty {
+                environment[key] = value
+            }
+        }
+        environment["PATH"] = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         for (key, value) in configuration.environment {
             environment[key] = value
         }

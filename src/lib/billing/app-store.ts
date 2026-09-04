@@ -1,4 +1,6 @@
 import { Plan, SubStatus } from "@prisma/client";
+import { Environment, SignedDataVerifier } from "@apple/app-store-server-library";
+import { env } from "@/lib/env";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 
 export interface AppStoreTransactionPayload {
@@ -48,6 +50,25 @@ export interface AppStoreServerNotificationPayload {
   signedDate: number;
 }
 
+export interface AppStoreVerificationConfiguration {
+  bundleId: string;
+  appAppleId: number;
+  environment: Environment;
+  rootCertificates: Buffer[];
+  enableOnlineChecks: boolean;
+}
+
+/** Narrow test seam; production callers always use Apple's certificate-chain verifier. */
+export interface AppStoreSignedDataVerifier {
+  verifyTransaction(signedTransactionInfo: string): Promise<AppStoreTransactionPayload>;
+  verifyNotification(signedPayload: string): Promise<AppStoreServerNotificationPayload>;
+}
+
+interface AppStoreVerificationOptions {
+  verifier?: AppStoreSignedDataVerifier;
+  configuration?: AppStoreVerificationConfiguration;
+}
+
 /**
  * Standard Juno App Store product identifiers.
  */
@@ -64,46 +85,80 @@ export const APP_STORE_PRODUCT_IDS: Record<string, { plan: Plan; interval: "mont
  * Maps an App Store Product ID to a Juno subscription Plan.
  */
 export function planFromAppStoreProductId(productId: string): Plan | null {
-  if (!productId) return null;
-  if (APP_STORE_PRODUCT_IDS[productId]) {
-    return APP_STORE_PRODUCT_IDS[productId].plan;
-  }
-  const lower = productId.toLowerCase();
-  if (/(?:^|[._-])max20(?:[._-]|$)/.test(lower)) return "MAX20";
-  if (/(?:^|[._-])max(?:[._-]|$)/.test(lower)) return "MAX";
-  if (/(?:^|[._-])pro(?:[._-]|$)/.test(lower)) return "PRO";
-  return null;
+  return APP_STORE_PRODUCT_IDS[productId]?.plan ?? null;
 }
 
-/**
- * Decodes and verifies a StoreKit 2 JWS (JSON Web Signature).
- *
- * StoreKit 2 signed transactions use JWS compact format: `<header>.<payload>.<signature>`.
- * Payload contains typed transaction information.
- */
-export function parseAppStoreJws<T = unknown>(jws: string): { header: Record<string, unknown>; payload: T } {
-  if (!jws || typeof jws !== "string") {
-    throw new Error("Invalid JWS: string expected.");
+function appStoreConfiguration(): AppStoreVerificationConfiguration {
+  const { bundleId, appAppleId, environment, rootCertificates, enableOnlineChecks } = env.appStore;
+  if (!bundleId || !appAppleId || !rootCertificates) {
+    throw new Error("App Store billing is unavailable: signed verification is not configured.");
   }
-  const parts = jws.trim().split(".");
-  if (parts.length !== 3) {
-    throw new Error(`Invalid JWS format: expected 3 parts, got ${parts.length}.`);
+  const numericAppAppleId = Number(appAppleId);
+  if (!Number.isSafeInteger(numericAppAppleId) || numericAppAppleId <= 0) {
+    throw new Error("App Store billing is unavailable: APP_STORE_APPLE_ID must be a positive integer.");
   }
+  if (environment !== Environment.PRODUCTION) {
+    throw new Error("App Store billing is unavailable: only the Production verifier is enabled.");
+  }
+  const certificates = rootCertificates.split(",").map((value) => value.trim()).filter(Boolean);
+  if (certificates.length === 0) {
+    throw new Error("App Store billing is unavailable: no Apple root certificates are configured.");
+  }
+  const decodedCertificates = certificates.map((certificate) => Buffer.from(certificate, "base64"));
+  if (decodedCertificates.some((certificate) => certificate.length === 0)) {
+    throw new Error("App Store billing is unavailable: an Apple root certificate is invalid.");
+  }
+  return { bundleId, appAppleId: numericAppAppleId, environment: Environment.PRODUCTION, rootCertificates: decodedCertificates, enableOnlineChecks };
+}
 
-  const decodeSegment = (segment: string) => {
-    try {
-      const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
-      const jsonStr = Buffer.from(padded, "base64").toString("utf8");
-      return JSON.parse(jsonStr);
-    } catch (err) {
-      throw new Error(`Invalid JWS segment: failed to decode JSON: ${err instanceof Error ? err.message : String(err)}`);
-    }
+function appleVerifier(configuration: AppStoreVerificationConfiguration): AppStoreSignedDataVerifier {
+  const verifier = new SignedDataVerifier(
+    configuration.rootCertificates,
+    configuration.enableOnlineChecks,
+    configuration.environment,
+    configuration.bundleId,
+    configuration.appAppleId
+  );
+  return {
+    async verifyTransaction(signedTransactionInfo) {
+      return await verifier.verifyAndDecodeTransaction(signedTransactionInfo) as AppStoreTransactionPayload;
+    },
+    async verifyNotification(signedPayload) {
+      return await verifier.verifyAndDecodeNotification(signedPayload) as AppStoreServerNotificationPayload;
+    },
   };
+}
 
-  const header = decodeSegment(parts[0]);
-  const payload = decodeSegment(parts[1]) as T;
-  return { header, payload };
+function validTimestamp(timestamp: unknown): timestamp is number {
+  return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0;
+}
+
+function validateTransactionPayload(
+  payload: AppStoreTransactionPayload,
+  configuration: AppStoreVerificationConfiguration
+): AppStoreTransactionPayload {
+  if (!payload.transactionId || !payload.originalTransactionId || !payload.productId) {
+    throw new Error("Invalid transaction payload: missing required fields.");
+  }
+  if (payload.bundleId !== configuration.bundleId) {
+    throw new Error("Invalid transaction payload: unexpected bundle identifier.");
+  }
+  if (payload.environment !== configuration.environment) {
+    throw new Error("Invalid transaction payload: unexpected App Store environment.");
+  }
+  if (!APP_STORE_PRODUCT_IDS[payload.productId]) {
+    throw new Error("Invalid transaction payload: unknown App Store product.");
+  }
+  if (!validTimestamp(payload.purchaseDate) || !validTimestamp(payload.expiresDate)) {
+    throw new Error("Invalid transaction payload: active subscription timestamps are required.");
+  }
+  if (payload.expiresDate < payload.purchaseDate) {
+    throw new Error("Invalid transaction payload: expiry precedes purchase.");
+  }
+  if (payload.revocationDate != null && !validTimestamp(payload.revocationDate)) {
+    throw new Error("Invalid transaction payload: invalid revocation timestamp.");
+  }
+  return payload;
 }
 
 function toValidDate(timestampMs?: number | null): Date | null {
@@ -118,15 +173,13 @@ function toValidDate(timestampMs?: number | null): Date | null {
  * Verifies and parses an App Store StoreKit 2 signed transaction info JWS string.
  */
 export async function verifyStoreKitTransaction(
-  signedTransactionInfo: string
+  signedTransactionInfo: string,
+  options: AppStoreVerificationOptions = {}
 ): Promise<AppStoreTransactionPayload> {
-  const { payload } = parseAppStoreJws<AppStoreTransactionPayload>(signedTransactionInfo);
-
-  if (!payload.transactionId || !payload.originalTransactionId || !payload.productId) {
-    throw new Error("Invalid transaction payload: missing required fields.");
-  }
-
-  return payload;
+  const configuration = options.configuration ?? appStoreConfiguration();
+  const verifier = options.verifier ?? appleVerifier(configuration);
+  const payload = await verifier.verifyTransaction(signedTransactionInfo);
+  return validateTransactionPayload(payload, configuration);
 }
 
 export interface SyncAppStoreTransactionOptions {
@@ -158,6 +211,19 @@ export async function syncAppStoreTransaction({
   const transaction = await verifyStoreKitTransaction(signedTransactionInfo);
 
   let targetUserId = providedUserId;
+
+  // A verified App Store transaction can only ever belong to one Juno account.
+  // Do this before the upsert so a copied, genuine receipt cannot reassign an
+  // existing subscriber when submitted through another authenticated session.
+  if (targetUserId) {
+    const existingOwner = await prismaUnguarded.subscription.findFirst({
+      where: { appStoreOriginalTransactionId: transaction.originalTransactionId },
+      select: { userId: true },
+    });
+    if (existingOwner && existingOwner.userId !== targetUserId) {
+      throw new Error("This App Store subscription is already linked to another Juno account.");
+    }
+  }
 
   // If userId was not explicitly provided (e.g. from server webhook), look up existing subscriber
   if (!targetUserId) {
@@ -270,43 +336,42 @@ export async function syncAppStoreTransaction({
  * Handles incoming App Store Server Notifications v2 webhook payload.
  */
 export async function handleAppStoreServerNotification(
-  signedPayload: string
+  signedPayload: string,
+  options: AppStoreVerificationOptions = {}
 ): Promise<{ processed: boolean; notificationType: string; originalTransactionId?: string; warning?: string }> {
-  const { payload } = parseAppStoreJws<AppStoreServerNotificationPayload>(signedPayload);
+  const configuration = options.configuration ?? appStoreConfiguration();
+  const verifier = options.verifier ?? appleVerifier(configuration);
+  const payload = await verifier.verifyNotification(signedPayload);
+
+  if (!payload.notificationType || !payload.notificationUUID || !validTimestamp(payload.signedDate)) {
+    throw new Error("Invalid App Store notification payload.");
+  }
+  if (payload.data?.bundleId && payload.data.bundleId !== configuration.bundleId) {
+    throw new Error("Invalid App Store notification payload: unexpected bundle identifier.");
+  }
+  if (payload.data?.environment && payload.data.environment !== configuration.environment) {
+    throw new Error("Invalid App Store notification payload: unexpected App Store environment.");
+  }
 
   if (payload.data?.signedTransactionInfo) {
-    const tx = await verifyStoreKitTransaction(payload.data.signedTransactionInfo);
+    const tx = await verifyStoreKitTransaction(payload.data.signedTransactionInfo, { verifier, configuration });
 
-    if (
-      payload.notificationType === "REVOKE" ||
-      payload.notificationType === "REFUND" ||
-      payload.notificationType === "EXPIRED" ||
-      payload.notificationType === "DID_FAIL_TO_RENEW"
-    ) {
-      // Find existing subscription and cancel entitlement
-      const existing = await prismaUnguarded.subscription.findFirst({
-        where: { appStoreOriginalTransactionId: tx.originalTransactionId },
+    // Notification names describe billing events, not entitlement truth. A
+    // verified transaction carries the authoritative expiry/revocation dates;
+    // applying a bare, possibly delayed DID_FAIL_TO_RENEW/EXPIRED name would
+    // incorrectly cancel an entitlement still covered by the signed record.
+    try {
+      await syncAppStoreTransaction({
+        signedTransactionInfo: payload.data.signedTransactionInfo,
       });
-      if (existing) {
-        await prismaUnguarded.subscription.update({
-          where: { id: existing.id },
-          data: { plan: "FREE", status: "CANCELED" },
-        });
-      }
-    } else {
-      try {
-        await syncAppStoreTransaction({
-          signedTransactionInfo: payload.data.signedTransactionInfo,
-        });
-      } catch (err) {
-        console.warn("[app-store-webhook] unable to associate notification transaction with user:", err);
-        return {
-          processed: false,
-          notificationType: payload.notificationType,
-          originalTransactionId: tx.originalTransactionId,
-          warning: err instanceof Error ? err.message : String(err),
-        };
-      }
+    } catch (err) {
+      console.warn("[app-store-webhook] unable to associate notification transaction with user:", err);
+      return {
+        processed: false,
+        notificationType: payload.notificationType,
+        originalTransactionId: tx.originalTransactionId,
+        warning: err instanceof Error ? err.message : String(err),
+      };
     }
 
     return {

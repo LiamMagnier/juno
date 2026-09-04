@@ -280,7 +280,8 @@ final class MCPFoundationTests: XCTestCase {
                     response(id: 2, result: toolListResult()),
                     response(id: 3, result: toolCallResult()),
                 ])
-            }
+            },
+            startupAuthorizer: { _ in true }
         )
 
         let references = try await registry.allTools()
@@ -301,6 +302,26 @@ final class MCPFoundationTests: XCTestCase {
         XCTAssertEqual(recorded?.definition.name, "search")
     }
 
+    func testRegistryDeniesAnUnapprovedServerBeforeCreatingItsTransport() async throws {
+        let configuration = try MCPServerConfiguration(name: "search", command: "fake-server")
+        let factory = TransportFactoryRecorder()
+        let registry = try MCPToolRegistry(
+            workspaceRootURL: workspaceURL,
+            configurations: [configuration],
+            transportFactory: { _, _ in
+                factory.recordCreation()
+                return QueuedLineTransport(lines: [])
+            }
+        )
+
+        let tools = try await registry.allTools()
+        let state = try await registry.state(for: "search")
+
+        XCTAssertTrue(tools.isEmpty)
+        XCTAssertEqual(factory.creationCount(), 0)
+        XCTAssertEqual(state, .closed)
+    }
+
     func testToolRegistryCompositionPreservesJunoApprovalForMCPTools() async throws {
         try writeJSON(
             ["mcpServers": ["search": ["command": "fake-server"]]],
@@ -314,7 +335,8 @@ final class MCPFoundationTests: XCTestCase {
                     response(id: 2, result: toolListResult()),
                     response(id: 3, result: toolCallResult()),
                 ])
-            }
+            },
+            startupAuthorizer: { _ in true }
         )
         let baseRegistry = ToolRegistry(tools: [])
         let activeRegistry = try await baseRegistry.includingMCPTools(from: mcpRegistry)
@@ -359,7 +381,8 @@ final class MCPFoundationTests: XCTestCase {
                     response(id: 1, result: initializeResult()),
                     response(id: 2, result: toolListResult()),
                 ])
-            }
+            },
+            startupAuthorizer: { _ in true }
         )
 
         _ = try await registry.tools(for: "search")
@@ -383,7 +406,8 @@ final class MCPFoundationTests: XCTestCase {
                     response(id: 1, result: initializeResult()),
                     response(id: 2, result: toolListResult()),
                 ])
-            }
+            },
+            startupAuthorizer: { _ in true }
         )
         let authorization = AuthorizationRecorder()
 
@@ -478,6 +502,23 @@ private actor AuthorizationRecorder {
 
     func value() -> (invocation: MCPToolInvocation, definition: MCPToolDefinition)? {
         recorded
+    }
+}
+
+private final class TransportFactoryRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var creations = 0
+
+    func recordCreation() {
+        lock.lock()
+        defer { lock.unlock() }
+        creations += 1
+    }
+
+    func creationCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return creations
     }
 }
 

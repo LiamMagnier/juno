@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { staggerDelay } from "@/lib/motion";
 import { JunoMark } from "@/components/brand/logo";
-import { AsciiWordmark, DotMatrixMark } from "@/components/signature/dot-matrix";
+import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { DottedDivider } from "@/components/signature/dotted-divider";
 import { ComposerPreview, HERO_MODEL } from "@/components/landing/composer-preview";
 import { FlagshipStrip, ModelLineup } from "@/components/landing/model-lineup";
@@ -11,7 +11,7 @@ import { Metering } from "@/components/landing/metering";
 import { Features } from "@/components/landing/features";
 import { Switching } from "@/components/landing/switching";
 import { Pricing } from "@/components/landing/pricing";
-import { LandingColumn } from "@/components/landing/section";
+import { LandingColumn, Section } from "@/components/landing/section";
 
 /**
  * The public front door (signed-out "/"). Entirely server-rendered — model
@@ -47,9 +47,8 @@ const PRODUCT_LINKS: { href: string; label: string; file?: boolean }[] = [
 
 /** The in-page anchors in the sticky bar, in reading order. */
 const NAV_LINKS = [
-  { href: "#metering", label: "Metering" },
-  { href: "#models", label: "Models" },
-  { href: "#features", label: "Features" },
+  { href: "#features", label: "Product" },
+  { href: "#code", label: "Code" },
   { href: "#pricing", label: "Pricing" },
 ];
 
@@ -122,27 +121,19 @@ export function LandingPage() {
             className="pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
           />
           <LandingColumn contentClassName="pb-16 pt-14 sm:pb-20 sm:pt-20">
-            <p className="flex items-center gap-2 font-mono text-label text-muted-foreground motion-safe:animate-fade-in">
-              <DotMatrixMark className="size-4" />
-              Multi-model AI chat
-            </p>
-            {/* The hero is one staggered set, indices 0-4 on the "loose" rung —
-                one keyframe, one tempo, across all five beats. */}
+            {/* The hero opens on the job to be done, not a catalogue claim. */}
             <h1
               style={staggerDelay(0, "loose")}
               className="mt-4 max-w-[22ch] text-balance font-serif text-hero font-medium tracking-tight motion-safe:animate-rise-in [animation-fill-mode:backwards]"
             >
-              {/* Italic accent on the key phrase — the most consistent typographic
-                  gesture Juno has (empty states, /work, /upgrade, /roadmap, code/new,
-                  onboarding). */}
-              Every frontier model. <span className="italic text-primary">One honest subscription.</span>
+              Choose the best AI <span className="italic text-primary">for the work.</span>
             </h1>
             <p
               style={staggerDelay(1, "loose")}
               className="mt-5 max-w-prose text-pretty text-body-lg text-muted-foreground motion-safe:animate-rise-in [animation-fill-mode:backwards]"
             >
-              Juno puts Claude, GPT, Gemini and a dozen more labs in one calm workspace — voice, artifacts, projects
-              and a coding agent included — with the real cost of every answer on the receipt.
+              Compare frontier models in one conversation, see the cost of every answer, and continue the same work on
+              web, Mac and iPhone.
             </p>
             <div
               style={staggerDelay(2, "loose")}
@@ -150,12 +141,12 @@ export function LandingPage() {
             >
               <Button asChild size="lg">
                 <Link href="/sign-up">
-                  Create account
+                  Start with Juno
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>
               <Button asChild size="lg" variant="secondary">
-                <Link href="/sign-in">Sign in</Link>
+                <a href="#features">Explore the workspace</a>
               </Button>
             </div>
             <div
@@ -177,6 +168,7 @@ export function LandingPage() {
         <Metering />
         <ModelLineup />
         <Features />
+        <CodeAndContinuity />
         <Switching />
         <Pricing />
       </main>
@@ -226,5 +218,44 @@ export function LandingPage() {
         </LandingColumn>
       </footer>
     </div>
+  );
+}
+
+/** The product boundary competitors often hide: powerful local work remains under reader control. */
+function CodeAndContinuity() {
+  return (
+    <Section
+      id="code"
+      eyebrow="Work across surfaces"
+      heading="Pick up the thread. Keep control of the machine."
+      lede="A project can move from a browser conversation to Juno Code on your Mac and back to your phone without turning local access into a black box."
+      className="border-y border-border/60 bg-secondary/25"
+    >
+      <div className="mt-10 grid gap-x-12 gap-y-10 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <p className="max-w-prose text-body-lg text-foreground">
+            Juno Code can inspect diffs, run tests and work in an isolated worktree. It shows what an action will touch
+            and asks before it acts.
+          </p>
+          <a
+            href="/downloads/Juno.dmg"
+            className="group mt-6 inline-flex items-center gap-1 rounded-xs text-body font-medium underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary focus-visible:text-primary"
+          >
+            Download Juno for macOS
+            <ArrowRight aria-hidden className="size-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none" />
+          </a>
+        </div>
+        <dl className="border-l border-border/70 pl-6 sm:pl-8">
+          <div className="border-b border-border/60 pb-5">
+            <dt className="text-heading">Exact MCP approval</dt>
+            <dd className="mt-1.5 text-body text-muted-foreground">A project-declared tool cannot start until you approve that exact command or endpoint.</dd>
+          </div>
+          <div className="pt-5">
+            <dt className="text-heading">One continuous project</dt>
+            <dd className="mt-1.5 text-body text-muted-foreground">Keep conversations, research, artifacts and code context aligned across the Juno apps.</dd>
+          </div>
+        </dl>
+      </div>
+    </Section>
   );
 }

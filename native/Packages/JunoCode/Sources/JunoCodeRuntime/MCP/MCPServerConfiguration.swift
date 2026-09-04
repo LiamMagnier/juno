@@ -20,6 +20,20 @@ public struct MCPServerConfiguration: Equatable, Sendable {
     public let url: URL?
     public let headers: [String: String]
 
+    /// Stable consent key for this exact declaration. It covers the process or
+    /// endpoint plus every value that can change its authority; a repository
+    /// editing an approved server therefore requires a new reader decision.
+    public var consentDigest: String {
+        func encode(_ value: String) -> String { "\(value.utf8.count):\(value)" }
+        let environment = self.environment.keys.sorted().map { encode($0) + encode(self.environment[$0] ?? "") }.joined()
+        let headers = self.headers.keys.sorted().map { encode($0) + encode(self.headers[$0] ?? "") }.joined()
+        return Digests.sha256Hex([
+            encode(name), encode(transport.rawValue), encode(command),
+            arguments.map(encode).joined(), environment, encode(workingDirectory ?? ""),
+            encode(url?.absoluteString ?? ""), headers, enabled ? "1" : "0",
+        ].joined(separator: "|"))
+    }
+
     public init(
         name: String,
         command: String,

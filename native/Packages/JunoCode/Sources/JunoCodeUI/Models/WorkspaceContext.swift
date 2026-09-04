@@ -25,6 +25,9 @@ public final class WorkspaceContext: Sendable {
     /// repository-controlled files. Session controllers use it to opt into
     /// discovered hooks explicitly.
     public let hookPolicyStore: HookPolicyStore
+    /// Consent gate for starting repository-declared MCP processes or making
+    /// their discovery requests. Missing consent always denies startup.
+    public let mcpPolicyStore: MCPServerPolicyStore
     /// Discovered during context construction so hooks are available to the
     /// first agent turn even when the reader never opens the Repository pane.
     public let hookDiscoveryResult: HookDiscoveryResult
@@ -45,6 +48,10 @@ public final class WorkspaceContext: Sendable {
         self.storageRoot = storageRoot
         self.webSearch = webSearch
         self.hookPolicyStore = HookPolicyStore(
+            storageRoot: storageRoot,
+            workspaceID: record.id
+        )
+        self.mcpPolicyStore = MCPServerPolicyStore(
             storageRoot: storageRoot,
             workspaceID: record.id
         )
@@ -90,7 +97,10 @@ public final class WorkspaceContext: Sendable {
             let configurations = try MCPConfigurationLoader.load(from: access)
             self.mcpRegistry = try MCPToolRegistry(
                 workspaceRootURL: access.rootURL,
-                configurations: configurations
+                configurations: configurations,
+                startupAuthorizer: { [mcpPolicyStore] configuration in
+                    mcpPolicyStore.allows(configuration)
+                }
             )
             self.mcpConfigurationError = nil
         } catch {
@@ -121,15 +131,24 @@ public final class WorkspaceContext: Sendable {
         )
     }
 
-    /// Discovers and connects configured MCP servers only when a Code
-    /// orchestrator is actually being built. Each discovered tool still passes
-    /// through Juno's normal approval gate via ``MCPCodeTool``.
+    /// Discovers only reader-approved MCP declarations when a Code orchestrator
+    /// is built. Each resulting tool still passes Juno's normal call approval.
     public func mcpTools(excludingServers disabled: Set<String> = []) async -> [any CodeTool] {
         guard let mcpRegistry,
               let references = try? await mcpRegistry.allTools()
                   .filter({ !disabled.contains($0.serverID) })
         else { return [] }
         return references.map { MCPCodeTool(registry: mcpRegistry, reference: $0) }
+    }
+
+    /// Applies reader consent outside the repository. Revocation closes an
+    /// already-running transport immediately, rather than merely preventing a
+    /// future Code turn from discovering it again.
+    public func setMCPServerConsent(_ server: MCPServerConfiguration, allowed: Bool) async throws {
+        try mcpPolicyStore.set(server, allowed: allowed)
+        if !allowed {
+            try? await mcpRegistry?.disconnect(serverID: server.name)
+        }
     }
 
     /// Builds a short-lived context rooted in a Juno-created worktree. The

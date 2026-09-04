@@ -21,6 +21,9 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
     /// Tools each connected MCP server reports, by server name, when a live
     /// session has connected to it. Nil means "not connected yet".
     public var mcpToolCounts: [String: Int] = [:]
+    /// Exact declarations the reader explicitly approved for startup. A changed
+    /// command, endpoint, argument, header or environment becomes unapproved.
+    public var approvedMCPServerDigests: Set<String> = []
 
     public init() {}
 
@@ -29,6 +32,9 @@ public struct CodeWorkspaceExtensions: Equatable, Sendable {
     public static func discover(in context: WorkspaceContext) async -> CodeWorkspaceExtensions {
         var extensions = CodeWorkspaceExtensions()
         extensions.mcpServers = (try? MCPConfigurationLoader.load(from: context.access)) ?? []
+        extensions.approvedMCPServerDigests = Set(
+            extensions.mcpServers.filter(context.mcpPolicyStore.allows).map(\.consentDigest)
+        )
         extensions.mcpConfigurationError = context.mcpConfigurationError
         extensions.hooks = HookDiscovery(access: context.access).discover()
         extensions.skills = SkillDiscovery(access: context.access).discover()
@@ -75,6 +81,7 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
     @State private var selectedWorkspaceID: WorkspaceID?
     @State private var extensions: CodeWorkspaceExtensions?
     @State private var isLoadingExtensions = false
+    @State private var pendingMCPApproval: MCPServerConfiguration?
 
     public init(
         defaults: CodeDefaults = .shared,
@@ -124,6 +131,25 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
             }
         }
         .task(id: selectedWorkspace?.id) { await loadExtensions() }
+        .confirmationDialog(
+            "Allow this MCP server to start?",
+            isPresented: Binding(
+                get: { pendingMCPApproval != nil },
+                set: { showing in if !showing { pendingMCPApproval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Allow this exact server") {
+                guard let server = pendingMCPApproval else { return }
+                pendingMCPApproval = nil
+                setMCPServerConsent(server, allowed: true)
+            }
+            Button("Cancel", role: .cancel) { pendingMCPApproval = nil }
+        } message: {
+            if let server = pendingMCPApproval {
+                Text(mcpApprovalDetail(server))
+            }
+        }
         .accessibilityIdentifier(scopeIdentifier)
     }
 
@@ -313,8 +339,11 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
                 } else {
                     ForEach(extensions.mcpServers, id: \.name) { server in
                         Toggle(isOn: Binding(
-                            get: { defaults.isMCPServerEnabled(server.name) && server.enabled },
-                            set: { defaults.setMCPServer(server.name, enabled: $0) }
+                            get: { extensions.approvedMCPServerDigests.contains(server.consentDigest) },
+                            set: { allowed in
+                                if allowed { pendingMCPApproval = server }
+                                else { setMCPServerConsent(server, allowed: false) }
+                            }
                         )) {
                             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                                 HStack(spacing: JunoSpace.snug) {
@@ -335,7 +364,7 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
                         .disabled(!server.enabled)
                         .accessibilityIdentifier("juno.desktop.settings.code.mcp.\(server.name)")
                     }
-                    Text("A server switched off here is left out of the agent's tools on its next turn. Every MCP call still asks for approval.")
+                    Text("Turning this on explicitly permits this exact server to start or make its discovery request in this project. A changed declaration needs approval again. Every MCP call still asks for approval.")
                         .junoCaption()
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -347,6 +376,8 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
         var parts: [String] = []
         if !server.enabled {
             parts.append("Disabled in the project's configuration")
+        } else if !extensionsApproved(server) {
+            parts.append("Needs your approval before it can start")
         } else if let toolCount {
             parts.append("\(toolCount) \(toolCount == 1 ? "tool" : "tools")")
         } else {
@@ -358,6 +389,36 @@ public struct CodeSettingsView<RemoteHosting: View>: View {
             parts.append(([server.command] + server.arguments).joined(separator: " "))
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func mcpApprovalDetail(_ server: MCPServerConfiguration) -> String {
+        if let url = server.url {
+            return "Juno will contact \(url.absoluteString) to discover its tools. This approval applies only to this exact endpoint and headers."
+        }
+        let command = ([server.command] + server.arguments).joined(separator: " ")
+        let cwd = server.workingDirectory ?? "."
+        let declaredKeys = server.environment.keys.sorted()
+        let declared = declaredKeys.isEmpty ? "no additional environment values" : "environment values for \(declaredKeys.joined(separator: ", "))"
+        return "Juno will run \(command) in \(cwd). It receives only PATH, HOME, TMPDIR and locale settings, plus \(declared). Every tool call will still ask for approval."
+    }
+
+    private func extensionsApproved(_ server: MCPServerConfiguration) -> Bool {
+        extensions?.approvedMCPServerDigests.contains(server.consentDigest) ?? false
+    }
+
+    private func setMCPServerConsent(_ server: MCPServerConfiguration, allowed: Bool) {
+        guard let workbench, let record = selectedWorkspace else { return }
+        Task {
+            guard let context = await workbench.context(for: record.id) else { return }
+            do {
+                try await context.setMCPServerConsent(server, allowed: allowed)
+                extensions = await CodeWorkspaceExtensions.discover(in: context)
+            } catch {
+                // Keep the control in its old state; the next discovery preserves
+                // the fact that no consent was written.
+                extensions = await CodeWorkspaceExtensions.discover(in: context)
+            }
+        }
     }
 
     @ViewBuilder

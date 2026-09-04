@@ -120,6 +120,17 @@ export const env = {
     priceMax20Yearly: process.env.STRIPE_PRICE_MAX20_YEARLY,
   },
 
+  // App Store Server API / StoreKit 2 (optional — native billing is refused
+  // rather than trusting a client-supplied receipt when this is incomplete).
+  // `rootCertificates` holds comma-separated base64 DER Apple root CAs.
+  appStore: {
+    bundleId: process.env.APP_STORE_BUNDLE_ID,
+    appAppleId: process.env.APP_STORE_APPLE_ID,
+    environment: process.env.APP_STORE_ENVIRONMENT ?? "Production",
+    rootCertificates: process.env.APP_STORE_ROOT_CERTIFICATES,
+    enableOnlineChecks: process.env.APP_STORE_ENABLE_ONLINE_CHECKS !== "false",
+  },
+
   // Voice (optional — falls back to the browser's Web Speech API, i.e. the OS
   // voice, which reads non-English text with an English accent and transcribes
   // non-English speech poorly. Set STT_PROVIDER/TTS_PROVIDER to fix both.)
@@ -155,6 +166,17 @@ export function isStorageAvailable(): boolean {
 
 export function isStripeConfigured(): boolean {
   return Boolean(env.stripe.secretKey && env.stripe.pricePro && env.stripe.priceMax);
+}
+
+/** App Store entitlement endpoints must fail closed until Apple verification is configured. */
+export function isAppStoreConfigured(): boolean {
+  const appStore = env.appStore;
+  return Boolean(
+    appStore.bundleId
+      && appStore.appAppleId
+      && appStore.rootCertificates
+      && appStore.environment === "Production"
+  );
 }
 
 export function isGoogleConfigured(): boolean {

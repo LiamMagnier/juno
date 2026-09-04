@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Link2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,12 @@ const PLAN_COPY = {
   hideQueries: "Hide the searches",
   step: "Step",
   search: "Search",
+  focus: "Research focus",
+  addConstraint: "Add a constraint",
+  addSource: "Add a source URL",
+  showFocus: "Set focus and sources",
+  hideFocus: "Hide focus and sources",
+  sources: "Sources to read first",
 } as const;
 
 /**
@@ -56,19 +62,28 @@ const PLAN_COPY = {
 export function PlanReview({
   steps,
   queries,
+  constraints,
+  pinnedSources,
   busy,
   onConfirm,
   onDiscard,
 }: {
   steps: string[];
   queries: string[];
+  constraints: string[];
+  pinnedSources: string[];
   busy: boolean;
-  onConfirm: (plan: { steps: string[]; queries: string[] }) => void;
+  onConfirm: (plan: { steps: string[]; queries: string[]; constraints: string[]; pinnedSources: string[] }) => void;
   onDiscard: () => void;
 }) {
   const [stepDraft, setStepDraft] = React.useState<string[] | null>(null);
   const [queryDraft, setQueryDraft] = React.useState<string[] | null>(null);
   const [queriesOpen, setQueriesOpen] = React.useState(false);
+  const [focusOpen, setFocusOpen] = React.useState(false);
+  const [constraintDraft, setConstraintDraft] = React.useState("");
+  const [sourceDraft, setSourceDraft] = React.useState("");
+  const [constraintValues, setConstraintValues] = React.useState(constraints);
+  const [sourceValues, setSourceValues] = React.useState(pinnedSources);
 
   const currentSteps = stepDraft ?? steps;
   const currentQueries = queryDraft ?? queries;
@@ -130,6 +145,8 @@ export function PlanReview({
             onConfirm({
               steps: currentSteps.map((s) => s.trim()).filter(Boolean),
               queries: currentQueries.map((q) => q.trim()).filter(Boolean),
+              constraints: constraintValues.map((value) => value.trim()).filter(Boolean),
+              pinnedSources: sourceValues.map((value) => value.trim()).filter(Boolean),
             })
           }
         >
@@ -191,6 +208,127 @@ export function PlanReview({
           )}
         </div>
       )}
+
+      <div className="mt-4 border-t border-border/50 pt-3">
+        <button
+          type="button"
+          aria-expanded={focusOpen}
+          onClick={() => setFocusOpen((value) => !value)}
+          className="pressable -ml-1 inline-flex items-center gap-1 rounded-control px-1 py-0.5 text-ui text-muted-foreground hover:text-foreground"
+        >
+          {focusOpen ? PLAN_COPY.hideFocus : PLAN_COPY.showFocus}
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "size-3.5 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+              focusOpen && "rotate-180"
+            )}
+          />
+        </button>
+
+        {focusOpen && (
+          <div className="mt-3 space-y-4 motion-safe:animate-research-detail-in">
+            <FocusList
+              label={PLAN_COPY.focus}
+              values={constraintValues}
+              emptyLabel={PLAN_COPY.addConstraint}
+              draft={constraintDraft}
+              onDraftChange={setConstraintDraft}
+              onAdd={() => {
+                const value = constraintDraft.trim();
+                if (!value) return;
+                setConstraintValues((current) => [...current, value]);
+                setConstraintDraft("");
+              }}
+              onRemove={(index) => setConstraintValues((current) => current.filter((_, i) => i !== index))}
+            />
+            <FocusList
+              label={PLAN_COPY.sources}
+              values={sourceValues}
+              emptyLabel={PLAN_COPY.addSource}
+              draft={sourceDraft}
+              onDraftChange={setSourceDraft}
+              onAdd={() => {
+                const value = sourceDraft.trim();
+                if (!value) return;
+                setSourceValues((current) => [...current, value]);
+                setSourceDraft("");
+              }}
+              onRemove={(index) => setSourceValues((current) => current.filter((_, i) => i !== index))}
+              source
+            />
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function FocusList({
+  label,
+  values,
+  emptyLabel,
+  draft,
+  onDraftChange,
+  onAdd,
+  onRemove,
+  source = false,
+}: {
+  label: string;
+  values: string[];
+  emptyLabel: string;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  source?: boolean;
+}) {
+  return (
+    <section>
+      <p className="text-ui font-medium text-foreground">{label}</p>
+      {values.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {values.map((value, index) => (
+            <li key={`${value}-${index}`} className="flex min-w-0 items-center gap-2 rounded-control bg-secondary/45 px-2 py-1.5 text-ui text-muted-foreground">
+              {source ? <Link2 aria-hidden className="size-3.5 shrink-0" /> : null}
+              <span className="min-w-0 flex-1 truncate">{value}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                aria-label={`Remove ${value}`}
+                className="pressable inline-flex size-5 shrink-0 items-center justify-center rounded-xs hover:bg-accent hover:text-foreground"
+              >
+                <X aria-hidden className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 flex gap-2">
+        <input
+          type={source ? "url" : "text"}
+          inputMode={source ? "url" : "text"}
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onAdd();
+            }
+          }}
+          placeholder={emptyLabel}
+          aria-label={emptyLabel}
+          className="min-w-0 flex-1 rounded-control bg-secondary/50 px-2.5 py-1.5 text-ui text-foreground outline-none ring-1 ring-transparent placeholder:text-muted-foreground/70 focus-visible:ring-ring"
+        />
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label={emptyLabel}
+          className="pressable inline-flex size-8 shrink-0 items-center justify-center rounded-control bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Plus aria-hidden className="size-3.5" />
+        </button>
+      </div>
+    </section>
   );
 }

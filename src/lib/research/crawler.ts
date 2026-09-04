@@ -85,7 +85,11 @@ export async function renderHeadlessPage(
       ],
     });
 
-    const context = await browser.newContext({
+    // Keep a narrowed reference for the abort callback; `browser` is also
+    // owned by the outer finally block and is intentionally optional there.
+    const activeBrowser = browser;
+
+    const context = await activeBrowser.newContext({
       userAgent: options.userAgent ?? DEFAULT_USER_AGENT,
       viewport: { width: 1280, height: 800 },
       javaScriptEnabled: true,
@@ -96,13 +100,13 @@ export async function renderHeadlessPage(
     // Abort abortable signals
     if (options.signal) {
       if (options.signal.aborted) {
-        await browser.close();
+        await activeBrowser.close();
         return { ok: false, failure: { reason: "aborted" } };
       }
       options.signal.addEventListener("abort", () => {
         page.close().catch(() => {});
         context.close().catch(() => {});
-        browser.close().catch(() => {});
+        activeBrowser.close().catch(() => {});
       });
     }
 

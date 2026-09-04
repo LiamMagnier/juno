@@ -63,14 +63,24 @@ export function RunSpine({
   const at = current === "done" ? VISIBLE_STAGES.length : VISIBLE_STAGES.indexOf(current);
 
   return (
-    <ol className={cn("relative", className)} aria-label={RESEARCH_STATE_MESSAGE[state]}>
+    <ol className={cn("relative", className)} aria-label={RESEARCH_STATE_MESSAGE[state]} aria-live="polite">
       {VISIBLE_STAGES.map((stage, i) => {
         const status = i < at ? "done" : i > at ? "ahead" : live ? "live" : "done";
         const last = i === VISIBLE_STAGES.length - 1;
         const yielded = yields?.[stage];
 
         return (
-          <li key={stage} className="relative flex gap-3 pb-3 last:pb-0">
+          <li
+            key={stage}
+            className={cn(
+              "relative flex gap-3 pb-3 last:pb-0",
+              // A stage transition is an event, not perpetual decoration. The
+              // short settle gives the eye a precise handoff as work moves from
+              // investigation to review to writing, while reduced-motion users
+              // receive the same state change without movement.
+              status === "live" && "motion-safe:animate-research-stage"
+            )}
+          >
             {/* The rule. Drawn per row rather than as one absolute element so it
                 stops exactly at the last node instead of running past it, and
                 so each segment can carry the colour of the stage ABOVE it —

@@ -81,6 +81,8 @@ const CONSOLE_COPY = {
   read: "read",
   checked: "checked",
   leaveHint: "Keeps running if you close this — the report will be here.",
+  focus: "Research focus",
+  pinnedSources: "pinned sources",
 } as const;
 
 type Tab = "activity" | "sources" | "evidence";
@@ -187,6 +189,8 @@ export function ResearchConsole({
   // resolved duplicate reads it as a live problem with the evidence.
   const conflicts = (run.plan.conflicts ?? []).filter((conflict) => !conflict.resolved);
   const objectives = run.plan.objectives ?? [];
+  const constraints = run.plan.constraints ?? [];
+  const pinnedSources = run.plan.pinnedSources ?? [];
 
   const tabs: SegmentedOption<Tab>[] = [
     { value: "activity", label: CONSOLE_COPY.activity },
@@ -246,6 +250,17 @@ export function ResearchConsole({
         </div>
       </header>
 
+      {(constraints.length > 0 || pinnedSources.length > 0) && (
+        <div className="relative mt-3 border-l border-primary/30 pl-3 text-ui text-muted-foreground">
+          <span className="font-medium text-foreground">{CONSOLE_COPY.focus}: </span>
+          {constraints.join(" · ")}
+          {constraints.length > 0 && pinnedSources.length > 0 ? " · " : ""}
+          {pinnedSources.length > 0
+            ? `${pinnedSources.length} ${CONSOLE_COPY.pinnedSources}`
+            : null}
+        </div>
+      )}
+
       {/* Follow-up rounds are a fact about gathering that has already happened,
           so they cannot be true at the gate — a plan waiting for approval has
           run nothing. */}
@@ -259,9 +274,11 @@ export function ResearchConsole({
         // The gate pre-empts everything. Nothing expensive has happened yet and
         // these are the queries that will actually be issued.
         <div className="relative mt-5">
-          <PlanReview
+            <PlanReview
             steps={run.plan.steps ?? []}
             queries={run.plan.queries}
+            constraints={constraints}
+            pinnedSources={pinnedSources}
             busy={busy}
             onConfirm={(plan) => void post("/plan", { decision: "confirm", ...plan })}
             onDiscard={() => void post("/plan", { decision: "cancel" })}

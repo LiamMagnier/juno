@@ -42,12 +42,17 @@ public typealias MCPTransportFactory = @Sendable (
     URL
 ) -> any MCPLineTransport
 
+/// Consent is distinct from per-tool approval: it authorizes only initial
+/// server discovery/startup for one exact workspace declaration.
+public typealias MCPServerStartupAuthorizer = @Sendable (MCPServerConfiguration) -> Bool
+
 /// Minimal workspace MCP registry: load configured stdio servers, lazily
 /// connect them, discover schema-bearing tools, and invoke only after the host
 /// provides an explicit authorization closure.
 public actor MCPToolRegistry {
     private let workspaceRootURL: URL
     private let transportFactory: MCPTransportFactory
+    private let startupAuthorizer: MCPServerStartupAuthorizer
     private var configurationsByID: [String: MCPServerConfiguration]
     private var clientsByID: [String: MCPClient] = [:]
     private var toolsByServerID: [String: [MCPToolDefinition]] = [:]
@@ -55,7 +60,8 @@ public actor MCPToolRegistry {
     public init(
         workspaceRootURL: URL,
         configurations: [MCPServerConfiguration]? = nil,
-        transportFactory: MCPTransportFactory? = nil
+        transportFactory: MCPTransportFactory? = nil,
+        startupAuthorizer: @escaping MCPServerStartupAuthorizer = { _ in false }
     ) throws {
         let resolvedConfigurations: [MCPServerConfiguration]
         if let configurations {
@@ -85,6 +91,7 @@ public actor MCPToolRegistry {
                 MCPHTTPTransport(configuration: configuration)
             }
         }
+        self.startupAuthorizer = startupAuthorizer
     }
 
     public func serverConfigurations() -> [MCPServerConfiguration] {
@@ -95,7 +102,7 @@ public actor MCPToolRegistry {
         guard let configuration = configurationsByID[serverID] else {
             throw MCPError.serverNotFound(serverID)
         }
-        guard configuration.enabled else { return .closed }
+        guard configuration.enabled, startupAuthorizer(configuration) else { return .closed }
         guard let client = clientsByID[serverID] else { return .idle }
         return await client.state
     }
@@ -133,7 +140,7 @@ public actor MCPToolRegistry {
 
     public func allTools() async throws -> [MCPToolReference] {
         var result: [MCPToolReference] = []
-        for configuration in serverConfigurations() where configuration.enabled {
+        for configuration in serverConfigurations() where configuration.enabled && startupAuthorizer(configuration) {
             result.append(contentsOf: try await tools(for: configuration.name))
         }
         return result.sorted { $0.qualifiedName < $1.qualifiedName }
@@ -190,7 +197,7 @@ public actor MCPToolRegistry {
         guard let configuration = configurationsByID[serverID] else {
             throw MCPError.serverNotFound(serverID)
         }
-        guard configuration.enabled else {
+        guard configuration.enabled, startupAuthorizer(configuration) else {
             throw MCPError.disabledServer(serverID)
         }
         if let client = clientsByID[serverID] {

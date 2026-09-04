@@ -53,12 +53,6 @@ function storageImagePatterns() {
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  eslint: { ignoreDuringBuilds: true },
-  // Type-checking runs in the editor and on the dev machine before pushing. On
-  // the 1 GB build VM, Next's type-check worker OOMs (it ignores
-  // --max-old-space-size), so we skip it during the production build. Catch type
-  // errors locally with `npx tsc --noEmit`.
-  typescript: { ignoreBuildErrors: true },
   // bcryptjs is pure JS but we keep it external to the server bundle to avoid
   // any bundler edge cases with its dynamic requires.
   serverExternalPackages: ["bcryptjs"],

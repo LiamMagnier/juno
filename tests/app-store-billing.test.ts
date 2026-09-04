@@ -1,15 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Environment } from "@apple/app-store-server-library";
 import {
   planFromAppStoreProductId,
-  parseAppStoreJws,
   verifyStoreKitTransaction,
+  type AppStoreSignedDataVerifier,
+  type AppStoreVerificationConfiguration,
 } from "@/lib/billing/app-store";
 
-function createMockJws(payload: Record<string, unknown>, header = { alg: "ES256", typ: "JWT" }) {
-  const b64 = (obj: Record<string, unknown>) =>
-    Buffer.from(JSON.stringify(obj)).toString("base64url");
-  return `${b64(header)}.${b64(payload)}.mock_signature`;
+const configuration: AppStoreVerificationConfiguration = {
+  bundleId: "com.liammagnier.JunoMobile",
+  appAppleId: 123456789,
+  environment: Environment.PRODUCTION,
+  rootCertificates: [Buffer.from("test")],
+  enableOnlineChecks: true,
+};
+
+function verifier(
+  transaction: Record<string, unknown>,
+  notification: Record<string, unknown> = {}
+): AppStoreSignedDataVerifier {
+  return {
+    async verifyTransaction() { return transaction as never; },
+    async verifyNotification() { return notification as never; },
+  };
 }
 
 test("planFromAppStoreProductId correctly maps standard product IDs", () => {
@@ -22,49 +36,41 @@ test("planFromAppStoreProductId correctly maps standard product IDs", () => {
   assert.equal(planFromAppStoreProductId("unknown.product.id"), null);
 });
 
-test("parseAppStoreJws successfully decodes header and payload", () => {
-  const mockPayload = {
-    transactionId: "10001",
-    originalTransactionId: "10000",
-    productId: "com.liammagnier.juno.pro.monthly",
-    environment: "Sandbox",
-  };
-  const token = createMockJws(mockPayload);
-  const result = parseAppStoreJws<typeof mockPayload>(token);
-
-  assert.equal(result.header.alg, "ES256");
-  assert.equal(result.payload.transactionId, "10001");
-  assert.equal(result.payload.productId, "com.liammagnier.juno.pro.monthly");
-});
-
-test("parseAppStoreJws throws on invalid formats", () => {
-  assert.throws(() => parseAppStoreJws("invalid.token"), /Invalid JWS format/);
-  assert.throws(() => parseAppStoreJws(""), /Invalid JWS/);
-});
-
-test("verifyStoreKitTransaction validates required fields", async () => {
+test("verifyStoreKitTransaction accepts only a verifier-decoded, policy-valid transaction", async () => {
   const validPayload = {
     transactionId: "tx_123",
     originalTransactionId: "orig_123",
-    bundleId: "com.liammagnier.juno",
+    bundleId: configuration.bundleId,
     productId: "com.liammagnier.juno.pro.monthly",
     purchaseDate: Date.now(),
     environment: "Production",
+    expiresDate: Date.now() + 60_000,
   };
-  const token = createMockJws(validPayload);
-  const parsed = await verifyStoreKitTransaction(token);
+  const parsed = await verifyStoreKitTransaction("signed-by-apple", {
+    configuration,
+    verifier: verifier(validPayload),
+  });
   assert.equal(parsed.transactionId, "tx_123");
   assert.equal(parsed.originalTransactionId, "orig_123");
   assert.equal(parsed.productId, "com.liammagnier.juno.pro.monthly");
 
-  const invalidToken = createMockJws({ transactionId: "only_this" });
   await assert.rejects(
-    async () => verifyStoreKitTransaction(invalidToken),
+    async () => verifyStoreKitTransaction("signed-by-apple", {
+      configuration,
+      verifier: verifier({ transactionId: "only_this" }),
+    }),
     /missing required fields/
   );
 });
 
-test("handleAppStoreServerNotification handles TEST notification gracefully", async () => {
+test("a forged compact JWS cannot bypass the production verifier", async () => {
+  await assert.rejects(
+    () => verifyStoreKitTransaction("eyJhbGciOiJFUzI1NiJ9.eyJ0cmFuc2FjdGlvbklkIjoidHgifQ.forged"),
+    /signed verification is not configured/
+  );
+});
+
+test("handleAppStoreServerNotification handles a verified TEST notification gracefully", async () => {
   const { handleAppStoreServerNotification } = await import("@/lib/billing/app-store");
   const testPayload = {
     notificationType: "TEST",
@@ -72,35 +78,21 @@ test("handleAppStoreServerNotification handles TEST notification gracefully", as
     version: "2.0",
     signedDate: Date.now(),
   };
-  const token = createMockJws(testPayload);
-  const result = await handleAppStoreServerNotification(token);
+  const result = await handleAppStoreServerNotification("signed-by-apple", {
+    configuration,
+    verifier: verifier({}, testPayload),
+  });
   assert.equal(result.processed, true);
   assert.equal(result.notificationType, "TEST");
 });
 
-test("handleAppStoreServerNotification handles unassociated transactions without throwing", async () => {
+test("notification verification rejects an invalid outer payload before database access", async () => {
   const { handleAppStoreServerNotification } = await import("@/lib/billing/app-store");
-  const txPayload = {
-    transactionId: "tx_unknown",
-    originalTransactionId: "orig_unknown",
-    productId: "com.liammagnier.juno.pro.monthly",
-    purchaseDate: Date.now(),
-  };
-  const signedTx = createMockJws(txPayload);
-  const notifPayload = {
-    notificationType: "SUBSCRIBED",
-    notificationUUID: "uuid-sub",
-    version: "2.0",
-    signedDate: Date.now(),
-    data: {
-      signedTransactionInfo: signedTx,
-    },
-  };
-  const token = createMockJws(notifPayload);
-  const result = await handleAppStoreServerNotification(token);
-  assert.equal(result.processed, false);
-  assert.equal(result.notificationType, "SUBSCRIBED");
-  assert.ok(result.warning, "Expected a warning describing failure to associate transaction");
+  await assert.rejects(
+    () => handleAppStoreServerNotification("signed-by-apple", {
+      configuration,
+      verifier: verifier({}, { notificationType: "SUBSCRIBED" }),
+    }),
+    /Invalid App Store notification payload/
+  );
 });
-
-

@@ -15,6 +15,8 @@ struct JunoMobileResearchProgress: View {
     let degradedWarning: String?
     let onDisable: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// The server's own `activity` stream, read through the same lens a local
     /// run is read through.
     ///
@@ -29,12 +31,57 @@ struct JunoMobileResearchProgress: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             if enabled { header }
+            phaseRail
             runRow
             searchBlock
             if let degradedWarning { warningRow(degradedWarning) }
         }
         .padding(.horizontal, JunoSpace.regular)
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: progress.phase
+        )
         .accessibilityIdentifier("juno.mobile.research-progress")
+    }
+
+    /// A compact, truthful map of the run. It makes the waiting state legible
+    /// without promising a stage that the server has not actually reached.
+    private var phaseRail: some View {
+        let current = phaseIndex(progress.phase)
+        return HStack(spacing: JunoSpace.tight) {
+            ForEach(Array(phaseLabels.enumerated()), id: \.offset) { index, label in
+                HStack(spacing: 4) {
+                    Capsule()
+                        .fill(index <= current ? Color.junoAccent : Color.junoMutedForeground.opacity(0.25))
+                        .frame(width: index == current ? 14 : 7, height: 3)
+                    if index == current {
+                        Text(label)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(Color.junoForeground)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Research stage: \(progress.phase.displayName)")
+        .accessibilityValue("Step \(current + 1) of \(phaseLabels.count)")
+        .accessibilityIdentifier("juno.mobile.research-phase")
+    }
+
+    private var phaseLabels: [String] {
+        ["Plan", "Search", "Read", "Check", "Write"]
+    }
+
+    private func phaseIndex(_ phase: DeepResearchPhase) -> Int {
+        switch phase {
+        case .planning, .stopped: 0
+        case .searching: 1
+        case .reading: 2
+        case .gapAnalysis: 3
+        case .synthesizing, .completed: 4
+        }
     }
 
     /// What stage the run is at, and how much it has covered.
