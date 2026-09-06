@@ -261,7 +261,8 @@ function def(d: ModelDef): ModelInfo {
  */
 const CURATED: ModelInfo[] = [
   // —— Anthropic ——
-  def({ provider: "anthropic", id: "claude-fable-5", name: "Claude Fable 5", family: "fable", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
+  def({ provider: "anthropic", id: "claude-fable-5-1", name: "Claude Fable 5.1", family: "fable", status: "current", released: "2026-09", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
+  def({ provider: "anthropic", id: "claude-fable-5", name: "Claude Fable 5", family: "fable", status: "legacy", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
   def({ provider: "anthropic", id: "claude-opus-5", name: "Claude Opus 5", family: "opus", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Most capable Opus — complex agentic coding and hard tasks." }),
   def({ provider: "anthropic", id: "claude-opus-4-8", name: "Claude Opus 4.8", family: "opus", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Previous-generation Opus, superseded by Opus 5." }),
   def({ provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5", family: "sonnet", status: "current", released: "2026-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Best speed-to-intelligence balance — near-Opus quality for everyday work." }),
@@ -318,7 +319,8 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
 
   // —— Google ——
-  def({ provider: "google", id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", family: "flash", status: "current", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
+  def({ provider: "google", id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", family: "flash", status: "current", released: "2026-09", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
+  def({ provider: "google", id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", family: "flash", status: "legacy", released: "2026-08", minPlan: "FREE", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Google's flagship multimodal Flash model with hybrid reasoning." }),
   def({ provider: "google", id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", family: "flash", status: "legacy", released: "2026-07", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier Flash generation." }),
   def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "legacy", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Earlier stable Flash generation." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks." }),
@@ -403,6 +405,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5", retiresOn: "2026-07-31", replacedBy: "mistral:mistral-medium-latest" }),
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
+  def({ provider: "xai", id: "grok-4.6", name: "Grok 4.6", family: "grok", status: "current", released: "2026-08", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
   // —— xAI (SpaceXAI) / Grok ——
   // EU rollout landed (watchlist item cleared 2026-07-16). The /models list is
   // unreadable while the team carries no credit balance, so availability was
@@ -411,7 +414,7 @@ const CURATED: ModelInfo[] = [
   // returns 400 "Model not found". 4.5 answers identically to the already-live
   // 4.3, so it is served to this account; only billing gates it, and that gates
   // every xAI model equally rather than this one specifically.
-  def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
+  def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok", status: "legacy", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
   def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "legacy", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive tier — chat, coding, and agentic tool calling. Superseded by 4.5." }),
   def({ provider: "xai", id: "grok-build-0.1", name: "Grok Build 0.1", family: "grok-build", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Fast agentic coding — successor to Grok Code Fast." }),
   def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent deep research (beta)." }),
@@ -589,12 +592,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "openai:dall-e-3": "openai:gpt-image-2", // shut down 2026-05-12
   "openai:dall-e-2": "openai:gpt-image-2", // shut down 2026-05-12
   // Google — marketing names listed as chat models + retired Imagen/Veo ids.
-  "google:nano-banana-pro": "google:gemini-3.7-flash", // was mis-listed as a chat model
-  "google:nano-banana-2": "google:gemini-3.7-flash", // was mis-listed as a chat model
+  "google:nano-banana-pro": "google:gemini-3.8-flash", // was mis-listed as a chat model
+  "google:nano-banana-2": "google:gemini-3.8-flash", // was mis-listed as a chat model
   "google:imagen-3.0-generate-002": "google:gemini-3.1-flash-image", // shut down 2025-11-10
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   // Listed by ListModels but 404s on every call: "no longer available to new users".
-  "google:gemini-2.5-flash": "google:gemini-3.7-flash",
+  "google:gemini-2.5-flash": "google:gemini-3.8-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
   // Meta — the Llama ids are still retired (the Meta Model API does not serve
@@ -617,10 +620,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
   "deepseek:deepseek-coder": "deepseek:deepseek-v4-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.
-  "xai:grok-4": "xai:grok-4.5",
-  "xai:grok-2": "xai:grok-4.5",
-  "xai:grok-beta": "xai:grok-4.5",
-  "xai:grok-3": "xai:grok-4.5",
+  "xai:grok-4": "xai:grok-4.6",
+  "xai:grok-2": "xai:grok-4.6",
+  "xai:grok-beta": "xai:grok-4.6",
+  "xai:grok-3": "xai:grok-4.6",
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.

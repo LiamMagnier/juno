@@ -78,12 +78,12 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
       <div ref={fieldTierRef} className="relative flex w-full min-w-0 flex-col">
         {above}
         {field}
-        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-1">
-          <div className={cn("flex min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar", dim)}>
+        <div className="flex flex-nowrap items-center gap-1.5 px-3 pb-3 pt-1">
+          <div className={cn("flex min-w-0 shrink-0 items-center gap-1.5", dim)}>
             {leading}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {trailing && <div className={cn("flex min-w-0 items-center gap-1", dim)}>{trailing}</div>}
+          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+            {trailing && <div className={cn("flex min-w-0 items-center gap-1.5 overflow-x-auto no-scrollbar py-1", dim)}>{trailing}</div>}
             {action}
           </div>
         </div>
@@ -104,7 +104,7 @@ export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } a
  * block padding, `text-base` because iOS Safari zooms into anything smaller.
  */
 export const composerFieldClass =
-  "block w-full resize-none bg-transparent px-4 pb-2 pt-3.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70 disabled:opacity-60";
+  "block w-full resize-none bg-transparent min-h-16 px-5 pb-3 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60";
 
 /**
  * A flat text chip on the controls row: model, effort, target, permission.
@@ -112,19 +112,19 @@ export const composerFieldClass =
  * raised or pressed treatment — the row is one quiet line of text.
  */
 export const composerChipClass =
-  "group inline-flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-ui font-medium text-foreground/80 transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
+  "group inline-flex h-9 min-w-0 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-ui font-medium text-foreground/80 transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-11";
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =
   "size-3 shrink-0 opacity-60 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
 
 /**
- * A 32px flat icon button (`+`, mic). Written against `<Button variant="ghost"
+ * A 36px flat icon button (`+`, mic). Written against `<Button variant="ghost"
  * size="icon-sm">`, whose hover raises a card — every raised/pressed class is
  * cancelled here so the button stays flat and only the accent fill arrives.
  */
 export const composerIconButtonClass =
-  "size-8 shrink-0 rounded-control border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
+  "size-9 shrink-0 rounded-control focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
 
 /** The thin rule between the chips and the mic/send pair. */
 export function ComposerDivider({ className }: { className?: string }) {
@@ -187,7 +187,20 @@ export function useComposerAutosize(
     measure();
   }, [value, measure]);
 
-  React.useEffect(() => () => controls.current?.stop(), []);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let width = el.getBoundingClientRect().width;
+    let active = true;
+    const observer = new ResizeObserver(([entry]) => {
+      if (Math.abs(entry.contentRect.width - width) < 1) return;
+      width = entry.contentRect.width;
+      measure();
+    });
+    observer.observe(el);
+    void document.fonts.ready.then(() => { if (active) measure(); });
+    return () => { active = false; observer.disconnect(); controls.current?.stop(); };
+  }, [ref, measure]);
 
   return measure;
 }
@@ -206,7 +219,7 @@ const FACE_MOTION = {
 };
 
 /**
- * The 32px coral circle. Flat — no raised shadow, no halo — and its face
+ * The 36px coral circle. Flat — no raised shadow, no halo — and its face
  * cross-morphs (scale .9→1 + fade over `duration-fast`) between send, stop,
  * the voice wave and a spinner. `.composer-primary-action` is kept as a class
  * hook for the e2e suite; it carries no styles.
@@ -223,8 +236,8 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
         ref={ref}
         type={type}
         className={cn(
-          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
-          "hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
           "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
           className
         )}
@@ -326,7 +339,7 @@ export function ComposerAttachmentTile({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${upload.fileName}`}
-          className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
+          className="absolute right-0.5 top-0.5 grid size-6 coarse:size-8 place-items-center rounded-full bg-foreground/80 text-background opacity-0 transition-[opacity,background-color] duration-fast ease-out-soft hover:bg-foreground focus-visible:opacity-100 group-hover:opacity-100 motion-reduce:transition-none coarse:opacity-100"
         >
           <ActionIcons.dismiss className="size-3" aria-hidden="true" />
         </button>

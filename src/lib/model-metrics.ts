@@ -97,7 +97,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 6) },
   ],
   google: [
-    { hints: ["3.8-flash", "3.7-flash"], metric: official(1.5, 9, 1_048_576, 8, 9) },
+    { hints: ["3.8-flash", "3.7-flash", "3.6-flash"], metric: official(0.75, 3.75, 1_048_576, 8, 9) },
     { hints: ["3.6-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) },
     { hints: ["3.5-flash"], metric: official(1.5, 9, 1_048_576, 8, 8) }, // II 50.2 · 152 tok/s — 3x the 2.5 Flash price
     { hints: ["3.1-flash-lite"], metric: official(0.25, 1.5, 1_048_576, 10, 4) }, // II 25.0 · 251 tok/s — fastest in the lineup
@@ -163,7 +163,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["small"], metric: official(0.15, 0.6, 262_144, 8, 3) }, // II 19.6 · 165 tok/s
   ],
   xai: [
-    { hints: ["grok-4.5"], metric: official(2, 6, 500_000, 6, 9) }, // II 53.8 · 93 tok/s — cheapest frontier-class model (EU mid-July)
+    { hints: ["grok-4.6", "grok-4.5"], metric: official(2, 6, 500_000, 6, 9) }, // II 53.8 · 93 tok/s — cheapest frontier-class model (EU mid-July)
     { hints: ["multi-agent"], metric: metric(3, 15, 1_000_000, 2, 7) },
     { hints: ["grok-build"], metric: metric(0.5, 2, 256_000, 8, 6) },
     { hints: ["grok-4.3"], metric: official(1.25, 2.5, 1_000_000, 7, 6) }, // II 37.6 · 105 tok/s
@@ -611,6 +611,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Haiku 4.5 is absent from the effort-supported list entirely — on/off only.
       if (id.includes("haiku")) return caps([], true, true);
       // Fable/Mythos: adaptive always on; disabled rejected.
+      if (/(fable|mythos)-5-1/.test(id)) return caps(LMHXM, false, false, "high");
       if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false);
       // Opus 4.5: manual budget_tokens only (no adaptive); effort API is
       // supported alongside budget but we still expose LMH for the slider.
@@ -681,6 +682,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps([], false);
     case "xai":
       if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
+      if (id.includes("grok-4.6")) return caps(LMHX, false, false, "high");
       if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
       if (id.includes("grok-4.3")) return caps(LMH, true); // none|low|medium|high
       return caps([], false); // grok-build: reasons, no documented control

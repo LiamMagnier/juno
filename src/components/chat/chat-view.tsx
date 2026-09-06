@@ -1960,7 +1960,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}
                   <div
                     className={cn(
-                      "mb-4 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-5",
+                      "mb-6 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-8",
                       // The greeting's exit beat: up and out on title-out while
                       // the composer below holds still for its travel. Forwards
                       // fill, or the final frame would snap back before the swap
@@ -1970,6 +1970,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     )}
                   >
                     <div
+                      aria-hidden={Boolean(privateMode || chat.pendingClarification)}
+                      inert={Boolean(privateMode || chat.pendingClarification)}
                       className={cn(
                         "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
                         privateMode || chat.pendingClarification
@@ -1980,6 +1982,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                       <EmptyGreeting />
                     </div>
                     <div
+                      aria-hidden={Boolean(!privateMode || chat.pendingClarification)}
+                      inert={Boolean(!privateMode || chat.pendingClarification)}
                       className={cn(
                         "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
                         privateMode && !chat.pendingClarification

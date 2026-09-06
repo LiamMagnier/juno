@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -37,8 +36,8 @@ import { cn } from "@/lib/utils";
  * the right on the same recipe, with Radix's own pointer grace area so a
  * diagonal move from the trigger into the flyout never closes it.
  *
- * The bar shows nothing about tool state: what is on is visible only in here
- * (and in the trigger's accessible name, for a screen reader).
+ * The trigger shows the number of enabled tools; individual states live here.
+ * Small screens drill into subpanels in place to keep every row reachable.
  *
  * Keyboard (all native to the menu): ↑/↓ move, Enter/Space activate or
  * toggle, → opens a submenu, ← closes it, Esc closes everything.
@@ -82,7 +81,7 @@ export type PlusMenuSection = PlusMenuItem[];
 
 /** Shared row recipe: 36px, `rounded-control`, accent fill under the cursor. */
 export const plusMenuRowClass =
-  "flex h-9 items-center gap-2.5 rounded-control px-2.5 text-ui font-medium text-foreground coarse:h-11";
+  "flex min-h-10 items-center gap-3 rounded-control px-3 py-2 text-ui font-medium text-foreground coarse:min-h-11";
 
 /** The 16px glyph slot at the head of a row. */
 export function PlusMenuGlyph({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
@@ -140,9 +139,11 @@ export const PlusMenuRow = React.forwardRef<
         </span>
       )}
       {note ? (
-        <span className="shrink-0 font-mono text-caption text-muted-foreground">{note}</span>
+        <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
       ) : toggle ? (
-        <Switch checked={checked} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
+        <span aria-hidden="true" className={cn("pointer-events-none flex h-5 w-8 shrink-0 items-center rounded-full p-0.5 transition-colors duration-fast motion-reduce:transition-none", checked ? "bg-primary" : "bg-muted")}>
+          <span className={cn("size-4 rounded-full bg-background transition-transform duration-fast motion-reduce:transition-none", checked && "translate-x-3")} />
+        </span>
       ) : radio && selected ? (
         <StatusIcons.success aria-hidden="true" className="size-3.5 shrink-0 text-primary" />
       ) : null}
@@ -168,8 +169,31 @@ export function PlusMenu({
   sections: PlusMenuSection[];
   className?: string;
 }) {
+  const activeCount = sections.flat().filter(item => item.kind === "toggle" && item.checked).length;
+  const [compact, setCompact] = React.useState(false);
+  const [panelId, setPanelId] = React.useState<string | null>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+  const panel = sections.flat().find(item => item.kind === "sub" && item.id === panelId);
+  React.useEffect(() => {
+    const query = window.matchMedia("(max-width: 639px)");
+    const update = () => setCompact(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  React.useEffect(() => {
+    if (compact && panelId) menuRef.current?.querySelector<HTMLElement>("input, [data-menu-back]")?.focus();
+  }, [compact, panelId]);
+  const back = () => {
+    if (panel?.kind === "sub") panel.onOpenChange?.(false);
+    setPanelId(null);
+    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>(`[data-panel-id="${panelId}"]`)?.focus());
+  };
   return (
-    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+    <DropdownMenu open={open} onOpenChange={(next) => {
+      if (!next) { setPanelId(null); if (panel?.kind === "sub") panel.onOpenChange?.(false); }
+      onOpenChange(next);
+    }}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
@@ -179,12 +203,13 @@ export function PlusMenu({
               size="icon-sm"
               aria-label={label}
               disabled={disabled}
-              className={cn(composerIconButtonClass, "group", className)}
+              className={cn(composerIconButtonClass, "group w-auto gap-1.5 px-2.5 coarse:w-auto", className)}
             >
               <Plus
                 aria-hidden="true"
                 className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
               />
+              {activeCount > 0 && <span aria-hidden="true" className="text-caption font-medium"><span className="hidden sm:inline">Tools · </span>{activeCount}</span>}
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -196,10 +221,18 @@ export function PlusMenu({
         side="top"
         sideOffset={8}
         collisionPadding={16}
-        aria-label="Add"
-        className="w-64 p-1.5"
+        ref={menuRef}
+        aria-label={compact && panel ? panel.label : "Add"}
+        onKeyDown={(event) => { if (event.key === "ArrowLeft" && panelId && !(event.target instanceof HTMLInputElement)) { event.preventDefault(); back(); } }}
+        className="w-72 max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto p-1.5"
       >
-        {sections
+        {compact && panel?.kind === "sub" ? <>
+          <DropdownMenuItem data-menu-back aria-label="Back to Add" className={plusMenuRowClass} onSelect={(event) => { event.preventDefault(); back(); }}>
+            <ArrowLeft className="size-4" aria-hidden="true" />{panel.label}
+          </DropdownMenuItem>
+          <PlusMenuSeparator />
+          {panel.render()}
+        </> : sections
           .filter((section) => section.length > 0)
           .map((section, i) => (
             <React.Fragment key={i}>
@@ -226,6 +259,12 @@ export function PlusMenu({
                   >
                     {item.label}
                   </PlusMenuRow>
+                ) : compact ? (
+                  <DropdownMenuItem key={item.id} data-panel-id={item.id} className={plusMenuRowClass} onSelect={(event) => {
+                    event.preventDefault(); setPanelId(item.id); item.onOpenChange?.(true);
+                  }}>
+                    <PlusMenuGlyph icon={item.icon} /><span className="flex-1">{item.label}</span><ChevronRight aria-hidden="true" className="size-4" />
+                  </DropdownMenuItem>
                 ) : (
                   <DropdownMenuSub key={item.id} onOpenChange={item.onOpenChange}>
                     <DropdownMenuSubTrigger className={plusMenuRowClass}>

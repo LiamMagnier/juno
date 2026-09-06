@@ -444,10 +444,12 @@ export function ModelSelector({
   value,
   onChange,
   filter: modelFilter,
+  disabled = false,
 }: {
   value: ModelId;
   onChange: (m: ModelId) => void;
   filter?: (model: ModelInfo) => boolean;
+  disabled?: boolean;
 }) {
   const router = useRouter();
   const { quota, models } = useApp();
@@ -558,6 +560,7 @@ export function ModelSelector({
     !isAutoModelId(m.id) && !m.comingSoon && planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
 
   const select = (m: ModelInfo) => {
+    if (disabled) return;
     if (isAutoModelId(m.id)) {
       onChange(AUTO_MODEL_ID);
       setOpen(false);
@@ -677,15 +680,16 @@ export function ModelSelector({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           aria-label={`Model: ${current?.name ?? "Select model"}`}
           // The shared composer chip: flat text, accent fill on hover and while
           // open. The name is set in the UI face, not mono — it is a label on a
           // control, not a value in a table.
-          className={cn(composerChipClass, "max-w-[13rem] px-2 sm:max-w-[16rem]")}
+          className={cn(composerChipClass, "max-w-[9rem] px-2 sm:max-w-[16rem]")}
         >
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded-sm sm:size-4" />

@@ -1534,10 +1534,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Picking one writes its name at the front of the task, where you can edit or delete it."
   },
   {
-    "id": "15a421e4cf7651fe",
-    "source": "Good evening"
-  },
-  {
     "id": "15a596e3c98c407e",
     "source": "correct"
   },
@@ -1596,10 +1592,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "16cbfe201f4554a8",
     "source": "Allowed. Juno is carrying this out."
-  },
-  {
-    "id": "16ef4d585ba61e53",
-    "source": "A fresh page"
   },
   {
     "id": "16f6367d4f52880d",
@@ -3246,10 +3238,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A canvas edit requires one direct message and cannot be combined with regenerate, clarification, or deep research."
   },
   {
-    "id": "2e29cefa2795490c",
-    "source": "Winding down"
-  },
-  {
     "id": "2e3ac056d4901875",
     "source": "Shared links"
   },
@@ -4186,6 +4174,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every connector action is refused, and nothing can be approved to run."
   },
   {
+    "id": "3c914e1e65c3f85c",
+    "source": "Back to Add"
+  },
+  {
     "id": "3cad797a77e55c00",
     "source": "Nothing has been read or written yet. Every page Juno cites and every file it changes is listed here as it goes."
   },
@@ -4368,10 +4360,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3fdf54c2a6a8b929",
     "source": "6. Vos droits"
-  },
-  {
-    "id": "4002591435e19287",
-    "source": "Up late"
   },
   {
     "id": "400456fe9927ec72",
@@ -4646,10 +4634,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "and the"
   },
   {
-    "id": "443c0d8da8da0cda",
-    "source": "Still going"
-  },
-  {
     "id": "445929267209c034",
     "source": "element"
   },
@@ -4742,10 +4726,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Export .md"
   },
   {
-    "id": "458c1fed57435404",
-    "source": "Evening"
-  },
-  {
     "id": "459c39b58968c174",
     "source": "The chunk, as chunk:<n>, from open_page or find_in_page."
   },
@@ -4800,10 +4780,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "467d2c710db57936",
     "source": "Loading your shared links"
-  },
-  {
-    "id": "469191d5658e46b0",
-    "source": "Onward"
   },
   {
     "id": "4695a9fcf8e5266f",
@@ -6368,10 +6344,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5d72436256ada538",
     "source": "gemini"
-  },
-  {
-    "id": "5d7be6c411574f69",
-    "source": "The small hours"
   },
   {
     "id": "5d811d15b4c909fa",
@@ -9942,10 +9914,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently deleted"
   },
   {
-    "id": "90a90a48e23dcc51",
-    "source": "Good morning"
-  },
-  {
     "id": "90d20d2cae3a4e84",
     "source": "Too many title updates."
   },
@@ -10914,10 +10882,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete…"
   },
   {
-    "id": "9ce858b7a157faf3",
-    "source": "Back at it"
-  },
-  {
     "id": "9cf6bc7c6562a019",
     "source": "Ministral"
   },
@@ -11368,6 +11332,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a2b3e8272173c6cb",
     "source": "3. Hébergement"
+  },
+  {
+    "id": "a2d86b47b6976600",
+    "source": "How can I help"
   },
   {
     "id": "a2e20a33570001ae",
@@ -14246,10 +14214,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Model stopped responding"
   },
   {
-    "id": "cc289305083cd990",
-    "source": "Settling in"
-  },
-  {
     "id": "cc31b47c7e352b64",
     "source": "Europe/Paris"
   },
@@ -14810,10 +14774,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Running now…"
   },
   {
-    "id": "d2f4399d300a43f3",
-    "source": "Moonlight chat"
-  },
-  {
     "id": "d31d065a762cf110",
     "source": "Cancel dictation"
   },
@@ -14824,10 +14784,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d31e014808ecdd2a",
     "source": "settled"
-  },
-  {
-    "id": "d325e1bbfd1c5681",
-    "source": "Good afternoon"
   },
   {
     "id": "d329f6becb727445",
@@ -15690,6 +15646,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ", so opening this preview tells nobody’s server that you did."
   },
   {
+    "id": "ddc6e2b224d0fd82",
+    "source": "sub"
+  },
+  {
     "id": "ddca9a57e6760d26",
     "source": "Important"
   },
@@ -16482,10 +16442,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Use an app"
   },
   {
-    "id": "e9376a281aac57bb",
-    "source": "Morning"
-  },
-  {
     "id": "e9467bb04f2b75df",
     "source": "https://www.anthropic.com/news/..."
   },
@@ -16620,10 +16576,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ead0e940b16ef69b",
     "source": "Ask rarely"
-  },
-  {
-    "id": "eaf380e7f60489b7",
-    "source": "What's next"
   },
   {
     "id": "eb1a70e39274bb76",
@@ -17226,6 +17178,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No project"
   },
   {
+    "id": "f352c21ead26614c",
+    "source": "Tools ·"
+  },
+  {
     "id": "f3577cb543db90ce",
     "source": "Flash"
   },
@@ -17784,10 +17740,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fb7218edf7cdbddd",
     "source": "One or more attachments are unavailable."
-  },
-  {
-    "id": "fb847b43637eee42",
-    "source": "Afternoon"
   },
   {
     "id": "fb8a735fcb78ad9c",

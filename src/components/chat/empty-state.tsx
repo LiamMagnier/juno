@@ -1,132 +1,15 @@
 "use client";
 
-import * as React from "react";
 import { useApp } from "@/components/app/app-provider";
-import { JunoMark } from "@/components/brand/logo";
-import { cn } from "@/lib/utils";
 
-// Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
-// feels fresh — and every phrase has to survive two readings: alone, and with
-// ", <name>" appended in italic serif. Nothing that overclaims the hour (no
-// "bright and early" at 11:40) and nothing saccharine; the 0–5 bucket is the one
-// allowed real personality, because nobody is at a 3am composer by accident.
-const TIME_GREETINGS: { from: number; to: number; phrases: string[] }[] = [
-  {
-    from: 0,
-    to: 5,
-    phrases: ["Still going", "Moonlight chat", "Up late", "The small hours"],
-  },
-  {
-    from: 5,
-    to: 12,
-    phrases: ["Good morning", "Morning", "A fresh page", "Back at it"],
-  },
-  {
-    from: 12,
-    to: 18,
-    phrases: ["Good afternoon", "Afternoon", "What's next", "Onward"],
-  },
-  {
-    from: 18,
-    to: 24,
-    phrases: ["Good evening", "Evening", "Settling in", "Winding down"],
-  },
-];
-
-function pickGreeting(): string {
-  const now = new Date();
-  const h = now.getHours();
-  const bucket =
-    TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
-  // A clock-keyed rotation, not Math.random(). Random would re-roll on every
-  // mount — each new chat a slot machine — and would guarantee a visible text
-  // swap at hydration, since the server's roll can never match the client's.
-  // Keyed to (day + hour) the pick walks the pool as the day moves and shifts
-  // by one at the same hour tomorrow, so it is fresh across sittings and still
-  // deterministic within one.
-  const day = now.getFullYear() * 372 + now.getMonth() * 31 + now.getDate();
-  return bucket.phrases[(day + h) % bucket.phrases.length];
-}
-
-/** The serif greeting + signature mark — sits above the centered composer.
- *
- *  One line of Newsreader at `text-display`: the phrase in the roman, the name
- *  in true italics and the accent. Nothing under it — the composer's
- *  placeholder already says what to do, and a subtitle repeating it was the
- *  one thing on the empty page that read as filler. The mark above is small
- *  (20px) and quiet; it is a signature, not a logo lock-up.
- */
 export function EmptyGreeting() {
   const { user } = useApp();
-  const firstName = user.name?.split(" ")[0];
-  // The pick is deterministic per clock (see pickGreeting), so both passes
-  // agree whenever server and visitor read the same hour and date. The effect
-  // still runs because the SERVER reads UTC and the client the visitor's own
-  // clock: anyone whose timezone has crossed a bucket (or date) boundary would
-  // otherwise be greeted with the wrong time of day until they navigate.
-  const [phrase, setPhrase] = React.useState(() => pickGreeting());
-  React.useEffect(() => setPhrase(pickGreeting()), []);
-
-  // The mark's press animation: retrigger the spring-pop keyframe per click.
-  const [popping, setPopping] = React.useState(false);
-
+  const firstName = user.name?.trim().split(/\s+/)[0];
   return (
-    <div className="flex w-full max-w-lg flex-col items-center">
-      <div className="flex flex-col items-center gap-3 text-center">
-        <button
-          type="button"
-          aria-label="Juno"
-          onClick={() => setPopping(true)}
-          onAnimationEnd={() => setPopping(false)}
-          className={cn(
-            // The GLYPH is 20px, which is the visual weight the greeting wants.
-            // The TARGET must not be: WCAG 2.2 2.5.8 asks for 24x24 CSS px.
-            // grid + place-items keeps the mark exactly where it is and grows
-            // only the hit area around it, so nothing moves and the button
-            // becomes tappable.
-            "grid size-10 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-            popping && "juno-mark-popping",
-          )}
-        >
-          <JunoMark
-            className={cn(
-              // Quieter than the sidebar's mark: 20px and at 70% ink, back to
-              // full on hover — a signature above the line, not a badge.
-              "block size-5 opacity-70",
-              "transition-[transform,opacity] duration-base ease-out-strong hover:opacity-100 motion-reduce:transition-none",
-              !popping &&
-                "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
-            )}
-          />
-        </button>
-        <h1
-          className="empty-greeting text-balance text-center font-serif text-display font-normal text-foreground"
-          suppressHydrationWarning
-        >
-          {/* The greeting and the name rise as two beats rather than one block.
-            suppressHydrationWarning belongs HERE, not only on the <h1>: React
-            does not apply it to deeply nested children, and this is the node
-            whose text differs. The server picks its bucket from UTC and the
-            client from the visitor's own clock, so any timezone that crosses a
-            bucket boundary hydrates with different words — which is the whole
-            point of the effect below, not a bug to fix. */}
-          <span
-            suppressHydrationWarning
-            className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in"
-          >
-            {phrase}
-            {firstName ? "," : null}
-          </span>
-          {firstName ? (
-            <>
-              {" "}
-              <span className="empty-greeting__name inline-block font-normal italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
-                {firstName}
-              </span>
-            </>
-          ) : null}
-        </h1>
-      </div>
+    <div className="flex w-full max-w-2xl flex-col items-center px-4">
+      <h1 className="text-balance text-center font-serif text-page-title font-normal text-foreground sm:text-display motion-safe:animate-rise-in">
+        How can I help{firstName ? <>, <span className="italic">{firstName}</span></> : null}?
+      </h1>
     </div>
   );
 }

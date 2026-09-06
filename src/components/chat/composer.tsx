@@ -1399,6 +1399,7 @@ export function Composer({
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     if (slashOpen && slash) {
       const n = slash.items.length;
       if (e.key === "ArrowDown") {
@@ -1810,7 +1811,7 @@ export function Composer({
           <input
             value={connectorQuery}
             onChange={(event) => setConnectorQuery(event.target.value)}
-            onKeyDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => { if (!["Escape", "ArrowDown", "Tab"].includes(event.key)) event.stopPropagation(); }}
             placeholder="Search apps…"
             aria-label="Search apps"
             autoFocus
@@ -2528,7 +2529,7 @@ export function Composer({
                   className={cn("min-w-0", controlsLocked && "pointer-events-none")}
                   aria-disabled={controlsLocked}
                 >
-                  <ModelSelector value={model} onChange={changeModel} />
+                  <ModelSelector value={model} onChange={changeModel} disabled={controlsLocked} />
                 </div>
 
                 {/* Thinking effort */}

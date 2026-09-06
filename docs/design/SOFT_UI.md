@@ -152,3 +152,18 @@ Concentric rule: outer radius = inner radius + padding. Remove `lg/surface` dual
 
 Sentence case everywhere. No all-caps. Product names: "Juno", "Juno Code",
 "Juno Work". Buttons are verbs. Empty states say what to do next in one line.
+
+### Composer accessibility and responsive refinements (September 2026)
+
+The shared composer keeps a comfortable text area and a single controls row.
+The plus trigger and primary action remain anchored while the model/effort
+cluster scrolls if needed. Controls use 36px desktop and 44px coarse-pointer
+targets with visible keyboard focus. Textarea sizing responds to width changes
+and loaded fonts; reduced motion snaps to the measured size.
+
+The plus trigger displays the enabled tool count. Toggle rows expose a single
+menuitemcheckbox, with a decorative switch rather than a nested button. On small
+screens Project and Connectors replace the menu body with a back row; desktop
+retains native submenus. Escape dismisses search and menus normally. The welcome
+heading uses stable text to avoid timezone-dependent hydration and inactive
+welcome variants are hidden from assistive technology.
