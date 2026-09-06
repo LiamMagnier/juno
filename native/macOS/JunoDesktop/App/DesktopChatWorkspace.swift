@@ -223,6 +223,21 @@ struct DesktopChatWorkspace: View {
         } message: {
             Text(screenshotFailure ?? "Juno could not take a screenshot.")
         }
+        // Manual-QA hook for the capture path: `--juno-debug-screenshot-picker`
+        // opens the system picker a beat after the window appears, so the
+        // picker's own states — its prompt, the cancel path, the failure alert
+        // — can be exercised without reaching for the ⇧⌘1 shortcut while also
+        // driving the app. DEBUG-only, like every other launch flag here.
+        #if DEBUG
+        .task {
+            if CommandLine.arguments.contains("--juno-debug-screenshot-picker"),
+                configuration.attachmentModel != nil
+            {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                attachScreenshot()
+            }
+        }
+        #endif
         // Column visibility is restored by hand rather than through
         // `@SceneStorage` directly: `NavigationSplitViewVisibility` is not
         // `RawRepresentable`, so it cannot be stored, and a window that always
