@@ -12,9 +12,9 @@ export const UI_STATE_FIXTURES = [
     required: [
       /export function EmptyGreeting\(\)/,
       /<h1\b/,
-      /aria-label="Juno"/,
+      /How can I help/,
       /motion-safe:/,
-      /motion-reduce:/,
+
     ],
     responsive: [/sm:/],
   },

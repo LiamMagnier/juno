@@ -131,6 +131,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 2.5, output: 10 };
     case "google":
       if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
+      // Promotional standard rates through 2026-12-31; see docs/models-september-2026.md.
+      if (/3\.[678]-flash/.test(pm)) return { input: 0.75, output: 3.75 };
       if (pm.includes("3.5-flash")) return { input: 1.5, output: 9 };
       if (pm.includes("pro")) return { input: 2, output: 12 };
       return { input: 0.3, output: 2.5 }; // older flash-class
@@ -242,11 +244,14 @@ export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
     return {
       input,
       output,
-      cacheRead: input * 0.1,
+      cacheRead: input * (/(fable|mythos)-5-1/.test(model.providerModel) ? 0.025 : 0.1),
       cacheWrite: input * 2, // default = 1h (what we actually write)
       cacheWrite5m: input * 1.25,
       cacheWrite1h: input * 2,
     };
+  }
+  if (model.provider === "google" && /3\.[5678]-flash/.test(model.providerModel)) {
+    return { input, output, cacheRead: input * 0.1, cacheWrite: input, cacheWrite5m: input, cacheWrite1h: input };
   }
   if (model.provider === "zhipu") {
     // Z.ai bills GLM cached input at $0.26 vs $1.40 fresh (GLM-5.2) ≈ 0.186x;
