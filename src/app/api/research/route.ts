@@ -87,8 +87,7 @@ export async function POST(req: Request) {
 
   // A run started from this surface always shows its plan first: the user typed
   // a goal and has not yet seen what Juno intends to search for, and the next
-  // stage is where the money goes. The chat path pre-confirms instead — the
-  // per-send research toggle IS that user's confirmation.
+  // stage is where the money goes. Web chat uses this same plan checkpoint.
   const run = await researchEngine().start({
     userId: user.id,
     goal: parsed.data.goal,

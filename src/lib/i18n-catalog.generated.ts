@@ -710,10 +710,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Give Juno a reusable role, operating instructions, starter prompts and a preferred model."
   },
   {
-    "id": "08ee9e0b3d0b822f",
-    "source": "Latest activity"
-  },
-  {
     "id": "08f171d0235ed5d0",
     "source": "” for the rest of this task only. It lapses when the task ends."
   },
@@ -3540,6 +3536,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "32084eeb5890aeae",
     "source": "High-volume, low-latency, cost-sensitive tier."
+  },
+  {
+    "id": "32303b9e22842596",
+    "source": "Researching your question"
   },
   {
     "id": "3236aeec43e563ca",
@@ -6514,10 +6514,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "instance"
   },
   {
-    "id": "5e910284a0a2901a",
-    "source": "Research plan"
-  },
-  {
     "id": "5e9f98120dbe5682",
     "source": "Severity"
   },
@@ -8778,10 +8774,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sign in to Juno — chat with the best AI models from one thoughtful workspace."
   },
   {
-    "id": "7dd161335df468d3",
-    "source": "sources found ·"
-  },
-  {
     "id": "7ddb4c54fd910b7f",
     "source": "Code session"
   },
@@ -9738,6 +9730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This week"
   },
   {
+    "id": "8c536089ad5df578",
+    "source": "Cancel research"
+  },
+  {
     "id": "8c810a20dafc31b6",
     "source": "Xiaomi MiMo's reasoning, coding and agentic flagship."
   },
@@ -10100,10 +10096,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "91ed0f7cdaa1385e",
     "source": "application/pdf"
-  },
-  {
-    "id": "91fdac9131ea5895",
-    "source": "Building an approach to your question…"
   },
   {
     "id": "91fe32b30bf6f588",
@@ -10762,10 +10754,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Show everything"
   },
   {
-    "id": "9a8831f13c449718",
-    "source": "Discard this run"
-  },
-  {
     "id": "9aabbcb2c18def7b",
     "source": "Strikethrough"
   },
@@ -11162,6 +11150,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "step-lab · generic process (comfortable)"
   },
   {
+    "id": "9f5c12ab48d8250f",
+    "source": "Your research plan"
+  },
+  {
     "id": "9f6c9933490bde2e",
     "source": "Juno — chat.liams.dev. Un service exploité depuis la France."
   },
@@ -11400,6 +11392,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a20d12c5e9c428c3",
     "source": "Thinking"
+  },
+  {
+    "id": "a222c21f97cc10dc",
+    "source": "Hide research details"
   },
   {
     "id": "a2239661b551c4f2",
@@ -12002,6 +11998,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Collapse sidebar"
   },
   {
+    "id": "aab32bb22ddbf140",
+    "source": "Stop research"
+  },
+  {
     "id": "aab4922458b14785",
     "source": "Edit canvas"
   },
@@ -12296,10 +12296,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ae647e495ebd29dc",
     "source": "Deep research was skipped"
-  },
-  {
-    "id": "ae660bf37577e5cd",
-    "source": "Answering from model knowledge instead."
   },
   {
     "id": "ae764a4a4d8bb1e9",
@@ -13002,10 +12998,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Down"
   },
   {
-    "id": "b87499ea7d7d0af0",
-    "source": "Research workspace"
-  },
-  {
     "id": "b879c361243a7144",
     "source": "This inline visual could not be rendered."
   },
@@ -13340,10 +13332,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bd41e30016640a3a",
     "source": "Only when it needs me"
-  },
-  {
-    "id": "bd445c462b7eebbc",
-    "source": "overview"
   },
   {
     "id": "bd7c68e25d0f47a7",
@@ -15154,6 +15142,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Research view"
   },
   {
+    "id": "d606cf6f5ddd2f86",
+    "source": "View research activity"
+  },
+  {
     "id": "d62e935dc545f6d8",
     "source": "12. Droit applicable et litiges"
   },
@@ -15944,10 +15936,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dfca811acf71f3e9",
     "source": "Last of the Imagen line."
-  },
-  {
-    "id": "dfd30e4cb827b128",
-    "source": "Your focus"
   },
   {
     "id": "dfd40d20ba96c876",
@@ -16862,6 +16850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen 3.8 Max"
   },
   {
+    "id": "ec290fb4a6ebd36b",
+    "source": "Turn off deep research"
+  },
+  {
     "id": "ec31682fde561917",
     "source": "x1"
   },
@@ -17260,10 +17252,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f2155c47c3c1eedf",
     "source": "Juno always asks first"
-  },
-  {
-    "id": "f240081b57e1934e",
-    "source": "Web search unavailable"
   },
   {
     "id": "f24088ce2a333125",

@@ -108,3 +108,12 @@ test("the detail line omits sections that have no value", () => {
   const searchedMore = buildUsage(model, { input: 100, output: 10, webSearchRequests: 2, xSearchRequests: 1 });
   assert.match(searchedMore.detail, /3 searches/, "plural, and both search kinds sum");
 });
+
+// Plan acknowledgements are application text; no provider generated these bytes.
+test("a local research plan notice has no synthesis charge", () => {
+  const usage = buildUsage(model, { input: 0, output: 0, promptChars: 0, completionChars: 0 });
+  assert.equal(usage.costMicroUsd, 0);
+  assert.equal(usage.cost, 0);
+  assert.equal(usage.totalInput, 0);
+  assert.equal(usage.output, 0);
+});

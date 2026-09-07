@@ -120,7 +120,7 @@ export function ResearchRecap({
 
       {/* Report Document Title */}
       <div className="mt-3.5 ">
-        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground sm:text-page-title">
+        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground sm:text-title">
           {title ?? run.goal}
         </h3>
       </div>
@@ -158,15 +158,15 @@ export function ResearchRecap({
           type="button"
           onClick={onOpenReport}
           className={cn(
-            "group mt-4 flex w-full items-center justify-between gap-3 rounded-field border border-primary/30 bg-primary/10 px-4 py-3.5 text-left text-primary transition-all duration-fast",
-            "hover:border-primary/50 hover:bg-primary/15 hover:shadow-xs motion-reduce:transition-none",
+            "group mt-4 flex w-full items-center justify-between gap-3 rounded-field border border-border bg-secondary/30 px-4 py-3.5 text-left text-foreground transition-colors duration-fast",
+            "hover:border-foreground/25 hover:bg-secondary/60 motion-reduce:transition-none",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
         >
           <span className="text-body font-semibold">{RECAP_COPY.openReport}</span>
           <ArrowRight
             aria-hidden
-            className="size-4 shrink-0 transition-transform duration-fast ease-out-soft group-hover:translate-x-1"
+            className="size-4 shrink-0 transition-transform duration-fast ease-out-soft motion-safe:group-hover:translate-x-0.5"
           />
         </button>
       ) : (

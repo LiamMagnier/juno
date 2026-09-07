@@ -231,7 +231,7 @@
        bounce off the frame. Same numbers as --ease-out-strong, named for the
        job so the sheet keyframes can be retuned without touching every "moving
        under the finger" transition in the product. */
-    --ease-spring: cubic-bezier(0.34, 1.16, 0.64, 1);
+    --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
     --dur-press: 70ms;
     --dur-fast: 120ms;
@@ -1295,8 +1295,7 @@
     background-color: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     box-shadow:
-      0 1px 2px hsl(var(--neu-dark) / .6),
-      0 8px 24px -12px hsl(var(--neu-dark-lg));
+      0 2px 8px hsl(var(--foreground) / .045);
     transition:
       border-color var(--dur-fast) var(--ease-out-soft),
       box-shadow   var(--dur-fast) var(--ease-out-soft);
@@ -1304,8 +1303,7 @@
   .composer-surface:focus-within {
     border-color: hsl(var(--foreground) / .4);
     box-shadow:
-      0 1px 3px hsl(var(--neu-dark) / .7),
-      0 16px 40px -16px hsl(var(--neu-dark-lg));
+      0 2px 12px hsl(var(--foreground) / .065);
   }
   @media (prefers-reduced-motion: reduce) {
     .composer-surface { transition: none; }
@@ -1502,10 +1500,10 @@
      Check each call site for one. */
   .overlay-glass {
     border: 1px solid hsl(var(--border) / .7);
-    background-color: hsl(var(--popover) / .86);
+    background-color: hsl(var(--popover));
     color: hsl(var(--popover-foreground));
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     box-shadow: var(--shadow-float);
   }
   @media (prefers-reduced-transparency: reduce) {
@@ -2921,7 +2919,7 @@
 }
 /* A quiet document surface shared by research planning, progress and reports. */
 @layer components {
-  .research-surface { @apply rounded-panel border border-border bg-card p-5 sm:p-7; }
+  .research-surface { @apply rounded-card border border-border bg-card p-4 sm:p-5; }
   .research-field { @apply block w-full rounded-field border border-border bg-card px-4 py-3 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60; }
   .research-icon { @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-11; }
   .research-tab-body { @apply min-w-0 pt-6; }

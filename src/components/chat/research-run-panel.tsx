@@ -8,7 +8,7 @@ import { ResearchRecap } from "@/components/research/research-recap";
 import { RunTimeline } from "@/components/research/run-timeline";
 import { SourceDeck } from "@/components/research/source-deck";
 import { isResearchState, isTerminalResearchState, type ResearchEventDTO, type ResearchState } from "@/lib/research/domain";
-import type { ResearchRunView } from "@/components/research/use-research-run";
+import { useResearchRun, type ResearchRunView } from "@/components/research/use-research-run";
 
 /**
  * The durable research run, next to the conversation that started it.
@@ -112,10 +112,16 @@ export function ResearchRunPanel({
           open={reportOpen}
           onOpenChange={setReportOpen}
           report={run.report}
-          sources={run.sources}
+          sources={run.sources.filter(source => source.read)}
           goal={run.goal}
         />
       )}
     </>
   );
+}
+
+/** Older runs retain their position and report when another research starts. */
+export function HistoricalResearchRunPanel({ runId }: { runId: string }) {
+  const research = useResearchRun(runId);
+  return <ResearchRunPanel {...research} className="mt-5" />;
 }

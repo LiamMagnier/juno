@@ -235,6 +235,7 @@ export function useResearchRun(runId: string | null) {
 
   React.useEffect(() => {
     setPayload(null);
+    setBusy(false);
     setNotice(null);
     setFailed(false);
     // A different run is a different log. Carrying the previous run's events
@@ -324,8 +325,8 @@ export function useResearchRun(runId: string | null) {
 
   return {
     payload,
-    run: payload?.run ?? null,
-    events: payload?.events ?? EMPTY_EVENTS,
+    run: payload?.run.id === runId ? payload.run : null,
+    events: payload?.run.id === runId ? payload.events : EMPTY_EVENTS,
     failed,
     busy,
     notice,
