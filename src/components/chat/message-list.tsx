@@ -9,6 +9,7 @@ import type { ClientArtifact, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
   messages: ChatMessage[];
+  researchContents?: Array<{ id: string; createdAt: string; node: React.ReactNode }>;
   busy: boolean;
   status?: GenerationStatus;
   artifacts: ClientArtifact[];
@@ -73,6 +74,16 @@ const ATTACH_SLOP_PX = 24;
 
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
+  const researchByMessage = new Map<number, React.ReactNode[]>();
+  for (const item of props.researchContents ?? []) {
+    const time = Date.parse(item.createdAt);
+    let index = -1;
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role === "USER" && Date.parse(messages[i].createdAt) <= time) index = i;
+    }
+    if (index >= 0 && messages[index + 1]?.role === "ASSISTANT") index++;
+    researchByMessage.set(index, [...(researchByMessage.get(index) ?? []), <React.Fragment key={item.id}>{item.node}</React.Fragment>]);
+  }
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -283,8 +294,10 @@ export function MessageList(props: MessageListProps) {
               onImageEdit={props.onImageEdit}
               currentModelId={props.currentModelId}
             />
+            {researchByMessage.get(i)}
             </div>
           ))}
+          {researchByMessage.get(-1)}
           <div ref={bottomRef} />
         </div>
       </div>

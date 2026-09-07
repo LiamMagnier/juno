@@ -1,46 +1,56 @@
-# Research workspace redesign
+# Research inside chat
 
-The `/research` workspace exposes the existing durable engine: brief → editable
-plan → investigation → evidence review → cited report. `/research/[id]` is a
-stable, authenticated reader. Sidebar history remains available after navigation
-and reload. The in-chat research toggle is retained for compatibility; the
-composer menu also links to the plan-first workspace.
+Research is a per-message tool in the composer’s + menu and has a visible,
+removable chip. There is no separate Research destination. Existing `/research`
+URLs redirect into chat; old report links select their original run there,
+including legacy runs that were not attached to a conversation.
 
-## Product research
+## Product references
 
-Reviewed official product and engineering documentation in September 2026:
+Reviewed September 2026:
 
-- [ChatGPT Deep Research](https://help.openai.com/en/articles/10500283-deep-research-in-chatgpt): editable plans, source choice, live progress and steering.
-- [Claude's research architecture](https://www.anthropic.com/engineering/multi-agent-research-system): bounded independent investigations, iterative exploration, synthesis and citation checking.
-- [Perplexity research](https://www.perplexity.ai/help-center/en/articles/10352895-how-does-perplexity-work.html): iterative searches and a report-first result.
+- [ChatGPT Deep Research](https://help.openai.com/en/articles/10500283-deep-research-in-chatgpt): tool-menu entry, editable plan, progress, interruption, source controls, and cited report reader.
+- [Claude Research](https://claude.com/blog/research): research selected within a conversation, iterative exploration and cited answers.
+- [Anthropic engineering](https://www.anthropic.com/engineering/multi-agent-research-system): an orchestrator, bounded parallel investigations, evidence-driven follow-up, persisted context, synthesis and citation checking.
 
-Juno preserves its provider-neutral, budget-checked engine rather than pretending
-to embed these proprietary products. Research depth and preferred source URLs now
-reach the planner, not just the subsequent fetch stages. Preferred URLs are not
-an allowlist: the UI explicitly says public-web search can use other sources.
-Private apps and connected files are not advertised as research sources.
+These are public behavioral and architecture references, not access to either
+company’s private implementation. Juno retains its provider-neutral research engine.
 
-## Design and behavior
+## Frontend
 
-Warm paper, serif questions and report headings, sentence-case UI, restrained
-terracotta, flat source lists, quiet rules. The four-stage track reflects persisted
-state, never a guessed percentage. Failed/cancelled runs do not get success ticks.
-Details are divided into Overview, Sources, Activity and Evidence. Only short
-arrival transitions animate; reduced-motion users receive no entrance animation.
+The research card lives beside its originating turn in the scrolling transcript,
+not in the fixed composer dock. The editable plan is initially visible. After
+approval, the card becomes a compact factual status with source counts, pause,
+resume, stop and expandable sources/activity/plan/evidence. The composer accepts
+additional direction during investigation. Completed reports open from the same
+card in an accessible document dialog with contents, citations and export.
+Earlier runs keep their cards when another run starts (up to the API’s 20-run
+history window). Discovery polls for new runs without a page reload; each run’s
+cursor polling stops once its terminal event log is caught up.
 
-The new brief offers Focused, Balanced and Thorough depth, constraints, and up to
-24 preferred URLs. Shared request validation runs before submission. Expensive
-investigation waits for plan confirmation. Pause/resume, cancellation and steering
-use existing authenticated control endpoints. Linked conversations are checked
-against the owner before a research run is created.
+Warm neutral surfaces, restrained terracotta, serif report titles and flat menus
+follow Claude’s quiet visual direction while preserving Juno’s identity. Menus are
+opaque for legibility; the composer’s focus shadow stays subtle. Motion uses
+short fades and non-overshooting easing, respecting reduced-motion settings.
 
-The report reader adds mobile contents navigation, scoped heading IDs, and
-scrollspy relative to its actual scroll container. Copying a page link is labelled
-as requiring sign-in; it is not public sharing. Source snapshots are labelled
-"read sources", not a promise that an entire page was read or fact-verified.
+## Backend
 
-Existing backend tests cover plan gating, modified queries, budgets, cancellation,
-resumption, source gathering, citations and worker recovery. A new regression
-test ensures effort, constraints and preferred URLs reach the planning function.
-Live paid research requires configured provider/search credentials; mocked UI
-checks must not be described as live inference validation.
+Web chat starts a durable run with confirmation required. Planning stops at
+`awaiting_plan_confirmation`, with no search before approval. The ordinary chat
+stream persists an application-authored plan acknowledgement without invoking or
+billing a synthesis model. The authenticated plan endpoint commits edits before
+starting the worker. Native clients retain their existing automatic confirmation
+and selected-model streaming path.
+
+The existing engine performs bounded parallel searches and reads, source
+ranking/deduplication, evidence coverage review, follow-up rounds, synthesis and
+citation validation against stored source snapshots. Worker leases, durable stage
+transitions, cancellation and run budgets remain enforced. Web reports are written
+by the configured research model; this is not the chat model selector. Research
+failure does not silently produce an answer from model knowledge.
+
+Completed reports and their numbered source references are loaded as untrusted,
+owner-scoped context for subsequent chat questions. The report itself remains in
+the durable research record. Preferred URLs are priorities, not a domain allowlist.
+Connected private apps and uploaded files are not advertised as research sources.
+No new schema or credentials are required.

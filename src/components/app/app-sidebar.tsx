@@ -525,7 +525,6 @@ export function AppSidebar({
         <nav className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")} aria-label="Primary">
           {(
             [
-              { href: "/research", kind: "research", label: "Research", active: !!pathname?.startsWith("/research") },
               { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
               { href: "/projects", kind: "projects", label: "Projects", active: !!pathname?.startsWith("/projects") },
               { href: "/artifacts", kind: "artifacts", label: "Artifacts", active: pathname === "/artifacts" },

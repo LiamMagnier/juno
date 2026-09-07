@@ -14,30 +14,8 @@ import { buildResearchCorpus, researchSearchConfigured } from "@/lib/research/to
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
 
-/**
- * Deep research, as the chat route sees it.
- *
- * This module used to BE the pipeline: plan, search, read, assemble a corpus —
- * all in local variables inside one request. It is now a thin adapter over the
- * durable job in `@/lib/research/run`. Everything the run finds is a row before
- * this function returns, so closing the tab no longer throws the work away, the
- * run can be paused, resumed and steered from the research panel, and
- * `ResearchRun.budgetMicroUsd` is a ceiling the job stops at rather than a
- * number discovered afterwards.
- *
- * The division of labour with the chat route has not changed, and that is
- * deliberate: the job gathers and stops at `synthesizing`, and the route streams
- * the SYNTHESIS through the user's own selected model exactly like a normal turn
- * (same delta path, budget enforcement, persistence). A job that wrote the
- * report itself would deliver it as one silent lump, minutes after the user sent
- * the message. Citations [n] map by position to the sources array — the same
- * convention `buildSearchContext` and the SourcesList UI use.
- *
- * Every failure still degrades: no search backend, no sources, or a run that
- * ended before it gathered anything all return `ok: false`, and the route
- * answers as plain chat with a warning activity. This module never throws into
- * the stream.
- */
+/** Durable research adapter. Web chat reviews the plan inline before paid
+ * investigation; native clients retain their existing streaming hand-off. */
 
 type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent;
 
@@ -62,8 +40,9 @@ export interface ResearchCorpusPage {
 }
 
 export interface DeepResearchResult {
-  /** false = nothing usable came back; the caller answers as plain chat. */
+  /** False means no report corpus is ready; never silently answer without research. */
   ok: boolean;
+  state?: string;
   /** System-prompt section: report instructions + the numbered source corpus. */
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
@@ -223,14 +202,8 @@ export async function runDeepResearch(opts: {
 
   let runId: string | null = null;
   try {
-    /*
-     * Every run parked at the plan gate holds a slot of the account's
-     * live-run cap until a person decides it, and chat is a surface with no
-     * plan-approval prompt to decide it from. Only the newest parked run in
-     * this conversation can still be what the user is replying to; anything
-     * older will never be confirmed by anyone, so it is cancelled here rather
-     * than left to silt up the cap.
-     */
+    // Only the newest plan can be acted on in this conversation. Release older
+    // abandoned plans before creating another so they do not hold live slots.
     const parked = opts.conversationId
       ? await prisma.researchRun.findMany({
           where: {
@@ -249,18 +222,14 @@ export async function runDeepResearch(opts: {
         .catch(() => undefined);
     }
 
-    const startPreConfirmedRun = async (): Promise<string> => {
+    const startChatRun = async (): Promise<string> => {
       const run = await engine.start({
         userId: opts.userId,
         goal: prompt,
         conversationId: opts.conversationId ?? null,
         budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
         effort: "deep",
-        // The per-send research toggle IS this user's confirmation (see
-        // `ResearchPlan.confirmation`): the run must flow planning → searching
-        // on its own, because a run that parks at the plan gate waits forever
-        // and the turn degrades to plain chat while still holding a slot.
-        confirmation: "auto",
+        confirmation: opts.client === "web" ? "required" : "auto",
       });
       return run.id;
     };
@@ -277,10 +246,10 @@ export async function runDeepResearch(opts: {
         // Not a decision on the waiting plan but a new question: end the
         // parked run and research what was actually asked.
         await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
-        runId = await startPreConfirmedRun();
+        runId = await startChatRun();
       }
     } else {
-      runId = await startPreConfirmedRun();
+      runId = await startChatRun();
     }
   } catch (e) {
     console.error("[deep-research] could not start a run", e);
@@ -364,7 +333,7 @@ export async function runDeepResearch(opts: {
     .slice(0, MAX_SOURCES);
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
 
-  if (sources.length === 0) return { ...EMPTY, runId, costUsd };
+  if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state };
 
   const plan = parsePlan(finished?.plan);
   opts.sendActivity({

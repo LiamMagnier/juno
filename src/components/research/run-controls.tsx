@@ -21,7 +21,7 @@ const PLAN_COPY = {
   lede: "Juno will work through this. Edit any step before it starts.",
   ledeFallback: "Juno will run these searches. Edit any of them before it starts.",
   start: "Start researching",
-  discard: "Discard this run",
+  discard: "Cancel research",
   showQueries: "Show the searches",
   hideQueries: "Hide the searches",
   step: "Step",
@@ -109,6 +109,7 @@ export function PlanReview({
               {i + 1}
             </span>
             <textarea
+              disabled={busy}
               value={value}
               rows={1}
               aria-label={`${primaryLabel} ${i + 1}`}

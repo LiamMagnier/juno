@@ -631,6 +631,11 @@ the model (see §6.3).
   480 pages, 60 min). Chat defaults to `deep` with an $8 ceiling; set
   `RESEARCH_CHAT_BUDGET_USD` to tune it, capped at $40. Sources deduplicate on
   canonical URL and page text remains untrusted when sent to any model.
+  On web, Research is a composer tool: its editable plan and subsequent progress
+  live in the transcript. Plan approval commits before a background worker starts
+  searching. The report opens in chat and is available as scoped context on later
+  turns. Native clients keep their selected-model streaming path. See
+  `docs/research-workspace.md` for the interaction and architecture references.
 - **Private/incognito mode** is a separate branch: nothing persists (`conversationId:
   "private"`), no memory, no attachments (**400** `PRIVATE_ATTACHMENTS_UNSUPPORTED`),
   no connectors, no regenerate; but budget, quota, and moderation still apply and

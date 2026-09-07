@@ -1,2 +1,2 @@
-import { ResearchWorkspace } from "@/components/research/research-workspace";
-export default function ResearchPage() { return <ResearchWorkspace />; }
+import { redirect } from "next/navigation";
+export default function ResearchPage() { redirect("/chat?research=1"); }

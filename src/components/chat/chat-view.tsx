@@ -21,7 +21,7 @@ import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
-import { ResearchRunPanel } from "@/components/chat/research-run-panel";
+import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
@@ -45,6 +45,7 @@ interface ChatViewProps {
   initialPrompt?: string;
   /** Auto-send the initial prompt as a deep-research turn (?research=1). */
   initialPromptResearch?: boolean;
+  initialResearchRun?: string;
   /** Seed the reasoning slider when starting a chat from a deep-link (e.g. project page). */
   initialReasoningEffort?: ReasoningEffort | null;
   initialConnectors?: string[];
@@ -188,7 +189,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialResearchRun, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -478,7 +479,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
    * One hook, one event cursor — see use-conversation-run.ts. Never in
    * incognito: that mode writes no rows to point at.
    */
-  const research = useConversationResearch(privateMode ? null : currentConversationId);
+  const research = useConversationResearch(privateMode ? null : currentConversationId, privateMode ? undefined : initialResearchRun);
   const researchSteering = research.steering;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
@@ -486,10 +487,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // is in flight is also what clears the previous turn's suggestions and drives
   // the refetch (the component keys its effect on `visible`).
   const followUpsVisible = React.useMemo(() => {
-    if (chat.isBusy || chat.status !== "idle" || privateMode) return false;
+    if (chat.isBusy || chat.status !== "idle" || privateMode || research.run?.live) return false;
     const last = chat.messages[chat.messages.length - 1];
     return !!last && last.role === "ASSISTANT" && !!last.content.trim() && !last.errorMessage;
-  }, [chat.isBusy, chat.status, chat.messages, privateMode]);
+  }, [chat.isBusy, chat.status, chat.messages, privateMode, research.run?.live]);
   const latestConversationsRef = React.useRef(conversations);
   const latestMessagesRef = React.useRef(chat.messages);
   const titleDebounceRef = React.useRef<number | null>(null);
@@ -1129,7 +1130,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     return lines;
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
-  const hasMessages = displayMessages.length > 0 || voiceOpen;
+  const hasMessages = displayMessages.length > 0 || voiceOpen || !!research.run;
 
   /* ─── First-message handoff ────────────────────────────────────────────────
    * The centered empty-state composer and the transcript's bottom dock are two
@@ -1554,6 +1555,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const composer = (
     <Composer
       conversationId={conversationId}
+      initialResearch={initialPromptResearch}
       model={model}
       onModelChange={setModel}
       onSend={sendFromComposer}
@@ -1872,6 +1874,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <MessageList
                 className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
+                researchContents={privateMode ? [] : [
+                  ...(research.run ? [{ id: research.run.id, createdAt: research.run.createdAt ?? "", node: <ResearchRunPanel run={research.run} events={research.events} busy={research.busy} notice={research.notice} post={research.post} className="mt-5" /> }] : []),
+                  ...research.history.filter(run => run.id !== research.runId).map(run => ({ ...run, node: <HistoricalResearchRunPanel runId={run.id} /> })),
+                ]}
                 busy={chat.isBusy}
                 status={chat.status}
                 artifacts={chat.artifacts}
@@ -1918,21 +1924,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
-                {/* A deep-research turn gathers into a durable run attached to
-                    this conversation. The panel is what remains once the turn
-                    has streamed: stages, sources, and the pause/steer/cancel
-                    controls the in-request pipeline had nowhere to put. Never in
-                    incognito — that mode writes no rows to point at. */}
-                {!privateMode && !voiceOpen && (
-                  <ResearchRunPanel
-                    run={research.run}
-                    events={research.events}
-                    busy={research.busy}
-                    notice={research.notice}
-                    post={research.post}
-                    className="mx-auto mb-3 w-[calc(100%-1rem)] max-w-4xl sm:w-[calc(100%-2rem)]"
-                  />
-                )}
                 {composer}
               </div>
               {(forkedFrom || privateMode) && (

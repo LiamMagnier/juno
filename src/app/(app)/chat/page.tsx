@@ -22,11 +22,12 @@ export default async function NewChatPage({
     project?: string;
     q?: string;
     research?: string;
+    researchRun?: string;
     model?: string;
     reasoning?: string;
   }>;
 }) {
-  const { project, q, research, model, reasoning } = await searchParams;
+  const { project, q, research, researchRun, model, reasoning } = await searchParams;
   return (
     <ChatView
       conversationId={null}
@@ -38,6 +39,7 @@ export default async function NewChatPage({
       projectId={project}
       initialPrompt={q}
       initialPromptResearch={research === "1"}
+      initialResearchRun={researchRun}
       initialReasoningEffort={parseReasoning(reasoning)}
     />
   );

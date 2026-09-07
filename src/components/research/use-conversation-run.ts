@@ -30,28 +30,39 @@ export interface ResearchSteering {
   stop: () => void;
 }
 
-export function useConversationResearch(conversationId: string | null) {
-  const [runId, setRunId] = React.useState<string | null>(null);
+export function useConversationResearch(conversationId: string | null, selectedRunId?: string) {
+  const [runId, setRunId] = React.useState<string | null>(selectedRunId ?? null);
+  const [history, setHistory] = React.useState<Array<{id: string; createdAt: string}>>([]);
 
   React.useEffect(() => {
-    setRunId(null);
+    setRunId(selectedRunId ?? null);
+    setHistory([]);
     if (!conversationId) return;
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const discover = async () => {
       try {
         const res = await fetch(`/api/research?conversationId=${encodeURIComponent(conversationId)}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { runs?: Array<{ id: string }> };
-        if (!cancelled) setRunId(data.runs?.[0]?.id ?? null);
+        const data = (await res.json()) as { runs?: Array<{ id: string; createdAt: string }> };
+        if (!cancelled) {
+          setRunId(selectedRunId ?? data.runs?.[0]?.id ?? null);
+          setHistory(data.runs ?? []);
+        }
       } catch {
         // A conversation whose run cannot be found simply has no panel and no
         // steering. This is an addition to the chat, never a reason to break it.
       }
-    })();
+      finally {
+        if (!cancelled) timer = setTimeout(discover, 4000);
+      }
+    };
+    void discover();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [conversationId]);
+  }, [conversationId, selectedRunId]);
 
   const research = useResearchRun(runId);
   const { run, post } = research;
@@ -70,5 +81,5 @@ export function useConversationResearch(conversationId: string | null) {
     };
   }, [run, accepting, post]);
 
-  return { ...research, runId, steering, run: run as ResearchRunView | null };
+  return { ...research, runId, history, steering, run: run as ResearchRunView | null };
 }

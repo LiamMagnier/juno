@@ -258,7 +258,7 @@ const chatStarted = (engine: ReturnType<typeof createResearchEngine>) =>
 // The chat run must never wait for a confirmation chat cannot give
 // ---------------------------------------------------------------------------
 
-test("a chat-initiated run flows past the plan gate and hands over at synthesizing", async () => {
+test("a native chat-initiated run flows past the plan gate and hands over at synthesizing", async () => {
   const { store, events } = memoryStore();
   const searched: string[] = [];
   const base = gatheringDeps(store);
@@ -395,16 +395,25 @@ test("every state name the chat adapter uses exists in the domain union", () => 
   }
 });
 
-test("chat runs pre-confirm — the per-send toggle is the confirmation", () => {
-  const source = readFileSync("src/lib/deep-research.ts", "utf8");
-  assert.match(
-    source,
-    /confirmation:\s*"auto"/,
-    "the chat adapter must start runs pre-confirmed; nothing in a chat turn ever renders a plan-approval prompt"
-  );
-  assert.doesNotMatch(
-    source,
-    /confirmation:\s*"required"/,
-    "a chat-started run requiring confirmation waits at the plan gate forever and holds a live-run slot while it does"
-  );
+test("web research parks before any search and runs the edited plan after approval", async () => {
+  const { store } = memoryStore();
+  const searched: string[] = [];
+  const base = gatheringDeps(store);
+  const engine = createResearchEngine({ ...base, async search(input) {
+    searched.push(input.query);
+    return base.search(input);
+  } });
+  const run = await engine.start({ userId: "user_1", goal: "Compare primary sources on European AI regulation", conversationId: "conv_1", confirmation: "required", budgetMicroUsd: BigInt(8_000_000) });
+  await engine.drive({ runId: run.id, userId: run.userId, until: "synthesizing" });
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "awaiting_plan_confirmation");
+  assert.equal(searched.length, 0, "planning must not issue paid searches before approval");
+  const decision = await engine.decidePlan({ runId: run.id, userId: run.userId, decision: "confirm", queries: ["European Commission AI Act official timeline"], steps: ["Verify the implementation dates with the Commission"] });
+  assert.equal(decision.ok, true);
+  await engine.drive({ runId: run.id, userId: run.userId, until: "synthesizing" });
+  assert.ok(searched.includes("European Commission AI Act official timeline"));
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "synthesizing");
+});
+
+test("web adapter requires review while native retains streaming compatibility", () => {
+  assert.match(readFileSync("src/lib/deep-research.ts", "utf8"), /confirmation: opts.client === "web" \? "required" : "auto"/);
 });

@@ -113,6 +113,7 @@ import type {
 } from "@/types/chat";
 
 interface ComposerProps {
+  initialResearch?: boolean;
   conversationId: string | null;
   model: ModelId;
   onModelChange: (m: ModelId) => void;
@@ -371,6 +372,7 @@ function PaletteIcon({ children }: { children: React.ReactNode }) {
 }
 
 export function Composer({
+  initialResearch = false,
   conversationId,
   model,
   onModelChange,
@@ -478,7 +480,7 @@ export function Composer({
     !!onToggleConnector && !privateMode && !voiceActive && modality === "chat";
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
-  const [research, setResearch] = React.useState(false);
+  const [research, setResearch] = React.useState(initialResearch);
   const researchAvailable = !privateMode && modality === "chat";
   const planAllowsResearch = true;
   const sendOptions = React.useMemo<SendOptions | undefined>(
@@ -497,7 +499,7 @@ export function Composer({
   );
   // Research lives in the + menu now, so the trigger carries its armed state —
   // otherwise a per-send mode would be on with nothing on screen saying so.
-  const researchArmed = !!sendOptions;
+  const researchArmed = research && planAllowsResearch;
   const placeholder = pendingClarification
     ? "Or type your own answer…"
     : quote
@@ -1971,7 +1973,6 @@ export function Composer({
                 },
               ]
             : []),
-          { kind: "action", id: "research-workspace", label: "Research workspace", icon: ComposerIcons.research, onSelect: () => router.push("/research") },
           ...(showConnectors
             ? [
                 {
@@ -2514,6 +2515,7 @@ export function Composer({
             )
           }
           leading={
+            <>
             <PlusMenu
               open={plusOpen}
               onOpenChange={setPlusOpen}
@@ -2522,6 +2524,10 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
+            {researchArmed && <button type="button" disabled={controlsLocked} onClick={() => setResearch(false)} aria-label="Turn off deep research" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-caption text-foreground transition-colors duration-fast hover:bg-accent motion-reduce:transition-none">
+              <ComposerIcons.research className="size-3.5" /> Research <span aria-hidden>×</span>
+            </button>}
+            </>
           }
           trailing={
             <>
