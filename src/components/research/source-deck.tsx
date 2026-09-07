@@ -16,11 +16,11 @@ import type { ResearchSourceView } from "@/components/research/use-research-run"
  */
 
 const DECK_COPY = {
-  read: "Read in full",
+  read: "Read sources",
   leads: "Found leads",
-  leadsNote: "Harvested candidates pending reading",
+  leadsNote: "Discovered, not yet read",
   empty: "No sources yet",
-  emptyNote: "Initial search results land within a few seconds.",
+  emptyNote: "Sources appear here as the research finds them.",
   showAll: "Show all",
   showFewer: "Show fewer",
 } as const;
@@ -79,7 +79,7 @@ function SourceCard({ source }: { source: ResearchSourceView }) {
   );
 
   const shell =
-    "group relative flex min-w-0 flex-col justify-between rounded-card border border-border/60 bg-secondary/30 p-3 transition-all duration-fast hover:border-primary/40 hover:bg-secondary/60 hover:shadow-xs";
+    "group relative flex min-w-0 flex-col justify-between rounded-control px-2 py-4 transition-colors duration-fast hover:bg-secondary/60 motion-reduce:transition-none";
 
   return linkable ? (
     <a
@@ -121,7 +121,7 @@ function Group({
         </span>
         {note && <span className="min-w-0 truncate text-caption text-muted-foreground">{note}</span>}
       </div>
-      <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+      <div className="mt-2.5 flex flex-col divide-y divide-border">
         {shown.map((source) => (
           <SourceCard key={source.id} source={source} />
         ))}
@@ -165,4 +165,3 @@ export function SourceDeck({
     </div>
   );
 }
-

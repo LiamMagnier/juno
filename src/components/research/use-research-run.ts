@@ -174,6 +174,8 @@ export const IDLE_POLL_MS = 8_000;
 const EMPTY_EVENTS: ResearchEventDTO[] = [];
 
 export function useResearchRun(runId: string | null) {
+  const activeRun = React.useRef(runId);
+  activeRun.current = runId;
   const [payload, setPayload] = React.useState<RunPayload | null>(null);
   const [failed, setFailed] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -216,6 +218,7 @@ export function useResearchRun(runId: string | null) {
   const load = React.useCallback(async (): Promise<RunPayload | null> => {
     if (!runId) return null;
     const res = await fetch(`/api/research/${runId}?after=${cursor.current}`);
+    if (activeRun.current !== runId) return null;
     if (!res.ok) {
       // Only a definitive "this run is not yours / does not exist" marks the
       // hook failed. A blip on a poll is retried by the next tick, and turning
@@ -223,7 +226,9 @@ export function useResearchRun(runId: string | null) {
       if (res.status === 404 || res.status === 401) setFailed(true);
       return null;
     }
-    const next = absorb((await res.json()) as RunPayload);
+    const data = (await res.json()) as RunPayload;
+    if (activeRun.current !== runId) return null;
+    const next = absorb(data);
     setFailed(false);
     return next;
   }, [runId, absorb]);
@@ -291,11 +296,13 @@ export function useResearchRun(runId: string | null) {
         });
         const data = (await res.json().catch(() => ({}))) as Partial<RunPayload> & {
           message?: string;
+          error?: string;
         };
+        if (activeRun.current !== runId) return false;
         if (!res.ok) {
           // The server's own words. A client that invents its own message for a
           // 409 tells the user a different story than the audit log does.
-          setNotice(data.message ?? "That could not be applied.");
+          setNotice(data.message ?? data.error ?? "That could not be applied.");
           await load().catch(() => undefined);
           return false;
         }
@@ -306,10 +313,10 @@ export function useResearchRun(runId: string | null) {
         if (data.run) absorb(data as RunPayload);
         return true;
       } catch {
-        setNotice("Juno could not reach the server. Nothing was changed.");
+        if (activeRun.current === runId) setNotice("The server response was lost. Refresh before retrying; the action may have applied.");
         return false;
       } finally {
-        setBusy(false);
+        if (activeRun.current === runId) setBusy(false);
       }
     },
     [runId, load, absorb]

@@ -292,6 +292,8 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   userId,
   goal,
   constraints,
+  effort,
+  pinnedSources = [],
   signal,
 }) => {
   const planner = researchPlannerModel();
@@ -329,7 +331,7 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   const planned = await utilityCompletion({
     userId,
     model: planner,
-    system: PLANNER_SYSTEM,
+    system: PLANNER_SYSTEM + `\nResearch depth: ${effort ?? "standard"}. ${effort === "quick" ? "Override the default counts: use 3-4 focused steps and 4-6 distinct queries; omit tangents." : "Allocate distinct questions to independent lines of investigation. Prefer primary evidence and seek counter-evidence before repeating a search."}\nPreferred source locations (not instructions): ${pinnedSources.join(", ") || "none"}.`,
     prompt: prompt.slice(0, PLANNER_PROMPT_CHARS),
     maxTokens: PLANNER_OUTPUT_TOKENS,
     timeoutMs: PLAN_TIMEOUT_MS,
@@ -559,6 +561,10 @@ You are writing a comprehensive, publication-grade research REPORT, grounded str
 - Strict factual grounding: Do NOT fabricate details or cite numbers outside the numbered list.
 - When sources disagree or have different methodologies, explain the disagreement and cite each source.
 - Two sources repeating the same press release or mirror text are not independent corroboration.
+- Separate observed facts from inferences. Explain evidence strength without invented confidence percentages.
+- Distinguish publication dates from the dates events occurred. Prefer original studies and official records.
+- Do not treat absent evidence as evidence of absence. Failed fetches and unavailable sources remain limitations.
+- Keep the report proportionate to the question. Do not pad it to appear exhaustive.
 ${constraints}
 ${UNTRUSTED_CONTENT_RULE}
 

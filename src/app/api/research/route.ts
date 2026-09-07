@@ -41,6 +41,13 @@ export async function POST(req: Request) {
   const parsed = startResearchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
+  if (parsed.data.conversationId) {
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: parsed.data.conversationId, userId: user.id }, select: { id: true },
+    });
+    if (!conversation) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
   const plan = await getUserPlan(user.id);
   if (!PLANS[plan].webSearch) {
     return NextResponse.json(

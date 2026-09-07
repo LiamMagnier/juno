@@ -54,6 +54,7 @@ export function ReportReader({
   sources: ResearchSourceView[];
   className?: string;
 }) {
+  const reportId = React.useId().replace(/:/g, "");
   const articleRef = React.useRef<HTMLElement | null>(null);
   const [toc, setToc] = React.useState<TocItem[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
@@ -83,12 +84,13 @@ export function ReportReader({
       let id = slugify(text);
       for (let n = 2; used.has(id); n++) id = `${slugify(text)}-${n}`;
       used.add(id);
+      id = `${reportId}-${id}`;
       heading.id = id;
       items.push({ id, text, level: Number(heading.tagName[1]) });
     });
     setToc(items);
     setActiveId(items[0]?.id ?? null);
-  }, [report]);
+  }, [report, reportId]);
 
   // Scrollspy: the deepest heading above the reading line is the section being
   // read. A plain scroll listener (rAF-throttled) rather than an
@@ -105,8 +107,8 @@ export function ReportReader({
       frame = 0;
       let current = toc[0].id;
       for (const item of toc) {
-        const el = document.getElementById(item.id);
-        if (el && el.getBoundingClientRect().top <= READING_LINE_PX) current = item.id;
+        const el = root.querySelector<HTMLElement>(`[id="${item.id}"]`);
+        if (el && el.getBoundingClientRect().top <= (scroller instanceof Element ? scroller.getBoundingClientRect().top : 0) + READING_LINE_PX) current = item.id;
         else break;
       }
       setActiveId(current);
@@ -123,7 +125,7 @@ export function ReportReader({
   }, [toc]);
 
   const jumpTo = (id: string) => {
-    const el = document.getElementById(id);
+    const el = articleRef.current?.querySelector<HTMLElement>(`[id="${id}"]`);
     if (!el) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
@@ -231,7 +233,7 @@ export function ReportReader({
   return (
     <div className={cn("space-y-6", className)}>
       {/* Top Action & Metadata Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 surface-raised rounded-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4 pr-8">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
             Deep Research Report
@@ -247,7 +249,7 @@ export function ReportReader({
         <div className="flex items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 gap-1.5 px-2.5 text-xs">
+              <Button variant="ghost" size="sm" onClick={handleCopy} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
                 {copied ? <StatusIcons.success className="size-3.5 text-primary" /> : <ActionIcons.copy className="size-3.5" />}
                 <span>{copied ? "Copied" : "Copy"}</span>
               </Button>
@@ -257,7 +259,7 @@ export function ReportReader({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={handleDownload} className="h-8 gap-1.5 px-2.5 text-xs">
+              <Button variant="ghost" size="sm" onClick={handleDownload} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
                 <ActionIcons.download className="size-3.5" />
                 <span>Export .md</span>
               </Button>
@@ -267,7 +269,7 @@ export function ReportReader({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={handlePrint} className="h-8 gap-1.5 px-2.5 text-xs">
+              <Button variant="ghost" size="sm" onClick={handlePrint} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
                 <Printer className="size-3.5" />
                 <span>Print</span>
               </Button>
@@ -277,15 +279,16 @@ export function ReportReader({
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={handleShare} className="h-8 gap-1.5 px-2.5 text-xs">
-                <ActionIcons.share className="size-3.5" />
+              <Button variant="ghost" size="sm" onClick={handleShare} className="h-9 gap-1.5 px-2.5 text-caption coarse:h-11">
+                <ActionIcons.share className="size-3.5" /><span className="sr-only">Copy page link</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Share research link</TooltipContent>
+            <TooltipContent>Copy page link (sign-in required)</TooltipContent>
           </Tooltip>
         </div>
       </div>
 
+      {toc.length >= 2 && <details className="border-b border-border pb-4 lg:hidden"><summary className="cursor-pointer text-ui font-medium">On this page</summary><nav aria-label="Report contents" className="mt-3 flex flex-col gap-1">{toc.map(item => <button key={item.id} type="button" onClick={() => jumpTo(item.id)} className="rounded-control px-2 py-2 text-left text-ui text-muted-foreground hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring">{item.text}</button>)}</nav></details>}
       <div className="flex items-start gap-8">
         {toc.length >= 2 && (
           <nav

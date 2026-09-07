@@ -126,8 +126,8 @@ export function PlanReview({
               }}
               className={cn(
                 "min-w-0 flex-1 resize-none rounded-control border border-border/50 bg-secondary/30 px-3 py-2 outline-none",
-                "text-body leading-relaxed text-foreground/90",
-                "transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:border-primary/40 focus-visible:bg-secondary/60 motion-reduce:transition-none"
+                "text-base leading-relaxed text-foreground/90",
+                "transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary/40 focus-visible:bg-secondary/60 motion-reduce:transition-none"
               )}
             />
           </li>
@@ -293,7 +293,7 @@ function FocusList({
                 type="button"
                 onClick={() => onRemove(index)}
                 aria-label={`Remove ${value}`}
-                className="pressable inline-flex size-5 shrink-0 items-center justify-center rounded-xs hover:bg-accent hover:text-foreground"
+                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-control hover:bg-accent hover:text-foreground"
               >
                 <X aria-hidden className="size-3" />
               </button>
@@ -315,7 +315,7 @@ function FocusList({
           }}
           placeholder={emptyLabel}
           aria-label={emptyLabel}
-          className="min-w-0 flex-1 rounded-control bg-secondary/50 px-2.5 py-1.5 text-ui text-foreground outline-none ring-1 ring-transparent placeholder:text-muted-foreground/70 focus-visible:ring-ring"
+          className="min-w-0 flex-1 rounded-control bg-secondary/50 px-2.5 py-1.5 text-base text-foreground outline-none ring-1 ring-transparent placeholder:text-muted-foreground/70 focus-visible:ring-ring"
         />
         <button
           type="button"

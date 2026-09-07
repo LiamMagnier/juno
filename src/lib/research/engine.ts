@@ -360,6 +360,8 @@ export interface ResearchDeps {
     userId: string;
     goal: string;
     constraints: string[];
+    effort?: import("./domain").ResearchEffort;
+    pinnedSources?: string[];
     signal?: AbortSignal;
   }): Promise<{
     queries: string[];
@@ -1140,6 +1142,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       userId: run.userId,
       goal: run.goal,
       constraints: plan.constraints,
+      effort: plan.effort,
+      pinnedSources: plan.pinnedSources,
       signal,
     });
     await bill(run, drafted.costMicroUsd, "plan");

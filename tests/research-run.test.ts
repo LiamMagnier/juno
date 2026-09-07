@@ -669,6 +669,22 @@ test("a run needing confirmation stops before it spends on searching", async () 
   assert.equal(searchedQueries[0], "the query the user actually wanted");
 });
 
+test("the planner receives the user's depth and preferred source locations", async () => {
+  const { store } = memoryStore();
+  let received: Parameters<ResearchDeps["plan"]>[0] | undefined;
+  const base = deps(store);
+  const engine = createResearchEngine({ ...base, async plan(input) {
+    received = input;
+    return base.plan(input);
+  } });
+  const run = await started(engine, { confirmation: "required", effort: "quick", pinnedSources: ["https://example.com/report"], constraints: ["Focus on Europe"] });
+  await engine.drive({ runId: run.id, userId: run.userId });
+  assert.equal(received?.effort, "quick");
+  assert.deepEqual(received?.pinnedSources, ["https://example.com/report"]);
+  assert.deepEqual(received?.constraints, ["Focus on Europe"]);
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "awaiting_plan_confirmation");
+});
+
 test("rejecting the plan cancels the run instead of running it anyway", async () => {
   const { store } = memoryStore();
   const engine = createResearchEngine(deps(store));
