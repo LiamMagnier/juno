@@ -12,6 +12,12 @@ import {
   budgetExhausted,
   budgetStopState,
   budgetForEffort,
+  fallbackResearchQueries,
+  investigationElapsedMs,
+  COVERAGE_TARGET,
+  MAX_DELEGATIONS_PER_ROUND,
+  MAX_RESEARCH_ROUNDS,
+  SATURATION_NEW_CLAIM_SHARE,
   isBlockedResearchState,
   isPausable,
   isResearchState,
@@ -44,6 +50,8 @@ import {
   type ResearchEventKind,
   type ResearchCoverageEntry,
   type ResearchConflict,
+  type ResearchDelegation,
+  type ResearchRound,
   type ResearchPlan,
   type ResearchEffort,
   type ResearchProgress,
@@ -64,6 +72,20 @@ import {
 // exists precisely so the canonical-URL rule has one definition that both sides
 // of that line can use.
 import { canonicalUrl } from "@/lib/search/url-safety";
+import {
+  CHUNK_PREVIEW_CHARS,
+  chunkText,
+  chunkOrdinal,
+  compileFindPattern,
+  type ResearchFindingRow,
+  type ReviewRoundInput,
+  type ReviewRoundOutput,
+  type RunWorkerInput,
+  type WorkerResult,
+  type WorkerStopReason,
+  type WorkerTools,
+} from "@/lib/research/agents/protocol";
+import { runAll } from "@/lib/research/agents/scheduler";
 
 /**
  * The durable research job.
@@ -235,6 +257,28 @@ export interface ResearchStore {
     passages: Array<{ text: string; locator?: string | null; ordinal: number }>;
   }): Promise<number>;
   listSources(runId: string, userId: string): Promise<ResearchSourceRow[]>;
+  /**
+   * A worker's finding: a claim, the quote behind it, the page it came from.
+   *
+   * Optional because the in-memory test stores predate the agent round and a
+   * store without findings simply runs no workers — the sweep still produces
+   * a corpus, findings are what make the report cite by claim rather than by
+   * page.
+   */
+  addFinding?(input: {
+    runId: string;
+    userId: string;
+    workerId: string;
+    round: number;
+    objectiveId: string | null;
+    sourceId: string | null;
+    url: string;
+    claim: string;
+    quote: string;
+    locator: string | null;
+    confidence: number | null;
+  }): Promise<{ id: string }>;
+  listFindings?(runId: string, userId: string): Promise<ResearchFindingRow[]>;
   /** Adds to `costMicroUsd` and returns the new total. */
   /** `kind` distinguishes a vendor fee, which has no model behind it and so
    *  needs the store to write the ledger row, from a model call that already
@@ -370,7 +414,13 @@ export interface ResearchDeps {
     costMicroUsd: number;
     objectives?: ResearchPlan["objectives"];
   }>;
-  search(input: { userId: string; query: string; signal?: AbortSignal }): Promise<{
+  search(input: {
+    userId: string;
+    query: string;
+    /** Results wanted after the merge — the tier's `resultsPerQuery`. */
+    count?: number;
+    signal?: AbortSignal;
+  }): Promise<{
     hits: ResearchHit[];
     costMicroUsd: number;
     /** Optional: backends that can say how each engine did, do. */
@@ -397,12 +447,23 @@ export interface ResearchDeps {
     limit: number;
     signal?: AbortSignal;
   }): Promise<{ queries: string[]; costMicroUsd: number }>;
+  /**
+   * One research worker: a model driving the worker tools against the run.
+   *
+   * Optional, and the whole agent round is skipped without it — the sweep
+   * above still gathers a corpus. Wired by run.ts to agents/worker.ts.
+   */
+  runWorker?(input: RunWorkerInput): Promise<WorkerResult>;
+  /** The lead's review between rounds. Optional; a deterministic review stands in. */
+  reviewRound?(input: ReviewRoundInput): Promise<ReviewRoundOutput>;
   /** Writes the report. Optional: the chat path streams synthesis itself. */
   synthesize?(input: {
     userId: string;
     goal: string;
     plan: ResearchPlan;
     sources: ResearchSourceRow[];
+    /** The workers' findings, when the store keeps them. */
+    findings?: ResearchFindingRow[];
     signal?: AbortSignal;
     /** Present only for the one bounded citation-driven rewrite. */
     revision?: {
@@ -1147,12 +1208,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       signal,
     });
     await bill(run, drafted.costMicroUsd, "plan");
-    // A failed planner degrades to searching the goal itself rather than to a
-    // dead run: the user asked a question, and one broad query beats nothing.
-    const queries = (drafted.queries.length ? drafted.queries : [run.goal]).slice(
-      0,
-      MAX_PLAN_QUERIES
-    );
+    // A failed planner degrades to the templated decomposition rather than to
+    // the goal alone. `[run.goal]` was the old fallback, and it is how a deep
+    // run came back with one page of results: one query, eighteen hits, done.
+    // A planner that wrote SOME queries is trusted as written — a quick tier
+    // is told to draft a handful, and topping it up would override that.
+    const queries = (drafted.queries.length
+      ? drafted.queries
+      : fallbackResearchQueries(run.goal, plan.effort)
+    ).slice(0, MAX_PLAN_QUERIES);
     const objectives = drafted.objectives?.length
       ? drafted.objectives
       : buildResearchObjectives(run.goal, queries);
@@ -1197,7 +1261,8 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     heartbeat?: () => Promise<void>
   ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
-    const queries = plan.queries.length ? plan.queries : [run.goal];
+    const queries = plan.queries.length ? plan.queries : fallbackResearchQueries(run.goal, plan.effort);
+    const resultsPerQuery = planBudget(plan).resultsPerQuery;
     const plannedIssued = new Set(plan.issuedQueries ?? []);
     // Legacy runs did not persist issuedQueries. Treat their first resumed
     // search as unissued so a schema rollout cannot silently skip gathering.
@@ -1256,7 +1321,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const found = await Promise.all(
         wave.map(async (query) => ({
           query,
-          result: await deps.search({ userId: run.userId, query, signal }),
+          result: await deps.search({ userId: run.userId, query, count: resultsPerQuery, signal }),
         }))
       );
 
@@ -1749,8 +1814,631 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         },
       },
     ]);
+
+    // The sweep seeded the corpus; now the team goes to work on it.
+    const agents = await doWorkerRounds(current, signal, heartbeat);
+    if (agents.outcome) return agents.outcome;
+    current = agents.run;
+
     const moved = await advance(current, "reviewing");
     return moved ? { kind: "advanced", state: "reviewing" } : { kind: "raced" };
+  };
+
+  // ── the agent rounds ────────────────────────────────────────────────────
+
+  /**
+   * The briefs for the first round: one worker per sub-question, and when the
+   * tier affords more workers than there are sub-questions, the most important
+   * ones get a second worker sent along a different axis — counter-evidence,
+   * the latest developments, primary records — so two workers on one question
+   * never read the same pages.
+   */
+  const initialDelegations = (plan: ResearchPlan, workers: number): ResearchDelegation[] => {
+    const objectives = plan.objectives.length ? plan.objectives : buildResearchObjectives("", plan.queries);
+    const ranked = [...objectives].sort((a, b) => b.importance - a.importance);
+    const out: ResearchDelegation[] = [];
+    const limit = Math.min(workers, MAX_DELEGATIONS_PER_ROUND);
+    for (const objective of ranked) {
+      if (out.length >= limit) break;
+      const requirements = objective.evidenceRequirements.map((r) => r.description).filter(Boolean);
+      out.push({
+        workerId: `w1-${out.length + 1}`,
+        objectiveId: objective.id,
+        objective: objective.question,
+        whatToFind: [
+          `Establish, with quotes from authoritative pages, what is known about: ${objective.question}.`,
+          ...(requirements.length ? [`Evidence needed: ${requirements.slice(0, 3).join("; ")}.`] : []),
+          "Prefer official documentation, primary sources, regulators and peer-reviewed or reputable trade reporting; note the date of every figure.",
+        ].join(" "),
+        boundaries: "Other workers cover the other sub-questions; stay on this one.",
+      });
+    }
+    const axes = [
+      {
+        label: "counter-evidence",
+        find: "Find the strongest disagreement, criticism, failure cases and conflicting numbers about: {q}. Look for sceptical experts, independent audits, complaints, retractions and second opinions.",
+        bounds: "Another worker is collecting the mainstream account and official figures; do not repeat it.",
+      },
+      {
+        label: "recent developments",
+        find: "Find the most recent developments, announcements, releases, rulings and data about: {q}. Prioritise the last twelve months and record exact dates.",
+        bounds: "Another worker covers background and the established record; only bring back what is new.",
+      },
+      {
+        label: "primary records",
+        find: "Find the primary records behind: {q} — original studies, filings, specifications, datasets, official statistics, court or regulator documents — and quote the figures directly from them.",
+        bounds: "Another worker covers secondary reporting; skip news summaries unless they link to the primary document.",
+      },
+    ];
+    let axis = 0;
+    for (const objective of ranked) {
+      if (out.length >= limit) break;
+      const a = axes[axis % axes.length]!;
+      axis += 1;
+      out.push({
+        workerId: `w1-${out.length + 1}`,
+        objectiveId: objective.id,
+        objective: objective.question,
+        whatToFind: a.find.replace("{q}", objective.question),
+        boundaries: a.bounds,
+      });
+    }
+    return out;
+  };
+
+  /**
+   * The lead's fallback review, when no reviewer is wired.
+   *
+   * Counts independent hosts behind each sub-question's findings and keeps
+   * going only while a round is still adding claims — the saturation rule
+   * `SATURATION_NEW_CLAIM_SHARE` states.
+   */
+  const fallbackReview = (input: ReviewRoundInput): ReviewRoundOutput => {
+    const coverage: Record<string, number> = {};
+    const gaps: ReviewRoundOutput["gaps"] = [];
+    for (const objective of input.objectives) {
+      const own = input.findings.filter((finding) => finding.objectiveId === objective.id);
+      const hosts = new Set(own.map((finding) => hostOfUrl(finding.url)));
+      const score = Math.min(1, hosts.size * 0.4 + Math.min(own.length, 6) * 0.05);
+      coverage[objective.id] = Number(score.toFixed(2));
+      if (score < COVERAGE_TARGET) {
+        gaps.push({
+          objectiveId: objective.id,
+          reason: own.length === 0 ? "No sourced finding answers this yet." : "Only one line of evidence so far.",
+          whatToFind: `Find independent, primary evidence for: ${objective.question}. Go somewhere the last round did not: a different kind of source, a specific dataset or filing, the field's own vocabulary.`,
+          boundaries: "Do not re-read pages the run has already opened unless you need a specific figure from them.",
+        });
+      }
+    }
+    const newThisRound = input.findings.filter((finding) => finding.round === input.round).length;
+    const saturated = input.round > 1 && newThisRound < Math.max(2, input.findings.length * SATURATION_NEW_CLAIM_SHARE);
+    const decision = gaps.length > 0 && input.roundsLeft > 0 && input.pagesLeft > 0 && !saturated ? "continue" : "synthesize";
+    return {
+      coverage,
+      gaps: decision === "continue" ? gaps : [],
+      contradictions: [],
+      decision,
+      reason:
+        decision === "continue"
+          ? `${gaps.length} sub-question${gaps.length === 1 ? "" : "s"} still short of evidence.`
+          : saturated
+            ? "The last round added little that was new."
+            : gaps.length === 0
+              ? "Every sub-question has independent, sourced evidence."
+              : "No rounds or pages left for the remaining gaps.",
+      costMicroUsd: 0,
+    };
+  };
+
+  /**
+   * The tools one worker holds, bound to this run.
+   *
+   * The engine implements them rather than the worker because the engine owns
+   * the money and the corpus: every search is billed and its hits become
+   * sources, every page opened is stored with its passages so the citation
+   * audit can later check a claim against the bytes the worker saw, and every
+   * finding lands in the shared table the lead reviews. The per-run counters
+   * (`pagesRead`, `spent`) are shared across the round's workers on purpose —
+   * the tier's page ceiling is a ceiling on the RUN.
+   */
+  const bindWorkerTools = (
+    run: ResearchRunRow,
+    workerId: string,
+    round: number,
+    objectiveId: string,
+    shared: { pagesRead: number; toolCalls: number; pageCeiling: number; resultsPerQuery: number },
+    perWorker: { maxToolCalls: number; deadline: number },
+    signal?: AbortSignal
+  ): WorkerTools => {
+    let calls = 0;
+    const tick = async (tool: string, arg: string, startedAt: number, ok: boolean) => {
+      calls += 1;
+      shared.toolCalls += 1;
+      await append(run.id, run.userId, [
+        {
+          kind: "worker_tool_call",
+          payload: { workerId, round, tool, arg: arg.slice(0, 200), ms: Date.now() - startedAt, ok },
+        },
+      ]);
+    };
+    /** The stop the NEXT call would hit, decided after this one ran. */
+    const stopAfter = async (): Promise<WorkerStopReason | undefined> => {
+      if (signal?.aborted) return "aborted";
+      if (calls >= perWorker.maxToolCalls) return "tool_limit";
+      if (Date.now() >= perWorker.deadline) return "time_limit";
+      const fresh = await store.loadRun(run.id, run.userId);
+      if (!fresh || fresh.state !== "investigating") return "aborted";
+      if (budgetExhausted(fresh.costMicroUsd, fresh.budgetMicroUsd)) return "budget";
+      return undefined;
+    };
+    const sourceByUrl = async (url: string) => {
+      const key = canonicalUrl(url);
+      return (await store.listSources(run.id, run.userId)).find((source) => canonicalUrl(source.url) === key) ?? null;
+    };
+    const digestOf = (source: ResearchSourceRow, alreadyRead: boolean) => {
+      const text = source.snapshot ?? "";
+      const chunks = chunkText(text);
+      return {
+        ok: true as const,
+        sourceId: source.id,
+        url: source.url,
+        title: source.title,
+        summary: text.slice(0, 700).replace(/\s+/g, " "),
+        chunkCount: chunks.length,
+        chunks: chunks.map((chunk) => ({ ordinal: chunk.ordinal, preview: chunk.text.slice(0, CHUNK_PREVIEW_CHARS).replace(/\s+/g, " ") })),
+        alreadyRead,
+      };
+    };
+
+    return {
+      async search(query) {
+        const startedAt = Date.now();
+        if (!(await affordable(run, SEARCH_ESTIMATE_MICRO_USD))) {
+          await tick("search", query, startedAt, false);
+          return { result: { hits: [], note: "The run's budget cannot pay for another search." }, stop: "budget" };
+        }
+        const result = await deps.search({ userId: run.userId, query, count: shared.resultsPerQuery, signal });
+        await bill(run, result.costMicroUsd, "search");
+        await append(run.id, run.userId, [
+          { kind: "query_issued", payload: { query, results: result.hits.length, workerId, round, ...(result.engines?.length ? { engines: result.engines } : {}) } },
+        ]);
+        const known = new Map((await store.listSources(run.id, run.userId)).map((source) => [canonicalUrl(source.url), source]));
+        const hits = [];
+        for (const hit of result.hits) {
+          const existing = known.get(canonicalUrl(hit.url));
+          if (!existing) {
+            const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
+            const score = scoreSource({ url: hit.url, text: body ?? hit.snippet, publishedAt: hit.publishedAt });
+            const stored = await store.upsertSource({
+              runId: run.id,
+              userId: run.userId,
+              url: hit.url,
+              title: hit.title,
+              publishedAt: hit.publishedAt,
+              ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
+              ...score,
+              sourceType: sourceTypeOf({ url: hit.url, text: body ?? hit.snippet, authority: score.authority }),
+            });
+            if (stored.created) {
+              await append(run.id, run.userId, [{ kind: "source_found", payload: { url: hit.url, title: hit.title, query, workerId } }]);
+            }
+          }
+          hits.push({ url: hit.url, title: hit.title, snippet: hit.snippet.slice(0, 300), read: !!existing?.snapshot && existing.snapshot.length >= 2_000 });
+        }
+        await tick("search", query, startedAt, true);
+        return { result: { hits }, stop: await stopAfter() };
+      },
+
+      async openPage(url) {
+        const startedAt = Date.now();
+        const existing = await sourceByUrl(url);
+        if (existing?.snapshot && existing.snapshot.length >= 2_000) {
+          await tick("open_page", url, startedAt, true);
+          return { result: digestOf(existing, true), stop: await stopAfter() };
+        }
+        if (shared.pagesRead >= shared.pageCeiling) {
+          await tick("open_page", url, startedAt, false);
+          return { result: { ok: false, url, reason: "the run has read every page its tier allows" }, stop: "page_limit" };
+        }
+        if (!(await affordable(run, READ_ESTIMATE_MICRO_USD))) {
+          await tick("open_page", url, startedAt, false);
+          return { result: { ok: false, url, reason: "the run's budget cannot pay for another page" }, stop: "budget" };
+        }
+        const page = await deps.fetchPage({ userId: run.userId, url, signal });
+        if (!page || pageWasSkipped(page)) {
+          await tick("open_page", url, startedAt, false);
+          if (page) {
+            await append(run.id, run.userId, [
+              { kind: "error", payload: { scope: "source", url, message: pageSkipMessage(page), reason: page.skipped, workerId } },
+            ]);
+          }
+          return { result: { ok: false, url, reason: page ? pageSkipMessage(page) : "the page returned no readable text" }, stop: await stopAfter() };
+        }
+        await bill(run, page.costMicroUsd, "fetch");
+        const text = page.text.slice(0, SNAPSHOT_CHARS);
+        const score = scoreSource({ url, text, publishedAt: existing?.publishedAt ?? null });
+        const stored = await store.upsertSource({
+          runId: run.id,
+          userId: run.userId,
+          url,
+          title: page.title || existing?.title || url,
+          publishedAt: existing?.publishedAt ?? null,
+          contentHash: deps.hash(text),
+          snapshot: text,
+          ...score,
+          sourceType: sourceTypeOf({ url, text, authority: score.authority }),
+        });
+        await store.savePassages({ userId: run.userId, sourceId: stored.id, passages: splitPassages(text) });
+        shared.pagesRead += 1;
+        await append(run.id, run.userId, [{ kind: "source_read", payload: { url, title: page.title, workerId, round } }]);
+        await tick("open_page", url, startedAt, true);
+        const row = (await sourceByUrl(url)) ?? { ...(existing ?? { id: stored.id, url, title: page.title, contentHash: null, publishedAt: null, authority: null, fetchedAt: deps.now() }), snapshot: text };
+        return { result: digestOf({ ...row, snapshot: text }, false), stop: await stopAfter() };
+      },
+
+      async findInPage(url, pattern) {
+        const startedAt = Date.now();
+        const source = await sourceByUrl(url);
+        if (!source?.snapshot) {
+          await tick("find_in_page", pattern, startedAt, false);
+          return { result: { ok: false, matches: [], reason: "open the page first" }, stop: await stopAfter() };
+        }
+        const regex = compileFindPattern(pattern);
+        const matches = chunkText(source.snapshot)
+          .filter((chunk) => regex.test(chunk.text))
+          .slice(0, 6)
+          .map((chunk) => ({ ordinal: chunk.ordinal, text: chunk.text }));
+        await tick("find_in_page", pattern, startedAt, true);
+        return { result: { ok: true, matches }, stop: await stopAfter() };
+      },
+
+      async noteFinding(finding) {
+        const startedAt = Date.now();
+        const source = await sourceByUrl(finding.url);
+        if (!source) {
+          await tick("note_finding", finding.claim, startedAt, false);
+          return { result: { ok: false, reason: "cite a page you opened in this run" }, stop: await stopAfter() };
+        }
+        // The quote has to be IN the page. A worker that paraphrases and calls
+        // it a quote has produced a claim the citation audit will reject later;
+        // catching it here costs one string search and teaches the worker.
+        const haystack = (source.snapshot ?? "").replace(/\s+/g, " ").toLowerCase();
+        const needle = finding.quote.replace(/\s+/g, " ").toLowerCase();
+        const probe = needle.length > 80 ? needle.slice(0, 80) : needle;
+        if (haystack && !haystack.includes(probe)) {
+          await tick("note_finding", finding.claim, startedAt, false);
+          return { result: { ok: false, reason: "the quote does not appear verbatim on that page — use find_in_page and quote exactly" }, stop: await stopAfter() };
+        }
+        if (store.addFinding) {
+          await store.addFinding({
+            runId: run.id,
+            userId: run.userId,
+            workerId,
+            round,
+            objectiveId,
+            sourceId: source.id,
+            url: source.url,
+            claim: finding.claim,
+            quote: finding.quote,
+            locator: chunkOrdinal(finding.locator) !== null ? finding.locator! : null,
+            confidence: finding.confidence ?? null,
+          });
+        }
+        await tick("note_finding", finding.claim, startedAt, true);
+        return { result: { ok: true }, stop: await stopAfter() };
+      },
+    };
+  };
+
+  /**
+   * The agent rounds: a team of workers, a lead's review, repeat.
+   *
+   * Runs inside the `investigating` step after the sweep has seeded the
+   * corpus. Each round dispatches the tier's worker count in parallel, each
+   * with its own brief and its own tool loop, then hands what they noted to
+   * the lead, who scores every sub-question and either writes the next
+   * round's briefs or declares the corpus ready. Rounds are recorded on the
+   * plan as they finish, so a driver that resumes the run picks up at the
+   * round after the last one recorded rather than paying for it twice.
+   *
+   * Skipped entirely when no worker is wired (the test engines), and bounded
+   * in every unit the tier names: workers per round, rounds, tool calls per
+   * worker, pages for the run, wall clock for the run and per worker, money.
+   */
+  const doWorkerRounds = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<{ run: ResearchRunRow; outcome?: StepOutcome }> => {
+    if (!deps.runWorker) return { run };
+    let current = run;
+    let plan = parsePlan(current.plan);
+    const budget = planBudget(plan);
+    const startedAt = plan.budget?.startedAt ?? deps.now().toISOString();
+    if (!plan.budget?.startedAt) {
+      plan = { ...plan, budget: { ...budget, startedAt } };
+      current = (await store.savePlan({ runId: run.id, userId: run.userId, plan })) ?? current;
+    }
+    const totalRounds = Math.min(budget.rounds, MAX_RESEARCH_ROUNDS);
+    let delegations: ResearchDelegation[] = [];
+    const lastRecorded = plan.rounds?.[plan.rounds.length - 1];
+    if (lastRecorded?.review?.decision === "synthesize") return { run: current };
+    let round = (plan.rounds?.length ?? 0) + 1;
+    if (round > totalRounds) return { run: current };
+    const workerTokens = { used: plan.rounds?.reduce((n, r) => n + r.tokens, 0) ?? 0 };
+
+    while (round <= totalRounds) {
+      const fresh = await store.loadRun(current.id, current.userId);
+      if (!fresh || fresh.state !== "investigating") return { run: current, outcome: { kind: "raced" } };
+      current = fresh;
+      plan = parsePlan(current.plan);
+      await heartbeat?.();
+
+      if (investigationElapsedMs(plan, deps.now()) >= budget.wallClockMs) break;
+      if (workerTokens.used >= budget.tokens) break;
+
+      const sourcesNow = await store.listSources(current.id, current.userId);
+      const readNow = sourcesNow.filter((source) => source.snapshot).length;
+      const pageCeiling = Math.min(MAX_SOURCES, budget.pages);
+      if (readNow >= pageCeiling) break;
+
+      if (delegations.length === 0) {
+        const previous = plan.rounds?.[plan.rounds.length - 1]?.review;
+        // A resumed run rebuilds the next round's briefs from the recorded
+        // review; a fresh one sends the first team out on the plan itself.
+        delegations = previous && round > 1
+          ? previous.gaps.map((gap, i) => {
+              const objective = plan.objectives.find((item) => item.id === gap.objectiveId);
+              return {
+                workerId: `w${round}-${i + 1}`,
+                objectiveId: gap.objectiveId,
+                objective: objective?.question ?? gap.objectiveId,
+                whatToFind: `Close this gap: ${gap.reason} Go somewhere the last round did not — a different kind of source, a specific dataset or filing, the field's own vocabulary.`,
+                boundaries: "Do not re-read pages the run has already opened unless you need a specific figure from them.",
+              };
+            })
+          : initialDelegations(plan, budget.workers);
+      }
+      delegations = delegations.slice(0, Math.min(budget.workers, MAX_DELEGATIONS_PER_ROUND));
+      if (delegations.length === 0) break;
+
+      // One budget decision for the whole round, taken BEFORE any worker
+      // starts. A worker costs roughly its tool budget in fees plus its own
+      // model calls; reserve the fees and let the per-call checks inside the
+      // tools hold the line from there.
+      const perWorkerEstimate = SEARCH_ESTIMATE_MICRO_USD * Math.ceil(budget.toolCallsPerWorker / 3);
+      const affordableWorkers = await affordableCount(current, perWorkerEstimate, delegations.length);
+      if (affordableWorkers === 0) break;
+      delegations = delegations.slice(0, affordableWorkers);
+
+      const roundStartedAt = deps.now().toISOString();
+      const findingsBefore = store.listFindings ? await store.listFindings(current.id, current.userId) : [];
+      const citedBefore = new Set(findingsBefore.map((finding) => canonicalUrl(finding.url)));
+      const shared = { pagesRead: readNow, toolCalls: 0, pageCeiling, resultsPerQuery: budget.resultsPerQuery };
+      const visited = sourcesNow.filter((source) => source.snapshot).map((source) => source.url);
+      const roundDeadline = Date.now() + Math.min(budget.workerWallClockMs, Math.max(30_000, budget.wallClockMs - investigationElapsedMs(plan, deps.now())));
+
+      await append(current.id, current.userId, [
+        ...delegations.map((delegation) => ({
+          kind: "worker_spawned" as const,
+          payload: {
+            workerId: delegation.workerId,
+            round,
+            objectiveId: delegation.objectiveId,
+            objective: delegation.objective,
+            whatToFind: delegation.whatToFind.slice(0, 400),
+          },
+        })),
+      ]);
+
+      // Workers run in parallel up to the tier's width; the heartbeat keeps the
+      // lease alive underneath them, since a round comfortably outlives it.
+      const pulse = setInterval(() => void heartbeat?.().catch(() => undefined), 45_000);
+      let settled: Awaited<ReturnType<typeof runAll<ResearchDelegation, WorkerResult>>>;
+      try {
+        settled = await runAll(
+          delegations,
+          budget.workers,
+          async (delegation) => {
+            const tools = bindWorkerTools(
+              current,
+              delegation.workerId,
+              round,
+              delegation.objectiveId,
+              shared,
+              { maxToolCalls: budget.toolCallsPerWorker, deadline: roundDeadline },
+              signal
+            );
+            return deps.runWorker!({
+              userId: current.userId,
+              brief: {
+                delegation,
+                round,
+                goal: current.goal,
+                brief: plan.brief ?? "",
+                constraints: plan.constraints,
+                visited,
+              },
+              tools,
+              limits: { maxToolCalls: budget.toolCallsPerWorker, wallClockMs: Math.max(30_000, roundDeadline - Date.now()) },
+              signal,
+            });
+          },
+          signal
+        );
+      } finally {
+        clearInterval(pulse);
+      }
+
+      const reports: ReviewRoundInput["workerReports"] = [];
+      let roundTokens = 0;
+      let roundCalls = 0;
+      for (let i = 0; i < delegations.length; i += 1) {
+        const delegation = delegations[i]!;
+        const outcome = settled[i]!;
+        const result: WorkerResult = outcome.ok
+          ? outcome.value
+          : { summary: "", openQuestions: [], followUps: [], tokens: 0, costMicroUsd: 0, reason: "error", toolCalls: 0, elapsedMs: 0 };
+        roundTokens += result.tokens;
+        roundCalls += result.toolCalls;
+        await bill(current, result.costMicroUsd, "worker");
+        reports.push({
+          workerId: delegation.workerId,
+          objectiveId: delegation.objectiveId,
+          summary: result.summary,
+          openQuestions: result.openQuestions,
+          followUps: result.followUps,
+        });
+        await append(current.id, current.userId, [
+          {
+            kind: "worker_finished",
+            payload: {
+              workerId: delegation.workerId,
+              round,
+              objectiveId: delegation.objectiveId,
+              reason: result.reason,
+              toolCalls: result.toolCalls,
+              tokens: result.tokens,
+              ms: result.elapsedMs,
+              summary: result.summary.slice(0, 600),
+              openQuestions: result.openQuestions.slice(0, 4),
+            },
+          },
+        ]);
+      }
+      workerTokens.used += roundTokens;
+
+      const findings = store.listFindings ? await store.listFindings(current.id, current.userId) : [];
+      const roundFindings = findings.filter((finding) => finding.round === round);
+      const newClaims = roundFindings.filter((finding) => !citedBefore.has(canonicalUrl(finding.url))).length;
+
+      // The lead reviews the round.
+      const latestPlan = parsePlan(((await store.loadRun(current.id, current.userId)) ?? current).plan);
+      const sourcesAfter = await store.listSources(current.id, current.userId);
+      const readAfter = sourcesAfter.filter((source) => source.snapshot).length;
+      const reviewInput: ReviewRoundInput = {
+        userId: current.userId,
+        goal: current.goal,
+        brief: latestPlan.brief ?? "",
+        constraints: latestPlan.constraints,
+        objectives: latestPlan.objectives,
+        findings,
+        workerReports: reports,
+        round,
+        roundsLeft: totalRounds - round,
+        pagesLeft: Math.max(0, pageCeiling - readAfter),
+        previous: latestPlan.rounds?.[latestPlan.rounds.length - 1]?.review,
+        signal,
+      };
+      let review: ReviewRoundOutput;
+      try {
+        review = deps.reviewRound ? await deps.reviewRound(reviewInput) : fallbackReview(reviewInput);
+      } catch (error) {
+        console.error("[research] round review failed", { runId: current.id, error });
+        review = fallbackReview(reviewInput);
+      }
+      await bill(current, review.costMicroUsd, "review");
+
+      // Contradictions the lead named become conflicts the report must address.
+      const conflicts: ResearchConflict[] = [
+        ...(latestPlan.conflicts ?? []),
+        ...review.contradictions.map((item, i) => ({
+          id: `lead-r${round}-${i + 1}`,
+          kind: "contradictory_evidence" as const,
+          ...(item.objectiveId ? { objectiveId: item.objectiveId } : {}),
+          sourceIds: item.sourceIds,
+          description: item.description,
+          severity: "medium" as const,
+          resolved: false,
+        })),
+      ];
+      for (const item of review.contradictions) {
+        await append(current.id, current.userId, [
+          { kind: "conflict_found", payload: { kind: "contradictory_evidence", description: item.description, sourceIds: item.sourceIds, round } },
+        ]);
+      }
+
+      const objectives = latestPlan.objectives.map((objective) => {
+        const score = review.coverage[objective.id] ?? 0;
+        return {
+          ...objective,
+          status: score >= COVERAGE_TARGET ? ("covered" as const) : score > 0 ? ("partially_covered" as const) : objective.status,
+        };
+      });
+      const recorded: ResearchRound = {
+        round,
+        delegations,
+        pagesRead: readAfter,
+        toolCalls: roundCalls || shared.toolCalls,
+        tokens: roundTokens,
+        claims: roundFindings.length,
+        newClaims,
+        startedAt: roundStartedAt,
+        finishedAt: deps.now().toISOString(),
+        review: {
+          coverage: review.coverage,
+          gaps: review.gaps.map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
+          contradictions: review.contradictions.length,
+          decision: review.decision,
+          reason: review.reason,
+        },
+      };
+      const rounds = [...(latestPlan.rounds ?? []).filter((item) => item.round !== round), recorded];
+      const saved = await store.savePlan({
+        runId: current.id,
+        userId: current.userId,
+        plan: { ...latestPlan, objectives, conflicts, rounds },
+      });
+      current = saved ?? current;
+
+      await append(current.id, current.userId, [
+        {
+          kind: "round_reviewed",
+          payload: {
+            round,
+            decision: review.decision,
+            reason: review.reason,
+            coverage: review.coverage,
+            gaps: review.gaps.map((gap) => ({ objectiveId: gap.objectiveId, reason: gap.reason })),
+            contradictions: review.contradictions.length,
+            claims: roundFindings.length,
+            newClaims,
+          },
+        },
+        {
+          kind: "budget_checkpoint",
+          payload: {
+            round,
+            pagesRead: readAfter,
+            pageCeiling,
+            toolCalls: roundCalls || shared.toolCalls,
+            tokens: workerTokens.used,
+            tokenCeiling: budget.tokens,
+            elapsedMs: investigationElapsedMs(parsePlan(current.plan), deps.now()),
+            wallClockMs: budget.wallClockMs,
+            spentMicroUsd: current.costMicroUsd.toString(),
+            budgetMicroUsd: current.budgetMicroUsd === null ? null : current.budgetMicroUsd.toString(),
+          },
+        },
+      ]);
+
+      if (review.decision !== "continue" || review.gaps.length === 0) break;
+      // Saturation is the lead's call, but the arithmetic backstops it: a
+      // round that added almost nothing new is not worth paying for again.
+      if (round > 1 && findings.length > 0 && newClaims < findings.length * SATURATION_NEW_CLAIM_SHARE) break;
+      delegations = review.gaps.map((gap, i) => {
+        const objective = objectives.find((item) => item.id === gap.objectiveId);
+        return {
+          workerId: `w${round + 1}-${i + 1}`,
+          objectiveId: gap.objectiveId,
+          objective: objective?.question ?? gap.objectiveId,
+          whatToFind: gap.whatToFind,
+          boundaries: gap.boundaries,
+        };
+      });
+      round += 1;
+    }
+    return { run: (await store.loadRun(current.id, current.userId)) ?? current };
   };
 
   /**
@@ -1958,11 +2646,13 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     if (!(await affordable(run, estimate))) {
       return stopForBudget(run, estimate);
     }
+    const findings = store.listFindings ? await store.listFindings(run.id, run.userId) : [];
     const written = await deps.synthesize({
       userId: run.userId,
       goal: run.goal,
       plan,
       sources,
+      findings,
       signal,
       ...(revision ? { revision } : {}),
     });

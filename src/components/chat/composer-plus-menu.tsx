@@ -63,6 +63,8 @@ export type PlusMenuItem =
       onToggle: () => void;
       disabled?: boolean;
       note?: string;
+      /** A short mono figure before the switch — what turning it on will do. */
+      detail?: string;
     }
   | {
       kind: "sub";
@@ -71,6 +73,8 @@ export type PlusMenuItem =
       icon: LucideIcon;
       /** What is currently chosen inside, shown before the chevron. */
       detail?: string;
+      /** True when the flyout holds a tool that is switched on — counts on the trigger. */
+      armed?: boolean;
       /** The flyout's body: rows, and whatever sits between them. */
       render: () => React.ReactNode;
       /** Called when the flyout closes — e.g. to clear its search field. */
@@ -107,12 +111,16 @@ export const PlusMenuRow = React.forwardRef<
     selected?: boolean;
     note?: string;
     detail?: string;
+    /** A second, muted line under the label. */
+    description?: string;
+    /** Keep the menu open after this row is picked (a radio that sets a mode, say). */
+    keepOpen?: boolean;
     /** A brand mark or any element in place of the Lucide glyph. */
     leading?: React.ReactNode;
     onSelect?: () => void;
   }
 >(function PlusMenuRow(
-  { icon, checked, selected, note, detail, leading, className, children, onSelect, ...props },
+  { icon, checked, selected, note, detail, description, keepOpen, leading, className, children, onSelect, ...props },
   ref,
 ) {
   const toggle = checked !== undefined;
@@ -125,14 +133,19 @@ export const PlusMenuRow = React.forwardRef<
       onSelect={(event) => {
         // A toggle answers in place: the menu stays open so the next switch
         // is one press away, and the row itself is what changed.
-        if (toggle) event.preventDefault();
+        if (toggle || keepOpen) event.preventDefault();
         onSelect?.();
       }}
-      className={cn(plusMenuRowClass, className)}
+      className={cn(plusMenuRowClass, description && "items-start py-2", className)}
       {...props}
     >
-      {leading ?? (icon ? <PlusMenuGlyph icon={icon} /> : null)}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {leading ?? (icon ? <PlusMenuGlyph icon={icon} className={description ? "mt-0.5" : undefined} /> : null)}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{children}</span>
+        {description && (
+          <span className="mt-0.5 block truncate text-caption font-normal text-muted-foreground">{description}</span>
+        )}
+      </span>
       {detail && (
         <span className="max-w-[7rem] shrink-0 truncate font-mono text-caption text-muted-foreground">
           {detail}
@@ -169,7 +182,9 @@ export function PlusMenu({
   sections: PlusMenuSection[];
   className?: string;
 }) {
-  const activeCount = sections.flat().filter(item => item.kind === "toggle" && item.checked).length;
+  const activeCount = sections
+    .flat()
+    .filter((item) => (item.kind === "toggle" && item.checked) || (item.kind === "sub" && item.armed)).length;
   const [compact, setCompact] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -255,6 +270,7 @@ export function PlusMenu({
                     checked={item.checked}
                     disabled={item.disabled}
                     note={item.note}
+                    detail={item.detail}
                     onSelect={item.onToggle}
                   >
                     {item.label}
@@ -281,7 +297,7 @@ export function PlusMenu({
                     <DropdownMenuSubContent
                       sideOffset={6}
                       collisionPadding={16}
-                      className="flex w-64 flex-col p-1.5"
+                      className="flex w-72 flex-col p-1.5"
                     >
                       {item.render()}
                     </DropdownMenuSubContent>

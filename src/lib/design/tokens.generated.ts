@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: f497f4b877356134
+// tokens-digest: c61fa69759274c9d
 //
 
 /** `--dur-*` in milliseconds. */
@@ -27,7 +27,7 @@ export const EASING = {
   outExpo: [0.16, 1, 0.3, 1] as const,
   outSoft: [0.33, 1, 0.68, 1] as const,
   outStrong: [0.32, 0.72, 0, 1] as const,
-  spring: [0.34, 1.16, 0.64, 1] as const,
+  spring: [0.22, 1, 0.36, 1] as const,
 } as const;
 
 /** The radius ladder, in pixels. */

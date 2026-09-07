@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: f497f4b877356134
+// tokens-digest: c61fa69759274c9d
 //
 
 import CoreGraphics
@@ -404,7 +404,7 @@ public enum JunoGeneratedEasing {
     /// `--ease-out-strong`
     public static let outStrong: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.32, 0.72, 0.0, 1.0)
     /// `--ease-spring`
-    public static let spring: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.34, 1.16, 0.64, 1.0)
+    public static let spring: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.22, 1.0, 0.36, 1.0)
 }
 
 /// The radius ladder, in points.

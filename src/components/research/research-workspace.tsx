@@ -8,17 +8,18 @@ import { Button } from "@/components/ui/button";
 import { ResearchConsole } from "./research-console";
 import { reportBody } from "./report-dialog";
 import { useResearchRun } from "./use-research-run";
+import { RESEARCH_EFFORT_COPY } from "./effort-copy";
 import { startResearchSchema, steerResearchSchema } from "@/app/api/research/protocol";
 import { isResearchState, RESEARCH_STATE_MESSAGE, type ResearchEffort } from "@/lib/research/domain";
 import { cn } from "@/lib/utils";
 
 const ReportReader = dynamic(() => import("./report-reader").then(module => module.ReportReader));
 type RecentRun = { id: string; goal: string; state: string; sourceCount: number };
-const EFFORTS: { value: ResearchEffort; label: string; description: string }[] = [
-  { value: "quick", label: "Focused", description: "A narrow question, fewer sources" },
-  { value: "standard", label: "Balanced", description: "Multiple perspectives and evidence" },
-  { value: "deep", label: "Thorough", description: "Broader exploration and follow-up research" },
-];
+const EFFORTS: { value: ResearchEffort; label: string; description: string }[] = RESEARCH_EFFORT_COPY.map((tier) => ({
+  value: tier.value,
+  label: tier.label,
+  description: `${tier.note} · ${tier.summary} · ${tier.eta}`,
+}));
 
 export function ResearchWorkspace({ runId = null }: { runId?: string | null }) {
   const router = useRouter();

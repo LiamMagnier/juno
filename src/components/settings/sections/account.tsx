@@ -26,6 +26,7 @@ import { useApp } from "@/components/app/app-provider";
 import { TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
+import { UsageActivity, UsageDetail, UsageStats, useProfileUsage } from "@/components/settings/usage-overview";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -34,9 +35,14 @@ function initials(name: string | null, email: string | null) {
 }
 
 /**
- * Who you are to Juno: the portrait, the name, the address you sign in with —
- * then the ways in and out (password, this session), the emails Juno may
- * send, and, last and alone, deletion.
+ * Who you are to Juno, and what you have done with it.
+ *
+ * The portrait, the name and the address you sign in with come first; then
+ * the account's own numbers — this month against the plan, the last thirty
+ * days, the streak — and a year of activity as a graph, because "how much do
+ * I use this and when" is the question people open this page to answer. The
+ * ways in and out (password, this session), the emails Juno may send, and,
+ * last and alone, deletion follow.
  */
 export function AccountSection() {
   const router = useRouter();
@@ -44,6 +50,7 @@ export function AccountSection() {
   const save = useSettingsSave();
   const plan = PLANS[quota.plan];
   const email = user.email ?? "";
+  const usage = useProfileUsage();
 
   // Portrait upload — the same flow the profile page used to own.
   const [avatar, setAvatar] = React.useState<string | null>(user.image ?? null);
@@ -140,7 +147,7 @@ export function AccountSection() {
         title="Profile"
         aside={
           <Button asChild variant="outline" size="sm">
-            <Link href="/profile">View activity</Link>
+            <Link href="/profile">Lifetime totals</Link>
           </Button>
         }
       >
@@ -216,6 +223,19 @@ export function AccountSection() {
           description="The address you sign in with. It cannot be changed here."
           control={<span className="font-mono text-caption text-muted-foreground">{email}</span>}
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="Usage" description="What this account has spent and done, from the same ledger billing reads.">
+        <div className="py-4">
+          <UsageStats {...usage} />
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup title="Activity" description="Every day you used Juno in the last year. Darker means more.">
+        <div className="py-4">
+          <UsageActivity data={usage.data} loading={usage.loading} />
+        </div>
+        <UsageDetail data={usage.data} loading={usage.loading} />
       </SettingsGroup>
 
       <SettingsGroup title="Sign-in" description="How you get into this account, and how you leave it.">

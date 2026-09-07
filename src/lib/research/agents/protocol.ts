@@ -366,6 +366,9 @@ export interface WorkerResult {
   /** What the worker's OWN model calls cost. Tool fees are billed by the engine as they happen. */
   costMicroUsd: number;
   reason: WorkerFinishReason;
+  /** Tool calls the worker made, for the round ledger. */
+  toolCalls: number;
+  elapsedMs: number;
 }
 
 export interface RunWorkerInput {

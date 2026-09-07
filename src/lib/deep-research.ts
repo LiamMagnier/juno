@@ -7,10 +7,11 @@ import {
   isResearchState,
   parsePlan,
   type ResearchBlockedState,
+  type ResearchEffort,
   type ResearchEventDTO,
 } from "@/lib/research/domain";
 import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
-import { buildResearchCorpus, researchSearchConfigured } from "@/lib/research/tools";
+import { buildResearchCorpus, corpusFindings, researchSearchConfigured } from "@/lib/research/tools";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 import { prisma } from "@/lib/db";
 
@@ -151,6 +152,30 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
     }
     case "source_ranked":
       return { kind: "reasoning", title: "Prioritizing the strongest sources" };
+    case "worker_spawned": {
+      const round = Number(payload.round ?? 1);
+      return {
+        kind: "reasoning",
+        title: round > 1 ? `Sending a researcher after a gap (round ${round})` : "Sending a researcher",
+        detail: truncate(String(payload.objective ?? ""), 96),
+      };
+    }
+    case "worker_finished": {
+      const calls = Number(payload.toolCalls ?? 0);
+      return {
+        kind: "context",
+        title: "A researcher reported back",
+        detail: truncate(String(payload.summary ?? "") || `${calls} tool call${calls === 1 ? "" : "s"}`, 96),
+      };
+    }
+    case "round_reviewed": {
+      const claims = Number(payload.claims ?? 0);
+      return {
+        kind: "reasoning",
+        title: payload.decision === "continue" ? "Lead review: another round is needed" : "Lead review: the evidence is ready",
+        detail: truncate(`${claims} sourced finding${claims === 1 ? "" : "s"} · ${String(payload.reason ?? "")}`, 96),
+      };
+    }
     case "coverage_matrix_updated":
       return { kind: "reasoning", title: "Checking each research question" };
     case "follow_up_scheduled":
@@ -190,6 +215,8 @@ export async function runDeepResearch(opts: {
   prompt: string;
   conversationId?: string | null;
   client: "web" | "app";
+  /** The depth the composer asked for. Deep when it did not say. */
+  effort?: ResearchEffort;
   signal?: AbortSignal;
   /** The chat route's activity emitter — events land in the existing timeline. */
   sendActivity: SendActivity;
@@ -228,7 +255,7 @@ export async function runDeepResearch(opts: {
         goal: prompt,
         conversationId: opts.conversationId ?? null,
         budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
-        effort: "deep",
+        effort: opts.effort ?? "deep",
         confirmation: opts.client === "web" ? "required" : "auto",
       });
       return run.id;
@@ -336,17 +363,19 @@ export async function runDeepResearch(opts: {
   if (sources.length === 0) return { ...EMPTY, runId, costUsd, state: finished?.state };
 
   const plan = parsePlan(finished?.plan);
+  const findings = store.listFindings ? await store.listFindings(runId, opts.userId).catch(() => []) : [];
+  const ledger = corpusFindings(plan, sources, findings);
   opts.sendActivity({
     kind: "context",
     title: "Research corpus ready",
     detail: `${sources.length} source${sources.length === 1 ? "" : "s"} · ${plan.queries.length} ${
       plan.queries.length === 1 ? "search" : "searches"
-    } · saved to this run`,
+    }${ledger.length ? ` · ${ledger.length} sourced finding${ledger.length === 1 ? "" : "s"}` : ""} · saved to this run`,
   });
 
   return {
     ok: true,
-    context: buildResearchCorpus(prompt, plan, sources),
+    context: buildResearchCorpus(prompt, plan, sources, ledger),
     // `cited` marks these as the numbered corpus the model was actually given,
     // which is what licenses the UI to resolve inline [n] markers positionally.
     // Deep research is the ONLY path that numbers sources for the model.

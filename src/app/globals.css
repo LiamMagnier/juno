@@ -2928,3 +2928,25 @@
   .research-enter, .research-tab-body { animation: research-arrive 180ms ease-out both; }
   @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
+
+/* The account page's activity graph: one square per day, sized by viewport
+   so a year fits the settings measure on desktop and scrolls on a phone. The
+   custom properties are read by the grid tracks AND the legend squares, so
+   the two can never drift apart. */
+@layer components {
+  .activity-heatmap {
+    --cell: 10px;
+    --gap: 3px;
+  }
+  @media (min-width: 640px) {
+    .activity-heatmap {
+      --cell: 11px;
+    }
+  }
+  .activity-heatmap .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .activity-heatmap .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}

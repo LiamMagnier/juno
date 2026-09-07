@@ -549,6 +549,55 @@ export function buildResearchObjectives(goal: string, queries: string[]): Resear
   });
 }
 
+/**
+ * Queries for a goal when the planner could not write any.
+ *
+ * The engine's previous fallback was `[goal]`: one query, the user's own words,
+ * and the search backend's per-query page of results as the entire corpus. It
+ * was the single most common way a "deep" run came back with eighteen sources
+ * — a planner timeout, a model that ignored the headings, a provider that was
+ * briefly unavailable — and from the outside every one of those looked like a
+ * feature that only searches what you typed.
+ *
+ * This is the floor instead: the goal, attacked from the angles the planner is
+ * prompted to cover, so a run with no planner still reads a corpus rather than
+ * a page. They are templates and read like it; the planner is still what a run
+ * wants. But a template that reaches the second and third page of results on
+ * several axes beats one literal query on any tier.
+ */
+export function fallbackResearchQueries(goal: string, effort: ResearchEffort = DEFAULT_RESEARCH_EFFORT): string[] {
+  const subject = goal.replace(/\s+/g, " ").trim().slice(0, 160);
+  if (!subject) return [];
+  const year = new Date().getUTCFullYear();
+  const angles = [
+    subject,
+    `${subject} explained`,
+    `${subject} official documentation`,
+    `${subject} statistics data ${year}`,
+    `${subject} research study findings`,
+    `${subject} comparison alternatives`,
+    `${subject} criticism problems limitations`,
+    `${subject} latest news ${year}`,
+    `${subject} history background timeline`,
+    `${subject} expert analysis review`,
+    `${subject} case study real world results`,
+    `${subject} pros and cons trade-offs`,
+    `${subject} how it works technical details`,
+    `${subject} regulation policy standards`,
+  ];
+  const wanted = effort === "quick" ? 5 : effort === "standard" ? 9 : angles.length;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const query of angles) {
+    const key = query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(query.slice(0, MAX_QUERY_CHARS));
+    if (out.length >= wanted) break;
+  }
+  return out;
+}
+
 function parseObjectives(value: unknown): ResearchObjective[] {
   if (!Array.isArray(value)) return [];
   const out: ResearchObjective[] = [];
@@ -762,6 +811,16 @@ export interface ResearchTier {
   toolCallsPerWorker: number;
   /** Pages the whole run may read in full. */
   pages: number;
+  /**
+   * Results one search query returns after the multi-engine merge.
+   *
+   * This used to be a single constant of 18 in tools.ts, and 18 is the number
+   * every user of a run that issued one query saw as "the source ceiling". It
+   * is a tier setting because a quick pass wants the top of one page while a
+   * deep run wants the long tail — the second page of results is where the
+   * primary sources that summaries cite actually live.
+   */
+  resultsPerQuery: number;
   /** Model tokens (input + output) the workers may consume across the run. */
   tokens: number;
   /** Wall clock from the first worker to the writer, in milliseconds. */
@@ -792,6 +851,7 @@ export const RESEARCH_TIERS: Record<ResearchEffort, ResearchTier> = {
     rounds: 1,
     toolCallsPerWorker: 25,
     pages: 20,
+    resultsPerQuery: 12,
     tokens: 400_000,
     wallClockMs: 5 * MINUTE_MS,
     workerWallClockMs: 4 * MINUTE_MS,
@@ -803,6 +863,7 @@ export const RESEARCH_TIERS: Record<ResearchEffort, ResearchTier> = {
     rounds: 2,
     toolCallsPerWorker: 40,
     pages: 80,
+    resultsPerQuery: 24,
     tokens: 1_500_000,
     wallClockMs: 12 * MINUTE_MS,
     workerWallClockMs: 5 * MINUTE_MS,
@@ -814,6 +875,7 @@ export const RESEARCH_TIERS: Record<ResearchEffort, ResearchTier> = {
     rounds: 3,
     toolCallsPerWorker: 60,
     pages: 320,
+    resultsPerQuery: 32,
     tokens: 6_000_000,
     wallClockMs: 30 * MINUTE_MS,
     workerWallClockMs: 8 * MINUTE_MS,
@@ -825,6 +887,7 @@ export const RESEARCH_TIERS: Record<ResearchEffort, ResearchTier> = {
     rounds: 3,
     toolCallsPerWorker: 80,
     pages: 480,
+    resultsPerQuery: 40,
     tokens: 12_000_000,
     wallClockMs: 60 * MINUTE_MS,
     workerWallClockMs: 12 * MINUTE_MS,
@@ -848,6 +911,7 @@ export interface ResearchBudget {
   rounds: number;
   toolCallsPerWorker: number;
   pages: number;
+  resultsPerQuery: number;
   tokens: number;
   wallClockMs: number;
   workerWallClockMs: number;
@@ -864,6 +928,7 @@ export function budgetForEffort(effort: ResearchEffort): ResearchBudget {
     rounds: tier.rounds,
     toolCallsPerWorker: tier.toolCallsPerWorker,
     pages: tier.pages,
+    resultsPerQuery: tier.resultsPerQuery,
     tokens: tier.tokens,
     wallClockMs: tier.wallClockMs,
     workerWallClockMs: tier.workerWallClockMs,
@@ -1131,6 +1196,7 @@ function parseBudget(value: unknown): ResearchBudget | undefined {
     rounds: pick("rounds"),
     toolCallsPerWorker: pick("toolCallsPerWorker"),
     pages: pick("pages"),
+    resultsPerQuery: pick("resultsPerQuery"),
     tokens: pick("tokens"),
     wallClockMs: pick("wallClockMs"),
     workerWallClockMs: pick("workerWallClockMs"),

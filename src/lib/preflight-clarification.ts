@@ -45,6 +45,7 @@ export interface PendingPreflightClarification {
    * actually asked for would silently not happen.
    */
   deepResearch?: boolean;
+  researchEffort?: "quick" | "standard" | "deep" | "max";
 }
 
 export interface PreflightClarificationContext {

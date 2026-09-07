@@ -82,6 +82,20 @@ export const TIMELINE_COPY = {
   resumed: "Resumed",
   cancelled: "Cancelled",
   earlierSteps: "earlier steps not shown",
+  /* The agent lanes. */
+  researchers: "researchers",
+  oneResearcher: "researcher",
+  workerSearching: "Searching",
+  workerReading: "Reading",
+  workerFinding: "Noting a finding",
+  workerChecking: "Checking a page",
+  workerStarting: "Starting",
+  workerDone: "Done",
+  findings: "findings",
+  oneFinding: "finding",
+  calls: "calls",
+  leadContinue: "Lead review: another round",
+  leadSynthesize: "Lead review: evidence is ready",
   /* The search backends, and what each of them did. See ENGINE_STATUS. */
   noGoodIndex: "No indexed search provider is configured",
   noGoodIndexDetail:
@@ -179,7 +193,31 @@ interface NoteStep {
   tone: StepTone;
 }
 
-type Step = (SearchStep | NoteStep) & { durationMs: number | null };
+/**
+ * One researcher's lane.
+ *
+ * A worker's dozens of tool calls are one story — what it was sent to find,
+ * what it is doing right now, what it brought back — not dozens of rows. The
+ * lane keeps the counts and the newest action, and closes with the worker's
+ * own summary when `worker_finished` lands.
+ */
+interface WorkerStep {
+  kind: "worker";
+  key: string;
+  at: number;
+  workerId: string;
+  round: number;
+  objective: string;
+  status: "working" | "done";
+  toolCalls: number;
+  findings: number;
+  pages: number;
+  /** The newest tool call, as "Searching · query" or "Reading · host". */
+  lastAction: string | null;
+  summary: string | null;
+}
+
+type Step = (SearchStep | NoteStep | WorkerStep) & { durationMs: number | null };
 
 function timeOf(event: ResearchEventDTO): number {
   const t = Date.parse(event.createdAt);
@@ -262,7 +300,8 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
     }
   }
 
-  const ordered: Array<SearchStep | NoteStep> = [];
+  const ordered: Array<SearchStep | NoteStep | WorkerStep> = [];
+  const byWorker = new Map<string, WorkerStep>();
   // Keyed by the query verbatim, not by position: a source rediscovered by a
   // later query keeps its FIRST parent (the engine emits `source_found` only on
   // create), so one query owns a source and no source is claimed twice.
@@ -277,6 +316,10 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
     switch (event.kind) {
       case "query_issued": {
         const query = str(payload, "query");
+        // A worker's search belongs to its lane, not to the query list: the
+        // lane already says what it is searching for, and eight researchers
+        // each issuing a dozen queries is the wall this list must not become.
+        if (str(payload, "workerId")) break;
         if (!query || byQuery.has(query)) break;
         const step: SearchStep = {
           kind: "search",
@@ -392,6 +435,63 @@ export function toRunSteps(events: ResearchEventDTO[], live: boolean): Step[] {
           url ? TIMELINE_COPY.readFailed : TIMELINE_COPY.errored,
           [url ? hostOf(url) : "", message].filter(Boolean).join(" · ") || null,
           "warning"
+        );
+        break;
+      }
+      case "worker_spawned": {
+        const workerId = str(payload, "workerId");
+        if (!workerId || byWorker.has(workerId)) break;
+        const step: WorkerStep = {
+          kind: "worker",
+          key: event.id,
+          at: timeOf(event),
+          workerId,
+          round: int(payload, "round") ?? 1,
+          objective: str(payload, "objective") || str(payload, "objectiveId"),
+          status: "working",
+          toolCalls: 0,
+          findings: 0,
+          pages: 0,
+          lastAction: TIMELINE_COPY.workerStarting,
+          summary: null,
+        };
+        byWorker.set(workerId, step);
+        ordered.push(step);
+        break;
+      }
+      case "worker_tool_call": {
+        const lane = byWorker.get(str(payload, "workerId"));
+        if (!lane) break;
+        const tool = str(payload, "tool");
+        const arg = str(payload, "arg");
+        const ok = payload.ok !== false;
+        lane.toolCalls += 1;
+        if (tool === "search") lane.lastAction = `${TIMELINE_COPY.workerSearching} · ${truncate(arg, 72)}`;
+        else if (tool === "open_page") {
+          if (ok) lane.pages += 1;
+          lane.lastAction = `${TIMELINE_COPY.workerReading} · ${hostOf(arg) || truncate(arg, 48)}`;
+        } else if (tool === "find_in_page") lane.lastAction = `${TIMELINE_COPY.workerChecking} · ${truncate(arg, 48)}`;
+        else if (tool === "note_finding") {
+          if (ok) lane.findings += 1;
+          lane.lastAction = `${TIMELINE_COPY.workerFinding} · ${truncate(arg, 72)}`;
+        }
+        break;
+      }
+      case "worker_finished": {
+        const lane = byWorker.get(str(payload, "workerId"));
+        if (!lane) break;
+        lane.status = "done";
+        lane.summary = str(payload, "summary") || null;
+        lane.lastAction = null;
+        break;
+      }
+      case "round_reviewed": {
+        const claims = int(payload, "claims") ?? 0;
+        const reason = str(payload, "reason");
+        note(
+          event,
+          str(payload, "decision") === "continue" ? TIMELINE_COPY.leadContinue : TIMELINE_COPY.leadSynthesize,
+          [`${claims} ${claims === 1 ? TIMELINE_COPY.oneFinding : TIMELINE_COPY.findings}`, reason].filter(Boolean).join(" · ")
         );
         break;
       }
@@ -560,6 +660,59 @@ function NoteRow({ step }: { step: NoteStep & { durationMs: number | null } }) {
   );
 }
 
+/**
+ * A researcher's lane: who it is, what it was sent for, what it is doing.
+ *
+ * The glyph breathes while the worker is out and settles to a check when it
+ * reports back — the same "is anything happening" question the search rows
+ * answer, asked of an agent instead of a query. Counts sit on the right in
+ * the metadata voice; the worker's own summary replaces the live action line
+ * when it is done, because that is the sentence a reader wants from it.
+ */
+function WorkerLane({ step, live }: { step: WorkerStep & { durationMs: number | null }; live: boolean }) {
+  const working = live && step.status === "working";
+  const index = step.workerId.replace(/^w\d+-/, "");
+  return (
+    <li className="flex min-w-0 items-start gap-2.5 py-1.5">
+      <span className="relative mt-0.5 flex size-5 shrink-0 items-center justify-center">
+        {working && (
+          <span aria-hidden className="absolute inset-0 rounded-full border border-primary/40 motion-safe:animate-pulse-ring" />
+        )}
+        <span
+          className={cn(
+            "flex size-5 items-center justify-center rounded-full font-mono text-micro tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+            working ? "bg-primary/15 text-primary-ink" : "bg-muted text-muted-foreground"
+          )}
+        >
+          {step.status === "done" ? <StatusIcons.success aria-hidden className="size-3" /> : index}
+        </span>
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-ui text-foreground/85">{step.objective}</span>
+        <span
+          key={step.lastAction ?? step.summary ?? "idle"}
+          className={cn(
+            "mt-0.5 block truncate text-caption motion-safe:animate-research-detail-in",
+            working ? "text-foreground/70" : "text-muted-foreground"
+          )}
+        >
+          {step.status === "done"
+            ? step.summary || TIMELINE_COPY.workerDone
+            : step.lastAction ?? TIMELINE_COPY.workerStarting}
+        </span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-0.5 text-caption tabular-nums text-muted-foreground/70">
+        <span>
+          {step.findings} {step.findings === 1 ? TIMELINE_COPY.oneFinding : TIMELINE_COPY.findings}
+        </span>
+        <span>
+          {step.toolCalls} {TIMELINE_COPY.calls}
+        </span>
+      </span>
+    </li>
+  );
+}
+
 export function RunTimeline({
   events,
   live,
@@ -581,10 +734,10 @@ export function RunTimeline({
   const steps = React.useMemo(() => toRunSteps(events, live), [events, live]);
   const roster = React.useMemo(() => readProviderRoster(events), [events]);
   const searches = steps.filter((step): step is SearchStep & { durationMs: number | null } => step.kind === "search");
-  const readCount = searches.reduce(
-    (total, step) => total + step.sites.filter((site) => site.state === "done").length,
-    0
-  );
+  const workers = steps.filter((step): step is WorkerStep & { durationMs: number | null } => step.kind === "worker");
+  const readCount =
+    searches.reduce((total, step) => total + step.sites.filter((site) => site.state === "done").length, 0) +
+    workers.reduce((total, step) => total + step.pages, 0);
 
   if (steps.length === 0) return null;
 
@@ -614,6 +767,8 @@ export function RunTimeline({
         <span className="min-w-0 flex-1 truncate text-ui tabular-nums text-muted-foreground">
           {searches.length} {searches.length === 1 ? TIMELINE_COPY.oneSearch : TIMELINE_COPY.searches} ·{" "}
           {readCount} {readCount === 1 ? TIMELINE_COPY.oneSourceRead : TIMELINE_COPY.sourcesRead}
+          {workers.length > 0 &&
+            ` · ${workers.length} ${workers.length === 1 ? TIMELINE_COPY.oneResearcher : TIMELINE_COPY.researchers}`}
         </span>
         <span className="sr-only">{open ? TIMELINE_COPY.hide : TIMELINE_COPY.show}</span>
         <ChevronDown
@@ -681,6 +836,8 @@ export function RunTimeline({
                     <StepDuration ms={step.durationMs} />
                   </span>
                 </li>
+              ) : step.kind === "worker" ? (
+                <WorkerLane key={step.key} step={step} live={live} />
               ) : (
                 <NoteRow key={step.key} step={step} />
               )

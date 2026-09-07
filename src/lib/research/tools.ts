@@ -7,6 +7,7 @@ import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
 import { SNAPSHOT_CHARS, type ResearchDeps, type ResearchHit, type ResearchSourceRow } from "@/lib/research/engine";
+import type { ResearchFindingRow } from "@/lib/research/agents/protocol";
 import {
   BRIEF_OUTPUT_TOKENS,
   BRIEF_PROMPT_CHARS,
@@ -35,8 +36,13 @@ import {
  * afterwards.
  */
 
-const BRIEF_TIMEOUT_MS = 20_000;
-const PLAN_TIMEOUT_MS = 25_000;
+const BRIEF_TIMEOUT_MS = 30_000;
+/**
+ * The planner writes six steps and fourteen queries after a brief; 25 seconds
+ * was short enough that a busy provider timed it out, and a timed-out planner
+ * is exactly the run that used to collapse to one literal search.
+ */
+const PLAN_TIMEOUT_MS = 60_000;
 const SEARCH_TIMEOUT_MS = 30_000;
 const FETCH_TIMEOUT_MS = 25_000;
 /**
@@ -49,7 +55,7 @@ const FETCH_TIMEOUT_MS = 25_000;
  * larger than any single engine's page — taking 18 of it is what makes a run
  * read like research rather than a search-results page.
  */
-const RESULTS_PER_QUERY = 18;
+const RESULTS_PER_QUERY = 24;
 /** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
 const PLANNED_QUERIES = 14;
 /**
@@ -372,13 +378,13 @@ export function researchSearchConfigured(): boolean {
  * from inside a run, and the only symptom either produced was a thinner report.
  * Passing it up means `query_issued` can carry it and the timeline can show it.
  */
-export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) => {
+export const searchTheWeb: ResearchDeps["search"] = async ({ query, count, signal }) => {
   if (!query.trim()) return { hits: [], costMicroUsd: 0 };
   const box = timeboxSignal(signal, SEARCH_TIMEOUT_MS);
   try {
     const { results, engines, providers } = await searchWithEngineReport({
       query: query.slice(0, 400),
-      count: RESULTS_PER_QUERY,
+      count: Math.max(5, Math.min(50, count ?? RESULTS_PER_QUERY)),
       signal: box.signal,
     });
 
@@ -524,10 +530,86 @@ export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> =
  * puts only the fetched text inside. The title is collapsed to one line for the
  * same reason: a newline in it would let one page forge a second entry.
  */
+export interface ResearchCorpusFinding {
+  claim: string;
+  quote: string;
+  /** Index into `sources`, so the finding can be cited as [n]. */
+  sourceIndex: number;
+  objective?: string;
+}
+
+/**
+ * Findings, rendered as the evidence ledger ahead of the raw pages.
+ *
+ * The workers' findings are claims a model has already tied to a verbatim
+ * quote on a specific page; putting them first hands the writer the argument
+ * and the citation together, so the report is built from what the team
+ * established rather than re-derived from two hundred pages of prose.
+ */
+function renderFindings(findings: ResearchCorpusFinding[]): string {
+  if (findings.length === 0) return "";
+  const byObjective = new Map<string, ResearchCorpusFinding[]>();
+  for (const finding of findings) {
+    const key = finding.objective ?? "";
+    const list = byObjective.get(key) ?? [];
+    list.push(finding);
+    byObjective.set(key, list);
+  }
+  const blocks: string[] = [];
+  for (const [objective, list] of byObjective) {
+    blocks.push(
+      [
+        objective ? `### ${objective}` : "### Findings",
+        ...list.map(
+          (finding) =>
+            `- ${finding.claim} [${finding.sourceIndex}]\n  > ${wrapUntrusted("finding quote", finding.quote.replace(/\s+/g, " "))}`
+        ),
+      ].join("\n")
+    );
+  }
+  return `\n# Evidence Ledger (${findings.length} sourced findings from the research team)
+Each finding is a claim tied to a verbatim quote from the numbered source it cites. Build the report from these first; the source material below is the full text behind them.
+
+${blocks.join("\n\n")}
+`;
+}
+
+/**
+ * Findings keyed to the numbered source list the writer will see.
+ *
+ * A finding whose page did not make the corpus (no snapshot, or past the
+ * source cap) is dropped rather than cited by a number that points elsewhere.
+ */
+export function corpusFindings(
+  plan: ResearchPlan,
+  sources: Array<Pick<ResearchSourceRow, "id">>,
+  findings: ReadonlyArray<Pick<ResearchFindingRow, "claim" | "quote" | "sourceId" | "objectiveId">>
+): ResearchCorpusFinding[] {
+  const index = new Map(sources.map((source, i) => [source.id, i + 1]));
+  const objectives = new Map(plan.objectives.map((objective) => [objective.id, objective.question]));
+  const out: ResearchCorpusFinding[] = [];
+  const seen = new Set<string>();
+  for (const finding of findings) {
+    const sourceIndex = finding.sourceId ? index.get(finding.sourceId) : undefined;
+    if (!sourceIndex) continue;
+    const key = `${sourceIndex}:${finding.claim.toLowerCase().slice(0, 120)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      claim: finding.claim,
+      quote: finding.quote,
+      sourceIndex,
+      ...(finding.objectiveId && objectives.get(finding.objectiveId) ? { objective: objectives.get(finding.objectiveId) } : {}),
+    });
+  }
+  return out;
+}
+
 export function buildResearchCorpus(
   goal: string,
   plan: ResearchPlan,
-  sources: Array<Pick<ResearchSourceRow, "url" | "title" | "snapshot">>
+  sources: Array<Pick<ResearchSourceRow, "url" | "title" | "snapshot">>,
+  findings: ResearchCorpusFinding[] = []
 ): string {
   const corpus = sources
     .map((source, i) => {
@@ -567,7 +649,7 @@ You are writing a comprehensive, publication-grade research REPORT, grounded str
 - Keep the report proportionate to the question. Do not pad it to appear exhaustive.
 ${constraints}
 ${UNTRUSTED_CONTENT_RULE}
-
+${renderFindings(findings)}
 # Numbered Source Material:
 ${corpus}`;
 }
@@ -585,6 +667,7 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   goal,
   plan,
   sources,
+  findings = [],
   signal,
   revision,
 }) => {
@@ -593,7 +676,7 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   if (!model || readable.length === 0) return { report: "", costMicroUsd: 0 };
 
   const system = [
-    buildResearchCorpus(goal, plan, readable),
+    buildResearchCorpus(goal, plan, readable, corpusFindings(plan, readable, findings)),
     ...(revision
       ? [
           `# Citation-driven revision (round ${revision.round})

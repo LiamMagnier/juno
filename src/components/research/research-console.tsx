@@ -39,6 +39,18 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
   const awaitingPlan = state === "awaiting_plan_confirmation";
   const latest = [...events].reverse().find(event => event.kind === "source_read" || event.kind === "query_issued");
   const detail = typeof latest?.payload.url === "string" ? hostOf(latest.payload.url) : typeof latest?.payload.query === "string" ? latest.payload.query : null;
+  const team = React.useMemo(() => {
+    const spawned = new Set<string>();
+    const finished = new Set<string>();
+    let findings = 0;
+    for (const event of events) {
+      const workerId = typeof event.payload.workerId === "string" ? event.payload.workerId : "";
+      if (event.kind === "worker_spawned" && workerId) spawned.add(workerId);
+      else if (event.kind === "worker_finished" && workerId) finished.add(workerId);
+      else if (event.kind === "worker_tool_call" && event.payload.tool === "note_finding" && event.payload.ok !== false) findings += 1;
+    }
+    return { total: spawned.size, working: [...spawned].filter((id) => !finished.has(id)).length, findings };
+  }, [events]);
   return <section aria-label="Deep research" className={cn("research-surface research-enter relative min-w-0", className)}>
     <header className="flex items-center justify-between gap-3">
       <div className="min-w-0">
@@ -55,8 +67,13 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
     </header>
     {awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
       <p className="mt-4 line-clamp-2 text-ui leading-relaxed text-foreground/85">{run.goal}</p>
-      <div className="mt-4 flex items-center gap-2 text-caption text-muted-foreground">
+      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span className="tabular-nums">{run.sources.filter(source => source.read).length} sources read</span>
+        {team.total > 0 && <>
+          <span aria-hidden>·</span>
+          <span className="tabular-nums">{team.working > 0 ? `${team.working} of ${team.total} researchers working` : `${team.total} researchers reported`}</span>
+          {team.findings > 0 && <><span aria-hidden>·</span><span className="tabular-nums">{team.findings} findings</span></>}
+        </>}
         {detail && <><span aria-hidden>·</span><span className="min-w-0 truncate">{detail}</span></>}
       </div>
       <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} className="mt-4 flex min-h-9 w-full items-center justify-between border-t border-border pt-3 text-ui text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

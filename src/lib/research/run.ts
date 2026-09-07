@@ -36,6 +36,8 @@ import {
   writeResearchReport,
 } from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
+import { runResearchWorker } from "@/lib/research/agents/worker";
+import { reviewResearchRound } from "@/lib/research/agents/lead";
 import { canonicalUrl } from "@/lib/search/url-safety";
 
 /**
@@ -408,6 +410,59 @@ export function createPrismaResearchStore(): ResearchStore {
       });
     },
 
+    async addFinding({ runId, userId, workerId, round, objectiveId, sourceId, url, claim, quote, locator, confidence }) {
+      const created = await prisma.researchFinding.create({
+        data: {
+          runId,
+          userId,
+          workerId: workerId.slice(0, 40),
+          round,
+          objectiveId,
+          sourceId,
+          claim: claim.slice(0, 600),
+          quote: quote.slice(0, 800),
+          locator,
+          confidence,
+        },
+        select: { id: true },
+      });
+      void url;
+      return { id: created.id };
+    },
+
+    async listFindings(runId, userId) {
+      const rows = await prisma.researchFinding.findMany({
+        where: { runId, userId },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          workerId: true,
+          round: true,
+          objectiveId: true,
+          sourceId: true,
+          claim: true,
+          quote: true,
+          locator: true,
+          confidence: true,
+          createdAt: true,
+          source: { select: { url: true } },
+        },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        workerId: row.workerId,
+        round: row.round,
+        objectiveId: row.objectiveId,
+        sourceId: row.sourceId,
+        url: row.source?.url ?? "",
+        claim: row.claim,
+        quote: row.quote,
+        locator: row.locator,
+        confidence: row.confidence,
+        createdAt: row.createdAt,
+      }));
+    },
+
     async addSpend({ runId, userId, microUsd, kind }) {
       const updated = await prisma.researchRun.updateMany({
         where: { id: runId, userId },
@@ -477,6 +532,8 @@ export function researchEngine(): ResearchEngine {
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     expandQueries: expandResearchQueries,
+    runWorker: runResearchWorker,
+    reviewRound: reviewResearchRound,
     synthesize: writeResearchReport,
     validateReport: async ({ userId, runId, goal, report, sources }) => {
       const audit = await recordCitationAudit({
@@ -536,6 +593,8 @@ export function gatheringOnlyEngine(): ResearchEngine {
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     expandQueries: expandResearchQueries,
+    runWorker: runResearchWorker,
+    reviewRound: reviewResearchRound,
     hash: hashSnapshot,
     now: () => new Date(),
   });

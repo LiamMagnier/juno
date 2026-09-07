@@ -11,6 +11,7 @@ import {
 } from "@/lib/generation-pending";
 import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
+import type { ResearchEffort } from "@/lib/research/domain";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import {
   formatPreflightClarificationVisibleMessage,
@@ -79,6 +80,8 @@ export interface RegenerateOptions {
 
 export type SendOptions = {
   deepResearch?: boolean;
+  /** Depth of a deep-research turn: quick | standard | deep | max. */
+  researchEffort?: ResearchEffort;
   artifactEdit?: ArtifactEditRequest;
   /** Per-send connector selection. When set, overrides the sticky `opts.connectors`
    *  for this generation (used when auto-enabling from prompt intent). */
@@ -762,6 +765,7 @@ export function useChat(opts: UseChatOptions) {
       attachments?: ClientAttachment[];
       preflightClarification?: PreflightClarificationContext;
       deepResearch?: boolean;
+      researchEffort?: ResearchEffort;
       artifactEdit?: ArtifactEditRequest;
       connectors?: string[];
     }): SendResult => {
@@ -843,6 +847,7 @@ export function useChat(opts: UseChatOptions) {
           // Per-send, never sticky — and never in private mode (research
           // persists sources/activity, which private chats don't do).
           deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
+          researchEffort: !opts.privateMode && input.deepResearch ? input.researchEffort : undefined,
           artifactEdit: !opts.privateMode ? input.artifactEdit : undefined,
           reasoningEffort: opts.reasoningEffort,
           connectors: input.connectors ?? opts.connectors,
@@ -936,7 +941,7 @@ export function useChat(opts: UseChatOptions) {
         deepResearch,
       });
       if (localSkip) {
-        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch });
+        return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort });
       }
 
       setStatus("checking");
@@ -974,6 +979,7 @@ export function useChat(opts: UseChatOptions) {
             // Parked with the pending card so answering the questions resumes
             // the RESEARCH turn the user asked for, not an ordinary one.
             deepResearch: options?.deepResearch,
+            researchEffort: options?.researchEffort,
           });
           setStatus("idle");
           return { accepted: false, clarificationPending: true };
@@ -984,7 +990,7 @@ export function useChat(opts: UseChatOptions) {
         clearTimeout(clarifyTimeout);
       }
 
-      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch });
+      return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
   );
@@ -1067,6 +1073,7 @@ export function useChat(opts: UseChatOptions) {
         // research questions would start a plain chat turn — the user would
         // have scoped a run that then never happened.
         deepResearch: pending.deepResearch,
+        researchEffort: pending.researchEffort,
       });
     },
     [pendingClarification, startGeneration, status]

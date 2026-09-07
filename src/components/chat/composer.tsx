@@ -19,6 +19,7 @@ import {
   SquareDashedMousePointer,
   SquarePen,
   TextQuote,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -54,6 +55,9 @@ import {
   type PlusMenuItem,
   type PlusMenuSection,
 } from "@/components/chat/composer-plus-menu";
+import { RESEARCH_EFFORT_COPY, researchEffortLabel } from "@/components/research/effort-copy";
+import { researchEffortFor } from "@/lib/research/auto-effort";
+import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import {
   Popover,
@@ -481,14 +485,27 @@ export function Composer({
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   const [research, setResearch] = React.useState(initialResearch);
+  // Depth is not a second decision: it follows the model and the thinking
+  // effort already chosen on this row (see src/lib/research/auto-effort.ts).
+  // The chip says what was derived, so a person who wants a deeper run knows
+  // to pick a stronger model or turn thinking up.
+  const researchEffort = React.useMemo<ResearchEffort>(
+    () =>
+      researchEffortFor({
+        cost: isAuto ? null : (resolved?.cost ?? null),
+        reasoningEffort: resolved ? clampReasoningEffort(resolved, reasoningEffort) : reasoningEffort,
+        proMode,
+      }),
+    [isAuto, resolved, reasoningEffort, proMode]
+  );
   const researchAvailable = !privateMode && modality === "chat";
   const planAllowsResearch = true;
   const sendOptions = React.useMemo<SendOptions | undefined>(
     () =>
       research && researchAvailable && planAllowsResearch
-        ? { deepResearch: true }
+        ? { deepResearch: true, researchEffort }
         : undefined,
-    [research, researchAvailable, planAllowsResearch],
+    [research, researchAvailable, planAllowsResearch, researchEffort],
   );
   const outgoingOptions = React.useMemo<SendOptions | undefined>(
     () =>
@@ -1875,7 +1892,10 @@ export function Composer({
           icon: ComposerIcons.research,
           checked: research && planAllowsResearch,
           disabled: !planAllowsResearch,
+          // The depth rides on the row, so what turning it on will do is
+          // legible before it is on; "Pro" replaces it where the plan says no.
           note: planAllowsResearch ? undefined : "Pro",
+          detail: planAllowsResearch ? researchEffortLabel(researchEffort) : undefined,
           onToggle: () => setResearch((v) => !v),
         }
       : null;
@@ -2524,9 +2544,36 @@ export function Composer({
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
-            {researchArmed && <button type="button" disabled={controlsLocked} onClick={() => setResearch(false)} aria-label="Turn off deep research" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-caption text-foreground transition-colors duration-fast hover:bg-accent motion-reduce:transition-none">
-              <ComposerIcons.research className="size-3.5" /> Research <span aria-hidden>×</span>
-            </button>}
+            {researchArmed && (
+              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={0}
+                      aria-label={`Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose.`}
+                      className="inline-flex h-full items-center gap-1.5 pl-2.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
+                      <ComposerIcons.research aria-hidden className="size-3.5" />
+                      <span>Research</span>
+                      <span aria-hidden className="text-primary-ink/60">·</span>
+                      <span>{researchEffortLabel(researchEffort)}</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-64 text-center">
+                    {RESEARCH_EFFORT_COPY.find((tier) => tier.value === researchEffort)?.summary}. Depth follows your model and thinking effort — pick a stronger model or raise thinking for a deeper run.
+                  </TooltipContent>
+                </Tooltip>
+                <button
+                  type="button"
+                  disabled={controlsLocked}
+                  onClick={() => setResearch(false)}
+                  aria-label="Turn off deep research"
+                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink motion-reduce:transition-none"
+                >
+                  <X aria-hidden className="size-3.5" />
+                </button>
+              </span>
+            )}
             </>
           }
           trailing={

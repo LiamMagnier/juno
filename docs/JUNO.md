@@ -635,7 +635,9 @@ the model (see §6.3).
   live in the transcript. Plan approval commits before a background worker starts
   searching. The report opens in chat and is available as scoped context on later
   turns. Native clients keep their selected-model streaming path. See
-  `docs/research-workspace.md` for the interaction and architecture references.
+  `docs/research-workspace.md` for the interaction and architecture references,
+  including the parallel research team (worker agents + lead review) and how the
+  run's depth is derived from the model and thinking effort.
 - **Private/incognito mode** is a separate branch: nothing persists (`conversationId:
   "private"`), no memory, no attachments (**400** `PRIVATE_ATTACHMENTS_UNSUPPORTED`),
   no connectors, no regenerate; but budget, quota, and moderation still apply and

@@ -54,3 +54,38 @@ owner-scoped context for subsequent chat questions. The report itself remains in
 the durable research record. Preferred URLs are priorities, not a domain allowlist.
 Connected private apps and uploaded files are not advertised as research sources.
 No new schema or credentials are required.
+
+## The research team (September 2026)
+
+A run is no longer a single sweep. After planning, `investigating` has two halves:
+
+1. **The sweep** seeds the corpus: the planner's queries (10–14, or the
+   templated decomposition in `fallbackResearchQueries` when the planner fails —
+   never the literal goal alone, which is how a run used to end with one page of
+   eighteen results), the user's pinned sources, ranked reads and one bounded link
+   hop. Each tier asks the merged search index for its own page of results
+   (`resultsPerQuery`: 12 / 24 / 32 / 40).
+2. **The agent rounds** (`doWorkerRounds` in `engine.ts`): the tier's workers go
+   out in parallel, one per sub-question plus extra axes (counter-evidence,
+   recent developments, primary records) when the tier affords more workers than
+   there are sub-questions. A worker (`agents/worker.ts`) drives a model against
+   `search`, `open_page`, `find_in_page`, `note_finding` and `done`, bounded by the
+   tier's tool calls, wall clock, pages and the run's money. Every finding is a
+   claim plus a verbatim quote that must appear on the page, stored in
+   `ResearchFinding`. Between rounds the lead (`agents/lead.ts`) scores coverage
+   per sub-question, names contradictions and either writes the next round's
+   briefs or declares the corpus ready; a deterministic review stands in when no
+   model is reachable. Rounds are recorded on the plan so a resumed run continues
+   rather than paying twice.
+
+Findings reach the writer as an evidence ledger ahead of the numbered sources
+(`buildResearchCorpus`), so the report is built from what the team established.
+The timeline draws one lane per researcher (`worker_spawned`, `worker_tool_call`,
+`worker_finished`) and the lead's verdict (`round_reviewed`); the chat activity
+feed narrates the same events.
+
+**Depth is derived, not chosen.** `researchEffortFor` (`src/lib/research/auto-effort.ts`)
+maps the model's cost tier and the thinking effort of the turn to a tier: a
+frontier model at max thinking is `max`, a mid model at high is `deep`, a small
+model with thinking off is `quick`. The composer's research chip shows the derived
+depth, and the chat route derives the same value server-side.

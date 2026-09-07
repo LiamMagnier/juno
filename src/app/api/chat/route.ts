@@ -60,6 +60,7 @@ import {
   modelRatesMicroUsdPerToken,
 } from "@/lib/spend";
 import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
+import { researchEffortFor } from "@/lib/research/auto-effort";
 import { recordCitationAudit } from "@/lib/research/claims";
 import { finalizeChatResearchRun } from "@/lib/research/run";
 import { isWebSearchConfigured } from "@/lib/web-search";
@@ -2214,6 +2215,16 @@ async function handleChat(req: Request) {
         const research = await runDeepResearch({
           userId: user.id,
           prompt: researchPrompt,
+          // Derived from the model and thinking effort of THIS turn, never
+          // from a separate control: see src/lib/research/auto-effort.ts.
+          // The client's own derivation is only a fallback for older apps.
+          effort: modelInfo
+            ? researchEffortFor({
+                cost: isAutoModelId(requestedId) ? null : modelInfo.cost,
+                reasoningEffort,
+                proMode: !!input.proMode,
+              })
+            : input.researchEffort,
           // The corpus is gathered by a durable ResearchRun attached to this
           // conversation, so the panel can reopen it — paused, resumed or
           // steered — long after this turn has finished streaming.

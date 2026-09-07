@@ -383,6 +383,8 @@ export interface ChatRequestBody {
   webSearch?: boolean;
   /** Deep research mode: plan → search → read → cited report (per-send flag). */
   deepResearch?: boolean;
+  /** How hard a deep-research turn works. Absent means the adapter's default. */
+  researchEffort?: "quick" | "standard" | "deep" | "max";
   reasoningEffort?: ReasoningEffort;
   generationId?: string;
   /** Durable creation surface for a newly saved conversation. */
