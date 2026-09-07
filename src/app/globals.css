@@ -2919,3 +2919,14 @@
      ever return, scope them with an attribute stamped on the portalled content
      itself — never with an ancestor selector. */
 }
+/* A quiet document surface shared by research planning, progress and reports. */
+@layer components {
+  .research-surface { @apply rounded-panel border border-border bg-card p-5 sm:p-7; }
+  .research-field { @apply block w-full rounded-field border border-border bg-card px-4 py-3 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60; }
+  .research-icon { @apply inline-flex size-9 shrink-0 items-center justify-center rounded-control text-muted-foreground hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-11; }
+  .research-tab-body { @apply min-w-0 pt-6; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .research-enter, .research-tab-body { animation: research-arrive 180ms ease-out both; }
+  @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+}

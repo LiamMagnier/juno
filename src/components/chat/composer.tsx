@@ -1971,6 +1971,7 @@ export function Composer({
                 },
               ]
             : []),
+          { kind: "action", id: "research-workspace", label: "Research workspace", icon: ComposerIcons.research, onSelect: () => router.push("/research") },
           ...(showConnectors
             ? [
                 {

@@ -67,7 +67,7 @@ export function ResearchRecap({
     <section
       aria-label={RECAP_COPY.kicker}
       className={cn(
-        "surface-raised-lg relative overflow-hidden rounded-panel border border-border/60 bg-card p-5 shadow-raised transition-all duration-base sm:p-6",
+        "research-surface relative overflow-hidden",
         className
       )}
     >
@@ -75,21 +75,21 @@ export function ResearchRecap({
       <header className="flex items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {clean ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-success-ink">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/15 px-2.5 py-1 text-xs font-semibold  text-success-ink">
               <CheckCircle2 className="size-3.5 text-success-ink" />
               {RECAP_COPY.complete}
             </span>
           ) : state === "failed" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-destructive">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-1 text-xs font-semibold  text-destructive">
               <AlertCircle className="size-3.5 text-destructive" />
               {RESEARCH_STATE_MESSAGE[state]}
             </span>
           ) : state === "cancelled" ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-xs font-semibold  text-muted-foreground">
               Cancelled
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/15 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-warning-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/15 px-2.5 py-1 text-xs font-semibold  text-warning-foreground">
               {RESEARCH_STATE_MESSAGE[state]}
             </span>
           )}
@@ -97,12 +97,12 @@ export function ResearchRecap({
 
         <div className="flex items-center gap-2">
           {elapsed && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs font-medium tabular-nums text-foreground">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-caption font-medium tabular-nums text-foreground">
               <Clock className="size-3 text-muted-foreground" />
               {elapsed}
             </span>
           )}
-          <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
+          <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary/80 px-2.5 py-1 text-caption tabular-nums text-muted-foreground">
             {formatMicroUsd(run.costMicroUsd)}
           </span>
           {onDismiss && (
@@ -119,19 +119,19 @@ export function ResearchRecap({
       </header>
 
       {/* Report Document Title */}
-      <div className="mt-3.5 border-l-2 border-success/50 pl-3.5">
-        <h3 className="text-balance font-sans text-lg font-bold leading-snug tracking-tight text-foreground sm:text-xl">
+      <div className="mt-3.5 ">
+        <h3 className="text-balance font-serif text-title font-normal leading-snug tracking-tight text-foreground sm:text-page-title">
           {title ?? run.goal}
         </h3>
       </div>
 
       {/* Provenance Badges */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 font-mono text-xs text-foreground/90 tabular-nums">
+        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 text-caption text-foreground/90 tabular-nums">
           {run.sources.length} {run.sources.length === 1 ? RECAP_COPY.oneSource : RECAP_COPY.sources} ({read} {RECAP_COPY.read})
         </span>
         {objectives.length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 font-mono text-xs text-foreground/90 tabular-nums">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-secondary/60 px-2.5 py-1 text-caption text-foreground/90 tabular-nums">
             {covered}/{objectives.length} {RECAP_COPY.covered}
           </span>
         )}
@@ -203,4 +203,3 @@ export function ResearchRecap({
     </section>
   );
 }
-
