@@ -25,7 +25,6 @@ import { HistoricalResearchRunPanel, ResearchRunPanel } from "@/components/chat/
 import { useConversationResearch } from "@/components/research/use-conversation-run";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
@@ -1929,10 +1928,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
-                {/* Voice field while a call is live */}
-                {voiceOpen && !privateMode && (
-                  <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
-                )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -2001,9 +1996,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="relative isolate w-full max-w-3xl"
                   >
-                    {voiceOpen && !privateMode && (
-                      <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
-                    )}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}

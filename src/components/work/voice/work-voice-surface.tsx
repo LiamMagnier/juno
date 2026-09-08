@@ -5,7 +5,6 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import type { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 
 /**
@@ -174,7 +173,6 @@ export function WorkVoiceSurface({
           has to be a SIBLING of the composer inside its `isolate` host for
           that to mean "behind the composer". Inside the section below it would
           land behind the section instead, trapped in a layer of its own. */}
-      <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
       <section
         aria-label={label}
         // `bg-popover`, the documented floating-layer rung. This panel sits over

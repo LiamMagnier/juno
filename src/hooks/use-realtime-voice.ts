@@ -141,6 +141,18 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
+  /** The caller is speaking right now, from the provider's own voice activity. */
+  const [userSpeaking, setUserSpeaking] = React.useState(false);
+  /**
+   * A turn has been committed and no output audio has started yet.
+   *
+   * This is the dead air between "you stopped talking" and "the answer began"
+   * — the worst moment in a voice call and the one the interface used to
+   * render as "Listening", indistinguishable from having said nothing at all.
+   */
+  const [awaitingResponse, setAwaitingResponse] = React.useState(false);
+  /** Which reconnect attempt is in flight, so the dock can say so. */
+  const [reconnectAttempt, setReconnectAttempt] = React.useState(0);
   const [transcript, setTranscript] = React.useState<RealtimeTranscriptLine[]>([]);
   const [usage, setUsage] = React.useState<RealtimeUsage | null>(null);
   const [muted, setMuted] = React.useState(false);
@@ -368,6 +380,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
    * replays it as history, so the conversation survives the reconnect. */
   const scheduleReconnect = React.useCallback(() => {
     const attempt = reconnectAttemptsRef.current + 1;
+    setReconnectAttempt(attempt);
     if (attempt > RECONNECT_MAX_ATTEMPTS) return false;
     reconnectAttemptsRef.current = attempt;
     sealTranscript();
@@ -554,22 +567,35 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setStatus("live");
           setError(null);
           reconnectAttemptsRef.current = 0; // a healthy session restores the retry budget
+          setReconnectAttempt(0);
           clientTranscriptActiveRef.current = msg.capabilities.needsClientTranscript && !mutedRef.current;
           if (clientTranscriptActiveRef.current) speechRef.current.start();
           else speechRef.current.stop();
           return;
         case "transcript":
           pushTranscript(msg.role, msg.text, msg.final, msg.turnId);
+          // A committed caller turn ends the speaking phase and opens the wait
+          // for an answer. Providers that transcribe client-side never send a
+          // speech-start, so this is also where their turn becomes visible.
+          if (msg.role === "user" && msg.final) {
+            setUserSpeaking(false);
+            setAwaitingResponse(true);
+          }
           return;
         case "turn":
           if (msg.speaker === "user") {
-            if (msg.phase === "start") beginUserTurn();
+            if (msg.phase === "start") {
+              beginUserTurn();
+              setUserSpeaking(true);
+              setAwaitingResponse(false);
+            }
             return;
           }
           providerTurnActiveRef.current = msg.phase === "start";
           if (msg.phase === "start") {
             speakingRef.current = true;
             setAssistantSpeaking(true);
+            setAwaitingResponse(false);
           } else if (playSourcesRef.current.size === 0) {
             speakingRef.current = false;
             setAssistantSpeaking(false);
@@ -581,6 +607,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           providerTurnActiveRef.current = false;
           speakingRef.current = false;
           setAssistantSpeaking(false);
+          setAwaitingResponse(false);
           return;
         case "usage":
           setUsage({
@@ -595,18 +622,25 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setClosedReason(msg.reason);
           sealTranscript();
           releaseResources();
-          if (msg.reason !== "client") {
-            statusRef.current = "ended";
-            setStatus("ended");
-          }
+          // EVERY close ends the call, including one the client asked for.
+          // Leaving the status at "live" after tearing down the microphone,
+          // the socket and the playback left the dock showing a live meter and
+          // an enabled Mute over a session that no longer existed, with
+          // nothing the user pressed doing anything.
+          statusRef.current = "ended";
+          setStatus("ended");
+          setAssistantSpeaking(false);
+          setUserSpeaking(false);
+          setAwaitingResponse(false);
           return;
         case "error":
+          // Promoted from any status, not only "connecting". A relay error
+          // arriving mid-call used to set a message that nothing rendered,
+          // because the dock's alert was gated on the status — so the user sat
+          // in a call that had already failed and was told nothing.
           setError(msg.message);
-          setStatus((cur) => {
-            const next = cur === "connecting" ? "error" : cur;
-            statusRef.current = next;
-            return next;
-          });
+          statusRef.current = "error";
+          setStatus("error");
           return;
         case "pong":
           return;
@@ -937,6 +971,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     muted,
     screenSharing,
     assistantSpeaking,
+    userSpeaking,
+    awaitingResponse,
+    reconnectAttempt,
     error,
     closedReason,
     levelRef,

@@ -658,6 +658,60 @@
 
 @layer components {
   /*
+   * The voice call meter: five bars reading one number.
+   *
+   * Same mechanism as the dictation meter below — the caller's rAF loop writes
+   * `--level` once per frame and CSS does the rest — but the fill direction
+   * carries whose turn it is, so the two are not the same rule.
+   *
+   *   speaking       centre-out. Juno is talking; the shape radiates.
+   *   user-speaking  left to right, like text arriving.
+   *   thinking       detached from the level entirely and breathing on its
+   *                  own, because there is no audio to show and animating
+   *                  silence as though there were is the lie the old
+   *                  hardcoded bars told.
+   *   listening      a low resting tick, so a quiet room reads as "on and
+   *                  quiet" rather than "off".
+   */
+  .voice-meter {
+    --level: 0;
+  }
+  .voice-meter > span {
+    transform: scaleY(calc(0.16 + 0.84 * var(--level) * var(--gain, 1)));
+    transition: transform var(--dur-fast) var(--ease-out-soft);
+  }
+  .voice-meter[data-phase="user-speaking"] > span:nth-child(1) { --gain: 1; }
+  .voice-meter[data-phase="user-speaking"] > span:nth-child(2) { --gain: 0.86; }
+  .voice-meter[data-phase="user-speaking"] > span:nth-child(3) { --gain: 0.72; }
+  .voice-meter[data-phase="user-speaking"] > span:nth-child(4) { --gain: 0.58; }
+  .voice-meter[data-phase="user-speaking"] > span:nth-child(5) { --gain: 0.44; }
+  .voice-meter[data-phase="thinking"] > span {
+    transform: none;
+    animation: voice-think 1.4s var(--ease-breathe) infinite;
+  }
+  .voice-meter[data-phase="thinking"] > span:nth-child(2) { animation-delay: 0.12s; }
+  .voice-meter[data-phase="thinking"] > span:nth-child(3) { animation-delay: 0.24s; }
+  .voice-meter[data-phase="thinking"] > span:nth-child(4) { animation-delay: 0.36s; }
+  .voice-meter[data-phase="thinking"] > span:nth-child(5) { animation-delay: 0.48s; }
+  @keyframes voice-think {
+    0%, 100% { transform: scaleY(0.26); }
+    50% { transform: scaleY(0.72); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* The level is state, not decoration — it is the proof the microphone is
+       hearing you — so the bars keep a fixed height and the colour carries it.
+       The thinking loop is decorative and stops outright (Tier C). */
+    .voice-meter > span {
+      transform: scaleY(0.5);
+      transition: none;
+    }
+    .voice-meter[data-phase="thinking"] > span {
+      animation: none;
+      transform: scaleY(0.5);
+    }
+  }
+
+  /*
    * The dictation level meter: five bars reading one number.
    *
    * The rAF loop in composer-dictation.tsx writes `--level` (0..1) to the
@@ -1332,50 +1386,21 @@
   }
 
   /*
-   * ——— Voice aura ———
+   * The voice aura is gone.
    *
-   * What a live voice call looks like: waves that run along the bottom of the chat
-   * column and up its two sides, dying out a little past halfway so they frame
-   * the reading area instead of enclosing it.
+   * It drew three travelling sine waves along the bottom edge and both arms of
+   * the reading column — eighteen 120-point filled-and-stroked paths per frame
+   * at up to 2x device pixel ratio — and then put a 9px blur over the whole
+   * canvas, which destroyed the 1.4px crest stroke that the code itself called
+   * the thing "that turns a glow into a wave". The most expensive part of the
+   * render was paid for and then erased, on the same main thread that decodes
+   * PCM and downsamples microphone frames.
    *
-   * The shape is drawn on a canvas (see voice-aura.tsx) because it is a sum of
-   * travelling sine waves, which no gradient can express. Everything CSS owns
-   * here is placement and softening.
+   * It was also a glow, on a reading surface, in a design language that has
+   * neither. What a live call looks like is the bar: a real level meter that
+   * reads the audio, a phase that names what is happening, and controls that
+   * are reachable. See `voice-meter.tsx` and `realtime-voice.tsx`.
    */
-  .voice-aura {
-    position: absolute;
-    /* The column, and no wider. Voice belongs to this conversation, so the
-       light stops where the conversation does — running it to the window edge
-       washed the sidebar, which is a different surface with its own state. */
-    left: 0;
-    right: 0;
-    /* Anchored just below the composer and reaching up behind it. */
-    bottom: -1.25rem;
-    height: min(30rem, 46vh);
-    /* UNDER the composer, not over it. The `isolate` on the host wrapper is
-       the stacking context that makes this mean "behind the composer" rather
-       than "behind the page". */
-    z-index: -1;
-    pointer-events: none;
-    /* One compositor-level blur over the whole field. Softening each wave
-       individually would need a filter per path and three times the work; this
-       is a single GPU pass and it is what turns stacked translucent shapes into
-       light. */
-    filter: blur(9px);
-    opacity: 0;
-    animation: voice-aura-in var(--dur-slow) var(--ease-out-soft) forwards;
-  }
-  .voice-aura__canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-  /* Arriving mid-sentence is worse than arriving late: the field fades up
-     rather than appearing at full strength the frame the socket opens. */
-  @keyframes voice-aura-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
   /* A live microphone has to stay visible, so reduced motion keeps the field
      and drops only the travel — the canvas freezes its clock and the waves
      become a still, breathing envelope. */

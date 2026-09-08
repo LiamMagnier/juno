@@ -6,7 +6,6 @@ import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
@@ -281,7 +280,6 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
 
   return (
     <>
-      <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
       {/* `rounded-field` + `px-3 py-2.5` + `bg-muted`, which is the recipe the
           four other cards stacked in this column use (the queued note, the
           changed-files list, the agent cards and the approval card). This panel

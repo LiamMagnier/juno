@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: f238d23070dbb895
+// tokens-digest: b79e75e4e5974868
 //
 
 import CoreGraphics
