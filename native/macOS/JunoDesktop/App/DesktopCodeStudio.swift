@@ -1112,6 +1112,8 @@ private struct DesktopCodeStatusLegend: View {
             }
             .junoCaption()
             .foregroundStyle(filter == target ? Color.junoForeground : Color.junoMutedForeground)
+            // Wide enough to hit, in a row that stays sidebar-height.
+            .frame(minWidth: 44, alignment: .leading)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
