@@ -4,6 +4,7 @@ import {
   readNativeAccessTokenClaims,
   signNativeAccessToken,
 } from "../src/lib/native-auth-core";
+import { readSessionCookieClaims } from "../src/lib/smoke-session";
 
 /**
  * Mints a fresh native access token for the release smoke, and prints it.
@@ -23,6 +24,9 @@ import {
  *      Its signature proves which user and device session were authorised;
  *      the session is re-checked against the database and a fresh token is
  *      signed for the same pair. Nothing has to change in the environment.
+ *   3. `JUNO_SMOKE_COOKIE` — a browser session cookie, expired or not. It is
+ *      decrypted with AUTH_SECRET to learn the account, and that account gets
+ *      a `release-smoke` device session and a fresh token, as in (1).
  *
  * Prints nothing and exits 0 when neither is configured or the stored token
  * is unusable, so the workflow can fall back to `JUNO_SMOKE_COOKIE`. Errors
@@ -42,14 +46,38 @@ function required(name: string): string {
 async function main() {
   const authSecret = required("AUTH_SECRET");
   const issuer = new URL(required("NEXT_PUBLIC_APP_URL")).origin;
-  const email = process.env.JUNO_SMOKE_EMAIL?.trim().toLowerCase();
+  let email = process.env.JUNO_SMOKE_EMAIL?.trim().toLowerCase();
   const stored = process.env.JUNO_SMOKE_TOKEN?.trim();
+  const cookie = process.env.JUNO_SMOKE_COOKIE?.trim();
   const prisma = new PrismaClient();
+  console.error(
+    `[smoke-token] configured: email=${email ? "yes" : "no"} token=${stored ? "yes" : "no"} cookie=${cookie ? "yes" : "no"}`
+  );
 
   try {
     let userId: string | null = null;
     let sessionVersion = 0;
     let deviceSessionId: string | null = null;
+
+    if (!email && !stored && cookie) {
+      try {
+        const claims = await readSessionCookieClaims({ cookieHeader: cookie, secret: authSecret });
+        if (!claims) {
+          console.error("[smoke-token] JUNO_SMOKE_COOKIE carries no Auth.js session cookie");
+          return;
+        }
+        if (claims.userId) {
+          const user = await prisma.user.findUnique({ where: { id: claims.userId }, select: { email: true } });
+          email = user?.email?.toLowerCase() ?? undefined;
+        }
+        email ??= claims.email?.toLowerCase() ?? undefined;
+        console.error(`[smoke-token] session cookie ${claims.expired ? "has expired" : "is still valid"}; account ${email ?? "unknown"}`);
+      } catch (error) {
+        console.error(`[smoke-token] JUNO_SMOKE_COOKIE could not be decrypted: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      if (!email) return;
+    }
 
     if (email) {
       const user = await prisma.user.findUnique({
@@ -57,7 +85,7 @@ async function main() {
         select: { id: true, sessionVersion: true, bannedAt: true },
       });
       if (!user || user.bannedAt) {
-        console.error(`[smoke-token] no active account for JUNO_SMOKE_EMAIL ${email}`);
+        console.error(`[smoke-token] no active account for ${email}`);
         return;
       }
       userId = user.id;
@@ -106,6 +134,7 @@ async function main() {
         return;
       }
     } else {
+      console.error("[smoke-token] nothing to mint from: set JUNO_SMOKE_EMAIL, JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE");
       return;
     }
 
