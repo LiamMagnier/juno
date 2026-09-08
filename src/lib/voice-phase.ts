@@ -122,3 +122,28 @@ export function announcementFor(phase: VoicePhase, previous: VoicePhase | null):
 
 /** The microphone level above which a caller counts as speaking, 0..1. */
 export const SPEECH_FLOOR = 0.08;
+
+/**
+ * The phase of a live call, from the controller the hook returns.
+ *
+ * One derivation, shared by the bar and the aura. They sit in different places
+ * in the tree — the aura has to be a sibling of the composer to sit behind it,
+ * while the bar sits above — and two readings of "is Juno talking" that could
+ * disagree is exactly how the light ends up the wrong colour while the label
+ * says something else.
+ */
+export function voicePhaseOf(voice: {
+  status: VoiceTransport;
+  muted: boolean;
+  userSpeaking: boolean;
+  awaitingResponse: boolean;
+  assistantSpeaking: boolean;
+}): VoicePhase {
+  return derivePhase({
+    transport: voice.status,
+    muted: voice.muted,
+    userSpeaking: voice.userSpeaking,
+    awaitingResponse: voice.awaitingResponse,
+    assistantSpeaking: voice.assistantSpeaking,
+  });
+}

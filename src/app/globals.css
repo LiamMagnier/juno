@@ -1178,22 +1178,56 @@
   }
 
   /*
-   * The voice aura is gone.
+   * ——— Voice aura ———
    *
-   * It drew three travelling sine waves along the bottom edge and both arms of
-   * the reading column — eighteen 120-point filled-and-stroked paths per frame
-   * at up to 2x device pixel ratio — and then put a 9px blur over the whole
-   * canvas, which destroyed the 1.4px crest stroke that the code itself called
-   * the thing "that turns a glow into a wave". The most expensive part of the
-   * render was paid for and then erased, on the same main thread that decodes
-   * PCM and downsamples microphone frames.
+   * The light along the bottom of the reading column while a call is live:
+   * waves running the bottom edge and a little way up both arms, dying out
+   * before they reach the top so they frame the conversation instead of
+   * enclosing it.
    *
-   * It was also a glow, on a reading surface, in a design language that has
-   * neither. What a live call looks like is the bar: a real level meter that
-   * reads the audio, a phase that names what is happening, and controls that
-   * are reachable. See `voice-meter.tsx` and `realtime-voice.tsx`.
+   * The shape is a canvas (voice-aura.tsx) because it is a sum of travelling
+   * sine waves, which no gradient expresses. Everything CSS owns is placement.
+   *
+   * NOTE THE ABSENT FILTER. An earlier version put `blur(9px)` over this whole
+   * canvas, which destroyed the 1.25px crest stroke that is the only part of
+   * the draw carrying the motion — the expensive work was paid for and then
+   * erased. Softness now lives in the paint: the fill runs a gradient that
+   * fades to nothing as it rises. Do not reintroduce a filter here.
    */
-  /* A live microphone has to stay visible, so reduced motion keeps the field
+  .voice-aura {
+    position: absolute;
+    /* The column, and no wider. Voice belongs to this conversation, so the
+       light stops where the conversation does — running it to the window edge
+       washed the sidebar, which is a different surface with its own state. */
+    left: 0;
+    right: 0;
+    /* Anchored just below the composer and reaching up behind it. */
+    bottom: -1.25rem;
+    height: min(26rem, 40vh);
+    /* UNDER the composer, not over it. The `isolate` on the host wrapper is
+       the stacking context that makes this mean "behind the composer" rather
+       than "behind the page". */
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0;
+    animation: voice-aura-in var(--dur-slow) var(--ease-out-soft) forwards;
+  }
+  .voice-aura__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  /* Arriving mid-sentence is worse than arriving late: the field fades up
+     rather than appearing at full strength the frame the socket opens. */
+  @keyframes voice-aura-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* The canvas stops advancing its clock on its own (see voice-aura.tsx), so
+       the waves hold still. The arrival keeps its fade — opacity is Tier A. */
+    .voice-aura { animation-duration: var(--dur-base); }
+  }  /* A live microphone has to stay visible, so reduced motion keeps the field
      and drops only the travel — the canvas freezes its clock and the waves
      become a still, breathing envelope. */
   @media (prefers-reduced-motion: reduce) {

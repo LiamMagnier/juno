@@ -34,6 +34,8 @@ import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
 import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
+import { VoiceAura } from "@/components/voice/voice-aura";
+import { voicePhaseOf } from "@/lib/voice-phase";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1928,6 +1930,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
+                {voiceOpen && !privateMode && (
+                  <VoiceAura phase={voicePhaseOf(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
+                )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -1996,6 +2001,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="relative isolate w-full max-w-3xl"
                   >
+                    {voiceOpen && !privateMode && (
+                      <VoiceAura phase={voicePhaseOf(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
+                    )}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}

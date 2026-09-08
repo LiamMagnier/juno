@@ -14,7 +14,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { VoiceMeter } from "@/components/voice/voice-meter";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
-import { PHASE_LABEL, announcementFor, derivePhase, type VoicePhase } from "@/lib/voice-phase";
+import { PHASE_LABEL, announcementFor, voicePhaseOf, type VoicePhase } from "@/lib/voice-phase";
 import { VOICE_PROVIDER_LABELS, VOICE_PROVIDERS } from "@/lib/voice-relay-protocol";
 import { cn } from "@/lib/utils";
 
@@ -52,13 +52,7 @@ type VoiceController = ReturnType<typeof useRealtimeVoice>;
  * is still recorded and still shown where spending belongs.
  */
 export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onClose: () => void }) {
-  const phase: VoicePhase = derivePhase({
-    transport: voice.status,
-    muted: voice.muted,
-    userSpeaking: voice.userSpeaking,
-    awaitingResponse: voice.awaitingResponse,
-    assistantSpeaking: voice.assistantSpeaking,
-  });
+  const phase: VoicePhase = voicePhaseOf(voice);
 
   const meterRef = React.useRef<HTMLSpanElement | null>(null);
   const levelRef = voice.levelRef;

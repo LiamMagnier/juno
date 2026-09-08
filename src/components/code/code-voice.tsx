@@ -10,6 +10,8 @@ import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
 import { PLANS } from "@/lib/plans";
+import { VoiceAura } from "@/components/voice/voice-aura";
+import { voicePhaseOf } from "@/lib/voice-phase";
 import {
   buildCodeVoiceBriefing,
   codeVoiceCatchUp,
@@ -294,6 +296,10 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
           the stack's left and right edges. `w-full` goes with it; a block
           <section> already fills its host, and keeping both would have pushed
           the panel 8px wider than the column. */}
+      {/* Outside the section: the field paints at `z-index: -1`, so it has to
+          be a sibling of the composer inside its `isolate` host for that to
+          mean "behind the composer" rather than "behind this panel". */}
+      <VoiceAura phase={voicePhaseOf(voice)} levelRef={voice.levelRef} />
       <section
         aria-label="Voice conversation about this code session"
         className="mx-1 mb-2 flex flex-col gap-3 rounded-field border border-border/70 bg-muted px-3 py-2.5 motion-safe:animate-rise-in"
