@@ -3,15 +3,18 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-/** Total resolve window — keep in sync with CSS title-resolve-* durations. */
-const RESOLVE_MS = 780;
+/** The cross-fade window: `--dur-base`, the rung a small element moving a
+ *  short distance sits on. Keep in sync with `title-fade-*` in globals.css. */
+const RESOLVE_MS = 220;
 
 /**
  * In-place title resolve for AI-authored renames (chats, projects).
  *
  * Manual renames pass `animate={false}` so a typed edit never feels delayed.
- * The choreography is deliberately monochrome: old label recedes, a soft sheen
- * passes through, the new label settles — no brand-color flash.
+ * A cross-fade, and nothing else. This replaced a 780ms sweep that panned a
+ * gradient across the row while animating blur and letter-spacing on both
+ * labels — a repaint and a reflow per frame, on a sidebar row, to say that a
+ * title had changed.
  */
 export function AnimatedTitle({
   title,
@@ -59,7 +62,6 @@ export function AnimatedTitle({
       )}
       aria-live="polite"
     >
-      {resolving ? <span className="animated-title__sheen" aria-hidden="true" /> : null}
       {previousTitle ? (
         <span
           className={cn(

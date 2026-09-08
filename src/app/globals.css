@@ -629,10 +629,37 @@
     }
     .skeleton::after,
     .shimmer-text,
+    .aicss-shine,
     [class*="animate-icon-breathe"],
     [class*="animate-gen-"],
     [class*="animate-ultra-"] { animation: none; }
+    /*
+     * Tailwind's stock infinite loops, which were in no tier at all.
+     *
+     * `animate-spin` alone had 70 unguarded call sites, plus 12 of
+     * `animate-pulse` and 4 of `animate-ping`, none written with
+     * `motion-safe:`. Under the preference every one of them ran at full
+     * speed — so a person who asks the operating system to stop non-essential
+     * motion got 86 things spinning and pulsing at them anyway, while the
+     * carefully tiered product animations beside them correctly stopped.
+     *
+     * A spinner still has to say "working", so it is slowed and its travel
+     * removed rather than frozen: the ring fades in place instead of turning.
+     * `ping` and `pulse` are pure decoration and stop outright.
+     */
+    .animate-spin {
+      animation: reduced-working 1.6s var(--ease-breathe) infinite;
+    }
+    .animate-ping,
+    .animate-pulse { animation: none; }
     html { scroll-behavior: auto; }
+  }
+
+  /* The reduced-motion stand-in for a spinner: it still says "working", it
+     just stops turning. */
+  @keyframes reduced-working {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
   }
 
   /* Focus visibility for keyboard users */
@@ -1033,330 +1060,95 @@
     .juno-mark-popping { animation: none; }
   }
 
-  /* Sidebar icons share Lucide's geometry. Hover articulates one clear action
-     per mark — short, linear-ish easing, no bounce/cascade/typing dots.
-     Positional child selectors follow Lucide node order; recheck on upgrade. */
+  /*
+   * The sidebar glyph.
+   *
+   * WHAT WAS HERE. Two hundred and sixteen lines of per-icon hover
+   * choreography for fifteen marks, plus three dedicated stroke-draw
+   * keyframes: a bookshelf whose spines compressed left in a 30/55/70ms
+   * cascade so the leaning volume could be drawn up and tipped off the shelf,
+   * a house whose door scaled open, a clock hand that swept 200 degrees over
+   * 520ms, a plug cord that charged, a slash that redrew itself. Every one of
+   * them fired on hovering a navigation row.
+   *
+   * None of it told the reader anything. A sidebar row already says where it
+   * goes — it has a word next to it — and a mark that performs on contact
+   * makes a list of destinations feel like a toy. Fifteen bespoke performances
+   * also meant fifteen different answers to "what does hovering do here",
+   * which is the opposite of a system.
+   *
+   * WHAT IS LEFT. The row's own tonal hover, and the one morph that carries
+   * meaning: a folder opens. That is a state change — closed becomes open —
+   * rather than a flourish, and it is the only place a glyph says something
+   * the label does not.
+   */
   .sidebar-motion-icon {
     position: relative;
     display: inline-flex;
-    width: 1.125rem;
-    height: 1.125rem;
-    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    isolation: isolate;
-    transform-origin: center;
-    transition: color var(--dur-fast) var(--ease-out-soft);
   }
   .sidebar-motion-icon__glyph {
-    display: block;
-    overflow: visible;
-    transform-origin: center;
-    transition: opacity var(--dur-base) var(--ease-out-soft), transform var(--dur-base) var(--ease-out-soft);
-  }
-  .sidebar-motion-icon__glyph > * {
-    transform-box: view-box;
-    transition:
-      opacity var(--dur-base) var(--ease-out-soft),
-      transform var(--dur-base) var(--ease-out-soft),
-      stroke-dashoffset var(--dur-base) var(--ease-out-soft);
+    transition: opacity var(--dur-fast) var(--ease-out-soft);
   }
   .sidebar-motion-icon__glyph--alternate { opacity: 0; }
 
-  /* Overflow (⋯): always static — a menu affordance, not a character.
-     Glyph is a true square block so the three dots sit optically centered in
-     the hit target (SVG inline/baseline alignment was shifting them). */
-  .sidebar-motion-icon--more {
-    display: block;
-    line-height: 0;
-  }
-  .sidebar-motion-icon--more,
-  .sidebar-motion-icon--more .sidebar-motion-icon__glyph,
-  .sidebar-motion-icon--more .sidebar-motion-icon__glyph > * {
-    transition: none !important;
-    animation: none !important;
-    transform: none !important;
-  }
-  .sidebar-motion-icon--more .sidebar-motion-icon__glyph {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
   @media (hover: hover) {
-    /* Quiet lift — not for overflow menus, and not for folder morphs (they
-       own their own base-hinged transform language). */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon:not(.sidebar-motion-icon--more):not(.sidebar-motion-icon--projects):not(.sidebar-motion-icon--folder) {
-      transform: translateY(-0.5px);
-      transition: color var(--dur-fast) var(--ease-out-soft), transform var(--dur-base) var(--ease-out-soft);
-    }
-
-    /* New chat: the plus becomes a creation mark. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--new .sidebar-motion-icon__glyph {
-      transform: rotate(90deg);
-    }
-
-    /* Home: door opens inward; roof holds. */
-    .sidebar-motion-icon--home .sidebar-motion-icon__glyph > :first-child { transform-origin: 12px 21px; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--home .sidebar-motion-icon__glyph > :first-child { transform: scaleY(.72); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--home .sidebar-motion-icon__glyph > :nth-child(2) { transform: translateY(-.5px); }
-
-    /* Code: brackets part; slash redraws once. */
-    .sidebar-motion-icon--code .sidebar-motion-icon__glyph > :nth-child(3) { stroke-dasharray: 17; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--code .sidebar-motion-icon__glyph > :first-child { transform: translateX(1px); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--code .sidebar-motion-icon__glyph > :nth-child(2) { transform: translateX(-1px); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--code .sidebar-motion-icon__glyph > :nth-child(3) {
-      animation: sidebar-code-draw 420ms var(--ease-out-soft) both;
-    }
-
-    /*
-     * Library — Lucide `Library` (bookshelf spines, left → right):
-     *   1 slanted volume (rightmost)
-     *   2 center upright
-     *   3 mid upright
-     *   4 tall left upright
-     *
-     * Hover narrative: the row compresses left to free a gap, then the leaning
-     * volume is drawn up and tipped off the shelf — one continuous “pick a book”
-     * gesture with spring easing and staggered weight.
-     */
-    .sidebar-motion-icon--library .sidebar-motion-icon__glyph > * {
-      transition: transform 400ms var(--ease-out-strong);
-    }
-    .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(1) {
-      transform-origin: 17px 20px; /* foot of the leaning spine */
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(4) {
-      transform: translateX(-0.85px);
-      transition-delay: 0ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(3) {
-      transform: translateX(-0.45px);
-      transition-delay: 30ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(2) {
-      transform: translate(-0.15px, -0.4px);
-      transition-delay: 55ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(1) {
-      transform: translate(1.15px, -1.65px) rotate(7deg) scale(1.04);
-      transition-delay: 70ms;
-    }
-
-    /* Artifacts: stack fans one pixel per layer. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--artifacts .sidebar-motion-icon__glyph > :first-child { transform: translateY(-1px); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--artifacts .sidebar-motion-icon__glyph > :nth-child(3) { transform: translateY(.75px); }
-
-    /* Connections: plug seats; cord charges once. */
-    .sidebar-motion-icon--connections .sidebar-motion-icon__glyph > :first-child { stroke-dasharray: 6; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--connections .sidebar-motion-icon__glyph > :first-child {
-      animation: sidebar-cord-charge 400ms var(--ease-out-soft) both;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--connections .sidebar-motion-icon__glyph > :nth-child(2),
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--connections .sidebar-motion-icon__glyph > :nth-child(3),
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--connections .sidebar-motion-icon__glyph > :nth-child(4) {
-      transform: translateY(-.75px);
-    }
-
-    /*
-     * Projects (and workspace folders) — closed Folder → FolderOpen.
-     * Hinge at the base so the open state unfolds upward; closed recedes with
-     * a tighter scale while open settles in on a spring. Deliberately no
-     * kanban bars — just the container, opening.
-     */
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph,
-    .sidebar-motion-icon--folder .sidebar-motion-icon__glyph {
-      transform-origin: 50% 92%;
-      transition:
-        opacity 200ms var(--ease-out-soft),
-        transform 440ms var(--ease-out-strong);
-    }
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
-    .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
-      opacity: 0;
-      transform: scale(0.9) translateY(1.25px) rotate(-2.5deg);
-      pointer-events: none;
-    }
+    /* Closed becomes open. The two glyphs are stacked and cross-fade, so the
+       shape reads as one folder changing rather than two icons swapping. */
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate),
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate) {
       opacity: 0;
-      transform: scale(0.93) translateY(0.6px);
-      transition:
-        opacity 160ms var(--ease-out-soft),
-        transform 360ms var(--ease-out-strong);
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
       opacity: 1;
-      transform: scale(1) translateY(0) rotate(0deg);
-      transition:
-        opacity 220ms var(--ease-out-soft) 45ms,
-        transform 500ms var(--ease-out-strong) 25ms;
-    }
-
-    /* Tasks: clock hand advances; face stays still. */
-    .sidebar-motion-icon--tasks .sidebar-motion-icon__glyph > :first-child { transform-origin: 16px 16px; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--tasks .sidebar-motion-icon__glyph > :first-child {
-      transform: rotate(200deg);
-      transition-duration: 520ms;
-    }
-
-    /* Pull requests: route draws between endpoints. */
-    .sidebar-motion-icon--pulls .sidebar-motion-icon__glyph > :nth-child(3) { stroke-dasharray: 22; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--pulls .sidebar-motion-icon__glyph > :nth-child(3) {
-      animation: sidebar-pull-route 460ms var(--ease-out-soft) both;
-    }
-
-    /* Search: whole mark leans into the query. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--search .sidebar-motion-icon__glyph {
-      transform: translate(-.35px, -.35px) rotate(-5deg);
-    }
-
-    /* Panel controls: divider previews the layout change. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--panel-open .sidebar-motion-icon__glyph > :nth-child(2) { transform: translateX(1.25px); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--panel-close .sidebar-motion-icon__glyph > :nth-child(2) { transform: translateX(-.75px); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--panel-close .sidebar-motion-icon__glyph > :nth-child(3) { transform: translateX(-1.25px); }
-
-    /* Close: strokes tuck in. */
-    .sidebar-motion-icon--close .sidebar-motion-icon__glyph > * { transform-origin: 12px 12px; }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--close .sidebar-motion-icon__glyph > :first-child { transform: rotate(8deg) scale(.92); }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--close .sidebar-motion-icon__glyph > :nth-child(2) { transform: rotate(-8deg) scale(.92); }
-
-    /* Conversation (MessageCircle): single path — a calm, 1px lift. No typing dots. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--conversation .sidebar-motion-icon__glyph {
-      transform: translateY(-0.75px);
     }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-motion-icon__glyph { transition: none; }
+  }
 
-  @keyframes sidebar-code-draw {
-    0% { stroke-dashoffset: 0; opacity: 1; }
-    44% { stroke-dashoffset: 17; opacity: .28; }
-    45% { stroke-dashoffset: -17; }
-    100% { stroke-dashoffset: 0; opacity: 1; }
+  /*
+   * A title that the model just rewrote.
+   *
+   * WHAT WAS HERE. A 780ms sequence across three keyframes and 105 lines: a
+   * 220%-wide gradient sheen panned diagonally across the row while the old
+   * label blurred out and the new one un-blurred and un-tracked itself from a
+   * clip-path inset, animating letter-spacing and filter together. It fired
+   * every time a conversation was named, on a row four pixels tall in a list
+   * of thirty.
+   *
+   * Animating blur and letter-spacing forces a repaint and a reflow of the
+   * text on every frame of the sweep, and a gradient panning across a label in
+   * the sidebar is the single loudest thing a person sees while reading their
+   * own chat history. The information content was: this title changed.
+   *
+   * A cross-fade says that. The old label leaves on the accelerate curve, the
+   * new one arrives on the decelerate, and the row never reflows.
+   */
+  .animated-title--resolving .animated-title__previous {
+    animation: title-fade-out var(--dur-exit) var(--ease-in) both;
   }
-  @keyframes sidebar-cord-charge {
-    from { stroke-dashoffset: 6; opacity: .42; }
-    to { stroke-dashoffset: 0; opacity: 1; }
+  .animated-title--resolving .animated-title__current {
+    animation: title-fade-in var(--dur-base) var(--ease-out-soft) both;
   }
-  @keyframes sidebar-pull-route {
-    from { stroke-dashoffset: 22; opacity: .32; }
-    to { stroke-dashoffset: 0; opacity: 1; }
+  @keyframes title-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
   }
+  @keyframes title-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
 
   @media (prefers-reduced-motion: reduce) {
-    .sidebar-motion-icon,
-    .sidebar-motion-icon *,
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon,
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon * {
-      animation: none !important;
-      transform: none !important;
-      transition: none !important;
-    }
-    .sidebar-motion-icon__glyph--alternate { opacity: 0 !important; }
-  }
-
-  /* AI-authored names resolve in place — monochrome, quiet, expensive-feeling.
-     No brand/coral flash. Old label recedes; a neutral sheen passes; the new
-     label settles. Manual renames opt out in AnimatedTitle. Timing pairs with
-     RESOLVE_MS in animated-title.tsx (~780ms). */
-  .animated-title {
-    /* Optical room for the sheen without shifting row layout. */
-    padding-inline: 1px;
-  }
-  .animated-title--resolving {
-    isolation: isolate;
-  }
-  .animated-title__sheen {
-    position: absolute;
-    inset: -1px -8px;
-    z-index: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(
-      105deg,
-      transparent 0%,
-      transparent 34%,
-      hsl(var(--sheen) / .55) 48%,
-      hsl(var(--foreground) / .055) 50%,
-      hsl(var(--sheen) / .45) 52%,
-      transparent 66%,
-      transparent 100%
-    );
-    background-size: 220% 100%;
-    animation: title-resolve-sheen 780ms var(--ease-out-soft) both;
-  }
-  .animated-title__previous,
-  .animated-title__label {
-    position: relative;
-    z-index: 1;
-  }
-  .animated-title__previous {
-    animation: title-resolve-out 300ms var(--ease-out-soft) both;
-  }
-  .animated-title__current {
-    animation: title-resolve-in 680ms var(--ease-out-expo) 50ms both;
-  }
-
-  @keyframes title-resolve-out {
-    0% {
-      opacity: 1;
-      transform: translateY(0);
-      filter: blur(0);
-      letter-spacing: 0;
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(-1.5px);
-      filter: blur(0.6px);
-      letter-spacing: 0.01em;
-    }
-  }
-  @keyframes title-resolve-in {
-    0% {
-      opacity: 0;
-      transform: translateY(2.5px);
-      filter: blur(0.8px);
-      clip-path: inset(0 18% 0 0);
-      letter-spacing: 0.02em;
-    }
-    42% {
-      opacity: 1;
-      filter: blur(0);
-      letter-spacing: 0.006em;
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-      filter: blur(0);
-      clip-path: inset(0 0 0 0);
-      letter-spacing: 0;
-    }
-  }
-  @keyframes title-resolve-sheen {
-    0% {
-      opacity: 0;
-      background-position: 100% 0;
-    }
-    18% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      background-position: -40% 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .animated-title__sheen,
-    .animated-title__previous,
-    .animated-title__current {
-      animation: none !important;
-      filter: none !important;
-      clip-path: none !important;
-      letter-spacing: normal !important;
-    }
+    /* The new label is simply there. A cross-fade is opacity-only and Tier A
+       would ordinarily keep it, but the old label is absolutely positioned
+       over the new one, so leaving both visible would overprint. */
     .animated-title__previous { display: none; }
-    .animated-title__sheen { display: none; }
+    .animated-title__current { animation: none; }
   }
 
   /* Composer: one quiet surface (SOFT_UI.md §3). A single rounded container —
@@ -1608,13 +1400,8 @@
        out-elevated every dropdown in the product. The leading inset is the rim
        light: on black the drop shadow is invisible and this is the only cue left. */
     box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-float);
-    animation: generation-play-breathe 2.6s var(--ease-breathe) infinite;
   }
 
-  @keyframes generation-play-breathe {
-    0%, 100% { opacity: .68; transform: scale(.94); }
-    50% { opacity: 1; transform: scale(1.02); }
-  }
   @media (max-width: 380px) {
     .generation-media__play-icon { width: 2.4rem; height: 2.4rem; padding: .58rem .52rem .58rem .72rem; }
   }
@@ -1842,9 +1629,13 @@
       radial-gradient(ellipse at center, #000 0%, transparent 62%);
     -webkit-mask-repeat: no-repeat, no-repeat;
     mask-repeat: no-repeat, no-repeat;
-    animation:
-      aicss-ig-morph 4.2s cubic-bezier(.35, 1.55, .65, 1) infinite,
-      aicss-ig-breathe 1.9s cubic-bezier(.66, 0, .34, 1) infinite;
+    /* One loop on a token curve, not two on hand-written beziers.
+       `cubic-bezier(.35, 1.55, .65, 1)` overshoots by 55% — more than double
+       what `--ease-out-back` allows and the only overshoot in the product —
+       and it ran simultaneously with a second raw curve, inside the transcript,
+       on a surface someone is reading. --ease-breathe is the symmetric loop
+       curve that exists so a cycle has no seam to pulse at. */
+    animation: aicss-ig-morph 4.2s var(--ease-breathe) infinite;
   }
   @keyframes aicss-ig-morph {
     0%   { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
@@ -1852,10 +1643,6 @@
     50%  { mask-size: 60% 44%, 38% 46%; -webkit-mask-size: 60% 44%, 38% 46%; mask-position: 82% 84%, 62% 68%; -webkit-mask-position: 82% 84%, 62% 68%; }
     75%  { mask-size: 48% 54%, 46% 40%; -webkit-mask-size: 48% 54%, 46% 40%; mask-position: 14% 82%, 34% 66%; -webkit-mask-position: 14% 82%, 34% 66%; }
     100% { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
-  }
-  @keyframes aicss-ig-breathe {
-    0%, 100% { opacity: .55; }
-    50% { opacity: 1; }
   }
   /* The resolution badge: a fact about the artefact, in the metadata voice. */
   .aicss-ig-res {
@@ -2636,7 +2423,21 @@
        This band travels off one edge and teleports back to the other, so there
        is no turn to soften — an eased sweep decelerates into the seam and then
        jumps, which reads as a stutter once a second on every loading screen. */
-    animation: shimmer 1.6s linear infinite;
+    animation: skeleton-sweep 1.6s linear infinite;
+  }
+  /*
+   * Declared HERE, not in tailwind.config.ts.
+   *
+   * The rule above named `shimmer`, which the config does declare — but
+   * Tailwind emits a keyframe only when its `animate-*` utility appears in the
+   * content glob, and `animate-shimmer` has no call sites anywhere. The
+   * keyframe was therefore never in the stylesheet and every skeleton in the
+   * product sat perfectly still while claiming to shimmer. A plain CSS rule
+   * needs its keyframe in plain CSS.
+   */
+  @keyframes skeleton-sweep {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
   }
   .text-balance { text-wrap: balance; }
   /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content

@@ -110,20 +110,6 @@ export function cn(...inputs: ClassValue[]) {
   return merge(clsx(inputs));
 }
 
-/**
- * Per-item entrance delay for a staggered list, with a hard index cap.
- *
- * Nine different formulas had grown across twelve files, several of them capped
- * at 12 — a 480–660ms tail before the last item lands, which stops reading as
- * choreography and starts reading as slow loading. Capping the index at 5 holds
- * the whole stagger under ~200ms; 40ms is kept because it sits inside the
- * 40–60ms range Juno already used, so the felt rhythm is unchanged.
- *
- * Never stagger something the user is about to aim at — a model-picker row that
- * has not faded in yet is a row that cannot be clicked. The cap guarantees
- * everything past index 5 is live on the same frame.
- */
-export const stagger = (i: number, step = 40) => ({ animationDelay: `${Math.min(i, 5) * step}ms` });
 
 export function formatBytes(bytes: number, decimals = 1): string {
   if (bytes === 0) return "0 B";

@@ -66,10 +66,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "account.apple.com"
   },
   {
-    "id": "007c756fee8f4eff",
-    "source": "Listening… speak naturally."
-  },
-  {
     "id": "007f4d43b5d93aa7",
     "source": "Copy the last response"
   },
@@ -142,6 +138,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "approximate"
   },
   {
+    "id": "00ff74289a121c75",
+    "source": "Call ended"
+  },
+  {
     "id": "0102dbc92add1a84",
     "source": "A backdrop effect samples what is behind this layer, so it is drawn beneath it wherever it sits in the list. Give the layer a low-alpha fill, or none, so there is something to see through."
   },
@@ -212,10 +212,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "02069f2c274641c5",
     "source": "Drag to resize. Arrow keys adjust, Home resets."
-  },
-  {
-    "id": "022c14191cf3acea",
-    "source": "Voice conversation controls"
   },
   {
     "id": "0234e267787b67ef",
@@ -746,10 +742,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "(compte, conversations, génération de réponses par les modèles d'IA, support) — base légale : exécution du contrat (CGU)."
   },
   {
-    "id": "095b648da4d586c0",
-    "source": "Speak to interrupt"
-  },
-  {
     "id": "0969eab862733d78",
     "source": "Session not found"
   },
@@ -1180,10 +1172,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1011b3a811f08490",
     "source": "Legal notice"
-  },
-  {
-    "id": "103afde2707b26f6",
-    "source": "Dictation isn't available here — try Chrome, or enable server transcription."
   },
   {
     "id": "103f4798bcb0256f",
@@ -1644,10 +1632,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1707f1c019543342",
     "source": "Refraction"
-  },
-  {
-    "id": "1709305c9fa966d1",
-    "source": "Level"
   },
   {
     "id": "171ea77b7923cd50",
@@ -2534,6 +2518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Legacy fast model."
   },
   {
+    "id": "2398e52c8c5f5146",
+    "source": "Stop Juno speaking"
+  },
+  {
     "id": "23a63c9d6c3d4479",
     "source": "No apps match “"
   },
@@ -2802,10 +2790,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "font-mono text-label text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
   },
   {
-    "id": "27b80374e1151af6",
-    "source": "Reconnecting…"
-  },
-  {
     "id": "27bb784df5d8b07a",
     "source": "The one saturated colour in the interface."
   },
@@ -3024,6 +3008,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2a3d681def30d1bf",
     "source": "Bring forward"
+  },
+  {
+    "id": "2a48b62e9b8c75c3",
+    "source": "Stop dictation and edit the text"
   },
   {
     "id": "2a78025de6aae5e7",
@@ -3390,10 +3378,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "et édité par"
   },
   {
-    "id": "2fe13d93a1f4b267",
-    "source": "End call"
-  },
-  {
     "id": "2fe70464aadf5873",
     "source": "Transition"
   },
@@ -3644,10 +3628,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "337f911f9b4aad88",
     "source": "Close review"
-  },
-  {
-    "id": "3387d3e85fedb04f",
-    "source": "Session Ended"
   },
   {
     "id": "339e5fcda064be02",
@@ -3910,10 +3890,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "supported"
   },
   {
-    "id": "37c08ac1e02f263c",
-    "source": "Session ended."
-  },
-  {
     "id": "37ca715f53b6bb83",
     "source": "Current plan"
   },
@@ -4162,6 +4138,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You are signed out, so Juno could not record your answer. Sign in and answer again."
   },
   {
+    "id": "3ad902a9077e159b",
+    "source": "Juno needs the microphone to dictate. Allow it in your browser, then try again."
+  },
+  {
     "id": "3ae0015e7835444e",
     "source": "Previous Flash generation (preview), superseded by Gemini 3.6 Flash."
   },
@@ -4316,10 +4296,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3d43f9c13eac63aa",
     "source": "Purpose of browsing this page."
-  },
-  {
-    "id": "3d6df245178e6076",
-    "source": "connecting"
   },
   {
     "id": "3d735a025b34e0eb",
@@ -5218,10 +5194,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing specific yet"
   },
   {
-    "id": "4aff15de2f313404",
-    "source": "Ask anything"
-  },
-  {
     "id": "4b1b8aa3608a26da",
     "source": "Owner"
   },
@@ -5312,10 +5284,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4bd9354bb6522334",
     "source": "warning"
-  },
-  {
-    "id": "4bed72580f71c1a8",
-    "source": "Waves along the bottom and up both sides of the chat column, behind the composer. Your turn is the accent; Juno&rsquo;s turn is a companion hue derived from it, so both follow the accent picker."
   },
   {
     "id": "4c0c9e7d1dbda7e7",
@@ -5636,10 +5604,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5030ea40c1bebd56",
     "source": "Base branch — optional"
-  },
-  {
-    "id": "503254dc197d99bf",
-    "source": "Live Voice & Video"
   },
   {
     "id": "5034a86845e5e659",
@@ -6086,10 +6050,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno home"
   },
   {
-    "id": "580c9ce214ffc356",
-    "source": "Juno is speaking… (speak anytime to interrupt)"
-  },
-  {
     "id": "580f9427c0745711",
     "source": "counter-evidence"
   },
@@ -6216,6 +6176,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5a23444828db654a",
     "source": "Manage"
+  },
+  {
+    "id": "5a271ba7ed246e2b",
+    "source": "Share screen"
   },
   {
     "id": "5a2980bc29ecca12",
@@ -6506,10 +6470,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No provider"
   },
   {
-    "id": "5ddbcebc06a445eb",
-    "source": "reconnecting"
-  },
-  {
     "id": "5de0a523f2d8debf",
     "source": "Connect GitHub in Connections before starting a cloud run."
   },
@@ -6574,6 +6534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "instance"
   },
   {
+    "id": "5e8dfa60d7f69ee7",
+    "source": "This browser cannot transcribe speech. Type instead, or use a Chromium browser."
+  },
+  {
     "id": "5e9f98120dbe5682",
     "source": "Severity"
   },
@@ -6584,10 +6548,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ea44c3961f16643",
     "source": "lines"
-  },
-  {
-    "id": "5ebb769533222780",
-    "source": "Stop and edit"
   },
   {
     "id": "5ed3c87ec6c0883a",
@@ -6640,6 +6600,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5f9bbdd124f822a2",
     "source": "Needs"
+  },
+  {
+    "id": "5fa76d725e56d854",
+    "source": "Try the call again"
   },
   {
     "id": "5fa7aac5375c5815",
@@ -8010,10 +7974,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your open pull requests"
   },
   {
-    "id": "711325fe014af588",
-    "source": "Refining transcription…"
-  },
-  {
     "id": "711cbf1f88f3190e",
     "source": "Close the timeline"
   },
@@ -8106,10 +8066,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Back to sign in"
   },
   {
-    "id": "72021eb70e91b4d5",
-    "source": "Connecting…"
-  },
-  {
     "id": "72229f5be16e0b94",
     "source": "A reason of 3–500 characters is required."
   },
@@ -8196,10 +8152,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "73562ef0b3bc9a95",
     "source": ", dont le siège est situé"
-  },
-  {
-    "id": "735635e4ec24897e",
-    "source": "Voice Unavailable"
   },
   {
     "id": "7364b67e2daa4208",
@@ -9418,10 +9370,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not load archived chats."
   },
   {
-    "id": "85cd61f8c3c8a01e",
-    "source": "Held"
-  },
-  {
     "id": "85e9d589ced86b65",
     "source": "Lower-cost Veo 3.1 tier for quick video drafts."
   },
@@ -9726,10 +9674,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "well spotted."
   },
   {
-    "id": "8ad6c4a2331aa928",
-    "source": "Send dictation"
-  },
-  {
     "id": "8af5a8a6acaf586b",
     "source": "That instruction is no longer in a state this Mac can complete."
   },
@@ -9760,6 +9704,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8b9431b08229c9c6",
     "source": "Fast, very cheap default — near-Pro reasoning at a third of the cost."
+  },
+  {
+    "id": "8b968cce31a08433",
+    "source": "Voice call"
   },
   {
     "id": "8b9c643731c94119",
@@ -10202,6 +10150,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "application/pdf"
   },
   {
+    "id": "91f922d22518e353",
+    "source": "user-speaking"
+  },
+  {
     "id": "91fe32b30bf6f588",
     "source": "Couldn't import that file"
   },
@@ -10314,6 +10266,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Dev gallery"
   },
   {
+    "id": "9368e9efe7165b87",
+    "source": "Call options"
+  },
+  {
     "id": "9372c470eeadd5ec",
     "source": "model"
   },
@@ -10374,10 +10330,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "day"
   },
   {
-    "id": "94601469e0f04412",
-    "source": "Share Screen"
-  },
-  {
     "id": "94614074d41d7954",
     "source": "Assistant not found or update failed"
   },
@@ -10404,10 +10356,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "948c4e8bd4175fba",
     "source": "Previous Pro reasoning model (Responses API)."
-  },
-  {
-    "id": "948fe603f61dc036",
-    "source": "client"
   },
   {
     "id": "94a1181cd13e3ce2",
@@ -10782,6 +10730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hide the sources panel"
   },
   {
+    "id": "9952e90bc2ed45f5",
+    "source": "End the call"
+  },
+  {
     "id": "99825c3b217d0016",
     "source": "First GPT-5 release."
   },
@@ -10980,10 +10932,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b9eb936c68a15b6",
     "source": "Wherever it fits"
-  },
-  {
-    "id": "9ba1519a41fb4681",
-    "source": "Transcribing with precision…"
   },
   {
     "id": "9bae918add9affa5",
@@ -11232,10 +11180,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9ea2d8e36b1b9891",
     "source": "Hand Juno an errand with a finish line. It plans the work, shows you every step, and asks before anything it cannot undo."
-  },
-  {
-    "id": "9ec2e0305e0af406",
-    "source": "Speak now, Juno is listening…"
   },
   {
     "id": "9ecce0b1bba753b0",
@@ -11770,10 +11714,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Google rejected the generation request"
   },
   {
-    "id": "a5433d2fa358ec7d",
-    "source": "Microphone access was denied — allow it in your browser to dictate."
-  },
-  {
     "id": "a546bc1a8a4e35c7",
     "source": "Write a short release description for users here."
   },
@@ -11952,10 +11892,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7ebb9583dc8c204",
     "source": "A cloud runner executes in a sandboxed CI environment and opens a pull request for you to review."
-  },
-  {
-    "id": "a7ee8300ef5170e7",
-    "source": "End Call"
   },
   {
     "id": "a80fe6a2b077b907",
@@ -12186,10 +12122,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "spend_cap_exceeded"
   },
   {
-    "id": "ab483d6da03501ff",
-    "source": "Voice Engine"
-  },
-  {
     "id": "ab48fcf706cb01d3",
     "source": "Accounting"
   },
@@ -12312,6 +12244,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ac7ec61bffd7218d",
     "source": "Hard light"
+  },
+  {
+    "id": "acabd66a5a2171f5",
+    "source": "Connection problem"
   },
   {
     "id": "acae3040216c72df",
@@ -12488,10 +12424,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "af06cdec25c51733",
     "source": "On-device models only"
-  },
-  {
-    "id": "af09e281c36b32f6",
-    "source": "Connecting to live voice relay…"
   },
   {
     "id": "af10493d8cea8778",
@@ -13162,10 +13094,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Unknown provider."
   },
   {
-    "id": "b88824c12361b6c9",
-    "source": "Voice aura"
-  },
-  {
     "id": "b8a7e24e95497806",
     "source": "slide"
   },
@@ -13374,10 +13302,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "BR"
   },
   {
-    "id": "bbb4106e814467bd",
-    "source": "Listening…"
-  },
-  {
     "id": "bbcf4d5ad0dbde3f",
     "source": "Files ·"
   },
@@ -13392,10 +13316,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bbedbdbdb01c4206",
     "source": "Juno is waiting for you to allow or refuse one action. Nothing else happens until you decide."
-  },
-  {
-    "id": "bbedc70e985fe0b6",
-    "source": "Sharing"
   },
   {
     "id": "bc05fe58e90941c3",
@@ -15242,10 +15162,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Darken"
   },
   {
-    "id": "d561b15cf93eba9b",
-    "source": "Close dictation"
-  },
-  {
     "id": "d563858471dc0f01",
     "source": "No variables yet. A variable is a named value — a colour, a number — that layers bind to instead of copying."
   },
@@ -15272,10 +15188,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d5b18ea57c182016",
     "source": "Dismiss these questions"
-  },
-  {
-    "id": "d5bc331ae3809b99",
-    "source": "Stop Screen Share"
   },
   {
     "id": "d5c07a2428d4cc59",
@@ -15710,10 +15622,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Needs approval"
   },
   {
-    "id": "db12e51da52f3d7e",
-    "source": "End voice session"
-  },
-  {
     "id": "db18382a249e0206",
     "source": "New chat"
   },
@@ -15784,6 +15692,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dbe4f85f88d4c429",
     "source": "Show the layers rail"
+  },
+  {
+    "id": "dbecc0b9488b00b6",
+    "source": "Speak now."
   },
   {
     "id": "dbf362d4f210c780",
@@ -16502,10 +16414,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Voice mode can receive images, but not document attachments yet."
   },
   {
-    "id": "e503367c41c06b12",
-    "source": "Close session"
-  },
-  {
     "id": "e5176a8cacaaa852",
     "source": "claims cited"
   },
@@ -17086,10 +16994,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Started"
   },
   {
-    "id": "eccee4ef94589b56",
-    "source": "Retry connection"
-  },
-  {
     "id": "ece8229c938aa523",
     "source": "Bg"
   },
@@ -17454,10 +17358,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "key missing or rejected"
   },
   {
-    "id": "f2647154b36fd533",
-    "source": "Voice settings"
-  },
-  {
     "id": "f26efd3574998b71",
     "source": "View results"
   },
@@ -17520,6 +17420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f34c2be0d1c5f562",
     "source": "No project"
+  },
+  {
+    "id": "f350f64921e4012d",
+    "source": "Stop sharing screen"
   },
   {
     "id": "f352c21ead26614c",
@@ -18138,6 +18042,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "— base légale : consentement, recueilli et révocable via le bandeau de consentement."
   },
   {
+    "id": "fc439abe8447bb00",
+    "source": "Send what you dictated"
+  },
+  {
     "id": "fc5b7a14a7f04488",
     "source": "Could not rename project."
   },
@@ -18292,6 +18200,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fecdf1d4d01c7ebd",
     "source": "Prepended to every chat, work run, and code session in this project."
+  },
+  {
+    "id": "fee7326ce5659a6c",
+    "source": "There is a problem with the call."
   },
   {
     "id": "feeb112480fc7896",

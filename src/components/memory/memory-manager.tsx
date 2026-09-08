@@ -8,10 +8,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApp } from "@/components/app/app-provider";
 import { openSettings } from "@/components/settings/settings-sections";
-import { stagger } from "@/lib/utils";
+import { } from "@/lib/utils";
 import { SummaryCard } from "@/components/memory/summary-card";
 import { PrivacyStrip } from "@/components/memory/privacy-strip";
 import type { Memory, SummaryData } from "@/components/memory/memory-model";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * The memory manager: the consolidated summary, the instruction field that
@@ -160,8 +161,8 @@ export function MemoryManager({ compact = false }: { compact?: boolean }) {
   if (memories === null) {
     return (
       <div className="space-y-3" aria-hidden="true">
-        <Skeleton style={stagger(0)} className="h-64 w-full rounded-card" />
-        <Skeleton style={stagger(1)} className="h-20 w-full rounded-card" />
+        <Skeleton style={staggerDelay(0, "tight")} className="h-64 w-full rounded-card" />
+        <Skeleton style={staggerDelay(1, "tight")} className="h-20 w-full rounded-card" />
       </div>
     );
   }

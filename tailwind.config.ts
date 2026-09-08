@@ -498,15 +498,13 @@ const config: Config = {
         },
         // The sentence remains neutral and only breathes slightly toward the
         // foreground, matching the monochrome reference instead of using coral.
+        // A live status breathes between two inks. It used to also animate a
+        // text-shadow — a literal glow on text, on a 2.8s loop, at six call
+        // sites — which is the one decoration this design language has no
+        // room for. The colour alone says "still going".
         "status-glow": {
-          "0%, 100%": {
-            color: "hsl(var(--muted-foreground) / 0.8)",
-            textShadow: "0 0 0 hsl(var(--foreground) / 0)",
-          },
-          "50%": {
-            color: "hsl(var(--foreground) / 0.78)",
-            textShadow: "0 0 8px hsl(var(--foreground) / 0.1)",
-          },
+          "0%, 100%": { color: "hsl(var(--muted-foreground) / 0.8)" },
+          "50%": { color: "hsl(var(--foreground) / 0.78)" },
         },
         "icon-breathe": {
           "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
@@ -691,8 +689,6 @@ const config: Config = {
         // A-to-B moves with both endpoints visible run in-out, not ease-out; and
         // the collapse is faster than the expand, like every other exit here.
         // These two previously used the raw `ease-out` keyword — off-token entirely.
-        "accordion-down": "accordion-down var(--dur-base) var(--ease-in-out)",
-        "accordion-up": "accordion-up var(--dur-exit) var(--ease-in-out)",
         // `fade-in` is the keyframe `page-in` and `overlay-in` both build on, so
         // it is the most-run animation in the product — and it was the last pair
         // still on the raw `ease-out` keyword and off-ladder 200/250ms, the exact
@@ -707,7 +703,6 @@ const config: Config = {
         "pulse-ring-once": "pulse-ring 1.6s var(--ease-breathe) 1 both",
         // linear: the band exits one edge and teleports to the other, so there is
         // no turn to ease — an eased sweep decelerates into the seam and jumps.
-        shimmer: "shimmer 1.5s linear infinite",
         blink: "blink 1.1s steps(1) infinite",
         // 6px of travel is a --dur-base move on the default decelerate; the
         // old slow/out-strong pairing was sized for the 8px it no longer has.
@@ -727,7 +722,6 @@ const config: Config = {
         // A loop turns around at both ends, so it takes the symmetric curve —
         // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
         // is the loop curve. See --ease-breathe.
-        "dot-wave": "dot-wave 1.2s var(--ease-breathe) infinite",
         // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
         "thinking-matrix": "thinking-matrix 1.8s var(--ease-breathe) infinite",
         // Same period as the matrix it stands in for, so the two read as one
@@ -735,7 +729,6 @@ const config: Config = {
         "thinking-pulse": "thinking-pulse 1.8s var(--ease-breathe) infinite",
         "status-glow": "status-glow 2.8s var(--ease-breathe) infinite",
         "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
-        "title-in": "title-in var(--dur-base) var(--ease-out-soft)",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
@@ -753,7 +746,6 @@ const config: Config = {
         // and break the `fixed` model-selector / canvas panel.
         // 280ms on out-expo front-loaded so hard that an opacity-only fade appeared
         // instantly and then hung; base on out-soft reads as one move.
-        "page-in": "fade-in var(--dur-base) var(--ease-out-soft) both",
         // Dialog/sheet backdrops. The scrim LEADS on open (the dim establishes
         // context before the panel arrives) and TRAILS on close (it must outlast
         // the panel it dims). Previously the scrim cleared in 150ms while
@@ -765,14 +757,8 @@ const config: Config = {
         // 24s, not 6s: the gradient should read as a slow luminous drift, not a
         // sweep. `linear` is deliberate — an eased loop visibly pulses at the
         // seam, which is the thing that looked like flashing.
-        "ultra-pan": "ultra-pan 24s linear infinite",
         // Per-particle durations (7-13s) are set inline; this is only the fallback.
-        "ultra-spark": "ultra-spark 9s var(--ease-breathe) infinite",
-        "ultra-pop": "ultra-pop 420ms var(--ease-out-strong)",
         // Media-generation placeholder (generation-placeholder.tsx).
-        "gen-drift-a": "gen-drift-a 16s var(--ease-breathe) infinite",
-        "gen-drift-b": "gen-drift-b 22s var(--ease-breathe) infinite",
-        "gen-grid-pulse": "gen-grid-pulse 5.2s var(--ease-breathe) infinite",
         "gen-sweep": "gen-sweep 1.8s var(--ease-breathe) infinite",
       },
     },

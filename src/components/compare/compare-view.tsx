@@ -19,9 +19,10 @@ import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, costScore } from "@/lib/model-metrics";
 import { planRank, effectiveMinPlan } from "@/lib/plans";
-import { cn, stagger, truncate } from "@/lib/utils";
+import { cn, truncate } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
 import type { ClientMessage, ClientQuota } from "@/types/chat";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * Side-by-side model comparison — the aggregator's signature move. One prompt,
@@ -367,8 +368,8 @@ export function CompareView() {
                   // The shared helper, not a tenth private formula. `120 + i*45`
                   // held the last starter back 210ms for no reason the user can
                   // see — and these are the first things anyone clicks on
-                  // /compare, which is the case stagger() is capped for.
-                  style={stagger(i)}
+                  // /compare, which is the case staggerDelay is capped for.
+                  style={staggerDelay(i, "tight")}
                   className="rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 transition-[border-color,background-color,color] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-accent/80 motion-safe:animate-rise-in"
                 >
                   {sample}
