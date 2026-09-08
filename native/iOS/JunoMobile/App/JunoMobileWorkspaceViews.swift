@@ -917,7 +917,7 @@ struct JunoMobileArtifactsView: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
           HStack(spacing: JunoSpace.snug) {
             JunoWorkspaceGlyph(icon: Self.kindIcon(artifact.kind), size: 32)
-            Text(Self.kindLabel(artifact.kind).uppercased())
+            Text(Self.kindLabel(artifact.kind))
               .junoFont(size: 11, relativeTo: .caption2, weight: .semibold)
               .junoMetaInk()
             Spacer(minLength: 4)
@@ -1854,7 +1854,7 @@ struct JunoMobileArtifactDetail: View {
           }
           JunoMobileMetaChip(title: kindName, icon: kindGlyph)
           if let language = artifact.language, !language.isEmpty {
-            JunoMobileMetaChip(title: language.uppercased())
+            JunoMobileMetaChip(title: language)
           }
           if artifact.versions.count > 1 {
             versionChip
@@ -2027,7 +2027,7 @@ struct JunoMobileArtifactDetail: View {
   private var metaLine: String {
     var parts = [kindName]
     if let language = artifact.language, !language.isEmpty {
-      parts.append(language.uppercased())
+      parts.append(language)
     }
     parts.append("From this conversation")
     parts.append("v\(selectedVersion == 0 ? artifact.currentVersion : selectedVersion)")
@@ -2134,7 +2134,7 @@ struct JunoMobileArtifactDetail: View {
       if !model.availableExportFormats.isEmpty {
         Section("Export") {
           ForEach(model.availableExportFormats, id: \.rawValue) { format in
-            Button(format.rawValue.uppercased()) { export(format) }
+            Button(format.rawValue) { export(format) }
           }
         }
       }

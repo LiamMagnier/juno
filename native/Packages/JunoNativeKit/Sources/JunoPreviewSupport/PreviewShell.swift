@@ -67,6 +67,15 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-code-remote-session", env: "JUNO_PREVIEW_CODE_REMOTE_SESSION")
     }
 
+    /// Opens a widget/Live Activity deep link from the launch command, from
+    /// `--juno-preview-open <url>` or `JUNO_PREVIEW_OPEN`. `simctl openurl`
+    /// raises a system confirmation for custom schemes that unattended QA
+    /// cannot press, so the fixture world hands the URL to the same parser an
+    /// `onOpenURL` event would reach.
+    public static var previewOpenURL: String? {
+        value(for: "--juno-preview-open", env: "JUNO_PREVIEW_OPEN")
+    }
+
     /// Opens the phone's full-screen voice mode over the fixture call, from
     /// `--juno-preview-voice-fullscreen` or `JUNO_PREVIEW_VOICE_FULLSCREEN=1`.
     public static var opensVoiceFullScreen: Bool {

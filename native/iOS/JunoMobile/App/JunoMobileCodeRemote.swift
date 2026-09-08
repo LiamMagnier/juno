@@ -1389,7 +1389,10 @@ struct JunoMobileDiffView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .background(Color.junoAccent.opacity(0.06))
       }
-      ScrollView(.horizontal, showsIndicators: false) {
+      // The indicator stays on here, unlike the hosts strip and filter row:
+      // a diff line has no other cue that it continues past the edge, and a
+      // clipped code line that looks complete is worse than a visible bar.
+      ScrollView(.horizontal, showsIndicators: true) {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(hunk.lines) { line in
             HStack(spacing: 0) {
