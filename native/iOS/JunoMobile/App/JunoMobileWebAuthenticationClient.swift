@@ -91,6 +91,7 @@ final class JunoMobileWebAuthenticationClient: NSObject,
         }
     }
 
+    @available(iOS, deprecated: 26.0, message: "Deprecated only to permit the scene-less fallback window; see the body.")
     func presentationAnchor(
         for session: ASWebAuthenticationSession
     ) -> ASPresentationAnchor {
@@ -106,6 +107,11 @@ final class JunoMobileWebAuthenticationClient: NSObject,
         if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
             return ASPresentationAnchor(windowScene: scene)
         }
+        // No scene at all: nothing can present a sign-in sheet, and the only
+        // window that can be made here is the scene-less one the OS 26 SDK
+        // deprecates. This method is marked deprecated for exactly that line —
+        // the system calls it through the protocol, so no Swift call site
+        // trips the warning — and the branch is unreachable in practice.
         return ASPresentationAnchor(frame: .zero)
     }
 }
