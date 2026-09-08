@@ -71,3 +71,28 @@ test("native access token rejects tampering, issuer drift, and expiry", async ()
     (error: unknown) => error instanceof NativeTokenError && error.code === "expired",
   );
 });
+
+test("an expired access token can still be read for renewal, but never verified", async () => {
+  const { readNativeAccessTokenClaims } = await import("../src/lib/native-auth-core");
+  const issued = new Date(Date.now() - 60 * 60 * 1000);
+  const { token } = await signNativeAccessToken({
+    authSecret: secret,
+    issuer,
+    userId: "user_smoke",
+    deviceSessionId: "device_smoke",
+    sessionVersion: 3,
+    now: issued,
+  });
+  await assert.rejects(verifyNativeAccessToken({ token, authSecret: secret, issuer }), (error: unknown) =>
+    error instanceof NativeTokenError && error.code === "expired"
+  );
+  const claims = await readNativeAccessTokenClaims({ token, authSecret: secret, issuer });
+  assert.equal(claims.userId, "user_smoke");
+  assert.equal(claims.deviceSessionId, "device_smoke");
+  assert.equal(claims.sessionVersion, 3);
+  assert.equal(claims.expired, true);
+  // The wrong secret is still the wrong secret: renewal never trusts an
+  // unsigned or foreign token.
+  await assert.rejects(readNativeAccessTokenClaims({ token, authSecret: "another-secret-entirely-1234567890", issuer }));
+  await assert.rejects(readNativeAccessTokenClaims({ token: "not.a.jwt", authSecret: secret, issuer }));
+});

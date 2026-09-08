@@ -1708,7 +1708,11 @@ cancel-in-progress. A superseding run must never sever a deploy midway through i
 
 Required **protected Production environment inputs**: `PROD_ENV` (the full
 production env file), `VM_SSH_KEY`, `VM_KNOWN_HOSTS`, `VM_USER`, and `VM_HOST`.
-`PROD_ENV` must also contain `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE`; the
+`PROD_ENV` must also name the smoke account: `JUNO_SMOKE_EMAIL` (preferred —
+the deploy mints a fresh native access token for that account from the release
+it just activated, via `scripts/mint-smoke-token.ts`), or `JUNO_SMOKE_TOKEN`
+(a native access token; it expires after ten minutes, so the deploy renews it
+for the same user and device session before use), or `JUNO_SMOKE_COOKIE`. The
 post-deploy authenticated catalog/chat/receipt/replay smoke never has an
 optional skip path. All provider keys and app secrets (including
 `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, etc.) live inside `PROD_ENV`.

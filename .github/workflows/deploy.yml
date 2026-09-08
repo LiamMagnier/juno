@@ -465,9 +465,10 @@ jobs:
               missing=1
             fi
           done
-          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
+          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_EMAIL=.+$' && \
+             ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
              ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_COOKIE=.+$'; then
-            echo "::error::PROD_ENV must include JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE for authenticated release smoke."
+            echo "::error::PROD_ENV must include JUNO_SMOKE_EMAIL, JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE for authenticated release smoke."
             missing=1
           fi
           [ "$missing" -eq 0 ]
@@ -969,6 +970,20 @@ jobs:
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          # A native access token lives ten minutes, so a token stored in .env
+          # authenticated exactly one deploy and rolled back every later one
+          # with "unauthenticated". Mint a fresh one from the release that was
+          # just activated — for JUNO_SMOKE_EMAIL's account, or for the same
+          # user and device session the stored token was issued to. An empty
+          # result leaves the stored token/cookie in place as the fallback.
+          FRESH_TOKEN="$(cd ~/juno/current && set -a && . ~/juno/.env && set +a && \
+            JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" npx --no-install tsx scripts/mint-smoke-token.ts 2>/tmp/juno-smoke-token.log || true)"
+          if [ -n "$FRESH_TOKEN" ]; then
+            SMOKE_TOKEN="$FRESH_TOKEN"
+            echo "Using a freshly minted smoke token."
+          else
+            echo "::warning::Could not mint a smoke token; using the stored credential. $(tr '\n' ' ' < /tmp/juno-smoke-token.log 2>/dev/null | cut -c1-300)"
+          fi
           # Qwen is the funded production provider. Keep the deploy gate pinned
           # to it so an obsolete VM-only smoke setting cannot roll back a good
           # release by calling an unfunded provider.

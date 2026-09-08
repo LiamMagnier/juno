@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { SignJWT, errors as joseErrors, jwtVerify } from "jose";
+import { SignJWT, decodeJwt, errors as joseErrors, jwtVerify } from "jose";
 
 export const NATIVE_REDIRECT_URI = "com.liammagnier.juno://auth/callback";
 export const LEGACY_NATIVE_REDIRECT_URI = "juno://auth/callback";
@@ -110,6 +110,41 @@ export async function signNativeAccessToken(input: {
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1000))
     .sign(accessKey(input.authSecret));
   return { token, expiresAt };
+}
+
+/**
+ * The claims of a native access token whose signature checks out, expired or
+ * not.
+ *
+ * Access tokens live ten minutes (`NATIVE_ACCESS_TTL_SECONDS`), which is right
+ * for an app that holds a refresh token and wrong for a credential pasted into
+ * a deployment's environment file: the post-deploy smoke stored one of these
+ * as `JUNO_SMOKE_TOKEN`, so every release after the first ten minutes rolled
+ * itself back with "unauthenticated". This lets the deploy mint a fresh token
+ * for the SAME user and device session the operator originally authorised —
+ * the signature still proves who issued it, and the caller re-checks the
+ * session against the database before trusting anything else about it.
+ *
+ * Never used on a request path. `authenticateNativeBearer` keeps rejecting
+ * expired tokens; this exists for the one operator tool that renews them.
+ */
+export async function readNativeAccessTokenClaims(input: {
+  token: string;
+  authSecret: string;
+  issuer: string;
+}): Promise<NativeAccessClaims & { expired: boolean }> {
+  let issuedAt: number | null = null;
+  try {
+    const decoded = decodeJwt(input.token);
+    issuedAt = typeof decoded.iat === "number" ? decoded.iat : null;
+  } catch {
+    throw new NativeTokenError("invalid", "The native access token is invalid.");
+  }
+  if (issuedAt === null) throw new NativeTokenError("invalid", "The native access token has no issue time.");
+  // Verify at the instant it was issued, so expiry cannot fail a token whose
+  // signature, issuer, audience and shape are all still exactly right.
+  const claims = await verifyNativeAccessToken({ ...input, now: new Date(issuedAt * 1000 + 1_000) });
+  return { ...claims, expired: claims.expiresAt.getTime() <= Date.now() };
 }
 
 export async function verifyNativeAccessToken(input: {
