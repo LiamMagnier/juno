@@ -2,6 +2,36 @@
 
 Initial handoff snapshot: 2026-07-21.
 
+## Re-audit — 2026-09-08 (Liquid Glass shell)
+
+Landed on top of the 2026-09-03 state, following `REWORK_PLAN.md`:
+
+- **Floors.** iOS 26 joins macOS 26, so every glass branch in the shared
+  package and the iOS app is unconditional and the `#available` forks are
+  gone (`JunoMaterials.swift`, `JunoMobileChrome.swift`). The 26 SDK
+  deprecates `Text` concatenation; every site now interpolates.
+- **Motion.** `JunoMotion.interactive` and `JunoMotion.reward` exist beside
+  the seven tokens; macOS runs `standard`/`emphasized`/`interactive` at
+  ×0.75. `reward` is used at exactly two sites, both in macOS Code: an
+  approval resolving and a run finishing.
+- **iOS shell.** `TabView(.sidebarAdaptable)` with Chat, Code, Work and a
+  search-role tab; Projects, Library, Artifacts, Tasks and Connections are a
+  hidden `TabSection` that becomes the iPad sidebar and pushes on the Chat
+  stack on iPhone. The hand-built drawer is a sheet (`JunoMobileRootView.swift`,
+  `JunoMobileShellChrome.swift`). `tabBarMinimizeBehavior(.onScrollDown)` and
+  a `tabViewBottomAccessory` live-run pill with running / needs-you counts.
+- **iOS composer.** Research depth is derived from the model's price class,
+  the thinking level and Pro mode (`NativeResearchEffort`, the Swift twin of
+  `src/lib/research/auto-effort.ts`, with a test) and shown on the research
+  header; a "/" palette (research, search, canvas, voice, library, apps); the
+  per-message price is gone from the transcript.
+- **Honest states.** `JunoSkeleton` / `JunoSkeletonRows` /
+  `JunoSkeletonParagraph` in the design system; `JunoMobileQuietLoading`
+  draws rows or a paragraph instead of a bare canvas on Search, Work, Code,
+  Tasks, Library, Connections, Settings and Usage.
+- **macOS Code.** Toolbar is three `ToolbarSpacer` groups; the sessions
+  column has a running / needs-you / done legend that doubles as the filter.
+
 ## Re-audit — 2026-09-03 (v1.5.0 Soft UI)
 
 The product-parity table below (§Product parity) is the historical 2026-07-21

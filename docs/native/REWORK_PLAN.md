@@ -281,6 +281,20 @@ The website Code & Work is feature-complete, but the apps cannot be linked to it
   security review, instructions editor, version history and per-version consent.
 - Offline writes cover 6 entity families out of 87.
 
+## Status — 2026-09-08
+
+What has landed from the phases above (see `PARITY_MATRIX.md` re-audit of the
+same date for the file-level list):
+
+| Phase | State |
+|---|---|
+| 0 Gate | Four design gates run in CI; targets baseline 338. |
+| 1 Tokens | `interactive` and `reward` tokens, macOS ×0.75 factor, iOS 26 floor. |
+| 3 One IA, two shells | iOS shell done (tab bar, hidden workspace section, history sheet, live-run pill). macOS keeps its product switcher; Settings-window consolidation and the Artifacts → Library fold are open. |
+| 4 Honest states | Skeletons in the design system and on every iOS list/reading loading state. Offline story open. |
+| 5 Agentic motion | Two `reward` sites, numeric transitions on counts, macOS Code status legend. Ambient decoration demotion (open question 1) untouched. |
+| 6 Code rework | Derived research depth and slash palette on iOS; macOS toolbar grouping. One transcript renderer / one composer still open. |
+
 ## Open questions for the owner
 
 1. **Ambient decoration — kill, demote, or keep?** `JunoComposerAura` (434 lines),
