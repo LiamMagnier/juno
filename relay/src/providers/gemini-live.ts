@@ -191,6 +191,9 @@ export class GeminiLiveSession implements VoiceProviderSession {
     if (!sc) return;
 
     if (sc.interrupted) {
+      // Gemini reports no speech-onset event of its own; the cancel its VAD
+      // raises when the caller starts talking is the same boundary.
+      ev.onUserSpeechStart();
       const alreadyReported = this.suppressAssistantOutput;
       this.suppressAssistantOutput = false;
       if (this.assistantSpeaking) {

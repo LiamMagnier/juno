@@ -72,7 +72,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
-  | { type: "turn"; speaker: "assistant"; phase: "start" | "end" }
+  | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   /** Model output was cancelled (user barge-in). Client must flush its
    *  audio playback queue immediately. */
   | { type: "interrupted" }

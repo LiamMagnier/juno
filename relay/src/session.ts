@@ -23,6 +23,17 @@ export class RelaySession {
   private provider: VoiceProviderSession | null = null;
   private providerId: VoiceProviderId | null = null;
   private transcript: TranscriptEntry[] = [];
+  /**
+   * Where the caller's next transcribed turn belongs in `transcript`.
+   *
+   * Input transcription resolves after the fact and routinely arrives once the
+   * model has already begun answering, so appending it would record the
+   * exchange backwards — and this history is what a mid-call model switch
+   * replays to the new provider, which would then read the answer before the
+   * question. Speech onset is the real boundary, so the slot is reserved the
+   * instant the caller starts talking. -1 means no turn is open.
+   */
+  private userTurnAnchor = -1;
   // Rolling partials per role so switch-seeding only carries finalized turns.
   private partial: Record<"user" | "assistant", string> = { user: "", assistant: "" };
   // Cost accrues in dollars at report time rather than from a running seconds
@@ -94,6 +105,7 @@ export class RelaySession {
         // Provider switches reuse the relay's finalized running transcript.
         if (!this.historySeeded) {
           this.transcript = sanitizeHistory(msg.history);
+          this.userTurnAnchor = -1;
           this.historySeeded = true;
         }
         await this.startProvider(msg.provider);
@@ -211,7 +223,7 @@ export class RelaySession {
           // Partial-accumulating providers (Gemini) send final:"" as a commit.
           const text = (t.text || this.partial[t.role]).trim();
           this.partial[t.role] = "";
-          if (text) this.transcript.push({ role: t.role, text, final: true });
+          if (text) this.recordTurn(t.role, text);
           if (t.text) this.send({ type: "transcript", role: t.role, text: t.text, final: true });
           else if (text) this.send({ type: "transcript", role: t.role, text, final: true });
         } else {
@@ -220,6 +232,11 @@ export class RelaySession {
         }
       },
       onTurn: (phase) => isCurrent() && this.send({ type: "turn", speaker: "assistant", phase }),
+      onUserSpeechStart: () => {
+        if (!isCurrent()) return;
+        if (this.userTurnAnchor < 0) this.userTurnAnchor = this.transcript.length;
+        this.send({ type: "turn", speaker: "user", phase: "start" });
+      },
       onInterrupted: () => {
         if (!isCurrent()) return;
         // Providers do not send a final transcript event for cancelled output.
@@ -283,7 +300,25 @@ export class RelaySession {
   private commitPartial(role: "user" | "assistant"): void {
     const text = this.partial[role].trim();
     this.partial[role] = "";
-    if (text) this.transcript.push({ role, text, final: true });
+    if (text) this.recordTurn(role, text);
+  }
+
+  /**
+   * Record one finished turn in the order it was SPOKEN.
+   *
+   * The caller's words go into the slot reserved when they started speaking,
+   * so a transcription that resolves after the answer has begun still precedes
+   * that answer. The model's words always append, and doing so closes the
+   * caller's slot: the exchange is complete.
+   */
+  private recordTurn(role: "user" | "assistant", text: string): void {
+    if (role === "user" && this.userTurnAnchor >= 0 && this.userTurnAnchor <= this.transcript.length) {
+      this.transcript.splice(this.userTurnAnchor, 0, { role, text, final: true });
+      this.userTurnAnchor = -1;
+      return;
+    }
+    this.transcript.push({ role, text, final: true });
+    if (role === "assistant") this.userTurnAnchor = -1;
   }
 
   private pushUsage(): void {

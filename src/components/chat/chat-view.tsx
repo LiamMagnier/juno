@@ -523,6 +523,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         role: line.role === "assistant" ? "ASSISTANT" : "USER",
         content: line.text,
         attachmentIds: line.attachments.map((attachment) => attachment.id),
+        // The exchange this line belongs to. The route stamps createdAt from
+        // it, so a reload replays the conversation as it was spoken rather
+        // than as the array happened to be built.
+        turn: line.turn,
       }));
     voiceUnloadPayloadRef.current = turns.length
       ? JSON.stringify({
@@ -1105,7 +1109,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   };
 
   const voiceMessages = React.useMemo<ChatMessage[]>(() => {
-    const lines: ChatMessage[] = realtimeVoice.transcript.map((line) => ({
+    const lines: ChatMessage[] = realtimeVoice.transcript
+      // A turn is opened the moment the caller starts speaking, before any
+      // transcription exists, so its row is briefly empty. That row is an
+      // ordering anchor, not something to draw — an empty bubble in the
+      // transcript reads as a message that failed to send.
+      .filter((line) => line.text.trim().length > 0)
+      .map((line) => ({
       id: `voice-${line.id}`,
       role: line.role === "assistant" ? "ASSISTANT" : "USER",
       content: line.text,
@@ -1409,6 +1419,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         role: line.role === "assistant" ? "ASSISTANT" : "USER",
         content: line.text,
         attachmentIds: line.attachments.map((attachment) => attachment.id),
+        turn: line.turn,
       })),
     });
     voiceUnloadPayloadRef.current = savePayload;

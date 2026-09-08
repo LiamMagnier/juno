@@ -41,6 +41,15 @@ export interface ProviderEvents {
   onAudio(pcm: Buffer, rate: number): void;
   onTranscript(t: TranscriptEntry): void;
   onTurn(phase: "start" | "end"): void;
+  /**
+   * The caller began speaking, as reported by the provider's voice activity
+   * detector. This is the only exact boundary for a spoken turn: input
+   * transcription resolves later and often after the model has already begun
+   * answering, so a client that waits for text has to guess where the turn
+   * belongs. Every provider detects speech onset; forwarding it lets the
+   * client anchor the turn at the moment it started.
+   */
+  onUserSpeechStart(): void;
   /** Model output cancelled (barge-in). Client playback must flush. */
   onInterrupted(): void;
   /** `audioInSec`/`audioOutSec` are durations. They price the session only for

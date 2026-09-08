@@ -17,6 +17,13 @@ import {
 } from "@/lib/voice-relay-protocol";
 import type { ClientAttachment } from "@/types/chat";
 import {
+  applyTranscriptEvent,
+  emptyCursor,
+  openUserTurn,
+  sealTranscript as sealTranscriptLines,
+  type RealtimeTranscriptLine,
+} from "@/lib/voice-transcript";
+import {
   normalizedSpeechLoudness,
   RealtimeVoiceActivityDetector,
 } from "@/lib/realtime-voice-activity";
@@ -60,14 +67,7 @@ function describeStartError(err: unknown): string {
   return err instanceof Error && err.message ? err.message : "Couldn't start voice mode.";
 }
 
-export interface RealtimeTranscriptLine {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  final: boolean;
-  createdAt: string;
-  attachments: ClientAttachment[];
-}
+export type { RealtimeTranscriptLine } from "@/lib/voice-transcript";
 
 export interface RealtimeUsage {
   audioInSec: number;
@@ -162,7 +162,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const providerTurnActiveRef = React.useRef(false);
   const micLevelRef = React.useRef(0);
   const playLevelRef = React.useRef(0);
-  const lineIdRef = React.useRef(0);
+  const cursorRef = React.useRef(emptyCursor());
   const turnAttachmentsRef = React.useRef(new Map<string, ClientAttachment[]>());
   const capsRef = React.useRef<ProviderCapabilities | null>(null);
   const screenTimerRef = React.useRef<number | null>(null);
@@ -250,53 +250,29 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const pushTranscript = React.useCallback((role: "user" | "assistant", text: string, final: boolean, turnId?: string) => {
-    setTranscript((prev) => {
-      const next = [...prev];
-      let pendingIndex = -1;
-      if (!turnId) {
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].role === role && !next[i].final) {
-            pendingIndex = i;
-            break;
-          }
-        }
-      }
-      if (pendingIndex >= 0) {
-        const pending = next[pendingIndex];
-        // Finals either replace the accumulated partial (full-text finals) or
-        // just seal it (empty-text commit markers). Search by role instead of
-        // only checking the last row: input transcription can finish after the
-        // assistant has already started streaming.
-        next[pendingIndex] = {
-          ...pending,
-          text: final && text ? text : pending.text + (final ? "" : text),
-          final,
-        };
-      } else if (text || !final) {
+  const pushTranscript = React.useCallback(
+    (role: "user" | "assistant", text: string, final: boolean, turnId?: string) => {
+      setTranscript((prev) => {
         const attachments = role === "user" && turnId ? turnAttachmentsRef.current.get(turnId) ?? [] : [];
         if (turnId) turnAttachmentsRef.current.delete(turnId);
-        const line = { id: ++lineIdRef.current, role, text, final, createdAt: new Date().toISOString(), attachments };
-        // ORDER BY THE CONVERSATION, NOT BY THE NETWORK.
-        //
-        // Input transcription resolves on its own schedule and routinely lands
-        // AFTER the model has already begun answering — the branch above says so
-        // for the partial case. Appending a first user line at that point put the
-        // reader's own words underneath the reply to them, which is the one
-        // ordering a conversation can never have.
-        //
-        // A person spoke before the assistant answered, so the row goes before
-        // the answer: walk back over the trailing run of assistant lines and
-        // insert at that boundary. When the last line is already the reader's,
-        // there is nothing to step over and this appends as before.
-        if (role === "user") {
-          let at = next.length;
-          while (at > 0 && next[at - 1].role === "assistant") at--;
-          next.splice(at, 0, line);
-        } else {
-          next.push(line);
-        }
-      }
+        const next = applyTranscriptEvent(prev, { role, text, final, turnId, attachments }, cursorRef.current);
+        transcriptRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
+  /**
+   * The caller started speaking. Their row is opened now, before a word of it
+   * has been transcribed, so that whenever the transcription resolves — often
+   * after the model has already begun answering — it lands in the turn it
+   * belongs to instead of being placed by guesswork.
+   */
+  const beginUserTurn = React.useCallback(() => {
+    setTranscript((prev) => {
+      const next = openUserTurn(prev, cursorRef.current);
+      if (next === prev) return prev;
       transcriptRef.current = next;
       return next;
     });
@@ -304,9 +280,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
   const sealTranscript = React.useCallback((role?: "user" | "assistant") => {
     setTranscript((prev) => {
-      const next = prev
-        .filter((line) => line.final || line.text.trim())
-        .map((line) => (!line.final && (!role || line.role === role) ? { ...line, final: true } : line));
+      const next = sealTranscriptLines(prev, role);
       transcriptRef.current = next;
       return next;
     });
@@ -588,6 +562,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           pushTranscript(msg.role, msg.text, msg.final, msg.turnId);
           return;
         case "turn":
+          if (msg.speaker === "user") {
+            if (msg.phase === "start") beginUserTurn();
+            return;
+          }
           providerTurnActiveRef.current = msg.phase === "start";
           if (msg.phase === "start") {
             speakingRef.current = true;
@@ -634,7 +612,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           return;
       }
     },
-    [flushPlayback, pushTranscript, releaseResources, sealTranscript]
+    [beginUserTurn, flushPlayback, pushTranscript, releaseResources, sealTranscript]
   );
 
   const start = React.useCallback(
@@ -850,7 +828,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const clearTranscript = React.useCallback(() => {
     setTranscript([]);
     transcriptRef.current = [];
-    lineIdRef.current = 0;
+    cursorRef.current = emptyCursor();
     turnAttachmentsRef.current.clear();
   }, []);
 

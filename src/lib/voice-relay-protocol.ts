@@ -43,7 +43,7 @@ export type VoiceClientMessage =
 export type VoiceServerMessage =
   | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
-  | { type: "turn"; speaker: "assistant"; phase: "start" | "end" }
+  | { type: "turn"; speaker: "assistant" | "user"; phase: "start" | "end" }
   | { type: "interrupted" }
   /** estCostInUsd/estCostOutUsd split estCostUsd into the user's speech vs the
    *  model's; optional — a provider may report no usable token counts. */

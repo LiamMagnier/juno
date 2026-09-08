@@ -23,6 +23,12 @@ const inputSchema = z.object({
     role: z.enum(["USER", "ASSISTANT"]),
     content: z.string().trim().min(1).max(20_000),
     attachmentIds: z.array(z.string().cuid()).max(4).default([]),
+    /**
+     * Which exchange this line belongs to, counting from 1. Sent by clients
+     * that track it (see `src/lib/voice-transcript.ts`); absent from older
+     * clients and from the native apps, which fall back to array position.
+     */
+    turn: z.number().int().min(1).max(MAX_VOICE_TRANSCRIPT_TURNS).optional(),
   })).min(1).max(MAX_VOICE_TRANSCRIPT_TURNS),
 });
 
@@ -114,12 +120,37 @@ export async function POST(req: Request) {
       }
 
       const messageIds: string[] = [];
+      /*
+       * ORDER THE TRANSCRIPT BEFORE STAMPING IT.
+       *
+       * `createdAt` is what every later read sorts on, so whatever order this
+       * loop writes is the order the conversation has forever. It used to be
+       * the client's array order, verbatim — which meant a client-side
+       * ordering bug was persisted and replayed on every reload rather than
+       * being a display glitch that a refresh cleared.
+       *
+       * Clients that carry a turn ordinal get sorted by it here: within an
+       * exchange the caller speaks before the answer, and the sort is stable
+       * so several lines from one side keep the order they were spoken in.
+       * Clients that send no ordinal are trusted as before.
+       */
+      const ordered = input.turns.every((turn) => turn.turn != null)
+        ? input.turns
+            .map((turn, index) => ({ turn, index }))
+            .sort(
+              (a, b) =>
+                (a.turn.turn ?? 0) - (b.turn.turn ?? 0) ||
+                (a.turn.role === b.turn.role ? 0 : a.turn.role === "USER" ? -1 : 1) ||
+                a.index - b.index
+            )
+            .map((entry) => entry.turn)
+        : input.turns;
       // Millisecond ordering can otherwise tie when many short realtime turns
       // are persisted in one transaction. Backfill a compact monotonic range
       // ending at "now" so ordinary conversation reads preserve the transcript.
-      const createdAtBase = Date.now() - input.turns.length;
+      const createdAtBase = Date.now() - ordered.length;
       let finalCreatedAt = new Date(createdAtBase);
-      for (const [turnIndex, turn] of input.turns.entries()) {
+      for (const [turnIndex, turn] of ordered.entries()) {
         finalCreatedAt = new Date(createdAtBase + turnIndex + 1);
         const message = await tx.message.create({
           data: {

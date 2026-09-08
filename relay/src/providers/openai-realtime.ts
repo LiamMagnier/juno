@@ -275,6 +275,8 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
         if (typeof msg.transcript === "string") ev.onTranscript({ role: "user", text: msg.transcript, final: true });
         return;
       case "input_audio_buffer.speech_started":
+        // The caller's turn starts here, whether or not they are interrupting.
+        ev.onUserSpeechStart();
         // Barge-in: the provider auto-cancels; tell the client to flush now.
         if (this.assistantSpeaking) {
           this.assistantSpeaking = false;
