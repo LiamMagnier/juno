@@ -1032,11 +1032,10 @@ struct DesktopCodeWorkspace: View {
             .help(reviewPresented ? "Close the review pane (⌥⌘R)" : "Review the changes beside the thread (⌥⌘R)")
             .accessibilityIdentifier("juno.code.review.toggle")
             .accessibilityValue(reviewPresented ? "Open" : "Closed")
-        }
 
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-
-        ToolbarItemGroup(placement: .primaryAction) {
+            // Review and Commands share a group: both are ways of looking at
+            // the thread, and three groups is the most a title bar reads as
+            // grouped rather than as a row of icons.
             Button {
                 showingPalette = true
             } label: {
@@ -1680,6 +1679,7 @@ private struct DesktopCodeRemoteCanvas: View {
     let remote: CodeRemoteBrowserModel
 
     @State private var message = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let measure: CGFloat = JunoReadingMeasure.reading
 
@@ -1739,9 +1739,14 @@ private struct DesktopCodeRemoteCanvas: View {
                             }
                         }
                     )
+                    // Resolving an approval is one of the two moments the
+                    // product rewards (the other is a run finishing): the
+                    // card leaves with the one bouncy curve in the ladder.
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
                 }
                 composer
             }
+            .animation(JunoMotion.reduced(JunoMotion.reward, when: reduceMotion), value: pendingApproval?.id)
             .frame(maxWidth: Self.measure, alignment: .leading)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, JunoSpace.region)
@@ -1779,6 +1784,9 @@ private struct DesktopCodeRemoteCanvas: View {
                     .padding(.horizontal, JunoSpace.snug)
                     .padding(.vertical, 3)
                     .background(Capsule(style: .continuous).fill(status.tint.opacity(0.13)))
+                    .contentTransition(.numericText())
+                    // The run finishing is the second rewarded moment.
+                    .animation(JunoMotion.reduced(JunoMotion.reward, when: reduceMotion), value: status.label)
                 }
 
                 HStack(spacing: JunoSpace.snug) {

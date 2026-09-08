@@ -392,6 +392,13 @@ struct DesktopCodeSidebar: View {
             Section {
                 DesktopCodeSessionFilterButton(filter: $filter)
                     .selectionDisabled()
+                DesktopCodeStatusLegend(
+                    running: DesktopCodeNavigationState.filtered(allRuns, by: .running).count,
+                    needsYou: DesktopCodeNavigationState.filtered(allRuns, by: .needsYou).count,
+                    done: DesktopCodeNavigationState.filtered(allRuns, by: .done).count,
+                    filter: $filter
+                )
+                .selectionDisabled()
             }
 
             Section {
@@ -1062,6 +1069,60 @@ private struct DesktopCodeThreadRow: View {
 
 /// The exclusive session filter uses the platform segmented picker so its
 /// selected state, keyboard navigation, and accessibility semantics are native.
+/// "● 2 running · ● 1 needs you · 4 done" under the filter: what the column
+/// holds right now, in the same three colours every thread row uses for its
+/// status, so the legend and the rows explain each other. Each count is the
+/// filter it names — clicking "needs you" is the same as picking that segment.
+///
+/// Counts change with a numeric transition and no bounce: this is a readout,
+/// not a reward.
+private struct DesktopCodeStatusLegend: View {
+    let running: Int
+    let needsYou: Int
+    let done: Int
+    @Binding var filter: DesktopCodeSessionFilter
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            entry(count: running, noun: "running", tint: Color.junoAccent, filter: .running)
+            entry(count: needsYou, noun: "needs you", tint: Color.junoCaution, filter: .needsYou)
+            entry(count: done, noun: "done", tint: Color.junoMutedForeground, filter: .done)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, JunoSpace.hairline)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: running + needsYou * 1_000 + done * 1_000_000)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.status-legend")
+    }
+
+    private func entry(count: Int, noun: String, tint: Color, filter target: DesktopCodeSessionFilter) -> some View {
+        Button {
+            filter = filter == target ? .all : target
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                Circle()
+                    .fill(count > 0 ? tint : tint.opacity(0.3))
+                    .frame(width: 6, height: 6)
+                Text("\(count)")
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text(noun)
+            }
+            .junoCaption()
+            .foregroundStyle(filter == target ? Color.junoForeground : Color.junoMutedForeground)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contentShape(.rect)
+        .help("Show \(noun) threads")
+        .accessibilityLabel("\(count) \(noun)")
+        .accessibilityAddTraits(filter == target ? .isSelected : [])
+        .accessibilityIdentifier("juno.code.status-legend.\(target.rawValue)")
+    }
+}
+
 private struct DesktopCodeSessionFilterButton: View {
     @Binding var filter: DesktopCodeSessionFilter
 

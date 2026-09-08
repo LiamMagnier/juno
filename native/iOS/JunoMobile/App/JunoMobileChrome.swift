@@ -23,10 +23,48 @@ import SwiftUI
 /// This is not a way to hide failure: every screen still renders its real error
 /// and empty states. It only covers the in-between.
 struct JunoMobileQuietLoading: View {
+    /// What the screen will look like once it has loaded, drawn in advance.
+    ///
+    /// A list screen shows the rows it is about to fill; a reading screen
+    /// shows its paragraph; the shell, which has no shape yet, shows the bare
+    /// canvas. The shimmer is the one motion here and it stops under Reduce
+    /// Motion (see `JunoSkeleton`).
+    enum Shape {
+        case blank
+        case rows(Int)
+        case paragraph
+    }
+
+    var shape: Shape = .rows(6)
+
+    init(_ shape: Shape = .rows(6)) {
+        self.shape = shape
+    }
+
     var body: some View {
-        Color.junoCanvas
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+        Group {
+            switch shape {
+            case .blank:
+                Color.junoCanvas
+            case .rows(let count):
+                VStack(alignment: .leading, spacing: 0) {
+                    JunoSkeletonRows(count: count)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.top, JunoSpace.cozy)
+                    Spacer(minLength: 0)
+                }
+            case .paragraph:
+                VStack(alignment: .leading, spacing: 0) {
+                    JunoSkeletonParagraph(lines: 5)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.top, JunoSpace.cozy)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Loading")
+        .accessibilityIdentifier("juno.mobile.loading")
     }
 }
 

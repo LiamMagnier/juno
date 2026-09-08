@@ -50,7 +50,7 @@ struct JunoMobileUsageView: View {
                         content(breakdown)
                     }
                 } else if isLoading {
-                    JunoMobileQuietLoading()
+                    JunoMobileQuietLoading(.paragraph)
                         .frame(height: 200)
                 }
             }

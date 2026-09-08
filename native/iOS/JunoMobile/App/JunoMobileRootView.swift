@@ -397,7 +397,7 @@ struct JunoMobileRootView: View {
         authenticatedContent(session: session)
       }
     case .restoring:
-      JunoMobileQuietLoading()
+      JunoMobileQuietLoading(.blank)
     case .signedOut, .signingIn, .unavailable:
       JunoMobileSignInView(authModel: authModel)
     }
