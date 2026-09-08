@@ -657,6 +657,33 @@
 }
 
 @layer components {
+  /*
+   * The dictation level meter: five bars reading one number.
+   *
+   * The rAF loop in composer-dictation.tsx writes `--level` (0..1) to the
+   * container once per frame and every bar scales from it here, so a frame is
+   * one style write rather than five, and no bar needs `will-change` — the
+   * meter this replaced promoted 37 compositor layers to display a single
+   * scalar. Each bar carries its own `--gain` so the row settles like a needle
+   * with weight instead of five identical sticks.
+   *
+   * The resting 0.18 matters: a silent room must read as "on and quiet", not
+   * as "off". Under reduced motion the bars hold a fixed height — the fact
+   * that the microphone is hearing you is state, and the colour still carries
+   * it, so only the travel goes.
+   */
+  .dictation-meter {
+    --level: 0;
+  }
+  .dictation-meter > span {
+    transform: scaleY(calc(0.18 + 0.82 * var(--level) * var(--gain, 1)));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dictation-meter > span {
+      transform: scaleY(0.5);
+    }
+  }
+
   /* Scroll without a scrollbar: horizontal chip rows that scroll on a phone
      and must not draw a bar under themselves on a desktop. */
   .no-scrollbar {

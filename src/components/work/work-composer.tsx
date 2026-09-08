@@ -57,7 +57,7 @@ import {
   WORK_ACCEPT_ATTRIBUTE,
   WorkComposerAttachments,
 } from "@/components/work/composer-home/composer-attachments";
-import { WorkDictationLayer } from "@/components/work/composer-home/dictation-layer";
+import { DictationSwap } from "@/components/ui/dictation-swap";
 import { WorkEffortChip } from "@/components/work/composer-home/effort-chip";
 import { ProjectChip } from "@/components/work/composer-home/project-chip";
 import { WorkStartNotes } from "@/components/work/composer-home/start-notes";
@@ -965,10 +965,9 @@ export function WorkComposer({
           />
         )}
 
-        {/* Dictation and the composer share one grid cell and cross-fade — see
-            `composer-home/dictation-layer.tsx` for why the capsule is a sibling
-            of the shell rather than a child of it. */}
-        <WorkDictationLayer
+        {/* Dictation and the composer share one grid cell and cross-fade —
+            see `ui/dictation-swap.tsx`. */}
+        <DictationSwap
           active={dictating}
           onCancel={() => setDictating(false)}
           onClose={closeDictation}
@@ -1118,7 +1117,7 @@ export function WorkComposer({
                   </Tooltip>
             }
           />
-        </WorkDictationLayer>
+        </DictationSwap>
 
         <input
           ref={fileInputRef}

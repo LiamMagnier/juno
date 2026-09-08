@@ -25,7 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
-import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { DictationSwap } from "@/components/ui/dictation-swap";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import {
@@ -487,29 +487,11 @@ export default function NewCodeSessionPage() {
                 <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
               )}
 
-              <div
-                className={cn(
-                  "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
-                  dictating ? "min-h-[170px]" : "min-h-[68px]",
-                )}
+              <DictationSwap
+                active={dictating}
+                onCancel={() => setDictating(false)}
+                onClose={closeDictation}
               >
-                <div
-                  className={cn(
-                    "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-                    dictating
-                      ? "translate-y-0 scale-100 opacity-100"
-                      : "pointer-events-none translate-y-1 scale-95 opacity-0",
-                  )}
-                >
-                  {dictating && (
-                    <ComposerDictation
-                      onCancel={() => setDictating(false)}
-                      onStop={(t) => closeDictation(t, false)}
-                      onSend={(t) => closeDictation(t, true)}
-                    />
-                  )}
-                </div>
-
                 <div
                   onDragOver={(e) => {
                     if (!canAttach || submitting || dictating) return;
@@ -524,13 +506,7 @@ export default function NewCodeSessionPage() {
                       addFiles(e.dataTransfer.files);
                     }
                   }}
-                  className={cn(
-                    "col-start-1 row-start-1 relative w-full origin-center",
-                    "transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-                    dictating
-                      ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
-                      : "translate-y-0 scale-100 opacity-100",
-                  )}
+                  className="relative w-full"
                 >
                   <ComposerShell
                     className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
@@ -731,7 +707,7 @@ export default function NewCodeSessionPage() {
                     />
                   )}
                 </div>
-              </div>
+              </DictationSwap>
             </div>
 
             {/* Error notifications */}

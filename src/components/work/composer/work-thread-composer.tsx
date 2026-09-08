@@ -15,7 +15,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { DictationSwap } from "@/components/ui/dictation-swap";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
@@ -291,57 +291,12 @@ export function WorkThreadComposer({
   const showVoiceButton = !sending && !canSend && !!onOpenVoiceMode;
 
   return (
-    <div
-      className={cn(
-        "relative grid w-full grid-cols-1 grid-rows-1 items-end justify-items-center",
-        // Only min-height animates. Dictation's transcript preview floats above
-        // the capsule and needs the headroom; animating the two layers'
-        // opacity/transform keeps the swap on the compositor.
-        "transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
-        dictating ? "min-h-[170px]" : "min-h-0"
-      )}
+    <DictationSwap
+      active={dictating}
+      onCancel={() => setDictating(false)}
+      onClose={closeDictation}
     >
-      <div
-        // `inert` is what actually takes this half of the cross-fade out of the
-        // page. `opacity-0 pointer-events-none` hides it from the eye and the
-        // mouse and leaves it in the tab order and the accessibility tree, so a
-        // keyboard or screen-reader user could reach a composer that is not on
-        // screen — and, mid-dictation, type into it. Same defect the chat
-        // transcript's jump-to-latest button had.
-        inert={!dictating}
-        className={cn(
-          "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-          dictating
-            ? "translate-y-0 scale-100 opacity-100"
-            : "pointer-events-none translate-y-1 scale-95 opacity-0"
-        )}
-      >
-        {dictating && (
-          <ComposerDictation
-            onCancel={() => setDictating(false)}
-            onStop={(text) => closeDictation(text, false)}
-            onSend={(text) => closeDictation(text, true)}
-          />
-        )}
-      </div>
-
-      {/* The cross-fade lives on a wrapper, not on the shell: `ComposerShell`
-          already declares `transition-[border-color,box-shadow]`, and two
-          arbitrary `transition-[…]` utilities on one element are resolved by
-          stylesheet order rather than class order — one would silently win. */}
-      <div
-        // `inert` is what actually takes this half of the cross-fade out of the
-        // page. `opacity-0 pointer-events-none` hides it from the eye and the
-        // mouse and leaves it in the tab order and the accessibility tree, so a
-        // keyboard or screen-reader user could reach a composer that is not on
-        // screen — and, mid-dictation, type into it. Same defect the chat
-        // transcript's jump-to-latest button had.
-        inert={dictating}
-        className={cn(
-          "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-          dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
-        )}
-      >
+      <div className="w-full">
         <ComposerShell
           dimmed={sending}
           above={
@@ -581,6 +536,6 @@ export function WorkThreadComposer({
         />
         {files.input}
       </div>
-    </div>
+    </DictationSwap>
   );
 }

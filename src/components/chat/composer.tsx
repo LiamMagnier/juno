@@ -83,7 +83,7 @@ import { PLANS } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { DictationSwap } from "@/components/ui/dictation-swap";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import {
@@ -2080,36 +2080,11 @@ export function Composer({
        * transcript preview, which floats above the capsule); both layers
        * themselves move on opacity/transform, which stay on the compositor.
        */}
-      <div
-        className={cn(
-          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
-          dictating ? "min-h-[170px]" : "min-h-[68px]",
-        )}
+      <DictationSwap
+        active={dictating}
+        onCancel={() => setDictating(false)}
+        onClose={(transcript, sendNow) => closeDictation(transcript, sendNow)}
       >
-        <div
-          // `inert` is what actually takes this half of the cross-fade out of the
-          // page. `opacity-0 pointer-events-none` hides it from the eye and the
-          // mouse and leaves it in the tab order and the accessibility tree, so a
-          // keyboard or screen-reader user could reach a composer that is not on
-          // screen — and, mid-dictation, type into it. Same defect the chat
-          // transcript's jump-to-latest button had.
-          inert={!dictating}
-          className={cn(
-            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-            dictating
-              ? "translate-y-0 scale-100 opacity-100"
-              : "pointer-events-none translate-y-1 scale-95 opacity-0",
-          )}
-        >
-          {dictating && (
-            <ComposerDictation
-              onCancel={() => setDictating(false)}
-              onStop={(t) => closeDictation(t, false)}
-              onSend={(t) => closeDictation(t, true)}
-            />
-          )}
-        </div>
-
         <div
           onDragOver={(e) => {
             if (!features.storage || privateMode) return;
@@ -2123,21 +2098,9 @@ export function Composer({
             if (features.storage && !privateMode && e.dataTransfer.files.length)
               addComposerFiles(e.dataTransfer.files);
           }}
-          // `inert` is what actually takes this half of the cross-fade out of the
-          // page. `opacity-0 pointer-events-none` hides it from the eye and the
-          // mouse and leaves it in the tab order and the accessibility tree, so a
-          // keyboard or screen-reader user could reach a composer that is not on
-          // screen — and, mid-dictation, type into it.
-          inert={dictating}
-          // The cross-fade lives on this wrapper, not on the surface: the surface
-          // owns its own focus transition (`.composer-surface`), and a second
-          // `transition-[…]` utility on the same element would replace it.
-          className={cn(
-            "col-start-1 row-start-1 w-full origin-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
-            dictating
-              ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
-              : "translate-y-0 scale-100 opacity-100",
-          )}
+          // The cross-fade, `inert` and pointer handling all live in
+          // DictationSwap; this wrapper only carries the drop target.
+          className="w-full"
         >
         <ComposerShell
           // The palette's containing block: it carries `relative`, so this — not
@@ -2781,7 +2744,7 @@ export function Composer({
               />
             )}
         </div>
-      </div>
+      </DictationSwap>
       {!hideDisclaimer && privateMode && (
         <p className="mt-2 text-center text-micro text-muted-foreground">
           Incognito chats are not saved or added to memory.

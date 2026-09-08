@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, MicOff, Square } from "lucide-react";
+import { ArrowUp, Check, MicOff } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
@@ -10,43 +10,63 @@ import { Pressable } from "@/components/ui/pressable";
 import { cn } from "@/lib/utils";
 
 /**
- * Dictate Mode — a floating capsule that replaces the composer input while
- * listening.
+ * Dictation — the composer, listening.
  *
- * Real audio pipeline: getUserMedia → AudioContext → AnalyserNode, sampled in
- * a rAF loop that drives the dot bar via direct style mutation (no re-renders).
+ * WHAT THIS REPLACED, and why none of it came back. Dictation used to be a
+ * floating capsule that swapped in for the composer: a 24px backdrop blur
+ * behind a 95%-opaque fill (a full-cost filter with nothing visible through
+ * it), a coral radial-gradient aura under a 40px blur scaling with the voice,
+ * a 36-bar mirrored "spectrum" that was really one loudness number drawn 36
+ * times, a three-stop gradient painted across six physical pixels per bar,
+ * 37 standing compositor layers, a halo pulsing at 1Hz that ignored
+ * prefers-reduced-motion, and status copy that read "Transcribing with
+ * precision…". It was the most expensive 250 pixels in the product and it
+ * said one thing: the microphone is on.
  *
- * Transcription is two-tier:
- *  - LIVE PREVIEW comes from the Web Speech API — instant, free, approximate.
- *  - The FINAL transcript is re-transcribed server-side (/api/voice/stt →
- *    gpt-4o-transcribe) from audio captured in parallel by a MediaRecorder.
- * Web Speech alone is poor at non-English speech (it mangles French badly), so
- * it is never trusted for the text that actually reaches the composer. If the
- * server route is unconfigured or fails, we fall back to the Web Speech text
- * rather than losing the user's words.
+ * The replacement is the same object the user was already typing in. Same
+ * surface, same radius, same position — the field's contents cross-fade to
+ * the words being heard and the controls row swaps its buttons. Nothing
+ * flies in, nothing glows, and the only thing that moves with the voice is
+ * a five-bar level meter, because that is the one fact worth showing: you
+ * are being heard.
+ *
+ * THE AUDIO PIPELINE is unchanged and still two-tier:
+ *  - the LIVE PREVIEW comes from the Web Speech API — instant, free, rough;
+ *  - the FINAL transcript is re-cut server-side (/api/voice/stt) from audio a
+ *    MediaRecorder captured in parallel, because the browser recognizer
+ *    mangles non-English speech and must never be the text that ships.
+ * If the server route is unconfigured, slow or fails, the preview stands in
+ * rather than the words being lost.
  */
-
-const DOT_COUNT = 36;
-/** Voice band sampled from the analyser (Hz) — speech energy lives here. */
-const VOICE_BAND_HZ: [number, number] = [85, 4000];
-const NOISE_FLOOR = 9; // 0-255 — ignore ambient hiss so silence is truly still
-// duration-exit on the motion ladder. The shell's closing transition runs the
-// same token, so the unmount lands exactly when the fade does — the old pairing
-// (120ms fade, 150ms timer) parked a fully-faded capsule in the tree for 30ms
-// every close, and neither number was on the ladder.
-const EXIT_MS = 160;
 
 /**
- * The capsule wears the composer's own radius family, because it IS the
- * composer for the duration of a dictation — the two cross-fade in one grid
- * cell, and a pill morphing into a 26px shell made that swap read as two
- * different objects. Concentric by the same arithmetic the shell documents:
- * `rounded-composer` (26px) − 12px padding = 14px = `rounded-composer-action`,
- * the exact rung the composer's own primary action sits on. `size="lg"` (36px)
- * is the nearest ladder rung and would break the 40px fit, so the base size is
- * overridden while the coarse-pointer rung is left alone.
+ * The level meter: five bars, and how each answers the same number.
+ *
+ * A level meter with five identical bars reads as a broken equalizer; five
+ * bars on staggered response curves read as a needle with weight. This is
+ * five gains on ONE scalar, not a pretend spectrum — the previous version's
+ * 36 bars sampled a mirrored FFT so bar i and bar 35−i were within 3% of the
+ * same bin, which is a frequency display costume worn by a volume reading.
  */
-const CAPSULE_CIRCLE = "size-10 shrink-0 rounded-composer-action coarse:size-11";
+const BAR_GAIN = [0.55, 0.8, 1, 0.8, 0.55];
+/** 0-255. Below this is room tone, and the meter must be still in a quiet room. */
+const NOISE_FLOOR = 9;
+/** Speech energy lives here; sampling wider just adds hum and hiss. */
+const VOICE_BAND_HZ: [number, number] = [85, 4000];
+/** Matches `duration-exit` on the motion ladder — see EXIT_CLASS below. */
+const EXIT_MS = 160;
+/**
+ * How long the server transcription may take before the preview ships instead.
+ *
+ * The old code awaited this fetch with no signal and no deadline, and every
+ * control was disabled while it ran: a wedged endpoint left a capsule that
+ * looked alive — meter moving, mic open — with no way out except Escape,
+ * which threw the words away. A stalled response body never rejects on its
+ * own, so the deadline has to be explicit.
+ */
+const STT_TIMEOUT_MS = 15_000;
+/** Restart backoff for a recognizer that keeps ending immediately. */
+const RESTART_BACKOFF_MS = [200, 500, 1200, 3000];
 
 type Phase = "active" | "stopping" | "cancelling" | "sending";
 
@@ -64,11 +84,15 @@ function extensionFor(mime: string): string {
 }
 
 /**
- * Server transcription (gpt-4o-transcribe). Returns null when the route is
- * unconfigured (501) or fails, so the caller can fall back to the Web Speech
- * text rather than dropping what the user just said.
+ * Server transcription. Returns null when the route is unconfigured (501),
+ * fails, or takes longer than a person will wait — the caller then ships the
+ * Web Speech preview rather than dropping what was just said.
  */
-async function transcribeBlob(blob: Blob): Promise<string | null> {
+async function transcribeBlob(blob: Blob, signal: AbortSignal): Promise<string | null> {
+  const timeout = new AbortController();
+  const onAbort = () => timeout.abort();
+  signal.addEventListener("abort", onAbort);
+  const timer = setTimeout(() => timeout.abort(), STT_TIMEOUT_MS);
   try {
     const form = new FormData();
     form.append("audio", blob, `dictation.${extensionFor(blob.type)}`);
@@ -76,15 +100,52 @@ async function transcribeBlob(blob: Blob): Promise<string | null> {
     // Without it the model guesses from the first syllables and often picks
     // English, which is exactly what mangles French dictation.
     if (typeof navigator !== "undefined" && navigator.language) form.append("language", navigator.language);
-    const res = await fetch("/api/voice/stt", { method: "POST", body: form });
+    const res = await fetch("/api/voice/stt", { method: "POST", body: form, signal: timeout.signal });
     if (!res.ok) return null;
     const data = (await res.json()) as { text?: string };
-    const text = data.text?.trim();
-    return text ? text : null;
+    return data.text?.trim() || null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
   }
 }
+
+/**
+ * The level meter: five bars reading one number off a CSS custom property.
+ *
+ * The rAF loop writes `--level` once per frame to this element and the bars
+ * scale from it in CSS, so a frame costs one style write rather than one per
+ * bar, and no element needs `will-change` — five transforms is not a layer
+ * budget problem, thirty-seven was. Under reduced motion the scale collapses
+ * and the colour stays, which is the tiering globals.css documents: the fact
+ * that the microphone is hearing you is state, not decoration.
+ */
+const DictationMeter = React.forwardRef<HTMLSpanElement, { active: boolean; className?: string }>(
+  function DictationMeter({ active, className }, ref) {
+    return (
+      <span
+        ref={ref}
+        aria-hidden="true"
+        className={cn("dictation-meter flex h-4 items-center gap-[3px]", className)}
+      >
+        {BAR_GAIN.map((gain, i) => (
+          <span
+            key={i}
+            style={{ ["--gain" as string]: gain }}
+            // The scale is `.dictation-meter > span` in globals.css: it reads
+            // the shared `--level` and this bar's `--gain`.
+            className={cn(
+              "h-full w-[3px] origin-center rounded-full transition-colors duration-fast ease-out-soft",
+              active ? "bg-primary" : "bg-muted-foreground/50"
+            )}
+          />
+        ))}
+      </span>
+    );
+  }
+);
 
 export function ComposerDictation({
   onCancel,
@@ -102,6 +163,8 @@ export function ComposerDictation({
   const [micError, setMicError] = React.useState(false);
   const [closing, setClosing] = React.useState(false);
   const [transcribing, setTranscribing] = React.useState(false);
+  /** The recognizer stopped coming back. The preview is dead; the recording is not. */
+  const [recognitionLost, setRecognitionLost] = React.useState(false);
 
   const { features } = useApp();
   const serverStt = features.serverStt;
@@ -112,9 +175,10 @@ export function ComposerDictation({
    *  was superseded. Separate from `phaseRef` so the check survives across the
    *  awaits rather than being narrowed away at the assignment above it. */
   const cancelledRef = React.useRef(false);
+  const abortRef = React.useRef<AbortController | null>(null);
   const restartAtRef = React.useRef(0);
-  const dotRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
-  const levelsRef = React.useRef<Float32Array>(new Float32Array(DOT_COUNT));
+  const restartCountRef = React.useRef(0);
+  const meterRef = React.useRef<HTMLSpanElement | null>(null);
   const previewRef = React.useRef<HTMLDivElement | null>(null);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
@@ -126,13 +190,26 @@ export function ComposerDictation({
   const speech = useSpeechRecognition({
     onFinal: (text) => setFinals((f) => [...f, text]),
     onEnd: () => {
-      // Chrome ends recognition after long silence — seamlessly restart while
-      // the overlay is active (throttled so a hard failure can't hot-loop).
+      // Chrome ends recognition after long silence, and also fires `no-speech`
+      // then `end` back to back. The old guard returned outright on a fast
+      // second end and never scheduled anything again, so the recognizer was
+      // dead for the rest of the take while the panel still read "Listening" —
+      // the meter moved, the words stopped, and nothing said why. This backs
+      // off instead, and gives up loudly.
       if (phaseRef.current !== "active") return;
       const now = Date.now();
-      if (now - restartAtRef.current < 300) return;
+      const gap = now - restartAtRef.current;
       restartAtRef.current = now;
-      startRef.current?.();
+      if (gap > 4000) restartCountRef.current = 0;
+      const delay = RESTART_BACKOFF_MS[restartCountRef.current];
+      if (delay === undefined) {
+        setRecognitionLost(true);
+        return;
+      }
+      restartCountRef.current += 1;
+      window.setTimeout(() => {
+        if (phaseRef.current === "active") startRef.current?.();
+      }, delay);
     },
   });
   const startRef = React.useRef<(() => void) | null>(null);
@@ -145,7 +222,7 @@ export function ComposerDictation({
   const transcriptRef = React.useRef(transcript);
   transcriptRef.current = transcript;
 
-  // ---- Real microphone → analyser → dot bar ----
+  // ---- Microphone → analyser → one CSS custom property ----
   React.useEffect(() => {
     let raf = 0;
     let ctx: AudioContext | null = null;
@@ -201,45 +278,19 @@ export function ComposerDictation({
       const hzPerBin = ctx.sampleRate / analyser.fftSize;
       const lo = Math.max(1, Math.floor(VOICE_BAND_HZ[0] / hzPerBin));
       const hi = Math.min(analyser.frequencyBinCount - 1, Math.ceil(VOICE_BAND_HZ[1] / hzPerBin));
-      const levels = levelsRef.current;
-      // The meter follows the tier policy in globals.css even though it is
-      // driven from JS, where no CSS clamp can reach it: the opacity response
-      // is Tier A state feedback (proof the mic is hearing you) and stays; the
-      // scaleY dance is Tier B travel and collapses to identity. A live
-      // MediaQueryList, read per frame, so flipping the OS setting mid-take
-      // applies without restarting the capture pipeline.
-      const reduceMotion =
-        typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+      let level = 0;
 
       const frame = () => {
         analyser.getByteFrequencyData(bins);
+        // One number: the mean energy across the voice band. Everything the
+        // meter shows is this, so it is computed once.
         let sum = 0;
-        for (let i = 0; i < DOT_COUNT; i++) {
-          // Linear-interpolated sample of the voice band, mirrored so the bar
-          // peaks around the center like a mouth-level meter.
-          const centered = 1 - Math.abs(i - (DOT_COUNT - 1) / 2) / ((DOT_COUNT - 1) / 2);
-          const pos = lo + (0.15 + 0.85 * centered) * (hi - lo) * (i % 2 ? 0.97 : 1);
-          const b0 = Math.floor(pos);
-          const t = pos - b0;
-          const raw = bins[b0] * (1 - t) + bins[Math.min(b0 + 1, hi)] * t;
-          const v = Math.max(0, raw - NOISE_FLOOR) / (255 - NOISE_FLOOR);
-          // Fast attack, slow decay — tactile but never jittery.
-          levels[i] = v > levels[i] ? v : levels[i] * 0.86;
-          sum += levels[i];
-          const dot = dotRefs.current[i];
-          if (dot) {
-            const s = 1 + levels[i] * 5.5;
-            dot.style.transform = reduceMotion?.matches ? "" : `scaleY(${s.toFixed(3)})`;
-            dot.style.opacity = (0.35 + levels[i] * 0.65).toFixed(3);
-          }
-        }
-        if (auraGlowRef.current && !reduceMotion?.matches) {
-          const avg = sum / DOT_COUNT;
-          const scale = 1 + avg * 0.45;
-          const op = Math.min(0.65, 0.18 + avg * 0.7);
-          auraGlowRef.current.style.transform = `translate(-50%, -50%) scale(${scale.toFixed(3)})`;
-          auraGlowRef.current.style.opacity = op.toFixed(3);
-        }
+        for (let i = lo; i <= hi; i++) sum += bins[i];
+        const raw = sum / Math.max(1, hi - lo + 1);
+        const v = Math.max(0, raw - NOISE_FLOOR) / (255 - NOISE_FLOOR);
+        // Fast attack, slow decay — tactile but never jittery.
+        level = v > level ? v : level * 0.86;
+        meterRef.current?.style.setProperty("--level", level.toFixed(3));
         raf = requestAnimationFrame(frame);
       };
       raf = requestAnimationFrame(frame);
@@ -254,28 +305,22 @@ export function ComposerDictation({
     };
   }, []);
 
-  const auraGlowRef = React.useRef<HTMLDivElement | null>(null);
-
   // Start recognition once support is known (resolved post-mount by the hook).
   const startedRef = React.useRef(false);
+  const startSpeech = speech.start;
+  const speechSupported = speech.supported;
   React.useEffect(() => {
-    if (speech.supported && !startedRef.current && phaseRef.current === "active") {
+    if (speechSupported && !startedRef.current && phaseRef.current === "active") {
       startedRef.current = true;
-      speech.start();
+      startSpeech();
     }
-  }, [speech.supported, speech]);
+  }, [speechSupported, startSpeech]);
 
   // Keep the live preview pinned to the newest words.
   React.useEffect(() => {
     const el = previewRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript]);
-
-  const [announcement, setAnnouncement] = React.useState("");
-  React.useEffect(() => {
-    const latest = finals[finals.length - 1]?.trim();
-    if (latest) setAnnouncement(latest);
-  }, [finals]);
 
   /** Stop the recorder and resolve the captured audio (null if nothing usable). */
   const stopRecorder = React.useCallback((): Promise<Blob | null> => {
@@ -300,7 +345,10 @@ export function ComposerDictation({
       const abortingInFlight = phase === "cancelling" && phaseRef.current !== "active";
       if (phaseRef.current !== "active" && !abortingInFlight) return;
       phaseRef.current = phase;
-      if (phase === "cancelling") cancelledRef.current = true;
+      if (phase === "cancelling") {
+        cancelledRef.current = true;
+        abortRef.current?.abort();
+      }
       const previewText = transcriptRef.current;
       speech.stop();
 
@@ -321,7 +369,9 @@ export function ComposerDictation({
         if (cancelledRef.current) return;
         if (!serverStt || !blob || blob.size < 1200) return close(previewText);
         setTranscribing(true);
-        const accurate = await transcribeBlob(blob);
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const accurate = await transcribeBlob(blob, controller.signal);
         if (cancelledRef.current) return;
         close(accurate ?? previewText);
       })();
@@ -338,141 +388,145 @@ export function ComposerDictation({
       if (e.key === "Escape") {
         e.preventDefault();
         cancel();
-      } else if (e.key === "Enter" && transcriptRef.current) {
+      } else if (e.key === "Enter" && (transcriptRef.current || serverStt)) {
+        // Matches the Send button exactly: with server transcription on, the
+        // preview may legitimately be empty and the words still arrive.
         e.preventDefault();
         send();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cancel, send]);
+  }, [cancel, send, serverStt]);
 
   const noTranscription = ready && !speech.supported && !serverStt;
-  const showFallback = micError || (noTranscription && !closing);
+  const listening = phaseRef.current === "active" && !micError && !transcribing;
+
+  /**
+   * The one status line, and it never says something it cannot know.
+   *
+   * "Listening" is claimed only while the microphone is actually open. When
+   * the browser recognizer gives up but the recording continues, the line
+   * says so plainly instead of leaving "Listening" on screen with no words
+   * appearing behind it.
+   */
+  const status = micError
+    ? "Microphone blocked"
+    : transcribing
+      ? "Transcribing"
+      : recognitionLost
+        ? serverStt
+          ? "Recording — text arrives when you finish"
+          : "Live text stopped"
+        : "Listening";
+
+  // The exit accelerates. An entrance decelerates because it is arriving under
+  // its own steam; a dismissal has already been decided, so it should leave.
+  const EXIT_CLASS = "duration-exit ease-in";
+
+  const canSend = !!transcript || serverStt;
 
   return (
     <div
-      role="dialog"
+      role="group"
       aria-label="Dictation"
       className={cn(
-        "relative z-30 flex items-center justify-center w-full px-3 transition-[opacity,transform] duration-exit ease-out-soft motion-reduce:transition-none",
-        closing ? "translate-y-2 scale-[0.97] opacity-0" : "motion-safe:animate-rise-in"
+        // The composer's own surface and radius. Dictation is not a different
+        // object arriving over the composer, it is the composer listening, so
+        // the box must not appear to change.
+        "composer-surface relative flex w-full flex-col rounded-panel",
+        "transition-opacity motion-reduce:transition-none",
+        closing ? cn("opacity-0", EXIT_CLASS) : "duration-fast ease-out-soft opacity-100"
       )}
     >
-      <div className="relative w-full max-w-xl">
-        {/* Dynamic Voice Ambient Aura Glow behind the Dictate Capsule */}
-        <div
-          ref={auraGlowRef}
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 -z-10 h-28 w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-2xl transition-transform duration-fast will-change-transform"
-          style={{
-            background: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.85) 0%, hsl(var(--primary) / 0.35) 45%, transparent 75%)",
-          }}
-        />
+      {/* The words, where the textarea's words were. Same padding, same size,
+          same measure — so the cross-fade reads as the field changing what it
+          holds rather than one panel replacing another. */}
+      <div
+        ref={previewRef}
+        aria-live="off"
+        className="max-h-40 min-h-16 overflow-y-auto px-5 pb-3 pt-4 text-base leading-relaxed"
+      >
+        {noTranscription ? (
+          <p className="text-muted-foreground">
+            This browser cannot transcribe speech. Type instead, or use a Chromium browser.
+          </p>
+        ) : micError ? (
+          <p className="text-muted-foreground">
+            Juno needs the microphone to dictate. Allow it in your browser, then try again.
+          </p>
+        ) : transcript ? (
+          <p className="whitespace-pre-wrap text-foreground">
+            {finals.join(" ")}
+            {speech.interim.trim() && (
+              <>
+                {finals.length ? " " : ""}
+                <span className="text-muted-foreground">{speech.interim.trim()}</span>
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Speak now.</p>
+        )}
+      </div>
 
-        {/* The one speaking element — see the announcement effect above. */}
-        <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
-          {announcement}
+      {/* The controls row, in the composer's own geometry: leading affordance,
+          state in the middle, primary action on the right. */}
+      <div className="flex flex-nowrap items-center gap-1.5 px-3 pb-3 pt-1">
+        <Pressable
+          kind="icon"
+          size="lg"
+          onClick={cancel}
+          aria-label="Cancel dictation"
+          className="shrink-0"
+        >
+          {micError ? <MicOff className="size-4" /> : <ActionIcons.dismiss className="size-4" />}
+        </Pressable>
+
+        <span className="flex min-w-0 items-center gap-2 pl-1">
+          {!micError && !noTranscription && <DictationMeter ref={meterRef} active={listening} />}
+          <span
+            role="status"
+            aria-live="polite"
+            className={cn(
+              "min-w-0 truncate text-ui text-muted-foreground",
+              // The shimmer is the product's existing "working" treatment and
+              // is already in the reduced-motion stop list, so it degrades to
+              // plain muted text rather than needing its own spinner.
+              transcribing && "shimmer-text"
+            )}
+          >
+            {status}
+          </span>
         </span>
 
-        {/* Live transcription preview — floats above the capsule with frosted glass. */}
-        {!showFallback && (
-          <div
-            ref={previewRef}
-            aria-live="off"
-            className="absolute bottom-full left-1/2 mb-3.5 max-h-40 w-[94%] -translate-x-1/2 surface-float overlay-glass overflow-y-auto rounded-popover px-4 py-3 text-sm leading-relaxed transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-none"
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={stop}
+            disabled={transcribing}
+            aria-label="Stop dictation and edit the text"
           >
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-primary" />
-              </span>
-              <span className="text-caption font-medium text-primary">
-                {transcribing ? "Transcribing with precision…" : "Listening…"}
-              </span>
-            </div>
-            {transcript ? (
-              <p className="text-foreground">
-                {finals.join(" ")}
-                {finals.length > 0 && speech.interim.trim() ? " " : ""}
-                <span className="text-muted-foreground transition-opacity">{speech.interim.trim()}</span>
-              </p>
-            ) : (
-              <span className="italic text-muted-foreground/60">Speak now, Juno is listening…</span>
+            <Check className="size-4" />
+            Done
+          </Button>
+          <button
+            type="button"
+            onClick={send}
+            disabled={transcribing || !canSend}
+            aria-label="Send what you dictated"
+            className={cn(
+              "pressable grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+              "hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+              "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11"
             )}
-            {transcribing && (
-              <span className="mt-2 flex items-center gap-1.5 text-caption text-primary">
-                <Loader2 className="size-3 animate-spin" />
-                Refining transcription…
-              </span>
-            )}
-          </div>
-        )}
-
-        {showFallback ? (
-          /* Graceful fallback: no Web Speech support, or mic denied. */
-          <div className="flex h-16 items-center justify-between gap-3 rounded-composer border border-border/80 bg-card px-3 pl-5 shadow-float">
-            <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
-              <MicOff className="size-4 shrink-0 text-muted-foreground/60" />
-              <span className="truncate">
-                {micError
-                  ? "Microphone access was denied — allow it in your browser to dictate."
-                  : "Dictation isn't available here — try Chrome, or enable server transcription."}
-              </span>
-            </span>
-            <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Close dictation" className={CAPSULE_CIRCLE}>
-              <ActionIcons.dismiss className="size-4" />
-            </Pressable>
-          </div>
-        ) : (
-          /* Shell radius + concentric inner rung: modern floating glass capsule */
-          <div className="relative flex h-16 items-center gap-3 rounded-composer border border-border/80 bg-card/95 px-3.5 shadow-float backdrop-blur-xl">
-            <Pressable
-              kind="icon"
-              size="lg"
-              onClick={cancel}
-              aria-label="Cancel dictation"
-              className={cn(CAPSULE_CIRCLE, "border border-border/60 hover:bg-muted/80")}
-            >
-              <ActionIcons.dismiss className="size-4" />
-            </Pressable>
-
-            {/* Live frequency waveform bars — driven by the analyser rAF loop */}
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-[3.5px] px-1" aria-hidden>
-              {Array.from({ length: DOT_COUNT }).map((_, i) => (
-                <span
-                  key={i}
-                  ref={(el) => {
-                    dotRefs.current[i] = el;
-                  }}
-                  className="h-1.5 w-[3.5px] shrink-0 rounded-full bg-gradient-to-t from-primary/60 via-primary to-foreground opacity-40 will-change-transform"
-                />
-              ))}
-            </div>
-
-            <Pressable
-              kind="icon"
-              size="lg"
-              onClick={stop}
-              autoFocus
-              disabled={transcribing}
-              aria-label="Stop and edit"
-              className={cn(CAPSULE_CIRCLE, "bg-muted/90 text-foreground hover:bg-muted")}
-            >
-              <Square className="size-3.5 fill-current" />
-            </Pressable>
-
-            <Button
-              size="icon"
-              onClick={send}
-              disabled={transcribing || (!transcript && !serverStt)}
-              aria-label="Send dictation"
-              className={cn(CAPSULE_CIRCLE, "shadow-sm")}
-            >
-              {transcribing ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4.5" />}
-            </Button>
-          </div>
-        )}
+          >
+            <ArrowUp className="size-4" strokeWidth={2.25} />
+          </button>
+        </div>
       </div>
     </div>
   );
