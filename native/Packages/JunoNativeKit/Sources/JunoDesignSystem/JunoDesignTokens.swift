@@ -225,11 +225,45 @@ public enum JunoMotion {
     /// whose own doc comment described the bug it fixes still had zero uses.
     public static let exit = Animation.easeIn(duration: Duration.exit)
     /// Standard transitions: selection, disclosure, popovers, sheets.
-    public static let standard = Animation.spring(duration: Duration.base, bounce: 0.05)
+    public static let standard = Animation.spring(
+        duration: Duration.base * platformFactor, bounce: 0.05
+    )
     /// Emphasized transitions: larger spatial moves like the sidebar reveal.
-    public static let emphasized = Animation.spring(duration: Duration.slow, bounce: 0.10)
-    /// Interactive, gesture-following spring for drag-driven surfaces.
-    public static let spring = Animation.interactiveSpring(response: 0.32, dampingFraction: 0.85)
+    public static let emphasized = Animation.spring(
+        duration: Duration.slow * platformFactor, bounce: 0.10
+    )
+    /// Interactive, gesture-following spring for anything tracking a held
+    /// finger or a dragged pointer.
+    public static let interactive = Animation.interactiveSpring(
+        response: 0.32 * platformFactor, dampingFraction: 0.85
+    )
+    /// The older name for ``interactive``. Kept so the ladder gains a rung
+    /// without renaming every drag surface in one commit.
+    public static let spring = interactive
+    /// The one celebratory rung, and the only bounce above the house range.
+    ///
+    /// **Exactly two sites product-wide**: a run reaching Completed, and an
+    /// approval being accepted. A third fails review. Bounce is the single
+    /// strongest toy-versus-tool dial, which is why the ceiling is 0.18 and why
+    /// it is spent on the two moments a person has genuinely been waiting for.
+    /// Not scaled by ``platformFactor``: a reward is the same size everywhere.
+    public static let reward = Animation.spring(duration: Duration.slow, bounce: 0.18)
+
+    /// Same names, different values: the Mac runs the travel rungs at three
+    /// quarters of the phone's, with identical bounce.
+    ///
+    /// A pointer covers distance faster than a thumb, the windows are larger,
+    /// and identical timings on both platforms are themselves a tell that
+    /// motion was specified once and shipped twice. One factor, applied here
+    /// and nowhere else — a call site that multiplies by hand is starting a
+    /// second ladder.
+    public static var platformFactor: Double {
+        #if os(macOS)
+            return 0.75
+        #else
+            return 1
+        #endif
+    }
 
     /// The ladder's rungs as raw seconds, for the handful of places that need a
     /// duration rather than an `Animation` — a `Task.sleep`, a `TimelineView`

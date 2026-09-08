@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Liquid Glass is reserved for floating chrome (composers, toolbars, floating
-/// controls) — never the main reading surface. This helper applies the OS 26+
-/// glass effect where available and falls back to a system material on the
-/// minimum deployment targets, so one call adapts across OS versions.
+/// controls) — never the main reading surface. Every helper here applies the
+/// real material: the package floor is the 26 releases, so the pre-26 branches
+/// that used to sit beside each call — a `.regularMaterial` plus a hairline —
+/// are gone, and with them a second design no shipping build ever rendered.
 ///
 /// Mechanically, glass on a scroller is wrong as well as off-brief: glass
 /// samples what is behind it *right now*, so on a moving transcript the sample
@@ -23,11 +24,7 @@ private struct JunoFloatingGlass: ViewModifier {
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
-        } else {
-            content.background(.regularMaterial, in: shape)
-        }
+        content.glassEffect(.regular, in: shape)
     }
 }
 
@@ -42,20 +39,7 @@ public struct JunoGlassBackground: View {
 
     public var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            // Was `.quaternary.opacity(0.5)`. That is a translucent grey *fill*,
-            // not a material: it does not blur, so on the warm canvas it read as
-            // the dirt a grey shadow leaves rather than as a surface. Every
-            // pre-26 fallback in the design system now stands on
-            // `.regularMaterial` plus a hairline — the material because it is
-            // what the HIG names for content that cannot be glass, and the
-            // hairline because a plain material carries no rim of its own, where
-            // real glass does.
-            shape.fill(.regularMaterial)
-                .overlay(shape.strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
+        Color.clear.glassEffect(.regular, in: shape)
     }
 }
 
@@ -106,16 +90,7 @@ public extension View {
 
 private struct JunoProminentAction: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.buttonStyle(.glassProminent).tint(Color.junoAccent)
-        } else {
-            // Below 26 there is no glass at all, and `.borderedProminent` is the
-            // platform's own answer for the same role. The explicit tint is
-            // load-bearing on both branches: without it the button draws in the
-            // *system* accent, which is how coral and system blue ended up on
-            // the same screen.
-            content.buttonStyle(.borderedProminent).tint(Color.junoAccent)
-        }
+        content.buttonStyle(.glassProminent).tint(Color.junoAccent)
     }
 }
 
@@ -124,12 +99,8 @@ private struct JunoAccentGlass<S: Shape>: ViewModifier {
     let interactive: Bool
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.glassEffect(
-                .regular.tint(Color.junoAccent).interactive(interactive), in: shape
-            )
-        } else {
-            content.background(Color.junoAccent, in: shape)
-        }
+        content.glassEffect(
+            .regular.tint(Color.junoAccent).interactive(interactive), in: shape
+        )
     }
 }

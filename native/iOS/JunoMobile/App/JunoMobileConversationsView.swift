@@ -2051,26 +2051,17 @@ struct JunoMobileSharedText: Identifiable {
 /// iOS 26 — the platform's answer to content passing under floating chrome.
 struct JunoMobileSoftScrollEdges: ViewModifier {
   func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-    } else {
-      content
-    }
+    content
+      .scrollEdgeEffectStyle(.soft, for: .top)
+      .scrollEdgeEffectStyle(.soft, for: .bottom)
   }
 }
 
 extension View {
   /// The composer as a bottom bar: `safeAreaBar` on iOS 26, which lets the
   /// scroll edge effect run under it, and `safeAreaInset` before.
-  @ViewBuilder
   func junoComposerBar<Bar: View>(@ViewBuilder _ bar: @escaping () -> Bar) -> some View {
-    if #available(iOS 26.0, *) {
-      safeAreaBar(edge: .bottom, content: bar)
-    } else {
-      safeAreaInset(edge: .bottom, content: bar)
-    }
+    safeAreaBar(edge: .bottom, content: bar)
   }
 }
 

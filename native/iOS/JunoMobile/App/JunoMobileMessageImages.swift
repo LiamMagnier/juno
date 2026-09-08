@@ -115,18 +115,14 @@ struct JunoMobileAttachmentImage: View {
 
 // MARK: - Zoom transition
 
-/// `.navigationTransition(.zoom)` / `.matchedTransitionSource`, gated so the
-/// deployment target keeps compiling. Both halves are no-ops below iOS 18.
+/// `.navigationTransition(.zoom)` / `.matchedTransitionSource`, as one pair so
+/// the anchor and the destination cannot drift apart.
 struct JunoMobileZoomTransitionAnchor: ViewModifier {
   let id: String
   let namespace: Namespace.ID
 
   func body(content: Content) -> some View {
-    if #available(iOS 18.0, *) {
-      content.matchedTransitionSource(id: id, in: namespace)
-    } else {
-      content
-    }
+    content.matchedTransitionSource(id: id, in: namespace)
   }
 }
 
@@ -135,11 +131,7 @@ struct JunoMobileZoomTransitionSource: ViewModifier {
   let namespace: Namespace.ID
 
   func body(content: Content) -> some View {
-    if #available(iOS 18.0, *) {
-      content.navigationTransition(.zoom(sourceID: id, in: namespace))
-    } else {
-      content
-    }
+    content.navigationTransition(.zoom(sourceID: id, in: namespace))
   }
 }
 

@@ -624,13 +624,8 @@ struct JunoMobileSidebarDrawer: View {
   // MARK: - Footer
 
   /// Who is signed in, on what plan, and the drawer's one primary action.
-  @ViewBuilder
   private var footer: some View {
-    if #available(iOS 26.0, *) {
-      GlassEffectContainer(spacing: 10) { footerControls }
-    } else {
-      footerControls
-    }
+    GlassEffectContainer(spacing: 10) { footerControls }
   }
 
   private var profileName: String { session.profile.name ?? session.profile.email }

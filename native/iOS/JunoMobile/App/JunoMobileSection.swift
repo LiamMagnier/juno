@@ -99,6 +99,14 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         .projects, .library, .artifacts, .work, .code, .tasks, .connections,
     ]
 
+    /// The surfaces that are not products. On iPhone they push on the Chat
+    /// stack from the history sheet; on iPad they are the hidden sidebar
+    /// group under the three product tabs. Work and Code are products and so
+    /// are tabs on both, which is why they are absent here.
+    static let workspaceDestinations: [JunoMobileSection] = [
+        .projects, .library, .artifacts, .tasks, .connections,
+    ]
+
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
     /// drawer shows the flat set.
     enum Group: String, CaseIterable, Identifiable {

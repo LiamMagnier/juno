@@ -179,17 +179,10 @@ private struct JunoSheetSurface: ViewModifier {
             .background(ground)
 
         #if os(macOS)
-        // `presentationSizing` is macOS 15 / iOS 18, one notch above this
-        // package's own floor — hence the check even though every Juno app is
-        // already at or above it.
-        if #available(macOS 15.0, *) {
-            switch sizing {
-            case .form: grounded.presentationSizing(.form)
-            case .page: grounded.presentationSizing(.page)
-            case .fitted: grounded.presentationSizing(.fitted)
-            }
-        } else {
-            grounded
+        switch sizing {
+        case .form: grounded.presentationSizing(.form)
+        case .page: grounded.presentationSizing(.page)
+        case .fitted: grounded.presentationSizing(.fitted)
         }
         #else
         grounded

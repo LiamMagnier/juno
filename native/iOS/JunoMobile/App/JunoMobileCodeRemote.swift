@@ -881,11 +881,7 @@ struct JunoMobileCodeRemoteThreadView: View {
 /// The content's bottom edge softens under the floating composer on iOS 26.
 struct JunoMobileSoftBottomEdge: ViewModifier {
   func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content.scrollEdgeEffectStyle(.soft, for: .bottom)
-    } else {
-      content
-    }
+    content.scrollEdgeEffectStyle(.soft, for: .bottom)
   }
 }
 

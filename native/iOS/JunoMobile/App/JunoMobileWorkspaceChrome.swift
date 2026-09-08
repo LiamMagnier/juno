@@ -306,13 +306,8 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
 /// system draw Liquid Glass and its pressed state on iOS 26/27, with the native
 /// bordered control as the older-system fallback.
 struct JunoMobileWorkspaceActionStyle: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.buttonStyle(.glass)
-        } else {
-            content.buttonStyle(.bordered)
-        }
+        content.buttonStyle(.glass)
     }
 }
 
