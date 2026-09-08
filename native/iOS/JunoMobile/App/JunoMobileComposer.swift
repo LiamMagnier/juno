@@ -109,6 +109,55 @@ struct JunoMobileComposer: View {
     model.modelCatalog.first { $0.id == selectedModelID }
   }
 
+  /// The "/" commands this composer can honour. Rows whose surface the
+  /// shell did not hand over (voice, library, connected apps) are absent
+  /// rather than present and inert.
+  private var slashCommands: [JunoMobileSlashCommand] {
+    var rows: [JunoMobileSlashCommand] = [
+      .init(key: "research", icon: .research, hint: "Run deep research on this message"),
+      .init(key: "search", icon: .web, hint: "Search the web for this message"),
+      .init(key: "canvas", icon: .canvas, hint: "Answer as a canvas"),
+    ]
+    if openVoiceMode != nil {
+      rows.append(.init(key: "voice", icon: .mic, hint: "Start voice mode"))
+    }
+    if openLibrary != nil {
+      rows.append(.init(key: "library", icon: .files, hint: "Attach from your library"))
+    }
+    if openPlugins != nil {
+      rows.append(.init(key: "apps", icon: .blocks, hint: "Connected apps"))
+    }
+    return rows
+  }
+
+  /// Consumes the token and acts. The prompt is cleared first so the command
+  /// never lands in the sent message as literal text.
+  private func runSlashCommand(_ command: JunoMobileSlashCommand) {
+    prompt = ""
+    switch command.key {
+    case "research": tools.deepResearch = true
+    case "search": tools.webSearch = true
+    case "canvas": tools.canvas = true
+    case "voice": openVoiceMode?()
+    case "library": openLibrary?()
+    case "apps": openPlugins?()
+    default: break
+    }
+    if ["research", "search", "canvas"].contains(command.key) {
+      composerFocused.wrappedValue = true
+    }
+  }
+
+  /// The research depth these choices buy — the chip's line, and the same
+  /// answer the server derives from the same three inputs.
+  private var researchDepth: NativeResearchEffort {
+    NativeResearchEffort.derived(
+      priceClass: selectedModel?.pricing?.priceClass,
+      reasoningEffort: reasoningEffort,
+      proMode: tools.proMode
+    )
+  }
+
   private var thinkingScale: NativeThinkingScale? {
     selectedModel.map(NativeThinkingScale.init)
   }
@@ -244,6 +293,7 @@ struct JunoMobileComposer: View {
       if tools.deepResearch || !model.researchActivity.isEmpty {
         JunoMobileResearchProgress(
           enabled: tools.deepResearch,
+          depth: researchDepth,
           activity: model.researchActivity,
           degradedWarning: model.researchDegradedWarning,
           onDisable: { tools.deepResearch = false }
@@ -286,6 +336,15 @@ struct JunoMobileComposer: View {
                 attachments: attachments,
                 onRemove: { attachmentModel.remove($0) },
                 onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+              )
+              .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            if let slashQuery = JunoMobileSlashPalette.query(in: prompt), !showsCollapsedDraft {
+              JunoMobileSlashPalette(
+                commands: slashCommands,
+                query: slashQuery,
+                pick: runSlashCommand
               )
               .transition(.opacity.combined(with: .move(edge: .bottom)))
             }

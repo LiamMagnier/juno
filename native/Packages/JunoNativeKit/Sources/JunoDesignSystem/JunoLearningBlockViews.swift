@@ -778,7 +778,7 @@ public struct JunoQuizInteraction: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             Rectangle().fill(Color.junoHairline).frame(height: 1)
-            (verdict + body)
+            Text("\(verdict)\(body)")
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1052,7 +1052,7 @@ public struct JunoLearningBlockView: View {
                 JunoIconView(.triangleAlert)
                     .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoCaution)
-                (claim + reason)
+                Text("\(claim)\(reason)")
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -1849,22 +1849,16 @@ private struct JunoMobileMessageRow: View {
     }
   }
 
+  /// The model only. The per-message price used to sit beside it, and a
+  /// transcript that quotes a dollar figure under every answer reads as a
+  /// meter rather than a conversation; the spend lives in Settings › Usage,
+  /// where it is a total with a shape, not a tax on each reply.
   private var footerLine: String? {
-    let name = message.model.flatMap { $0.isEmpty ? nil : junoDisplayModelName($0) }
-    let price = message.costUSD.map(JunoMobileCost.formatted)
-    switch (name, price) {
-    case (let name?, let price?): return "\(name) · \(price)"
-    case (let name?, nil): return name
-    case (nil, let price?): return price
-    default: return nil
-    }
+    message.model.flatMap { $0.isEmpty ? nil : junoDisplayModelName($0) }
   }
 
   private var footerAccessibilityLabel: String? {
-    guard let price = message.costUSD.map(JunoMobileCost.formatted) else { return nil }
-    guard let name = message.model.flatMap({ $0.isEmpty ? nil : junoDisplayModelName($0) })
-    else { return "Cost \(price)" }
-    return "\(name), cost \(price)"
+    footerLine.map { "Answered by \($0)" }
   }
 
   /// The website's action row, ported.

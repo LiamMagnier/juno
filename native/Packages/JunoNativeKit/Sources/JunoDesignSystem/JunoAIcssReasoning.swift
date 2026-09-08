@@ -187,9 +187,7 @@ public struct JunoAIcssReasoningStream: View {
                     // compact Chat wording, while Code can call this provenance
                     // "Reasoning" without the interface pretending the trace is
                     // a mysterious thought bubble.
-                    Text(label == "Thinking…" ? "Thought" : label)
-                        .foregroundStyle(Color.junoMutedForeground)
-                        + Text(duration.map { " for \($0)" } ?? "")
+                    Text((label == "Thinking…" ? "Thought" : label) + (duration.map { " for \($0)" } ?? ""))
                         .foregroundStyle(Color.junoMutedForeground)
                     JunoIconView(.chevronUp)
                         .junoFont(size: 9, relativeTo: .caption2, weight: .semibold)

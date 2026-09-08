@@ -619,11 +619,10 @@ struct JunoModelDetailPanel: View {
     private var metaLine: some View {
         var line = Text(model.shortProviderName)
         if model.modality == .chat, let context = model.contextWindowTokens {
-            line = line + Text(" · ")
-                + Text("\(JunoModelFormatting.contextWindow(context)) context").monospaced()
+            line = Text("\(line) · \(Text("\(JunoModelFormatting.contextWindow(context)) context").monospaced())")
         }
         if let released = model.released {
-            line = line + Text(" · ") + Text(released).monospaced()
+            line = Text("\(line) · \(Text(released).monospaced())")
         }
         return line
             .junoFont(size: 10, relativeTo: .caption2)
@@ -637,11 +636,12 @@ struct JunoModelDetailPanel: View {
             if price.isFree {
                 return Text("Free").fontWeight(.semibold)
             }
-            return Text(JunoModelSelectorCatalog.formatPrice(price.inputPerMillion)).fontWeight(.semibold)
-                + Text(" in ").foregroundStyle(Color.junoMutedForeground)
-                + Text("· ").foregroundStyle(Color.junoMutedForeground.opacity(0.5))
-                + Text(JunoModelSelectorCatalog.formatPrice(price.outputPerMillion)).fontWeight(.semibold)
-                + Text(" out / MTok").foregroundStyle(Color.junoMutedForeground)
+            let input = Text(JunoModelSelectorCatalog.formatPrice(price.inputPerMillion)).fontWeight(.semibold)
+            let output = Text(JunoModelSelectorCatalog.formatPrice(price.outputPerMillion)).fontWeight(.semibold)
+            let inLabel = Text(" in ").foregroundStyle(Color.junoMutedForeground)
+            let dot = Text("· ").foregroundStyle(Color.junoMutedForeground.opacity(0.5))
+            let outLabel = Text(" out / MTok").foregroundStyle(Color.junoMutedForeground)
+            return Text("\(input)\(inLabel)\(dot)\(output)\(outLabel)")
         }
         if let detail = model.priceDetail {
             return Text(detail).foregroundStyle(Color.junoMutedForeground)
@@ -670,11 +670,9 @@ struct JunoModelDetailPanel: View {
             providerTile
         }
 
-        (Text("Routes each message to the ")
-            + Text("optimal model").fontWeight(.medium).foregroundStyle(Color.junoForeground)
-            + Text(" and ")
-            + Text("thinking depth").fontWeight(.medium).foregroundStyle(Color.junoForeground)
-            + Text(" for speed, intelligence and cost."))
+        Text(
+            "Routes each message to the \(Text("optimal model").fontWeight(.medium).foregroundStyle(Color.junoForeground)) and \(Text("thinking depth").fontWeight(.medium).foregroundStyle(Color.junoForeground)) for speed, intelligence and cost."
+        )
             .junoFont(size: 12, relativeTo: .caption)
             .lineSpacing(3)
             .junoSecondaryInk()
