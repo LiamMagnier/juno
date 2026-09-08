@@ -202,6 +202,7 @@ const config: Config = {
       // and a `z-[100]` that outranks everything in the product including the
       // modal scrim. A scale you cannot type is not a scale.
       zIndex: {
+        aura: "var(--z-aura)", // the voice light: over the interface, under input
         popper: "var(--z-popper)", // menus, popovers, selects, tooltips
         modal: "var(--z-modal)", // the dialog scrim and its panel
         toolbar: "var(--z-toolbar)", // floating toolbars that must clear a popper

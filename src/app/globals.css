@@ -336,6 +336,8 @@
        with the dialog's own panel and resolved on DOM order. Radix portals both
        to <body>, so which one wins was an accident of mount order. The menu has
        to clear the surface that opened it. */
+    /* The voice aura: over the interface, under anything that takes input. */
+    --z-aura: 40;
     --z-popper: 55;
     --z-modal: 50;
     --z-toolbar: 60;
@@ -1180,34 +1182,33 @@
   /*
    * ——— Voice aura ———
    *
-   * The light along the bottom of the reading column while a call is live:
-   * waves running the bottom edge and a little way up both arms, dying out
-   * before they reach the top so they frame the conversation instead of
-   * enclosing it.
+   * The light around the window while a call is live: waves along the bottom
+   * edge and up the lowest 30% of both sides, with an ambient field behind
+   * them. A call is a mode the whole screen is in, not a widget inside the
+   * conversation, so the light wraps the window rather than the reading column.
    *
    * The shape is a canvas (voice-aura.tsx) because it is a sum of travelling
    * sine waves, which no gradient expresses. Everything CSS owns is placement.
    *
+   * IT PAINTS OVER THE PRODUCT, NOT UNDER IT. Every surface in the app has its
+   * own opaque background, so a layer underneath would be invisible everywhere
+   * except the page margins. It sits above the interface and below anything
+   * that takes input — menus, dialogs, toasts — at alphas low enough that type
+   * underneath stays legible, and with pointer-events off so it can never take
+   * a click.
+   *
    * NOTE THE ABSENT FILTER. An earlier version put `blur(9px)` over this whole
    * canvas, which destroyed the 1.25px crest stroke that is the only part of
    * the draw carrying the motion — the expensive work was paid for and then
-   * erased. Softness now lives in the paint: the fill runs a gradient that
-   * fades to nothing as it rises. Do not reintroduce a filter here.
+   * erased. Softness lives in the paint: the fill runs a gradient that fades to
+   * nothing as it rises, and the field is radial falloff. Do not reintroduce a
+   * filter here; on a full-window canvas it is also a full-surface pass every
+   * frame.
    */
   .voice-aura {
-    position: absolute;
-    /* The column, and no wider. Voice belongs to this conversation, so the
-       light stops where the conversation does — running it to the window edge
-       washed the sidebar, which is a different surface with its own state. */
-    left: 0;
-    right: 0;
-    /* Anchored just below the composer and reaching up behind it. */
-    bottom: -1.25rem;
-    height: min(26rem, 40vh);
-    /* UNDER the composer, not over it. The `isolate` on the host wrapper is
-       the stacking context that makes this mean "behind the composer" rather
-       than "behind the page". */
-    z-index: -1;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-aura);
     pointer-events: none;
     opacity: 0;
     animation: voice-aura-in var(--dur-slow) var(--ease-out-soft) forwards;
@@ -1223,15 +1224,12 @@
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  /* A live microphone has to stay visible, so reduced motion keeps the field
+     and drops only the travel — the canvas freezes its clock (see
+     voice-aura.tsx) and the waves become a still envelope that still swells
+     with the level. The arrival keeps its fade: opacity is Tier A. */
   @media (prefers-reduced-motion: reduce) {
-    /* The canvas stops advancing its clock on its own (see voice-aura.tsx), so
-       the waves hold still. The arrival keeps its fade — opacity is Tier A. */
     .voice-aura { animation-duration: var(--dur-base); }
-  }  /* A live microphone has to stay visible, so reduced motion keeps the field
-     and drops only the travel — the canvas freezes its clock and the waves
-     become a still, breathing envelope. */
-  @media (prefers-reduced-motion: reduce) {
-    .voice-aura { animation: none; opacity: 1; }
   }
 
   /*
