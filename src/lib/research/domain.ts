@@ -1330,12 +1330,12 @@ export const REVISION_REPORT_CHARS = 48_000;
 /**
  * Allowance for the system prompt riding each model call.
  *
- * One number rather than four because the three research system prompts are
- * 788, 1,690 and 857 characters and none of them is going to double; a
- * per-prompt constant would be four things to keep in step for no extra
- * accuracy.
+ * One number rather than four because a per-prompt constant would be four
+ * things to keep in step for no extra accuracy. 4,000 covers the largest of
+ * them — the structured planner's contract (plan-format.ts) runs ~3,500
+ * characters; the worker, lead and writer prompts are well under.
  */
-export const SYSTEM_PROMPT_CHARS = 2_500;
+export const SYSTEM_PROMPT_CHARS = 4_000;
 /**
  * Fixed characters of `buildResearchCorpus` before any source: the report
  * contract, the untrusted-content rule and the restated goal.

@@ -282,7 +282,7 @@ export default function UpgradePage() {
         <div className="surface-inset mt-4 rounded-card p-1.5">
           {faq.map((entry) => (
             <details key={entry.q} className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-[background-color,box-shadow] duration-fast ease-out-soft hover:bg-card hover:shadow-raised motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-[background-color,box-shadow] duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
                 {entry.q}
                 <ChevronDown
                   className="size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-open:rotate-180 motion-reduce:transition-none"

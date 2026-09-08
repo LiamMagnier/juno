@@ -186,6 +186,21 @@ export default function ProjectsPage() {
     setOpen(true);
   };
 
+  // `/projects?new=1` (the sidebar's + on the Projects section) lands with
+  // the create dialog already open, then drops the flag from the URL so a
+  // refresh or a back-navigation does not reopen it. Read off `location`
+  // rather than useSearchParams, which would ask for a Suspense boundary
+  // around a page that is otherwise plain.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("new") !== "1") return;
+    url.searchParams.delete("new");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    setName("");
+    setOpen(true);
+  }, []);
+
   const pinnedCount = React.useMemo(() => (items ?? []).filter((p) => p.starred).length, [items]);
 
   // Search, filter and sort

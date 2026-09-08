@@ -36,6 +36,14 @@ export interface StreamBudgetGuardOptions {
     completionTokens?: number;
     /** Prompt tokens served from the provider's cache — billed at `rates.cacheRead`. */
     cacheReadTokens?: number;
+    /**
+     * Whether `promptTokens` already counts the cached reads. OpenAI-style
+     * providers report `prompt_tokens` INCLUSIVE of `cached_tokens`; Anthropic
+     * reports `input_tokens` EXCLUSIVE of `cache_read_input_tokens`. Getting
+     * this wrong in either direction is a 10x error on a long chat, so it is
+     * stated rather than guessed. Default: inclusive.
+     */
+    promptTokensIncludeCacheRead?: boolean;
     /** Answer text so far. */
     outputChars: number;
     /** Reasoning text so far — billed, so it counts toward the ceiling. */
@@ -64,16 +72,25 @@ export function createStreamBudgetGuard(opts: StreamBudgetGuardOptions): StreamB
       // estimate would fire onHalt again on every subsequent event.
       if (opts.ceilingMicroUsd == null || halted) return;
 
-      const { promptTokens, completionTokens, cacheReadTokens, outputChars, reasoningChars } = opts.usage();
-      const inTok = promptTokens ?? Math.ceil(opts.inputChars / CHARS_PER_TOKEN);
+      const {
+        promptTokens,
+        completionTokens,
+        cacheReadTokens,
+        promptTokensIncludeCacheRead = true,
+        outputChars,
+        reasoningChars,
+      } = opts.usage();
+      const reported = promptTokens ?? Math.ceil(opts.inputChars / CHARS_PER_TOKEN);
       const outTok = completionTokens ?? Math.ceil((outputChars + reasoningChars) / CHARS_PER_TOKEN);
       // Cached reads are priced at the cache rate, not the full input rate.
-      // Providers report them beside the prompt count (Anthropic exclusive of
-      // it, OpenAI inclusive); the guard only ever needs an upper bound, so the
-      // cached share is capped at the prompt count and priced separately.
-      const cached = Math.min(Math.max(0, cacheReadTokens ?? 0), inTok);
+      // Whether they sit inside the reported prompt count is provider-specific
+      // (see `promptTokensIncludeCacheRead`); either way the fresh share is
+      // never allowed below zero, so the guard stays an upper bound.
+      const cachedRaw = Math.max(0, cacheReadTokens ?? 0);
+      const cached = promptTokensIncludeCacheRead ? Math.min(cachedRaw, reported) : cachedRaw;
+      const fresh = promptTokensIncludeCacheRead ? reported - cached : reported;
       const cacheRate = opts.rates.cacheRead ?? opts.rates.input;
-      const projected = (inTok - cached) * opts.rates.input + cached * cacheRate + outTok * opts.rates.output;
+      const projected = fresh * opts.rates.input + cached * cacheRate + outTok * opts.rates.output;
 
       if (projected >= opts.ceilingMicroUsd) {
         halted = true;

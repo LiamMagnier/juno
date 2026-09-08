@@ -528,7 +528,7 @@ export default function WorkSkillPage() {
               {versions.map((entry) => (
                 <li
                   key={entry.id}
-                  className="group flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none"
+                  className="group flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-control border border-transparent px-3 py-2.5 transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none"
                 >
                   <History className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="shrink-0 font-mono text-micro text-foreground">

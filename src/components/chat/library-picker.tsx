@@ -203,7 +203,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                     aria-label={i.fileName}
                     className={cn(
                       "surface-raised group relative aspect-square overflow-hidden rounded-field",
-                      "transition-[transform,border-color,box-shadow] duration-fast ease-out-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-raised-lg active:translate-y-0 active:scale-[0.98] active:shadow-pressed motion-reduce:transition-none",
+                      "transition-[transform,border-color,box-shadow] duration-fast ease-out-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-raised-lg active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none",
                       isSel && "border-primary ring-2 ring-primary/80 ring-offset-2 ring-offset-card"
                     )}
                   >

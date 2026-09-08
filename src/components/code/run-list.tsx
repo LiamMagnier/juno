@@ -521,7 +521,7 @@ function RunRow({
   return (
     <div
       className={cn(
-        "group rounded-control border border-transparent transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none",
+        "group rounded-control border border-transparent transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none",
         raised && "surface-raised border-border/60",
         focused && !raised && "border-border/60",
       )}
@@ -865,7 +865,7 @@ function RunPeek({
         <div
           role="group"
           aria-label="Juno Code approval request"
-          className="space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5 shadow-inset"
+          className="space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5"
         >
           <div className="flex items-start gap-2.5">
             <CodeIcons.permission className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
@@ -990,7 +990,7 @@ function SeededEmptyState() {
                 {/* The house whole-tile link. */}
                 <Link
                   href={`/code/new?seed=${encodeURIComponent(seed.prompt)}`}
-                  className="surface-raised block h-full rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg active:shadow-pressed motion-reduce:transition-none"
+                  className="surface-raised block h-full rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg motion-reduce:transition-none"
                 >
                   <span className="block text-sm font-medium">{seed.label}</span>
                   <span className="mt-1 block text-xs leading-relaxed text-muted-foreground line-clamp-3">

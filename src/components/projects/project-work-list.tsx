@@ -97,7 +97,7 @@ export function ProjectWorkList({
             >
               <Link
                 href={`/work/${work.id}`}
-                className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg active:shadow-pressed motion-reduce:transition-none"
+                className="surface-raised flex h-full min-h-36 flex-col rounded-card p-4 transition-[border-color,box-shadow,background-color] duration-fast ease-out-soft hover:border-foreground/20 hover:shadow-raised-lg motion-reduce:transition-none"
               >
                 <div className="flex items-start gap-3">
                   <span className="surface-inset flex size-9 shrink-0 items-center justify-center rounded-field text-muted-foreground">

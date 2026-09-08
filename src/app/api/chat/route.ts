@@ -940,6 +940,9 @@ async function handleChat(req: Request) {
               promptTokens: acc.tokens.promptTokens,
               completionTokens: acc.tokens.completionTokens,
               cacheReadTokens: acc.tokens.cacheReadTokens,
+              // Anthropic's input_tokens exclude cache reads; every other adapter
+              // reports a prompt count that includes them (pricing.ts, normalizeUsage).
+              promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
               outputChars: acc.text.length,
               reasoningChars: acc.reasoning.length,
             }),
@@ -2293,6 +2296,7 @@ async function handleChat(req: Request) {
           promptTokens: acc.tokens.promptTokens,
           completionTokens: acc.tokens.completionTokens,
           cacheReadTokens: acc.tokens.cacheReadTokens,
+          promptTokensIncludeCacheRead: modelInfo.provider !== "anthropic",
           outputChars: acc.text.length,
           reasoningChars: acc.reasoning.length,
         }),

@@ -569,10 +569,13 @@ export const READ_ESTIMATE_MICRO_USD = PAGE_FETCH_FEE_MICRO_USD * VENDOR_ESTIMAT
  * will be judged spends its calls on evidence that will count.
  */
 export function researchBriefText(plan: ResearchPlan): string {
+  // Approach and criteria FIRST: the worker and the lead truncate this text
+  // (2,000 / 1,500 chars) and the expanded brief alone can fill that, so the
+  // judgement rules go where a cut cannot reach them.
   const parts = [
-    plan.brief ?? "",
     plan.approach ? `Approach: ${plan.approach}` : "",
     plan.successCriteria?.length ? `A complete answer includes:\n${plan.successCriteria.map((c) => `- ${c}`).join("\n")}` : "",
+    plan.brief ?? "",
   ].filter(Boolean);
   return parts.join("\n\n");
 }

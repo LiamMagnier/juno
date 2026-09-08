@@ -592,9 +592,14 @@ export function AppSidebar({
                         isCollapsed={sectionCollapsed.projects}
                         onToggleCollapse={() => toggleSection("projects")}
                         action={
-                          <SectionAction label="All projects" onClick={() => router.push("/projects")}>
-                            <ChevronRight className="size-3.5" />
-                          </SectionAction>
+                          <>
+                            <SectionAction label="New project" onClick={() => router.push("/projects?new=1")} always>
+                              <Plus className="size-3.5" />
+                            </SectionAction>
+                            <SectionAction label="All projects" onClick={() => router.push("/projects")}>
+                              <ChevronRight className="size-3.5" />
+                            </SectionAction>
+                          </>
                         }
                       >
                         {sidebarProjects.map((p) => (
@@ -1013,7 +1018,18 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
   );
 }
 
-function SectionAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function SectionAction({
+  label,
+  onClick,
+  children,
+  always = false,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  /** Shown at rest, not only on hover — the section's one standing affordance. */
+  always?: boolean;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -1022,7 +1038,10 @@ function SectionAction({ label, onClick, children }: { label: string; onClick: (
           size="sm"
           onClick={onClick}
           aria-label={label}
-          className="text-muted-foreground/80 opacity-0 transition-opacity duration-fast group-hover/section:opacity-100 focus-visible:opacity-100 coarse:opacity-100"
+          className={cn(
+            "text-muted-foreground/80 transition-opacity duration-fast focus-visible:opacity-100 coarse:opacity-100",
+            always ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
+          )}
         >
           {children}
         </Pressable>
@@ -1340,7 +1359,10 @@ function ProjectRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
-  const [expanded, setExpanded] = React.useState(false);
+  // Open by default: a pinned project's recent chats are the reason it is
+  // pinned, and Claude's sidebar shows them under the project at rest. The
+  // chevron still folds a noisy one away.
+  const [expanded, setExpanded] = React.useState(true);
   const [showAll, setShowAll] = React.useState(false);
   const PREVIEW = 3;
   const visibleChats = showAll ? chats : chats.slice(0, PREVIEW);
@@ -1367,7 +1389,7 @@ function ProjectRow({
           title={project.name}
         >
           <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
-            <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
+            <Archive className="size-4" strokeWidth={1.75} />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
         </Link>
@@ -1421,7 +1443,10 @@ function ProjectRow({
       </div>
       {hasChats && (
         <Disclosure open={expanded}>
-          <div className="mt-0.5 space-y-0.5">
+          {/* The chats hang from a guide line dropped from the project's
+              glyph (its centre is 10px + 11px in), each with a hollow bullet:
+              the tree Claude draws under a pinned project. */}
+          <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
             {visibleChats.map((c) => (
               <Link
                 key={c.id}
@@ -1430,18 +1455,16 @@ function ProjectRow({
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
                 title={c.title}
                 className={cn(
-                  "group group/pc flex min-h-8 items-center gap-2 rounded-control border py-1 pl-8 pr-2 text-ui transition-[color,background-color,border-color] duration-fast ease-out-soft",
+                  "group group/pc flex min-h-8 items-center gap-2.5 rounded-control border py-1 pl-2 pr-2 text-ui transition-[color,background-color,border-color] duration-fast ease-out-soft",
                   activePath === `/chat/${c.id}`
                     ? "border-transparent bg-sidebar-accent font-medium text-foreground"
                     : "border-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
                 )}
               >
-                <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground [.bg-sidebar-accent_&]:text-foreground">
-                  <SidebarMotionIcon
-                    kind="conversation"
-                    className="size-3.5 shrink-0"
-                  />
-                </span>
+                <span
+                  aria-hidden
+                  className="ml-0.5 size-1.5 shrink-0 rounded-full border border-current opacity-60 transition-opacity duration-fast group-hover/pc:opacity-100"
+                />
                 <span dir="auto" className="min-w-0 flex-1 truncate">
                   {c.title || "New chat"}
                 </span>
@@ -1451,7 +1474,7 @@ function ProjectRow({
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="flex items-center rounded-xs py-1 pl-9 pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+                className="flex items-center rounded-control py-1 pl-[1.375rem] pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
               >
                 {showAll ? "Show less" : `View all ${chats.length}`}
               </button>

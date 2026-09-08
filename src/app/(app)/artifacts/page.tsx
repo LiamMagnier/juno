@@ -79,7 +79,7 @@ interface Item {
 
 /** The hover-raised row: flat on the page at rest, a raised card under the pointer. */
 const rowClass =
-  "group relative flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none";
+  "group relative flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none";
 
 export default function ArtifactsPage() {
   const router = useRouter();

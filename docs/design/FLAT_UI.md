@@ -96,11 +96,13 @@ a token that resolves to "no shadow" is a retune, not a migration.
   the Claude / ChatGPT bubble.
 - **Switch, checkbox, radio, slider, progress, badge, kbd.** Tonal tracks,
   flat fills, no pressed recipe. The switch track is `--input` when off.
-- **Model picker.** One column: search, filter chips (All · Favorites · one
-  chip per configured lab), then rows of mark · name · one-line description ·
-  `$in · $out` per million tokens, with a star on hover that persists to the
-  account's favorites. Auto leads as the recommendation. The three-pane
-  picker with metric bars is gone.
+- **Model picker.** Three flat panes: a rail of configured labs on the left
+  (plus All and Favorites), the lab's models on the right arranged by Text ·
+  Image · Video with superseded generations folded away, and a spec sheet
+  that fills in on hover or arrow — intelligence, speed, context and cost as
+  ten-segment bars, capability chips, the exact price per million tokens,
+  and Use / Favorite. Rows carry a one-line description and the price;
+  favorites persist to the account and lead the All view.
 - **Research plan gate.** Approach paragraph · questions to answer (with
   evidence chips: independent sources, primary source, freshness) · the
   editable schedule · what a complete answer includes · where evidence may be

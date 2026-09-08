@@ -86,7 +86,7 @@ export function TaskCard({
     <article
       aria-label={task.name}
       className={cn(
-        "group flex w-full items-start gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none",
+        "group flex w-full items-start gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,opacity] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none",
         !task.enabled && "opacity-70 hover:opacity-100"
       )}
     >

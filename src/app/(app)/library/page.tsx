@@ -100,7 +100,7 @@ const browserGrid =
 
 /** The hover-raised row, the house recipe for a row in a list. */
 const rowClass =
-  "group/row rounded-control border border-transparent px-3 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-border/60 hover:bg-card hover:shadow-raised motion-reduce:transition-none";
+  "group/row rounded-control border border-transparent px-3 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none";
 
 function typeLabel(item: LibItem) {
   const extension = item.fileName.includes(".") ? item.fileName.split(".").pop()?.trim() : "";

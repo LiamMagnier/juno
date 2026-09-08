@@ -134,6 +134,27 @@ test("cached prompt tokens are priced at the cache-read rate, not the input rate
   assert.equal(halts.length, 0);
 });
 
+test("Anthropic reports cached reads OUTSIDE the prompt count, and they are still billed", () => {
+  // 50 fresh tokens and 40,000 cached ones. Subtracting the cached count from
+  // the fresh one (the OpenAI convention) would price this turn at ~5 —
+  // effectively free — when it really costs 50 + 4,000 = 4,050 at a cache
+  // rate of 0.1. The exclusive flag keeps the fresh count whole.
+  const { g, halts } = guard({
+    ceilingMicroUsd: 4_000,
+    rates: { input: 1, output: 10, cacheRead: 0.1 },
+    usage: () => ({
+      promptTokens: 50,
+      completionTokens: 0,
+      cacheReadTokens: 40_000,
+      promptTokensIncludeCacheRead: false,
+      outputChars: 0,
+      reasoningChars: 0,
+    }),
+  });
+  g.enforce(); // 50 + 4,000 = 4,050 ≥ 4,000
+  assert.equal(halts.length, 1);
+});
+
 test("a cached count larger than the prompt count cannot make a turn look free", () => {
   // OpenAI reports cached tokens INSIDE the prompt count and Anthropic outside
   // it; the guard only needs an upper bound, so the cached share is capped at

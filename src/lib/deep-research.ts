@@ -139,7 +139,7 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
       return {
         kind: "reasoning",
         title: count > 0 ? `Planned the research: ${count} question${count === 1 ? "" : "s"} to answer` : "Planned the research",
-        detail: truncate(String(payload.approach ?? ""), 140),
+        detail: truncate(String(payload.approach ?? ""), 140) || undefined,
       };
     }
     case "plan_confirmed":
