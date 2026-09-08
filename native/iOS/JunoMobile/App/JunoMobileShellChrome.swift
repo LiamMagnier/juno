@@ -29,6 +29,31 @@ struct JunoMobileLiveRun: Equatable {
   let section: JunoMobileSection
 }
 
+/// Installs the live-run pill as the tab bar's bottom accessory.
+///
+/// `tabViewBottomAccessory(isEnabled:)` is 26.1; on 26.0 the accessory is
+/// installed unconditionally and simply has no content while nothing is
+/// live. The pill and the shell never see the difference.
+struct JunoMobileLiveRunAccessory: ViewModifier {
+  let run: JunoMobileLiveRun?
+  let open: (JunoMobileSection) -> Void
+
+  func body(content: Content) -> some View {
+    if #available(iOS 26.1, *) {
+      content.tabViewBottomAccessory(isEnabled: run != nil) { pill }
+    } else {
+      content.tabViewBottomAccessory { pill }
+    }
+  }
+
+  @ViewBuilder
+  private var pill: some View {
+    if let run {
+      JunoMobileLiveRunPill(run: run) { open(run.section) }
+    }
+  }
+}
+
 /// The persistent "a run is in progress" pill above the tab bar.
 ///
 /// The one place a phone can say, whatever screen it is on, that Juno is doing

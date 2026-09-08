@@ -97,8 +97,15 @@ final class JunoMobileWebAuthenticationClient: NSObject,
         let activeScene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive }
-        return activeScene?.keyWindow
-            ?? activeScene?.windows.first
-            ?? ASPresentationAnchor()
+        if let window = activeScene?.keyWindow ?? activeScene?.windows.first {
+            return window
+        }
+        // No foreground scene yet — a sign-in kicked off at launch. Anchor to
+        // whichever window scene exists rather than to a scene-less window,
+        // which the OS 26 SDK no longer allows.
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            return ASPresentationAnchor(windowScene: scene)
+        }
+        return ASPresentationAnchor(frame: .zero)
     }
 }

@@ -465,11 +465,7 @@ struct JunoMobileRootView: View {
     }
     .tabViewStyle(.sidebarAdaptable)
     .tabBarMinimizeBehavior(.onScrollDown)
-    .tabViewBottomAccessory(isEnabled: liveRun != nil) {
-      if let liveRun {
-        JunoMobileLiveRunPill(run: liveRun) { selection = liveRun.section }
-      }
-    }
+    .modifier(JunoMobileLiveRunAccessory(run: liveRun) { section in selection = section })
     .tint(Color.junoAccent)
     .sheet(isPresented: $showingHistory) {
       historySheet(session: session)
