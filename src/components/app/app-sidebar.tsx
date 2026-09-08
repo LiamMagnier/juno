@@ -1389,7 +1389,7 @@ function ProjectRow({
           title={project.name}
         >
           <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
-            <Archive className="size-4" strokeWidth={1.75} />
+            <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
         </Link>
