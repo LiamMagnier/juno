@@ -61,12 +61,10 @@
        back into. `JunoDesignSystemTests.testBrandNeutralsAreWarmInBothAppearances`
        asserts r > b && g >= b over the whole ramp and is the gate that catches
        the drift the next time, on both clients at once. */
-    /* Soft UI ground (docs/design/FLAT_UI.md §2.1). One warm material, three
-       depths: the page is 96%, a raised card sits two points above it and a
-       recessed well sits on the page's own value with an inset shadow. The
-       ground is deliberately NOT 97-99%: a dual-direction shadow needs room on
-       both sides — a white highlight has to be lighter than the surface it
-       lifts, and 96% leaves it four points to work with. */
+    /* Flat ground (docs/design/FLAT_UI.md §3.1). One warm plane: the page is
+       97%, a card sits two points above it as a fill with a hairline, and a
+       well sits on the page's own value. No shadow carries depth in-flow, so
+       the ground can sit close to white without starving a highlight. */
     --background: 48 24% 97.2%;
     --foreground: 48 4% 11%;
 

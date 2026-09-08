@@ -330,10 +330,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Earlier stable Flash generation."
   },
   {
-    "id": "03a0e90ee550c2a7",
-    "source": "Everyday prompt → Fast models · Instant"
-  },
-  {
     "id": "03ac864d2beafabd",
     "source": "Resize the motion timeline"
   },
@@ -424,6 +420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "056a3c0be22d937d",
     "source": "Juno — every frontier AI model, one honest subscription"
+  },
+  {
+    "id": "056c4d1163c2381f",
+    "source": "Hover a model and press the star to keep it here."
   },
   {
     "id": "057589b74dc2806a",
@@ -726,10 +726,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Legacy long-context text model."
   },
   {
-    "id": "093035b0a4210271",
-    "source": "Coding & analysis → Mid tier · Balanced"
-  },
-  {
     "id": "0937c32da2498f51",
     "source": "xAI's recommended image model — generation and editing."
   },
@@ -844,10 +840,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0a9761441f88f001",
     "source": "Chat archived."
-  },
-  {
-    "id": "0ab83287074adfea",
-    "source": "Requires the"
   },
   {
     "id": "0abba441f16eff90",
@@ -1120,6 +1112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0f50505ce224077f",
     "source": "artifacts"
+  },
+  {
+    "id": "0f589c19cd5c9c86",
+    "source": "All models"
   },
   {
     "id": "0f5c8d18d661ceac",
@@ -1934,10 +1930,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting for the first step. This fills in the moment Juno starts working."
   },
   {
-    "id": "1b2c08a8733d7ff1",
-    "source": "Quality"
-  },
-  {
     "id": "1b3c7f8e637e1454",
     "source": "GPT-6 Astra"
   },
@@ -2158,10 +2150,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "run_cap_exceeded"
   },
   {
-    "id": "1ec0df71b2ec78da",
-    "source": "Juno will work through this. Edit any step before it starts."
-  },
-  {
     "id": "1ed87d21bf295e3a",
     "source": "While hovering"
   },
@@ -2192,10 +2180,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1f21c198ae4be76a",
     "source": "MiMo Pro"
-  },
-  {
-    "id": "1f2ba25aaafeea20",
-    "source": "Use this model"
   },
   {
     "id": "1f2c17331a7383f3",
@@ -3442,10 +3426,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search or start a chat"
   },
   {
-    "id": "30a93a2aa770fd63",
-    "source": "in Settings to enable these models."
-  },
-  {
     "id": "30bf7b9b9540d4e1",
     "source": "Transcription"
   },
@@ -3726,8 +3706,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Group"
   },
   {
+    "id": "34d25227a00a43a6",
+    "source": "Evidence needed"
+  },
+  {
     "id": "34d56dcc9a0ddce7",
     "source": "Deleted attachment not found."
+  },
+  {
+    "id": "34ebb77394054b2e",
+    "source": "Here's how Juno will research this. Adjust anything before it starts."
   },
   {
     "id": "35196e6dca66383d",
@@ -4110,16 +4098,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "budget_exceeded"
   },
   {
-    "id": "3a56171f5d137e39",
-    "source": "Scores by"
-  },
-  {
     "id": "3a5ecca188c0579c",
     "source": "Updated"
   },
   {
     "id": "3a6170c5480d43f6",
     "source": "No instructions yet"
+  },
+  {
+    "id": "3a83bf622c657191",
+    "source": "Where evidence may be thin"
   },
   {
     "id": "3a8f54d10915326b",
@@ -4416,10 +4404,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3f7f42e069fb5035",
     "source": "Streaming Text"
-  },
-  {
-    "id": "3f8271f91a889225",
-    "source": "thinking depth"
   },
   {
     "id": "3f83cf53868f24b7",
@@ -4724,6 +4708,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "43b5894c3e4e2b24",
     "source": "Deleting…"
+  },
+  {
+    "id": "44168f3677e6c57c",
+    "source": "How the work will run"
   },
   {
     "id": "44253ca9e35663d8",
@@ -5114,10 +5102,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Listening"
   },
   {
-    "id": "49d1cb503605616c",
-    "source": "optimal model"
-  },
-  {
     "id": "49e96d7cdf58069c",
     "source": "Amount"
   },
@@ -5324,6 +5308,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4c3ebb1704a9c59e",
     "source": "The quoted words, found verbatim in the saved copy"
+  },
+  {
+    "id": "4c3f03bb625194b7",
+    "source": "primary source"
   },
   {
     "id": "4c44cea118efaa73",
@@ -5562,10 +5550,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A project can move from a browser conversation to Juno Code on your Mac and back to your phone without turning local access into a black box."
   },
   {
-    "id": "4f7d64017689437e",
-    "source": "Coming soon"
-  },
-  {
     "id": "4f89da076497186b",
     "source": "Le directeur de la publication est"
   },
@@ -5668,10 +5652,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "50cbffee01bcdecc",
     "source": "The language Juno replies in."
-  },
-  {
-    "id": "50e7759fec6cb130",
-    "source": "Respects your plan limits, image needs, and web search settings."
   },
   {
     "id": "51035b5b67dca0d1",
@@ -6074,10 +6054,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "counter-evidence"
   },
   {
-    "id": "582967534d0f909d",
-    "source": "in"
-  },
-  {
     "id": "58363fd94240d677",
     "source": "Delete user"
   },
@@ -6382,10 +6358,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "provider"
   },
   {
-    "id": "5c6170e82f9cd480",
-    "source": "Use Auto"
-  },
-  {
     "id": "5c6aea379fa2521a",
     "source": "Voice mode"
   },
@@ -6520,10 +6492,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5e3147ab51e0084c",
     "source": "Photos"
-  },
-  {
-    "id": "5e3bad4387f34a47",
-    "source": "out / MTok"
   },
   {
     "id": "5e4546f83f27304e",
@@ -6730,10 +6698,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Scroll to latest"
   },
   {
-    "id": "60ff4d68f33effcb",
-    "source": "Current model"
-  },
-  {
     "id": "6105d6cc76af4003",
     "source": "image"
   },
@@ -6912,6 +6876,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "635c649247069212",
     "source": "Add a constraint, or paste a source to include…"
+  },
+  {
+    "id": "6377602714041678",
+    "source": "A complete answer includes"
   },
   {
     "id": "6383f037cfc608ea",
@@ -7608,10 +7576,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6c45cb72a36e63d5",
     "source": "stop"
-  },
-  {
-    "id": "6c582b62e0e5aa05",
-    "source": "Fast"
   },
   {
     "id": "6c5a15da74caf292",
@@ -8558,10 +8522,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Runs in this folder on your Mac — the same working copy your editor has open."
   },
   {
-    "id": "78ea5ef30f1e6270",
-    "source": "Intelligence"
-  },
-  {
     "id": "78fd7f3a2edbdfec",
     "source": "Which providers may read your chats to build memory, titles and summaries — work you never see."
   },
@@ -8766,10 +8726,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "générer ou diffuser des contenus manifestement illicites (haine, harcèlement, exploitation de mineurs, désinformation malveillante) ;"
   },
   {
-    "id": "7ce399f9cb9b543a",
-    "source": "Routes each message to the"
-  },
-  {
     "id": "7ce78f4f954945d9",
     "source": "End voice mode before opening an artifact on this screen, so the microphone controls stay visible."
   },
@@ -8904,10 +8860,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7e744141b40ea550",
     "source": "Style"
-  },
-  {
-    "id": "7e7e1479e2da05c0",
-    "source": "for speed, intelligence and cost."
   },
   {
     "id": "7e8b64d281f4401e",
@@ -9596,10 +9548,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "892e29ab37354c39",
     "source": "work.system.change_security_setting"
-  },
-  {
-    "id": "8938415cf0468dd4",
-    "source": "Hover a model to compare intelligence, speed, context and cost."
   },
   {
     "id": "894cc9f0cca010a1",
@@ -10490,6 +10438,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Click to upload files"
   },
   {
+    "id": "95c91385659e3c73",
+    "source": "No favorites yet"
+  },
+  {
     "id": "95d3f179cfe80e1b",
     "source": "GPT-5.6 Luna"
   },
@@ -10544,10 +10496,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "96dbedeca7dfb7fa",
     "source": "Starts"
-  },
-  {
-    "id": "96e8840dc9cdb053",
-    "source": "plan."
   },
   {
     "id": "96ebc8544f6e52ec",
@@ -10918,6 +10866,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Le traitement des données personnelles et l'usage des cookies (essentiels uniquement à ce jour) sont décrits dans la"
   },
   {
+    "id": "9b3aa9589f653d3f",
+    "source": "Questions to answer"
+  },
+  {
     "id": "9b42798ce64cc8d7",
     "source": "Denied. Juno did not carry this out."
   },
@@ -11174,20 +11126,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· current"
   },
   {
-    "id": "9e6ad6db21dbc4cc",
-    "source": "Smart"
-  },
-  {
     "id": "9e709348f582d44e",
     "source": "Create your account"
   },
   {
     "id": "9e7edf9717eb87c1",
     "source": "You see what every answer costs."
-  },
-  {
-    "id": "9e87d9dadae79eb5",
-    "source": "All labs"
   },
   {
     "id": "9e8a3b648cf75788",
@@ -12028,6 +11972,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a9b0a2e6303f4ad3",
     "source": "Filter by category"
+  },
+  {
+    "id": "a9bc81f483d04c8f",
+    "source": "Try another name, lab or capability."
   },
   {
     "id": "a9c2e2487f978e3a",
@@ -13002,6 +12950,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ran"
   },
   {
+    "id": "b6b243caef1ef4d3",
+    "source": "Approach"
+  },
+  {
     "id": "b6c3e6cd47b10099",
     "source": "This file could not be opened as an archive. The download beside it is unaffected."
   },
@@ -13874,10 +13826,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rotate"
   },
   {
-    "id": "c372fee9b4566b85",
-    "source": "Speed"
-  },
-  {
     "id": "c37e50b29e6e2b84",
     "source": "Juno Code approval request"
   },
@@ -14020,10 +13968,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c582ac7607f2971e",
     "source": "instructions_or_restore_version"
-  },
-  {
-    "id": "c587c2601ccfc456",
-    "source": "Vision"
   },
   {
     "id": "c592b0f25e5d1391",
@@ -14734,10 +14678,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "prompt"
   },
   {
-    "id": "cf0ee3547a4e51a5",
-    "source": "Soon"
-  },
-  {
     "id": "cf1368a3d1f60767",
     "source": "Edit task"
   },
@@ -14888,6 +14828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d08a5d208a9f699b",
     "source": "Compare couldn’t start"
+  },
+  {
+    "id": "d098ab5e44b9aabb",
+    "source": "fresh"
   },
   {
     "id": "d0a525c87598227d",
@@ -15328,10 +15272,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d6b5908f4b305613",
     "source": "No Macs yet"
-  },
-  {
-    "id": "d6b7e540a8e13888",
-    "source": "Artificial Analysis"
   },
   {
     "id": "d6b840c166a45c84",
@@ -17242,10 +17182,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Primary"
   },
   {
-    "id": "eff928e1713fbf18",
-    "source": "Capable foundation model."
-  },
-  {
     "id": "f0063b808736318d",
     "source": "Hour"
   },
@@ -17542,6 +17478,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Productivity"
   },
   {
+    "id": "f42d0f9e4b0ec07d",
+    "source": "favorites"
+  },
+  {
     "id": "f43fbbefe9a3019e",
     "source": "(journaux techniques, quotas) — base légale : intérêt légitime du responsable du traitement."
   },
@@ -17652,10 +17592,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f5d3b616fa807b41",
     "source": "Allow this action for this connector"
-  },
-  {
-    "id": "f5e65825147c4ee3",
-    "source": "deprecated"
   },
   {
     "id": "f5e805d39112ad2e",
@@ -18102,10 +18038,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Alloy"
   },
   {
-    "id": "fccdb015a54c6afc",
-    "source": "Deep reasoning → Flagship · Deep thinking"
-  },
-  {
     "id": "fcdeb241b9acbe38",
     "source": "Update popup"
   },
@@ -18116,10 +18048,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fd1355ba188fdbec",
     "source": "Your permissions blocked this, so Juno never sent it."
-  },
-  {
-    "id": "fd1e830ab4ddfc43",
-    "source": "Retiring soon"
   },
   {
     "id": "fd220f56d2d5c14c",

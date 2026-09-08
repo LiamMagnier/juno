@@ -35,27 +35,25 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
         aria-hidden
         className="absolute -inset-x-10 -inset-y-8 -z-10 bg-[radial-gradient(60%_70%_at_50%_45%,hsl(var(--primary)/0.18),transparent_70%)] blur-2xl"
       />
-      {/* The shell: `surface-raised-lg` at `rounded-panel` (20) with p-2 (8),
-          so the 12px field inside is concentric. The `before:` hairline is the
-          --sheen top highlight every raised surface on the dark ground carries. */}
-      <div className="surface-raised-lg relative flex w-full flex-col gap-2 rounded-panel p-2 before:pointer-events-none before:absolute before:inset-x-3 before:top-0 before:h-px before:rounded-full before:bg-[hsl(var(--sheen))]">
-        <div className="surface-inset rounded-field px-3.5 pb-7 pt-3">
-          <p className="text-body text-muted-foreground">Ask anything…</p>
-        </div>
-        <div className="flex items-center gap-1.5 px-0.5 pb-0.5">
-          {/* The `+` menu and the model trigger: raised chips cut from the
-              control material, as the real ones are. */}
-          <span className="control-neu inline-flex size-8 items-center justify-center rounded-full text-muted-foreground">
+      {/* The shell: the same `.composer-surface` the real composer wears — one
+          quiet card with a hairline and a low throw, the text directly on it,
+          one controls row under it. No inner well: a field in a box is the
+          one thing the flat composer never draws. */}
+      <div className="composer-surface relative flex w-full flex-col rounded-panel">
+        <p className="px-5 pb-6 pt-4 text-body text-muted-foreground">Ask anything…</p>
+        <div className="flex items-center gap-1.5 px-3 pb-3 pt-1">
+          {/* The `+` and the model chip: the flat chips the real composer uses. */}
+          <span className="inline-flex size-9 items-center justify-center rounded-control text-muted-foreground">
             <Plus className="size-4" aria-hidden />
           </span>
-          <span className="control-neu inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-ui font-medium text-foreground/85">
+          <span className="inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-ui font-medium text-foreground/80">
             <ProviderLogo provider={model.provider} className="size-4 shrink-0" />
-            <span className="font-mono">{model.name}</span>
-            <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
+            <span>{model.name}</span>
+            <ChevronDown className="size-3 text-muted-foreground opacity-60" aria-hidden />
           </span>
           {/* Send — the composer's primary action at its real size and material. */}
-          <span className="control-primary ml-auto grid size-9 place-items-center rounded-control">
-            <ArrowUp className="size-4" aria-hidden />
+          <span className="ml-auto grid size-9 place-items-center rounded-full bg-primary text-primary-foreground">
+            <ArrowUp className="size-4" aria-hidden strokeWidth={2.25} />
           </span>
         </div>
       </div>
