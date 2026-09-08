@@ -976,13 +976,19 @@ jobs:
           # just activated — for JUNO_SMOKE_EMAIL's account, or for the same
           # user and device session the stored token was issued to. An empty
           # result leaves the stored token/cookie in place as the fallback.
-          FRESH_TOKEN="$(cd ~/juno/current && set -a && . ~/juno/.env && set +a && \
-            JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" npx --no-install tsx scripts/mint-smoke-token.ts 2>/tmp/juno-smoke-token.log || true)"
+          MINT_LOG="$HOME/juno/smoke-token.log"
+          : > "$MINT_LOG"
+          # Node's own --env-file loader, not `. .env`: a dotenv file is not
+          # guaranteed to be valid shell, and a sourcing failure inside the
+          # substitution silently skipped the mint on the first attempt.
+          FRESH_TOKEN="$(cd ~/juno/current && JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
+            node --env-file="$HOME/juno/.env" --import tsx scripts/mint-smoke-token.ts 2>>"$MINT_LOG")" || true
           if [ -n "$FRESH_TOKEN" ]; then
             SMOKE_TOKEN="$FRESH_TOKEN"
             echo "Using a freshly minted smoke token."
           else
-            echo "::warning::Could not mint a smoke token; using the stored credential. $(tr '\n' ' ' < /tmp/juno-smoke-token.log 2>/dev/null | cut -c1-300)"
+            echo "::warning::Could not mint a smoke token; using the stored credential."
+            sed 's/^/  mint: /' "$MINT_LOG" | head -20 || true
           fi
           # Qwen is the funded production provider. Keep the deploy gate pinned
           # to it so an obsolete VM-only smoke setting cannot roll back a good
