@@ -119,3 +119,37 @@ test("usage is re-read on every check, not captured once", () => {
   g.enforce();
   assert.equal(halts.length, 1, "the guard must see counts that grew since the last check");
 });
+
+test("cached prompt tokens are priced at the cache-read rate, not the input rate", () => {
+  // 900 of 1,000 prompt tokens came from the provider's cache. At the full
+  // input rate that is 1,000 + 0 = 1,000 and halts; at the cache rate it is
+  // 100 + 900 × 0.1 = 190 and runs. A guard that cannot tell the two apart
+  // halts turns the plan could afford, on exactly the long chats caching
+  // exists for.
+  const { g, halts } = guard({
+    rates: { input: 1, output: 10, cacheRead: 0.1 },
+    usage: () => ({ promptTokens: 1_000, completionTokens: 0, cacheReadTokens: 900, outputChars: 0, reasoningChars: 0 }),
+  });
+  g.enforce();
+  assert.equal(halts.length, 0);
+});
+
+test("a cached count larger than the prompt count cannot make a turn look free", () => {
+  // OpenAI reports cached tokens INSIDE the prompt count and Anthropic outside
+  // it; the guard only needs an upper bound, so the cached share is capped at
+  // the prompt count rather than driving the projection negative.
+  const { g, halts } = guard({
+    rates: { input: 1, output: 10, cacheRead: 0.1 },
+    usage: () => ({ promptTokens: 1_000, completionTokens: 100, cacheReadTokens: 5_000, outputChars: 0, reasoningChars: 0 }),
+  });
+  g.enforce(); // 1,000 × 0.1 + 100 × 10 = 1,100 ≥ 1,000
+  assert.equal(halts.length, 1);
+});
+
+test("without a cache rate every prompt token is priced at the input rate", () => {
+  const { g, halts } = guard({
+    usage: () => ({ promptTokens: 1_000, completionTokens: 0, cacheReadTokens: 900, outputChars: 0, reasoningChars: 0 }),
+  });
+  g.enforce(); // 1,000 × 1 = 1,000, at the ceiling
+  assert.equal(halts.length, 1);
+});

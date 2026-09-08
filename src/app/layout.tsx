@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, JetBrains_Mono, Newsreader } from "next/font/google";
+import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import { Providers } from "@/components/providers";
@@ -9,13 +9,15 @@ import { auth } from "@/lib/auth";
 import { directionOf, isAutoLocale } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 
-// One interface voice across native and web. Archivo supplies a warm, highly
-// legible grotesque for controls, headings and reading text; hierarchy comes
-// from weight, measure and spacing rather than switching to an editorial font.
+// One interface voice across native and web. Inter is the quiet, neutral
+// grotesque every calm product interface has converged on (its metrics are
+// the closest open face to the custom sans Claude and ChatGPT set); hierarchy
+// comes from weight, measure and spacing rather than switching to an
+// editorial font.
 // JetBrains Mono stays for labels/metadata + the dot/ASCII signature layer.
 // Newsreader is the one human moment — the empty-chat greeting — and is loaded
 // in roman and italic so the name can be set in true italics, not a slant.
-const sans = Archivo({
+const sans = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",

@@ -5,7 +5,7 @@ import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 /**
- * A segmented control on the product's lighting model (docs/design/SOFT_UI.md
+ * A segmented control on the product's lighting model (docs/design/FLAT_UI.md
  * §2.2): the track is an inset well and the live segment is a raised key
  * standing proud of it.
  *

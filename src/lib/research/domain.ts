@@ -433,6 +433,12 @@ export type EvidenceRequirementStatus = "missing" | "weak" | "satisfied" | "conf
 export interface ResearchObjective {
   id: string;
   question: string;
+  /**
+   * Why this question is on the plan — one sentence from the planner, shown
+   * at the gate under the question so a person can see what answering it
+   * buys. Absent on plans built mechanically from the query list.
+   */
+  rationale?: string;
   importance: number;
   status: ResearchObjectiveStatus;
   evidenceRequirements: EvidenceRequirement[];
@@ -481,6 +487,7 @@ export interface ResearchConflict {
 
 export const MAX_RESEARCH_OBJECTIVES = 8;
 export const MAX_EVIDENCE_REQUIREMENTS = 4;
+export const MAX_RATIONALE_CHARS = 240;
 export const MAX_COVERAGE_ENTRIES = 32;
 export const MAX_CONFLICTS = 24;
 /** Bounded follow-up rounds. Increased to 4 for OpenAI-style deep recursive research. */
@@ -643,6 +650,9 @@ function parseObjectives(value: unknown): ResearchObjective[] {
     out.push({
       id,
       question,
+      ...(typeof item.rationale === "string" && item.rationale.trim()
+        ? { rationale: item.rationale.trim().slice(0, MAX_RATIONALE_CHARS) }
+        : {}),
       importance:
         typeof item.importance === "number" && Number.isFinite(item.importance)
           ? Math.max(0, Math.min(1, item.importance))
@@ -764,6 +774,16 @@ export interface ResearchPlan {
    * only its own sub-question and drifts away from the goal.
    */
   brief?: string;
+  /**
+   * The planner's reasoning, for the person at the gate: how the question
+   * will be attacked and how evidence will be judged, in one paragraph. The
+   * steps are the schedule; this is the thinking behind it.
+   */
+  approach?: string;
+  /** What a complete answer has to contain — the planner's own bar for "done". */
+  successCriteria?: string[];
+  /** Where the planner expects evidence to be thin, disputed or stale. */
+  risks?: string[];
   /** How hard the run works — see `RESEARCH_TIERS`. Absent on runs older than tiers. */
   effort?: ResearchEffort;
   /** The tier's ceilings, frozen on the run so a later edit to the table cannot move a live run's limits. */
@@ -1022,6 +1042,9 @@ export const MAX_PLAN_QUERIES = 40;
  */
 export const MAX_PLAN_STEPS = 6;
 export const MAX_STEP_CHARS = 200;
+export const MAX_APPROACH_CHARS = 1_200;
+export const MAX_PLAN_CRITERIA = 8;
+export const MAX_CRITERION_CHARS = 240;
 export const MAX_PLAN_CONSTRAINTS = 16;
 export const MAX_PINNED_SOURCES = 24;
 export const MAX_QUERY_CHARS = 400;
@@ -1082,6 +1105,15 @@ export function parsePlan(value: unknown): ResearchPlan {
     ...(Array.isArray(raw.coverage) ? { coverage: parseCoverage(raw.coverage) } : {}),
     ...(Array.isArray(raw.conflicts) ? { conflicts: parseConflicts(raw.conflicts) } : {}),
     ...(typeof raw.brief === "string" && raw.brief.trim() ? { brief: raw.brief.trim().slice(0, MAX_BRIEF_CHARS) } : {}),
+    ...(typeof raw.approach === "string" && raw.approach.trim()
+      ? { approach: raw.approach.trim().slice(0, MAX_APPROACH_CHARS) }
+      : {}),
+    ...(Array.isArray(raw.successCriteria) && raw.successCriteria.length
+      ? { successCriteria: cleanList(raw.successCriteria, MAX_PLAN_CRITERIA, MAX_CRITERION_CHARS) }
+      : {}),
+    ...(Array.isArray(raw.risks) && raw.risks.length
+      ? { risks: cleanList(raw.risks, MAX_PLAN_CRITERIA, MAX_CRITERION_CHARS) }
+      : {}),
     ...(isResearchEffort(raw.effort) ? { effort: raw.effort } : {}),
     ...(budget ? { budget } : {}),
     ...(Array.isArray(raw.rounds) ? { rounds: parseRounds(raw.rounds) } : {}),
@@ -1284,7 +1316,9 @@ export const BRIEF_PROMPT_CHARS = 4_000;
 export const BRIEF_OUTPUT_TOKENS = 600;
 /** Brief-augmented characters it then sends the planner. */
 export const PLANNER_PROMPT_CHARS = 6_000;
-export const PLANNER_OUTPUT_TOKENS = 1_024;
+/** The structured plan is JSON — objectives with evidence contracts and their
+ *  searches — and runs about twice the length of the old two-heading text. */
+export const PLANNER_OUTPUT_TOKENS = 2_048;
 /** Gap description characters `expandResearchQueries` sends. */
 export const EXPANSION_PROMPT_CHARS = 6_000;
 export const EXPANSION_OUTPUT_TOKENS = 512;

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ChevronDown, Pause, Play, Square, X } from "lucide-react";
 import { EvidencePanel } from "./evidence-panel";
-import { PlanReview } from "./run-controls";
+import { PlanOutline, PlanReview } from "./run-controls";
 import { RunSpine, type StageYield } from "./run-spine";
 import { RunTimeline } from "./run-timeline";
 import { SourceDeck } from "./source-deck";
@@ -65,7 +65,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
         {onDismiss && !run.live && <button type="button" aria-label="Hide this research run" onClick={onDismiss} className="research-icon"><X className="size-4" /></button>}
       </div>
     </header>
-    {awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
+    {awaitingPlan ? <div className="mt-5"><PlanReview key={run.id} steps={run.plan.steps ?? []} queries={run.plan.queries} constraints={run.plan.constraints ?? []} pinnedSources={run.plan.pinnedSources ?? []} approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} successCriteria={run.plan.successCriteria} risks={run.plan.risks} busy={busy} onConfirm={plan => void post("/plan", { decision: "confirm", ...plan })} onDiscard={() => void post("/plan", { decision: "cancel" })} /></div> : <>
       <p className="mt-4 line-clamp-2 text-ui leading-relaxed text-foreground/85">{run.goal}</p>
       <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span className="tabular-nums">{run.sources.filter(source => source.read).length} sources read</span>
@@ -85,7 +85,7 @@ export function ResearchConsole({ run, state, events, busy, notice, post, onDism
           {[{value:"sources",label:"Sources"},{value:"activity",label:"Activity"},{value:"plan",label:"Plan"},{value:"evidence",label:"Evidence"}].map(item => <button key={item.value} type="button" aria-pressed={tab === item.value} onClick={() => setTab(item.value)} className={cn("shrink-0 border-b-2 px-1 py-3 text-ui focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring", tab === item.value ? "border-foreground font-medium text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>{item.label}</button>)}
         </nav>
         <div key={tab} className="research-tab-body" role="region" aria-label={tab}>
-          {tab === "plan" && <ol className="space-y-3">{(run.plan.steps?.length ? run.plan.steps : run.plan.queries).map((step,index) => <li key={index} className="flex gap-3 text-ui leading-relaxed"><span className="text-muted-foreground">{index+1}.</span><span>{step}</span></li>)}</ol>}
+          {tab === "plan" && <PlanOutline approach={run.plan.approach || undefined} objectives={run.plan.objectives ?? []} steps={run.plan.steps ?? []} queries={run.plan.queries} successCriteria={run.plan.successCriteria} risks={run.plan.risks} />}
           {tab === "sources" && <SourceDeck sources={run.sources} />}
           {tab === "activity" && <RunTimeline events={events} live={run.live} />}
           {tab === "evidence" && <EvidencePanel objectives={run.plan.objectives ?? []} coverage={run.plan.coverage ?? []} conflicts={(run.plan.conflicts ?? []).filter(item => !item.resolved)} sources={run.sources} />}

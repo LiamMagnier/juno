@@ -9,7 +9,7 @@ import { DEFAULT_MODEL, MODEL_LIST, getModel, type ModelInfo } from "@/lib/model
  * thing a user touches after signing in is visually the thing that sold them.
  *
  * This is a DEPICTION, not a copy of the component: the same Soft UI recipe
- * the real composer is cut from (docs/design/SOFT_UI.md — a raised shell at
+ * the real composer is cut from (docs/design/FLAT_UI.md — a raised shell at
  * the panel rung, an inset well for the field, a raised chip for the model
  * trigger, the primary material on send) plus the real ProviderLogo. If the
  * composer's recipe changes, change this with it — a front door that

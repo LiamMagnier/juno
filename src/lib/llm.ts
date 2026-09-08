@@ -64,6 +64,14 @@ export async function* streamChat(opts: {
   /** Stable id grouping requests that share a prompt prefix (conversation id).
    *  Used as OpenAI's prompt_cache_key to raise automatic cache hit rates. */
   cacheKey?: string;
+  /**
+   * The leading part of `system` that is identical for every user on the same
+   * feature toggles (`buildSystemPromptSections().stable`). Providers with
+   * explicit breakpoints cache it as its own tier, so the per-user tail that
+   * follows can change without re-writing the rules. Must be a byte prefix
+   * of `system`; anything else is ignored.
+   */
+  systemStablePrefix?: string;
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: boolean;
@@ -127,7 +135,7 @@ export async function* streamChat(opts: {
       case "anthropic-native":
         yield* streamAnthropic(
           model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-          toolset, dynamicContext, fastMode
+          toolset, dynamicContext, fastMode, opts.systemStablePrefix
         );
         return;
       case "gemini-native":

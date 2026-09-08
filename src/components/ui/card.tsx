@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * A card is `.surface-raised` (docs/design/SOFT_UI.md §2.2): the card fill,
+ * A card is `.surface-raised` (docs/design/FLAT_UI.md §2.2): the card fill,
  * the hairline, and the dual top-left-light / bottom-right-dark shadow.
  *
  *   default      raised
@@ -29,7 +29,7 @@ const cardVariants = cva(
         // depth without a second material. `active:` is here because hover is
         // not an affordance on touch.
         interactive:
-          "surface-raised hover:border-foreground/20 hover:shadow-raised-lg active:bg-secondary active:shadow-pressed focus-within:border-foreground/25 motion-reduce:transition-none",
+          "surface-raised hover:border-foreground/20 hover:shadow-raised-lg active:bg-secondary focus-within:border-foreground/25 motion-reduce:transition-none",
       },
     },
     defaultVariants: { variant: "default" },

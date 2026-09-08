@@ -14,7 +14,7 @@ import { providerHealthy } from "@/lib/provider-health";
 import { loadModelCapabilityMap, modelCanRoute } from "@/lib/model-capability";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
-import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
+import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
@@ -785,7 +785,7 @@ async function handleChat(req: Request) {
     const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
     const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
     const useProMode = !!input.proMode && supportsProMode(modelInfo);
-    const baseSystem = buildSystemPrompt({
+    const baseSystemSections = buildSystemPromptSections({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
       personality: settings?.personality ?? DEFAULT_PERSONALITY,
@@ -799,6 +799,9 @@ async function handleChat(req: Request) {
       // outside content like any other.
       untrustedContent: useWebSearch,
     });
+    const baseSystem = baseSystemSections.variable
+      ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
+      : baseSystemSections.stable;
     // Same composition the saved path uses. The two used to be hand-written
     // expressions that happened to agree.
     const system = withRegenerateInstruction(
@@ -936,6 +939,7 @@ async function handleChat(req: Request) {
             usage: () => ({
               promptTokens: acc.tokens.promptTokens,
               completionTokens: acc.tokens.completionTokens,
+              cacheReadTokens: acc.tokens.cacheReadTokens,
               outputChars: acc.text.length,
               reasoningChars: acc.reasoning.length,
             }),
@@ -950,6 +954,7 @@ async function handleChat(req: Request) {
           for await (const ev of streamChat({
             model: modelInfo,
             system,
+            systemStablePrefix: baseSystemSections.stable,
             history: privateHistory,
             maxTokens: PLANS[plan].maxOutputTokens,
             signal: generationController.signal,
@@ -1762,7 +1767,7 @@ async function handleChat(req: Request) {
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
     && workspacePermits(workspaceConfig, "canvas");
-  const baseSystem = buildSystemPrompt({
+  const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
@@ -1784,6 +1789,9 @@ async function handleChat(req: Request) {
       !!projectKnowledge ||
       !!attachmentKnowledge,
   });
+  const baseSystem = baseSystemSections.variable
+    ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
+    : baseSystemSections.stable;
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
@@ -2284,6 +2292,7 @@ async function handleChat(req: Request) {
         usage: () => ({
           promptTokens: acc.tokens.promptTokens,
           completionTokens: acc.tokens.completionTokens,
+          cacheReadTokens: acc.tokens.cacheReadTokens,
           outputChars: acc.text.length,
           reasoningChars: acc.reasoning.length,
         }),
@@ -2317,6 +2326,7 @@ async function handleChat(req: Request) {
           : streamChat({
           model: modelInfo,
           system: synthesisSystem,
+          systemStablePrefix: baseSystemSections.stable,
           history: modelHistory,
           maxTokens: PLANS[plan].maxOutputTokens,
           // Not tied to req.signal: route changes can drop the browser stream

@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The page frame (docs/design/SOFT_UI.md §3): a scroll region and a centred
+ * The page frame (docs/design/FLAT_UI.md §3): a scroll region and a centred
  * content column at one of three measures. Every app page opens with this
  * plus an `<AppPageHeader>`, which is what retires the five ad-hoc
  * `max-w-*` values the pages had picked independently.

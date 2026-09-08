@@ -61,32 +61,32 @@
        back into. `JunoDesignSystemTests.testBrandNeutralsAreWarmInBothAppearances`
        asserts r > b && g >= b over the whole ramp and is the gate that catches
        the drift the next time, on both clients at once. */
-    /* Soft UI ground (docs/design/SOFT_UI.md §2.1). One warm material, three
+    /* Soft UI ground (docs/design/FLAT_UI.md §2.1). One warm material, three
        depths: the page is 96%, a raised card sits two points above it and a
        recessed well sits on the page's own value with an inset shadow. The
        ground is deliberately NOT 97-99%: a dual-direction shadow needs room on
        both sides — a white highlight has to be lighter than the surface it
        lifts, and 96% leaves it four points to work with. */
-    --background: 50 22% 96%;
-    --foreground: 48 3% 12%;
+    --background: 48 24% 97.2%;
+    --foreground: 48 4% 11%;
 
     /* 98%, not a pure white. A literal #fff card floating on warm paper is the
        one pairing that reads as somebody else's brand; a 2% step is the raised
        rung, and the highlight in --shadow-raised is what carries the lift. */
-    --card: 50 30% 98%;
-    --card-foreground: 48 3% 12%;
+    --card: 46 32% 99.2%;
+    --card-foreground: 48 4% 11%;
 
-    --popover: 50 30% 98.5%;
-    --popover-foreground: 48 3% 12%;
+    --popover: 46 32% 99.4%;
+    --popover-foreground: 48 4% 11%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 54% 44%;
 
-    --secondary: 48 22% 93%;
-    --secondary-foreground: 48 3% 18%;
+    --secondary: 46 20% 93.5%;
+    --secondary-foreground: 48 4% 16%;
 
-    --muted: 48 22% 93%;
+    --muted: 46 20% 93.5%;
     /* 40%, not 46%. This is the token `junoSecondaryInk()` and `junoMetaInk()`
        both resolve to, so it is the floor for every caption, timestamp and
        provenance line in the product. At 46% on `--muted` it measured 4.43:1
@@ -95,8 +95,8 @@
        5.35 on a card, 4.84 on `--muted`, 4.57 on the `--accent` hover fill. */
     --muted-foreground: 48 4% 40%;
 
-    --accent: 48 24% 90%;
-    --accent-foreground: 48 3% 18%;
+    --accent: 46 20% 91.5%;
+    --accent-foreground: 48 4% 14%;
 
     --destructive: 11 51% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -115,17 +115,17 @@
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
 
-    --border: 46 18% 86%;
-    --input: 48 12% 53%;
+    --border: 44 14% 86.5%;
+    --input: 44 12% 78%;
     --ring: 15 54% 46%;
 
     /* The sidebar is an inset well cut into the page (two points below it), so
        its frame carries `.surface-inset`'s recess and the active row is the one
        raised object inside it. */
-    --sidebar: 48 20% 94%;
+    --sidebar: 46 22% 95.5%;
     --sidebar-foreground: 48 4% 30%;
-    --sidebar-border: 46 18% 86%;
-    --sidebar-accent: 48 24% 90%;
+    --sidebar-border: 44 14% 88%;
+    --sidebar-accent: 46 20% 91%;
 
     /* `rounded-lg` and the `card` rung. The whole ladder lives in
        tailwind.config.ts (control 10 · field 12 · menu 14 · card 16 ·
@@ -285,22 +285,27 @@
        as well as a longer one, or the two rungs read as the same card at two
        blur radii. */
     --neu-dark-lg: 46 18% 20% / 0.2;
-    --shadow-raised: -2px -2px 6px hsl(var(--neu-light)), 3px 4px 10px hsl(var(--neu-dark));
-    --shadow-raised-lg: -4px -4px 12px hsl(var(--neu-light)), 6px 8px 20px hsl(var(--neu-dark-lg));
-    --shadow-inset: inset 2px 2px 6px hsl(var(--neu-dark)), inset -2px -2px 6px hsl(var(--neu-light));
-    --shadow-pressed: inset 1px 1px 3px hsl(var(--neu-dark)), inset -1px -1px 3px hsl(var(--neu-light));
+    /* Flat material (2026-09 retune, docs/design/FLAT_UI.md). Depth is a
+       hairline first and a shadow second; in-flow surfaces carry at most a
+       1px contact shadow, and only out-of-flow layers get a real throw. The
+       dual-direction neumorphic recipes are gone — a card is a card because
+       its edge says so, not because it is extruded from the page. */
+    --shadow-raised: 0 1px 2px hsl(var(--shadow-ink) / 0.04);
+    --shadow-raised-lg: 0 1px 2px hsl(var(--shadow-ink) / 0.04), 0 6px 16px -6px hsl(var(--shadow-ink) / 0.08);
+    --shadow-inset: 0 0 0 0 transparent;
+    --shadow-pressed: 0 0 0 0 transparent;
     /* The out-of-flow rung — popovers, dialogs, toasts, tooltips, sheets. A
        crisp contact shadow, a long soft throw pulled in by negative spread so
        it never smears across the page, and the rim light along the top edge. */
-    --shadow-float: 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(46 18% 20% / 0.28), inset 0 1px 0 hsl(var(--sheen));
+    --shadow-float: 0 0 0 1px hsl(var(--shadow-ink) / 0.03), 0 2px 6px hsl(var(--shadow-ink) / 0.05), 0 14px 36px -10px hsl(var(--shadow-ink) / 0.16);
 
     /* The legacy elevation ladder. `soft` and `lift` are the in-flow rungs a
        call site reaches for when it wants "a little" rather than the full raised
        recipe; `glass` is the material behind `.overlay-glass`. All three are
        cut from the same two inks as the kit above so they stay in family. */
-    --shadow-soft: 0 1px 2px hsl(var(--neu-dark));
-    --shadow-lift: -1px -1px 4px hsl(var(--neu-light)), 2px 3px 8px hsl(var(--neu-dark));
-    --shadow-glass: 0 2px 6px hsl(46 18% 20% / 0.06), 0 14px 34px -24px hsl(46 18% 20% / 0.22);
+    --shadow-soft: 0 1px 2px hsl(var(--shadow-ink) / 0.04);
+    --shadow-lift: 0 1px 2px hsl(var(--shadow-ink) / 0.04), 0 4px 12px -4px hsl(var(--shadow-ink) / 0.08);
+    --shadow-glass: 0 2px 6px hsl(var(--shadow-ink) / 0.05), 0 14px 36px -10px hsl(var(--shadow-ink) / 0.16);
 
     /* A top sheen for raised surfaces, a crisp pop shadow for small interactive
        elements, a colored halo for the primary, and an inset "well" alias for
@@ -313,7 +318,7 @@
        whose stated rule is to keep raw colour out of components. */
     --sheen-strong: 0 0% 100% / 0.7;
     --hairline: 48 12% 18% / 0.06;
-    --shadow-pop: 0 1px 2px hsl(48 12% 18% / 0.08);
+    --shadow-pop: 0 1px 2px hsl(var(--shadow-ink) / 0.06);
     /* Alias onto the kit's inset recipe: `shadow-well` and `.field-well` used
        to be a one-directional 1px lip, and a well with light from one side only
        reads as a line, not a recess. */
@@ -322,7 +327,7 @@
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
        behind; warm ink from the same family as --shadow-* follows. */
-    --scrim: 48 12% 8% / 0.42;
+    --scrim: 48 12% 8% / 0.36;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
        up its answer instead of picking a number.
@@ -383,27 +388,27 @@
      * same paper family the light theme uses and the coral has something to
      * sit on, low enough that nobody can name the colour.
      */
-    --background: 30 7% 9%;
-    --foreground: 45 12% 96%;
+    --background: 30 5% 11.5%;
+    --foreground: 45 12% 95%;
 
-    --card: 30 7% 12%;
-    --card-foreground: 45 12% 96%;
+    --card: 30 5% 14%;
+    --card-foreground: 45 12% 95%;
 
-    --popover: 30 7% 14%;
-    --popover-foreground: 45 12% 96%;
+    --popover: 30 5% 16.5%;
+    --popover-foreground: 45 12% 95%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 62% 66%;
 
-    --secondary: 30 6% 15%;
+    --secondary: 30 5% 18%;
     --secondary-foreground: 45 10% 92%;
 
-    --muted: 30 6% 15%;
+    --muted: 30 5% 18%;
     /* 66%: 7.7:1 on the page, 5.8:1 on the `--accent` hover fill. */
     --muted-foreground: 40 6% 66%;
 
-    --accent: 30 6% 18%;
+    --accent: 30 5% 21%;
     --accent-foreground: 45 12% 96%;
 
     --destructive: 11 51% 49.5%;
@@ -433,16 +438,16 @@
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 30 6% 20%;
-    --input: 30 6% 24%;
+    --border: 30 5% 22.5%;
+    --input: 30 5% 27%;
     --ring: 45 6% 80%;
 
     /* One point below the page: the sidebar is a well cut into the ground,
        which on dark reads as the deepest thing on screen. */
-    --sidebar: 30 7% 8%;
-    --sidebar-foreground: 40 6% 68%;
-    --sidebar-border: 30 6% 16%;
-    --sidebar-accent: 30 6% 14%;
+    --sidebar: 30 5% 9.5%;
+    --sidebar-foreground: 40 6% 70%;
+    --sidebar-border: 30 5% 18%;
+    --sidebar-accent: 30 5% 17%;
 
     /*
      * Depth kit (dark). The highlight is a near-white at 6%: enough that the
@@ -460,10 +465,10 @@
        up-left highlight alone is too faint to say "lit", and a 1px rim light
        is what every dark ChatGPT/Claude card uses to separate from the ground.
        Same geometry as light otherwise; the inks are the only difference. */
-    --shadow-raised: inset 0 1px 0 hsl(var(--sheen)), -2px -2px 6px hsl(var(--neu-light)), 3px 4px 12px hsl(var(--neu-dark));
-    --shadow-raised-lg: inset 0 1px 0 hsl(var(--sheen)), -4px -4px 12px hsl(var(--neu-light)), 6px 8px 22px hsl(var(--neu-dark-lg));
-    --shadow-float: 0 1px 2px hsl(var(--neu-dark)), 0 16px 40px -20px hsl(0 0% 0% / 0.7), inset 0 1px 0 hsl(var(--sheen));
-    --shadow-glass: 0 2px 8px hsl(0 0% 0% / 0.3), 0 16px 38px -24px hsl(0 0% 0% / 0.64), inset 0 1px 0 hsl(var(--sheen));
+    --shadow-raised: 0 1px 2px hsl(0 0% 0% / 0.25);
+    --shadow-raised-lg: 0 1px 2px hsl(0 0% 0% / 0.25), 0 8px 20px -8px hsl(0 0% 0% / 0.5);
+    --shadow-float: 0 0 0 1px hsl(45 20% 96% / 0.05), 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
+    --shadow-glass: 0 4px 12px hsl(0 0% 0% / 0.35), 0 18px 44px -12px hsl(0 0% 0% / 0.6);
 
     /* The sheen is a warm near-white kept low: over charcoal it is light along
        an edge, and it is the one cue that survives no matter what is behind
@@ -478,7 +483,7 @@
     /* The modal dim. Pure black, heavier than light's: dimming a 9% ground
        needs opacity to do most of the work, and the 2px backdrop blur on the
        overlay does the rest. */
-    --scrim: 0 0% 0% / 0.6;
+    --scrim: 0 0% 0% / 0.55;
 
     /* Design-canvas selection chrome — lifted like every other state colour,
        because a 1px stroke on #000 dies at light-theme lightness. */
@@ -578,29 +583,9 @@
   svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
   svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
 
-  /* Film grain (2–3%), quiet and non-interactive. A PAPER effect: it belongs to
-     the light theme and is switched off in dark below.
-
-     z-index 1, not 70. 70 is --z-toast, so this layer tied with the top rung of
-     the product and painted over every toast, floating toolbar, popover and
-     modal in it — grain on top of a dialog is grain on the wrong side of the
-     glass. 1 lifts it clear of page content and leaves every out-of-flow rung
-     above it. */
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    opacity: 0.022;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
-  /* Off on dark. Grain is warm paper's texture; over charcoal the same noise
-     reads as sensor grain on a photograph, and the dual shadows that carry
-     depth there are subtle enough that a texture on top competes with them. */
-  .dark body::after {
-    display: none;
-  }
+  /* No film grain. Claude and ChatGPT ship clean paper; the fractal-noise
+     overlay that used to sit here at 2% read as texture on a 5K display and
+     as dirt on a compressed screenshot. */
 
   /*
    * Reduced motion, in tiers rather than as a kill switch.
@@ -674,6 +659,15 @@
 }
 
 @layer components {
+  /* Scroll without a scrollbar: horizontal chip rows that scroll on a phone
+     and must not draw a bar under themselves on a desktop. */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   @keyframes research-stage {
     from {
       opacity: 0.45;
@@ -763,10 +757,12 @@
     .danger-hover:hover svg { transform: none; }
   }
 
-  /* ---- Soft UI surfaces (SOFT_UI.md §2.2) -----------------------------------
-     One material, three depths. These six classes are the ONLY way a component
-     may express depth; a raw `shadow-[…]`, `shadow-2xl` or hand-typed rgba on a
-     surface is a fork of this system and will not follow a retune.
+  /* ---- Surfaces (docs/design/FLAT_UI.md §2) ---------------------------------
+     One flat material. A surface is defined by its fill and its hairline; a
+     shadow is reserved for layers that leave the page (menus, dialogs, toasts).
+     These six classes are the ONLY way a component may express a surface; a
+     raw `shadow-[…]`, `shadow-2xl` or hand-typed rgba is a fork of this system
+     and will not follow a retune.
 
        .surface-raised     extruded from the page — cards,
                            tiles, the sidebar's active row
@@ -776,13 +772,13 @@
                            segmented tracks, the sidebar frame, user bubbles
        .surface-float      lifted above the page — popovers, dropdowns, dialogs,
                            toasts, tooltips, sheets
-       .control-neu        raised at rest, pressed-inset while held or while on —
-                           secondary buttons, icon buttons, toggles, chips
-       .control-primary    the coral action: gradient fill + glow + raised shadow
+       .control-neu        a flat bordered control: hairline at rest, tonal
+                           fill on hover, darker fill while on — secondary
+                           buttons, icon buttons, toggles, chips
+       .control-primary    the accent action: solid fill, no shadow, no glow
 
-     Every one of them draws a hairline as well as a shadow. A neumorphic edge
-     on its own is under 3:1 against its ground and fails WCAG 1.4.11; the
-     hairline is the boundary, the shadow is the texture.
+     Every one of them draws a hairline; that hairline IS the boundary
+     (WCAG 1.4.11 needs 3:1 for a UI edge, which a shadow alone never gives).
 
      Trap worth knowing: these are components-layer classes and Tailwind emits
      utilities after them at equal specificity, so a `bg-*`, `border-*` or
@@ -792,7 +788,7 @@
   .surface-raised-lg {
     background-color: hsl(var(--card));
     color: hsl(var(--card-foreground));
-    border: 1px solid hsl(var(--border) / .6);
+    border: 1px solid hsl(var(--border) / .8);
     box-shadow: var(--shadow-raised);
   }
   .surface-raised-lg {
@@ -800,13 +796,13 @@
   }
   .surface-inset {
     background-color: hsl(var(--background));
-    border: 1px solid hsl(var(--border) / .55);
-    box-shadow: var(--shadow-inset);
+    border: 1px solid hsl(var(--border) / .8);
+    box-shadow: none;
   }
   .surface-float {
     background-color: hsl(var(--popover));
     color: hsl(var(--popover-foreground));
-    border: 1px solid hsl(var(--border) / .7);
+    border: 1px solid hsl(var(--border) / .9);
     box-shadow: var(--shadow-float);
   }
 
@@ -820,8 +816,8 @@
   .control-neu {
     background-color: hsl(var(--card));
     color: hsl(var(--foreground));
-    border: 1px solid hsl(var(--border) / .6);
-    box-shadow: var(--shadow-raised);
+    border: 1px solid hsl(var(--border));
+    box-shadow: none;
     transition:
       transform        var(--dur-press) var(--ease-out-soft),
       color            var(--dur-fast)  var(--ease-out-soft),
@@ -831,8 +827,8 @@
   }
   @media (hover: hover) {
     .control-neu:hover {
-      border-color: hsl(var(--border));
-      box-shadow: var(--shadow-raised-lg);
+      background-color: hsl(var(--accent));
+      border-color: hsl(var(--foreground) / .18);
     }
   }
   .control-neu:active,
@@ -841,8 +837,8 @@
   .control-neu[aria-pressed="true"],
   .control-neu[data-selected] {
     background-color: hsl(var(--secondary));
-    border-color: hsl(var(--border) / .8);
-    box-shadow: var(--shadow-pressed);
+    border-color: hsl(var(--foreground) / .22);
+    box-shadow: none;
   }
   .control-neu:active {
     transform: scale(.97);
@@ -855,9 +851,9 @@
      brightens; pressing dips into the pressed recipe. */
   .control-primary {
     color: hsl(var(--primary-foreground));
-    border: 1px solid hsl(var(--primary) / .9);
+    border: 1px solid hsl(var(--primary));
     background-color: hsl(var(--primary));
-    box-shadow: var(--shadow-raised);
+    box-shadow: none;
     transition:
       transform        var(--dur-press) var(--ease-out-soft),
       background-color var(--dur-fast)  var(--ease-out-soft),
@@ -871,8 +867,7 @@
     }
   }
   .control-primary:active {
-    filter: brightness(.96);
-    box-shadow: var(--shadow-pressed);
+    filter: brightness(.94);
     transform: scale(.97);
   }
   @media (prefers-reduced-motion: reduce) {
@@ -1295,15 +1290,17 @@
     background-color: hsl(var(--card));
     border: 1px solid hsl(var(--border));
     box-shadow:
-      0 2px 8px hsl(var(--foreground) / .045);
+      0 1px 2px hsl(var(--shadow-ink) / .03),
+      0 6px 20px -10px hsl(var(--shadow-ink) / .12);
     transition:
       border-color var(--dur-fast) var(--ease-out-soft),
       box-shadow   var(--dur-fast) var(--ease-out-soft);
   }
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / .4);
+    border-color: hsl(var(--foreground) / .28);
     box-shadow:
-      0 2px 12px hsl(var(--foreground) / .065);
+      0 1px 2px hsl(var(--shadow-ink) / .04),
+      0 10px 28px -10px hsl(var(--shadow-ink) / .16);
   }
   @media (prefers-reduced-motion: reduce) {
     .composer-surface { transition: none; }
@@ -1476,8 +1473,8 @@
    */
   .field-well {
     background-color: hsl(var(--background));
-    border-color: hsl(var(--border) / .55);
-    box-shadow: var(--shadow-inset);
+    border-color: hsl(var(--border) / .8);
+    box-shadow: none;
   }
 
   /* Legacy alias for the float material's shadow. The three remaining call

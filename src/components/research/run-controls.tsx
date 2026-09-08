@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Link2, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Link2, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
  */
 
 const PLAN_COPY = {
-  lede: "Juno will work through this. Edit any step before it starts.",
+  lede: "Here's how Juno will research this. Adjust anything before it starts.",
   ledeFallback: "Juno will run these searches. Edit any of them before it starts.",
   start: "Start researching",
   discard: "Cancel research",
@@ -32,38 +33,206 @@ const PLAN_COPY = {
   showFocus: "Set focus and sources",
   hideFocus: "Hide focus and sources",
   sources: "Sources to read first",
+  approach: "Approach",
+  questions: "Questions to answer",
+  schedule: "How the work will run",
+  criteria: "A complete answer includes",
+  risks: "Where evidence may be thin",
+  primary: "primary source",
+  fresh: "fresh",
 } as const;
+
+/** The plan's objectives as the gate and the plan tab receive them. */
+export interface PlanObjectiveView {
+  id: string;
+  question: string;
+  rationale?: string;
+  importance?: number;
+  status?: string;
+  evidenceRequirements?: Array<{
+    id: string;
+    description: string;
+    minimumIndependentSources?: number;
+    requiresPrimarySource?: boolean;
+    freshnessRule?: string;
+    status?: string;
+  }>;
+}
+
+/** A section of the plan: a mono eyebrow over its content, staggered in. */
+function PlanSection({
+  label,
+  index,
+  children,
+  className,
+}: {
+  label: string;
+  index: number;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      style={staggerDelay(index, "base")}
+      className={cn("motion-safe:animate-rise-in [animation-fill-mode:backwards]", className)}
+    >
+      <p className="font-mono text-label text-muted-foreground">{label}</p>
+      <div className="mt-2">{children}</div>
+    </section>
+  );
+}
+
+/** The evidence contract behind one sub-question, as a quiet row of chips. */
+function EvidenceChips({ objective }: { objective: PlanObjectiveView }) {
+  const requirements = objective.evidenceRequirements ?? [];
+  if (requirements.length === 0) return null;
+  const independent = Math.max(...requirements.map((r) => r.minimumIndependentSources ?? 1));
+  const primary = requirements.some((r) => r.requiresPrimarySource);
+  const fresh = requirements.map((r) => r.freshnessRule).find(Boolean);
+  const chips = [
+    independent > 1 ? `${independent} independent sources` : "1 source",
+    primary ? PLAN_COPY.primary : null,
+    fresh ? `${PLAN_COPY.fresh} · ${fresh}` : null,
+  ].filter((chip): chip is string => !!chip);
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Evidence needed">
+      {chips.map((chip) => (
+        <li
+          key={chip}
+          className="rounded-full border border-border bg-background px-2 py-0.5 font-mono text-micro text-muted-foreground"
+        >
+          {chip}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The plan, read-only: the approach, the sub-questions with their evidence
+ * contracts, the schedule, the bar for done and the risks. Shared by the gate
+ * (which wraps the schedule in editors) and the console's Plan tab, so the
+ * plan a person approved and the plan the run reports are one rendering.
+ */
+export function PlanOutline({
+  approach,
+  objectives,
+  steps,
+  queries,
+  successCriteria,
+  risks,
+  renderSteps,
+  startIndex = 0,
+}: {
+  approach?: string;
+  objectives: PlanObjectiveView[];
+  steps: string[];
+  queries: string[];
+  successCriteria?: string[];
+  risks?: string[];
+  /** The gate supplies editable steps; the tab renders them as text. */
+  renderSteps?: (steps: string[]) => React.ReactNode;
+  startIndex?: number;
+}) {
+  let index = startIndex;
+  const scheduleSteps = steps.length ? steps : queries;
+  return (
+    <div className="flex flex-col gap-5">
+      {approach && (
+        <PlanSection label={PLAN_COPY.approach} index={index++}>
+          <p className="text-body leading-relaxed text-foreground/90">{approach}</p>
+        </PlanSection>
+      )}
+      {objectives.length > 0 && (
+        <PlanSection label={PLAN_COPY.questions} index={index++}>
+          <ol className="flex flex-col gap-3">
+            {objectives.map((objective, i) => (
+              <li key={objective.id} className="flex items-start gap-3">
+                <span
+                  aria-hidden
+                  className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-caption font-medium tabular-nums text-muted-foreground"
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-body font-medium leading-snug text-foreground">{objective.question}</p>
+                  {objective.rationale && (
+                    <p className="mt-0.5 text-ui leading-relaxed text-muted-foreground">{objective.rationale}</p>
+                  )}
+                  <EvidenceChips objective={objective} />
+                </div>
+              </li>
+            ))}
+          </ol>
+        </PlanSection>
+      )}
+      {scheduleSteps.length > 0 && (
+        <PlanSection label={PLAN_COPY.schedule} index={index++}>
+          {renderSteps ? (
+            renderSteps(scheduleSteps)
+          ) : (
+            <ol className="flex flex-col gap-2">
+              {scheduleSteps.map((step, i) => (
+                <li key={i} className="flex gap-3 text-ui leading-relaxed text-foreground/90">
+                  <span className="w-4 shrink-0 font-mono text-caption tabular-nums text-muted-foreground">{i + 1}</span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </PlanSection>
+      )}
+      {!!successCriteria?.length && (
+        <PlanSection label={PLAN_COPY.criteria} index={index++}>
+          <ul className="flex flex-col gap-1.5">
+            {successCriteria.map((line) => (
+              <li key={line} className="flex items-start gap-2.5 text-ui leading-relaxed text-foreground/90">
+                <Check aria-hidden className="mt-1 size-3.5 shrink-0 text-success-ink" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </PlanSection>
+      )}
+      {!!risks?.length && (
+        <PlanSection label={PLAN_COPY.risks} index={index++}>
+          <ul className="flex flex-col gap-1.5">
+            {risks.map((line) => (
+              <li key={line} className="flex items-start gap-2.5 text-ui leading-relaxed text-muted-foreground">
+                <span aria-hidden className="mt-2 size-1 shrink-0 rounded-full bg-warning" />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </PlanSection>
+      )}
+    </div>
+  );
+}
 
 /**
  * The plan gate: nothing expensive has happened yet, and this is what the run
- * intends to do. Editable, because the whole point of stopping here is that the
- * user can change it.
+ * intends to do — the planner's approach, the sub-questions a complete answer
+ * needs and the evidence that would settle each, the order the work will run
+ * in, the bar for done. Editable where editing changes the investigation: the
+ * schedule (the steps the objectives are rebuilt from when they change) and
+ * the searches one disclosure down. The approach and the questions are the
+ * planner's reasoning and are read, not rewritten — a person who disagrees
+ * with them adds a constraint or cancels.
  *
- * WHAT IT SHOWS, and why that changed. It used to render the raw query list —
- * "best AI subscription 2026", "claude max vs chatgpt pro price" — as a stack of
- * bordered inputs. That is the machine's shopping list, and the question the
- * gate actually asks ("is this going to cover what I care about?") cannot be
- * answered from a bag of search strings: you can read fourteen of them and still
- * not know whether anyone is going to check the vendors' own pricing pages. So
- * the planner now writes a plan in sentences alongside the queries (see
- * PLANNER_SYSTEM in tools.ts), and the gate leads with that. The queries are
- * still here, still editable, one disclosure down — they are how the plan
- * executes, and the person who wants to tune them is a different person from the
- * one deciding whether to spend the money.
- *
- * Steps are editable too, and that is not decoration: they are what the writer's
- * objectives are built from, so a step the user rewrites changes the
- * investigation rather than just the label on it.
- *
- * A plan with no steps — an older run, or a planner that ignored the format —
- * falls back to the query list as the primary content, which is exactly the
- * screen this replaced. Nothing regresses to blank.
+ * A plan with no structure — an older run, or a planner that ignored the
+ * format — falls back to the step list, and with no steps to the query list,
+ * which is exactly the screen this replaced. Nothing regresses to blank.
  */
 export function PlanReview({
   steps,
   queries,
   constraints,
   pinnedSources,
+  approach,
+  objectives = [],
+  successCriteria,
+  risks,
   busy,
   onConfirm,
   onDiscard,
@@ -72,6 +241,10 @@ export function PlanReview({
   queries: string[];
   constraints: string[];
   pinnedSources: string[];
+  approach?: string;
+  objectives?: PlanObjectiveView[];
+  successCriteria?: string[];
+  risks?: string[];
   busy: boolean;
   onConfirm: (plan: { steps: string[]; queries: string[]; constraints: string[]; pinnedSources: string[] }) => void;
   onDiscard: () => void;
@@ -88,54 +261,70 @@ export function PlanReview({
   const currentSteps = stepDraft ?? steps;
   const currentQueries = queryDraft ?? queries;
   const hasSteps = currentSteps.length > 0;
+  const structured = !!approach || objectives.length > 0;
 
-  // The primary list is whichever one is really the plan here. Everything below
-  // reads from this pair so there is one layout, not two.
+  // The editable list is whichever one is really the plan here.
   const primary = hasSteps ? currentSteps : currentQueries;
   const setPrimary = hasSteps ? setStepDraft : setQueryDraft;
   const primaryLabel = hasSteps ? PLAN_COPY.step : PLAN_COPY.search;
 
+  const editor = (
+    <ol className="flex flex-col gap-2">
+      {primary.map((value, i) => (
+        <li key={i} className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="mt-2 w-4 shrink-0 font-mono text-caption tabular-nums text-muted-foreground"
+          >
+            {i + 1}
+          </span>
+          <textarea
+            disabled={busy}
+            value={value}
+            rows={1}
+            aria-label={`${primaryLabel} ${i + 1}`}
+            onChange={(e) => {
+              const next = [...primary];
+              next[i] = e.target.value;
+              setPrimary(next);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            ref={(el) => {
+              if (!el) return;
+              el.style.height = "auto";
+              el.style.height = `${el.scrollHeight}px`;
+            }}
+            className={cn(
+              "min-w-0 flex-1 resize-none rounded-control border border-transparent bg-transparent px-2.5 py-1.5 outline-none",
+              "text-ui leading-relaxed text-foreground/90",
+              "transition-[background-color,border-color] duration-fast ease-out-soft hover:bg-secondary focus-visible:border-border focus-visible:bg-secondary motion-reduce:transition-none"
+            )}
+          />
+        </li>
+      ))}
+    </ol>
+  );
+
   return (
     <div>
-      <p className="text-ui text-muted-foreground">{hasSteps ? PLAN_COPY.lede : PLAN_COPY.ledeFallback}</p>
+      <p className="text-ui text-muted-foreground">
+        {structured || hasSteps ? PLAN_COPY.lede : PLAN_COPY.ledeFallback}
+      </p>
 
-      <ol className="mt-3.5 flex flex-col gap-2">
-        {primary.map((value, i) => (
-          <li key={i} className="flex items-start gap-3">
-            <span
-              aria-hidden
-              className="mt-1 flex size-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-secondary/60 text-caption font-mono font-medium text-muted-foreground"
-            >
-              {i + 1}
-            </span>
-            <textarea
-              disabled={busy}
-              value={value}
-              rows={1}
-              aria-label={`${primaryLabel} ${i + 1}`}
-              onChange={(e) => {
-                const next = [...primary];
-                next[i] = e.target.value;
-                setPrimary(next);
-                e.target.style.height = "auto";
-                e.target.style.height = `${e.target.scrollHeight}px`;
-              }}
-              ref={(el) => {
-                if (!el) return;
-                el.style.height = "auto";
-                el.style.height = `${el.scrollHeight}px`;
-              }}
-              className={cn(
-                "min-w-0 flex-1 resize-none rounded-control border border-border/50 bg-secondary/30 px-3 py-2 outline-none",
-                "text-base leading-relaxed text-foreground/90",
-                "transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-primary/40 focus-visible:bg-secondary/60 motion-reduce:transition-none"
-              )}
-            />
-          </li>
-        ))}
-      </ol>
+      <div className="mt-5">
+        <PlanOutline
+          approach={approach}
+          objectives={objectives}
+          steps={hasSteps ? currentSteps : []}
+          queries={currentQueries}
+          successCriteria={successCriteria}
+          risks={risks}
+          renderSteps={() => editor}
+        />
+      </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <Button
           type="button"
           disabled={busy || primary.every((value) => !value.trim())}
@@ -150,22 +339,15 @@ export function PlanReview({
         >
           {PLAN_COPY.start}
         </Button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onDiscard}
-          className="pressable rounded-control px-1 py-0.5 text-ui text-muted-foreground underline-offset-4 hover:text-destructive hover:underline disabled:opacity-50"
-        >
+        <Button type="button" variant="ghost" disabled={busy} onClick={onDiscard} className="text-muted-foreground">
           {PLAN_COPY.discard}
-        </button>
+        </Button>
       </div>
 
       {/* The searches, for the reader who wants them. Only when the steps are
-          carrying the plan — with no steps the queries ARE the plan above, and
-          a disclosure holding a duplicate of the list you are looking at is
-          worse than no disclosure. */}
+          carrying the plan — with no steps the queries ARE the plan above. */}
       {hasSteps && currentQueries.length > 0 && (
-        <div className="mt-4 border-t border-border/50 pt-3">
+        <div className="mt-5 border-t border-border pt-3">
           <button
             type="button"
             aria-expanded={queriesOpen}
@@ -184,7 +366,7 @@ export function PlanReview({
           </button>
 
           {queriesOpen && (
-            <ol className="mt-2 flex flex-col">
+            <ol className="mt-2 flex flex-col motion-safe:animate-research-detail-in">
               {currentQueries.map((query, i) => (
                 <li key={i} className="flex items-center gap-3">
                   <span aria-hidden className="w-4 shrink-0 text-caption tabular-nums text-muted-foreground/60">
@@ -198,7 +380,7 @@ export function PlanReview({
                       next[i] = e.target.value;
                       setQueryDraft(next);
                     }}
-                    className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary/50 focus-visible:bg-secondary/60 focus-visible:text-foreground motion-reduce:transition-none"
+                    className="min-w-0 flex-1 rounded-control bg-transparent px-2 py-1.5 text-ui text-muted-foreground outline-none transition-colors duration-fast ease-out-soft hover:bg-secondary focus-visible:bg-secondary focus-visible:text-foreground motion-reduce:transition-none"
                   />
                 </li>
               ))}
@@ -207,7 +389,7 @@ export function PlanReview({
         </div>
       )}
 
-      <div className="mt-4 border-t border-border/50 pt-3">
+      <div className="mt-4 border-t border-border pt-3">
         <button
           type="button"
           aria-expanded={focusOpen}

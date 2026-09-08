@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const Tabs = TabsPrimitive.Root;
 
 /**
- * Inset track, raised thumb (docs/design/SOFT_UI.md §2.2). The list is
+ * Inset track, raised thumb (docs/design/FLAT_UI.md §2.2). The list is
  * `.surface-inset` at `rounded-menu` (14) with p-1, so the 10px
  * `rounded-control` triggers sit concentric inside it; the active trigger is
  * `.surface-raised` — a key standing proud of its slot. SegmentedControl is

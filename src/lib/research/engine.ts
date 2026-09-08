@@ -413,6 +413,12 @@ export interface ResearchDeps {
     steps?: string[];
     costMicroUsd: number;
     objectives?: ResearchPlan["objectives"];
+    /** The expanded brief, persisted so every worker and the lead read it. */
+    brief?: string;
+    /** The planner's reasoning for the gate. See `ResearchPlan.approach`. */
+    approach?: string;
+    successCriteria?: string[];
+    risks?: string[];
   }>;
   search(input: {
     userId: string;
@@ -557,6 +563,20 @@ export interface ResearchValidationResult {
  */
 export const SEARCH_ESTIMATE_MICRO_USD = SEARCH_FEE_MICRO_USD * VENDOR_ESTIMATE_MARGIN;
 export const READ_ESTIMATE_MICRO_USD = PAGE_FETCH_FEE_MICRO_USD * VENDOR_ESTIMATE_MARGIN;
+/**
+ * The brief every worker and the lead read: the expanded brief, then the
+ * planner's approach and its bar for done. A worker that knows how evidence
+ * will be judged spends its calls on evidence that will count.
+ */
+export function researchBriefText(plan: ResearchPlan): string {
+  const parts = [
+    plan.brief ?? "",
+    plan.approach ? `Approach: ${plan.approach}` : "",
+    plan.successCriteria?.length ? `A complete answer includes:\n${plan.successCriteria.map((c) => `- ${c}`).join("\n")}` : "",
+  ].filter(Boolean);
+  return parts.join("\n\n");
+}
+
 /** Both calls `planResearchQueries` makes: the brief expansion, then the planner. */
 export const PLAN_ESTIMATE_MICRO_USD =
   modelCallEstimateMicroUsd(BRIEF_PROMPT_CHARS + SYSTEM_PROMPT_CHARS, BRIEF_OUTPUT_TOKENS) +
@@ -1226,6 +1246,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       // "no steps" as "fall back to the query list", which is what every plan
       // drafted before steps existed does.
       ...(drafted.steps?.length ? { steps: drafted.steps } : {}),
+      ...(drafted.brief ? { brief: drafted.brief } : {}),
+      ...(drafted.approach ? { approach: drafted.approach } : {}),
+      ...(drafted.successCriteria?.length ? { successCriteria: drafted.successCriteria } : {}),
+      ...(drafted.risks?.length ? { risks: drafted.risks } : {}),
       queries,
       objectives,
       issuedQueries: [],
@@ -1240,15 +1264,23 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     await store.recordQueries({ runId: run.id, userId: run.userId, queries });
 
     const reloaded = (await store.loadRun(run.id, run.userId)) ?? run;
+    // The timeline narrates the plan from this payload: how many questions
+    // the run will answer and the planner's one-paragraph approach.
+    const drafted_ = {
+      queries,
+      objectives: objectives.length,
+      steps: next.steps ?? [],
+      ...(next.approach ? { approach: next.approach } : {}),
+    };
     if (planIsConfirmed(next)) {
       const moved = await advance(reloaded, "investigating", undefined, [
-        { kind: "plan_drafted", payload: { queries } },
+        { kind: "plan_drafted", payload: drafted_ },
         { kind: "plan_confirmed", payload: { by: "auto" } },
       ]);
       return moved ? { kind: "advanced", state: "investigating" } : { kind: "raced" };
     }
     const moved = await advance(reloaded, "awaiting_plan_confirmation", undefined, [
-      { kind: "plan_drafted", payload: { queries } },
+      { kind: "plan_drafted", payload: drafted_ },
     ]);
     return moved
       ? { kind: "blocked", state: "awaiting_plan_confirmation" }
@@ -2255,7 +2287,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
                 delegation,
                 round,
                 goal: current.goal,
-                brief: plan.brief ?? "",
+                brief: researchBriefText(plan),
                 constraints: plan.constraints,
                 visited,
               },
@@ -2319,7 +2351,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const reviewInput: ReviewRoundInput = {
         userId: current.userId,
         goal: current.goal,
-        brief: latestPlan.brief ?? "",
+        brief: researchBriefText(latestPlan),
         constraints: latestPlan.constraints,
         objectives: latestPlan.objectives,
         findings,
@@ -2983,7 +3015,16 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const current = parsePlan(run.plan);
       const editedQueries = queries ?? current.queries;
       const editedSteps = steps ?? current.steps ?? [];
-      const planEdit = queries !== undefined || steps !== undefined;
+      // An edit is a CHANGE, not a round trip. The gate posts the lists back
+      // whether or not the user touched them, and rebuilding the evidence
+      // contract on an untouched plan threw away the planner's structured
+      // objectives — the sub-questions, their rationale and their evidence
+      // requirements — for the mechanical one-objective-per-line fallback.
+      const sameList = (a: readonly string[], b: readonly string[]) =>
+        a.length === b.length && a.every((value, i) => value.trim() === (b[i] ?? "").trim());
+      const planEdit =
+        (queries !== undefined && !sameList(queries, current.queries)) ||
+        (steps !== undefined && !sameList(steps, current.steps ?? []));
       /*
        * WHAT THE EVIDENCE CONTRACT IS REBUILT FROM, and why steps win.
        *
@@ -3021,7 +3062,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const moved = await advance(saved ?? run, "investigating", undefined, [
         {
           kind: "plan_confirmed",
-          payload: { by: "user", queries: edited.queries, edited: queries !== undefined },
+          payload: { by: "user", queries: edited.queries, edited: planEdit },
         },
       ]);
       return moved

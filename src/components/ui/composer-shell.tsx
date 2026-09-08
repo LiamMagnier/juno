@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import type { PendingUpload } from "@/hooks/use-uploads";
 
 /**
- * The composer: one quiet surface (docs/design/SOFT_UI.md §3).
+ * The composer: one quiet surface (docs/design/FLAT_UI.md §3).
  *
  *   ┌──────────────────────────────────────────────┐
  *   │  above      attachment thumbnails / quote     │

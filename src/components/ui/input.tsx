@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The text field is `.surface-inset` (docs/design/SOFT_UI.md §2.2): the page
+ * The text field is `.surface-inset` (docs/design/FLAT_UI.md §2.2): the page
  * fill with the recess shadow, plus the --input hairline as its boundary.
  *
  * Focus is the border darkening to foreground/70 and NOTHING else — no ring,

@@ -31,7 +31,7 @@ const RadioGroupItem = React.forwardRef<
     {...props}
   >
     <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
-      <span className="check-morph block size-2 rounded-full bg-primary shadow-raised" aria-hidden="true" />
+      <span className="check-morph block size-2 rounded-full bg-primary" aria-hidden="true" />
     </RadioGroupPrimitive.Indicator>
   </RadioGroupPrimitive.Item>
 ));

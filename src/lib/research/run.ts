@@ -618,6 +618,11 @@ export interface ResearchRunView {
     constraints: string[];
     pinnedSources: string[];
     confirmed: boolean;
+    /** The planner's reasoning for the gate — see `ResearchPlan`. Empty when absent. */
+    brief: string;
+    approach: string;
+    successCriteria: string[];
+    risks: string[];
     objectives: ResearchObjective[];
     coverage: ResearchCoverageEntry[];
     conflicts: ResearchConflict[];
@@ -769,6 +774,12 @@ export async function readResearchRun(input: {
         constraints: plan.constraints,
         pinnedSources: plan.pinnedSources,
         confirmed: planIsConfirmed(plan),
+        // The planner's reasoning, for the gate and the plan tab. Empty
+        // strings and lists rather than absent, for the same reason as steps.
+        brief: plan.brief ?? "",
+        approach: plan.approach ?? "",
+        successCriteria: plan.successCriteria ?? [],
+        risks: plan.risks ?? [],
         objectives: plan.objectives,
         coverage: plan.coverage ?? [],
         conflicts: plan.conflicts ?? [],

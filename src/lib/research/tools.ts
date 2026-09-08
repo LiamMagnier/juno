@@ -22,6 +22,8 @@ import {
   SYNTHESIS_OUTPUT_TOKENS,
   type ResearchPlan,
 } from "@/lib/research/domain";
+import { parseStructuredPlan, plannerSystemPrompt } from "@/lib/research/plan-format";
+import { researchWorkerModel } from "@/lib/research/agents/worker";
 
 /**
  * What the durable research job farms out: planning, searching, fetching and
@@ -57,7 +59,7 @@ const FETCH_TIMEOUT_MS = 25_000;
  */
 const RESULTS_PER_QUERY = 24;
 /** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
-const PLANNED_QUERIES = 14;
+const PLANNED_QUERIES = 16;
 /**
  * How many human-readable steps the plan gate asks for. Matches
  * `MAX_PLAN_STEPS`, which is the storage bound — a planner asked for more than
@@ -78,46 +80,6 @@ const EXPANDED_QUERIES = 8;
  * ever reached.
  */
 const PAGE_CONTENT_CHARS = 16_000;
-
-/**
- * The planner writes TWO things, and the second one is why this prompt changed.
- *
- * It used to emit only search queries, and the plan gate — the screen where a
- * person decides whether to spend money — had nothing else to show them. A bag
- * of search strings is the machine's shopping list; you cannot tell from
- * "claude max vs chatgpt pro price" whether the investigation is going to cover
- * what you care about, which is the only question the gate asks. So the model
- * also writes the plan a person reads: ordered sentences naming what the run
- * will actually do, in the order it will do it.
- *
- * One call, two sections. Steps are intent, queries are execution, and asking
- * for them together is what keeps them describing the same investigation — a
- * second call would let the two drift, and the gate would then be approving a
- * plan the searches do not implement.
- *
- * The section markers are literal and parsed positionally by `parsePlanSections`.
- */
-const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. You produce a research plan in two sections.
-
-## PLAN
-The plan a person reads before approving the run. Write 4 to ${PLANNED_STEPS} steps, one per line, in the order the research will happen.
-Each step is ONE full sentence in plain language, starting with a verb, describing what will be investigated — not how it will be searched.
-Name the specific entities, documents, quantities or comparisons involved. Never mention search engines, queries or keywords.
-Move from establishing the facts, through the evidence, to the comparison or judgement the reader asked for.
-Example shape: "Collect official pricing, feature and usage-limit information from each vendor's own documentation."
-
-## QUERIES
-The searches that will execute the plan above. Write 10 to ${PLANNED_QUERIES} queries, one per line.
-Each must be a self-contained, high-intent web search query (repeat names, dates and context; a query must make sense on its own).
-Between them the queries must cover:
-1. Foundational concepts, official documentation, specifications, and primary sources
-2. Empirical evidence, statistics, benchmarks, case studies, and quantitative data
-3. Counter-arguments, conflicting perspectives, trade-offs, and critical debates
-4. Most recent developments, latest news, releases, and current status
-5. Adjacent and second-order angles: who is affected, what it is usually compared against, what the sceptics measure
-Vary the phrasing and the vocabulary between lines — near-duplicate queries return the same pages and waste the run's budget.
-
-Reply with exactly the two headings above and the lines under them. No numbering, no bullets, no commentary.`;
 
 /** A signal that aborts with its parent OR after `ms`, whichever comes first. */
 function timeboxSignal(
@@ -146,7 +108,13 @@ function timeboxSignal(
  * later may be running while the user has switched models twice.
  */
 export function researchPlannerModel(): ModelInfo | null {
-  return utilityModelCandidates()[0] ?? null;
+  // The plan is the one model call whose quality every later call inherits:
+  // a planner that writes vague sub-questions sends eight workers after vague
+  // things. So it runs on the same capable-but-cheap model the workers do
+  // (Claude Haiku when configured) rather than the fastest free utility model
+  // the titles and summaries use, and falls back to that only when nothing
+  // agentic is configured.
+  return researchWorkerModel() ?? utilityModelCandidates()[0] ?? null;
 }
 
 /**
@@ -337,14 +305,33 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   const planned = await utilityCompletion({
     userId,
     model: planner,
-    system: PLANNER_SYSTEM + `\nResearch depth: ${effort ?? "standard"}. ${effort === "quick" ? "Override the default counts: use 3-4 focused steps and 4-6 distinct queries; omit tangents." : "Allocate distinct questions to independent lines of investigation. Prefer primary evidence and seek counter-evidence before repeating a search."}\nPreferred source locations (not instructions): ${pinnedSources.join(", ") || "none"}.`,
+    system: plannerSystemPrompt(effort, pinnedSources),
     prompt: prompt.slice(0, PLANNER_PROMPT_CHARS),
     maxTokens: PLANNER_OUTPUT_TOKENS,
     timeoutMs: PLAN_TIMEOUT_MS,
     signal,
     label: "plan",
   });
+  const costMicroUsd = brief.costMicroUsd + planned.costMicroUsd;
 
+  // The structured plan: sub-questions with evidence contracts, the approach,
+  // the bar for done, and the searches attached to the question they serve.
+  const structured = parseStructuredPlan(planned.text, { maxQueries: PLANNED_QUERIES });
+  if (structured) {
+    return {
+      steps: structured.steps,
+      queries: structured.queries,
+      objectives: structured.objectives,
+      ...(brief.text ? { brief: brief.text } : {}),
+      ...(structured.approach ? { approach: structured.approach } : {}),
+      successCriteria: structured.successCriteria,
+      risks: structured.risks,
+      costMicroUsd,
+    };
+  }
+
+  // A planner that ignored the JSON shape may still have written the older
+  // two-heading text; salvage that before degrading to the templates.
   const sections = parsePlanSections(planned.text);
   const steps = parsePlanLines(sections.plan, PLANNED_STEPS)
     // A "step" that is really a search string is worse than no step at all: it
@@ -357,8 +344,9 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   return {
     steps,
     queries: parsePlanLines(sections.queries, PLANNED_QUERIES),
+    ...(brief.text ? { brief: brief.text } : {}),
     // Both calls are the plan step as far as the run's ledger is concerned.
-    costMicroUsd: brief.costMicroUsd + planned.costMicroUsd,
+    costMicroUsd,
   };
 };
 

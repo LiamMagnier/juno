@@ -72,7 +72,30 @@ export interface ResearchRunView {
     constraints: string[];
     pinnedSources: string[];
     confirmed: boolean;
-    objectives?: Array<{ id: string; question: string; status: string }>;
+    /** The expanded brief the planner wrote from the goal. */
+    brief?: string;
+    /** The planner's one-paragraph reasoning: how the question will be attacked. */
+    approach?: string;
+    /** What a complete answer must contain, in the planner's words. */
+    successCriteria?: string[];
+    /** Where the planner expects evidence to be thin or disputed. */
+    risks?: string[];
+    objectives?: Array<{
+      id: string;
+      question: string;
+      status: string;
+      rationale?: string;
+      importance?: number;
+      evidenceRequirements?: Array<{
+        id: string;
+        description: string;
+        preferredSourceTypes?: string[];
+        minimumIndependentSources?: number;
+        requiresPrimarySource?: boolean;
+        freshnessRule?: string;
+        status?: string;
+      }>;
+    }>;
     coverage?: Array<{
       objectiveId: string;
       requirementId: string;

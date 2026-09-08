@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 
 /* ────────────────────────────────────────────────────────────────────────────
- * The sidebar (docs/design/SOFT_UI.md §3).
+ * The sidebar (docs/design/FLAT_UI.md §3).
  *
  * An inset well (the frame is painted by `.app-sidebar-frame` in the shell)
  * holding, top to bottom: brand + collapse, Search (⌘K), New chat, the
@@ -703,7 +703,7 @@ export function AppSidebar({
                 <UserMenu
                   trigger={
                     <Pressable kind="row" className="group gap-2.5 px-2 py-1.5 hover:bg-sidebar-accent">
-                      <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full surface-raised">
+                      <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card">
                         {user.image ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={user.image} alt="" className="size-full object-cover" />
@@ -848,7 +848,7 @@ function NavRow({
   const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
         {icon}
       </span>
       {!collapsed && (
@@ -893,7 +893,7 @@ function navRowClass(collapsed: boolean, active: boolean) {
     // one tap and the row's tooltip names it.
     collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2.5 py-1.5",
     active
-      ? "surface-raised border-border/60 font-semibold text-foreground"
+      ? "border border-transparent bg-sidebar-accent font-medium text-foreground"
       : "border border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
 }
@@ -1230,7 +1230,7 @@ function ConversationRow({
         "group relative flex min-h-9 items-center rounded-control border pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
         nested ? "pl-5" : "pl-2.5",
         active
-          ? "surface-raised border-border/60 font-semibold text-foreground"
+          ? "border-transparent bg-sidebar-accent font-medium text-foreground"
           : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
       )}
     >
@@ -1250,7 +1250,7 @@ function ConversationRow({
         )}
         title={conversation.title}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
           <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
         <AnimatedTitle title={conversation.title || "New chat"} animate={conversation.titleSource === "ai"} className="min-w-0 flex-1" />
@@ -1352,7 +1352,7 @@ function ProjectRow({
         className={cn(
           "group relative flex min-h-9 items-center rounded-control border pl-2.5 pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
           active
-            ? "surface-raised border-border/60 font-semibold text-foreground"
+            ? "border-transparent bg-sidebar-accent font-medium text-foreground"
             : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
         )}
       >
@@ -1366,7 +1366,7 @@ function ProjectRow({
           )}
           title={project.name}
         >
-          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.surface-raised_&]:text-foreground">
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
             <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
@@ -1432,11 +1432,11 @@ function ProjectRow({
                 className={cn(
                   "group group/pc flex min-h-8 items-center gap-2 rounded-control border py-1 pl-8 pr-2 text-ui transition-[color,background-color,border-color] duration-fast ease-out-soft",
                   activePath === `/chat/${c.id}`
-                    ? "surface-raised border-border/60 font-medium text-foreground"
+                    ? "border-transparent bg-sidebar-accent font-medium text-foreground"
                     : "border-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
                 )}
               >
-                <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground [.surface-raised_&]:text-foreground">
+                <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground [.bg-sidebar-accent_&]:text-foreground">
                   <SidebarMotionIcon
                     kind="conversation"
                     className="size-3.5 shrink-0"

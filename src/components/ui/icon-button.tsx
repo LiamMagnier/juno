@@ -22,10 +22,10 @@ const iconButtonVariants = cva(
   {
     variants: {
       variant: {
-        default: "control-neu border-border/60 text-foreground",
+        default: "control-neu text-foreground",
         // Flat at rest for dense toolbars; raises on hover, presses when on.
         ghost:
-          "border-transparent bg-transparent text-muted-foreground hover:border-border/60 hover:bg-card hover:text-foreground hover:shadow-raised active:bg-secondary active:shadow-pressed aria-pressed:border-border/60 aria-pressed:bg-secondary aria-pressed:text-foreground aria-pressed:shadow-pressed",
+          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-secondary aria-pressed:bg-secondary aria-pressed:text-foreground",
         primary: "control-primary border-primary/90",
       },
       size: {

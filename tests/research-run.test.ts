@@ -1021,9 +1021,12 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   const searched: string[] = [];
   // The search bills exactly what tools.ts records for one, so the arithmetic
   // below is about the real fee rather than an invented one.
-  const PLAN_COST = 46_200;
+  // The plan estimate grew with the structured planner (a 2,048-token JSON
+  // reply); the ceiling and the plan's real cost move together so the sweep
+  // arithmetic below is unchanged: 3,800 of headroom past the plan.
+  const PLAN_COST = 96_200;
   const SEARCH_COST = SEARCH_FEE_MICRO_USD;
-  const CEILING = 50_000;
+  const CEILING = 100_000;
   const base = deps(store, { costs: { plan: PLAN_COST, search: SEARCH_COST } });
   const engine = createResearchEngine({
     ...base,
@@ -1052,12 +1055,12 @@ test("the ceiling stops a query sweep midway, not once the sweep has been paid f
   /*
    * The arithmetic behind the 2, spelled out so the count above is derivable
    * rather than magic. Before the k-th query the run has really spent
-   * 46,200 (plan) + (k-1) × 1,000 (searches), and the gate is that number plus
-   * the 2,000 reservation, against a 50,000 ceiling:
+   * 96,200 (plan) + (k-1) × 1,000 (searches), and the gate is that number plus
+   * the 2,000 reservation, against a 100,000 ceiling:
    *
-   *   k=1  46,200 + 2,000 = 48,200  ≤ 50,000  → issued
-   *   k=2  47,200 + 2,000 = 49,200  ≤ 50,000  → issued
-   *   k=3  48,200 + 2,000 = 50,200  > 50,000  → refused, run stops
+   *   k=1  96,200 + 2,000 = 98,200  ≤ 100,000  → issued
+   *   k=2  97,200 + 2,000 = 99,200  ≤ 100,000  → issued
+   *   k=3  98,200 + 2,000 = 100,200 > 100,000 → refused, run stops
    *
    * Both directions are asserted, from the constants rather than the literals,
    * so the day a reservation moves this fails loudly instead of quietly

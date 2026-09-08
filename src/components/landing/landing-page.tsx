@@ -73,13 +73,11 @@ export function LandingPage() {
     // its background would paint AFTER the hero's `-z-10` backdrop layers in the
     // root stacking context. `body` already paints --background.
     <div className="min-h-dvh text-foreground">
-      {/* The floating bar: `.surface-float` + `.overlay-glass` — the same
-          material every menu and popover in the product is cut from, which is
-          what glass is for (chrome, never reading surfaces). The side and top
-          edges of the material's hairline are zeroed so only the bottom rule
-          remains; the shadow-float throw and the --sheen rim light stay.
-          Server-only: no scroll listener, the bar is the same at rest and mid-page. */}
-      <header className="surface-float overlay-glass sticky top-0 z-toolbar rounded-none border-x-0 border-t-0">
+      {/* The bar: the page ground at 90% over a 12px blur with one bottom
+          hairline — the flat header Claude and ChatGPT wear. No float shadow:
+          a sticky header is chrome that stays on the page, not a layer that
+          leaves it. Server-only: no scroll listener, the same at rest and mid-page. */}
+      <header className="sticky top-0 z-toolbar border-b border-border bg-background/90 backdrop-blur-md">
         <LandingColumn contentClassName="flex items-center justify-between gap-3 py-2.5">
           <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
             <JunoMark className="size-7" />

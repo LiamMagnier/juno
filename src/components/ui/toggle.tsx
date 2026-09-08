@@ -20,7 +20,7 @@ const toggleVariants = cva(
       variant: {
         default: "control-neu border-border/60 text-muted-foreground",
         ghost:
-          "border-transparent bg-transparent text-muted-foreground hover:border-border/60 hover:bg-card hover:text-foreground hover:shadow-raised data-[state=on]:border-border/60 data-[state=on]:bg-secondary data-[state=on]:shadow-pressed",
+          "border-transparent bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground data-[state=on]:bg-secondary data-[state=on]:text-foreground",
       },
       size: {
         default: "h-9 min-w-9 px-3 coarse:h-11 coarse:min-w-11",

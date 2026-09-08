@@ -155,9 +155,14 @@ skills, connectors and approvals — §9b), `plans.ts` / `usage.ts` / `spend.ts`
 
 ## 3. Design system
 
-Juno's identity is **Soft UI** — one warm material cut to three depths, calm and
-tactile — with a monospace **dot/ASCII** signature layer. The brief is
-`docs/design/SOFT_UI.md` and it is authoritative where this section is silent.
+Juno's identity is **flat, warm and quiet** — one plane, hairline edges, tonal
+state, a real shadow only on the layers that leave the page — with a monospace
+**dot/ASCII** signature layer. The brief is `docs/design/FLAT_UI.md` (September
+2026) and it is authoritative where this section is silent; `SOFT_UI.md` is the
+record of the neumorphic pass it retuned and its token and class names survive.
+Where the tables below still describe dual-direction shadows, inset wells or
+pressed controls, read them as the *names* of the recipes: what each draws now
+is in `FLAT_UI.md` §3.
 All tokens are CSS variables in `src/app/globals.css`; Tailwind maps them in
 `tailwind.config.ts`; `npm run design:tokens` projects colour, motion and radius
 onto `src/lib/design/tokens.generated.ts` and the Swift package, and
@@ -737,8 +742,12 @@ MiniMax Image-01, Veo 3.1, Gemini Omni, Seedance, Hailuo, CogVideoX) require the
 `api:"responses"` (the Pro/Codex line) → `streamOpenAIResponses`; everything else →
 `streamOpenAICompat`.
 
-- **Anthropic** (`anthropic.ts`): native SDK, 1 h prompt-cache TTL, a conversation
-  cache breakpoint, native `web_search` and MCP connector support, and a **fast mode**
+- **Anthropic** (`anthropic.ts`): native SDK, 1 h prompt-cache TTL on **two system
+  tiers** (the shared rules, then this user's memory / project / style —
+  `buildSystemPromptSections` in `src/lib/chat/system-prompt.ts` — so a new memory
+  fact rewrites only the tail), a breakpoint on the last connector tool so the tool
+  schemas are read from cache, a conversation cache breakpoint, native `web_search`
+  and MCP connector support, and a **fast mode**
   (`speed:"fast"` beta) with automatic fallback on capacity errors. Thinking
   (`anthropic-thinking.ts`) is **adaptive** (`type:"adaptive"` + `output_config.effort`)
   for the newest models (Fable, Opus 4.6+, Sonnet 5) or **manual**

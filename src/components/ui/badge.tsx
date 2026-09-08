@@ -14,11 +14,11 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground shadow-pop [background-image:linear-gradient(180deg,hsl(0_0%_100%/.14),hsl(0_0%_100%/0)_55%)]",
-        secondary: "border-border/50 bg-secondary text-secondary-foreground shadow-pop",
-        outline: "border-border/70 bg-card text-foreground shadow-pop",
-        success: "border-transparent bg-success text-success-foreground shadow-pop [background-image:linear-gradient(180deg,hsl(0_0%_100%/.14),hsl(0_0%_100%/0)_55%)]",
-        muted: "border-transparent bg-muted text-muted-foreground shadow-pressed",
+        default: "border-transparent bg-primary text-primary-foreground",
+        secondary: "border-transparent bg-secondary text-secondary-foreground",
+        outline: "border-border bg-transparent text-foreground",
+        success: "border-transparent bg-success text-success-foreground",
+        muted: "border-transparent bg-muted text-muted-foreground",
         // Tinted "soft" chip — premium, low-noise; the accent hue at low alpha.
         soft: "border-primary/25 bg-primary/12 text-primary",
       },

@@ -4,12 +4,12 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /**
- * The action button, on the Soft UI surfaces (docs/design/SOFT_UI.md).
+ * The action button, on the flat material (docs/design/FLAT_UI.md).
  *
- *   default      `.control-primary` — coral gradient, accent glow, raised
- *   secondary    `.control-neu` — raised at rest, pressed-inset while held
- *   ghost        flat at rest, RAISES on hover, presses on :active
- *   outline      hairline at rest, raises on hover, presses on :active
+ *   default      `.control-primary` — solid accent fill, no shadow
+ *   secondary    `.control-neu` — hairline at rest, tonal fill on hover
+ *   ghost        flat at rest, tonal fill on hover, darker while held
+ *   outline      hairline at rest, tonal fill on hover
  *   destructive  the primary recipe in the destructive hue
  *   link         text only
  *
@@ -35,7 +35,7 @@ const buttonVariants = cva(
       variant: {
         default: "control-primary border-primary/90",
         destructive:
-          "border-destructive/90 bg-destructive text-destructive-foreground shadow-raised [background-image:linear-gradient(180deg,hsl(0_0%_100%/.14),hsl(0_0%_100%/0)_55%)] hover:brightness-[1.06] active:shadow-pressed active:brightness-[.96]",
+          "border-destructive bg-destructive text-destructive-foreground shadow-none hover:brightness-[1.06] active:brightness-[.94]",
         // Destructive hover language: calm at rest (outline + red text), fills
         // destructive red on hover via .danger-hover (globals.css) — the one
         // opt-in for delete/disconnect/remove controls that shouldn't shout.
@@ -45,10 +45,10 @@ const buttonVariants = cva(
         // than left to `.surface-raised` (a `border-*` utility on the base
         // would beat the components-layer class).
         outline:
-          "border-border bg-transparent shadow-none hover:border-border hover:bg-card hover:shadow-raised active:bg-secondary active:shadow-pressed",
-        secondary: "control-neu border-border/60 text-foreground",
+          "border-border bg-transparent shadow-none hover:border-foreground/20 hover:bg-accent active:bg-secondary",
+        secondary: "control-neu text-foreground",
         ghost:
-          "border-transparent bg-transparent shadow-none hover:border-border/60 hover:bg-card hover:text-foreground hover:shadow-raised active:bg-secondary active:shadow-pressed",
+          "border-transparent bg-transparent shadow-none hover:bg-accent hover:text-foreground active:bg-secondary",
         link: "border-transparent text-primary underline-offset-4 hover:underline active:text-primary/75",
       },
       // Every size grows to a ~44px hit area on touch devices (coarse:) so a

@@ -25,7 +25,7 @@ import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /**
- * The composer's `+` menu (docs/design/SOFT_UI.md §3).
+ * The composer's `+` menu (docs/design/FLAT_UI.md §3).
  *
  * One `.surface-float` menu at `rounded-popover` with p-1.5, so its 36px rows
  * sit concentric at `rounded-control`. Sections are separated by a hairline

@@ -5382,6 +5382,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not reach your host. Nothing was changed."
   },
   {
+    "id": "4cde0db01dbc5195",
+    "source": ". Depth follows your model and thinking effort — pick a stronger model or raise thinking for a deeper run."
+  },
+  {
     "id": "4ceca1d52cede44d",
     "source": "Timezone"
   },

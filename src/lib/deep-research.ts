@@ -134,6 +134,16 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
       if (!isResearchState(state)) return null;
       return { kind: "reasoning", title: RESEARCH_STATE_MESSAGE[state] };
     }
+    case "plan_drafted": {
+      const count = Number(payload.objectives ?? 0);
+      return {
+        kind: "reasoning",
+        title: count > 0 ? `Planned the research: ${count} question${count === 1 ? "" : "s"} to answer` : "Planned the research",
+        detail: truncate(String(payload.approach ?? ""), 140),
+      };
+    }
+    case "plan_confirmed":
+      return { kind: "reasoning", title: payload.by === "user" ? "Plan approved — starting the research" : "Starting the research" };
     case "query_issued":
       return {
         kind: "search",

@@ -26,7 +26,7 @@ const Progress = React.forwardRef<
   >
     <ProgressPrimitive.Indicator
       className={cn(
-        "h-full w-full flex-1 rounded-full shadow-raised transition-transform duration-slow ease-out-soft motion-reduce:transition-none",
+        "h-full w-full flex-1 rounded-full transition-transform duration-slow ease-out-soft motion-reduce:transition-none",
         tone === "primary" && "bg-primary",
         tone === "success" && "bg-success",
         tone === "warning" && "bg-warning",

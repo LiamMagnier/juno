@@ -16,8 +16,9 @@ import animate from "tailwindcss-animate";
  *                         Radix data-[state=open/closed]. animate-shimmer-text (thinking status),
  *                         animate-check-morph (copy → check).
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
- * Elevation ............. Soft UI depth kit (docs/design/SOFT_UI.md): shadow-{raised,raised-lg,inset,
- *                         pressed,float} — theme-aware via --shadow-* CSS vars. Components use
+ * Elevation ............. Flat kit (docs/design/FLAT_UI.md): shadow-{raised,raised-lg,inset,
+ *                         pressed,float} — theme-aware via --shadow-* CSS vars; inset and
+ *                         pressed resolve to nothing since the 2026-09 retune. Components use
  *                         the composed .surface-{raised,raised-lg,inset,float} / .control-{neu,primary}
  *                         classes in globals.css, not the bare shadows. shadow-{soft,lift,glass}
  *                         are the legacy in-flow rungs, cut from the same two inks.
@@ -267,7 +268,7 @@ const config: Config = {
         // compact telemetry.
         sans: [
           "var(--font-sans)",
-          "Archivo",
+          "Inter",
           "system-ui",
           "-apple-system",
           "Segoe UI",

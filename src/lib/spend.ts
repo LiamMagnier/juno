@@ -4,7 +4,7 @@ import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
-import { estimateGenerationCostUsd, estimateTokensFromChars } from "@/lib/pricing";
+import { estimateGenerationCostUsd, estimateTokensFromChars, tokenRate } from "@/lib/pricing";
 import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import {
@@ -94,10 +94,16 @@ export function modelRequestCost({
  * to the $/MTok rates — the 10^6 (dollars→micro) and 10^6 (per-MTok→per-token)
  * cancel. Used for real-time, mid-stream budget enforcement in the chat route.
  */
-export function modelRatesMicroUsdPerToken(modelId: string): { input: number; output: number } {
+export function modelRatesMicroUsdPerToken(modelId: string): { input: number; output: number; cacheRead: number } {
   const model = resolveModel(modelId);
   const metrics = model ? getModelMetrics(model) : null;
-  return { input: metrics?.inputUsdPerMTok ?? 2, output: metrics?.outputUsdPerMTok ?? 10 };
+  const input = metrics?.inputUsdPerMTok ?? 2;
+  // The cache-read discount comes from the billing table, applied to the
+  // display rate so the two stay on one scale (they are the same number for
+  // every curated model; the fallback for an unknown one is "no discount").
+  const rate = model ? tokenRate(model) : null;
+  const cacheRead = rate && rate.input > 0 ? input * (rate.cacheRead / rate.input) : input;
+  return { input, output: metrics?.outputUsdPerMTok ?? 10, cacheRead };
 }
 
 /**

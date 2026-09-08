@@ -16,6 +16,11 @@ export interface StreamBudgetRates {
   input: number;
   /** micro-USD per output token. */
   output: number;
+  /** micro-USD per cached input token read (~0.1x input). Optional: a guard
+   *  without it prices every prompt token at the full rate, which on a long
+   *  cached chat over-projects by up to 10x and halts turns the plan could
+   *  afford. */
+  cacheRead?: number;
 }
 
 export interface StreamBudgetGuardOptions {
@@ -29,6 +34,8 @@ export interface StreamBudgetGuardOptions {
   usage: () => {
     promptTokens?: number;
     completionTokens?: number;
+    /** Prompt tokens served from the provider's cache — billed at `rates.cacheRead`. */
+    cacheReadTokens?: number;
     /** Answer text so far. */
     outputChars: number;
     /** Reasoning text so far — billed, so it counts toward the ceiling. */
@@ -57,10 +64,16 @@ export function createStreamBudgetGuard(opts: StreamBudgetGuardOptions): StreamB
       // estimate would fire onHalt again on every subsequent event.
       if (opts.ceilingMicroUsd == null || halted) return;
 
-      const { promptTokens, completionTokens, outputChars, reasoningChars } = opts.usage();
+      const { promptTokens, completionTokens, cacheReadTokens, outputChars, reasoningChars } = opts.usage();
       const inTok = promptTokens ?? Math.ceil(opts.inputChars / CHARS_PER_TOKEN);
       const outTok = completionTokens ?? Math.ceil((outputChars + reasoningChars) / CHARS_PER_TOKEN);
-      const projected = inTok * opts.rates.input + outTok * opts.rates.output;
+      // Cached reads are priced at the cache rate, not the full input rate.
+      // Providers report them beside the prompt count (Anthropic exclusive of
+      // it, OpenAI inclusive); the guard only ever needs an upper bound, so the
+      // cached share is capped at the prompt count and priced separately.
+      const cached = Math.min(Math.max(0, cacheReadTokens ?? 0), inTok);
+      const cacheRate = opts.rates.cacheRead ?? opts.rates.input;
+      const projected = (inTok - cached) * opts.rates.input + cached * cacheRate + outTok * opts.rates.output;
 
       if (projected >= opts.ceilingMicroUsd) {
         halted = true;

@@ -55,6 +55,41 @@ the durable research record. Preferred URLs are priorities, not a domain allowli
 Connected private apps and uploaded files are not advertised as research sources.
 No new schema or credentials are required.
 
+## The plan (September 2026)
+
+Planning is two model calls on the research team's capable-but-cheap model
+(`researchPlannerModel`, Claude Haiku when configured): the brief expansion,
+then a **structured plan** (`src/lib/research/plan-format.ts`). The planner no
+longer answers with two headings of prose and search strings; it answers with
+one JSON object the parser bounds and the engine stores on `ResearchRun.plan`:
+
+- `approach` — one paragraph to the person who asked: how the question will be
+  attacked, which sources carry weight, how conflicting evidence is judged.
+- `objectives[]` — the sub-questions a complete answer needs, each with a
+  `rationale`, an `importance`, an **evidence contract** (`evidenceRequirements`:
+  preferred source types, minimum independent sources, whether a primary record
+  is required, a freshness rule) and its own `queries`.
+- `steps` — the schedule, in the order the work will run.
+- `successCriteria` — the planner's bar for done.
+- `risks` — where evidence is expected to be thin, disputed or stale.
+
+`queries` on the plan are flattened from the objectives in importance order, so
+the sweep still has its list; the objectives, not the queries, are what the
+coverage matrix, the delegation briefs and the lead's review key on. The brief,
+approach and success criteria are persisted and handed to every worker and to
+the lead (`researchBriefText`), so a worker knows how its evidence will be
+judged. A reply that is not the structured shape falls back to the legacy
+two-heading parser, and from there to `fallbackResearchQueries` — never to the
+literal goal.
+
+The gate (`PlanReview`) renders the plan in that order — approach, questions
+with evidence chips, the editable schedule, criteria, risks, then the searches
+one disclosure down — and the console's Plan tab renders the same `PlanOutline`.
+Confirming an **unchanged** plan keeps the structured objectives; only a real
+edit to the steps or queries rebuilds them (`decidePlan`). The chat activity
+feed narrates `plan_drafted` ("Planned the research: N questions to answer",
+with the approach) and `plan_confirmed`.
+
 ## The research team (September 2026)
 
 A run is no longer a single sweep. After planning, `investigating` has two halves:

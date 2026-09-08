@@ -50,7 +50,7 @@ const pressableVariants = cva(
         tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-sm",
         chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
-        icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:control-neu hover:border-border/60 hover:text-foreground",
+        icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
       },
       /**
        * `selected` is a variant rather than a caller-supplied className because
@@ -73,7 +73,7 @@ const pressableVariants = cva(
       {
         kind: "row",
         selected: true,
-        class: "surface-raised border-border/60 text-foreground hover:bg-card hover:text-foreground",
+        class: "bg-accent text-foreground hover:bg-accent hover:text-foreground",
       },
       // Tile, chip, icon: `.control-neu[data-selected]` supplies the pressed
       // recess and the secondary fill; these add the accent edge and ink, and
@@ -91,7 +91,7 @@ const pressableVariants = cva(
       {
         kind: "icon",
         selected: true,
-        class: "control-neu border-border/60 text-primary-ink hover:text-primary-ink",
+        class: "bg-secondary text-primary-ink hover:text-primary-ink",
       },
 
       // Sizes. Only `icon` and `chip` are size-sensitive; a row and a tile size
