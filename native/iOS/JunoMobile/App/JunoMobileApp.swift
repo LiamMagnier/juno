@@ -379,9 +379,8 @@ final class JunoMobileAppDelegate: NSObject, UIApplicationDelegate, UNUserNotifi
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         JunoMobileCodeNotifications.shared.registerBackgroundTask()
-        if let item = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
-            JunoMobileLaunchRequests.shared.handle(shortcutType: item.type)
-        }
+        // A quick action at cold launch arrives through the scene's
+        // connection options (`configurationForConnecting`), not here.
         return true
     }
 

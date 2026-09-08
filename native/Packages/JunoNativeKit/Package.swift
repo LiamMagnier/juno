@@ -22,9 +22,14 @@ private extension URL {
 
 let package = Package(
     name: "JunoNativeKit",
+    // The Liquid Glass floor. Both apps ship on the 26 releases, and every
+    // glass call in this package used to carry an `if #available` with a
+    // material fallback that no shipping build could reach — a second design
+    // nobody reviewed. String form rather than `.v26`, which this
+    // tools-version does not know.
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
+        .macOS("26.0"),
+        .iOS("26.0"),
     ],
     products: [
         .library(name: "JunoCore", targets: ["JunoCore"]),

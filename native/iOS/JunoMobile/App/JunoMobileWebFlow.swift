@@ -30,11 +30,9 @@ struct JunoMobileWebFlow: UIViewControllerRepresentable {
         let configuration = SFSafariViewController.Configuration()
         configuration.barCollapsingEnabled = false
         let controller = SFSafariViewController(url: url, configuration: configuration)
-        // Named rather than converted from the SwiftUI colour: `UIColor(_:)` on a
-        // dynamic colour resolves against the trait collection at init, which for
-        // a controller built off-screen is the wrong appearance. A named asset
-        // stays dynamic and resolves when it draws.
-        controller.preferredControlTintColor = UIColor(named: "AccentColor")
+        // No `preferredControlTintColor`: on OS 26 the Safari controller's
+        // bar is Liquid Glass and a tint fights the background effect, so the
+        // system's own ink is the right one.
         controller.dismissButtonStyle = .cancel
         controller.delegate = context.coordinator
         return controller

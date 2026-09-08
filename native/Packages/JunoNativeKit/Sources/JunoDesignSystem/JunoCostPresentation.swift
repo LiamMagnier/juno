@@ -254,20 +254,20 @@ public struct JunoMessageMetaLine: View {
         var needsSeparator = false
 
         if let modelDisplayName {
-            text = text + Text(modelDisplayName).font(.junoCaption)
+            text = Text("\(text)\(Text(modelDisplayName).font(.junoCaption))")
             needsSeparator = true
         }
         if let costUSD {
-            if needsSeparator { text = text + separator }
-            text = text
-                + Text(JunoCostFormatting.cost(costUSD, isPartial: isCostPartial))
-                    .font(.junoCaption.monospacedDigit())
-                    .fontWeight(.medium)
+            if needsSeparator { text = Text("\(text)\(separator)") }
+            let cost = Text(JunoCostFormatting.cost(costUSD, isPartial: isCostPartial))
+                .font(.junoCaption.monospacedDigit())
+                .fontWeight(.medium)
+            text = Text("\(text)\(cost)")
             needsSeparator = true
         }
         if isStreaming {
-            if needsSeparator { text = text + separator }
-            text = text + Text("Streaming").font(.junoCaption)
+            if needsSeparator { text = Text("\(text)\(separator)") }
+            text = Text("\(text)\(Text("Streaming").font(.junoCaption))")
         }
         return text
     }

@@ -1849,22 +1849,16 @@ private struct JunoMobileMessageRow: View {
     }
   }
 
+  /// The model only. The per-message price used to sit beside it, and a
+  /// transcript that quotes a dollar figure under every answer reads as a
+  /// meter rather than a conversation; the spend lives in Settings › Usage,
+  /// where it is a total with a shape, not a tax on each reply.
   private var footerLine: String? {
-    let name = message.model.flatMap { $0.isEmpty ? nil : junoDisplayModelName($0) }
-    let price = message.costUSD.map(JunoMobileCost.formatted)
-    switch (name, price) {
-    case (let name?, let price?): return "\(name) · \(price)"
-    case (let name?, nil): return name
-    case (nil, let price?): return price
-    default: return nil
-    }
+    message.model.flatMap { $0.isEmpty ? nil : junoDisplayModelName($0) }
   }
 
   private var footerAccessibilityLabel: String? {
-    guard let price = message.costUSD.map(JunoMobileCost.formatted) else { return nil }
-    guard let name = message.model.flatMap({ $0.isEmpty ? nil : junoDisplayModelName($0) })
-    else { return "Cost \(price)" }
-    return "\(name), cost \(price)"
+    footerLine.map { "Answered by \($0)" }
   }
 
   /// The website's action row, ported.
@@ -2051,26 +2045,17 @@ struct JunoMobileSharedText: Identifiable {
 /// iOS 26 — the platform's answer to content passing under floating chrome.
 struct JunoMobileSoftScrollEdges: ViewModifier {
   func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content
-        .scrollEdgeEffectStyle(.soft, for: .top)
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-    } else {
-      content
-    }
+    content
+      .scrollEdgeEffectStyle(.soft, for: .top)
+      .scrollEdgeEffectStyle(.soft, for: .bottom)
   }
 }
 
 extension View {
   /// The composer as a bottom bar: `safeAreaBar` on iOS 26, which lets the
   /// scroll edge effect run under it, and `safeAreaInset` before.
-  @ViewBuilder
   func junoComposerBar<Bar: View>(@ViewBuilder _ bar: @escaping () -> Bar) -> some View {
-    if #available(iOS 26.0, *) {
-      safeAreaBar(edge: .bottom, content: bar)
-    } else {
-      safeAreaInset(edge: .bottom, content: bar)
-    }
+    safeAreaBar(edge: .bottom, content: bar)
   }
 }
 

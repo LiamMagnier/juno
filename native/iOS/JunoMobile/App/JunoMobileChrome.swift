@@ -23,10 +23,48 @@ import SwiftUI
 /// This is not a way to hide failure: every screen still renders its real error
 /// and empty states. It only covers the in-between.
 struct JunoMobileQuietLoading: View {
+    /// What the screen will look like once it has loaded, drawn in advance.
+    ///
+    /// A list screen shows the rows it is about to fill; a reading screen
+    /// shows its paragraph; the shell, which has no shape yet, shows the bare
+    /// canvas. The shimmer is the one motion here and it stops under Reduce
+    /// Motion (see `JunoSkeleton`).
+    enum Shape {
+        case blank
+        case rows(Int)
+        case paragraph
+    }
+
+    var shape: Shape = .rows(6)
+
+    init(_ shape: Shape = .rows(6)) {
+        self.shape = shape
+    }
+
     var body: some View {
-        Color.junoCanvas
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+        Group {
+            switch shape {
+            case .blank:
+                Color.junoCanvas
+            case .rows(let count):
+                VStack(alignment: .leading, spacing: 0) {
+                    JunoSkeletonRows(count: count)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.top, JunoSpace.cozy)
+                    Spacer(minLength: 0)
+                }
+            case .paragraph:
+                VStack(alignment: .leading, spacing: 0) {
+                    JunoSkeletonParagraph(lines: 5)
+                        .padding(.horizontal, JunoSpace.regular)
+                        .padding(.top, JunoSpace.cozy)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Loading")
+        .accessibilityIdentifier("juno.mobile.loading")
     }
 }
 
@@ -58,18 +96,11 @@ extension View {
 
 // MARK: - Containers
 
-/// A circular Liquid Glass container (OS 26+) with a material fallback, used for
-/// the round chrome buttons: sidebar search, profile, sheet close.
+/// A circular Liquid Glass container, used for the round chrome buttons:
+/// sidebar search, profile, sheet close.
 struct JunoGlassCircle: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            content
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
+        content.glassEffect(.regular.interactive(), in: Circle())
     }
 }
 
@@ -98,13 +129,7 @@ struct JunoGlassCircle: ViewModifier {
 /// A neutral Liquid Glass capsule for a secondary control in a floating row.
 struct JunoGlassCapsule: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            content
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
+        content.glassEffect(.regular.interactive(), in: Capsule())
     }
 }
 
@@ -250,7 +275,7 @@ struct JunoStatusPill: View {
 
 // MARK: - Liquid Glass
 
-/// The real Liquid Glass container, with a pre-OS-26 fallback.
+/// The real Liquid Glass container.
 ///
 /// `GlassEffectContainer` is not decoration: it is what tells the system which
 /// glass elements belong to one another, so they refract a shared sample of the
@@ -262,36 +287,22 @@ struct JunoGlass<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) { content }
-        } else {
-            content
-        }
+        GlassEffectContainer(spacing: spacing) { content }
     }
 }
 
 extension View {
-    /// Applies real Liquid Glass in `shape`, falling back to a material.
+    /// Applies real Liquid Glass in `shape`.
     ///
     /// `interactive` is what makes the glass respond to touch — it flexes and
     /// scatters light under a finger. It belongs on anything tappable and
     /// nowhere else: a static panel that reacts to touch reads as a control.
-    @ViewBuilder
     func junoGlass(
         in shape: some Shape,
         tint: Color? = nil,
         interactive: Bool = false
     ) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            self.glassEffect(
-                .regular.tint(tint).interactive(interactive), in: shape
-            )
-        } else {
-            // `stroke`, not `strokeBorder`: the latter is only on
-            // `InsettableShape`, and this takes any `Shape`.
-            self.background(.regularMaterial, in: shape)
-                .overlay(shape.stroke(Color.junoHairline, lineWidth: 1))
-        }
+        glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
     }
 
     /// Marks this glass element so the system can track it across a transition.
@@ -301,49 +312,30 @@ extension View {
     /// It deliberately does **not** set a transition. The default is
     /// `matchedGeometry`, which is the one that makes the material *stretch*
     /// between an element's old and new position — the whole reason to give a
-    /// glass element an id in the first place. This used to chain
-    /// `.glassEffectTransition(.materialize)` unconditionally, which explicitly
-    /// opts out of geometry matching; `materialize` is for elements farther
-    /// apart than their container's spacing, where there is no meaningful path
-    /// to stretch along. Use ``junoGlassMaterialize(_:in:)`` for that case.
-    @ViewBuilder
+    /// glass element an id in the first place. Use
+    /// ``junoGlassMaterialize(_:in:)`` for elements farther apart than their
+    /// container's spacing, where there is no meaningful path to stretch along.
     func junoGlassID(_ id: some Hashable & Sendable, in namespace: Namespace.ID) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            self.glassEffectID(id, in: namespace)
-        } else {
-            self
-        }
+        glassEffectID(id, in: namespace)
     }
 
     /// The same, for two glass elements far enough apart that stretching between
     /// them would read as a smear rather than as one thing moving.
-    @ViewBuilder
     func junoGlassMaterialize(
         _ id: some Hashable & Sendable, in namespace: Namespace.ID
     ) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            self.glassEffectID(id, in: namespace)
-                .glassEffectTransition(.materialize)
-        } else {
-            self
-        }
+        glassEffectID(id, in: namespace)
+            .glassEffectTransition(.materialize)
     }
-}
 
-extension View {
     /// Wraps one glass element in a `GlassEffectContainer` so it blends with the
     /// chrome around it instead of sampling independently.
-    @ViewBuilder
     func junoGlassSearchContainer() -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            GlassEffectContainer { self }
-        } else {
-            self
-        }
+        GlassEffectContainer { self }
     }
 }
 
-/// The system's own glass button style, with a pre-OS-26 fallback.
+/// The system's own glass button style.
 ///
 /// `.buttonStyle(.glass)` is a real component: it brings the press flex, the
 /// light scatter and the platform's own shape and metrics, and it keeps up when
@@ -351,10 +343,6 @@ extension View {
 /// today and drifts from the platform the moment the platform moves.
 struct JunoGlassButtonStyle: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.buttonStyle(.glass)
-        } else {
-            content.buttonStyle(.bordered)
-        }
+        content.buttonStyle(.glass)
     }
 }

@@ -11,6 +11,10 @@ import SwiftUI
 /// reads as a hung app rather than as work in progress.
 struct JunoMobileResearchProgress: View {
     let enabled: Bool
+    /// The depth the run will get, derived from the model and thinking level
+    /// — see `NativeResearchEffort.derived`. Nil hides the line, which only
+    /// the previews do; the composer always knows.
+    var depth: NativeResearchEffort? = nil
     let activity: [NativeChatActivity]
     let degradedWarning: String?
     let onDisable: () -> Void
@@ -146,17 +150,39 @@ struct JunoMobileResearchProgress: View {
     }
 
     private var header: some View {
-        HStack(spacing: JunoSpace.tight) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
             JunoIconView(.research, size: 14)
-            Text("research.enabled")
-                .font(.caption.weight(.medium))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: JunoSpace.hairline) {
+                    Text("research.enabled")
+                        .font(.caption.weight(.medium))
+                    if let depth {
+                        Text("· \(depth.label)")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Color.junoAccent)
+                            .contentTransition(.numericText())
+                            .accessibilityIdentifier("juno.mobile.research-depth")
+                    }
+                }
+                // The depth is not chosen here; it follows the model and the
+                // thinking level in the row below, so the line says what
+                // those choices bought rather than offering a second menu.
+                if let depth {
+                    Text(depth.summary)
+                        .font(.caption2)
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .lineLimit(1)
+                }
+            }
             Spacer()
             Button("research.turn-off", action: onDisable)
                 .font(.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(.tint)
-            .contentShape(.rect)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
         }
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: depth)
         .accessibilityElement(children: .combine)
     }
 
