@@ -52,7 +52,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const task = await prisma.codeTask.findFirst({
     where: { id, userId: user.id },
-    select: { prompt: true, target: true, repoOwner: true, repoName: true, baseRef: true, status: true },
+    select: { prompt: true, target: true, repoOwner: true, repoName: true, baseRef: true, status: true, model: true, reasoningEffort: true },
   });
   if (!task || task.target !== "cloud" || !task.repoOwner || !task.repoName) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -94,7 +94,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const availableModels = await loadAvailableModels();
   const capabilityProbes = await loadModelCapabilityMap(availableModels.map((model) => model.id));
-  const models = backendAgentCatalog(availableModels, capabilityProbes);
+  const catalog = backendAgentCatalog(availableModels, capabilityProbes);
+
+  /*
+   * The submitter's chosen model goes first.
+   *
+   * The runner picks `models.find(m => m.available) ?? models[0]`, so ordering
+   * IS the choice — no runner change is needed, and an older runner keeps
+   * working because the list it receives is still a full, ordered catalog.
+   *
+   * Reordering rather than filtering is deliberate. If the chosen model has
+   * since been retired, or is unavailable in this deployment, the run proceeds
+   * on the next best one instead of failing at the runner with nothing to say
+   * — the same outcome as before this column existed, which is the behaviour
+   * every task created before it still gets.
+   */
+  const models =
+    task.model && catalog.some((entry) => entry.model === task.model)
+      ? [...catalog].sort((a, b) =>
+          a.model === task.model ? -1 : b.model === task.model ? 1 : 0,
+        )
+      : catalog;
 
   return NextResponse.json(
     {
@@ -110,6 +130,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       // rides the public dispatch input.
       taskToken: mintTaskToken(id),
       models,
+      // How hard to think, when the agent's model supports it. Null means the
+      // submitter expressed no preference.
+      reasoningEffort: task.reasoningEffort,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

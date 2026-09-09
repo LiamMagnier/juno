@@ -251,6 +251,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
             workspaceName: conversation.codeWorkspaceName,
           },
           attachments,
+          // The composer's own two controls, finally reaching the run.
+          { model, reasoningEffort },
         );
         if (accepted) {
           setDraft("");
@@ -276,6 +278,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           workspaceKey,
         },
         attachments,
+        { model, reasoningEffort },
       );
       if (accepted) {
         setDraft("");
@@ -294,9 +297,11 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       isCloud,
       isUploading,
       meta,
+      model,
       nameSessionFromFirstPrompt,
       presence.device,
       readyAttachments,
+      reasoningEffort,
       session,
       workspaceKey,
       workspacePath,

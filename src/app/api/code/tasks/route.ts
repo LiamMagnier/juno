@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { sweepStuckCodeTasksOpportunistically } from "@/lib/sweep-stuck-code-tasks";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
@@ -60,6 +61,14 @@ const postSchema = z.object({
     })
     .optional(),
   baseRef: z.string().trim().min(1).max(200).optional(),
+  // What to run the task with. The composer has offered both of these since
+  // Juno Code shipped — a model picker and a thinking slider, on /code/new and
+  // inside a live session — and this schema accepted neither, so the values
+  // were persisted onto the Conversation (where they LOOKED durable) and never
+  // reached a run. Optional: omitted means "no preference", which keeps the
+  // runner's first-available fallback for native clients.
+  model: z.string().trim().min(1).max(200).optional(),
+  reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -95,6 +104,25 @@ async function enrichPromptWithAttachments(
 export async function GET(req: Request) {
   const { user, error } = await requireUser();
   if (!user) return error;
+
+  /*
+   * Reconcile runs whose runner died, riding along on a request that already
+   * exists.
+   *
+   * The sweeper's policy has been written, documented and unit-tested since
+   * Juno Code shipped, and nothing ever called it: its only caller was a manual
+   * npm script, and there is no scheduler in this deployment to hang a cron on.
+   * So the exact case it was written for — the runner is gone — was never
+   * reconciled in production, and a killed run showed its owner a spinner
+   * indefinitely.
+   *
+   * This route is the natural host: it is what the run list polls, so it is
+   * hit precisely when someone is looking at the rows the sweep repairs. It is
+   * throttled to once every ten minutes per instance and runs in `after()`, so
+   * it never delays this response, and it can never change what this response
+   * says — the sweep's effects land in the NEXT poll.
+   */
+  after(() => sweepStuckCodeTasksOpportunistically());
 
   const { searchParams } = new URL(req.url);
   const deviceId = searchParams.get("deviceId") ?? undefined;
@@ -142,6 +170,8 @@ export async function POST(req: Request) {
     target,
     repo,
     baseRef,
+    model,
+    reasoningEffort,
   } = parsed.data;
   const isCloud = target === "cloud";
   // Existing-session tasks are explicit: the task and the local SwiftData
@@ -289,6 +319,8 @@ export async function POST(req: Request) {
             createsNewSession,
             origin: origin ?? "cloud",
             idempotencyKey: idempotencyKey ?? null,
+            model: model ?? null,
+            reasoningEffort: reasoningEffort ?? null,
           },
         });
       });
@@ -408,6 +440,8 @@ export async function POST(req: Request) {
           createsNewSession,
           origin: origin ?? "remote",
           idempotencyKey: idempotencyKey ?? null,
+          model: model ?? null,
+          reasoningEffort: reasoningEffort ?? null,
         },
       });
     } catch (err) {

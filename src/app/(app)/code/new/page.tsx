@@ -299,6 +299,11 @@ export default function NewCodeSessionPage() {
           title: titleFallback,
           attachmentIds: attachmentIds.length ? attachmentIds : undefined,
           conversationId,
+          // The page's own model picker and thinking slider. They were written
+          // to the Conversation and nowhere else, so the run they configured
+          // ignored both of them.
+          model,
+          reasoningEffort: reasoningEffort ?? undefined,
         }),
       });
 
@@ -317,7 +322,8 @@ export default function NewCodeSessionPage() {
         return true;
       }
 
-      const err = ((await tRes.json().catch(() => ({}))) as { error?: string }).error;
+      const payload = (await tRes.json().catch(() => ({}))) as { error?: string; message?: string };
+      const err = payload.error;
       if (tRes.status === 503 && err === "cloud_runner_not_configured") {
         setCloudStartError("not_configured");
         discardOrphanCloudSession();
@@ -330,12 +336,27 @@ export default function NewCodeSessionPage() {
         toast.error("One of the attached files is no longer available. Remove it and try again.");
         discardOrphanCloudSession();
       } else {
-        toast.error("Could not start the cloud run. Check your connection and try again.");
+        /*
+         * Anything else: say what the SERVER said, when it said something.
+         *
+         * The fallback here used to be "Check your connection and try again"
+         * for every unlisted status, which swallowed both quota refusals — the
+         * carefully worded 429s "You already have 3 cloud runs in progress. Let
+         * one finish first." and "Too many cloud runs started." — and told a
+         * user who had hit a limit that their network was broken. Both of those
+         * arrive as prose in `error`, so anything with a space in it is a
+         * sentence meant to be read, not a code.
+         */
+        const sentence =
+          payload.message?.trim() ||
+          (err && /\s/.test(err) ? err : "") ||
+          "Could not start the cloud run. Check your connection and try again.";
+        toast.error(sentence);
         discardOrphanCloudSession();
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, enabledConnectors, model, router, upsertConversation],
+    [clear, discardOrphanCloudSession, enabledConnectors, model, reasoningEffort, router, upsertConversation],
   );
 
   const submit = React.useCallback(

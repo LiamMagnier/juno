@@ -148,8 +148,20 @@ export type CodeSendTarget =
       workspaceName?: string | null;
     };
 
-/** Turn the API's machine error codes into calm, human copy (device + cloud). */
-function friendlyTaskError(code: string | undefined): string {
+/**
+ * Turn the API's machine error codes into calm, human copy (device + cloud).
+ *
+ * The `default` branch used to return the CODE, so any refusal not listed here
+ * was shown to the user verbatim — the device path's most likely one produced a
+ * toast reading literally `device_does_not_serve_queued_tasks`. Worse, that
+ * route sends a well-written `message` alongside the code and the client threw
+ * it away. So: prefer the server's own sentence when there is one, fall back to
+ * the table, and never show a code to a person.
+ */
+function friendlyTaskError(code: string | undefined, message?: string | undefined): string {
+  // A server-authored sentence beats anything written here: it can name the
+  // machine, the quota, or the file that went missing.
+  if (typeof message === "string" && message.trim().length > 0) return message;
   switch (code) {
     case "github_not_connected":
       return "Connect GitHub in Connections to run in the cloud.";
@@ -159,8 +171,17 @@ function friendlyTaskError(code: string | undefined): string {
       return "Couldn’t start the cloud run. Please try again.";
     case "attachment_claim_failed":
       return "One of the attached files is no longer available. Remove it and try again.";
+    case "device_does_not_serve_queued_tasks":
+      return "That computer is signed in but isn’t set up to run remote work, so the task would never start.";
+    case "device_offline":
+      return "That computer is offline. Wake it, or run this in the cloud instead.";
+    case "conversationId_required":
+      return "This session isn’t saved yet. Reload the page and try again.";
     default:
-      return code ?? "Could not start the task.";
+      // A sentence from the server that arrived in `error` rather than
+      // `message` — anything with a space in it is prose, not a code.
+      if (code && /\s/.test(code)) return code;
+      return "Could not start the task.";
   }
 }
 
@@ -679,6 +700,15 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       text: string,
       target: CodeSendTarget,
       attachments: ClientMessage["attachments"] = [],
+      /**
+       * What to run it with. Both of these are chosen in the composer and, until
+       * now, went nowhere: the create route's schema did not accept them, so
+       * they were written onto the Conversation — where they LOOKED durable —
+       * and the cloud runner just took the first available model in its
+       * catalog. Optional, so a caller that has no preference still gets that
+       * fallback rather than a failure.
+       */
+      choice: { model?: string | null; reasoningEffort?: string | null } = {},
     ): Promise<{ accepted: boolean }> => {
       if (statusRef.current !== "idle") return { accepted: false };
       const trimmed = text.trim();
@@ -712,6 +742,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 prompt: trimmed,
                 attachmentIds: attachmentIds.length ? attachmentIds : undefined,
                 conversationId: opts.conversationId,
+                model: choice.model || undefined,
+                reasoningEffort: choice.reasoningEffort || undefined,
               }
             : {
                 deviceId: target.deviceId,
@@ -722,6 +754,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 prompt: trimmed,
                 attachmentIds: attachmentIds.length ? attachmentIds : undefined,
                 conversationId: opts.conversationId,
+                model: choice.model || undefined,
+                reasoningEffort: choice.reasoningEffort || undefined,
               };
         const res = await fetch("/api/code/tasks", {
           method: "POST",
@@ -732,8 +766,10 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
           task?: RemoteTask;
           userMessage?: ClientMessage;
           error?: string;
+          /** A server-authored sentence, which beats any code we map here. */
+          message?: string;
         };
-        if (!res.ok || !data.task) throw new Error(friendlyTaskError(data.error));
+        if (!res.ok || !data.task) throw new Error(friendlyTaskError(data.error, data.message));
 
         const task = data.task;
         setMessages((prev) =>
@@ -775,6 +811,19 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     [resetRollback, streamTask]
   );
 
+  /**
+   * How long "Stopping…" may last before the session admits it is not working.
+   *
+   * Cancelling a RUNNING task is a request, not a kill: the server appends a
+   * `cancel_request` event and the host picks it up from its control cursor on
+   * its next callback. A host that has already died never reads it, and the
+   * session used to sit in `stopping` forever — composer disabled, no timeout,
+   * no escalation, no way back except a reload. Thirty seconds is several
+   * control round-trips for a live host and a very long time to stare at a
+   * disabled composer.
+   */
+  const CANCEL_ACK_TIMEOUT_MS = 30_000;
+
   const cancel = React.useCallback(async () => {
     const task = activeTask;
     if (!task || statusRef.current === "stopping") return;
@@ -782,7 +831,17 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     try {
       const res = await fetch(`/api/code/tasks/${task.id}/cancel`, { method: "POST" });
       if (!res.ok) throw new Error();
-      // Terminal state (and the persisted outcome) arrives through the stream.
+      // Terminal state (and the persisted outcome) arrives through the stream —
+      // when there is still a host to deliver it. If nothing has moved by the
+      // time the window is up, say so and hand the controls back rather than
+      // leaving the composer disabled against a run that may already be dead.
+      window.setTimeout(() => {
+        if (statusRef.current !== "stopping") return;
+        setStatus("running");
+        toast.error(
+          "The run has not acknowledged the stop. It may have already ended — reload to see where it got to.",
+        );
+      }, CANCEL_ACK_TIMEOUT_MS);
     } catch {
       setStatus(task.status === "queued" ? "queued" : "running");
       toast.error("Could not cancel the task. Check your connection and try again.");

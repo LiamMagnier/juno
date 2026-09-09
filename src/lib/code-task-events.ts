@@ -79,6 +79,44 @@ export async function appendTaskEvents(
       });
       if (moved.count === 0) applyStatus = undefined;
     }
+    /*
+     * The pull request URL, lifted out of the event that carries it.
+     *
+     * The cloud runner opens the PR and reports it INSIDE a `done` payload
+     * (scripts/cloud-code-runner.mjs). Nothing ever copied it onto the task, so
+     * `CodeTask.prUrl` was written by no code path in the product and stayed
+     * null forever — which silently killed everything downstream of it: the PR
+     * chip on the session banner (the cloud run's only call to action), the PR
+     * button in the run list, `hasOutcome`, and therefore the entire "Ready to
+     * review" bucket, which could never contain a run. Every finished cloud run
+     * fell straight into the collapsed "Wrapped up" group, and the list's decay
+     * rule — which waits for a PR to settle — never ran either.
+     *
+     * Read from any event that carries one rather than from `done` alone: a
+     * host that reports the URL earlier (on push, say) should not have to wait
+     * for the run to finish before the link appears.
+     *
+     * FIRST WRITE WINS. A run opens one pull request; a later event carrying a
+     * different URL is a retry or a replay, and the value already shown to the
+     * user is the one they may have clicked.
+     */
+    let prUrl: string | undefined;
+    for (const event of events) {
+      const payload = event.payload as { prUrl?: unknown } | null;
+      const candidate = payload && typeof payload === "object" ? payload.prUrl : undefined;
+      if (typeof candidate === "string" && candidate.startsWith("https://")) {
+        prUrl = candidate;
+        break;
+      }
+    }
+
+    // Guarded on `prUrl: null` so this is genuinely first-write-wins rather
+    // than last: putting it in the update below would let a replayed `done`
+    // overwrite the link the user may already have opened.
+    if (prUrl) {
+      await tx.codeTask.updateMany({ where: { id: taskId, prUrl: null }, data: { prUrl } });
+    }
+
     const task = await tx.codeTask.update({
       where: { id: taskId },
       data: {

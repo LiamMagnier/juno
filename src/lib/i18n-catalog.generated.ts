@@ -5758,6 +5758,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Small"
   },
   {
+    "id": "52653195ff24f16e",
+    "source": "The run has not acknowledged the stop. It may have already ended — reload to see where it got to."
+  },
+  {
     "id": "526811f8fad9f20a",
     "source": "Delete all conversations?"
   },
@@ -6432,10 +6436,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5d28a90f4498a814",
     "source": "failed"
-  },
-  {
-    "id": "5d3eb350af3b9a6f",
-    "source": "Could not start the cloud run. Check your connection and try again."
   },
   {
     "id": "5d435857281c9944",
