@@ -9994,6 +9994,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cheaper GLM vision-language model for image understanding."
   },
   {
+    "id": "8fc2750ed2b42f02",
+    "source": "Could not load your apps."
+  },
+  {
     "id": "8fc6e0e16f6ecf22",
     "source": "Renews"
   },
@@ -11388,6 +11392,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a13e6afc724bf9a2",
     "source": "Runs in the cloud · opens a pull request"
+  },
+  {
+    "id": "a13fdb7fab1cb83d",
+    "source": "Waiting for the upload to finish"
   },
   {
     "id": "a14248d03c481c55",
@@ -17424,10 +17432,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f350f64921e4012d",
     "source": "Stop sharing screen"
-  },
-  {
-    "id": "f352c21ead26614c",
-    "source": "Tools ·"
   },
   {
     "id": "f3577cb543db90ce",

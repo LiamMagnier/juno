@@ -1305,21 +1305,15 @@
   .composer-voice-wave > span:nth-child(2),
   .composer-voice-wave > span:nth-child(4) { height: 9px; }
   .composer-voice-wave > span:nth-child(3) { height: 13px; }
-  .composer-primary-action:hover .composer-voice-wave > span {
-    animation: composer-wave 640ms var(--ease-out-strong) both;
-  }
-  .composer-primary-action:hover .composer-voice-wave > span:nth-child(2) { animation-delay: 45ms; }
-  .composer-primary-action:hover .composer-voice-wave > span:nth-child(3) { animation-delay: 90ms; }
-  .composer-primary-action:hover .composer-voice-wave > span:nth-child(4) { animation-delay: 135ms; }
-  .composer-primary-action:hover .composer-voice-wave > span:nth-child(5) { animation-delay: 180ms; }
-  @keyframes composer-wave {
-    0%, 100% { transform: scaleY(1); }
-    38% { transform: scaleY(.48); }
-    70% { transform: scaleY(1.24); }
-  }
+  /* NO HOVER CHOREOGRAPHY HERE. Hovering the send button used to run a 640ms
+     squash-and-stretch across the five bars, staggered 45ms apart, every time
+     the pointer crossed the most-used control in the product. It signalled
+     nothing — the button does the same thing whether or not you have hovered
+     it — and it is the single motion a heavy user would see most often. The
+     bars are a static mark for "voice"; the button's real feedback is its
+     hover fill and its press. */
   @media (prefers-reduced-motion: reduce) {
-    .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon,
-    .composer-primary-action:hover .composer-voice-wave > span { animation: none; }
+    .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon { animation: none; }
     .group:hover .sidebar-motion-icon { transform: none; }
   }
 

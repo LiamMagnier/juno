@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { composerIconButtonClass } from "@/components/ui/composer-shell";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,9 +155,15 @@ export const PlusMenuRow = React.forwardRef<
       {note ? (
         <span className="max-w-28 text-right text-caption text-muted-foreground">{note}</span>
       ) : toggle ? (
-        <span aria-hidden="true" className={cn("pointer-events-none flex h-5 w-8 shrink-0 items-center rounded-full p-0.5 transition-colors duration-fast motion-reduce:transition-none", checked ? "bg-primary" : "bg-muted")}>
-          <span className={cn("size-4 rounded-full bg-background transition-transform duration-fast motion-reduce:transition-none", checked && "translate-x-3")} />
-        </span>
+        // The real Switch, not a second drawing of one. This menu used to
+        // hand-roll a 32×20 track-and-knob while the "@" palette — the same
+        // rows, the same toggles, the same meaning — rendered the actual
+        // component, so the product showed two different switches for one
+        // idea. It is `aria-hidden` and `pointer-events-none` because the ROW
+        // is the control: it carries `menuitemcheckbox` and `aria-checked`,
+        // and a focusable switch inside a menu item would be a second tab stop
+        // that answers the same question.
+        <Switch aria-hidden="true" tabIndex={-1} checked={checked} className="pointer-events-none shrink-0" />
       ) : radio && selected ? (
         <StatusIcons.success aria-hidden="true" className="size-3.5 shrink-0 text-primary" />
       ) : null}
@@ -218,13 +225,28 @@ export function PlusMenu({
               size="icon-sm"
               aria-label={label}
               disabled={disabled}
-              className={cn(composerIconButtonClass, "group w-auto gap-1.5 px-2.5 coarse:w-auto", className)}
+              className={cn(composerIconButtonClass, "group relative", className)}
             >
               <Plus
                 aria-hidden="true"
                 className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
               />
-              {activeCount > 0 && <span aria-hidden="true" className="text-caption font-medium"><span className="hidden sm:inline">Tools · </span>{activeCount}</span>}
+              {/* The count is a badge pinned over the corner, NOT a label
+                  inside the button. It used to render "Tools · 2" in the flow,
+                  which made the button three different widths — one per state,
+                  and a fourth below `sm` where the word was hidden — so turning
+                  a tool on shoved everything to its right along the row. A
+                  badge changes nothing about the button's box. The count is
+                  also already in the trigger's accessible name, which names
+                  what is on rather than how many. */}
+              {activeCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-primary text-[0.625rem] font-semibold leading-none text-primary-foreground"
+                >
+                  {activeCount}
+                </span>
+              )}
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

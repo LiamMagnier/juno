@@ -91,6 +91,7 @@ import {
   COMPOSER_LONG_TEXT_CHARS,
   sampleLineCount,
 } from "@/lib/prompt-limits";
+import { duration } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import {
   artifactEditRequestFromQuote,
@@ -499,13 +500,12 @@ export function Composer({
     [isAuto, resolved, reasoningEffort, proMode]
   );
   const researchAvailable = !privateMode && modality === "chat";
-  const planAllowsResearch = true;
   const sendOptions = React.useMemo<SendOptions | undefined>(
     () =>
-      research && researchAvailable && planAllowsResearch
+      research && researchAvailable
         ? { deepResearch: true, researchEffort }
         : undefined,
-    [research, researchAvailable, planAllowsResearch, researchEffort],
+    [research, researchAvailable, researchEffort],
   );
   const outgoingOptions = React.useMemo<SendOptions | undefined>(
     () =>
@@ -516,7 +516,18 @@ export function Composer({
   );
   // Research lives in the + menu now, so the trigger carries its armed state —
   // otherwise a per-send mode would be on with nothing on screen saying so.
-  const researchArmed = research && planAllowsResearch;
+  /**
+   * Deep research is ARMED only while it is also available.
+   *
+   * This used to be `research && planAllowsResearch`, where the second operand
+   * was a hard-coded `true` — a plan gate that had been flattened but left in,
+   * along with a "paid plan" note and a Pro branch that no state could ever
+   * reach. What the expression never checked was `researchAvailable`, so
+   * switching to an image model (or into incognito) with research on left the
+   * pill sitting on the row, armed, for a send that would silently drop the
+   * flag.
+   */
+  const researchArmed = research && researchAvailable;
   const placeholder = pendingClarification
     ? "Or type your own answer…"
     : quote
@@ -559,6 +570,16 @@ export function Composer({
     [allConnectors],
   );
   const [connectorsLoading, setConnectorsLoading] = React.useState(false);
+  /**
+   * Whether the last connector fetch failed.
+   *
+   * Without this the catch below was an empty block, so a failed request left
+   * `connectors` empty and the flyout rendered "Connect an app" — the exact
+   * same thing it renders for an account that genuinely has none. A network
+   * failure told the user they had connected nothing, which for anyone who had
+   * is simply false.
+   */
+  const [connectorsFailed, setConnectorsFailed] = React.useState(false);
   const [connectorQuery, setConnectorQuery] = React.useState("");
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
   enabledConnectorIdsRef.current = connectorsEnabled;
@@ -654,15 +675,28 @@ export function Composer({
     [onDictatingChange],
   );
 
-  // Quote chip exit: play pop-out (120ms) before the quote leaves state.
+  // Quote chip exit: play pop-out before the quote leaves state.
   const [quoteRemoving, setQuoteRemoving] = React.useState(false);
+  // The timer is held so it can be cancelled. It was a bare `setTimeout`, so
+  // dismissing a quote and then navigating away fired a state update and a
+  // parent callback on an unmounted component — and the delay was the literal
+  // `120`, the value of `--dur-fast`, copied out of the scale it should read.
+  const quoteExitTimer = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (quoteExitTimer.current !== null) window.clearTimeout(quoteExitTimer.current);
+    },
+    [],
+  );
   const dismissQuote = React.useCallback(() => {
     if (!onClearQuote) return;
     setQuoteRemoving(true);
-    window.setTimeout(() => {
+    if (quoteExitTimer.current !== null) window.clearTimeout(quoteExitTimer.current);
+    quoteExitTimer.current = window.setTimeout(() => {
+      quoteExitTimer.current = null;
       setQuoteRemoving(false);
       onClearQuote();
-    }, 120);
+    }, duration.fast * 1000);
   }, [onClearQuote]);
 
   // A fresh selection lands the user straight in the textarea, ready to type.
@@ -775,6 +809,17 @@ export function Composer({
     status !== "checking" &&
     !pendingClarification;
   const controlsLocked = isBusy || sendLocked || uploading || !!quotaReached;
+  /**
+   * What the "+" menu is locked by, which is much less than the send button is.
+   *
+   * The menu used to take `controlsLocked` wholesale, so while a file was
+   * uploading you could not open the menu to attach ANOTHER file, and while an
+   * answer streamed you could not pick a project or turn Memory on. None of
+   * those touch the request in flight — they apply to the next send. The two
+   * that genuinely cannot proceed are a hard send lock and a spent quota,
+   * because there is no next send to configure.
+   */
+  const plusLocked = sendLocked || !!quotaReached;
   const canSend = steerMode
     ? // No attachments and no clarification answers: direction is words, and a
       // file cannot be handed to a run that is already reading.
@@ -1087,7 +1132,7 @@ export function Composer({
         on: webSearchEnabled,
         run: () => onToggleWebSearch?.(!webSearchEnabled),
       },
-      ...(researchAvailable && planAllowsResearch
+      ...(researchAvailable
         ? [
             {
               id: "research",
@@ -1133,7 +1178,6 @@ export function Composer({
       webSearchEnabled,
       onToggleWebSearch,
       researchAvailable,
-      planAllowsResearch,
       research,
       onOpenVoiceMode,
       router,
@@ -1174,9 +1218,8 @@ export function Composer({
               hint: "Deep-research the next message",
               group: "tools" as const,
               icon: ComposerIcons.research,
-              on: planAllowsResearch ? research : undefined,
-              note: planAllowsResearch ? undefined : "paid plan",
-              run: planAllowsResearch
+              on: research,
+              run: researchAvailable
                 ? () => setResearch((v) => !v)
                 : () =>
                     toast.error("Deep research is available on paid plans."),
@@ -1267,7 +1310,6 @@ export function Composer({
     onToggleWebSearch,
     modality,
     researchAvailable,
-    planAllowsResearch,
     research,
     privateMode,
     canvasEnabled,
@@ -1519,6 +1561,7 @@ export function Composer({
     async (signal?: AbortSignal) => {
       if (privateMode || !onToggleConnector) return;
       setConnectorsLoading(true);
+      setConnectorsFailed(false);
       try {
         const response = await fetch("/api/connectors", { signal });
         if (!response.ok) return;
@@ -1554,7 +1597,9 @@ export function Composer({
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          // Keep the last known list on transient failures.
+          // Keep the last known list on a transient failure — a stale list is
+          // more useful than an empty one — but record that it IS stale.
+          setConnectorsFailed(true);
         }
       } finally {
         if (!signal?.aborted) setConnectorsLoading(false);
@@ -1830,7 +1875,13 @@ export function Composer({
           <input
             value={connectorQuery}
             onChange={(event) => setConnectorQuery(event.target.value)}
-            onKeyDown={(event) => { if (!["Escape", "ArrowDown", "Tab"].includes(event.key)) event.stopPropagation(); }}
+            // ArrowUp passes through too. The list was reachable with
+            // ArrowDown and then had no way back out of it: every other key was
+            // stopped here, so ArrowUp from the first row died in the input and
+            // the flyout became a one-way trip for a keyboard user. Character
+            // keys are still stopped, or the menu's typeahead would fight the
+            // field for every letter typed into it.
+            onKeyDown={(event) => { if (!["Escape", "ArrowDown", "ArrowUp", "Tab"].includes(event.key)) event.stopPropagation(); }}
             placeholder="Search apps…"
             aria-label="Search apps"
             autoFocus
@@ -1844,6 +1895,17 @@ export function Composer({
             {[0, 1, 2].map((row) => (
               <span key={row} className="skeleton h-9 rounded-control" />
             ))}
+          </div>
+        ) : connectorsFailed && connectors.length === 0 ? (
+          <div className="px-2.5 py-3 text-center">
+            <p className="text-caption text-muted-foreground">Could not load your apps.</p>
+            <button
+              type="button"
+              onClick={() => void refreshConnectors()}
+              className="mt-1 text-caption font-medium text-primary-ink underline-offset-2 hover:underline"
+            >
+              Try again
+            </button>
           </div>
         ) : connectors.length === 0 ? (
           <PlusMenuRow icon={Plug} onSelect={() => router.push("/connections")}>
@@ -1890,12 +1952,10 @@ export function Composer({
           id: "research",
           label: "Deep research",
           icon: ComposerIcons.research,
-          checked: research && planAllowsResearch,
-          disabled: !planAllowsResearch,
+          checked: research,
           // The depth rides on the row, so what turning it on will do is
-          // legible before it is on; "Pro" replaces it where the plan says no.
-          note: planAllowsResearch ? undefined : "Pro",
-          detail: planAllowsResearch ? researchEffortLabel(researchEffort) : undefined,
+          // legible before it is on.
+          detail: researchEffortLabel(researchEffort),
           onToggle: () => setResearch((v) => !v),
         }
       : null;
@@ -2479,6 +2539,20 @@ export function Composer({
                 // textarea has to name the row the arrow keys are sitting on, and
                 // aria-controls ties that row's listbox back to this field while it
                 // is showing (activedescendant alone leaves AT to guess which list).
+                //
+                // The three attributes below are what makes that legible rather
+                // than merely present. The field was setting `aria-controls` and
+                // `aria-activedescendant` on a PLAIN TEXTAREA: an active
+                // descendant pointing into a list that, as far as assistive
+                // technology was concerned, did not exist and had never opened.
+                // Typing "/" announced nothing, and the first arrow key moved a
+                // selection the user had not been told about. A combobox that
+                // reports whether it is expanded is the difference between a
+                // palette and a trap.
+                role="combobox"
+                aria-expanded={slashOpen}
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
                 aria-controls={
                   slashOpen ? "composer-palette-listbox" : undefined
                 }
@@ -2502,25 +2576,34 @@ export function Composer({
             <PlusMenu
               open={plusOpen}
               onOpenChange={setPlusOpen}
-              disabled={controlsLocked}
+              disabled={plusLocked}
               label={armedSummary ? `Add — ${armedSummary}` : "Add"}
               tooltip={armedSummary ? `Add — ${armedSummary}` : "Add files, tools and context"}
               sections={plusSections}
             />
             {researchArmed && (
-              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in">
+              /* h-9, like every other control on this row. It was h-8: an
+                 8px-shorter object in the middle of the left cluster, which is
+                 the kind of thing you cannot name but can see. */
+              <span className="composer-armed-pill inline-flex h-9 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-11">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      tabIndex={0}
-                      aria-label={`Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose.`}
+                    {/* A button, not a `tabIndex={0}` span. It was focusable
+                        with no role and nothing to activate, purely to host a
+                        tooltip — a dead stop in the tab order between the "+"
+                        and the model chip. Pressing it now does the obvious
+                        thing and opens the menu it came from. */}
+                    <button
+                      type="button"
+                      onClick={() => setPlusOpen(true)}
+                      aria-label={`Deep research on, ${researchEffortLabel(researchEffort)} depth. Depth follows the model and thinking effort you chose. Opens the add menu.`}
                       className="inline-flex h-full items-center gap-1.5 pl-2.5 pr-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     >
                       <ComposerIcons.research aria-hidden className="size-3.5" />
                       <span>Research</span>
                       <span aria-hidden className="text-primary-ink/60">·</span>
                       <span>{researchEffortLabel(researchEffort)}</span>
-                    </span>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-64 text-center">
                     {RESEARCH_EFFORT_COPY.find((tier) => tier.value === researchEffort)?.summary}. Depth follows your model and thinking effort — pick a stronger model or raise thinking for a deeper run.
@@ -2531,7 +2614,7 @@ export function Composer({
                   disabled={controlsLocked}
                   onClick={() => setResearch(false)}
                   aria-label="Turn off deep research"
-                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink motion-reduce:transition-none"
+                  className="inline-flex h-full items-center pl-1 pr-2 text-primary-ink/70 transition-colors duration-fast hover:bg-primary/10 hover:text-primary-ink disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none"
                 >
                   <X aria-hidden className="size-3.5" />
                 </button>
@@ -2542,27 +2625,31 @@ export function Composer({
           trailing={
             <>
                 {/* Model + thinking effort, beside Send (SOFT_UI.md §3). */}
-                <div
-                  className={cn("min-w-0", controlsLocked && "pointer-events-none")}
-                  aria-disabled={controlsLocked}
-                >
+                {/* No `aria-disabled` on this wrapper: it is a plain div, so
+                    the attribute described nothing to anyone. The inner button
+                    is properly disabled, which is what assistive technology
+                    reads. */}
+                <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
                   <ModelSelector value={model} onChange={changeModel} disabled={controlsLocked} />
                 </div>
 
                 {/* Thinking effort */}
+                {/* A READOUT, not a button. This was a focusable `<Button>`
+                    carrying `aria-disabled` but no `disabled` and no handler:
+                    it took a tab stop, showed a pointer-ish affordance, and
+                    pressing it did nothing at all. When thinking depth follows
+                    the model there is no choice to offer, so the row says so
+                    and stops pretending otherwise. */}
                 {isAuto && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        aria-disabled
+                      <span
+                        role="status"
                         aria-label="Thinking effort: Auto — chosen automatically with the model"
                         className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
                       >
                         <span className="min-w-0 truncate">Auto</span>
-                      </Button>
+                      </span>
                     </TooltipTrigger>
                     <TooltipContent>
                       Thinking depth is chosen automatically with the model
@@ -2688,22 +2775,30 @@ export function Composer({
                             : "Stop generating"
                           : primaryFace === "voice"
                             ? "Start voice conversation"
-                            : steerMode
-                              ? "Add this to the research"
-                              : "Send message"
+                            : uploading
+                              ? "Send — waiting for the attachment to finish uploading"
+                              : steerMode
+                                ? "Add this to the research"
+                                : "Send message"
                       }
                     />
                   </TooltipTrigger>
                   <TooltipContent>
+                    {/* Send is disabled while an attachment uploads, and used
+                        to say nothing about it: pressing Enter did nothing,
+                        silently, and the only clue was a progress ring on a
+                        56px tile. The button now names its own blocker. */}
                     {primaryFace === "stop"
                       ? steerMode
                         ? "Stop the research"
                         : "Stop"
                       : primaryFace === "voice"
                         ? "Voice conversation"
-                        : steerMode
-                          ? "Add to the research"
-                          : "Send"}
+                        : uploading
+                          ? "Waiting for the upload to finish"
+                          : steerMode
+                            ? "Add to the research"
+                            : "Send"}
                   </TooltipContent>
                 </Tooltip>
           }

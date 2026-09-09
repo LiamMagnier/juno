@@ -14,6 +14,7 @@ import { ArrowUp, Loader2, Square } from "lucide-react";
 
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
+import { transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { PendingUpload } from "@/hooks/use-uploads";
 
@@ -83,7 +84,13 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
             {leading}
           </div>
           <div className="ml-auto flex min-w-0 items-center gap-1.5">
-            {trailing && <div className={cn("flex min-w-0 items-center gap-1.5 overflow-x-auto no-scrollbar py-1", dim)}>{trailing}</div>}
+            {/* No `overflow-x-auto` here. It used to scroll with no scrollbar
+                and no fade, so on a narrow window the effort chip and the mic
+                simply left the screen with nothing saying they existed. The
+                row now shrinks instead: `min-w-0` lets the model chip — the
+                one control on it carrying a long, truncatable string — give up
+                its width first, which is the right thing to lose. */}
+            {trailing && <div className={cn("flex min-w-0 items-center gap-1.5 py-1", dim)}>{trailing}</div>}
             {action}
           </div>
         </div>
@@ -215,7 +222,11 @@ const FACE_MOTION = {
   initial: { opacity: 0, scale: 0.9 },
   animate: { opacity: 1, scale: 1 },
   exit: { opacity: 0, scale: 0.9 },
-  transition: { duration: 0.12, ease: [0.2, 0, 0, 1] as const },
+  // From the scale, not a literal. This was `0.12` and a raw cubic-bezier
+  // array — the exact values of `--dur-fast` and `--ease-out-strong`, copied,
+  // which means a change to the scale would have silently skipped this one
+  // control.
+  transition: transition.fast,
 };
 
 /**
