@@ -79,47 +79,86 @@ Swift: 6.4. Xcode: 27.0 beta (`27A5218g`). Before production release, repeat all
 ## How to screenshot each platform
 
 DEBUG only, no account needed. Both apps render the real authenticated screens
-over an isolated in-memory fixture world via `JunoPreviewSupport`
-(`native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/`). It never touches
-the production store, Keychain, or network; add fixtures there for anything new
-so it can be screenshotted without signing in. The Stable/Release binary
-contains zero preview symbols (gated by `release-gates.sh`).
+over a throwaway encrypted database with a no-network sender, via
+`JunoPreviewSupport`
+(`native/Packages/JunoNativeKit/Sources/JunoPreviewSupport/`). It never
+composes the production store, Keychain, or network; add fixtures there for
+anything new so it can be screenshotted without signing in. The Stable/Release
+binary contains zero preview symbols (gated by `release-gates.sh`).
 
-macOS (`JunoDesktop`, `--juno-ui-preview`):
+Activate with `--juno-ui-preview` or `JUNO_UI_PREVIEW=1` — launch arguments and
+`JUNO_PREVIEW_*` env vars are interchangeable (`JunoPreviewEnvironment` in
+`PreviewShell.swift`). One asymmetry: `simctl` only forwards environment
+variables prefixed `SIMCTL_CHILD_`, so launch arguments are the simpler path on
+iOS.
+
+macOS (`JunoDesktop`, Debug build):
 
 ```bash
 # Build once (Debug), then launch the app binary directly — not via `open -n`,
 # which can reuse a just-terminated instance with no window.
-./native/macOS/JunoDesktop/.build/debug/Juno \
-  --juno-ui-preview --juno-preview-tab chat --juno-preview-scenario normal \
-  --juno-preview-appearance light --juno-preview-size 1240x800
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+xcodebuild -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+  -scheme JunoDesktop -configuration Debug -destination 'platform=macOS' build
+
+APP=$(ls -d ~/Library/Developer/Xcode/DerivedData/JunoDesktop-*/Build/Products/Debug/Juno*.app | head -n1)
+"$APP/Contents/MacOS/$(basename "$APP" .app)" \
+  --juno-ui-preview --juno-preview-tab chat --juno-preview-appearance light \
+  --juno-preview-size 1240x800
+
+# Or batch every surface in light + dark (waits for the window, refuses to
+# capture if Juno never came forward):
+./native/Scripts/capture-desktop.sh "$APP"
 ```
 
-iOS (`JunoMobile`, `JUNO_UI_PREVIEW=1` — launch args and env vars are
-equivalent; `JunoPreviewEnvironment` accepts both):
+iOS (`JunoMobile`, `com.liammagnier.JunoMobile.debug`):
 
 ```bash
+xcrun simctl boot "iPhone 17 Pro"
+xcrun simctl install booted <path-to-Debug-JunoMobile.app>
 xcrun simctl launch booted com.liammagnier.JunoMobile.debug \
-  --juno-ui-preview --juno-preview-tab chat \
-  --juno-preview-appearance dark
-# or: JUNO_UI_PREVIEW=1 JUNO_PREVIEW_TAB=projects xcrun simctl launch booted …
+  --juno-ui-preview --juno-preview-tab chat --juno-preview-appearance dark
+xcrun simctl io booted screenshot out.png
+# Env-var form (note the SIMCTL_CHILD_ prefix):
+SIMCTL_CHILD_JUNO_UI_PREVIEW=1 SIMCTL_CHILD_JUNO_PREVIEW_TAB=projects \
+  xcrun simctl launch booted com.liammagnier.JunoMobile.debug
 ```
 
-Useful flags (each has a `JUNO_PREVIEW_*` env twin, see `PreviewShell.swift`):
-`--juno-preview-tab <chat|search|projects|library|artifacts|code|work|settings>`
-· `--juno-preview-scenario
-<normal|manyItems|empty|loading|offline|error|conflict|mutating|longText|streaming>`
-· `--juno-preview-appearance <light|dark>` · `--juno-preview-size <WxH>`
-· `--juno-preview-settings-route <voice|archived|notifications|code|appearance>`
-· `--juno-preview-model-selector`, `--juno-preview-thinking`,
-`--juno-preview-keyboard` (composer QA) · `--juno-preview-signed-out`
-(onboarding) · `--juno-preview-code-session <id>` /
-`--juno-preview-code-remote-session <id>` (Code states) ·
-`--juno-preview-overlay <sheet|alert|confirm|popover|add-menu>` (macOS overlays).
+Useful flags — the first group also has a `JUNO_PREVIEW_*` env twin; the
+composer and overlay flags are launch-argument only
+(`JunoPreviewEnvironment` / `JunoComposerPreviewFlags` in `JunoPreviewSupport`):
+
+- `--juno-preview-tab` — `chat search projects library artifacts connections
+  tasks usage settings`, plus `memory` and `design` on macOS, `code` and `work`
+  (products on macOS, sidebar sections on iOS), and the iOS-only
+  `voice` / `sidebar` shorthands.
+- `--juno-preview-scenario
+  <normal|manyItems|empty|loading|offline|error|conflict|mutating|longText|streaming>`
+- `--juno-preview-appearance <light|dark>` · `--juno-preview-size <WxH>`
+  (macOS only) · `--juno-preview-accent <name>` (each of the five accents)
+- `--juno-preview-settings-route <voice|archived|notifications|code|appearance|…>`
+- `--juno-preview-signed-out` (onboarding) · `--juno-preview-voice-fullscreen`
+- `--juno-preview-code-session <id>` / `--juno-preview-code-remote-session <id>`
+  (Code states; ids in `PreviewCodeFixtures` / `PreviewCodeRemoteFixtures`)
+- `--juno-preview-work-overview`, `--juno-preview-work-files`,
+  `--juno-preview-update-ready` (macOS staged-update card)
+- Composer QA (both apps): `--juno-preview-model-selector`,
+  `--juno-preview-model <id>`, `--juno-preview-model-search <text>`,
+  `--juno-preview-model-provider <id>`, `--juno-preview-thinking`,
+  `--juno-preview-thinking-level <off|minimal|low|medium|high|xhigh|max>`,
+  `--juno-preview-keyboard`, `--juno-preview-picker <photos|camera|files>`
+- macOS overlays: `--juno-preview-overlay <sheet|alert|confirm|popover|add-menu>`
 
 Capture with `screencapture -R x,y,w,h` (points, not pixels) on macOS, or
 `xcrun simctl io booted screenshot out.png` in the simulator. Screenshot every
 screen light + dark; on iPad Pro 13" do both orientations.
+
+The harness itself needs no signing — it never composes the live configuration.
+The signed-vs-unsigned caveat at the top of this file still applies the moment
+a screenshot leaves the fixture world: an unsigned iOS build has no
+`application-identifier`, every Keychain call fails with
+`errSecMissingEntitlement`, and the sign-in gate drops to `.unavailable`. Use a
+signed build for anything that must show real authenticated state.
 
 ## Contract alignment — `b903159`
 

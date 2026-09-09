@@ -55,8 +55,11 @@ native/
     JunoNativeKit/            # shared cross-platform kit (macOS 14 / iOS 17)
     JunoCode/                 # macOS Code agent (macOS 26)
     JunoWork/                 # Work engine core/local/runtime/automation
-  Config/
-  Scripts/                    # generate-projects.sh (XcodeGen)
+  Config/                     # shared xcconfig layers per app and configuration
+  Scripts/                    # generate-projects.sh (XcodeGen), capture-desktop.sh,
+                              # release-macos.sh, write-build-metadata.sh
+  desktop-electron/           # separate Electron macOS prototype; not one of the
+                              # two shipping apps and not a dependency of them
 ```
 
 Each application is a composition root. It owns its lifecycle, scenes,
@@ -87,16 +90,22 @@ Three umbrella packages. Dependencies point down and never back up:
   10. `JunoPreviewSupport` (`#if DEBUG` only, contributes nothing to Release):
       fixture world + `JunoPreviewEnvironment` flags behind `--juno-ui-preview`
       / `JUNO_UI_PREVIEW=1` (see `TESTING.md` "How to screenshot each platform").
-- `JunoCode` (`native/Packages/JunoCode`, macOS 26 only) — the macOS Code agent:
-  `JunoCodeCore` (pure values) → `JunoCodeLocal` (only filesystem touchpoint) →
-  `JunoCodeRuntime` (tools, approval gate, executor) → `JunoCodeUI` (workbench)
-  + `JunoCodeBridge` (remote-command protocols; UI depends on the bridge, never
-  the reverse) + `JunoSimulator` (Xcode/simctl discovery, headless-testable).
+- `JunoCode` (`native/Packages/JunoCode`, macOS 26 only; depends on
+  `JunoNativeKit`) — the macOS Code agent. `JunoCodeCore` (pure values) is the
+  root; `JunoCodeLocal` (the only filesystem touchpoint), `JunoCodeRuntime`
+  (tools, approval gate, executor) and `JunoSimulator` (Xcode/simctl discovery,
+  no SwiftUI, headless-testable) each depend on Core alone. `JunoCodeUI` (the
+  workbench) takes Core/Local/Runtime plus the bridge, the simulator, and
+  `JunoDesignSystem`, `JunoCodeKit` and `JunoAuth` from JunoNativeKit.
+  `JunoCodeBridge` (remote-command protocols) takes Core/Runtime plus
+  JunoNativeKit's API/auth/sync/chat-kit. UI depends on the bridge, never the
+  reverse — the bridge must stay usable without a window.
 - `JunoWork` (`native/Packages/JunoWork`, macOS 14 / iOS 17; Core decodes on
   both so the phone can watch) — `JunoWorkCore` (pure values, no deps) →
-  `JunoWorkLocal` (Core only) → `JunoWorkRuntime` (same approval gate for local
-  and remote instructions) → `JunoWorkAutomation` (browser/AX/screen control
-  behind the same gate + kill switch).
+  `JunoWorkLocal` (Core only) → `JunoWorkRuntime` (Core + Local; the same
+  approval gate for local and remote instructions) → `JunoWorkAutomation`
+  (Core + Runtime; browser/AX/screen control behind the same gate + kill
+  switch).
 
 Concrete clients are injected at the two app roots. Mutable process-wide
 singletons such as the prototype's `AuthSession.shared`, `SyncService.shared`,
