@@ -163,7 +163,18 @@ export function InboxRow({
   const quiet = Number.isFinite(quietMs) && quietMs >= WORK_QUIET_AFTER_MS;
 
   const apply = React.useCallback(
-    async (change: Parameters<typeof patchWorkSession>[1], failure: string) => {
+    async (
+      change: Parameters<typeof patchWorkSession>[1],
+      failure: string,
+      /**
+       * What to say when it worked, for the changes whose only visible effect
+       * is the row LEAVING. Pin and rename explain themselves — the row moves
+       * or its title changes, in front of you. Archiving does not: the row
+       * simply vanished, with no confirmation and, until now, nowhere to look
+       * for it.
+       */
+      success?: string,
+    ) => {
       setBusy(true);
       const result = await patchWorkSession(session.id, change);
       setBusy(false);
@@ -172,6 +183,7 @@ export function InboxRow({
         // The sidebar and any other Work list on screen poll on this event, so a
         // pin made here reaches them now rather than in up to thirty seconds.
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        if (success) toast.success(success);
         return;
       }
       toast.error(
@@ -361,7 +373,10 @@ export function InboxRow({
               onSelect={() =>
                 void apply(
                   { archived: !session.archived },
-                  "Couldn’t change that. The task is where it was."
+                  "Couldn’t change that. The task is where it was.",
+                  session.archived
+                    ? "Brought back."
+                    : "Archived. Find it under the Archived filter.",
                 )
               }
             >

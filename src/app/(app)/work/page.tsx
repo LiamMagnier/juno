@@ -167,6 +167,32 @@ function WorkInbox() {
     setSessions((current) => current ?? []);
   }, []);
 
+  /*
+   * The archived rows, fetched only while that pill is selected.
+   *
+   * A separate list rather than a widened one: the live list is polled every
+   * few seconds and drives six counts, and archived rows are by definition not
+   * moving. Loading them alongside would double the payload of every poll to
+   * serve a view nobody is looking at.
+   */
+  const [archivedSessions, setArchivedSessions] = React.useState<ClientWorkSession[] | null>(null);
+  const [archivedFailed, setArchivedFailed] = React.useState(false);
+  React.useEffect(() => {
+    if (state !== "archived") return;
+    let cancelled = false;
+    setArchivedFailed(false);
+    void fetchWorkSessions(PAGE_SIZE * 4, true).then((result) => {
+      if (cancelled) return;
+      if (result.kind === "ok") setArchivedSessions(result.value);
+      else setArchivedFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `sessions` is in the deps so bringing a row back refreshes this list:
+    // an unarchived row must leave here as well as reappear in the live list.
+  }, [state, sessions]);
+
   const loadHosts = React.useCallback(async () => {
     const result = await fetchWorkHosts();
     if (result.kind === "ok") {
@@ -272,6 +298,8 @@ function WorkInbox() {
       unread: 0,
       done: 0,
       all: 0,
+      // Counted from its own list, below: `live` holds only unarchived rows.
+      archived: 0,
     };
     for (const session of live) {
       const ctx = context.get(session.id) ?? { scheduled: false, unread: false };
@@ -284,10 +312,12 @@ function WorkInbox() {
 
   const matching = React.useMemo(
     () =>
-      live.filter((session) =>
-        matchesTriage(session, state, context.get(session.id) ?? { scheduled: false, unread: false })
-      ),
-    [live, state, context]
+      state === "archived"
+        ? (archivedSessions ?? [])
+        : live.filter((session) =>
+            matchesTriage(session, state, context.get(session.id) ?? { scheduled: false, unread: false })
+          ),
+    [live, state, context, archivedSessions]
   );
 
   const rows = matching.slice(0, shown);
@@ -361,10 +391,20 @@ function WorkInbox() {
                   them silently would let the reader act on a list that has
                   stopped updating.
                 */}
-                {sessionsFailed && (
+                {sessionsFailed && state !== "archived" && (
                   <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground" role="status">
                     This list stopped refreshing. What you can see was true as of{" "}
                     {loadedAt === null ? "the last successful load" : workTimeAgo(loadedAt)}.
+                  </p>
+                )}
+
+                {/* The archived list is fetched on its own, so it fails on its
+                    own, and the live list's staleness notice does not describe
+                    it. Same rule: say the load failed rather than render an
+                    empty list that reads as "you have archived nothing". */}
+                {state === "archived" && archivedFailed && (
+                  <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground" role="status">
+                    Could not load the archive. What you can see may be incomplete.
                   </p>
                 )}
 
@@ -460,6 +500,7 @@ const EMPTY_TITLE: Record<WorkTriageState, string> = {
   unread: "You are up to date",
   done: "Nothing finished yet",
   all: "No tasks yet",
+  archived: "Nothing archived",
 };
 
 const EMPTY_BODY: Record<WorkTriageState, string> = {
@@ -469,6 +510,7 @@ const EMPTY_BODY: Record<WorkTriageState, string> = {
   unread: "Nothing has moved since you last looked at it.",
   done: "Tasks land here when they stop, whether or not they succeeded.",
   all: "Describe something above and Juno will carry it out.",
+  archived: "Tasks you put away land here, and can be brought back at any time.",
 };
 
 /**

@@ -361,8 +361,15 @@ export function workIdempotencyKey(): string {
 // Sessions, runs and hosts
 // ---------------------------------------------------------------------------
 
-export function fetchWorkSessions(limit = 40): Promise<WorkResult<ClientWorkSession[]>> {
-  return get(`/api/work/sessions?limit=${limit}`, (data) => list<ClientWorkSession>(data.sessions));
+export function fetchWorkSessions(
+  limit = 40,
+  /** Ask for the put-away rows instead of the live ones. */
+  archived = false,
+): Promise<WorkResult<ClientWorkSession[]>> {
+  return get(
+    `/api/work/sessions?limit=${limit}${archived ? "&archived=true" : ""}`,
+    (data) => list<ClientWorkSession>(data.sessions),
+  );
 }
 
 export function fetchWorkHosts(): Promise<WorkResult<ClientWorkHost[]>> {

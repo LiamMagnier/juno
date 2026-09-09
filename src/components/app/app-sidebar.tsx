@@ -921,7 +921,23 @@ function MoreFlyout({
   onOpenArchived: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  /*
+   * Work and Code lead, because until now neither was reachable by touch.
+   *
+   * Both are top-level products, and the only navigation to either was the
+   * Chat/Work switcher in the shell header and the Code destination beside it —
+   * BOTH of which are `hidden … md:flex`. Below the `md` breakpoint the sole
+   * entry point to an entire agentic product was the command palette, which is
+   * keyboard-driven. On a phone, Work did not exist.
+   *
+   * They go here rather than into a fourth and fifth row of the Destinations
+   * nav: the desktop switcher already gives them a more prominent home at the
+   * width where there is room for one, and this list is exactly the overflow
+   * that exists so nothing is unreachable.
+   */
   const items = [
+    { href: "/work", kind: "work" as const, label: "Work", active: !!pathname?.startsWith("/work") },
+    { href: "/code", kind: "code" as const, label: "Code", active: !!pathname?.startsWith("/code") },
     { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
     { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
     { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },

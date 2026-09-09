@@ -29,14 +29,7 @@ import { cn } from "@/lib/utils";
  * instead of tabbing through six controls to reach the seventh thing.
  */
 
-export interface TriageCounts {
-  needs_you: number;
-  in_progress: number;
-  scheduled: number;
-  unread: number;
-  done: number;
-  all: number;
-}
+export type TriageCounts = Record<WorkTriageState, number>;
 
 export function TriageBar({
   value,

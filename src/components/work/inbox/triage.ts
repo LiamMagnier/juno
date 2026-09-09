@@ -54,6 +54,16 @@ export const WORK_TRIAGE_STATES = [
   "unread",
   "done",
   "all",
+  // Last, after the escape hatch, because it is where things go to be forgotten
+  // rather than a slice of live work.
+  //
+  // It exists because archiving was a ONE-WAY TRIP. Every row offered "Archive"
+  // and "Bring back", the list route filters `archived: false` by default, and
+  // no state — `all` explicitly included, whose own caption said "everything
+  // that has not been archived" — could show an archived row. So the
+  // "Bring back" branch was unreachable code, and archiving a task removed it
+  // from the product with no confirmation and no way back.
+  "archived",
 ] as const;
 
 export type WorkTriageState = (typeof WORK_TRIAGE_STATES)[number];
@@ -69,6 +79,7 @@ export const TRIAGE_LABEL: Record<WorkTriageState, string> = {
   unread: "Unread",
   done: "Done",
   all: "All",
+  archived: "Archived",
 };
 
 /**
@@ -86,6 +97,7 @@ export const TRIAGE_CAPTION: Record<WorkTriageState, string> = {
   unread: "Something changed on these since you last opened them.",
   done: "Finished, for better or worse. Check the deliverable, then archive.",
   all: "Everything that has not been archived.",
+  archived: "Put away. Nothing here runs or notifies; bring one back to work on it again.",
 };
 
 /**
@@ -142,6 +154,10 @@ export function matchesTriage(
   const item = asRecentItem(session);
   switch (state) {
     case "all":
+      return true;
+    // The page fetches archived rows only for this state and live rows only for
+    // the others, so membership is already decided by which list was loaded.
+    case "archived":
       return true;
     case "needs_you":
       return matchesFilter(item, "needs_attention");

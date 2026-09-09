@@ -12874,6 +12874,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No console output yet."
   },
   {
+    "id": "b4c9049720ada1aa",
+    "source": "Could not load the archive. What you can see may be incomplete."
+  },
+  {
     "id": "b4d879ff56f2c045",
     "source": "Claude Fable"
   },
@@ -14538,6 +14542,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "start"
   },
   {
+    "id": "cd084fd7a4437f88",
+    "source": "Nothing archived"
+  },
+  {
     "id": "cd14e155c4ab71a2",
     "source": "Nothing has been changed by the attempt. The skill, its instructions and whether Juno may reach for it are all as they were."
   },
@@ -15884,6 +15892,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd9d24965dbedc02",
     "source": "Cron"
+  },
+  {
+    "id": "dd9e881230ebf6e0",
+    "source": "archived"
   },
   {
     "id": "dda77d1be6f43efc",
