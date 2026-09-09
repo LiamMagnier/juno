@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Code2, FileCode2, FileText, GitBranch, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, LayoutGrid, List as ListIcon, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, PanelRightOpen, Search, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,6 +32,7 @@ import { staggerDelay } from "@/lib/motion";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ArtifactPreview } from "@/components/artifacts/artifact-preview";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -75,15 +76,32 @@ interface Item {
   conversationTitle: string;
   createdAt: string;
   updatedAt: string;
+  /** The head of the newest version's source, for the grid tile. */
+  preview: string | null;
 }
 
 /** The hover-raised row: flat on the page at rest, a raised card under the pointer. */
 const rowClass =
   "group relative flex w-full items-center gap-3 rounded-control border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-fast ease-out-soft hover:border-transparent hover:bg-accent motion-reduce:transition-none";
 
+/**
+ * The two view modes, and where the choice is kept.
+ *
+ * Same control, same options, same storage mechanism as the Library — the two
+ * pages hold the same kind of thing and a reader who set one to Grid has said
+ * something about how they want to look at their own work.
+ */
+type ArtifactView = "list" | "grid";
+const ARTIFACT_VIEW_STORAGE_KEY = "juno:artifacts:view";
+const VIEW_OPTIONS = [
+  { value: "list" as const, label: "List", icon: <ListIcon className="size-3.5" /> },
+  { value: "grid" as const, label: "Grid", icon: <LayoutGrid className="size-3.5" /> },
+];
+
 export default function ArtifactsPage() {
   const router = useRouter();
   const [items, setItems] = React.useState<Item[] | null>(null);
+  const [view, setView] = React.useState<ArtifactView>("list");
   const [error, setError] = React.useState<null | "network" | "offline">(null);
   const [query, setQuery] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<ArtifactType | "ALL">("ALL");
@@ -94,6 +112,86 @@ export default function ArtifactsPage() {
   const [deleting, setDeleting] = React.useState(false);
   const [shareTarget, setShareTarget] = React.useState<Item | null>(null);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+
+  // List is the default and the safe one: a browser with storage blocked gets
+  // the denser view rather than nothing.
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(ARTIFACT_VIEW_STORAGE_KEY);
+      if (saved === "list" || saved === "grid") setView(saved);
+    } catch {
+      /* hardened browsing mode — the in-memory preference still works */
+    }
+  }, []);
+
+  /**
+   * The actions menu, defined once for both views.
+   *
+   * It closes over the page's handlers rather than taking eight props, which is
+   * the whole reason the grid could be added without the two views drifting:
+   * one definition of what you can do to an artifact, wherever you are looking
+   * at it.
+   */
+  const ArtifactActions = React.useCallback(
+    function ArtifactActions({ item, href }: { item: Item; href: string }) {
+      return (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Actions for ${item.title || "artifact"}`}
+              className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+            >
+              {downloadingId === item.id ? (
+                <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
+              ) : (
+                <ActionIcons.more className="size-4" aria-hidden />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem onSelect={() => router.push(href)}>
+              <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
+              <MessagesSquare className="size-4" aria-hidden /> Open conversation
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => openRename(item)}>
+              <ActionIcons.edit className="size-4" aria-hidden /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => download(item)}>
+              <ActionIcons.download className="size-4" aria-hidden /> Download source
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShareTarget(item)}>
+              <ActionIcons.share className="size-4" aria-hidden /> Share
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              onSelect={() => setDeleteTarget(item)}
+            >
+              <ActionIcons.delete className="size-4" aria-hidden /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `download` and
+    // `openRename` are declared below this point; both are stable for the life
+    // of the page and neither closes over anything that changes identity.
+    [downloadingId, router],
+  );
+
+  const changeView = React.useCallback((next: ArtifactView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(ARTIFACT_VIEW_STORAGE_KEY, next);
+    } catch {
+      /* as above */
+    }
+  }, []);
 
   const load = React.useCallback(async () => {
     setError(null);
@@ -284,6 +382,13 @@ export default function ArtifactsPage() {
               }))}
             />
           )}
+          <SegmentedControl<ArtifactView>
+            value={view}
+            onChange={changeView}
+            options={VIEW_OPTIONS}
+            ariaLabel="Artifact view"
+            className="ml-auto h-9 shrink-0"
+          />
         </div>
       )}
 
@@ -357,6 +462,73 @@ export default function ArtifactsPage() {
             </Button>
           }
         />
+      ) : view === "grid" ? (
+        /*
+         * The grid.
+         *
+         * `auto-fill` with a 15rem floor rather than fixed breakpoints, so the
+         * columns follow the actual width available — this page sits beside a
+         * sidebar that collapses, and a media-query grid would be a column
+         * short or a column too many for half of its states.
+         *
+         * The tile is the same object as the row: same link target, same
+         * actions menu, same metadata, arranged for a reader who is looking
+         * for something by eye rather than reading a list of names.
+         */
+        <ul
+          className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3"
+          aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}
+        >
+          {filtered.map((item, i) => {
+            const rt = runtimeFor(item.type, item.language);
+            const href = `/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`;
+            return (
+              <li
+                key={item.id}
+                style={staggerDelay(i, "tight")}
+                className="group relative flex flex-col rounded-card border border-border bg-card p-2 transition-[border-color,background-color] duration-fast ease-out-soft hover:bg-accent motion-safe:animate-rise-in [animation-fill-mode:backwards] motion-reduce:transition-none"
+              >
+                <ArtifactPreview
+                  type={item.type}
+                  preview={item.preview}
+                  title={item.title}
+                  className="aspect-[4/3] w-full"
+                />
+
+                <div className="flex min-w-0 items-start gap-1 px-1 pb-0.5 pt-2">
+                  {/* The stretched link covers the whole tile, preview
+                      included; the actions menu sits above it. */}
+                  <Link
+                    href={href}
+                    className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:rounded-card after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+                  >
+                    <span className="block truncate text-sm font-medium">{item.title || "Untitled artifact"}</span>
+                    <span className="mt-0.5 flex items-center gap-1.5 font-mono text-caption tabular-nums text-muted-foreground">
+                      <span className="truncate">{rt.label}</span>
+                      {item.version > 1 && (
+                        <>
+                          <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+                          <span className="shrink-0">v{item.version}</span>
+                        </>
+                      )}
+                      <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+                      <time
+                        dateTime={item.updatedAt}
+                        title={new Date(item.updatedAt).toLocaleString()}
+                        className="shrink-0"
+                      >
+                        {timeAgo(item.updatedAt)}
+                      </time>
+                    </span>
+                  </Link>
+                  <div className="relative z-10 -mr-1 flex shrink-0 items-center">
+                    <ArtifactActions item={item} href={href} />
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       ) : (
         <ul className="mt-5 space-y-1" aria-label={`${filtered.length} ${filtered.length === 1 ? "artifact" : "artifacts"}`}>
           {filtered.map((item, i) => {
@@ -400,44 +572,7 @@ export default function ArtifactsPage() {
                 </span>
 
                 <div className="relative z-10 flex shrink-0 items-center">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Actions for ${item.title || "artifact"}`}
-                        className="text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
-                      >
-                        {downloadingId === item.id ? (
-                          <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
-                        ) : (
-                          <ActionIcons.more className="size-4" aria-hidden />
-                        )}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem onSelect={() => router.push(href)}>
-                        <PanelRightOpen className="size-4" aria-hidden /> Open in canvas
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => router.push(`/chat/${item.conversationId}`)}>
-                        <MessagesSquare className="size-4" aria-hidden /> Open conversation
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => openRename(item)}>
-                        <ActionIcons.edit className="size-4" aria-hidden /> Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => download(item)}>
-                        <ActionIcons.download className="size-4" aria-hidden /> Download source
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setShareTarget(item)}>
-                        <ActionIcons.share className="size-4" aria-hidden /> Share
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive focus:bg-destructive/10 focus:text-destructive" onSelect={() => setDeleteTarget(item)}>
-                        <ActionIcons.delete className="size-4" aria-hidden /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <ArtifactActions item={item} href={href} />
                 </div>
               </li>
             );
