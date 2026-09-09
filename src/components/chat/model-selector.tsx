@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
-  Brain,
   ChevronDown,
   Eye,
   Image as ImageIcon,
@@ -11,7 +10,9 @@ import {
   Search,
   Star,
   Video,
+  Waypoints,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -180,7 +181,7 @@ function MetricBars({ label, value }: { label: string; value: number }) {
   );
 }
 
-function CapabilityChip({ icon: Icon, label }: { icon: typeof Brain; label: string }) {
+function CapabilityChip({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-1.5 py-0.5 text-micro leading-none text-muted-foreground">
       <Icon className="size-2.5 text-muted-foreground/80" />
@@ -328,7 +329,12 @@ function DetailPanel({
             {model.modality === "image" && <CapabilityChip icon={ImageIcon} label="Image" />}
             {model.modality === "video" && <CapabilityChip icon={Video} label="Video" />}
             {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
-            {model.reasoning && <CapabilityChip icon={Brain} label="Thinking" />}
+            {/* Waypoints, not a BRAIN. Extended thinking is the model working
+                through intermediate steps before answering — a route with stops
+                on it. A brain says "this one is intelligent", which is either
+                true of every row here or of none of them, and is the single
+                most worn-out mark in AI product design. */}
+            {model.reasoning && <CapabilityChip icon={Waypoints} label="Thinking" />}
             {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
             {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
             {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}

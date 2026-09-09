@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Crop, ImageIcon, ImageOff, MousePointer2, Wand2 } from "lucide-react";
+import { Crop, ImageIcon, ImageOff, MousePointer2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
@@ -572,9 +572,12 @@ export function ImageEditOverlay({
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-ui font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-ui font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
                 >
-                  <Wand2 className="size-3.5 transition-transform duration-base ease-out-soft group-hover/apply:-translate-y-0.5 group-hover/apply:rotate-[-8deg] motion-reduce:transition-none motion-reduce:group-hover/apply:translate-y-0 motion-reduce:group-hover/apply:rotate-0" aria-hidden="true" />
+                  {/* The mark of the thing being made, not a magic wand that
+                      lifted and tilted on hover. A button that says what it
+                      does does not need a glyph performing enthusiasm. */}
+                  <ImageIcon className="size-3.5" aria-hidden="true" />
                   <span>Generate edit</span>
                 </button>
               </div>

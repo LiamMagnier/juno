@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ClientWorkSkill } from "@/lib/work/skills";
 import { AppIcons } from "@/lib/app-icons";
@@ -72,7 +72,7 @@ export default function WorkSkillsPage() {
           </WorkList>
         ) : skills.length === 0 ? (
           <EmptyState
-            icon={Sparkles}
+            icon={AppIcons.assistants}
             title="No skills yet"
             description="The easiest way to get one is to not write it. Run a task the ordinary way, and when it finishes well, press “Save this as a skill” on it — Juno drafts the instructions from the steps it actually took and you edit them before anything is saved."
             action={

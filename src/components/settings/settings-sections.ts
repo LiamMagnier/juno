@@ -1,15 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import {
-  CreditCard,
-  Database,
-  Mic,
-  NotebookPen,
-  Plug,
-  Settings2,
-  Sparkles,
-  User,
-  Wand2,
-} from "lucide-react";
+import { SettingsIcons } from "@/lib/app-icons";
 
 /**
  * The settings sections — one registry for the modal rail, the `/settings`
@@ -20,17 +10,23 @@ import {
  * and the money. Irreversible operations live at the bottom of Account and
  * Data & privacy, not in a "danger zone" section of their own: a section
  * whose only content is destruction reads as a dare.
+ *
+ * The marks come from `SettingsIcons` rather than being imported here one by
+ * one, so the rail cannot drift from the rest of the shell — and so the two
+ * that were pure AI-marketing decoration (a SPARKLE for Personalization, a
+ * MAGIC WAND for Models) cannot come back without editing the registry that
+ * explains why they are gone.
  */
 export const SETTINGS_SECTIONS = [
-  { id: "general", label: "General", icon: Settings2, description: "Theme, accent, language and text size." },
-  { id: "personalization", label: "Personalization", icon: Sparkles, description: "How Juno writes and what it keeps in mind." },
-  { id: "memory", label: "Memory", icon: NotebookPen, description: "What Juno may remember between conversations." },
-  { id: "models", label: "Models", icon: Wand2, description: "Which model answers by default, and how hard it thinks." },
-  { id: "connectors", label: "Connectors", icon: Plug, description: "The apps Juno can read from and act on." },
-  { id: "voice", label: "Voice", icon: Mic, description: "How Juno sounds, and how you talk to it." },
-  { id: "data", label: "Data & privacy", icon: Database, description: "Export, import, shared links and deletion." },
-  { id: "account", label: "Account", icon: User, description: "Who you are to Juno, and how you sign in." },
-  { id: "billing", label: "Plan & billing", icon: CreditCard, description: "Your plan, what you have used, and the ceiling." },
+  { id: "general", label: "General", icon: SettingsIcons.general, description: "Theme, accent, language and text size." },
+  { id: "personalization", label: "Personalization", icon: SettingsIcons.personalization, description: "How Juno writes and what it keeps in mind." },
+  { id: "memory", label: "Memory", icon: SettingsIcons.memory, description: "What Juno may remember between conversations." },
+  { id: "models", label: "Models", icon: SettingsIcons.models, description: "Which model answers by default, and how hard it thinks." },
+  { id: "connectors", label: "Connectors", icon: SettingsIcons.connectors, description: "The apps Juno can read from and act on." },
+  { id: "voice", label: "Voice", icon: SettingsIcons.voice, description: "How Juno sounds, and how you talk to it." },
+  { id: "data", label: "Data & privacy", icon: SettingsIcons.data, description: "Export, import, shared links and deletion." },
+  { id: "account", label: "Account", icon: SettingsIcons.account, description: "Who you are to Juno, and how you sign in." },
+  { id: "billing", label: "Plan & billing", icon: SettingsIcons.billing, description: "Your plan, what you have used, and the ceiling." },
 ] as const satisfies readonly { id: string; label: string; icon: LucideIcon; description: string }[];
 
 export type SettingsSectionId = (typeof SETTINGS_SECTIONS)[number]["id"];

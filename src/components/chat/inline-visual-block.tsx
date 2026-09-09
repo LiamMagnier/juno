@@ -3,16 +3,15 @@
 import * as React from "react";
 import {
   ArrowRight,
-  Brain,
+  Frame,
   Circle,
   CornerDownRight,
   GitBranch,
   HelpCircle,
   Layers3,
-  Lightbulb,
+  Loader2,
   ListChecks,
   Maximize2,
-  Wand2,
   Table2,
 } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
@@ -185,9 +184,14 @@ function iconFor(type: VisualKind) {
   if (type === "flow" || type === "flowchart" || type === "diagram") return GitBranch;
   if (type === "comparison" || type === "table") return Table2;
   if (type === "quiz") return HelpCircle;
-  if (type === "callout") return Lightbulb;
+  // Not a lightbulb: a callout is a note worth reading, not an idea the
+  // product is having. The same info mark the rest of the app uses.
+  if (type === "callout") return StatusIcons.info;
   if (type === "timeline") return Layers3;
-  return Brain;
+  // The fallback for a visual whose kind we do not recognise: a frame,
+  // meaning "something rendered here". A BRAIN meant "an AI made this", which
+  // is true of every pixel in the product and so distinguishes nothing.
+  return Frame;
 }
 
 function typeLabel(type: VisualKind): string {
@@ -486,7 +490,7 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
             // callout sits in resolves ~1.2 points above it, i.e. the row had no
             // fill of its own and the bulleted list read as loose paragraphs.
             <div key={index} className="flex gap-2 rounded-field bg-secondary px-3 py-2">
-              <Wand2 className="mt-1 size-3.5 shrink-0 text-primary" />
+              <StatusIcons.info className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
               <p className="text-sm leading-6">
                 <span className="font-semibold">{itemTitle(item, `Point ${index + 1}`)}</span>
                 {primaryText(item) ? <span className="text-muted-foreground"> - {primaryText(item)}</span> : null}
@@ -541,7 +545,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
       // that has to say "this did not render" had nothing behind its text.
       <div className="my-3 rounded-field border bg-card px-4 py-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
-          {streaming ? <Wand2 className="size-4 animate-pulse text-primary" /> : <StatusIcons.warning className="size-4 text-warning" />}
+          {streaming ? <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden="true" /> : <StatusIcons.warning className="size-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
         </div>
       </div>

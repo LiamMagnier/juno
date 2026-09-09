@@ -13,7 +13,10 @@ import {
   Bot,
   CalendarClock,
   Check,
+  Cpu,
+  CreditCard,
   Copy,
+  Database,
   Download,
   Circle,
   Cloud,
@@ -34,6 +37,7 @@ import {
   LayoutTemplate,
   Library,
   Lock,
+  Mic,
   Info,
   MessageCircle,
   Minus,
@@ -59,6 +63,8 @@ import {
   Trash2,
   TriangleAlert,
   Type,
+  User,
+  UserPen,
   X,
   Workflow,
   type LucideIcon,
@@ -311,3 +317,45 @@ export const ActionIcons = {
 } as const satisfies Record<string, LucideIcon>;
 
 export type ActionIconName = keyof typeof ActionIcons;
+
+/**
+ * The marks for the settings sections.
+ *
+ * This group exists because the settings rail was the one place in the product
+ * still wearing AI-marketing iconography: Personalization was a SPARKLE and
+ * Models was a MAGIC WAND. Neither describes anything. A sparkle is the
+ * industry's shorthand for "something happens here and we would rather not say
+ * what", and a wand says the product is doing a trick rather than running a
+ * model you chose and pay for. They are also the two marks in the whole app
+ * that could be swapped for each other without changing what either means,
+ * which is the test that fails.
+ *
+ * Every mark here names the NOUN of its section — the thing you are editing —
+ * rather than a feeling about it. `personalization` is a person and a pen
+ * because it is your writing preferences; `models` is a processor because a
+ * model is machinery with a price per token, and the section is about picking
+ * which one runs.
+ */
+export const SettingsIcons = {
+  /** Adjustments to how the app itself looks and behaves. */
+  general: SlidersHorizontal,
+  /** How Juno writes for YOU: your instructions, your tone. Not a sparkle. */
+  personalization: UserPen,
+  /** What Juno keeps between conversations — the same notebook the composer's
+   *  memory toggle uses, because it is the same store. */
+  memory: NotebookPen,
+  /** Which machine answers, and how hard it thinks. Not a wand. */
+  models: Cpu,
+  /** The apps Juno may reach. Matches `AppIcons.connections`. */
+  connectors: Plug,
+  /** Speech, in and out. */
+  voice: Mic,
+  /** Your data: export, import, deletion. */
+  data: Database,
+  /** Who you are to Juno. */
+  account: User,
+  /** What you pay. */
+  billing: CreditCard,
+} as const satisfies Record<string, LucideIcon>;
+
+export type SettingsIconName = keyof typeof SettingsIcons;
