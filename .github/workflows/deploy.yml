@@ -345,6 +345,22 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relaytest
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/relaytest
 
+      # The research inspector suite had been skipping green in every CI run
+      # since it was written: it needs RESEARCH_TEST_DATABASE_URL, and no job
+      # set one. Same recipe as the two steps above — its own database, its own
+      # step — for the same reasons.
+      - name: The research inspector, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE researchtest'
+          npx prisma migrate deploy
+          npx tsx --test tests/research-inspector-db.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          NODE_OPTIONS: --conditions=react-server
+          RESEARCH_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/researchtest
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/researchtest
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/researchtest
+
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a
