@@ -3,10 +3,16 @@
 import * as React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { GripVertical, Pause, Play, Square } from "lucide-react";
+import { ChevronDown, Cloud, GripVertical, Hand, Pause, Play, Square } from "lucide-react";
 import { ActionIcons, AppIcons } from "@/lib/app-icons";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { splitBounds, useSplitPane } from "@/hooks/use-split-pane";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
@@ -26,19 +32,22 @@ import {
   deriveReferences,
 } from "@/components/work/work-detail-panels";
 import {
-  RAIL_ORDER,
   RAIL_POLICY,
   RailDisclosure,
   RailSection,
   WorkRunAnnouncer,
   deriveRunPhase,
+  railOrderFor,
   sectionTitle,
   type RailSectionName,
 } from "@/components/work/detail/work-rail";
 import { WorkAttempts } from "@/components/work/detail/work-attempts";
 import { WorkContextSection } from "@/components/work/detail/work-context";
+import { WorkDeliverableStage } from "@/components/work/detail/work-deliverable-stage";
 import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { WorkOutputsSection } from "@/components/work/detail/work-outputs";
+import { useWorkArtifactList } from "@/components/work/work-documents";
+import { canRunInCloudInstead } from "@/components/work/inbox/triage";
 import { WorkProgressChecklist, planTally } from "@/components/work/detail/work-progress";
 import {
   WorkConversation,
@@ -73,6 +82,7 @@ import {
   steerWorkRun,
   subscribeToWorkEvents,
   workIdempotencyKey,
+  type StartWorkRunInput,
   type WorkApprovalDecisionInput,
   type WorkBlocked,
   type WorkControlAction,
@@ -191,6 +201,8 @@ export default function WorkThreadPage() {
   const [blocked, setBlocked] = React.useState<WorkBlocked | null>(null);
   const [loadFailure, setLoadFailure] = React.useState<WorkTransportFailure["cause"] | null>(null);
   const [streamLost, setStreamLost] = React.useState(false);
+  /** The stream was refused with a 401: the tab's session ended under it. */
+  const [signedOut, setSignedOut] = React.useState(false);
   const [answering, setAnswering] = React.useState(false);
   const [busyApprovalId, setBusyApprovalId] = React.useState<string | null>(null);
   const [busyControl, setBusyControl] = React.useState(false);
@@ -315,10 +327,14 @@ export default function WorkThreadPage() {
           setBlocked(outcome);
           return;
         }
-        // A finished run is not a lost stream, and neither is a signed-out tab —
-        // only a stream that gave up while the run was still going leaves the
-        // page showing something that will never update again.
-        if (outcome.kind === "failed" && outcome.cause !== "unauthorized") setStreamLost(true);
+        // A finished run is not a lost stream. A signed-out tab is its own
+        // thing: the stream ended because the session did, and "Reconnect"
+        // would fail the same way — the reader needs a sign-in, and a page
+        // that looked live while its cookie was gone was the one failure that
+        // said nothing at all.
+        if (outcome.kind !== "failed") return;
+        if (outcome.cause === "unauthorized") setSignedOut(true);
+        else setStreamLost(true);
       },
     });
     return unsubscribe;
@@ -338,6 +354,14 @@ export default function WorkThreadPage() {
     [events, live]
   );
   const activityPhase: ActivityPhase = run === null ? "not-started" : live ? "live" : "settled";
+  /*
+   * The task's documents, read once here and handed to two places: the
+   * deliverable stage at the top of the main column and the rail's Outputs
+   * section. One read is what keeps the two agreeing about which documents
+   * exist. A draft has no run and cannot have produced anything, so nothing is
+   * fetched until there is one.
+   */
+  const documents = useWorkArtifactList(id, artifacts.length, run !== null);
   // Split rather than filtered twice. The two halves go to different places: an
   // undecided approval is a thing blocking a person and is lifted above the
   // conversation, while a decided one is history and belongs in the rail with
@@ -528,17 +552,30 @@ export default function WorkThreadPage() {
    * run. The header's own buttons ignore it.
    */
   const dispatch = React.useCallback(
-    async (origin: "manual" | "retry"): Promise<ClientWorkRun | null> => {
+    async (
+      origin: "manual" | "retry",
+      /**
+       * The two per-attempt overrides the route has always accepted and no
+       * surface offered: `requestedTarget: "cloud"` for a run that lost its
+       * Mac, `permissionPolicy: "permissive"` for "run it again and stop
+       * asking". Both are scoped to the attempt they start.
+       */
+      overrides: Pick<StartWorkRunInput, "requestedTarget" | "permissionPolicy"> = {}
+    ): Promise<ClientWorkRun | null> => {
       setBusyControl(true);
       setBlocked(null);
       const result = await startWorkRun(id, {
         origin,
+        ...overrides,
         // The plan decides what this attempt needs; the browser does not get to
         // narrow it. An empty list means "nothing local", which `selectTarget`
         // reads as the cloud — the correct reading for a caller that has not
         // planned. A previous attempt's requirements are carried forward so a
-        // retry is judged against the same bar the first attempt was.
-        requiredCapabilities: run?.requiredCapabilities ?? [],
+        // retry is judged against the same bar the first attempt was — except
+        // when the reader has asked for the cloud instead, where carrying the
+        // local requirements forward would be asking for the refusal again.
+        requiredCapabilities:
+          overrides.requestedTarget === "cloud" ? [] : (run?.requiredCapabilities ?? []),
         idempotencyKey: workIdempotencyKey(),
       });
       setBusyControl(false);
@@ -778,6 +815,11 @@ export default function WorkThreadPage() {
   const readSources = references.filter((reference) => reference.direction === "read");
   const writtenFiles = references.filter((reference) => reference.direction === "written");
   const tally = planTally(plan);
+  // Anything the task has made, from either source: the list once it lands,
+  // the stream until then, and the changed-file rows either way.
+  const hasOutputs =
+    (documents.artifacts?.length ?? 0) > 0 || artifacts.length > 0 || writtenFiles.length > 0;
+  const railOrder = railOrderFor(phase, hasOutputs);
 
   const sections: Record<RailSectionName, React.ReactNode> = {
     progress: policy.progress.shown && (
@@ -796,7 +838,9 @@ export default function WorkThreadPage() {
         {phase === "failed" && run !== null && (
           <WorkOutcomeDigest run={run} plan={plan} performed={performed} />
         )}
-        <WorkCurrentAction action={currentAction} />
+        {/* The current action is pinned at the top of the conversation column
+            while the run is live — where a reader watching it work looks — and
+            the checklist stays here. */}
         <WorkProgressChecklist steps={plan} />
 
         {/*
@@ -818,18 +862,23 @@ export default function WorkThreadPage() {
         )}
 
         {/*
-         * The feed, subordinate to the plan rather than beside it.
+         * The feed, subordinate to the plan rather than beside it — and OPEN
+         * while the run is live.
          *
-         * It opens by default only when there is no plan to be subordinate to.
-         * A run that never wrote one still did the work, and on that run the
-         * feed is the only record of it — leaving it collapsed would make
-         * Progress an empty heading over a task that ran for ten minutes.
+         * "Watch it work" is the thing a reader does with a running agent, and
+         * for as long as this arrived closed whenever a plan existed, the live
+         * view was filed under a chevron. It opens by default while the run is
+         * going and when there is no plan to be subordinate to; a run that
+         * never wrote one still did the work, and on that run the feed is the
+         * only record of it. A settled run with a plan arrives closed: the
+         * checklist is the summary and the feed is the detail. The reader's
+         * own click outranks all of this, as everywhere in the rail.
          */}
         <RailDisclosure
           storageKey="progress.activity"
           title="Activity"
           meta={activity.length > 0 ? String(activity.length) : null}
-          defaultOpen={plan.length === 0}
+          defaultOpen={plan.length === 0 || live}
         >
           {/* Marked busy rather than live. The feed gains a row a second while a
               run is going, and announcing each one would make the page unusable
@@ -862,7 +911,7 @@ export default function WorkThreadPage() {
     outputs: policy.outputs.shown && (
       <WorkOutputsSection
         key="outputs"
-        sessionId={session.id}
+        documents={documents}
         phase={phase}
         defaultOpen={policy.outputs.open}
         artifacts={artifacts}
@@ -927,7 +976,7 @@ export default function WorkThreadPage() {
    * It doubles as the guard for the jump link itself: null means the rail
    * rendered nothing at all, and there is nothing to jump to.
    */
-  const railLead = RAIL_ORDER.find((name) => Boolean(sections[name])) ?? null;
+  const railLead = railOrder.find((name) => Boolean(sections[name])) ?? null;
 
   return (
     <AppPage
@@ -1011,15 +1060,62 @@ export default function WorkThreadPage() {
                 </Button>
               )}
               {run !== null && isTerminalStatus(run.status) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busyControl}
-                  onClick={() => void dispatch("retry")}
-                  className="gap-1.5"
-                >
-                  <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busyControl}
+                    onClick={() => void dispatch("retry")}
+                    className="gap-1.5"
+                  >
+                    <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Try again
+                  </Button>
+                  {/*
+                   * The two ways to try again differently — the route's own
+                   * per-attempt overrides, reachable from nowhere until now.
+                   * "Run in the cloud instead" is offered only where a Mac is
+                   * what went wrong (`host_offline`, `interrupted`); "and stop
+                   * asking" wherever the task was not already set to just do it.
+                   * A menu rather than two more buttons, because the header
+                   * already holds the one press most readers want.
+                   */}
+                  {(canRunInCloudInstead(session) || session.permissionPolicy !== "permissive") && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon-sm"
+                          disabled={busyControl}
+                          aria-label="Other ways to try again"
+                          className="size-8"
+                        >
+                          <ChevronDown className="size-3.5" aria-hidden="true" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-60">
+                        {canRunInCloudInstead(session) && (
+                          <DropdownMenuItem
+                            onSelect={() => void dispatch("retry", { requestedTarget: "cloud" })}
+                          >
+                            <Cloud className="text-muted-foreground" />
+                            <span className="flex-1">Run in the cloud instead</span>
+                          </DropdownMenuItem>
+                        )}
+                        {session.permissionPolicy !== "permissive" && (
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              void dispatch("retry", { permissionPolicy: "permissive" })
+                            }
+                            title="This attempt only. It still asks before anything it cannot take back."
+                          >
+                            <Hand className="text-muted-foreground" />
+                            <span className="flex-1">Run again and stop asking</span>
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </>
               )}
             </>
           }
@@ -1055,7 +1151,20 @@ export default function WorkThreadPage() {
                 {run.terminalDetail ?? statusSentence(session.status)}
               </WorkStateNote>
             )}
-            {streamLost && (
+            {signedOut && (
+              <WorkStateNote
+                tone="warning"
+                action={
+                  <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                    Reload
+                  </Button>
+                }
+              >
+                You’re signed out, so this page stopped updating. The task itself carries on; reload
+                to sign in and pick it back up.
+              </WorkStateNote>
+            )}
+            {streamLost && !signedOut && (
               <WorkStateNote
                 tone="warning"
                 action={
@@ -1176,7 +1285,14 @@ export default function WorkThreadPage() {
                         key={question.id}
                         question={question}
                         busy={answering}
+                        // Only the quick picks answer from the card; typed
+                        // answers go through the composer, which is in
+                        // `answer` mode for exactly this question.
                         onAnswer={(questionId, text) => void answer(questionId, text)}
+                        // The oldest open question is the one the composer is
+                        // answering (see `composerMode`); a second open one
+                        // waits its turn, and the card says so.
+                        current={question.id === openQuestion?.id}
                       />
                     ))}
                   </div>
@@ -1201,6 +1317,21 @@ export default function WorkThreadPage() {
           )}
 
           <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:pb-6 lg:pt-1">
+            {/* What it is doing right now, at the top of the column a reader
+                watching the run is looking at — the ChatGPT-Agent position —
+                rather than inside a rail section. Only while live: a finished
+                run has nothing current, and the checklist says where it got. */}
+            {currentAction !== null && (
+              <div className="mb-5">
+                <WorkCurrentAction action={currentAction} />
+              </div>
+            )}
+            {/* The deliverable, before the transcript. For an agent run the
+                transcript is mostly one goal bubble and a few paragraphs; the
+                thing the task was started for is the report or the site, and
+                it renders here in full rather than behind a Preview button in
+                the rail. Nothing for tasks that made no previewable file. */}
+            <WorkDeliverableStage list={documents} />
             <WorkConversation
               session={session}
               run={run}
@@ -1212,9 +1343,10 @@ export default function WorkThreadPage() {
             />
           </div>
 
-          {/* The rail proper. Its four sections are always in `RAIL_ORDER`, and a
-              section this phase has no use for renders nothing at all — no
-              heading, no rule, no apology. */}
+          {/* The rail proper. Its four sections are in `railOrderFor`'s order —
+              `RAIL_ORDER`, with Outputs promoted once the task has made
+              something — and a section this phase has no use for renders
+              nothing at all: no heading, no rule, no apology. */}
           <aside
             id="work-rail"
             // Focusable only by the jump link above, never by tabbing: a landmark
@@ -1228,7 +1360,7 @@ export default function WorkThreadPage() {
               !needsYou && "lg:pt-1"
             )}
           >
-            {RAIL_ORDER.map((name) => sections[name])}
+            {railOrder.map((name) => sections[name])}
           </aside>
 
           {/* The handle spans BOTH rows of the second column, because both of

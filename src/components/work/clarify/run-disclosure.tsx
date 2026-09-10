@@ -1,66 +1,75 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Cloud, Laptop, Loader2 } from "lucide-react";
-import type { WorkEffectiveTarget } from "@/lib/work/domain";
+import { ChevronDown, Loader2 } from "lucide-react";
+import {
+  WORK_APPROVAL_MODE_SUMMARY,
+  type WorkEffectiveTarget,
+  type WorkPermissionPolicy,
+} from "@/lib/work/domain";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
 import { cn } from "@/lib/utils";
 
 /*
- * "What this run commits to" — the three facts a task is started on.
+ * "What this run commits to" — one line under the composer, and one chevron.
  *
  * A Work run is the one thing in Juno that spends real money while nobody is
- * looking, and until now the composer said two of the three things that decides:
- * it explained where the task would run, and it let the reader choose which apps
- * it could reach. It never said what it would cost, or what would stop it. The
- * ceilings were a constant in a route handler, which is to say they were a fact
- * about the reader's money that only the people who wrote the route knew.
+ * looking, so the composer has to say where the task will run, how often it
+ * will stop to ask, and what will stop it. It used to say those things as a
+ * stack: an executor strip, a sentence about the approval mode, this
+ * disclosure, an inference line and a run line — up to five blocks of caption
+ * under one input, every one of them honest and the total reading like a terms
+ * sheet. Cowork is a prompt, a folder, connectors, go.
  *
- * Collapsed by default, and that is not timidity: the summary line already
- * carries the whole of it in one sentence, and a permanently expanded block of
- * metadata over a composer is the sort of thing readers learn to look past —
- * at which point it has stopped disclosing anything. The chevron is for the
- * press where somebody actually wants to know.
+ * So: ONE line that carries all three facts — "Runs in the cloud · asks before
+ * risky steps · stops at $2 / 20 min" — and a single disclosure under it for
+ * the reader who wants the detail, where what Juno read into the goal and what
+ * it will do about it now live as well. Collapsed by default, and that is not
+ * timidity: the summary already carries the whole of it in one sentence, and a
+ * permanently expanded block of metadata over a composer is the sort of thing
+ * readers learn to look past.
  *
  * Nothing here is computed. `selectForInferred` in the composer already decided
- * the target, the Apps chip already holds the connector selection, and the
- * ceilings are the route's constant. Recomputing any of the three would produce
- * a second answer that could disagree with the one the dispatch acts on, which
- * is the failure the composer's own header spends a paragraph on.
+ * the target, the [+] already holds the connector selection, the chip holds the
+ * mode, and the ceilings are `DEFAULT_RUN_BUDGET`. Recomputing any of them
+ * would produce a second answer that could disagree with the one the dispatch
+ * acts on.
  */
 
 /**
- * The run budget, restated for the reader.
+ * The run budget, restated for the reader in the units a person thinks in.
  *
- * A mirror of `DEFAULT_RUN_BUDGET` in
- * src/app/api/work/sessions/[id]/runs/route.ts, which is a module-private
- * constant in a `server-only` route and cannot be imported into a client
- * bundle. That is a real duplication and it is written here in the same units
- * as the original so that a divergence is obvious on sight rather than hidden
- * behind a unit conversion: if that constant moves, this sentence becomes a
- * lie, and this comment is where whoever moves it finds out.
+ * Derived from `DEFAULT_RUN_BUDGET` rather than mirrored: this used to be a
+ * hand-copied constant with a comment asking whoever moved the original to
+ * come and move this too, and no test guarding it. Read from the source, the
+ * sentence cannot be wrong about the number.
  */
 export const RUN_CEILINGS = {
-  costUsd: 2,
-  tokens: 600_000,
-  minutes: 20,
+  costUsd: DEFAULT_RUN_BUDGET.maxCostMicroUsd / 1_000_000,
+  tokens: DEFAULT_RUN_BUDGET.maxTokens,
+  minutes: Math.round(DEFAULT_RUN_BUDGET.maxRuntimeMs / 60_000),
 } as const;
 
-interface RunDisclosureProps {
-  /** Where `selectForInferred` says this will run. Null while that is unknown. */
-  target: WorkEffectiveTarget | null;
-  /** The Mac's own name, when it is going to a Mac. */
-  hostName: string | null;
-  /** The apps switched on for this task, in the words the reader chose them by. */
-  connectorLabels: readonly string[];
-}
+/**
+ * The approval mode as the tail of a sentence.
+ *
+ * `WORK_APPROVAL_MODE_LABEL` is the imperative the chip wears — "Ask before
+ * risky steps" — and this is the same phrase conjugated for "Runs in the cloud
+ * · …". Kept beside it in spirit rather than derived by string surgery, because
+ * "Just do it" does not conjugate by lowercasing.
+ */
+const APPROVAL_PHRASE: Record<WorkPermissionPolicy, string> = {
+  conservative: "asks before every change",
+  balanced: "asks before risky steps",
+  permissive: "just does it",
+};
 
 /**
  * Where this task will run, in the reader's words.
  *
- * One function, read by the strip item and by the disclosure below it, because
- * the composer now names the executor in two places and the two must not be able
- * to disagree — a strip saying "your Mac" over a panel saying "Juno's cloud" is
- * the failure this whole surface's header spends a paragraph on.
+ * One function, read by the summary line and by the voice briefing, because
+ * the composer names the executor in two places and the two must not be able to
+ * disagree.
  */
 export function runTargetLabel(
   target: WorkEffectiveTarget,
@@ -69,73 +78,54 @@ export function runTargetLabel(
   return target === "cloud" ? "Juno’s cloud" : (hostName ?? "your Mac");
 }
 
-/**
- * The executor, on the composer's utility strip: the third standing fact about
- * a run, beside which project it is filed in and which apps it may reach.
- *
- * NOT a control, and that is the honest shape rather than an unfinished one.
- * Work has no executor picker anywhere — `selectForInferred` reads the goal and
- * decides, and the dispatch route runs the same function over the same list — so
- * a dropdown here would be a choice the server is entitled to ignore. A reader
- * still needs the answer before they press Start, which is why it is drawn at
- * all; what it will do about it is one line down, in the disclosure.
- *
- * Every state is a real sentence. "Checking…" while the host list is in flight,
- * because claiming the cloud and correcting it two hundred milliseconds later is
- * the one line here nobody can check; "Can’t tell" when that request failed,
- * because Juno not knowing and nothing being available are different facts.
- */
-export function WorkRunTarget({
-  target,
-  hostName,
-  loading,
-  unknown,
-}: {
+interface RunDisclosureProps {
+  /** Where `selectForInferred` says this will run. Null while that is unknown. */
   target: WorkEffectiveTarget | null;
+  /** The Mac's own name, when it is going to a Mac. */
   hostName: string | null;
   /** The host list is still in flight. */
   loading: boolean;
   /** The host list could not be read at all. */
   unknown: boolean;
-}) {
-  const label = loading
-    ? "Checking…"
-    : unknown
-      ? "Can’t tell where"
-      : target === null
-        ? "Nothing can run this"
-        : `Runs on ${runTargetLabel(target, hostName)}`;
-
-  return (
-    <span
-      // Announced when it settles: the strip is the only place a reader who
-      // never opens the disclosure learns where their task is going, and it
-      // changes under them as the host list lands.
-      aria-live="polite"
-      className={cn(
-        "inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-mono text-caption font-medium",
-        target === null && !loading ? "text-warning-foreground" : "text-muted-foreground"
-      )}
-    >
-      {loading ? (
-        <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-      ) : target === "local" ? (
-        <Laptop className="size-3.5 shrink-0" aria-hidden="true" />
-      ) : (
-        <Cloud className="size-3.5 shrink-0" aria-hidden="true" />
-      )}
-      <span className="truncate">{label}</span>
-    </span>
-  );
+  /** The apps switched on for this task, in the words the reader chose them by. */
+  connectorLabels: readonly string[];
+  /** How often this task will stop to ask. */
+  approvalMode: WorkPermissionPolicy;
+  /** What Juno read into the goal, when it read anything. */
+  inferenceLine: string | null;
+  /** What the executor decision will do about it, when there is one to state. */
+  runLine: string | null;
 }
 
-export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisclosureProps) {
+export function WorkRunDisclosure({
+  target,
+  hostName,
+  loading,
+  unknown,
+  connectorLabels,
+  approvalMode,
+  inferenceLine,
+  runLine,
+}: RunDisclosureProps) {
   const [open, setOpen] = React.useState(false);
 
-  // Nothing is claimed while the target is unknown. A disclosure that said
-  // "Juno's cloud" and then corrected itself once the host list landed would be
-  // the one part of this surface the reader has no way to check.
-  if (target === null) return null;
+  const stops = `stops at $${RUN_CEILINGS.costUsd} / ${RUN_CEILINGS.minutes} min`;
+  const asks = APPROVAL_PHRASE[approvalMode];
+  /*
+   * Every state of the summary is a real sentence. "Checking…" while the host
+   * list is in flight, because claiming the cloud and correcting it two hundred
+   * milliseconds later is the one line here nobody can check; "can't tell
+   * where" when that request failed, because Juno not knowing and nothing
+   * being available are different facts. The notes under the composer carry
+   * the explanation for the last case; this line only has to not lie.
+   */
+  const summary = loading
+    ? `Checking where this will run · ${asks} · ${stops}`
+    : unknown
+      ? `Can’t tell where this will run · ${asks} · ${stops}`
+      : target === null
+        ? `Nothing can run this as written · ${asks} · ${stops}`
+        : `Runs on ${runTargetLabel(target, hostName)} · ${asks} · ${stops}`;
 
   const reaches =
     connectorLabels.length === 0
@@ -150,22 +140,25 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       >
-        {/* The where and the reach used to be in this sentence too. Both are on
-            the composer's utility strip now — the executor as `WorkRunTarget`,
-            the apps as the count on the Apps chip — and repeating them here
-            would be the same two facts in two places, one of them a strip whose
-            entire job is to carry them. What is left is the fact nothing else on
-            this page says out loud, which is also the one that costs money. */}
-        <span className="min-w-0 flex-1 truncate">
-          Stops at ${RUN_CEILINGS.costUsd} or {RUN_CEILINGS.minutes} minutes — what this run
-          commits to.
+        {loading && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
+        {/* Announced when it settles or when the mode changes: the chip says
+            only the mode's name, and a reader moving between the three with a
+            screen reader would otherwise hear three words and no meaning. */}
+        <span
+          aria-live="polite"
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            target === null && !loading && !unknown && "text-warning-foreground"
+          )}
+        >
+          {summary}
         </span>
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3 shrink-0 transition-transform duration-base ease-in-out",
+            "size-3 shrink-0 transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -175,21 +168,29 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
           above uses, so the reveal is animatable without measuring anything. */}
       <div
         className={cn(
-          "grid transition-[grid-template-rows] duration-base ease-out-soft",
+          "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         )}
       >
         <div className="min-h-0 overflow-hidden">
           <dl className="mt-2 space-y-2 border-l border-border/60 pl-3">
-            <Row label="Runs on">
-              {target === "cloud"
-                ? "Juno’s cloud. Nothing on your Mac is read or touched."
-                : `${hostName ?? "Your Mac"}. It has to stay awake for the task to finish.`}
-            </Row>
+            {!loading && !unknown && target !== null && (
+              <Row label="Runs on">
+                {target === "cloud"
+                  ? "Juno’s cloud. Nothing on your Mac is read or touched."
+                  : `${hostName ?? "Your Mac"}. It has to stay awake for the task to finish.`}
+              </Row>
+            )}
+            {inferenceLine !== null && <Row label="Read into it">{inferenceLine}</Row>}
+            {runLine !== null && <Row label="So">{runLine}</Row>}
             <Row label="Reaches">
               {connectorLabels.length === 0
                 ? "No connected apps. It works from the task, its project and any files attached to it."
                 : `${reaches}. Every other app you have connected stays out of reach.`}
+            </Row>
+            <Row label="Asks">
+              {WORK_APPROVAL_MODE_SUMMARY[approvalMode]} Anything it cannot take back — a permanent
+              delete, a message sent, a purchase — is asked about under every mode.
             </Row>
             <Row label="Stops at">
               {`$${RUN_CEILINGS.costUsd}, ${RUN_CEILINGS.tokens.toLocaleString("en-US")} tokens, or ${RUN_CEILINGS.minutes} minutes of working time — whichever comes first. If one is reached the task stops and tells you where it got to; waiting for you does not count against the clock.`}
@@ -205,13 +206,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div>
       {/* `text-label` supplies the 0.10em the config names as the editorial
-          maximum for caps, plus the weight. This was hand-tracked at 0.16em —
-          past that ceiling, where uppercase micro-labels stop grouping into
-          words — and it is the same defect `WorkPreflightCard` already fixed on
-          its own two badges. */}
-      <dt className="font-mono text-label text-muted-foreground">
-        {label}
-      </dt>
+          maximum for caps, plus the weight. */}
+      <dt className="font-mono text-label text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 text-caption leading-relaxed text-muted-foreground">{children}</dd>
     </div>
   );

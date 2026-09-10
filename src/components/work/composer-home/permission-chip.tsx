@@ -59,8 +59,8 @@ export function WorkPermissionChip({
 }) {
   const [open, setOpen] = React.useState(false);
   // The default is not a decision, so it is not coloured like one. Coral here
-  // marks a reader who moved off Auto — the case worth noticing on a strip
-  // being skimmed — rather than every task ever composed.
+  // marks a reader who moved off the default — the case worth noticing on a
+  // strip being skimmed — rather than every task ever composed.
   const chosen = value !== DEFAULT_WORK_PERMISSION_POLICY;
 
   return (

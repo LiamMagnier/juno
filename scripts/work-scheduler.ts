@@ -45,6 +45,7 @@ import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
 import { unattendedRunCeiling } from "@/lib/spend-ceiling";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
 import {
   createRun,
   createWorkSession,
@@ -55,6 +56,7 @@ import {
 import {
   WORK_LIVE_STATUSES,
   defaultVisibilityFor,
+  narrowestBudget,
   narrowestPolicy,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
@@ -540,17 +542,23 @@ async function dispatchOne(
           requiredCapabilities: runConfig.requiredCapabilities,
           degradation: decision.degradation,
           permissionPolicy: policy,
-          budget: {
-            // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
-            // set a figure defaulted to 0 — so the runs firing at 03:00 with
-            // nobody watching were the only ones with no cost ceiling at all,
-            // while a manually started run got $2. Substituted here rather than
-            // in `budgetExceeded` because 0-means-unlimited is the persisted
-            // contract the column and every client already speak.
-            maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
-            maxTokens: schedule.maxTokens,
-            maxRuntimeMs: schedule.maxRuntimeMs,
-          },
+          // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
+          // set a figure defaulted to 0 — so the runs firing at 03:00 with
+          // nobody watching were the only ones with no ceiling at all, while a
+          // manually started run got $2 / 600k tokens / 20 minutes. The cost
+          // axis takes the unattended default ($1) first; then every axis is
+          // narrowed against the standard run budget, which is what fills the
+          // token and runtime ceilings a schedule left at zero. Substituted
+          // here rather than in `budgetExceeded` because 0-means-unlimited is
+          // the persisted contract the column and every client already speak.
+          budget: narrowestBudget(
+            {
+              maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
+              maxTokens: schedule.maxTokens,
+              maxRuntimeMs: schedule.maxRuntimeMs,
+            },
+            DEFAULT_RUN_BUDGET
+          ),
           idempotencyKey: scheduleRunIdempotencyKey(schedule.id, fireAt),
         });
         if (!created.replay) started += 1;

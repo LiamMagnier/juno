@@ -120,7 +120,14 @@ const FIELD_LABEL: Record<WorkContextField, string> = {
  */
 function noteFor(field: WorkContextField, change: WorkContextChange | null, live: boolean): string {
   const label = FIELD_LABEL[field];
-  if (change?.explanation) return `${label} — ${change.explanation}`;
+  if (change?.explanation) {
+    // The caveat is the half of "in effect now" that a reader who just pulled a
+    // file off a live task most needs: the run keeps what it has already read.
+    return change.inFlightCaveat
+      ? `${label} — ${change.explanation} ${change.inFlightCaveat}`
+      : `${label} — ${change.explanation}`;
+  }
+  if (change?.timing === "none") return `${label} unchanged.`;
   if (!live) return `${label} saved. It will be used the next time this task runs.`;
   switch (change?.timing ?? "unstated") {
     case "now":
@@ -132,6 +139,19 @@ function noteFor(field: WorkContextField, change: WorkContextChange | null, live
       // the one that cannot mislead.
       return `${label} saved. The attempt already running may not pick it up.`;
   }
+}
+
+/**
+ * One field put back to what it was before an optimistic write.
+ *
+ * `undefined` is "no local value", so restoring an absent one means deleting
+ * the key rather than assigning it — `{ ...next, [field]: undefined }` would
+ * leave a key whose presence every `in` check downstream reads as a value.
+ */
+function restoreField(next: LocalValues, previous: LocalValues, field: WorkContextField): LocalValues {
+  const restored: LocalValues = { ...next };
+  delete restored[field];
+  return previous[field] === undefined ? restored : { ...restored, [field]: previous[field] };
 }
 
 /** What to say about a change that did not happen. Never blames the reader. */
@@ -324,13 +344,17 @@ export function useWorkThreadContext({
           return;
         }
         adopt(result.value.context);
-        setNote(
-          noteFor(
-            field,
-            result.value.changes.find((entry) => entry.field === field) ?? null,
-            live
-          )
-        );
+        const verdict = result.value.changes.find((entry) => entry.field === field) ?? null;
+        /*
+         * A per-field refusal inside a 200 — the skill, today — is a change
+         * that did not happen, and it gets the same treatment as a failed
+         * request: the optimistic value goes, the value from before the press
+         * comes back. `adopt` cannot do this on its own because it lets local
+         * values win the merge, which is right for a change the server accepted
+         * and exactly wrong for one it declined.
+         */
+        if (verdict?.refused) write(restoreField(localRef.current, previous, field));
+        setNote(noteFor(field, verdict, live));
         // The sidebar and the task list poll on their own clock, so without this
         // a task whose project just changed keeps its old filing beside the
         // reader for up to thirty seconds.

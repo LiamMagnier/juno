@@ -15,12 +15,12 @@ import {
   resolveApprovalMode,
   selectTarget,
   type HostCapabilityView,
-  type WorkBudget,
   type WorkCapability,
   type WorkDegradation,
   type WorkPermissionPolicy,
   type WorkTarget,
 } from "@/lib/work/domain";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import {
   defaultWorkModelId,
@@ -78,46 +78,15 @@ const MAX_FAILOVER_HISTORY = 4;
  */
 const CLOUD_WORK_AVAILABLE = true;
 
-/**
- * The ceilings a run is dispatched with.
- *
- * Nothing wrote these until now, so every column was zero — which
- * `WorkBudget` reads as "no explicit ceiling". The consequence was not
- * theoretical: `WorkBudgetGuard` never fires, `budget_exceeded` and
- * `timed_out` are terminal reasons no run can reach, the three budget bars in
- * the UI render empty, and the only thing bounding a run is
- * `MAX_STEPS_PER_RUN = 200` — two hundred model turns, on a frontier model, on
- * the deployment's key, for a task that may have gone in a circle at step
- * eleven.
- *
- * Each number is a number somebody has to be able to defend, so:
- *
- *  - Two US dollars. A Work run is meant to be worth more than a chat turn and
- *    materially less than a person's hour. Two dollars buys a few hundred
- *    thousand tokens on the models Work admits, which covers research, a draft
- *    and a revision, and stops a loop at the cost of a coffee rather than the
- *    cost of a laptop.
- *  - 600,000 tokens. Deliberately reached at roughly the same time as the cost
- *    ceiling on a mid-priced model, so the two do not disagree about what a
- *    long run is — and so a run on a cheap model is stopped by tokens rather
- *    than running eight times longer for the same money.
- *  - Twenty minutes of *running* time. The guard stops its clock while a run
- *    waits for a person (`WorkBudgetGuard.suspend`), so this is twenty minutes
- *    of work and not twenty minutes of elapsed wall clock — a run that asks a
- *    question at 17:00 and is answered at 09:00 has spent none of it waiting.
- *
- * They are a ceiling and not a target: `narrowestBudget` means a skill, a
- * schedule or a host may lower any of them and none may raise them. Raising
- * them for a particular run is a control that does not exist yet — the field
- * is on `CreateRunInput` and nothing on the wire fills it — so this constant
- * is the whole policy, which is exactly why it is stated here rather than
- * defaulted somewhere quieter.
+/*
+ * The ceilings a run is dispatched with are `DEFAULT_RUN_BUDGET` in
+ * src/lib/work/budget.ts — hoisted out of this file so the scheduler, the
+ * run-now route and the composer's own "Stops at $2" sentence read the one
+ * constant rather than each keeping a copy. Nothing wrote a budget before it
+ * existed, and a zero budget is what `MAX_STEPS_PER_RUN = 200` alone bounds:
+ * two hundred model turns on a frontier model for a task that went in a circle
+ * at step eleven.
  */
-const DEFAULT_RUN_BUDGET: WorkBudget = {
-  maxCostMicroUsd: 2_000_000,
-  maxTokens: 600_000,
-  maxRuntimeMs: 20 * 60_000,
-};
 
 /**
  * What a host can currently do, from what the host itself advertised.

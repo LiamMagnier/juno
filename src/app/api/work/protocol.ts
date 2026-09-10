@@ -22,6 +22,7 @@ import {
   WORK_TARGETS,
   describeCapability,
   hostStateFor,
+  isTerminalStatus,
   mayBeCoveredByStandingAllowance,
   selectTarget,
   type TargetSelection,
@@ -34,6 +35,7 @@ import {
   type WorkStatus,
 } from "@/lib/work/domain";
 import { hostCapabilityView, type WorkHostRow } from "@/lib/work/schedule";
+import { matchesFilter, type RecentItem } from "@/lib/work/recents";
 import { verifyApproval } from "@/lib/work/digests";
 import { MAX_SKILL_SLUG_CHARS } from "@/lib/work/skills";
 import { REASONING_TIERS } from "@/lib/model-metrics";
@@ -868,6 +870,71 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
       limit: limitParam(params.get("limit"), SESSION_LIST_DEFAULT_LIMIT, SESSION_LIST_MAX_LIMIT),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Session counts — the inbox's pills and the sidebar badge
+// ---------------------------------------------------------------------------
+
+/** One row of `groupBy(status, needsAttention)` over the account's live sessions. */
+export interface SessionStatusTally {
+  status: string;
+  needsAttention: boolean;
+  count: number;
+}
+
+/**
+ * The four counts the server can answer for the whole account.
+ *
+ * `scheduled` and `unread` are deliberately absent: one is a fact about the
+ * schedule list and the other about this browser's history with a row, and
+ * neither is something the session table knows.
+ */
+export interface WorkTriageCounts {
+  needs_you: number;
+  in_progress: number;
+  done: number;
+  all: number;
+}
+
+/**
+ * The counts, from a status tally rather than from a page of rows.
+ *
+ * The inbox used to count over the newest forty sessions, so a task that had
+ * been waiting on an approval since last week — with forty newer tasks above
+ * it — vanished from "Needs you" and from its number. A group-by over the
+ * account is one indexed query and cannot lose a row to a page size.
+ *
+ * The predicates are `matchesFilter`'s, not restated: that function is the one
+ * definition of "running" and "needs attention" the sidebar's Recents list and
+ * the inbox both render from, and a third copy here would let the badge and
+ * the list disagree about the case it went to the trouble of writing down —
+ * that a task waiting on an approval is NOT running.
+ */
+export function tallyTriageCounts(rows: readonly SessionStatusTally[]): WorkTriageCounts {
+  const counts: WorkTriageCounts = { needs_you: 0, in_progress: 0, done: 0, all: 0 };
+  for (const row of rows) {
+    if (!(WORK_STATUSES as readonly string[]).includes(row.status)) continue;
+    const item: RecentItem = {
+      id: row.status,
+      kind: "work",
+      title: "",
+      updatedAt: "",
+      pinned: false,
+      status: row.status as WorkStatus,
+      needsAttention: row.needsAttention,
+      href: "/work",
+    };
+    counts.all += row.count;
+    if (matchesFilter(item, "needs_attention")) counts.needs_you += row.count;
+    if (matchesFilter(item, "running")) counts.in_progress += row.count;
+    // Terminal AND not needing anybody — `host_offline` is terminal and still a
+    // decision waiting on a person, so it is counted under needs_you instead.
+    if (isTerminalStatus(row.status) && !matchesFilter(item, "needs_attention")) {
+      counts.done += row.count;
+    }
+  }
+  return counts;
 }
 
 // ---------------------------------------------------------------------------

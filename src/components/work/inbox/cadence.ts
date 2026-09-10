@@ -69,24 +69,3 @@ function relativeFuture(ms: number): string {
   const days = Math.round(hours / 24);
   return days === 1 ? "tomorrow" : `in ${days} days`;
 }
-
-/**
- * The same interval, phrased for a heading rather than a metadata line.
- *
- * The schedules page puts this under a task's name, where "Next in 3 hours"
- * reading as a fragment beside a title is worse than a sentence. Split out
- * rather than parameterised, because a boolean argument named `long` at the
- * call site tells the reader nothing about which phrasing they are getting.
- */
-export function cadenceSentence(schedule: ClientWorkSchedule, now: number = Date.now()): string {
-  if (!schedule.enabled) return "Paused. It will not run until you switch it back on.";
-  if (schedule.nextRunAt === null) {
-    const trigger = schedule.triggers.find((candidate) => candidate.enabled);
-    return trigger === undefined
-      ? "Nothing will start this. Add a time or an event trigger."
-      : `Runs when ${describeTrigger(trigger).toLowerCase()}.`;
-  }
-  const at = Date.parse(schedule.nextRunAt);
-  if (Number.isNaN(at)) return "The next run time could not be read.";
-  return `Runs again ${relativeFuture(at - now)}.`;
-}

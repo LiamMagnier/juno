@@ -64,12 +64,14 @@ import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
 import { unattendedRunCeiling } from "@/lib/spend-ceiling";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import { appendEvents, createRun, finishRun } from "@/lib/work/store";
 import {
   WORK_LIVE_STATUSES,
   defaultVisibilityFor,
+  narrowestBudget,
   narrowestPolicy,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
@@ -968,13 +970,19 @@ async function offer(
     requiredCapabilities: runConfig.requiredCapabilities,
     degradation: decision.degradation,
     permissionPolicy,
-    budget: {
-      // Same reason as the scheduler: a trigger-fired run has no human in the
-      // loop, and 0 on this column means unlimited. See `unattendedRunCeiling`.
-      maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
-      maxTokens: schedule.maxTokens,
-      maxRuntimeMs: schedule.maxRuntimeMs,
-    },
+    // Same reason as the scheduler: a trigger-fired run has no human in the
+    // loop, and 0 on this column means unlimited. The unattended cost default
+    // first (`unattendedRunCeiling`), then every axis narrowed against the
+    // standard run budget so a schedule with no figures of its own still has a
+    // token and a runtime ceiling.
+    budget: narrowestBudget(
+      {
+        maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
+        maxTokens: schedule.maxTokens,
+        maxRuntimeMs: schedule.maxRuntimeMs,
+      },
+      DEFAULT_RUN_BUDGET
+    ),
     idempotencyKey,
   });
 

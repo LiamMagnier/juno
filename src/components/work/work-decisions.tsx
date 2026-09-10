@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { Send } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Pressable } from "@/components/ui/pressable";
+import { WORK_THREAD_COMPOSER_FIELD_ID } from "@/components/work/composer/work-thread-composer";
 import {
   WORK_APPROVAL_DECISIONS,
   WORK_RISK_LEVELS,
@@ -90,21 +90,42 @@ export function deriveOpenQuestions(events: readonly ClientWorkEvent[]): OpenQue
   return [...open.values()];
 }
 
+/**
+ * The question, as a summary with the quick picks — not a second input.
+ *
+ * This card used to carry its own text field and Send, while the composer at
+ * the bottom of the conversation was in `answer` mode for the very same
+ * question: one question, two inputs, and the transcript turn making a third
+ * rendering. The composer is the single place typed answers go now; the card
+ * keeps the options (one press, no typing) and a "Reply below" that puts the
+ * cursor in the composer, because the card lives in the rail column and the
+ * box is at the bottom of the other one.
+ */
 export function WorkQuestionCard({
   question,
   busy,
   onAnswer,
+  current = true,
 }: {
   question: OpenQuestion;
   busy: boolean;
+  /** Answers with one of the question's own options. Typed answers go below. */
   onAnswer: (questionId: string, text: string) => void;
+  /** False for a second open question the composer is not yet answering. */
+  current?: boolean;
 }) {
-  const [draft, setDraft] = React.useState("");
   const answer = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
-    setDraft("");
     onAnswer(question.id, trimmed);
+  };
+
+  const replyBelow = () => {
+    const field = document.getElementById(WORK_THREAD_COMPOSER_FIELD_ID);
+    if (field instanceof HTMLTextAreaElement) {
+      field.focus();
+      field.scrollIntoView({ block: "nearest" });
+    }
   };
 
   return (
@@ -140,27 +161,22 @@ export function WorkQuestionCard({
           ))}
         </div>
       )}
-      <div className="mt-2.5 flex items-center gap-2">
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") answer(draft);
-          }}
-          disabled={busy}
-          placeholder="Type your answer"
-          aria-label={`Answer: ${question.question}`}
-          className="h-9 flex-1"
-        />
-        <Button
-          size="icon-sm"
-          disabled={busy || draft.trim().length === 0}
-          onClick={() => answer(draft)}
-          aria-label="Send answer"
-          className="size-9 shrink-0"
-        >
-          <Send className="size-3.5" aria-hidden="true" />
-        </Button>
+      <div className="mt-2.5">
+        {current ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={replyBelow}
+            className="h-7 gap-1.5"
+            aria-label="Reply in the message box below"
+          >
+            <ArrowDown className="size-3.5" aria-hidden="true" /> Reply below
+          </Button>
+        ) : (
+          <p className="text-caption leading-relaxed text-muted-foreground">
+            Answer the question above it first; this one is next.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -31,24 +31,32 @@ import type {
  * reads it can be diffed against the same paragraph instead of against each
  * other. The endpoints, exactly as they exist under src/app/api/work:
  *
- *   GET  /api/work/sessions?limit=N        → { sessions: ClientWorkSession[] }
+ *   GET  /api/work/sessions?limit=N&archived=&needsAttention=&status=&projectId=
+ *          → { sessions: (ClientWorkSession & { currentStep })[] }
+ *   GET  /api/work/sessions/counts         → { counts: { needs_you, in_progress,
+ *                                              done, all } }  ← whole account
  *   POST /api/work/sessions                { goal, title?, requestedTarget,
  *                                            preferredHostId?, projectId?, model?,
- *                                            reasoningEffort?, attachmentIds?,
+ *                                            reasoningEffort?, permissionPolicy?,
+ *                                            attachmentIds?, connectorIds?,
  *                                            idempotencyKey? }
  *          201 → { session }               ← a DRAFT. Nothing is dispatched.
- *   GET  /api/work/sessions/[id]           → { session, run }   (run = newest attempt)
+ *   GET  /api/work/sessions/[id]           → { session, run, approvals }
+ *   DELETE /api/work/sessions/[id]         → { ok }   ← soft; stops a live run first
  *   POST /api/work/sessions/[id]/runs      { origin?, requiredCapabilities?,
- *                                            requestedTarget?, model?,
- *                                            reasoningEffort?, idempotencyKey? }
- *          201 → { run, selection }
+ *                                            requestedTarget?, permissionPolicy?,
+ *                                            model?, reasoningEffort?,
+ *                                            confirmExpensive?, idempotencyKey? }
+ *          201 → { run, selection, approvalMode, preflight? }
  *          409 → { error: "no_executor_available" | "session_already_running" |
  *                  "expensive_confirmation_required", message, missing?,
  *                  degradation?, confirmation? }
  *          429 → { error: "run_cap_exceeded" | "dispatch_in_flight", message }
  *   GET  /api/work/sessions/[id]/events?runId=<id>&after=<seq>   (SSE)
- *          data: { type: "snapshot" | "events" | "done", session, run, events }
+ *          data: { type: "snapshot" | "events" | "done", session, run, events,
+ *                  approvals }
  *   POST /api/work/sessions/[id]/answer    { questionId, text, idempotencyKey? }
+ *                                          | { text }  ← a steer, no question
  *          409 → { error: "run_not_waiting_input", message, status }
  *   POST /api/work/runs/[runId]/control    { action: "pause" | "resume" | "cancel" }
  *          409 → { error, message, status }
@@ -66,7 +74,12 @@ import type {
  *                                            permissionPolicy?, projectId?,
  *                                            connectorIds?, attachmentIds?,
  *                                            skillSlug? }
- *          → { session?, context?, applied?: [{ field, timing, explanation }] }
+ *          → { session, context, applied: [{ field: "files" | "connectors" |
+ *              "skill" | "model" | "reasoningEffort" | "permissionPolicy" |
+ *              "project", change, effect: "now" | "next_attempt" | "none",
+ *              explanation, inFlightCaveat? }] }
+ *            ← `readWorkSessionContextUpdate` maps those field names onto
+ *              the request keys above; `skill` is always `refused`.
  *   GET  /api/work/schedules?limit=N       → { schedules: ClientWorkSchedule[] }
  *   POST /api/work/schedules               → 201 { schedule }
  *   GET|PATCH|DELETE /api/work/schedules/[id]
@@ -113,6 +126,13 @@ export const WORK_SYNC_EVENT = "juno:work-sync";
 
 /** How often a mounted Work surface re-reads sessions and hosts while visible. */
 export const WORK_POLL_MS = 30_000;
+
+/**
+ * The inbox's poll while any row is executing. The task page updates about
+ * once a second off its stream; a list thirty seconds behind the page it links
+ * to reads as two products. Five seconds is the executor's own tick.
+ */
+export const WORK_LIVE_POLL_MS = 5_000;
 
 // ---------------------------------------------------------------------------
 // Outcomes
@@ -361,15 +381,70 @@ export function workIdempotencyKey(): string {
 // Sessions, runs and hosts
 // ---------------------------------------------------------------------------
 
+/**
+ * A session as the list route returns it: the row, plus the plan step the
+ * executing attempt is on. `currentStep` is the list route's own addition — see
+ * the note in `GET /api/work/sessions` — and is null for a row that is not
+ * executing, or one whose run has not started a step yet.
+ */
+export interface WorkInboxSession extends ClientWorkSession {
+  currentStep: string | null;
+}
+
 export function fetchWorkSessions(
-  limit = 40,
-  /** Ask for the put-away rows instead of the live ones. */
-  archived = false,
-): Promise<WorkResult<ClientWorkSession[]>> {
-  return get(
-    `/api/work/sessions?limit=${limit}${archived ? "&archived=true" : ""}`,
-    (data) => list<ClientWorkSession>(data.sessions),
+  options: {
+    limit?: number;
+    /** Ask for the put-away rows instead of the live ones. */
+    archived?: boolean;
+    /** Only the rows blocked on a person — the whole account's, not a page's. */
+    needsAttention?: boolean;
+  } = {}
+): Promise<WorkResult<WorkInboxSession[]>> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 40) });
+  if (options.archived) query.set("archived", "true");
+  if (options.needsAttention) query.set("needsAttention", "true");
+  return get(`/api/work/sessions?${query.toString()}`, (data) =>
+    list<Record<string, unknown>>(data.sessions).map((entry) => ({
+      ...(entry as unknown as ClientWorkSession),
+      currentStep: text(entry, "currentStep"),
+    }))
   );
+}
+
+/** The four counts the server keeps for the whole account. See the counts route. */
+export interface WorkTriageCounts {
+  needs_you: number;
+  in_progress: number;
+  done: number;
+  all: number;
+}
+
+function count(source: Record<string, unknown>, key: string): number {
+  const value = source[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+export function fetchWorkTriageCounts(): Promise<WorkResult<WorkTriageCounts>> {
+  return get("/api/work/sessions/counts", (data) => {
+    const raw =
+      data.counts !== null && typeof data.counts === "object" && !Array.isArray(data.counts)
+        ? (data.counts as Record<string, unknown>)
+        : {};
+    return {
+      needs_you: count(raw, "needs_you"),
+      in_progress: count(raw, "in_progress"),
+      done: count(raw, "done"),
+      all: count(raw, "all"),
+    };
+  });
+}
+
+/**
+ * Soft-deletes a task. The route stops any attempt still executing first, so
+ * a deleted task cannot go on spending a budget from outside every list.
+ */
+export function deleteWorkSession(sessionId: string): Promise<WorkResult<null>> {
+  return remove(`/api/work/sessions/${sessionId}`, () => null);
 }
 
 export function fetchWorkHosts(): Promise<WorkResult<ClientWorkHost[]>> {
@@ -608,6 +683,12 @@ export interface StartWorkRunInput {
   requiredCapabilities?: readonly WorkCapability[];
   /** Overrides the session's own target for this attempt only. */
   requestedTarget?: "automatic" | "cloud" | "local";
+  /**
+   * Overrides the session's approval mode for this attempt only — "run it
+   * again and stop asking". Attempt-scoped on the server too: the run's own
+   * policy blob is written per attempt, so this never leaks into the next one.
+   */
+  permissionPolicy?: WorkPermissionPolicy;
   /** Overrides the session's model for this attempt only. */
   model?: string | null;
   /** Absent, a tier, or null for Instant — read the way `CreateWorkSessionInput` describes. */
@@ -644,6 +725,9 @@ export function startWorkRun(
         ? {}
         : { requiredCapabilities: [...input.requiredCapabilities] }),
       ...(input.requestedTarget === undefined ? {} : { requestedTarget: input.requestedTarget }),
+      ...(input.permissionPolicy === undefined
+        ? {}
+        : { permissionPolicy: input.permissionPolicy }),
       ...(input.model ? { model: input.model } : {}),
       ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
       ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
@@ -811,14 +895,30 @@ export const WORK_CONTEXT_FIELDS = [
 
 export type WorkContextField = (typeof WORK_CONTEXT_FIELDS)[number];
 
-/** When a saved change reaches the work: now, at the next attempt, or unsaid. */
-export type WorkContextTiming = "now" | "next_attempt" | "unstated";
+/**
+ * When a saved change reaches the work.
+ *
+ * `none` is the server's own word for "nothing changed, or the change was
+ * refused" (`WorkContextEffect` in protocol.ts); `unstated` is this client's
+ * word for a response that carried no timing at all, which only an older
+ * deployment of the route would send.
+ */
+export type WorkContextTiming = "now" | "next_attempt" | "none" | "unstated";
 
 export interface WorkContextChange {
   field: WorkContextField;
   timing: WorkContextTiming;
+  /** True when the route understood the change and declined it — the skill. */
+  refused: boolean;
   /** The server's own sentence about this field, when it wrote one. */
   explanation: string | null;
+  /**
+   * The route's warning that the attempt now running keeps what it was already
+   * handed — a revoked file it has read, an app whose socket is open. Sent only
+   * with `effect: "now"` on a live run, and the one sentence that keeps that
+   * "now" honest.
+   */
+  inFlightCaveat: string | null;
 }
 
 /**
@@ -860,17 +960,44 @@ export interface WorkSessionContextInput {
   skillSlug?: string | null;
 }
 
-const CONTEXT_FIELD_NAMES = new Set<string>(WORK_CONTEXT_FIELDS);
 const POLICY_NAMES = new Set<string>(WORK_PERMISSION_POLICIES);
 
 /**
- * The timing of one field, read the several ways a route might state it.
+ * The route's field names, mapped onto the request keys this file sends.
+ *
+ * The route answers in the reader's nouns (`files`, `connectors`, `skill`,
+ * `project` — `WORK_CONTEXT_FIELDS` in protocol.ts) while the request body is
+ * keyed by column (`attachmentIds`, …). Until this table existed the client
+ * only recognised its own request keys, so every verdict about files, apps, the
+ * project or the skill was dropped on the floor and the composer printed a
+ * fallback sentence in its place — including the one case where the route had
+ * something urgent to say, the in-flight caveat on a revoked grant.
+ */
+const SERVER_FIELD_ALIAS: Record<string, WorkContextField> = {
+  files: "attachmentIds",
+  attachmentIds: "attachmentIds",
+  connectors: "connectorIds",
+  connectorIds: "connectorIds",
+  skill: "skillSlug",
+  skillSlug: "skillSlug",
+  project: "projectId",
+  projectId: "projectId",
+  model: "model",
+  reasoningEffort: "reasoningEffort",
+  permissionPolicy: "permissionPolicy",
+};
+
+/**
+ * The timing of one field, read from the route's `effect` first and then the
+ * older spellings a previous deployment might still send.
  *
  * Tolerant in the direction that cannot mislead: anything unrecognised is
  * `unstated` rather than `now`. Reading an unknown word as "in effect now" is
  * how a UI comes to assert something the run never saw.
  */
 function contextTiming(entry: Record<string, unknown>): WorkContextTiming {
+  const effect = text(entry, "effect");
+  if (effect === "now" || effect === "next_attempt" || effect === "none") return effect;
   if (entry.appliesNow === true) return "now";
   if (entry.appliesNow === false) return "next_attempt";
   const stated = text(entry, "timing") ?? text(entry, "appliesTo") ?? text(entry, "effective");
@@ -888,19 +1015,39 @@ function contextChanges(raw: unknown): WorkContextChange[] {
   return raw.flatMap((entry) => {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
     const record = entry as Record<string, unknown>;
-    const field = text(record, "field") ?? text(record, "name");
+    const named = text(record, "field") ?? text(record, "name");
     // A field name this bundle does not know is dropped rather than carried as
     // a string: everything downstream indexes a label off it, and an unlabelled
     // note under the composer says less than no note at all.
-    if (field === null || !CONTEXT_FIELD_NAMES.has(field)) return [];
+    const field = named === null ? undefined : SERVER_FIELD_ALIAS[named];
+    if (field === undefined) return [];
     return [
       {
-        field: field as WorkContextField,
+        field,
         timing: contextTiming(record),
+        refused: text(record, "change") === "refused",
         explanation: text(record, "explanation") ?? text(record, "message"),
+        inFlightCaveat: text(record, "inFlightCaveat"),
       },
     ];
   });
+}
+
+/**
+ * The PATCH response, picked apart. Exported so a test can feed a body built
+ * from the route's own `describeGrantChange` / `SKILL_NOT_EDITABLE` through the
+ * same reader the composer uses — the two halves of this contract are owned by
+ * different files, and a disagreement between them is invisible in the browser
+ * (the composer prints a fallback sentence rather than an error).
+ */
+export function readWorkSessionContextUpdate(
+  data: Record<string, unknown>
+): WorkSessionContextUpdate {
+  return {
+    session: (data.session as ClientWorkSession | undefined) ?? null,
+    context: contextValues(data.context),
+    changes: contextChanges(data.applied ?? data.changes ?? data.fields),
+  };
 }
 
 function stringList(raw: unknown): string[] | undefined {
@@ -983,11 +1130,7 @@ export function updateWorkSessionContext(
       ...(input.attachmentIds === undefined ? {} : { attachmentIds: [...input.attachmentIds] }),
       ...(input.skillSlug === undefined ? {} : { skillSlug: input.skillSlug }),
     },
-    (data) => ({
-      session: (data.session as ClientWorkSession | undefined) ?? null,
-      context: contextValues(data.context),
-      changes: contextChanges(data.applied ?? data.changes ?? data.fields),
-    })
+    readWorkSessionContextUpdate
   );
 }
 
@@ -1024,10 +1167,20 @@ export interface WorkScheduleInput {
   missedRunPolicy: string;
   notifyPolicy: string;
   maxConcurrentRuns: number;
+  /**
+   * Per-run ceilings. Zero on any axis means "no ceiling of the schedule's
+   * own" — the standard run budget then applies, because the dispatchers merge
+   * this with `DEFAULT_RUN_BUDGET` through `narrowestBudget`.
+   */
+  budget?: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
+  /** The model every fire runs on. Null clears the override; absent leaves it. */
+  model?: string | null;
 }
 
 function scheduleBody(input: WorkScheduleInput): Record<string, unknown> {
   return {
+    ...(input.budget === undefined ? {} : { budget: input.budget }),
+    ...(input.model === undefined ? {} : { model: input.model }),
     name: input.name,
     instructions: input.instructions,
     timezone: input.timezone,
@@ -1294,8 +1447,23 @@ export interface WorkArtifactVersion {
   runId: string | null;
   /** Whether the validator re-opened this version's bytes successfully. */
   validated: boolean;
+  /**
+   * What the validator objected to, in its own sentences. Empty when it passed
+   * or when the verdict was written by a build that recorded none — the card
+   * says "not confirmed to open" for both; this is the half that says why.
+   */
+  problems: string[];
   provenance: WorkProvenanceEntry[];
   createdAt: string;
+}
+
+/** The validator's objections, read out of the stored verdict. */
+function versionProblems(raw: unknown): string[] {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const problems = (raw as Record<string, unknown>).problems;
+  return Array.isArray(problems)
+    ? problems.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    : [];
 }
 
 export interface WorkArtifactDetail {
@@ -1334,6 +1502,7 @@ export function fetchWorkArtifact(id: string): Promise<WorkResult<WorkArtifactDe
       origin: text(version, "origin") ?? "generated",
       runId: text(version, "runId"),
       validated: versionValidated(version.validation),
+      problems: versionProblems(version.validation),
       provenance: provenanceFrom(version.provenance),
       createdAt: text(version, "createdAt") ?? "",
     })),
@@ -1560,13 +1729,6 @@ export function hostCapabilities(host: ClientWorkHost): WorkCapability[] {
     background_continuation: host.allowsBackground,
   };
   return advertised.filter((capability) => permitted[capability] !== false);
-}
-
-/** Capabilities a Mac advertises but has switched off — the reason it is degraded. */
-export function hostWithheldCapabilities(host: ClientWorkHost): WorkCapability[] {
-  const advertised = capabilitiesFrom(host.capabilities);
-  const granted = new Set(hostCapabilities(host));
-  return advertised.filter((capability) => !granted.has(capability));
 }
 
 /**

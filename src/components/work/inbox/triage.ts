@@ -195,7 +195,7 @@ export function matchesTriage(
  *      what the approval is holding up and for how long.
  *   2. It is an observation, never a diagnosis. Juno does not know a quiet run
  *      is stuck, so the row reports the silence and leaves the conclusion to
- *      the reader — the same rule `statusActivity` follows.
+ *      the reader — the same rule `quietLine` follows.
  *   3. It is written for somebody who does not work here. No status token, no
  *      terminal reason spelled as an identifier, no "executor".
  *
@@ -257,10 +257,12 @@ export function rowStatus(
     schedule?: ClientWorkSchedule | null;
     /** The run's own terminal reason, when the list has been told one. */
     terminalReason?: string | null;
+    /** The plan step the executing attempt is on, when the list route read one. */
+    currentStep?: string | null;
     now?: number;
   } = {}
 ): RowStatus {
-  const { outputCount, schedule = null, terminalReason = null } = context;
+  const { outputCount, schedule = null, terminalReason = null, currentStep = null } = context;
   const status: WorkStatus = session.status;
 
   switch (status) {
@@ -279,7 +281,10 @@ export function rowStatus(
     case "paused":
       return { line: "Paused by you. It will pick up where it stopped.", tone: "neutral" };
     case "running":
-      return { line: "Working on it now.", tone: "live" };
+      // The step, when the list was told one. "Working on it now." is the pill
+      // restated; the step title is what a reader triaging the list wants, and
+      // it is what the task page's own plan shows in bold.
+      return { line: currentStep === null ? "Working on it now." : currentStep, tone: "live" };
     case "cancelled":
       return { line: FAILURE_LINE.cancelled, tone: "neutral" };
     case "interrupted":
@@ -343,11 +348,20 @@ export function canRunAgain(session: ClientWorkSession): boolean {
 /**
  * Whether a session is blocked on a person right now.
  *
- * A named predicate rather than the expression inline, because it is asked in
- * four places — the pill count, the nav badge, the row mark, and the document
- * title — and four copies of it is four chances for the badge and the list to
- * disagree about how many things need you.
+ * A named predicate rather than the expression inline: the sidebar badge
+ * (`useWorkNeedsYouCount`) and the `needsAttention=true` list are two readers
+ * of the same rows, and one definition is what keeps the badge and the inbox's
+ * "Needs you" pill from disagreeing about how many things need you.
  */
 export function needsYou(session: ClientWorkSession): boolean {
   return session.needsAttention || statusNeedsAttention(session.status);
+}
+
+/**
+ * Whether a session is on the ladder from a failed or stranded attempt to a
+ * cloud retry: the two terminal states a Mac produces and the cloud does not.
+ * `POST …/runs` takes `requestedTarget: "cloud"` for exactly this move.
+ */
+export function canRunInCloudInstead(session: ClientWorkSession): boolean {
+  return session.status === "host_offline" || session.status === "interrupted";
 }

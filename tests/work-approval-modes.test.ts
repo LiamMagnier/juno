@@ -306,7 +306,7 @@ test("Skip on a Mac advertising something stricter resolves to the Mac's", () =>
   // And the sentence names the machine, because "your setting was ignored" with
   // no subject sends the reader looking for a bug.
   assert.match(onManualMac.explanation, /Robin’s MacBook/);
-  assert.match(onManualMac.explanation, /Manual/);
+  assert.match(onManualMac.explanation, /Ask before every change/);
 
   const onAutoMac = resolveApprovalMode({ requested: "permissive", host: "balanced" });
   assert.equal(onAutoMac.policy, "balanced");

@@ -5,7 +5,6 @@ import { Loader2, Mic, Plus } from "lucide-react";
 import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
-  ComposerDivider,
   ComposerPrimaryAction,
   ComposerShell,
   composerFieldClass,
@@ -26,6 +25,7 @@ import {
 } from "@/components/work/composer/work-thread-controls";
 import { useWorkThreadContext } from "@/components/work/composer/use-work-thread-context";
 import { useWorkThreadFiles } from "@/components/work/composer/work-thread-files";
+import { useComposerProjects } from "@/components/work/composer-home/use-composer-projects";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -102,15 +102,21 @@ import { cn, formatBytes } from "@/lib/utils";
  * middle of. Sending is gated on the button and on the Enter handler instead,
  * which is where the guard belongs.
  *
- * ── One primary button, three jobs ─────────────────────────────────────────
+ * ── One primary button, one job ────────────────────────────────────────────
  *
- * The button on the right is the same control chat's composer runs: with
- * nothing to send and a voice relay available it IS the voice launcher, and the
- * moment there is anything to send it morphs into Send in place. See
- * `showVoiceButton` in `chat/composer.tsx`. It used to be a second, separate
- * button beside Send, which is two entry points a centimetre apart for a
- * conversation and a message — and it drifted from chat within one release.
+ * The button on the right is Send, and only Send — the same control row every
+ * composer in the product now draws: [+] on the left; project (only once one
+ * is chosen), approval mode, model, dictate and Send on the right. The spoken
+ * conversation is a row in the [+] ("Talk it through"). It used to be the
+ * primary action's empty-field face, and before that a second button beside
+ * Send; both were entry points that drifted from chat within a release.
  */
+
+/**
+ * The field's id, so the question card in the other column can put the cursor
+ * here: the composer in `answer` mode is the one place a typed answer goes.
+ */
+export const WORK_THREAD_COMPOSER_FIELD_ID = "work-thread-composer-field";
 
 /** What the box is for right now. There is no "closed" — that was the bug. */
 export type WorkComposerMode =
@@ -218,6 +224,8 @@ export function WorkThreadComposer({
    * the menu lost the upload. See `useWorkThreadFiles`.
    */
   const files = useWorkThreadFiles(context);
+  /** The account's projects, shared by the [+] (filing) and the chip (changing). */
+  const projects = useComposerProjects();
 
   /*
    * The library dialog, mounted here rather than in the [+] panel.
@@ -288,7 +296,6 @@ export function WorkThreadComposer({
   );
 
   const canSend = draft.trim().length > 0 && !sending;
-  const showVoiceButton = !sending && !canSend && !!onOpenVoiceMode;
 
   return (
     <DictationSwap
@@ -413,6 +420,7 @@ export function WorkThreadComposer({
           }
           field={
             <textarea
+              id={WORK_THREAD_COMPOSER_FIELD_ID}
               ref={textareaRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -466,18 +474,27 @@ export function WorkThreadComposer({
                     <WorkThreadAddPanel
                       context={context}
                       files={files}
+                      projects={projects}
                       onOpenLibrary={openLibrary}
+                      onTalk={
+                        onOpenVoiceMode === undefined
+                          ? undefined
+                          : () => {
+                              setAddOpen(false);
+                              onOpenVoiceMode();
+                            }
+                      }
                     />
                   </PopoverContent>
                 </Popover>
-
-                {/* The standing context of the task — how often it asks, where
-                    it is filed — on the same row as everything else. */}
-                <WorkThreadRunContext context={context} />
             </>
           }
           trailing={
             <>
+                {/* The standing context of the task — where it is filed (only
+                    once it is), how often it asks — then the model, on the
+                    right with everything else that is spent on the message. */}
+                <WorkThreadRunContext context={context} projects={projects} />
                 <WorkThreadModelControl context={context} />
 
                 {speechSupported && (
@@ -504,21 +521,22 @@ export function WorkThreadComposer({
                     <TooltipContent>Dictate</TooltipContent>
                   </Tooltip>
                 )}
-
-                <ComposerDivider />
             </>
           }
           action={
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    {/* Send, and only Send: the spoken conversation is a row in
+                        the [+], and a send in flight holds the button rather
+                        than swapping it for a spinner face. */}
                     <ComposerPrimaryAction
-                      face={sending ? "busy" : showVoiceButton ? "voice" : "send"}
-                      onClick={showVoiceButton ? onOpenVoiceMode : () => void submit(draft)}
-                      disabled={showVoiceButton ? false : !canSend}
-                      aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
+                      face="send"
+                      onClick={() => void submit(draft)}
+                      disabled={!canSend}
+                      aria-label={sendLabel(mode)}
                     />
                   </TooltipTrigger>
-                  <TooltipContent>{showVoiceButton ? "Voice conversation" : "Send"}</TooltipContent>
+                  <TooltipContent>Send</TooltipContent>
                 </Tooltip>
           }
         />

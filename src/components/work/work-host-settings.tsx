@@ -8,6 +8,8 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import {
+  WORK_APPROVAL_MODE_LABEL,
+  WORK_APPROVAL_MODE_SUMMARY,
   WORK_PERMISSION_POLICIES,
   type WorkAccessMode,
   type WorkCapability,
@@ -195,11 +197,14 @@ function ToggleRow({
 // Approval policy
 // ---------------------------------------------------------------------------
 
-const POLICY_LABEL: Record<WorkPermissionPolicy, string> = {
-  conservative: "Ask a lot",
-  balanced: "Ask about commands",
-  permissive: "Ask rarely",
-};
+/*
+ * The three modes wear `WORK_APPROVAL_MODE_LABEL` and `WORK_APPROVAL_MODE_SUMMARY`
+ * here, the same words the composer's chip and the task page use. This panel
+ * used to relabel the same enum "Ask a lot / Ask about commands / Ask rarely"
+ * with its own three sentences underneath — a second vocabulary for one
+ * setting, on the one surface a reader reaches from a task that was already
+ * described in the first.
+ */
 
 /**
  * Policy strength, so a segment looser than the Mac's can be drawn unavailable.
@@ -214,22 +219,6 @@ const POLICY_RANK: Record<WorkPermissionPolicy, number> = {
   conservative: 0,
   balanced: 1,
   permissive: 2,
-};
-
-/**
- * What each policy actually rules, taken from `WorkRisk.ruling`.
- *
- * The ladder is: `conservative` allows only a plain read; `balanced` also allows
- * an edit; `permissive` allows a command too. Nothing above that is on the
- * ladder at all — sensitive and irreversible actions ask under every policy, and
- * there is no setting anywhere that turns that off, which is why it is stated
- * once beneath the control rather than folded into the "Ask rarely" sentence
- * where it would read like a caveat on one option.
- */
-const POLICY_DETAIL: Record<WorkPermissionPolicy, string> = {
-  conservative: "Juno asks before changing a file or running a command. Reading goes ahead.",
-  balanced: "Juno edits files without asking, and asks before running a command.",
-  permissive: "Juno edits files and runs commands without asking.",
 };
 
 // ---------------------------------------------------------------------------
@@ -336,7 +325,7 @@ export function WorkHostSettings({
             onChange={(approvalPolicy) => onPatch({ approvalPolicy })}
             options={WORK_PERMISSION_POLICIES.map((policy) => ({
               value: policy,
-              label: POLICY_LABEL[policy],
+              label: WORK_APPROVAL_MODE_LABEL[policy],
               // The same ceiling as the switches, in three values instead of
               // two: the owner may pick any policy at least as strict as the
               // Mac's, and a looser request lands on the Mac's rather than
@@ -350,11 +339,13 @@ export function WorkHostSettings({
                   POLICY_RANK[policy] > POLICY_RANK[advertisedPolicy]),
             }))}
             ariaLabel="How often Juno asks before acting on this Mac"
-            optionClassName="px-3 py-1 text-ui"
-            className="max-w-md"
+            // The labels are phrases now, not words, so the segments wrap on a
+            // narrow window rather than truncating a promise mid-sentence.
+            optionClassName="whitespace-normal px-3 py-1 text-ui leading-snug"
+            className="max-w-xl"
           />
           <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-            {POLICY_DETAIL[host.approvalPolicy]}
+            {WORK_APPROVAL_MODE_SUMMARY[host.approvalPolicy]}
           </p>
           <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
             Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a
@@ -363,8 +354,8 @@ export function WorkHostSettings({
           </p>
           {advertisedPolicy !== null && POLICY_RANK[advertisedPolicy] < 2 && (
             <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
-              This Mac asked for “{POLICY_LABEL[advertisedPolicy]}”, so that is as relaxed as it
-              goes from here. Loosen it in Juno on the Mac itself.
+              This Mac asked for “{WORK_APPROVAL_MODE_LABEL[advertisedPolicy]}”, so that is as
+              relaxed as it goes from here. Loosen it in Juno on the Mac itself.
             </p>
           )}
         </div>

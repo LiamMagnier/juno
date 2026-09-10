@@ -309,7 +309,9 @@ async function downloadProblem(response: Response, fallback: string): Promise<st
 const UNREACHABLE = "Couldn’t reach the file. The download beside it is unaffected.";
 
 // ---------------------------------------------------------------------------
-// The dialogs
+// The previewers — each a hook that owns the bytes, a body that draws them,
+// and two shells: the dialog the row opens, and the inline panel the task
+// page's main column renders
 // ---------------------------------------------------------------------------
 
 /** What every previewer here needs, and nothing else. `version` travels with
@@ -340,7 +342,58 @@ export function WorkDeliverablePreview({ kind, ...props }: PreviewProps & { kind
   return <WorkSitePreview {...props} />;
 }
 
-function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
+/**
+ * The same preview, in the page rather than over it.
+ *
+ * The task page puts the deliverable where a reader looks first — the main
+ * column, above the conversation — and this is what it draws there. Same hook,
+ * same body, same sandbox as the dialog; only the shell differs. `active` is
+ * always true here: an inline preview is on screen for as long as it is
+ * mounted, and it re-reads when the version changes exactly as the dialog
+ * re-reads on every open.
+ */
+export function WorkDeliverableInlinePreview({
+  kind,
+  artifactId,
+  version,
+  title,
+}: {
+  kind: string;
+  artifactId: string;
+  version: number;
+  title: string;
+}) {
+  if (!canPreviewArtifact(kind)) return null;
+  if (kind === "report") {
+    return (
+      <div className="max-h-[min(40rem,70vh)] overflow-y-auto overscroll-contain rounded-field border border-border/60 bg-card px-5 py-4">
+        <ReportPreviewBody artifactId={artifactId} version={version} active />
+      </div>
+    );
+  }
+  return (
+    <div className="h-[min(36rem,70vh)] overflow-hidden rounded-field border border-border/60 bg-card">
+      <SitePreviewBody artifactId={artifactId} version={version} title={title} active />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sites
+// ---------------------------------------------------------------------------
+
+/**
+ * The site's bytes, its entry list and the page on screen.
+ *
+ * `active` is the dialog's `open`, or true for the inline panel. Going inactive
+ * frees the archive: a decompressed 50 MB site held behind a closed dialog,
+ * once per document row, is not a thing a Work thread should carry. Going
+ * active re-reads rather than reusing — a scheduled task can write a new
+ * version while this row is on screen, and showing bytes that are no longer
+ * the current ones is exactly the confusion the deliverable pipeline hashes
+ * against everywhere else.
+ */
+function useSitePreview(artifactId: string, version: number, active: boolean) {
   const [state, setState] = React.useState<LoadState>({ kind: "loading" });
   const [path, setPath] = React.useState(INDEX_PAGE);
   const [html, setHtml] = React.useState<string | null>(null);
@@ -349,13 +402,13 @@ function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: Pre
   // Held rather than re-read: opening a second page must not re-download 50 MB.
   const zipRef = React.useRef<JSZip | null>(null);
   /*
-   * Which open this work belongs to.
+   * Which activation this work belongs to.
    *
    * A download and an inflate are both long enough to outlive the dialog that
    * asked for them — close it and reopen it and there are two of each in
-   * flight, racing to write `zipRef` and the state. Bumped on every open and on
-   * every close, and checked after each await, so the loser drops out instead of
-   * pushing an older bundle over a newer one.
+   * flight, racing to write `zipRef` and the state. Bumped on every activation
+   * and every deactivation, and checked after each await, so the loser drops
+   * out instead of pushing an older bundle over a newer one.
    */
   const generation = React.useRef(0);
 
@@ -426,21 +479,13 @@ function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: Pre
   }, [artifactId, version]);
 
   React.useEffect(() => {
-    if (!open) {
-      // Closing frees the archive. This component stays mounted while shut — so
-      // that Radix can play the dialog's own exit rather than having it yanked
-      // out from under it — and a decompressed 50 MB site held behind a closed
-      // dialog, once per document row, is not a thing a Work thread should carry.
+    if (!active) {
       generation.current += 1;
       zipRef.current = null;
       return;
     }
-    // Re-read on every open rather than once: a scheduled task can write a new
-    // version while this row is on screen, and showing bytes that are no longer
-    // the current ones is exactly the confusion the deliverable pipeline hashes
-    // against everywhere else.
     void load();
-  }, [open, load]);
+  }, [active, load]);
 
   // The page's own markup, inflated the first time it is asked for.
   React.useEffect(() => {
@@ -489,6 +534,56 @@ function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: Pre
     return () => window.removeEventListener("message", onMessage);
   }, [state]);
 
+  return { state, path, setPath, html, pageProblem, frameRef, load };
+}
+
+/** The frame and its three waiting states. Fills whatever box it is put in. */
+function SitePreviewBody({
+  artifactId,
+  version,
+  title,
+  active,
+}: {
+  artifactId: string;
+  version: number;
+  title: string;
+  active: boolean;
+}) {
+  const site = useSitePreview(artifactId, version, active);
+
+  if (site.state.kind === "loading") return <PreviewWait label="Unpacking the site…" />;
+  if (site.state.kind === "failed") {
+    return <PreviewProblem message={site.state.message} onRetry={() => void site.load()} />;
+  }
+  if (site.pageProblem !== null) {
+    return (
+      <PreviewProblem
+        message={site.pageProblem}
+        onRetry={() => site.setPath(INDEX_PAGE)}
+        retryLabel="Back to the first page"
+      />
+    );
+  }
+  if (site.html === null) return <PreviewWait label={`Opening ${site.path}…`} />;
+  return (
+    <iframe
+      ref={site.frameRef}
+      title={`${title} — ${site.path}`}
+      srcDoc={site.html}
+      // No `allow-same-origin`: the opaque origin is what stops anything in
+      // here reaching Juno's cookies or storage. The two popup flags are what
+      // let an external link open as a real tab, and they are only defensible
+      // because the injected nonce means no script from the bundle can ever
+      // run to abuse them.
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+      // The bundle paints its own background for both colour schemes, so a
+      // fill here would flash the wrong one before the page arrives.
+      className="size-full border-0 bg-transparent"
+    />
+  );
+}
+
+function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -503,40 +598,12 @@ function WorkSitePreview({ artifactId, version, title, open, onOpenChange }: Pre
           <DialogDescription>
             {/* Stated plainly because it is the reason this is allowed to
                 exist: the frame reaches neither Juno nor the network. */}
-            Version {version} · <span className="font-mono">{path}</span> · this page runs no script
-            and loads nothing from the network.
+            Version {version} · this page runs no script and loads nothing from the network.
           </DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 overflow-hidden rounded-field border border-border/60 bg-card">
-          {state.kind === "loading" ? (
-            <PreviewWait label="Unpacking the site…" />
-          ) : state.kind === "failed" ? (
-            <PreviewProblem message={state.message} onRetry={() => void load()} />
-          ) : pageProblem !== null ? (
-            <PreviewProblem
-              message={pageProblem}
-              onRetry={() => setPath(INDEX_PAGE)}
-              retryLabel="Back to the first page"
-            />
-          ) : html === null ? (
-            <PreviewWait label={`Opening ${path}…`} />
-          ) : (
-            <iframe
-              ref={frameRef}
-              title={`${title} — ${path}`}
-              srcDoc={html}
-              // No `allow-same-origin`: the opaque origin is what stops anything
-              // in here reaching Juno's cookies or storage. The two popup flags
-              // are what let an external link open as a real tab, and they are
-              // only defensible because the injected nonce means no script from
-              // the bundle can ever run to abuse them.
-              sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
-              // The bundle paints its own background for both colour schemes, so
-              // a fill here would flash the wrong one before the page arrives.
-              className="size-full border-0 bg-transparent"
-            />
-          )}
+          <SitePreviewBody artifactId={artifactId} version={version} title={title} active={open} />
         </div>
       </DialogContent>
     </Dialog>
@@ -553,21 +620,16 @@ type ReportState =
   | { kind: "failed"; message: string };
 
 /**
- * A report's markdown, laid out with the renderer the rest of the product uses.
+ * A report's markdown, read on every activation.
  *
- * Simpler than the site previewer by exactly the amount the format is simpler:
- * one request, one string, no archive to hold open and no second page to
- * navigate to. What it does keep is the generation guard — a close-and-reopen
- * still leaves an in-flight download racing a newer one, and a report that
- * arrives after its dialog was reopened at a different version would otherwise
- * paint the wrong version under the right header.
- *
- * The bytes are read on every open rather than cached for the same reason the
- * site previewer re-reads: a schedule can write v4 while v3 is on screen, and
- * every other part of this pipeline hashes specifically so that nobody is shown
- * bytes that are no longer the current ones.
+ * Simpler than the site hook by exactly the amount the format is simpler: one
+ * request, one string, no archive to hold open and no second page to navigate
+ * to. What it does keep is the generation guard — a close-and-reopen still
+ * leaves an in-flight download racing a newer one, and a report that arrives
+ * after its dialog was reopened at a different version would otherwise paint
+ * the wrong version under the right header.
  */
-function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
+function useReportPreview(artifactId: string, version: number, active: boolean) {
   const [state, setState] = React.useState<ReportState>({ kind: "loading" });
   const generation = React.useRef(0);
 
@@ -617,15 +679,66 @@ function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: P
   }, [artifactId, version]);
 
   React.useEffect(() => {
-    if (!open) {
+    if (!active) {
       // Retires whatever is in flight, and drops the markdown with the state on
-      // the next open. Nothing else is held: there is no archive here.
+      // the next activation. Nothing else is held: there is no archive here.
       generation.current += 1;
       return;
     }
     void load();
-  }, [open, load]);
+  }, [active, load]);
 
+  return { state, load };
+}
+
+/** The laid-out report and its two notes. Scrolls inside whatever holds it. */
+function ReportPreviewBody({
+  artifactId,
+  version,
+  active,
+}: {
+  artifactId: string;
+  version: number;
+  active: boolean;
+}) {
+  const report = useReportPreview(artifactId, version, active);
+
+  if (report.state.kind === "loading") return <PreviewWait label="Reading the report…" />;
+  if (report.state.kind === "failed") {
+    return <PreviewProblem message={report.state.message} onRetry={() => void report.load()} />;
+  }
+  const { imageRefs, truncated, markdown } = report.state;
+  return (
+    <>
+      {(imageRefs > 0 || truncated) && (
+        <div className="mb-4 space-y-1 border-b border-border/60 pb-3">
+          {imageRefs > 0 && (
+            <p className="text-caption leading-relaxed text-muted-foreground">
+              {imageRefs === 1
+                ? "One image is shown as a link rather than loaded"
+                : `${imageRefs} images are shown as links rather than loaded`}
+              , so opening this preview tells nobody’s server that you did.
+            </p>
+          )}
+          {truncated && (
+            <p className="text-caption leading-relaxed text-muted-foreground">
+              Only the first {REPORT_PREVIEW_MAX_CHARS.toLocaleString("en-US")} characters are laid
+              out here. The download has the whole file.
+            </p>
+          )}
+        </div>
+      )}
+      {/* No `sources`: the citation-chip contract belongs to deep research,
+          which hands the model a numbered corpus. A report's own sources are
+          prose written by `sourcesMarkdown`, and resolving a bracket in one
+          positionally into a list this component does not have would attach a
+          confident wrong source to a claim. */}
+      <Markdown content={markdown} />
+    </>
+  );
+}
+
+function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: PreviewProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -651,39 +764,7 @@ function WorkReportPreview({ artifactId, version, title, open, onOpenChange }: P
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain rounded-field border border-border/60 bg-card px-5 py-4">
-          {state.kind === "loading" ? (
-            <PreviewWait label="Reading the report…" />
-          ) : state.kind === "failed" ? (
-            <PreviewProblem message={state.message} onRetry={() => void load()} />
-          ) : (
-            <>
-              {(state.imageRefs > 0 || state.truncated) && (
-                <div className="mb-4 space-y-1 border-b border-border/60 pb-3">
-                  {state.imageRefs > 0 && (
-                    <p className="text-caption leading-relaxed text-muted-foreground">
-                      {state.imageRefs === 1
-                        ? "One image is shown as a link rather than loaded"
-                        : `${state.imageRefs} images are shown as links rather than loaded`}
-                      , so opening this preview tells nobody’s server that you did.
-                    </p>
-                  )}
-                  {state.truncated && (
-                    <p className="text-caption leading-relaxed text-muted-foreground">
-                      Only the first {REPORT_PREVIEW_MAX_CHARS.toLocaleString("en-US")} characters
-                      are laid out here. The download has the whole file.
-                    </p>
-                  )}
-                </div>
-              )}
-              {/* No `sources`: the citation-chip contract belongs to deep
-                  research, which hands the model a numbered corpus. A report's
-                  own sources are prose written by `sourcesMarkdown`, and
-                  resolving a bracket in one positionally into a list this
-                  component does not have would attach a confident wrong source
-                  to a claim. */}
-              <Markdown content={state.markdown} />
-            </>
-          )}
+          <ReportPreviewBody artifactId={artifactId} version={version} active={open} />
         </div>
       </DialogContent>
     </Dialog>
@@ -694,7 +775,7 @@ function PreviewWait({ label }: { label: string }) {
   return (
     <p
       role="status"
-      className="flex h-full items-center justify-center gap-1.5 font-mono text-micro text-muted-foreground"
+      className="flex h-full min-h-24 items-center justify-center gap-1.5 font-mono text-micro text-muted-foreground"
     >
       <Loader2 className="size-3 animate-spin" aria-hidden="true" /> {label}
     </p>
@@ -711,7 +792,7 @@ function PreviewProblem({
   retryLabel?: string;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2.5 px-6 text-center">
+    <div className="flex h-full min-h-24 flex-col items-center justify-center gap-2.5 px-6 text-center">
       <StatusIcons.warning className="size-4 text-warning" aria-hidden="true" />
       <p className="max-w-md text-ui leading-relaxed text-muted-foreground">{message}</p>
       <Button variant="outline" size="sm" onClick={onRetry}>

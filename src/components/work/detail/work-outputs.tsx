@@ -7,7 +7,7 @@ import { RailDisclosure, RailLiveCount, RailSection } from "@/components/work/de
 import type { PerformedActions } from "@/components/work/work-timeline";
 import type { WorkProducedArtifact, WorkReference } from "@/components/work/work-detail-panels";
 import { WorkActionsPerformed } from "@/components/work/work-detail-panels";
-import { WorkDocuments } from "@/components/work/work-documents";
+import { WorkDocuments, type WorkArtifactList } from "@/components/work/work-documents";
 import { cn } from "@/lib/utils";
 import { Pressable } from "@/components/ui/pressable";
 
@@ -27,26 +27,24 @@ import { Pressable } from "@/components/ui/pressable";
  *
  * ── What the count counts ────────────────────────────────────────────────────
  *
- * The number beside the heading is what THIS ATTEMPT recorded: the artifacts and
- * the changed files its own event stream reported. The document list below it
- * comes from `/api/work/artifacts`, which is scoped to the task rather than the
- * attempt, so on a task that has been retried it can hold rows this attempt knew
- * nothing about. The two are allowed to differ and the difference is the honest
- * one: "this run produced two files" is the fact somebody deciding whether to
- * retry actually needs, and it is not the same fact as "this task has four files
- * in it".
+ * The number beside the heading is the task's document list plus this
+ * attempt's changed files. The list comes from `/api/work/artifacts`, scoped
+ * to the task rather than the attempt, and the page reads it once
+ * (`useWorkArtifactList`) for this section and for the deliverable stage in the
+ * main column. Until it lands the stream's own count stands in, so the heading
+ * never sits numberless over rows it is about to show.
  *
  * ── Why the document list is behind a condition ──────────────────────────────
  *
- * `WorkDocuments` fetches, and an empty answer from it prints a sentence
- * explaining the emptiness — which is the thing the rail was rebuilt to stop
- * doing. So it is rendered only where there is evidence there might be something
- * to fetch: this attempt reported an artifact, or an earlier attempt exists and
- * may have. Everywhere else the section is a heading and nothing under it.
+ * `WorkDocuments` renders nothing for an empty list — a section with nothing
+ * in it is a heading and nothing else — so the condition is only about not
+ * drawing skeletons on a run that has no reason to have documents: the list
+ * has rows, or the list failed and the stream reported some, or an earlier
+ * attempt exists and may have produced any.
  */
 
 export function WorkOutputsSection({
-  sessionId,
+  documents,
   phase,
   defaultOpen,
   artifacts,
@@ -55,7 +53,8 @@ export function WorkOutputsSection({
   /** True once this task has more than one attempt. See the note above. */
   hasEarlierAttempts,
 }: {
-  sessionId: string;
+  /** The task's documents, read once by the page and shared with the stage. */
+  documents: WorkArtifactList;
   phase: RunPhase;
   defaultOpen: boolean;
   artifacts: readonly WorkProducedArtifact[];
@@ -64,8 +63,18 @@ export function WorkOutputsSection({
   performed: PerformedActions;
   hasEarlierAttempts: boolean;
 }) {
-  const count = artifacts.length + written.length;
-  const showDocuments = artifacts.length > 0 || hasEarlierAttempts;
+  /*
+   * The count is the list's once the list has landed, and the stream's until
+   * then. The heading used to count only this attempt's events while the list
+   * under it was the whole task's, so "Outputs" with no number could sit over
+   * three rows on a retried task — a heading contradicting its own body.
+   */
+  const documentCount = documents.artifacts?.length ?? artifacts.length;
+  const count = documentCount + written.length;
+  const showDocuments =
+    documents.artifacts !== null
+      ? documents.artifacts.length > 0 || documents.failed
+      : artifacts.length > 0 || hasEarlierAttempts;
   const settled = phase === "done" || phase === "failed";
   const performedAnything = performed.actions.length > 0 || performed.unclassified > 0;
 
@@ -89,7 +98,7 @@ export function WorkOutputsSection({
         </ul>
       )}
 
-      {showDocuments && <WorkDocuments sessionId={sessionId} fromEvents={artifacts} />}
+      {showDocuments && <WorkDocuments list={documents} fromEvents={artifacts} />}
 
       {/*
        * The one sentence this section is allowed to print about emptiness, and

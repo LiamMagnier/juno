@@ -3,7 +3,16 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, CalendarClock, ChevronRight, Pin, PinOff } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  CalendarClock,
+  ChevronRight,
+  Cloud,
+  Hand,
+  Pin,
+  PinOff,
+} from "lucide-react";
 import { ActionIcons, CodeIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,22 +27,26 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import type { WorkStatus } from "@/lib/work/domain";
+import { isTerminalStatus, type WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import {
+  deleteWorkSession,
   patchWorkSession,
   startWorkRun,
   workIdempotencyKey,
   WORK_SYNC_EVENT,
+  type StartWorkRunInput,
 } from "@/components/work/work-transport";
 import { WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cadenceLine } from "@/components/work/inbox/cadence";
 import {
   canRunAgain,
+  canRunInCloudInstead,
   quietLine,
   rowStatus,
   WORK_QUIET_AFTER_MS,
@@ -120,8 +133,12 @@ export function InboxRow({
   enterRank = 0,
   /** The row after a change, so the list can re-render without waiting to poll. */
   onChanged,
+  /** Called once the task is gone, so the list can drop the row without a poll. */
+  onDeleted,
   /** Called when the row is opened, so the list can clear its unread mark. */
   onOpen,
+  /** The plan step the executing attempt is on, when the list route read one. */
+  currentStep = null,
 }: {
   session: ClientWorkSession;
   outputCount?: number;
@@ -129,9 +146,12 @@ export function InboxRow({
   unread?: boolean;
   enterRank?: number | null;
   onChanged?: (session: ClientWorkSession) => void;
+  onDeleted?: (sessionId: string) => void;
   onOpen?: (session: ClientWorkSession) => void;
+  currentStep?: string | null;
 }) {
   const [renaming, setRenaming] = React.useState(false);
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   /*
@@ -158,7 +178,7 @@ export function InboxRow({
     return () => window.clearInterval(interval);
   }, [session.status]);
 
-  const status = rowStatus(session, { outputCount, schedule });
+  const status = rowStatus(session, { outputCount, schedule, currentStep });
   const quietMs = now === null ? 0 : now - Date.parse(session.lastActivityAt);
   const quiet = Number.isFinite(quietMs) && quietMs >= WORK_QUIET_AFTER_MS;
 
@@ -207,25 +227,70 @@ export function InboxRow({
    * sent — the list does not know the previous attempt's requirements, and
    * sending a guess would have the server judge the retry against a bar nobody
    * set. The task page, which does know, passes them.
+   *
+   * The two overrides are the route's own per-attempt fields, unreachable from
+   * any surface until now: `requestedTarget: "cloud"` is "it lost the Mac, run
+   * it up here instead", and `permissionPolicy: "permissive"` is "it stopped to
+   * ask nine times, run it again and stop asking". Both are scoped to the
+   * attempt they start — the session's own settings are untouched.
    */
-  const runAgain = React.useCallback(async () => {
+  const runAgain = React.useCallback(
+    async (overrides: Pick<StartWorkRunInput, "requestedTarget" | "permissionPolicy"> = {}) => {
+      setBusy(true);
+      const result = await startWorkRun(session.id, {
+        origin: "retry",
+        ...overrides,
+        idempotencyKey: workIdempotencyKey(),
+      });
+      setBusy(false);
+      if (result.kind === "ok") {
+        toast.success(
+          overrides.requestedTarget === "cloud"
+            ? "Started again, in the cloud."
+            : overrides.permissionPolicy === "permissive"
+              ? "Started again. It will only stop for what it cannot take back."
+              : "Started again."
+        );
+        window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        return;
+      }
+      toast.error(
+        result.kind === "blocked"
+          ? result.explanation
+          : "Couldn’t start it again. Nothing was dispatched."
+      );
+    },
+    [session.id]
+  );
+
+  /**
+   * Gone for good, from the list.
+   *
+   * Behind a dialog, unlike Archive, because the two are not the same weight:
+   * an archived task has a filter it lives under and a "Bring back", a deleted
+   * one has neither. The route stops any attempt still executing before the
+   * row goes, which the dialog says — a reader deleting a running task should
+   * know they are also stopping it.
+   */
+  const destroy = React.useCallback(async () => {
     setBusy(true);
-    const result = await startWorkRun(session.id, {
-      origin: "retry",
-      idempotencyKey: workIdempotencyKey(),
-    });
+    const result = await deleteWorkSession(session.id);
     setBusy(false);
+    setConfirmingDelete(false);
     if (result.kind === "ok") {
-      toast.success("Started again.");
+      onDeleted?.(session.id);
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+      toast.success("Deleted.");
       return;
     }
     toast.error(
       result.kind === "blocked"
         ? result.explanation
-        : "Couldn’t start it again. Nothing was dispatched."
+        : result.kind === "failed" && result.cause === "not_found"
+          ? "This task was already gone."
+          : "Couldn’t delete it. The task is where it was."
     );
-  }, [session.id]);
+  }, [session.id, onDeleted]);
 
   const cadence = schedule === null ? null : cadenceLine(schedule);
 
@@ -353,6 +418,21 @@ export function InboxRow({
                 <span className="flex-1">Run it again</span>
               </DropdownMenuItem>
             )}
+            {canRunInCloudInstead(session) && (
+              <DropdownMenuItem onSelect={() => void runAgain({ requestedTarget: "cloud" })}>
+                <Cloud className="text-muted-foreground" />
+                <span className="flex-1">Run in the cloud instead</span>
+              </DropdownMenuItem>
+            )}
+            {canRunAgain(session) && session.permissionPolicy !== "permissive" && (
+              <DropdownMenuItem
+                onSelect={() => void runAgain({ permissionPolicy: "permissive" })}
+                title="This attempt only. It still asks before anything it cannot take back."
+              >
+                <Hand className="text-muted-foreground" />
+                <span className="flex-1">Run again and stop asking</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => setRenaming(true)}>
               <ActionIcons.edit className="text-muted-foreground" />
               <span className="flex-1">Rename</span>
@@ -387,9 +467,38 @@ export function InboxRow({
               )}
               <span className="flex-1">{session.archived ? "Bring back" : "Archive"}</span>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => setConfirmingDelete(true)}
+              className="text-destructive focus:text-destructive"
+            >
+              <ActionIcons.delete className="text-destructive" />
+              <span className="flex-1">Delete</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this task?</DialogTitle>
+            <DialogDescription>
+              {session.status !== "draft" && !isTerminalStatus(session.status)
+                ? "It is still under way. Deleting it stops the attempt first, then removes the task and its record from your lists. There is no Bring back for a deleted task."
+                : "The task and its record leave your lists. There is no Bring back for a deleted task — archive it instead if you might want it later."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingDelete(false)} disabled={busy}>
+              Keep it
+            </Button>
+            <Button variant="destructive" onClick={() => void destroy()} disabled={busy}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <RenameDialog
         open={renaming}

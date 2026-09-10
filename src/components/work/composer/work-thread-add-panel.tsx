@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { FileUp, Loader2, Wrench } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { AudioLines, FileUp, Loader2, Wrench } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/components/app/app-provider";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { useWorkSkills } from "@/components/work/composer-home/use-work-skills";
+import type { ComposerProjectsState } from "@/components/work/composer-home/use-composer-projects";
 import type { WorkThreadContextState } from "@/components/work/composer/use-work-thread-context";
 import type { WorkThreadFiles } from "@/components/work/composer/work-thread-files";
 import { AppIcons } from "@/lib/app-icons";
@@ -45,18 +46,24 @@ import { cn } from "@/lib/utils";
  *   - files are not offered. Handing one over means sending the whole list, and
  *     a list assembled without knowing what is already in it is how a grant
  *     somebody made yesterday disappears.
- *   - the skill *is* offered, because it is a single value rather than a set:
- *     naming one is a complete statement that needs nothing merged into it. Only
- *     the tick beside the current one is withheld, because that is the part
- *     nobody could read.
+ *   - the skill is reported, not offered. The route refuses every edit to it
+ *     (`SKILL_NOT_EDITABLE`), so the row says which one is in force and how to
+ *     change it — start a new task — rather than drawing a picker that can
+ *     never land.
  */
 
 export function WorkThreadAddPanel({
   context,
   files,
+  projects,
   onOpenLibrary,
+  onTalk,
 }: {
   context: WorkThreadContextState;
+  /** The account's projects, owned by the composer and shared with its chip. */
+  projects: ComposerProjectsState;
+  /** Opens the spoken conversation. Absent on a build with no voice relay. */
+  onTalk?: () => void;
   /**
    * The uploads, owned by the composer.
    *
@@ -122,13 +129,87 @@ export function WorkThreadAddPanel({
 
         {context.reachKnown && <AppsSection context={context} />}
 
+        {/* Filing, offered only while the task is in no project. Once it is,
+            the chip on the row is the fact and the way to change it. */}
+        {context.projectId === null && <ProjectSection context={context} projects={projects} />}
+
         {/* Skills last, and drawn even when the read failed: it is the one
             section that needs nothing merged into what is already there. The
             account-wide view of skills and connections — what Juno may reach for
             on its own, what is linked at all — is the rail's Context panel, one
             column across, and is not repeated here. */}
         <SkillSection context={context} />
+
+        {onTalk && (
+          <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
+            {/* The spoken conversation, reached from here now that the primary
+                action is Send and nothing else. */}
+            <Pressable kind="row" size="sm" onClick={onTalk}>
+              <AudioLines className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-ui">Talk it through</span>
+            </Pressable>
+          </div>
+        )}
       </ScrollFade>
+    </div>
+  );
+}
+
+/**
+ * Filing the task in a project, from the [+].
+ *
+ * Writes through `PATCH …/context` like every other section here, so the note
+ * under the composer reports when it lands — the project binds at dispatch, so
+ * the attempt now running keeps the one it started with. No "New project" row:
+ * filing a running task into a project created for it in the same gesture is
+ * two decisions dressed as one.
+ */
+function ProjectSection({
+  context,
+  projects,
+}: {
+  context: WorkThreadContextState;
+  projects: ComposerProjectsState;
+}) {
+  const list = projects.projects;
+  if (!projects.failed && (list === null || list.length === 0)) return null;
+
+  return (
+    <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">Project</p>
+      {projects.failed ? (
+        <div className="space-y-2">
+          <p className="text-ui leading-relaxed text-muted-foreground">
+            Couldn’t read your projects. This is empty because the request failed, not because
+            you have none.
+          </p>
+          <Button variant="outline" size="sm" onClick={projects.reload} className="gap-1.5">
+            <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
+          </Button>
+        </div>
+      ) : (
+        <ul className="space-y-0.5">
+          {(list ?? []).map((project) => (
+            <li key={project.id}>
+              <Pressable
+                kind="row"
+                size="sm"
+                disabled={context.saving}
+                onClick={() => context.change({ projectId: project.id })}
+              >
+                <AppIcons.projects
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-ui">{project.name}</span>
+              </Pressable>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
+        Its instructions and files apply from the next attempt.
+      </p>
     </div>
   );
 }
@@ -309,75 +390,44 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
 }
 
 /**
- * The skill this task runs under.
+ * The skill this task runs under — read, not chosen.
  *
- * One at a time, because the runtime only has one: `applySkill` resolves exactly
- * one skill per run, and a list of switches would promise a stack of
- * instructions nothing can apply. Picking the current one takes it back off.
+ * This used to be a picker, and the server refused every press: `PATCH
+ * …/context` answers `skillSlug` with `SKILL_NOT_EDITABLE` because the skill is
+ * resolved from the `/slug` at the start of the goal, and the goal is verbatim
+ * for the life of the task (every attempt's plan is checked back against it).
+ * A control that looks like a permission and grants nothing is worse than no
+ * control, so the row now reports the one fact it can read and says, in the
+ * route's own words, how to change it: start a new task.
  *
- * The caveat here is sharper than the others and is stated rather than softened.
- * A skill is resolved when a run is built, and the goal a plan is validated
- * against is fixed for the life of the task — so this is a choice about the next
- * attempt, and there is no reading of it under which the attempt now running
- * changes what it is doing.
+ * Drawn only once the read has landed. Before that the client does not know
+ * which skill is in force, and "No skill" would be a claim, not a report.
  */
 function SkillSection({ context }: { context: WorkThreadContextState }) {
-  const { skills, failed, reload } = useWorkSkills();
+  const { skills } = useWorkSkills();
+  if (!context.reachKnown) return null;
 
-  if (skills === null && !failed) return null;
-  if (!failed && skills !== null && skills.length === 0) return null;
+  const slug = context.skillSlug;
+  const skill = slug === null ? null : (skills ?? []).find((entry) => entry.slug === slug) ?? null;
 
   return (
     <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
       <p className="mb-1.5 font-mono text-label text-muted-foreground">Skill</p>
-      {failed ? (
-        <div className="space-y-2">
-          <p className="text-ui leading-relaxed text-muted-foreground">
-            Couldn’t read your skills. This is empty because the request failed, not because you
-            have none.
-          </p>
-          <Button variant="outline" size="sm" onClick={reload} className="gap-1.5">
-            <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
-          </Button>
-        </div>
+      {slug === null ? (
+        <p className="text-ui leading-relaxed text-muted-foreground">
+          Runs without a skill. Its plan comes from what you asked for alone.
+        </p>
       ) : (
-        <ul className="space-y-0.5">
-          {(skills ?? []).map((skill) => {
-            // Only claimed where it was read. Until then the rows are choices
-            // rather than a report of which one is in force.
-            const active = context.reachKnown && context.skillSlug === skill.slug;
-            return (
-              <li key={skill.id}>
-                <Pressable
-                  kind="row"
-                  size="sm"
-                  selected={active}
-                  disabled={context.saving}
-                  aria-pressed={active}
-                  onClick={() => context.change({ skillSlug: active ? null : skill.slug })}
-                >
-                  <Wrench
-                    className={cn(
-                      "size-3.5 shrink-0",
-                      active ? "text-primary" : "text-muted-foreground"
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-ui">{skill.name}</span>
-                    <span className="block truncate font-mono text-micro text-muted-foreground">
-                      /{skill.slug}
-                    </span>
-                  </span>
-                  {active && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
-                </Pressable>
-              </li>
-            );
-          })}
-        </ul>
+        <p className="flex items-center gap-2 text-ui leading-relaxed text-foreground">
+          <Wrench className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="min-w-0 truncate">
+            Runs under <span className="font-mono text-caption">/{slug}</span>
+            {skill !== null && skill.name !== slug ? ` — ${skill.name}` : ""}
+          </span>
+        </p>
       )}
       <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-        The attempt now running keeps the skill it started with.{" "}
+        Start a new task to change it.{" "}
         <Link href="/work/skills" className="underline underline-offset-2 hover:text-foreground">
           Manage skills
         </Link>

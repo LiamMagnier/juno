@@ -39,6 +39,13 @@ export type SegmentedOption<T extends string> = {
    * the thumb nowhere (the equal-width grid below does the rest).
    */
   count?: number;
+  /**
+   * Things waiting on the reader behind this segment — the Work switch's
+   * "needs you" number. Unlike `count` it is drawn as a small accent disc,
+   * because it is a call to act rather than a tally, and it is part of the
+   * segment's accessible name so the number is announced with the label.
+   */
+  badge?: number;
   /** Disables just this segment (still announced, not selectable). */
   disabled?: boolean;
 };
@@ -120,7 +127,15 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="radio"
             aria-checked={selected}
-            aria-label={labelHidden ? opt.label : undefined}
+            aria-label={
+              labelHidden
+                ? opt.badge
+                  ? `${opt.label}, ${opt.badge} waiting on you`
+                  : opt.label
+                : opt.badge
+                  ? `${opt.label}, ${opt.badge} waiting on you`
+                  : undefined
+            }
             title={labelHidden ? opt.label : undefined}
             disabled={opt.disabled}
             // Roving tabindex: the group is one tab stop; arrows move within it.
@@ -174,6 +189,17 @@ export function SegmentedControl<T extends string>({
                 dimmed by opacity so the segment's own ink decides its colour. */}
             {!labelHidden && opt.count !== undefined && (
               <span className="relative z-10 font-mono text-micro tabular-nums opacity-70">{opt.count}</span>
+            )}
+            {/* The call to act: a small accent disc. Absent at zero, and never
+                drawn while the segment is the one selected — the reader is
+                already looking at what it counts. */}
+            {!!opt.badge && !selected && (
+              <span
+                aria-hidden="true"
+                className="relative z-10 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 font-mono text-micro tabular-nums leading-none text-primary-foreground"
+              >
+                {opt.badge > 99 ? "99+" : opt.badge}
+              </span>
             )}
           </button>
         );

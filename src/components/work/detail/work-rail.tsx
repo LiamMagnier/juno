@@ -45,11 +45,13 @@ import { cn } from "@/lib/utils";
  *    files, where "it made nothing" is the answer rather than the absence of
  *    one, and that line is written where it is known: in the Outputs section.
  *
- * 3. Order is fixed; only openness moves. The old rail reordered its groups per
- *    phase, which meant the reader learned a layout that then changed under
- *    them the moment a run finished. Progress, Outputs, Context, How it ran —
- *    always, in that order — and `RAIL_POLICY` decides which of them arrive
- *    open.
+ * 3. Order is fixed, with one promotion; otherwise only openness moves. The
+ *    old rail reordered its groups per phase, which meant the reader learned a
+ *    layout that then changed under them the moment a run finished. Progress,
+ *    Outputs, Context, How it ran — in that order — and `RAIL_POLICY` decides
+ *    which of them arrive open. The promotion is `railOrderFor`: once the run
+ *    has made something, or is done, Outputs leads, because the deliverable is
+ *    what the task was for.
  */
 
 // ---------------------------------------------------------------------------
@@ -96,8 +98,27 @@ export function deriveRunPhase(input: {
 
 export type RailSectionName = "progress" | "outputs" | "context" | "setup";
 
-/** The reading order, and it does not vary. See rule 3 at the top of the file. */
+/** The reading order. See rule 3 at the top of the file, and `railOrderFor`. */
 export const RAIL_ORDER: readonly RailSectionName[] = ["progress", "outputs", "context", "setup"];
+
+/**
+ * The one promotion rule 3 allows: once a run has made something, or is over,
+ * Outputs leads.
+ *
+ * The deliverable is the reason the task was started, and a rail that led with
+ * the checklist of how it was made — over a 58px row holding the thing itself —
+ * had ranked the receipt above the goods. Cowork puts the document front and
+ * centre; here the preview is in the main column (`WorkDeliverableStage`) and
+ * this puts the list of files first in the rail beside it. Nothing else moves,
+ * and while a run is still going with nothing made yet the order is the
+ * original one, so the promotion happens once per task rather than on every
+ * frame.
+ */
+export function railOrderFor(phase: RunPhase, hasOutputs: boolean): readonly RailSectionName[] {
+  return hasOutputs || phase === "done"
+    ? ["outputs", "progress", "context", "setup"]
+    : RAIL_ORDER;
+}
 
 export interface SectionPolicy {
   /** False removes the section from this phase entirely, filled or not. */

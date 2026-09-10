@@ -14,6 +14,7 @@ import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { WorkPermissionChip } from "@/components/work/composer-home/permission-chip";
 import { COMPOSER_CHIP_CLASS } from "@/components/work/composer-home/composer-chip";
+import type { ComposerProjectsState } from "@/components/work/composer-home/use-composer-projects";
 import type { WorkThreadContextState } from "@/components/work/composer/use-work-thread-context";
 import { AppIcons } from "@/lib/app-icons";
 import { REASONING_TIERS, type ReasoningEffort, clampReasoningEffort } from "@/lib/model-metrics";
@@ -116,31 +117,43 @@ export function WorkThreadModelControl({ context }: { context: WorkThreadContext
 }
 
 /**
- * The utility half: how often this task stops to ask, and where it is filed.
+ * The standing half: where this task is filed (once it is), and how often it
+ * stops to ask.
  *
  * Both survive the send. Both are still true of the message after this one, and
- * of the attempt after that — which is the whole test for what belongs under the
- * composer's hairline rather than in the row with Send. The home composer keeps
- * the identical pair in the identical place, wearing the identical chips.
+ * of the attempt after that. The home composer keeps the identical pair in the
+ * identical place, wearing the identical chips.
  *
  * The spinner is here rather than beside whichever control was used because
  * `useWorkThreadContext` permits exactly one change in flight at a time: a
  * single indicator for the strip states that fact, where one per chip would
  * imply they could be saving independently.
  */
-export function WorkThreadRunContext({ context }: { context: WorkThreadContextState }) {
+export function WorkThreadRunContext({
+  context,
+  projects,
+}: {
+  context: WorkThreadContextState;
+  projects: ComposerProjectsState;
+}) {
   const held = context.saving;
   return (
     <>
+      {/* Only once the task is in a project. Filing an unfiled task is a row in
+          the [+] (`WorkThreadAddPanel`'s project section); a chip reading
+          "Project" on every task was a permanent badge. */}
+      {context.projectId !== null && (
+        <ThreadProjectChip
+          value={context.projectId}
+          projects={projects}
+          onChange={(projectId) => context.change({ projectId })}
+          disabled={held}
+        />
+      )}
+
       <WorkPermissionChip
         value={context.permissionPolicy}
         onChange={(policy) => context.change({ permissionPolicy: policy })}
-        disabled={held}
-      />
-
-      <ThreadProjectChip
-        value={context.projectId}
-        onChange={(projectId) => context.change({ projectId })}
         disabled={held}
       />
 
@@ -192,59 +205,31 @@ export function WorkThreadControlsNote({
   );
 }
 
-/** As much of `GET /api/projects` as a chip has any use for. */
-interface ThreadProject {
-  id: string;
-  name: string;
-}
-
 /**
- * Where this task is filed.
+ * Where this task is filed, once it is filed somewhere.
  *
- * Loaded on mount rather than on open, because the chip cannot name the project
- * the task is already in without the list — and a chip reading "Project" for a
- * task that is in one is a control that misreports the state it exists to show.
+ * The list is the composer's (`useComposerProjects`), shared with the [+]
+ * panel's project section, so the chip cannot name a project the section did
+ * not offer. A task filed in a project whose name has not arrived says so
+ * rather than reading as unfiled.
  *
  * No "New project" row, unlike the home composer's. Filing a running task into a
  * project that was created for it in the same gesture is two decisions dressed
- * as one, and the empty case here is a reader with no projects at all, for whom
- * the honest answer is that there is nothing to file into yet.
+ * as one.
  */
 function ThreadProjectChip({
   value,
+  projects: list,
   onChange,
   disabled,
 }: {
-  value: string | null;
+  value: string;
+  projects: ComposerProjectsState;
   onChange: (projectId: string | null) => void;
   disabled: boolean;
 }) {
-  const [projects, setProjects] = React.useState<ThreadProject[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    setFailed(false);
-    try {
-      const response = await fetch("/api/projects");
-      if (!response.ok) throw new Error("projects");
-      const data = (await response.json()) as { projects?: ThreadProject[] };
-      setProjects(data.projects ?? []);
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
+  const { projects, failed, reload } = list;
   const selected = projects?.find((project) => project.id === value) ?? null;
-
-  // Nothing at all while the list is in flight, and nothing for an account with
-  // no projects and no task filed anywhere: a chip that appeared is better than
-  // one that changes what it says under a pointer already heading for it.
-  if (projects === null && !failed) return null;
-  if (!failed && (projects?.length ?? 0) === 0 && value === null) return null;
 
   return (
     <DropdownMenu>
@@ -252,19 +237,14 @@ function ThreadProjectChip({
         <button
           type="button"
           disabled={disabled}
-          aria-label={
-            selected ? `Project: ${selected.name}. Change it` : "File this task in a project"
-          }
+          aria-label={`Project: ${selected?.name ?? "in a project"}. Change it`}
           className={COMPOSER_CHIP_CLASS}
         >
-          <AppIcons.projects
-            className={cn("size-3.5 shrink-0", value ? "text-primary" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
+          <AppIcons.projects className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
           <span className="truncate">
             {/* A task filed in a project whose name has not arrived says so
                 rather than reading as unfiled. */}
-            {value === null ? "Project" : (selected?.name ?? "In a project")}
+            {selected?.name ?? "In a project"}
           </span>
           <ChevronDown
             className="size-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
@@ -285,7 +265,7 @@ function ThreadProjectChip({
                 Couldn’t load your projects. This is empty because the request failed, not because
                 you have none.
               </p>
-              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={reload} className="gap-1.5">
                 <ActionIcons.refresh className="size-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>

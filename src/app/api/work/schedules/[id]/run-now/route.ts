@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
-import { WORK_LIVE_STATUSES, narrowestPolicy, selectTarget } from "@/lib/work/domain";
+import {
+  WORK_LIVE_STATUSES,
+  narrowestBudget,
+  narrowestPolicy,
+  selectTarget,
+} from "@/lib/work/domain";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
 import { createRun } from "@/lib/work/store";
 import { serializeRun } from "@/lib/work/serializers";
 import {
@@ -157,11 +163,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     availableCapabilities: selection.available,
     degradation: selection.degradation,
     permissionPolicy,
-    budget: {
-      maxCostMicroUsd: schedule.maxCostMicroUsd,
-      maxTokens: schedule.maxTokens,
-      maxRuntimeMs: schedule.maxRuntimeMs,
-    },
+    // The schedule's own figures, narrowed against the standard ceiling. A
+    // schedule with no budget of its own stores zeros, and zero means "no
+    // ceiling" to `budgetExceeded` — so before this merge a run pressed from
+    // the schedule page was the only kind with nothing but the 200-turn cap
+    // bounding it, while the same task started from the composer got $2.
+    // `narrowestBudget` skips the zeros rather than clamping to them.
+    budget: narrowestBudget(
+      {
+        maxCostMicroUsd: schedule.maxCostMicroUsd,
+        maxTokens: schedule.maxTokens,
+        maxRuntimeMs: schedule.maxRuntimeMs,
+      },
+      DEFAULT_RUN_BUDGET
+    ),
     idempotencyKey,
   });
 

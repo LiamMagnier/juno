@@ -16,6 +16,7 @@ import {
   DEFAULT_WORK_PERMISSION_POLICY,
 } from "@/lib/work/domain";
 import { AppPage, AppPageHeader } from "@/components/app/app-page";
+import { DownloadMenu } from "@/components/app/download-menu";
 import { WorkNav } from "@/components/work/work-nav";
 import { WorkList } from "@/components/work/shell/work-section";
 import { WorkHostRow } from "@/components/work/work-host-row";
@@ -122,6 +123,27 @@ export default function WorkPermissionsPage() {
         <AlwaysAsks />
         <ApprovalModes />
 
+        {/*
+         * "Your Macs" is drawn as a section only for an account that has one, or
+         * whose host list could not be read. Most readers run everything in
+         * the cloud and will never own a Mac Juno can reach; for them the
+         * section was an empty-state essay about hosts, executors and grants —
+         * a page of prose about a machine they do not have. They get one line
+         * and an install link instead.
+         */}
+        {hosts !== null && hosts.length === 0 && !failed ? (
+          <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="min-w-0 flex-1 text-body text-muted-foreground">
+              Every task runs in Juno’s cloud. To let a task reach a folder, an app or the browser
+              on your own Mac, install Juno on it and switch Work on from the app — it appears here
+              on its own once it does.
+            </p>
+            {/* The shell's own download menu, not a link to a page that does
+                not exist: it reads the release feed on open and offers the
+                build for this platform. */}
+            <DownloadMenu />
+          </div>
+        ) : (
         <section className="mt-8">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
             <div className="min-w-0">
@@ -180,6 +202,7 @@ export default function WorkPermissionsPage() {
             </>
           )}
         </section>
+        )}
       </div>
     </AppPage>
   );
@@ -303,11 +326,11 @@ function ApprovalModes() {
       <p className="mt-4 text-sm text-muted-foreground">
         When you answer an approval with “and stop asking”, that covers that one action for the rest
         of that task only, and lapses when the task ends. Nothing you allow on one task carries over
-        to another. See the decisions a task made under{" "}
-        <Link href="/work" className="underline underline-offset-4 hover:text-foreground">
-          its own Approvals list
+        to another. Anything waiting for a decision right now is under{" "}
+        <Link href="/work?show=needs_you" className="underline underline-offset-4 hover:text-foreground">
+          Needs you
         </Link>
-        .
+        , and a task’s own decisions are listed on the task under Progress.
       </p>
     </section>
   );

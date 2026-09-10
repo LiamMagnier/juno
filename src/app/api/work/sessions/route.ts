@@ -187,7 +187,60 @@ export async function GET(req: Request) {
     take: limit,
   });
 
-  return NextResponse.json({ sessions: sessions.map(serializeSession) });
+  /*
+   * What each executing task is doing right now, for the row's status line.
+   *
+   * The inbox used to say "Working on it now." for every running row, which
+   * is the pill restated. The plan step the run is on is the sentence a reader
+   * triaging a list actually wants, and the executor already records it:
+   * `step_started` carries the step's title. One query for the whole page — the
+   * newest `step_started` per live run — rather than a join per row, and only
+   * when a row is executing at all, so an idle inbox costs nothing extra.
+   *
+   * Scoped through the run rather than by run id: a session's status is
+   * denormalised from its current attempt, and only one attempt per session can
+   * be executing (`session_already_running`), so the executing run IS the
+   * current one.
+   */
+  const executing = sessions
+    .filter((session) => session.status === "preparing" || session.status === "running")
+    .map((session) => session.id);
+  const steps =
+    executing.length === 0
+      ? []
+      : await prisma.workEvent.findMany({
+          where: {
+            userId: user.id,
+            kind: "step_started",
+            run: {
+              userId: user.id,
+              sessionId: { in: executing },
+              status: { in: ["preparing", "running"] },
+            },
+          },
+          orderBy: [{ runId: "asc" }, { seq: "desc" }],
+          distinct: ["runId"],
+          select: { payload: true, run: { select: { sessionId: true } } },
+        });
+  const currentStep = new Map<string, string>();
+  for (const step of steps) {
+    const payload = step.payload;
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) continue;
+    const title = (payload as { title?: unknown }).title;
+    if (typeof title === "string" && title.trim().length > 0) {
+      currentStep.set(step.run.sessionId, title.trim());
+    }
+  }
+
+  return NextResponse.json({
+    sessions: sessions.map((session) => ({
+      ...serializeSession(session),
+      // Beside the serialised row rather than inside `serializeSession`: it is
+      // a fact about the list view, read from another table, and the session
+      // shape every other route and the native clients decode stays as it was.
+      currentStep: currentStep.get(session.id) ?? null,
+    })),
+  });
 }
 
 export async function POST(req: Request) {

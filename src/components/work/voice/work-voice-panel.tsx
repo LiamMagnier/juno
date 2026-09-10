@@ -57,11 +57,11 @@ import {
  * This used to export a `WorkVoiceButton` that drew its own "Talk about this
  * task" button above the composer. That was a second entry point for the same
  * conversation sitting a few pixels from the composer's own controls, and it is
- * not how chat does it: chat's composer has ONE primary button that is the
- * voice launcher while there is nothing to send and morphs into Send the moment
- * there is (`showVoiceButton` in `chat/composer.tsx`). Work now does the same,
- * so what is left here is the live session — the panel — plus `useWorkVoice`,
- * which hands the composer the `onOpenVoiceMode` callback it expects.
+ * not how the composers do it now: the primary action is Send and nothing
+ * else, and the spoken conversation is a "Talk it through" row in the [+]
+ * menu on both Work composers. So what is left here is the live session — the
+ * panel — plus `useWorkVoice`, which hands the composer the `onOpenVoiceMode`
+ * callback that row calls.
  *
  * Everything the panel LOOKS like — the aura, the transcript, which line is
  * sendable, what a refusal leaves behind — is `WorkVoiceSurface`, shared with

@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Coins, Link2, ShieldCheck, Sigma, Timer } from "lucide-react";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
+import { Coins, ShieldCheck, Sigma, Timer } from "lucide-react";
 import {
   WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
@@ -156,80 +155,6 @@ function isWebUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-export function WorkReferences({ references }: { references: readonly WorkReference[] }) {
-  const read = references.filter((reference) => reference.direction === "read");
-  const written = references.filter((reference) => reference.direction === "written");
-
-  if (references.length === 0) {
-    return (
-      <p className="text-ui leading-relaxed text-muted-foreground">
-        Nothing has been read or written yet. Every page Juno cites and every file it changes is
-        listed here as it goes.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {read.length > 0 && <ReferenceGroup title="Read" references={read} />}
-      {written.length > 0 && <ReferenceGroup title="Written" references={written} />}
-    </div>
-  );
-}
-
-function ReferenceGroup({
-  title,
-  references,
-}: {
-  title: string;
-  references: readonly WorkReference[];
-}) {
-  return (
-    <div>
-      <p className="mb-1.5 font-mono text-label text-muted-foreground">{title}</p>
-      <ul className="space-y-1.5">
-        {references.map((reference) => (
-          <li key={reference.id} className="flex items-start gap-2">
-            {reference.url !== null ? (
-              <Link2 className="mt-[3px] size-3.5 shrink-0 text-source" aria-hidden="true" />
-            ) : (
-              <CodeIcons.file
-                className="mt-[3px] size-3.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-            )}
-            <span className="min-w-0 flex-1">
-              {reference.url !== null ? (
-                <a
-                  href={reference.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex min-w-0 max-w-full items-center gap-1 text-ui leading-relaxed text-foreground underline-offset-2 hover:underline"
-                >
-                  <span className="min-w-0 truncate">{reference.label}</span>
-                  <ActionIcons.external
-                    className="size-3 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                </a>
-              ) : (
-                <span className="block truncate text-ui leading-relaxed text-foreground">
-                  {reference.label}
-                </span>
-              )}
-              {reference.detail !== null && (
-                <span className="mt-0.5 block truncate font-mono text-micro text-muted-foreground">
-                  {reference.detail}
-                </span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -554,9 +479,14 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
           warningThreshold={0.8}
         />
       </div>
+      {/* No sentence for a run with every ceiling at zero. There is no "plan
+          default" behind a zero — `budgetExceeded` reads it as no ceiling — and
+          every dispatcher now merges `DEFAULT_RUN_BUDGET` in, so a zero here is
+          a run written before that landed. The bars already show "no ceiling"
+          by having no total. */}
       {unlimited && (
         <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
-          No custom ceiling was set for this run, so the plan’s default limits apply.
+          This attempt ran with no ceiling of its own — only the account’s monthly budget bounded it.
         </p>
       )}
       {ceiling.exceeded && (

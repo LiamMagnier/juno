@@ -26,11 +26,15 @@ import {
 } from "@/components/work/inbox/triage";
 import { fetchWorkOutputCounts } from "@/components/work/shell/work-outputs";
 import {
+  WORK_LIVE_POLL_MS,
   WORK_POLL_MS,
   WORK_SYNC_EVENT,
   fetchWorkHosts,
   fetchWorkSchedules,
   fetchWorkSessions,
+  fetchWorkTriageCounts,
+  type WorkInboxSession,
+  type WorkTriageCounts as ServerTriageCounts,
 } from "@/components/work/work-transport";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
@@ -65,10 +69,16 @@ import type { ClientWorkHost, ClientWorkSession } from "@/lib/work/serializers";
  * the other three.
  *
  * THE STATE LIVES IN THE URL. `?show=needs_you` is what makes "3 need you" in
- * the sidebar, a notification, and a link in an email all able to land the
- * reader on the same filtered view — which is the cross-surface pending queue
- * this product was missing. It also means Back works, which a `useState` filter
- * never does.
+ * the sidebar (`useWorkNeedsYouCount`), a notification, and a link in an email
+ * all able to land the reader on the same filtered view — which is the
+ * cross-surface pending queue this product was missing. It also means Back
+ * works, which a `useState` filter never does.
+ *
+ * THE COUNTS ARE THE SERVER'S. The pills used to count the page they could
+ * see — the newest forty rows — so a task waiting since last week fell out of
+ * "Needs you" and out of its number. `GET /api/work/sessions/counts` is one
+ * group-by over the account, and the "Needs you" view itself is backed by
+ * `?needsAttention=true` so the row is there as well as counted.
  */
 
 /** How many rows are rendered before the list offers to show the rest. */
@@ -123,9 +133,15 @@ function WorkInbox() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const [sessions, setSessions] = React.useState<ClientWorkSession[] | null>(null);
+  const [sessions, setSessions] = React.useState<WorkInboxSession[] | null>(null);
   const [sessionsFailed, setSessionsFailed] = React.useState(false);
   const [loadedAt, setLoadedAt] = React.useState<string | null>(null);
+  /**
+   * The four counts the server keeps for the whole account. Null until the
+   * first answer; the pills fall back to counting the page they can see, which
+   * is what they did before the route existed and is still true of that page.
+   */
+  const [serverCounts, setServerCounts] = React.useState<ServerTriageCounts | null>(null);
   const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
   const [hostsFailed, setHostsFailed] = React.useState(false);
   const [outputs, setOutputs] = React.useState<ReadonlyMap<string, number> | null>(null);
@@ -167,6 +183,18 @@ function WorkInbox() {
     setSessions((current) => current ?? []);
   }, []);
 
+  /**
+   * The counts, from the server's group-by rather than from the page.
+   *
+   * A failure leaves the last answer standing: the pills then show a number
+   * that was true a moment ago, and the staleness notice below the bar already
+   * covers a list that has stopped refreshing.
+   */
+  const loadCounts = React.useCallback(async () => {
+    const result = await fetchWorkTriageCounts();
+    if (result.kind === "ok") setServerCounts(result.value);
+  }, []);
+
   /*
    * The archived rows, fetched only while that pill is selected.
    *
@@ -175,13 +203,13 @@ function WorkInbox() {
    * moving. Loading them alongside would double the payload of every poll to
    * serve a view nobody is looking at.
    */
-  const [archivedSessions, setArchivedSessions] = React.useState<ClientWorkSession[] | null>(null);
+  const [archivedSessions, setArchivedSessions] = React.useState<WorkInboxSession[] | null>(null);
   const [archivedFailed, setArchivedFailed] = React.useState(false);
   React.useEffect(() => {
     if (state !== "archived") return;
     let cancelled = false;
     setArchivedFailed(false);
-    void fetchWorkSessions(PAGE_SIZE * 4, true).then((result) => {
+    void fetchWorkSessions({ limit: PAGE_SIZE * 4, archived: true }).then((result) => {
       if (cancelled) return;
       if (result.kind === "ok") setArchivedSessions(result.value);
       else setArchivedFailed(true);
@@ -191,6 +219,32 @@ function WorkInbox() {
     };
     // `sessions` is in the deps so bringing a row back refreshes this list:
     // an unarchived row must leave here as well as reappear in the live list.
+  }, [state, sessions]);
+
+  /*
+   * The rows blocked on a person, fetched from the whole account while that
+   * pill is selected.
+   *
+   * The live list is one page of the newest forty. A task that has been
+   * waiting on an approval since last week, with forty newer tasks above it,
+   * is not on that page — and "Needs you" is the one view where a missing row
+   * is a decision nobody makes. `?needsAttention=true` is the route's own
+   * filter and it is bounded by the account, not by recency. Merged over the
+   * page rather than replacing it, so a row that is on both is one row.
+   */
+  const [attentionSessions, setAttentionSessions] = React.useState<WorkInboxSession[] | null>(
+    null
+  );
+  React.useEffect(() => {
+    if (state !== "needs_you") return;
+    let cancelled = false;
+    void fetchWorkSessions({ needsAttention: true, limit: 100 }).then((result) => {
+      if (cancelled) return;
+      if (result.kind === "ok") setAttentionSessions(result.value);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [state, sessions]);
 
   const loadHosts = React.useCallback(async () => {
@@ -228,17 +282,37 @@ function WorkInbox() {
 
   const reload = React.useCallback(() => {
     void loadSessions();
+    void loadCounts();
     void loadHosts();
     void loadOutputs();
     void loadSchedules();
-  }, [loadSessions, loadHosts, loadOutputs, loadSchedules]);
+  }, [loadSessions, loadCounts, loadHosts, loadOutputs, loadSchedules]);
+
+  /*
+   * The poll, at two speeds.
+   *
+   * Thirty seconds is right for an inbox of settled rows. It is wrong the
+   * moment one of them is executing: the task page a row links to updates
+   * about once a second off its stream, and a row that says "Working on it"
+   * for half a minute after the page said "Finished" reads as two products.
+   * Five seconds while anything is `preparing` or `running` — the executor's
+   * own tick — and back to thirty the moment nothing is.
+   */
+  const executing = React.useMemo(
+    () =>
+      (sessions ?? []).some(
+        (session) =>
+          !session.archived && (session.status === "preparing" || session.status === "running")
+      ),
+    [sessions]
+  );
 
   React.useEffect(() => {
     reload();
     const tick = () => {
       if (!document.hidden) reload();
     };
-    const interval = window.setInterval(tick, WORK_POLL_MS);
+    const interval = window.setInterval(tick, executing ? WORK_LIVE_POLL_MS : WORK_POLL_MS);
     window.addEventListener(WORK_SYNC_EVENT, tick);
     document.addEventListener("visibilitychange", tick);
     return () => {
@@ -246,7 +320,7 @@ function WorkInbox() {
       window.removeEventListener(WORK_SYNC_EVENT, tick);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [reload]);
+  }, [reload, executing]);
 
   /**
    * One row after the user changed it, folded back into the list.
@@ -254,6 +328,10 @@ function WorkInbox() {
    * Archiving is the case that matters: the list route filters `archived: false`
    * by default, so a task put away here must leave the list rather than sit in
    * it with a changed flag until the next poll.
+   *
+   * The PATCH route answers with the plain session, so the step the row was
+   * showing is kept from the row it replaces: a rename must not blank the
+   * status line until the next poll.
    */
   const replaceSession = React.useCallback((saved: ClientWorkSession) => {
     setSessions((current) =>
@@ -261,8 +339,19 @@ function WorkInbox() {
         ? current
         : saved.archived
           ? current.filter((session) => session.id !== saved.id)
-          : current.map((session) => (session.id === saved.id ? saved : session))
+          : current.map((session) =>
+              session.id === saved.id ? { ...saved, currentStep: session.currentStep } : session
+            )
     );
+  }, []);
+
+  /** A deleted row leaves every list it was in, now rather than on the next poll. */
+  const dropSession = React.useCallback((sessionId: string) => {
+    const without = (rows: WorkInboxSession[] | null) =>
+      rows === null ? rows : rows.filter((session) => session.id !== sessionId);
+    setSessions(without);
+    setArchivedSessions(without);
+    setAttentionSessions(without);
   }, []);
 
   const live = React.useMemo(
@@ -307,18 +396,39 @@ function WorkInbox() {
         if (matchesTriage(session, key, ctx)) tally[key] += 1;
       }
     }
+    /*
+     * The four the server can answer come from its group-by over the whole
+     * account, which is the only tally that cannot lose a task to the page
+     * size. `scheduled` and `unread` stay client-side: one is a fact about the
+     * schedule list and the other about this browser, and the session table
+     * knows neither.
+     */
+    if (serverCounts !== null) {
+      tally.needs_you = serverCounts.needs_you;
+      tally.in_progress = serverCounts.in_progress;
+      tally.done = serverCounts.done;
+      tally.all = serverCounts.all;
+    }
     return tally;
-  }, [live, context]);
+  }, [live, context, serverCounts]);
 
-  const matching = React.useMemo(
-    () =>
-      state === "archived"
-        ? (archivedSessions ?? [])
-        : live.filter((session) =>
-            matchesTriage(session, state, context.get(session.id) ?? { scheduled: false, unread: false })
-          ),
-    [live, state, context, archivedSessions]
-  );
+  const matching = React.useMemo(() => {
+    if (state === "archived") return archivedSessions ?? [];
+    const ctx = (session: ClientWorkSession) =>
+      context.get(session.id) ?? { scheduled: false, unread: false };
+    const rows = live.filter((session) => matchesTriage(session, state, ctx(session)));
+    if (state !== "needs_you" || attentionSessions === null) return rows;
+    // The account-wide rows that the page did not hold, after the page's own
+    // so the order the reader knows is kept and only the tail is new.
+    const seen = new Set(rows.map((session) => session.id));
+    return [
+      ...rows,
+      ...attentionSessions.filter(
+        (session) =>
+          !seen.has(session.id) && !session.archived && matchesTriage(session, state, ctx(session))
+      ),
+    ];
+  }, [live, state, context, archivedSessions, attentionSessions]);
 
   const rows = matching.slice(0, shown);
   const arrivals = useWorkArrivals(rows.map((session) => session.id));
@@ -417,7 +527,9 @@ function WorkInbox() {
                       schedule={scheduleFor(session, schedules)}
                       unread={context.get(session.id)?.unread ?? false}
                       enterRank={arrivals.rankFor(session.id)}
+                      currentStep={session.currentStep}
                       onChanged={replaceSession}
+                      onDeleted={dropSession}
                       onOpen={(opened) => unread.markSeen(opened.id, opened.lastActivityAt)}
                     />
                   ))}

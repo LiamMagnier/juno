@@ -523,14 +523,17 @@ export const DEFAULT_WORK_PERMISSION_POLICY: WorkPermissionPolicy = "balanced";
 /**
  * What each mode is called where a person picks it.
  *
- * One word each, because the control is a segmented three-way and a phrase in a
- * segment wraps. The sentence underneath is `WORK_APPROVAL_MODE_SUMMARY`, and
- * the two are written together: neither is much use alone.
+ * These were "Manual / Auto / Skip", and the Mac settings page relabelled the
+ * same three "Ask a lot / Ask about commands / Ask rarely" — two products'
+ * worth of words for one setting, and neither set said what the default did:
+ * "Auto" reads as "automation", not as "asks before risky steps". One
+ * vocabulary now, and each label is the promise itself. The sentence
+ * underneath is `WORK_APPROVAL_MODE_SUMMARY`, and the two are written together.
  */
 export const WORK_APPROVAL_MODE_LABEL: Record<WorkPermissionPolicy, string> = {
-  conservative: "Manual",
-  balanced: "Auto",
-  permissive: "Skip",
+  conservative: "Ask before every change",
+  balanced: "Ask before risky steps",
+  permissive: "Just do it",
 };
 
 /**
@@ -786,8 +789,8 @@ export function approvalRuling(input: {
         reason: "mode",
         explanation:
           input.risk === "edit"
-            ? "This task is set to Manual, so Juno asks before it changes anything."
-            : "This task is set to Manual, so Juno asks before it runs anything.",
+            ? "This task is set to ask before every change, so Juno asks before it changes anything."
+            : "This task is set to ask before every change, so Juno asks before it runs anything.",
       };
     case "balanced":
       if (input.risk === "safe" || input.risk === "edit") break;
@@ -795,7 +798,7 @@ export function approvalRuling(input: {
         ask: true,
         reason: "mode",
         explanation:
-          "Running a program can do more than Juno can predict, so Auto asks first even though nothing here is marked dangerous.",
+          "Running a program can do more than Juno can predict, so it counts as a risky step and Juno asks first even though nothing here is marked dangerous.",
       };
     case "permissive":
       break;
@@ -851,7 +854,7 @@ export function resolveApprovalMode(input: {
     host,
     narrowedByHost,
     explanation: narrowedByHost
-      ? `${input.hostName ?? "That Mac"} is set to ${WORK_APPROVAL_MODE_LABEL[policy]}, and a task cannot ask less often than the Mac it runs on — so this one runs in ${WORK_APPROVAL_MODE_LABEL[policy]}, not the ${WORK_APPROVAL_MODE_LABEL[input.requested]} you picked.`
+      ? `${input.hostName ?? "That Mac"} is set to “${WORK_APPROVAL_MODE_LABEL[policy]}”, and a task cannot ask less often than the Mac it runs on — so this one runs as “${WORK_APPROVAL_MODE_LABEL[policy]}”, not the “${WORK_APPROVAL_MODE_LABEL[input.requested]}” you picked.`
       : WORK_APPROVAL_MODE_SUMMARY[policy],
   };
 }

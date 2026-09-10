@@ -45,6 +45,7 @@ import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
+import { useWorkNeedsYouCount } from "@/components/work/inbox/use-needs-you-count";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
@@ -146,6 +147,7 @@ export function AppSidebar({
 } = {}) {
   const router = useRouter();
   const pathname = usePathname();
+  const workNeedsYou = useWorkNeedsYouCount();
   const reduceMotion = useReducedMotion();
   const {
     conversations,
@@ -525,7 +527,10 @@ export function AppSidebar({
                   optionClassName="gap-1.5 px-2 py-1.5 text-ui font-medium"
                   options={[
                     { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
-                    { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="size-3.5" /> },
+                    // The "3 need you" mark the Work home promised the sidebar
+                    // since its inbox was written — the account's tasks blocked
+                    // on the reader, from the same count the inbox's pill uses.
+                    { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="size-3.5" />, badge: workNeedsYou ?? undefined },
                     { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
                   ]}
                 />
@@ -604,7 +609,7 @@ export function AppSidebar({
                 active={!!pathname?.startsWith("/work")}
                 onClick={() => setSidebarOpen(false)}
                 icon={<SidebarMotionIcon kind="work" />}
-                label="Work"
+                label={workNeedsYou ? `Work · ${workNeedsYou} waiting on you` : "Work"}
                 layoutId="nav-work"
                 transition={layoutTransition}
               />

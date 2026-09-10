@@ -17,7 +17,10 @@ import {
   type WorkUnattendedPolicy,
 } from "@/lib/work/domain";
 import { WORK_NOTIFY_POLICIES, type WorkNotifyPolicy } from "@/lib/work/notifications";
-import type { ClientWorkSchedule } from "@/lib/work/schedule";
+import { parseScheduleRunConfig, type ClientWorkSchedule } from "@/lib/work/schedule";
+import { DEFAULT_RUN_BUDGET } from "@/lib/work/budget";
+import { MODEL_LIST } from "@/lib/models";
+import { isWorkCapableModel } from "@/lib/work/models";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
 import {
   createWorkSchedule,
@@ -152,14 +155,48 @@ interface ScheduleDraft {
   missedRunPolicy: WorkMissedRunPolicy;
   notifyPolicy: WorkNotifyPolicy;
   maxConcurrentRuns: number;
+  /**
+   * Per-run ceilings, as the reader types them: dollars, tokens and minutes.
+   * Empty means "the standard ceiling" — the dispatchers merge zeros with
+   * `DEFAULT_RUN_BUDGET`, so an empty field is the honest default, not
+   * "unlimited".
+   */
+  budget: { costUsd: string; tokens: string; minutes: string };
+  /** The model every fire runs on. Empty means the task's own. */
+  model: string;
 }
 
 function oneOf<T extends string>(options: readonly T[], value: string, fallback: T): T {
   return (options as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
+/** The standard ceilings in the units the fields take, for placeholders and caps. */
+const STANDARD_CEILING = {
+  costUsd: DEFAULT_RUN_BUDGET.maxCostMicroUsd / 1_000_000,
+  tokens: DEFAULT_RUN_BUDGET.maxTokens,
+  minutes: Math.round(DEFAULT_RUN_BUDGET.maxRuntimeMs / 60_000),
+} as const;
+
+/** A stored ceiling as a field value: zero is "standard", and shows as empty. */
+function ceilingField(value: number): string {
+  return value > 0 ? String(value) : "";
+}
+
+/** A typed ceiling as a number, or null when it is not one this form can send. */
+function ceilingValue(raw: string): number | null {
+  if (raw.trim() === "") return 0;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 function draftFrom(schedule: ClientWorkSchedule): ScheduleDraft {
   return {
+    budget: {
+      costUsd: ceilingField(schedule.budget.maxCostMicroUsd / 1_000_000),
+      tokens: ceilingField(schedule.budget.maxTokens),
+      minutes: ceilingField(schedule.budget.maxRuntimeMs / 60_000),
+    },
+    model: parseScheduleRunConfig(schedule.runConfig).model ?? "",
     name: schedule.name,
     instructions: schedule.instructions,
     timezone: schedule.timezone,
@@ -207,6 +244,8 @@ function blankDraft(): ScheduleDraft {
     missedRunPolicy: "run_once",
     notifyPolicy: "on_attention",
     maxConcurrentRuns: 1,
+    budget: { costUsd: "", tokens: "", minutes: "" },
+    model: "",
   };
 }
 
@@ -275,12 +314,19 @@ export function WorkScheduleEditor({
   // a local schedule has to name its Mac, or a 07:00 fire lands on whichever
   // laptop happens to be awake.
   const missingHost = draft.target === "local" && draft.hostId === null;
+  const budget = {
+    costUsd: ceilingValue(draft.budget.costUsd),
+    tokens: ceilingValue(draft.budget.tokens),
+    minutes: ceilingValue(draft.budget.minutes),
+  };
+  const budgetValid = budget.costUsd !== null && budget.tokens !== null && budget.minutes !== null;
   const canSave =
     draft.name.trim().length > 0 &&
     draft.instructions.trim().length > 0 &&
     draft.timezone.trim().length > 0 &&
     draft.triggers.length > 0 &&
     !missingHost &&
+    budgetValid &&
     !saving;
 
   const save = React.useCallback(async () => {
@@ -304,6 +350,16 @@ export function WorkScheduleEditor({
       missedRunPolicy: draft.missedRunPolicy,
       notifyPolicy: draft.notifyPolicy,
       maxConcurrentRuns: draft.maxConcurrentRuns,
+      // Whole units on the wire, in the units the columns hold. An empty field
+      // is zero, which every dispatcher reads as "the standard ceiling".
+      budget: {
+        maxCostMicroUsd: Math.round((budget.costUsd ?? 0) * 1_000_000),
+        maxTokens: Math.round(budget.tokens ?? 0),
+        maxRuntimeMs: Math.round((budget.minutes ?? 0) * 60_000),
+      },
+      // Null clears an override; the route reads absent as "leave it", so the
+      // empty choice has to be sent as null rather than dropped.
+      model: draft.model === "" ? null : draft.model,
     };
 
     const result =
@@ -337,7 +393,7 @@ export function WorkScheduleEditor({
           ? "Couldn’t reach Juno to save this. Nothing was changed."
           : "Couldn’t save this schedule. Nothing was changed.")
     );
-  }, [canSave, draft, schedule, onSaved]);
+  }, [canSave, draft, budget.costUsd, budget.tokens, budget.minutes, schedule, onSaved]);
 
   return (
     <div className="space-y-7">
@@ -456,6 +512,131 @@ export function WorkScheduleEditor({
             )}
           </div>
         )}
+      </section>
+
+      {/*
+        What each run may spend, and on what.
+        These three fields existed on the wire — `budget`, `model` and
+        `maxConcurrentRuns` on both schedule routes — and the editor sent
+        defaults for all of them: zeros for the budget, nothing for the model,
+        one for concurrency. Zero on a budget column means "no ceiling of the
+        schedule's own"; the dispatchers now merge it with the standard run
+        budget, so an empty field here is that standard, and a number is a
+        LOWER one. The placeholders say what the standard is so the reader is
+        never asked to lower a ceiling they were not told.
+      */}
+      <section>
+        <h2 className="mb-2.5 font-mono text-label text-muted-foreground">
+          What each run may spend
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="schedule-budget-cost">Cost, in US dollars</Label>
+            <Input
+              id="schedule-budget-cost"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={STANDARD_CEILING.costUsd}
+              step="0.25"
+              value={draft.budget.costUsd}
+              onChange={(event) => set("budget", { ...draft.budget, costUsd: event.target.value })}
+              placeholder={String(STANDARD_CEILING.costUsd)}
+              disabled={saving}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="schedule-budget-tokens">Tokens</Label>
+            <Input
+              id="schedule-budget-tokens"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={STANDARD_CEILING.tokens}
+              step={10_000}
+              value={draft.budget.tokens}
+              onChange={(event) => set("budget", { ...draft.budget, tokens: event.target.value })}
+              placeholder={String(STANDARD_CEILING.tokens)}
+              disabled={saving}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="schedule-budget-minutes">Minutes of work</Label>
+            <Input
+              id="schedule-budget-minutes"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={STANDARD_CEILING.minutes}
+              step={1}
+              value={draft.budget.minutes}
+              onChange={(event) => set("budget", { ...draft.budget, minutes: event.target.value })}
+              placeholder={String(STANDARD_CEILING.minutes)}
+              disabled={saving}
+              className="mt-1"
+            />
+          </div>
+        </div>
+        <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
+          Empty means the standard ceiling — ${STANDARD_CEILING.costUsd},{" "}
+          {STANDARD_CEILING.tokens.toLocaleString("en-US")} tokens or {STANDARD_CEILING.minutes}{" "}
+          minutes of working time, whichever comes first. A number here lowers one of them for this
+          schedule; nothing raises them. A run fired while nobody is watching is capped at $
+          {Math.min(STANDARD_CEILING.costUsd, 1)} unless you set a lower figure.
+        </p>
+        {!budgetValid && (
+          <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
+            Each ceiling has to be a number of zero or more, or left empty.
+          </p>
+        )}
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="schedule-model">Model</Label>
+            {/* The same `field-well` recipe as the Mac select above, for the
+                same reason. Only the models the Work runner can drive; the
+                empty choice is the task's own model, which is what every
+                schedule ran on before this field existed. */}
+            <select
+              id="schedule-model"
+              value={draft.model}
+              disabled={saving}
+              onChange={(event) => set("model", event.target.value)}
+              className="field-well mt-1 h-9 w-full rounded-field border border-input px-3.5 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <option value="">The task’s own model</option>
+              {MODEL_LIST.filter(isWorkCapableModel).map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="schedule-concurrency">Runs at once</Label>
+            <Input
+              id="schedule-concurrency"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={5}
+              step={1}
+              value={draft.maxConcurrentRuns}
+              onChange={(event) => {
+                const next = Math.floor(Number(event.target.value));
+                if (Number.isFinite(next) && next >= 1 && next <= 5) set("maxConcurrentRuns", next);
+              }}
+              disabled={saving}
+              className="mt-1"
+            />
+            <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
+              How many of this schedule’s runs may be under way together. One is right for anything
+              that writes a file; a fire that lands while the last is still going waits.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-4">

@@ -1,9 +1,9 @@
 # Juno Work — how it executes, where the boundaries are, how to run it
 
-Date: 2026-08-05
-Status: cloud execution and the API surface are built; the Mac host half is
-partially built and explicitly not wired end to end (see
-[What is not yet wired](#what-is-not-yet-wired)).
+Date: 2026-09-10
+Status: cloud execution, the Mac host command loop and the API surface are
+built and deployed; what remains open is listed, plainly, under
+[What is not yet wired](#what-is-not-yet-wired).
 
 Juno Work is the surface where Juno is asked to *do* something rather than
 answer something: move a folder of files, prepare a document, drive an app,
@@ -40,14 +40,26 @@ spent most of a budget before it stopped, and repeating those silently is worse
 than stopping.
 
 ```text
-POST /api/work/sessions                      create the goal
-POST /api/work/sessions/{id}/runs            dispatch an attempt
-GET  /api/work/sessions/{id}/events          SSE: snapshot → events → done
-POST /api/work/sessions/{id}/answer          answer a question the run asked
-POST /api/work/approvals/{id}/decision       allow or deny one exact action
-POST /api/work/runs/{id}/control             pause / resume / cancel
-GET  /api/work/hosts                         the user's Macs and their state
+POST  /api/work/sessions                     create the goal
+GET   /api/work/sessions?needsAttention=…    the list, with the executing step per row
+GET   /api/work/sessions/counts              needs_you / in_progress / done / all
+PATCH /api/work/sessions/{id}/context        files, apps, model, effort, mode, project
+DELETE /api/work/sessions/{id}               soft delete; stops a live attempt first
+POST  /api/work/sessions/{id}/runs           dispatch an attempt (per-attempt
+                                             requestedTarget / permissionPolicy)
+GET   /api/work/sessions/{id}/events         SSE: snapshot → events → done
+POST  /api/work/sessions/{id}/answer         answer a question, or steer a live run
+POST  /api/work/approvals/{id}/decision      allow or deny one exact action
+POST  /api/work/runs/{id}/control            pause / resume / cancel
+GET   /api/work/hosts                        the user's Macs and their state
+GET   /api/work/hosts/{id}/commands          a Mac's long poll: claim the next command
+POST  /api/work/hosts/{id}/commands/{cmd}    acknowledge one
+POST  /api/work/hosts/{id}/events            a Mac reporting a run's events
 ```
+
+Every run is dispatched under `DEFAULT_RUN_BUDGET` (`src/lib/work/budget.ts`:
+$2, 600,000 tokens, twenty minutes of working time). A schedule, a skill or a
+host may lower any of the three through `narrowestBudget`; nothing raises them.
 
 The request shapes and every pure decision on that surface live in
 `src/app/api/work/protocol.ts`, deliberately free of Prisma and `server-only` so
@@ -296,9 +308,16 @@ at least recorded as having tried.
 ## Running the workers
 
 ```bash
-npm run work:runner      # the cloud Work executor (scripts/work-runner.ts)
-npm run tasks:runner     # the scheduled-task worker, for comparison
+npm run work:runner          # the cloud Work executor (scripts/work-runner.ts)
+npm run work:scheduler       # fires due schedules into queued runs (scripts/work-scheduler.ts)
+npm run work:trigger-poller  # fires event triggers — email, calendar, connector, folder
+npm run tasks:runner         # the scheduled-task worker, for comparison
 ```
+
+In production all three are pm2 apps in `deploy/ecosystem.config.js` —
+`juno-work`, `juno-work-scheduler` and `juno-work-triggers`. The executor is
+the only one that may run in several copies; the other two decide when a
+schedule is due, and two deciders fire one cron expression twice.
 
 `work:runner` claims queued runs whose `effectiveTarget` is `cloud`, drives at
 most three at a time, ticks every five seconds, renews its leases at a third of
@@ -344,42 +363,51 @@ green in CI by construction.
 ## What is not yet wired
 
 Stated plainly, because a half-wired security boundary that reads as finished is
-worse than an absent one.
+worse than an absent one. The previous version of this section listed five
+gaps; four have closed and are recorded here so nobody re-opens a ticket for
+them, and the one that remains is stated as it stands.
 
-- **The Mac host command surface is only half built.** `WorkRelaying` declares
-  `advertiseWorkHost`, `claimNextWorkCommand` and `acknowledgeWorkCommand`. The
-  advertisement half has landed (`POST /api/work/hosts/register`, with the pure
-  decisions in `src/lib/work/relay.ts`); the claim and acknowledge routes have
-  not. `serializeCommandForHost` still has no caller outside
-  `tests/work-grant-paths.test.ts`, which is the check to re-run when judging
-  whether that is still true — the moment a claim route exists, it is the first
-  thing that will legitimately want the host shape, and the first place the
-  disclosure gate earns its keep. The gate was written *before* those routes on
-  purpose: a gate added afterwards is a gate added after the mistake.
-- **The cloud executor gives the agent no tools.** `scripts/work-runner.ts`
-  constructs `WorkAgentSession` with `tools: []`. The orchestration runtime,
-  budget guard, tier lattice and plan checker are all exercised; the tool
-  surface is not.
-- **The cloud executor holds a provider key.** `resolveProvider` builds an
-  adapter from a directly-configured provider in the environment. Production
-  should reach models through the Juno proxy with a per-run scoped token,
-  exactly as `scripts/cloud-code-runner.mjs` does — that handshake needs a
-  per-run token this queue does not mint yet. The consequence is real: this
-  worker holds a key where the Code runner does not.
-- **No process enforces the egress policy.** `egress-policy.ts` is rules and
-  tests; nothing imports it outside its own suite. `container-sandbox.ts`
-  accepts a `proxyNetwork` and will attach the container to it, but the proxy
-  that network is supposed to route through has not been built. Until it is,
-  `network: "none"` is the only honest setting.
-- **The cloud Work executor is not deployed.** There is no `juno-work` entry in
-  `deploy/ecosystem.config.js`, and `build-and-deploy` in `deploy.yml` does not
-  build `runner/agent-core`, so `dist/` never reaches the VM — and
-  `node_modules` is excluded from the deploy rsync, so its runtime dependencies
-  would not be there either. Wiring it means mirroring what the voice relay
-  already does: build it in `build-and-deploy`, `npm ci --omit=dev --prefix
-  runner/agent-core` in the post-deploy step, and add a pm2 app. All three parts
-  have to land together; two of the three would produce a worker that looks
-  deployed and never starts.
+**Closed since this section was first written.**
+
+- The Mac host command surface is complete: `POST /api/work/hosts/register`
+  advertises, `GET /api/work/hosts/[id]/commands` claims over a long poll,
+  `POST …/commands/[commandId]` acknowledges, and `POST …/events` carries a
+  run's events back. The claim route serialises through `serializeCommand` —
+  the remote-bound half — so `serializeCommandForHost` still has no caller in
+  `src/app/api/work` and the disclosure gate in `deploy.yml` /
+  `release-gates.sh` still holds; a Mac resolves a `grant_folder` in its own
+  file dialog and never needs the relay to hand it a path.
+- The cloud executor gives the agent tools. `scripts/work-runner.ts` builds the
+  workspace, cloud-file, deliverable and connector tool sets per run, narrowed
+  by the session's connector allowlist and the skill's egress domains.
+- The cloud executor is deployed: `juno-work`, `juno-work-scheduler` and
+  `juno-work-triggers` in `deploy/ecosystem.config.js`, with
+  `runner/agent-core` built in `build-and-deploy`.
+- Every dispatcher applies a budget. Runs from the composer, from run-now, from
+  the scheduler and from an event trigger are all merged with
+  `DEFAULT_RUN_BUDGET` through `narrowestBudget`; a schedule's zeros no longer
+  mean "no ceiling".
+
+**Still open.**
+
+- **The cloud executor holds a provider key.** `resolveProvider` in
+  `scripts/work-runner.ts` builds an adapter from a directly-configured
+  provider in the environment. Production should reach models through the Juno
+  proxy with a per-run scoped token, exactly as `scripts/cloud-code-runner.mjs`
+  does — that handshake needs a per-run token this queue does not mint yet. The
+  consequence is real: this worker holds a key where the Code runner does not.
+- **The egress allowlist is enforced by the tool layer, not by a proxy.**
+  `runner/agent-core/src/work/tools.ts` consults `egress-policy.ts` before a
+  web tool makes a request, and a skill's granted domains narrow it per run.
+  What does not exist is the proxy `container-sandbox.ts`'s `proxyNetwork` was
+  designed to route through: a container with `network: "none"` cannot reach
+  anything, and one with a network reaches everything. Until the proxy is
+  built, `network: "none"` is the only honest setting for the container, and
+  the allowlist governs the tools that run outside it.
+- **The web surface cannot grant a folder.** Local folder grants are made on the
+  Mac (`grant_folder` over the relay); the web shows their display names and
+  can revoke. A Cowork-style "give this task a folder" picker on the web would
+  need the Mac's file dialog, which is the design, not an omission.
 
 ## Files worth reading first
 

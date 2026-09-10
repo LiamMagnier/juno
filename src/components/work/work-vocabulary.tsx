@@ -164,63 +164,6 @@ export function statusSentence(status: WorkStatus): string {
  */
 export const WORK_QUIET_AFTER_MS = 10 * 60 * 1000;
 
-/**
- * What a task is doing right now, for a row in a list.
- *
- * `statusSentence` on its own answers "what state is this in", which the pill
- * beside it has already said. The one thing a list row can add — from the
- * session columns a list response actually carries, and without asking the
- * server for anything more — is whether a task that claims to be executing has
- * recorded anything lately. A run that has been quiet for half an hour and one
- * that wrote an event four seconds ago render identically otherwise, and they
- * are the two cases a reader most needs told apart.
- *
- * Stated as an observation and not as a diagnosis. Juno does not know that a
- * quiet run is stuck — it may be inside one long tool call — so the row reports
- * the silence and leaves the conclusion to the reader, who can open the task and
- * see. Claiming a fault here would put a red flag on a run that is working.
- *
- * Reads the clock, like `workTimeAgo`, and is safe for the same reason: it is
- * only ever called from a row that exists because a fetch resolved, which is
- * always after mount, so no server render can disagree with it.
- */
-export function statusActivity(status: WorkStatus, lastActivityAt: string): string {
-  const sentence = STATUS_META[status].sentence;
-  if (status !== "preparing" && status !== "running") return sentence;
-  const then = new Date(lastActivityAt).getTime();
-  if (Number.isNaN(then)) return sentence;
-  const quiet = Date.now() - then;
-  if (quiet < WORK_QUIET_AFTER_MS) return sentence;
-  return `${sentence} Nothing new has been recorded for ${quietFor(quiet)}.`;
-}
-
-/**
- * A silence, in the coarsest unit that still says something.
- *
- * Not `formatDuration`, which is built for how long a tool call took and renders
- * eleven minutes as "11m 4s". The seconds are meaningless at this scale and they
- * make the row look like a stopwatch on a task nobody is timing.
- */
-function quietFor(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes} minutes`;
-  const hours = Math.floor(minutes / 60);
-  return hours === 1 ? "an hour" : `${hours} hours`;
-}
-
-/**
- * The files a finished task left behind, counted.
- *
- * Only ever rendered for a count of one or more. There is no "no files" form on
- * purpose: the browser learns about deliverables from a list that is capped and
- * ordered by recency, so an absent count means "none were seen", which is not
- * the same claim as "none were made" — and a row is not the place to make the
- * stronger one. See `fetchWorkOutputCounts`.
- */
-export function outputsLabel(count: number): string {
-  return count === 1 ? "1 file" : `${count} files`;
-}
-
 const DOT_CLASS: Record<StatusTone, string> = {
   // Full muted-foreground, not /50. The dot is the only mark on WorkStatusDot, so
   // it is a meaningful graphical indicator and has to clear 3:1 — at 50% alpha on

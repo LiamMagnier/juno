@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  ComposerDivider,
   ComposerPrimaryAction,
   ComposerShell,
   composerFieldClass,
@@ -16,6 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -51,15 +51,14 @@ import {
   type WorkBlocked,
 } from "@/components/work/work-transport";
 import { ComposerAddMenu } from "@/components/work/composer-home/composer-add-menu";
-import { WorkConnectorsChip } from "@/components/work/composer-home/connectors-chip";
 import { WorkPermissionChip } from "@/components/work/composer-home/permission-chip";
 import {
   WORK_ACCEPT_ATTRIBUTE,
   WorkComposerAttachments,
 } from "@/components/work/composer-home/composer-attachments";
 import { DictationSwap } from "@/components/ui/dictation-swap";
-import { WorkEffortChip } from "@/components/work/composer-home/effort-chip";
 import { ProjectChip } from "@/components/work/composer-home/project-chip";
+import { useComposerProjects } from "@/components/work/composer-home/use-composer-projects";
 import { WorkStartNotes } from "@/components/work/composer-home/start-notes";
 import {
   describeFailure,
@@ -82,11 +81,7 @@ import {
   derivePreflightQuestions,
 } from "@/components/work/clarify/preflight";
 import { WorkPreflightCard } from "@/components/work/clarify/preflight-card";
-import {
-  WorkRunDisclosure,
-  WorkRunTarget,
-  runTargetLabel,
-} from "@/components/work/clarify/run-disclosure";
+import { WorkRunDisclosure, runTargetLabel } from "@/components/work/clarify/run-disclosure";
 import type { PreflightClarificationAnswer } from "@/lib/preflight-clarification";
 import { cn } from "@/lib/utils";
 
@@ -110,8 +105,9 @@ import { cn } from "@/lib/utils";
  * and `scripts/work-runner.ts` narrows the run's connector set by it, which is
  * the bar a permission control has to clear before it is worth drawing.
  *
- * The approval mode — Manual, Auto, Skip — is here on the same terms and is the
- * second control to clear that bar. `approvalRuling` in src/lib/work/domain.ts
+ * The approval mode — ask before every change, ask before risky steps, just do
+ * it — is here on the same terms and is the second control to clear that bar.
+ * `approvalRuling` in src/lib/work/domain.ts
  * is what the three modes differ in, the session stores the choice, dispatch
  * narrows it against any Mac's advertised floor, and both executors gate on the
  * result. It is drawn now for exactly that reason and would not have been drawn
@@ -123,32 +119,31 @@ import { cn } from "@/lib/utils";
  *
  * ── ONE ROW, AND WHERE EACH CONTROL SITS ON IT ─────────────────────────────
  *
- * The surface is `ComposerShell` — one quiet box, one row of controls. The
- * left of the row is the standing context of the run: the [+] (files and the
- * skill), then the project, the approval mode and the apps as chips. The right
- * is what is spent on this sentence: the model, the thinking depth, dictation
- * and the primary action. Each placement fixes a specific misreading:
+ * The surface is `ComposerShell` — one quiet box, one row of controls, the
+ * same row the chat composer draws. Left: the [+], and nothing else — files,
+ * the skill, the apps, filing into a project and the spoken conversation are
+ * all in there. Right: the project chip (only once a project is chosen), how
+ * often it asks, the model (with the thinking depth inside its panel), dictate,
+ * and Send. Each placement fixes a specific misreading:
  *
- *   - the project and the approval mode were a chip strip ABOVE the field. A
+ *   - a chip on the row is a FACT about this task, never a placeholder. "Apps"
+ *     and "Choose project" used to sit on every task, chosen or not, which is
+ *     two permanent badges the reader had to rule out before every press.
+ *   - the project and the approval mode were once a strip ABOVE the field. A
  *     strip above the field reads as part of the message being composed, which
  *     is the exact opposite of what those two are.
- *   - the apps were the third section of the [+], two gestures deep inside a
- *     menu that opens upward over the text. They are the standing reach of the
- *     run, not something spent on this sentence, and they now wear
- *     `WorkConnectorsChip` on the row. The [+]'s dot badge went with them: it
- *     existed only because a granted app had no other trace on the surface.
- *   - the executor is `WorkRunTarget`, under the surface. It is not a control,
- *     because Work has none to offer — `selectForInferred` decides and the
- *     dispatch route runs the same function over the same list — but "where is
- *     this going to run" is the third standing fact about a run and a reader is
- *     owed it before the press.
+ *   - the executor is not a control, because Work has none to offer —
+ *     `selectForInferred` decides and the dispatch route runs the same function
+ *     over the same list — so it is the first clause of the one line under the
+ *     surface (`WorkRunDisclosure`), where "where is this going to run" is
+ *     answered before the press without taking a chip.
  *
  * ── TALKING IT THROUGH ─────────────────────────────────────────────────────
  *
- * The primary action is also the voice launcher while the box is empty, which is
- * chat's arrangement (`showVoiceButton` in `chat/composer.tsx`) and the thread
- * composer's. What a spoken line does here is deliberately narrower than
- * anywhere else in the product: it goes into the goal field, and nothing starts.
+ * The spoken conversation is a row in the [+] ("Talk it through"); the primary
+ * action is Send and nothing else, on every composer in the product. What a
+ * spoken line does here is deliberately narrower than anywhere else: it goes
+ * into the goal field, and nothing starts.
  * See `voiceSend` below — `WorkSession.goal` is the sentence the plan is
  * validated against, so the only honest way for a conversation to reach it is in
  * front of the reader, where they can edit it and take it back out.
@@ -218,10 +213,12 @@ import { cn } from "@/lib/utils";
  *
  *   start-attempt.ts          what one press IS, and what to say when it failed
  *   use-connected-apps.ts     the account's linked apps, fetched once
- *   project-chip.tsx          the Project control, with its own list and create
+ *   use-composer-projects.ts  the account's projects, loaded once for the [+]
+ *                             and the chip
+ *   project-chip.tsx          the Project chip, drawn once one is chosen
+ *   composer-add-menu.tsx     the [+]: files, project, apps, skill, voice
  *   composer-attachments.tsx  the document chips above the field, and the
  *                             accept list the picker is opened with
- *   effort-chip.tsx           the thinking-depth control and its Auto twin
  *   dictation-layer.tsx       the capsule/composer cross-fade and its geometry
  *   start-notes.tsx           every reason this will not run, newest last
  *
@@ -290,6 +287,8 @@ export function WorkComposer({
    */
   const [project, setProject] = React.useState<{ id: string; name: string } | null>(null);
   const projectId = project?.id ?? null;
+  /** The account's projects, shared by the [+] (filing) and the chip (changing). */
+  const projects = useComposerProjects();
   /**
    * The connected apps this task may reach. Empty, and empty is a real answer.
    *
@@ -895,8 +894,21 @@ export function WorkComposer({
     [submitting]
   );
 
-  const showVoiceButton =
-    !submitting && goal.trim().length === 0 && !!voice.onOpenVoiceMode;
+  /**
+   * The thinking depth, drawn as the footer of the model picker's own panel —
+   * chat's arrangement, from the same slider. Nothing for Auto (the depth is
+   * chosen with the model) or for a model with one tier, where a slider with
+   * one stop is a question with one answer.
+   */
+  const thinkingControl =
+    effortOptions.length < 2 ? null : (
+      <ReasoningSlider
+        options={effortOptions}
+        value={effort}
+        onChange={setReasoningEffort}
+        disabled={submitting}
+      />
+    );
 
   const confirmExpensiveAndSubmit = React.useCallback(() => {
     if (attemptRef.current === null) return;
@@ -913,18 +925,13 @@ export function WorkComposer({
   };
 
   /*
-   * The caption under the surface, at most two lines: what Juno read into the
-   * goal, then what it will do about it. Each is suppressed rather than padded
-   * out when it has nothing to say — an inference that found nothing is a
-   * normal answer, and a line reserved for it would be a permanent blank strip
-   * under the composer. The second line stands down entirely when a note below
-   * is about to carry the same sentence in a louder tone; saying it twice reads
-   * as two separate problems.
+   * Two rows inside the run disclosure: what Juno read into the goal, then
+   * what it will do about it. Each is omitted rather than padded out when it
+   * has nothing to say — an inference that found nothing is a normal answer.
+   * The second stands down entirely when a note below is about to carry the
+   * same sentence in a louder tone; saying it twice reads as two problems.
    */
   const inferenceLine = describeInference(inference, describeCapability);
-  // No "Checking where this can run…" branch any more: the utility strip spins
-  // and says "Checking…" in the same moment, and one wait reported twice reads
-  // as two things being waited on.
   const runLine =
     executorsUnknown || loadingHosts || blocked !== null || selection.target === null
       ? null
@@ -999,62 +1006,71 @@ export function WorkComposer({
             }
             /*
              * ── One controls row ───────────────────────────────────────────
-             * Left: attach, name a skill, and the standing context of the run
-             * (project, how often it asks, which apps). Right: the model, the
-             * thinking depth, dictate, start. One line, never a second strip.
+             * Left: the [+] and nothing else. Right: the project (only once
+             * one is chosen), how often it asks, the model, dictate, start.
+             * No permanent badges — a chip on this row is a fact about THIS
+             * task, never a placeholder for a question it could be asked.
              */
             leading={
+              <ComposerAddMenu
+                disabled={submitting}
+                attach={
+                  canAttach
+                    ? {
+                        onFiles: () => fileInputRef.current?.click(),
+                        onLibrary: () => setLibraryOpen(true),
+                      }
+                    : undefined
+                }
+                skills={{
+                  skills: skills.skills,
+                  failed: skills.failed,
+                  onRetry: skills.reload,
+                  invokedSlug: invoked?.slug ?? null,
+                  onInvoke: invokeSkill,
+                }}
+                apps={{
+                  connectors: apps.connectors,
+                  failed: apps.failed,
+                  onRetry: apps.reload,
+                  selected: connectorIds,
+                  onToggle: toggleConnector,
+                }}
+                // Filing lives in the [+] until a project is chosen; from then
+                // on the chip on the right is the fact and the way to change it.
+                project={project === null ? { projects, onPick: setProject } : undefined}
+                onTalk={voice.onOpenVoiceMode}
+              />
+            }
+            trailing={
               <>
-                  <ComposerAddMenu
+                  <ProjectChip
+                    value={project}
+                    projects={projects}
+                    onChange={setProject}
                     disabled={submitting}
-                    attach={
-                      canAttach
-                        ? {
-                            onFiles: () => fileInputRef.current?.click(),
-                            onLibrary: () => setLibraryOpen(true),
-                          }
-                        : undefined
-                    }
-                    skills={{
-                      skills: skills.skills,
-                      failed: skills.failed,
-                      onRetry: skills.reload,
-                      invokedSlug: invoked?.slug ?? null,
-                      onInvoke: invokeSkill,
-                    }}
                   />
-
-                  <ProjectChip value={projectId} onChange={setProject} disabled={submitting} />
                   <WorkPermissionChip
                     value={approvalMode}
                     onChange={setApprovalMode}
                     disabled={submitting}
                   />
-                  <WorkConnectorsChip
-                    connectors={apps.connectors}
-                    failed={apps.failed}
-                    onRetry={apps.reload}
-                    selected={connectorIds}
-                    onToggle={toggleConnector}
-                    disabled={submitting}
-                  />
-              </>
-            }
-            trailing={
-              <>
+
+                  {/* The thinking depth is the slider inside the picker's own
+                      panel, exactly as in chat: a second fixed-width chip for a
+                      value the picker already shows was one more thing on the
+                      row for the reader to rule out. Auto has no slider — the
+                      depth is chosen with the model. */}
                   <div
                     className={cn("min-w-0 shrink-0", submitting && "pointer-events-none")}
                   >
-                    <ModelSelector value={model} onChange={changeModel} filter={isWorkCapableModel} />
+                    <ModelSelector
+                      value={model}
+                      onChange={changeModel}
+                      filter={isWorkCapableModel}
+                      thinking={thinkingControl}
+                    />
                   </div>
-
-                  <WorkEffortChip
-                    auto={isAutoModelId(model)}
-                    options={effortOptions}
-                    value={effort}
-                    onChange={setReasoningEffort}
-                    disabled={submitting}
-                  />
 
                   {/* Dictate. Sits immediately left of the primary action, the
                       same place it occupies in the chat and Code composers — a
@@ -1087,33 +1103,26 @@ export function WorkComposer({
                       <TooltipContent>Dictate</TooltipContent>
                     </Tooltip>
                   )}
-
-                  <ComposerDivider />
               </>
             }
             action={
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="shrink-0">
+                        {/* Send, and only Send. The spoken conversation is a row
+                            in the [+]; while a start is in flight the button is
+                            held rather than swapped for a spinner face. */}
                         <ComposerPrimaryAction
-                          face={submitting ? "busy" : showVoiceButton ? "voice" : "send"}
-                          onClick={
-                            showVoiceButton ? voice.onOpenVoiceMode : () => void submit()
-                          }
-                          disabled={showVoiceButton ? false : !canStart}
+                          face="send"
+                          onClick={() => void submit()}
+                          disabled={!canStart}
                           aria-label={
-                            showVoiceButton
-                              ? "Talk to Juno about the task you are writing"
-                              : selection.target === null
-                                ? selection.explanation
-                                : "Start this task"
+                            selection.target === null ? selection.explanation : "Start this task"
                           }
                         />
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>
-                      {showVoiceButton ? "Voice conversation" : "Start task"}
-                    </TooltipContent>
+                    <TooltipContent>Start task</TooltipContent>
                   </Tooltip>
             }
           />
@@ -1166,70 +1175,26 @@ export function WorkComposer({
       )}
 
       {/*
-       * What the chosen approval mode means, for the reader who never opens
-       * the chip.
+       * What this run commits to — ONE line, one chevron.
        *
-       * The CONTROL is `WorkPermissionChip` on the strip above, which is the
-       * arrangement the chip was extracted for: one shape and one position for
-       * "how often this task asks", instead of a three-segment control here and
-       * a dropdown chip in the thread toolbar for the same three
-       * `WORK_PERMISSION_POLICIES`. Only the sentence stays behind, because the
-       * argument that put it here is unchanged — "Skip" alone reads as a promise
-       * never to be interrupted, which is false in four cases and would be
-       * discovered as a prompt somebody was told would not come. The chip's menu
-       * carries the same line per row from the same record, so there is one
-       * sentence per mode in the product rather than two that can drift.
+       * Where it will run, how often it will ask and what will stop it, from
+       * the values that will be sent rather than from a second computation of
+       * them: `selection` is the same object the dispatch preview reads, the
+       * mode is the chip's, and the connector labels are the ones the reader
+       * switched on in the [+]. What Juno read into the goal and what it will
+       * do about it are rows inside the disclosure rather than two more lines
+       * under it. This used to be five stacked captions; see run-disclosure.tsx.
        */}
-      {/* Where it will run — a fact, not a control (Work has no executor to
-          choose; `selectForInferred` decides), so it lives under the surface
-          rather than on the row, beside the other standing facts about the run. */}
-      <div className="mt-2.5 flex min-w-0 items-center px-1.5">
-        <WorkRunTarget
-          target={selection.target}
-          hostName={
-            (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ?? null
-          }
-          loading={loadingHosts}
-          unknown={executorsUnknown}
-        />
-      </div>
-      <p
-        // Announced when it changes: the chip above says only the mode's name,
-        // and a reader moving between the three with a screen reader would
-        // otherwise hear three words and no meaning.
-        aria-live="polite"
-        className="mt-1 px-1.5 text-caption leading-relaxed text-muted-foreground"
-      >
-        {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
-      </p>
-
-      {/* What the run commits to, from the values that will be sent rather than
-          from a second computation of them: `selection` is the same object the
-          caption below reads, and the connector labels are the ones the reader
-          switched on in the chip above. Suppressed while the host list is in
-          flight, for the reason the degradation note below is: a "runs on
-          Juno's cloud" that corrects itself two hundred milliseconds later is
-          the one line here nobody can check. */}
-      {!loadingHosts && !executorsUnknown && blocked === null && (
-        <WorkRunDisclosure
-          target={selection.target}
-          hostName={
-            (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ?? null
-          }
-          connectorLabels={connectorLabels}
-        />
-      )}
-
-      {(inferenceLine !== null || runLine !== null) && (
-        <div className="mt-2.5 space-y-0.5 px-1.5">
-          {inferenceLine !== null && (
-            <p className="text-caption leading-relaxed text-muted-foreground">{inferenceLine}</p>
-          )}
-          {runLine !== null && (
-            <p className="text-caption leading-relaxed text-muted-foreground">{runLine}</p>
-          )}
-        </div>
-      )}
+      <WorkRunDisclosure
+        target={selection.target}
+        hostName={(hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ?? null}
+        loading={loadingHosts}
+        unknown={executorsUnknown}
+        connectorLabels={connectorLabels}
+        approvalMode={approvalMode}
+        inferenceLine={inferenceLine}
+        runLine={runLine}
+      />
 
       {/* Every reason this might not run, in `start-notes.tsx`: what the browser
           worked out for itself, then what the server said when it disagreed. */}
