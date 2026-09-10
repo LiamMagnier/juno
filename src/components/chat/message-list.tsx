@@ -42,6 +42,14 @@ interface MessageListProps {
   /** Merged onto the root. Exists for the first-message handoff (chat-view),
    *  which fades the transcript region in under the travelling composer. */
   className?: string;
+  /**
+   * Which product is drawing the transcript. A Code session renders its
+   * tool calls as its own cards (see components/code/code-activity.tsx), so
+   * its turns skip the chat's thought-process strip and word their live
+   * status from the running command rather than "Thinking about your
+   * request". Chat is the default.
+   */
+  surface?: "chat" | "code";
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -293,6 +301,7 @@ export function MessageList(props: MessageListProps) {
               onContinue={props.onContinue}
               onEdit={props.onEdit}
               onResend={props.onResend}
+              surface={props.surface}
               editOnRequest={m.id === lastUserId}
               onFeedback={props.onFeedback}
               canFeedback={props.canFeedback ? props.canFeedback(m) : undefined}

@@ -106,7 +106,7 @@ as a max-effort reasoning run needs; a 15 s heartbeat keeps nginx's
 ## 2. Repository layout
 
 ```
-prisma/schema.prisma        Data model (48 models, 13 enums) + migrations/
+prisma/schema.prisma        Data model (92 models, 13 enums) + migrations/
 src/
   app/
     (auth)/                 sign-in, sign-up, forgot/reset-password
@@ -608,9 +608,11 @@ the model (see §6.3).
 ### 5.5 Quota, budget & moderation gates
 
 - **Message quota:** enforced by `consumeMessage` as a single atomic conditional
-  increment (no TOCTOU). **FREE = 0 messages** (browse/history only); paid plans are
-  effectively unlimited on count and governed by the € **budget** instead. Over quota
-  → **402** `QUOTA_EXCEEDED`.
+  increment (no TOCTOU). **FREE = 15 messages a month** — a trial allowance sized to
+  `BUDGET_EUR.FREE` (`spend.ts`), so a trial can never outrun what those messages cost
+  (`PLANS.FREE.monthlyMessages` in `plans.ts`; set it back to 0 to end the trial).
+  Paid plans are effectively unlimited on count and governed by the € **budget**
+  instead. Over quota → **402** `QUOTA_EXCEEDED`.
 - **Budget:** `checkBudget` before the stream → **402** `budget_exceeded`; a hard
   **mid-stream** `enforceStreamBudget` aborts the provider the instant projected cost
   would exceed the remaining budget, keeping/billing the partial as a user-stop.
@@ -909,10 +911,26 @@ A Mac/Windows host running the agent registers/heartbeats via `POST /api/code/de
 `POST /api/code/tasks/[id]/events` (server assigns monotone `seq`; returns pending
 control events). When it needs permission it appends an `approval_request` and sets
 `awaiting_approval`; the client answers via `/respond`. Web clients render via the SSE
-`GET /api/code/tasks/[id]/events`. Event kinds: `status`, `user`, `text`, `tool`,
-`file_change`, `approval_request`/`response`, `cancel_request`, `error`, `done`, and
-**`agent`** (subagent lifecycle cards). Statuses: `queued → running ↔ awaiting_approval
-→ done | failed | cancelled`.
+`GET /api/code/tasks/[id]/events`. Event kinds: `status`, `user`, `text`, `tool`
+(payload may carry `exitCode`, the process status, beside the ` — ok`/` — failed`
+summary suffix), `file_change` (optionally `patch`/`diff`, persisted into the
+session's ASSISTANT row under a 16 KB/120 KB cap and read back on reload),
+`approval_request`/`response`, `cancel_request`, `error`, `done`, **`agent`**
+(subagent lifecycle cards), the rollback quartet, and **`steer`**/**`steer_ack`**.
+Statuses: `queued → running ↔ awaiting_approval → done | failed | cancelled`.
+
+**Mid-run steering (device only).** `POST /api/code/tasks/[id]/steer {text, requestId}`
+appends a `steer` control (idempotent on `steer:<requestId>`), persists the text as a
+USER message in the linked conversation, and answers `{status:"queued"}`. The host reads
+it on its next events POST, injects it as the next user message, and posts `steer_ack
+{requestId}` — the web marks the instruction *delivered* only on that ack. Terminal
+tasks are refused (409 `task_finished`); cloud tasks are refused (409 `steer_unsupported`)
+because the cloud driver runs `prompt()` exactly once.
+
+`GET /api/code/tasks` omits `prompt` (the agent prompt, including extracted attachment
+text) unless `?include=prompt`; single-task reads keep it. Every list row carries
+`changedFileCount`, derived from its `file_change` events in one grouped query, which is
+what lets a finished device run be "Ready to review" without a PR.
 
 ### 9.2 Remote sessions (phone ↔ Mac)
 
@@ -937,9 +955,16 @@ Everything here is scoped to the logged-in user's own devices (plain session aut
 Cloud Code runs a session with no local machine: pick a repo, describe a task, the agent
 runs in GitHub Actions and opens a PR. `POST /api/code/tasks` with `target:"cloud"` +
 `repo:{owner,name}` requires a linked GitHub connector and `GITHUB_DISPATCH_TOKEN`;
-it rate-limits (10/min/user) and caps concurrency (≤3 active, under a Postgres advisory
-lock), then `workflow_dispatch`es `.github/workflows/code-runner.yml` with **non-secret**
-inputs only. The runner (`scripts/cloud-code-runner.mjs`):
+it first probes that `code-runner.yml` exists and is enabled on the runner repo
+(`getCloudRunnerReadiness`, cached 10 min ready / 60 s not-ready, also served to the
+composer as `GET /api/code/cloud-runner`) and answers 503 `cloud_runner_not_configured`
+with a reason before any row is written; then rate-limits (10/min/user), caps concurrency
+(≤3 active, under a Postgres advisory lock), and `workflow_dispatch`es
+`.github/workflows/code-runner.yml` with **two non-secret inputs only** — `taskId` and
+`callbackBase`. The repository is deliberately not an input: inputs are printed into the
+public Actions log, and the runner receives the repo from runner-context instead. A
+dispatch that still fails hands the persisted USER row and failed ASSISTANT row back on
+the 502 so the client keeps them. The runner (`scripts/cloud-code-runner.mjs`):
 
 1. fetches its **GitHub Actions OIDC JWT** at runtime (audience `juno-cloud-code`);
 2. calls `GET /api/code/tasks/[id]/runner-context` with `Authorization: Bearer <oidc>` —
@@ -947,12 +972,17 @@ inputs only. The runner (`scripts/cloud-code-runner.mjs`):
    `job_workflow_ref` allowlist). The route is **single-use** (stamps `runnerClaimedAt`),
    rejects browser sessions with 403 (so the clone token never reaches a browser), and
    returns the clone token + a fresh **task token** (`cct_…`, HMAC over `{taskId,exp}`
-   with `CLOUD_CODE_SECRET`, 30 min);
+   with `CLOUD_CODE_SECRET`, the workflow's 30-minute `timeout-minutes` plus a 5-minute
+   margin so the terminal `done` post never lands on an expired token) and the
+   submitter's `reasoningEffort`, which the driver passes to `AgentSession`;
 3. claims (task-token), clones via a transient git askpass (token never in argv/config),
    scrubs its environment, runs the vendored agent-core against the prompt with the
    backend proxy pointed at **`/api/agent`** (so all provider calls + billing go through
-   Juno — no provider key ever reaches Actions), streams events, and on completion commits
-   to a branch and opens a PR.
+   Juno — no provider key ever reaches Actions), streams events (the engine's sensitive-
+   command gate is auto-allowed inside the container and recorded as one honest
+   `tool` row, "Auto-allowed in sandbox: …", never as a request/response pair nobody
+   answered), and on completion commits to a branch and opens a PR. `prUrl` is lifted
+   onto the task only from an `https://github.com/…/pull/N` URL.
 
 `requireTaskAuth` lets the claim/events/respond/cancel routes and the `/api/agent` proxy
 accept either a real session **or** a valid task token for that exact task, and refuse a
@@ -1176,9 +1206,12 @@ Prices below are the numbers rendered on `/upgrade`, in **EUR**. Note that
 | MAX20 ("Max x20") | 200 | unlimited | 50 | ✓ / ✓ / ✓ |
 | OWNER | – | unlimited | 1000 | ✓ / ✓ / ✓ (env `OWNER_EMAILS`, not purchasable) |
 
-**Every model is floored to a PRO minimum** (`effectiveMinPlan`) — no model is usable on
-FREE. Video generation requires MAX. Gating is enforced server-side at the chat/generate
-routes and on upload size.
+**The catalog's own `minPlan` is enforced as-is** (`effectiveMinPlan` is now the identity,
+kept as the single seam every lock badge, picker and API gate reads): models the catalog
+prices at FREE — Sonnet, Haiku, GPT Mini, Gemini Flash, DeepSeek Flash… — are the trial
+tier a FREE account's 15 messages can use; flagships keep their paid minimum. Video
+generation requires MAX. Gating is enforced server-side at the chat/generate routes and
+on upload size.
 
 ### 11.2 Stripe
 
@@ -1466,10 +1499,13 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 
 ## 17. Data model
 
-Prisma schema: `prisma/schema.prisma` (48 models, 13 enums). Message `content`,
+Prisma schema: `prisma/schema.prisma` (92 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
-Every relation cascades from `User` (account deletion is a single cascading delete).
+That is the whole list — `Message.activity`, memory entries and summaries, attachment
+`extractedText`, artifact bodies and scheduled-task prompts are plaintext; `SECURITY.md`
+keeps the exact table. Every relation cascades from `User` (account deletion is a single
+cascading delete).
 
 **Users / auth / connectors.** `User` (email, `hashedPassword?`, `sessionVersion`,
 moderation fields `bannedAt`/`banReason`/`bannedBy`/`strikes`, image). `Account`,
@@ -1658,10 +1694,12 @@ still serving** — the deploy applies migrations, then reloads PM2. And Prisma 
 no down-migrations: there is no `migrate rollback`. A migration that the running
 code cannot tolerate is therefore an outage, not an inconvenience.
 
-All 45 migrations to date are additive — verified: zero `DROP COLUMN`, `DROP
-TABLE`, `DROP CONSTRAINT` or `SET NOT NULL` anywhere in `prisma/migrations/`. That
-is why this has never bitten. The first destructive change will, unless it is
-split:
+Of the 85 migrations to date, all but four are additive. The exceptions are
+`20260803230000_background_provider_policy` and `20260804090000_task_event_idempotency`
+(`SET NOT NULL` after a backfill), `20260805130000_reconcile_schema_drift` (drops six
+dead `CodeTask` columns) and `20260808220000_import_lease_fencing` (`SET NOT NULL`) —
+each shipped only after the code stopped reading the old shape, which is the discipline
+that keeps this from biting. A destructive change has to be split:
 
 | Want | Do it as |
 |---|---|
@@ -1935,6 +1973,7 @@ Local dev: `npm install`, `cp .env.example .env`, `npx prisma migrate dev`, `npm
 → <http://localhost:3000>. For voice, run the relay with `RELAY_ENABLE_MOCK=1` and set
 `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787`.
 
-> **Build note:** `next.config.mjs` sets `typescript.ignoreBuildErrors` and
-> `eslint.ignoreDuringBuilds` because the 1 GB build VM OOMs on the type-check worker —
-> catch type errors locally with `npx tsc --noEmit` before pushing.
+> **Build note:** `next.config.mjs` no longer sets `typescript.ignoreBuildErrors` or
+> `eslint.ignoreDuringBuilds`; the type gate is still `npx tsc --noEmit` (CI runs it on
+> every pull request, and `npm run build` sets `--max-old-space-size=4096` for the
+> type-check worker), so run it locally before pushing.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, serializeTask, serializeTaskEvent } from "@/lib/code-remote";
+import { countChangedFiles, requireUser, serializeTask, serializeTaskEvent } from "@/lib/code-remote";
 
 export const runtime = "nodejs";
 
@@ -20,5 +20,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     orderBy: { seq: "asc" },
     take: 500,
   });
-  return NextResponse.json({ task: serializeTask(task), events: events.map(serializeTaskEvent) });
+  const changed = await countChangedFiles([task.id]);
+  return NextResponse.json({
+    task: serializeTask(task, { changedFileCount: changed.get(task.id) ?? 0 }),
+    events: events.map(serializeTaskEvent),
+  });
 }

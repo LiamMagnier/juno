@@ -20,6 +20,7 @@ import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
 import type { UsageReporter } from './usage.js';
 import { runAgentLoop } from './loop.js';
+import type { ReasoningEffort } from './providers/types.js';
 import {
   SubagentManager,
   delegationPromptSection,
@@ -58,6 +59,18 @@ export interface AgentOptions {
   containerSandbox?: ContainerSandboxConfig;
   /** Subagent delegation config; `false` disables it (no tools exposed). */
   subagents?: SubagentConfig | false;
+  /**
+   * How hard to think, when the model can be asked.
+   *
+   * The website's composer has offered a thinking-effort control on every Code
+   * run since Juno Code shipped, the task row stored it, runner-context
+   * returned it — and nothing on this side ever read it, so the control chose
+   * nothing. This is the field that was missing: it rides every provider
+   * request the loop makes (see `AgentLoopOptions.reasoningEffort`), and an
+   * adapter whose lab has no such concept drops it silently. Absent means
+   * Instant, which is what every run got before.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 function buildSystemPrompt(cwd: string, mode: PermissionMode, delegation = false): string {
@@ -100,6 +113,8 @@ export class AgentSession {
   private env?: NodeJS.ProcessEnv;
   /** Container confinement for agent-authored commands; absent locally. */
   private readonly containerSandbox?: ContainerSandboxConfig;
+  /** Thinking effort for every provider request this session makes. */
+  private readonly reasoningEffort?: ReasoningEffort;
   private aborter: AbortController | null = null;
   /** Root-only child-task orchestration. Children run through the manager's
    *  own executor (which hard-rejects orchestration tools), so nesting is
@@ -122,6 +137,7 @@ export class AgentSession {
     this.usageReporter = opts.usageReporter;
     this.env = opts.env;
     this.containerSandbox = opts.containerSandbox;
+    this.reasoningEffort = opts.reasoningEffort;
     if (opts.subagents !== false) {
       const session = this;
       this.subagents = new SubagentManager(
@@ -133,6 +149,7 @@ export class AgentSession {
           get tools() { return session.tools; },
           get env() { return session.env; },
           get usageReporter() { return session.usageReporter; },
+          get reasoningEffort() { return session.reasoningEffort; },
           emit: (event) => session.emit(event),
           requestApproval: (request) => session.callbacks.requestApproval(request),
           snapshotForUndo: (absPath) => session.checkpoints.snapshot(session.currentTurnIndex, absPath),
@@ -260,6 +277,7 @@ export class AgentSession {
         tools: toolSpecs,
         signal: this.aborter.signal,
         maxSteps: MAX_STEPS_PER_TURN,
+        ...(this.reasoningEffort ? { reasoningEffort: this.reasoningEffort } : {}),
         onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
         onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
         executeToolCall: (call) => this.executeToolCall(turnIndex, call),
@@ -390,10 +408,12 @@ export class AgentSession {
     const started = Date.now();
     let output: string;
     let isError = false;
+    let exitCode: number | undefined;
     try {
       const result = await tool.execute(call.input, ctx);
       output = result.output;
       isError = result.isError ?? false;
+      exitCode = result.exitCode;
     } catch (err) {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
@@ -409,6 +429,7 @@ export class AgentSession {
       output: eventOutput,
       isError,
       durationMs: Date.now() - started,
+      ...(exitCode !== undefined ? { exitCode } : {}),
     });
     const result: UserContent = {
       type: 'tool_result',

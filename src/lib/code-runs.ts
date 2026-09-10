@@ -43,7 +43,21 @@ export type RunStatus = (typeof RUN_STATUSES)[number];
 export interface CodeRun {
   id: string;
   title: string;
-  prompt: string;
+  /**
+   * The agent prompt — composer text plus extracted attachment text. ABSENT
+   * on the list: `GET /api/code/tasks` omits it unless asked (`?include=prompt`),
+   * because a hundred of them polled every six seconds for a screen that
+   * renders titles was most of that screen's cost. Present on single-task
+   * reads. Nothing in the list reads it.
+   */
+  prompt?: string;
+  /**
+   * How many file changes the run has reported, derived from its event log
+   * at read time (see `countChangedFiles` in lib/code-task-events.ts). Absent
+   * from responses that did not compute it, which is why `hasOutcome` treats
+   * absence as unknown rather than as zero.
+   */
+  changedFileCount?: number;
   status: string;
   /** Where the run was STARTED FROM: "local" | "remote" | "cloud". */
   origin: string;
@@ -242,15 +256,17 @@ export function runState(run: CodeRun, reachable: boolean | null): RunState {
 /**
  * Whether a finished run left the reader anything to look at.
  *
- * A pull request is the unambiguous case. Absent one, the list cannot know
- * whether files changed without reading the run's event log, which is one
- * request per row and is what the peek is for — so a cloud run without a PR and
- * a device run both fall back to "Finished", and the row's own peek upgrades
- * the answer when it is opened. Under-claiming here is deliberate: a "Ready to
- * review" chip on a run that changed nothing sends people to an empty diff.
+ * A pull request is the unambiguous case. A run that reported file changes is
+ * the other one — and it is the one that used to be invisible: device runs
+ * never open a pull request, so every one of them fell into "Wrapped up" no
+ * matter what it wrote, and "Ready to review" was a bucket nothing could
+ * reach. The count now rides on the list row, derived from the event log in
+ * one grouped query (see `countChangedFiles`), so the answer costs nothing
+ * per row. Under-claiming on an absent count is deliberate: an older server
+ * that sends none must not promote every finished run.
  */
 function hasOutcome(run: CodeRun): boolean {
-  return !!run.prUrl;
+  return !!run.prUrl || (run.changedFileCount ?? 0) > 0;
 }
 
 export function bucketOf(run: CodeRun, reachable: boolean | null): TriageBucket {

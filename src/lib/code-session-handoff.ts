@@ -9,6 +9,13 @@ import type { ClientAttachment } from "@/types/chat";
  * keyed by conversation id, into CodeSessionView, which dispatches once the Mac
  * is reachable. sessionStorage (not a query param) keeps the task text out of
  * the URL and history.
+ *
+ * READ AND CLEAR ARE SEPARATE ON PURPOSE. The read used to `removeItem` as it
+ * went, and the text then lived only in React state — so a reload while the
+ * Mac was offline lost the instruction the composer had just promised was
+ * "safe here" and would "send the moment the Mac reconnects". Now the session
+ * view peeks, and clears only once `send` has returned `accepted`, which is the
+ * first moment the words exist anywhere durable.
  */
 export const CODE_PENDING_PROMPT_PREFIX = "juno:code:pending-prompt:";
 
@@ -16,6 +23,8 @@ export type PendingCodePrompt = {
   text: string;
   attachments: ClientAttachment[];
 };
+
+const keyFor = (conversationId: string) => `${CODE_PENDING_PROMPT_PREFIX}${conversationId}`;
 
 /** Persist the first prompt (+ optional attachments) for a just-created session. */
 export function setPendingCodePrompt(
@@ -29,23 +38,18 @@ export function setPendingCodePrompt(
       text: text.trim(),
       attachments: attachments.slice(0, 10),
     };
-    window.sessionStorage.setItem(
-      `${CODE_PENDING_PROMPT_PREFIX}${conversationId}`,
-      JSON.stringify(payload),
-    );
+    window.sessionStorage.setItem(keyFor(conversationId), JSON.stringify(payload));
   } catch {
     /* quota / private mode — session view simply won't auto-send */
   }
 }
 
-/** Read + clear the pending first prompt for a device session (one-shot). */
-export function takePendingCodePrompt(conversationId: string): PendingCodePrompt | null {
+/** Read the pending first prompt for a device session WITHOUT consuming it. */
+export function peekPendingCodePrompt(conversationId: string): PendingCodePrompt | null {
   if (typeof window === "undefined") return null;
   try {
-    const key = `${CODE_PENDING_PROMPT_PREFIX}${conversationId}`;
-    const value = window.sessionStorage.getItem(key);
+    const value = window.sessionStorage.getItem(keyFor(conversationId));
     if (!value) return null;
-    window.sessionStorage.removeItem(key);
 
     // New shape: JSON { text, attachments }.
     try {
@@ -73,5 +77,15 @@ export function takePendingCodePrompt(conversationId: string): PendingCodePrompt
     return text ? { text, attachments: [] } : null;
   } catch {
     return null;
+  }
+}
+
+/** Forget the pending prompt — call once the words have landed on a run. */
+export function clearPendingCodePrompt(conversationId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(keyFor(conversationId));
+  } catch {
+    /* nothing to clear, or storage unavailable */
   }
 }

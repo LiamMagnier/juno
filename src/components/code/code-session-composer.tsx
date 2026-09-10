@@ -1,33 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, Loader2, Mic } from "lucide-react";
+import { AudioLines, Loader2, Mic } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
-  ComposerDivider,
   ComposerPrimaryAction,
   ComposerShell,
-  composerChevronClass,
-  composerChipClass,
   composerFieldClass,
   composerIconButtonClass,
+  type ComposerPrimaryFace,
 } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
-import { CodeConnectorsMenu } from "@/components/code/code-connectors-menu";
 import { AppIcons, CodeIcons } from "@/lib/app-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
-import {
-  clampReasoningEffort,
-  reasoningOptions,
-  type ReasoningEffort,
-} from "@/lib/model-metrics";
+import { reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment } from "@/types/chat";
 import type { PendingUpload } from "@/hooks/use-uploads";
@@ -58,22 +50,30 @@ export interface CodeSessionComposerProps {
 
   blockedReason: string | null;
   canSend: boolean;
-  hasPayload: boolean;
   onSubmit: () => void;
 
   status: CodeSessionStatus;
   isBusy: boolean;
   onCancel: () => void;
 
-  // Model & Reasoning
+  /**
+   * Mid-run steering. `canSteer` is the session's own answer (a device run
+   * that is running or waiting on an approval); `steerReady` narrows it to
+   * "there is text to send and nothing staged that a steer cannot carry".
+   * While `canSteer` the field stays live and the primary action's send face
+   * reads "Send to running task"; Stop is what the circle shows when the
+   * field is empty, because that is the other thing left to press.
+   */
+  canSteer: boolean;
+  steerReady: boolean;
+  onSteer: () => void;
+
+  // Model & thinking. Effort lives inside the model chip's popover (the
+  // `thinking` footer slot), never as a chip of its own on the row.
   model?: string;
   onModelChange?: (model: string) => void;
   reasoningEffort?: ReasoningEffort;
   onReasoningChange?: (effort: ReasoningEffort) => void;
-
-  // Connectors
-  connectorsEnabled?: string[];
-  onToggleConnector?: (id: string) => void;
 
   attachments: {
     enabled: boolean;
@@ -101,10 +101,18 @@ export interface CodeSessionComposerProps {
 /**
  * The composer at the bottom of a Code session: the shared single surface.
  *
- * One row of controls. Where the session runs — the workspace or the cloud
- * repo, and its base branch — is a quiet fact on the left of that row rather
- * than a second strip under it; the run context that used to live on a
- * hairline-separated tier sits inline, in the muted ink, and truncates first.
+ * One row, in the shell's order — `+` on the left; on the right the run
+ * context as a quiet chip, the model chip (with thinking effort inside it),
+ * the dictate and voice icon buttons, then the primary action. Nothing on the
+ * row is a permanent badge: the "Auto" tag, the effort chip and the
+ * connectors chip that used to sit here are gone, because a row that shows
+ * every option at once reads as a settings panel (docs/design/FLAT_UI.md §4).
+ *
+ * The field does not go dark while a device run is going. It used to — the
+ * only verb left was Stop — so a reader who watched the agent head the wrong
+ * way had to kill the run and start over. Now typed text goes INTO the run as
+ * its next instruction (see `useCodeSession.steer`), and the send circle
+ * names that verb.
  */
 export function CodeSessionComposer({
   above,
@@ -121,17 +129,17 @@ export function CodeSessionComposer({
   textareaRef,
   blockedReason,
   canSend,
-  hasPayload: _hasPayload,
   onSubmit,
   status,
   isBusy,
   onCancel,
+  canSteer,
+  steerReady,
+  onSteer,
   model = DEFAULT_MODEL,
   onModelChange,
   reasoningEffort = null,
   onReasoningChange,
-  connectorsEnabled = [],
-  onToggleConnector,
   attachments,
   dictation,
   voice,
@@ -139,35 +147,79 @@ export function CodeSessionComposer({
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
-  const [fastMode, setFastMode] = React.useState(false);
-  const [proMode, setProMode] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const blockedId = React.useId();
 
-  const showVoiceButton = !isBusy && !_hasPayload && !!voice.onOpen;
+  // Locked means "nothing can be typed": submitting, stopping, queued, or a
+  // running cloud task (which cannot be steered). A steerable device run
+  // leaves the field open.
+  const locked = isBusy && !canSteer;
+  const settling = status === "stopping" || status === "submitting";
   const dropEnabled = attachments.enabled && !isBusy && !dictation.active;
 
   const modelInfo = React.useMemo(() => resolveModel(model), [model]);
-  const effortOptions = React.useMemo(
-    () => (modelInfo ? reasoningOptions(modelInfo) : []),
-    [modelInfo],
-  );
+  const effortOptions = React.useMemo(() => (modelInfo ? reasoningOptions(modelInfo) : []), [modelInfo]);
   const isAuto = isAutoModelId(model);
 
-  const face = isBusy
-    ? status === "stopping" || status === "submitting"
-      ? "busy"
-      : "stop"
-    : showVoiceButton
-      ? "voice"
-      : "send";
+  // The effort control rides INSIDE the model chip, as the chat composer
+  // mounts it — one chip for one decision. Absent for Auto (the model picks
+  // its own depth) and for models with a single tier.
+  const thinkingControl =
+    isAuto || !modelInfo || effortOptions.length < 2 || !onReasoningChange ? null : (
+      <ReasoningSlider
+        options={effortOptions}
+        value={reasoningEffort}
+        onChange={onReasoningChange}
+        disabled={locked}
+      />
+    );
 
-  const runLabel = resolving
-    ? "Getting this session ready…"
+  /*
+   * Which face the circle wears, and what pressing it does.
+   *
+   *   settling             busy      (disabled — a stop or a start is in flight)
+   *   steerable + text     send      "Send to running task"
+   *   busy otherwise       stop
+   *   idle                 send
+   *
+   * `voice` is never one of them: voice is its own icon button beside the
+   * mic, because a second verb in the one accent-coloured control was the
+   * thing people pressed by accident most.
+   */
+  const face: ComposerPrimaryFace = settling ? "busy" : isBusy ? (steerReady ? "send" : "stop") : "send";
+  const primaryLabel = settling
+    ? status === "stopping"
+      ? "Stopping task"
+      : "Starting task"
+    : face === "stop"
+      ? "Stop this task"
+      : isBusy
+        ? "Send to running task"
+        : isCloud
+          ? "Start a cloud run"
+          : "Send to your Mac";
+  const primaryTip = settling
+    ? status === "stopping"
+      ? "Stopping…"
+      : "Starting…"
+    : face === "stop"
+      ? "Stop"
+      : isBusy
+        ? "Send to running task"
+        : "Send";
+  const onPrimary = face === "stop" ? onCancel : isBusy ? onSteer : onSubmit;
+  const primaryDisabled = settling || (face === "send" && !(isBusy ? steerReady : canSend));
+
+  const runLabel = resolving ? "Getting this session ready…" : isCloud ? (cloudRepoFull ?? workspaceName) : workspaceName;
+
+  const placeholder = canSteer
+    ? "Add an instruction to the running task…"
     : isCloud
-      ? (cloudRepoFull ?? workspaceName)
-      : workspaceName;
+      ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
+      : presenceState === "offline"
+        ? "Describe the change — it sends when your Mac reconnects…"
+        : "Describe what to build or fix…";
 
   return (
     <div className="mx-auto w-full max-w-3xl px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
@@ -202,7 +254,7 @@ export function CodeSessionComposer({
           >
             <ComposerShell
               className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
-              dimmed={isBusy}
+              dimmed={locked}
               above={
                 attachments.enabled && (
                   <ComposerAttachmentTray uploads={attachments.uploads} onRemove={attachments.onRemove} />
@@ -216,48 +268,42 @@ export function CodeSessionComposer({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      if (canSend) onSubmit();
+                      if (isBusy) {
+                        if (steerReady) onSteer();
+                      } else if (canSend) {
+                        onSubmit();
+                      }
                     }
                   }}
                   rows={1}
-                  disabled={isBusy}
-                  placeholder={
-                    isCloud
-                      ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
-                      : presenceState === "offline"
-                        ? "Describe the change — it sends when your Mac reconnects…"
-                        : "Describe what to build or fix…"
-                  }
-                  aria-label="Prompt for this code session"
+                  disabled={locked}
+                  placeholder={placeholder}
+                  aria-label={canSteer ? "Instruction for the running task" : "Prompt for this code session"}
                   aria-describedby={blockedReason ? blockedId : undefined}
                   className={composerFieldClass}
                 />
               }
               leading={
+                attachments.enabled && (
+                  // Attachments cannot ride a steer, so the `+` rests while a
+                  // run is going even though the field does not.
+                  <ComposerAddMenu
+                    open={plusOpen}
+                    onOpenChange={setPlusOpen}
+                    disabled={isBusy}
+                    onPickPhotos={() => imageInputRef.current?.click()}
+                    onPickFiles={() => fileInputRef.current?.click()}
+                    onPickLibrary={() => setLibraryOpen(true)}
+                  />
+                )
+              }
+              trailing={
                 <>
-                  {attachments.enabled && (
-                    <ComposerAddMenu
-                      open={plusOpen}
-                      onOpenChange={setPlusOpen}
-                      disabled={isBusy}
-                      onPickPhotos={() => imageInputRef.current?.click()}
-                      onPickFiles={() => fileInputRef.current?.click()}
-                      onPickLibrary={() => setLibraryOpen(true)}
-                    />
-                  )}
-
-                  {onToggleConnector && (
-                    <CodeConnectorsMenu
-                      enabledConnectors={connectorsEnabled}
-                      onToggleConnector={onToggleConnector}
-                      disabled={isBusy}
-                    />
-                  )}
-
-                  {/* Where this runs: a fact, in the muted ink, on the same row. */}
+                  {/* Where this runs: a fact, in the chip's own ink and
+                      height, not a control. It truncates first. */}
                   <span
                     title={isCloud ? (cloudRepoFull ?? undefined) : (workspacePath ?? undefined)}
-                    className="hidden min-w-0 items-center gap-1.5 px-2 text-ui text-muted-foreground sm:flex"
+                    className="hidden h-8 min-w-0 items-center gap-1.5 px-2 text-ui text-muted-foreground sm:flex coarse:h-10"
                   >
                     {resolving ? (
                       <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
@@ -267,7 +313,7 @@ export function CodeSessionComposer({
                       <AppIcons.projects className="size-3.5 shrink-0" aria-hidden="true" />
                     )}
                     {!resolving && <span className="sr-only">Runs in </span>}
-                    <span className="min-w-0 max-w-[14rem] truncate">{runLabel}</span>
+                    <span className="min-w-0 max-w-[12rem] truncate">{runLabel}</span>
                     {!resolving && isCloud && baseRef && (
                       <>
                         <span aria-hidden="true" className="text-border">·</span>
@@ -277,78 +323,17 @@ export function CodeSessionComposer({
                       </>
                     )}
                   </span>
-                </>
-              }
-              trailing={
-                <>
+
                   {onModelChange && (
-                    <div className="min-w-0 shrink-0">
-                      <ModelSelector value={model} onChange={onModelChange} />
+                    <div className={cn("min-w-0", locked && "pointer-events-none")}>
+                      <ModelSelector
+                        value={model}
+                        onChange={onModelChange}
+                        disabled={locked}
+                        thinking={thinkingControl}
+                      />
                     </div>
                   )}
-
-                  {isAuto && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          aria-disabled
-                          className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
-                        >
-                          <span>Auto</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
-                    </Tooltip>
-                  )}
-
-                  {!isAuto && effortOptions.length > 0 && onReasoningChange && (() => {
-                    const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
-                    const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
-                    const label = current.label === "Extra high" ? "X-high" : current.label;
-                    const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
-
-                    return (
-                      <Tooltip>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={isBusy}
-                                aria-label={`Thinking effort: ${current.label}`}
-                                className={cn(composerChipClass, atTop && "text-primary hover:text-primary")}
-                              >
-                                <span className="min-w-0 truncate">{label}</span>
-                                <ChevronDown className={composerChevronClass} />
-                              </Button>
-                            </TooltipTrigger>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            align="end"
-                            sideOffset={10}
-                            className="w-[300px] origin-popper p-4"
-                          >
-                            <ReasoningSlider
-                              options={effortOptions}
-                              value={reasoningEffort}
-                              onChange={onReasoningChange}
-                              disabled={isBusy}
-                              fastMode={fastMode}
-                              onFastModeChange={setFastMode}
-                              proMode={proMode}
-                              onProModeChange={setProMode}
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <TooltipContent>Thinking effort & depth</TooltipContent>
-                      </Tooltip>
-                    );
-                  })()}
 
                   {dictation.supported && (
                     <Tooltip>
@@ -358,7 +343,7 @@ export function CodeSessionComposer({
                           variant="ghost"
                           size="icon-sm"
                           onClick={dictation.onStart}
-                          disabled={isBusy || dictation.active || voice.open}
+                          disabled={locked || dictation.active || voice.open}
                           aria-label="Dictate"
                           aria-pressed={dictation.active}
                           className={composerIconButtonClass}
@@ -369,7 +354,25 @@ export function CodeSessionComposer({
                       <TooltipContent>Dictate</TooltipContent>
                     </Tooltip>
                   )}
-                  <ComposerDivider />
+
+                  {voice.onOpen && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={voice.onOpen}
+                          disabled={dictation.active || voice.open}
+                          aria-label="Talk this session through with Juno"
+                          className={composerIconButtonClass}
+                        >
+                          <AudioLines className="size-4" aria-hidden="true" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Voice conversation</TooltipContent>
+                    </Tooltip>
+                  )}
                 </>
               }
               action={
@@ -377,36 +380,12 @@ export function CodeSessionComposer({
                   <TooltipTrigger asChild>
                     <ComposerPrimaryAction
                       face={face}
-                      onClick={
-                        isBusy
-                          ? onCancel
-                          : showVoiceButton && voice.onOpen
-                            ? voice.onOpen
-                            : onSubmit
-                      }
-                      disabled={
-                        isBusy
-                          ? status === "stopping" || status === "submitting"
-                          : showVoiceButton
-                            ? false
-                            : !canSend
-                      }
-                      aria-label={
-                        isBusy
-                          ? status === "stopping"
-                            ? "Stopping task"
-                            : "Stop this task"
-                          : showVoiceButton
-                            ? "Talk this session through with Juno"
-                            : isCloud
-                              ? "Start a cloud run"
-                              : "Send to your Mac"
-                      }
+                      onClick={onPrimary}
+                      disabled={primaryDisabled}
+                      aria-label={primaryLabel}
                     />
                   </TooltipTrigger>
-                  <TooltipContent>
-                    {isBusy ? "Stop" : showVoiceButton ? "Voice conversation" : "Send"}
-                  </TooltipContent>
+                  <TooltipContent>{primaryTip}</TooltipContent>
                 </Tooltip>
               }
             />

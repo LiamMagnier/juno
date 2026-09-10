@@ -12,7 +12,7 @@ import { env } from "@/lib/env";
  * runner-context then hands back the ONE Juno-minted credential the runner uses
  * for the rest of the run:
  *
- *  - TASK token ("cct_", ~30 min): minted server-side and returned ONLY inside
+ *  - TASK token ("cct_", job timeout + 5 min): minted server-side and returned ONLY inside
  *    the runner-context response body (never a dispatch input). It authenticates
  *    the runner's subsequent callbacks (claim/events/respond/cancel + the
  *    /api/agent provider proxy) for the single task it was minted for.
@@ -33,10 +33,27 @@ import { env } from "@/lib/env";
 /** Task token: runner → Juno callbacks (claim/events/respond/cancel + proxy). */
 export const CLOUD_CODE_TOKEN_PREFIX = "cct_";
 
-/** ~30 min: long enough for a cold-start clone + install + agent run, short
- *  enough that a leaked token is a narrow, self-expiring window. Aligned with
- *  docs/cloud-code.md. */
-export const CLOUD_CODE_TOKEN_TTL_MS = 30 * 60_000;
+/**
+ * The workflow's `timeout-minutes` (.github/workflows/code-runner.yml), in ms.
+ * Spelled here so the token's lifetime can be derived from it: the two used to
+ * be independent numbers that happened to both be thirty, and the token had
+ * no margin over the job at all.
+ */
+export const CLOUD_RUNNER_JOB_TIMEOUT_MS = 30 * 60_000;
+
+/**
+ * The job timeout plus five minutes.
+ *
+ * Minted at runner-context time, which is a little after the job starts, so a
+ * token that lasted exactly as long as the job expired BEFORE the job did. A
+ * run that finished in the last minutes of its window then posted `done` and
+ * its `prUrl` with a dead token: 401 is not a retryable status for the outbox,
+ * the batch was dropped, the PR existed on GitHub, and the task sat `running`
+ * until the sweeper failed it. The margin is what lets the last post land.
+ * Still short enough that a leaked token is a narrow, self-expiring window.
+ * tests/code-runner-workflow.test.ts pins this to the workflow's timeout.
+ */
+export const CLOUD_CODE_TOKEN_TTL_MS = CLOUD_RUNNER_JOB_TIMEOUT_MS + 5 * 60_000;
 
 type TokenKind = "task";
 

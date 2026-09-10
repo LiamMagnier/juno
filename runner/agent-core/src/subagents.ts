@@ -14,7 +14,7 @@ import type {
   UserContent,
   ToolSpec,
 } from './types.js';
-import type { ProviderAdapter } from './providers/types.js';
+import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import { PermissionEngine, classifyRisk } from './permissions.js';
 import { runAgentLoop } from './loop.js';
@@ -104,6 +104,8 @@ export interface SubagentHost {
   readonly tools: ToolDefinition[];
   readonly env?: NodeJS.ProcessEnv;
   readonly usageReporter?: UsageReporter;
+  /** The root session's thinking effort; children think as hard as the root. */
+  readonly reasoningEffort?: ReasoningEffort;
   emit(event: AgentEvent): void;
   requestApproval(request: ApprovalRequest): Promise<ApprovalDecision>;
   /** Snapshot an absolute path before the manager applies imported changes. */
@@ -728,6 +730,7 @@ function resolveSubagentModel(specModel: string | undefined, hostModel: string):
       tools: tools.map((t) => t.spec),
       signal: task.aborter.signal,
       maxSteps: this.config.maxStepsPerChild,
+      ...(this.host.reasoningEffort ? { reasoningEffort: this.host.reasoningEffort } : {}),
       executeToolCall: async (call) => {
         // Structural no-nesting guard on top of the tool-set guard.
         if (isOrchestrationTool(call.name)) {

@@ -17,6 +17,7 @@ import type {
   CodePendingApproval,
   CodeRollbackRequest,
   CodeRollbackVerb,
+  CodeSteering,
 } from "@/hooks/use-code-session";
 import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
@@ -242,6 +243,24 @@ export interface CodeRunStackProps {
   blocked: { reason: string; onRecheck?: () => Promise<void> | void } | null;
   /** Keep/revert/undo, or null when no host has said it can honour them. */
   rollback: CodeRollbackControls | null;
+  /** Which machine is running this, so every sentence names the right one. */
+  isCloud: boolean;
+  /** The newest mid-run instruction and where it has got to, or null. */
+  steering: CodeSteering | null;
+}
+
+/** The lifecycle line under a steer, phase by phase. */
+function steeringCopy(steering: CodeSteering): string {
+  switch (steering.phase) {
+    case "sending":
+      return "Sending your instruction…";
+    case "queued":
+      return "Queued for the running task — it takes it at its next step.";
+    case "delivered":
+      return "Delivered — the run has your instruction.";
+    case "failed":
+      return steering.message ?? "Couldn’t send the instruction.";
+  }
 }
 
 export function CodeRunStack({
@@ -253,6 +272,8 @@ export function CodeRunStack({
   queuedNote,
   blocked,
   rollback,
+  isCloud,
+  steering,
 }: CodeRunStackProps) {
   return (
     <MotionConfig reducedMotion="user">
@@ -271,16 +292,50 @@ export function CodeRunStack({
                   ? " This affects files outside the workspace."
                   : ""
             } Deny or Allow below.`
-          : (queuedNote ?? "")}
+          : steering
+            ? steeringCopy(steering)
+            : (queuedNote ?? "")}
       </p>
 
       {files.length > 0 && <ChangedFilesCard files={files} rollback={rollback} />}
       {agents.length > 0 && <AgentsCard agents={agents} />}
       {blocked && <BlockedNote reason={blocked.reason} onRecheck={blocked.onRecheck} />}
       {queuedNote && (
-        <p className={cn(RUN_CARD, RUN_CARD_INSET, "flex items-center gap-2 text-xs text-muted-foreground motion-safe:animate-rise-in")}>
+        <p className={cn(RUN_CARD, RUN_CARD_INSET, "flex items-center gap-2 text-ui text-muted-foreground motion-safe:animate-rise-in")}>
           <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground motion-safe:animate-pulse" aria-hidden="true" />
           {queuedNote}
+        </p>
+      )}
+
+      {/*
+        WHERE A MID-RUN INSTRUCTION HAS GOT TO. Three states the reader can
+        see change — sending, queued, delivered — because the send circle
+        returns to rest the moment the POST lands, and without this line the
+        instruction would appear to have vanished into a run that shows no
+        sign of having read it. "Delivered" comes only from the host's ack.
+      */}
+      {steering && (
+        <p
+          className={cn(
+            RUN_CARD,
+            RUN_CARD_INSET,
+            "flex items-start gap-2 text-ui motion-safe:animate-rise-in",
+            steering.phase === "failed" ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {steering.phase === "delivered" ? (
+            <StatusIcons.success className="mt-px size-3.5 shrink-0 text-success" aria-hidden="true" />
+          ) : steering.phase === "failed" ? (
+            <StatusIcons.error className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          ) : (
+            <Loader2 className="mt-px size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+          )}
+          <span className="min-w-0 flex-1">
+            <span>{steeringCopy(steering)}</span>
+            <span className="mt-0.5 block truncate font-mono text-caption text-muted-foreground" title={steering.text}>
+              {steering.text}
+            </span>
+          </span>
         </p>
       )}
 
@@ -309,6 +364,7 @@ export function CodeRunStack({
               detail={pendingApproval.detail}
               responding={responding}
               onRespond={onRespond}
+              isCloud={isCloud}
             />
           </motion.div>
         )}
@@ -1034,20 +1090,23 @@ function AgentsCard({ agents }: { agents: CodeAgentState[] }) {
   );
 }
 
-/** An agent follow-up question: approve or deny the proposed action. The Mac
- *  waits up to five minutes, then denies on its own (native host behavior). */
+/** An agent follow-up question: approve or deny the proposed action. A Mac
+ *  waits up to five minutes, then denies on its own (native host behavior); a
+ *  cloud runner has no such clock, and the footnote says which it is. */
 function ApprovalCard({
   summary,
   risk,
   detail,
   responding,
   onRespond,
+  isCloud,
 }: {
   summary: string;
   risk: string;
   detail: string | null;
   responding: boolean;
   onRespond: (approve: boolean) => void;
+  isCloud: boolean;
 }) {
   return (
     // Not a dialog: this card appears inline in the transcript, never takes
@@ -1125,7 +1184,11 @@ function ApprovalCard({
           {responding && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
           Allow
         </Button>
-        <span className="text-caption text-muted-foreground">Your Mac denies automatically after 5 minutes.</span>
+        <span className="text-caption text-muted-foreground">
+          {/* Named for the machine that is waiting. "Your Mac" on a cloud
+              run was a sentence about a computer that is not involved. */}
+          {isCloud ? "The cloud runner waits for your answer." : "Your Mac denies automatically after 5 minutes."}
+        </span>
       </div>
     </div>
   );

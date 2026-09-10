@@ -31,6 +31,17 @@ const CONTROL_KINDS = [
   "accept_change",
   "reject_change",
   "undo_change",
+  /*
+   * `steer` ({ requestId, text }) is a new instruction for a task that is
+   * ALREADY RUNNING — the web composer's "Send to running task". The host
+   * injects `text` as the next user message of its live session and answers
+   * with a `steer_ack` ({ requestId }) event, which is what moves the
+   * composer's lifecycle from "queued" to "delivered". Same delivery channel
+   * as every other control here, and the same backwards-compatibility: a host
+   * that predates the verb swallows it, sends no ack, and the web shows the
+   * instruction as queued rather than as done.
+   */
+  "steer",
 ];
 
 export type TaskEventInput = {
@@ -39,6 +50,52 @@ export type TaskEventInput = {
   /** Producer-supplied idempotency key; see `CodeTaskEvent.eventKey`. */
   key?: string | null;
 };
+
+/**
+ * A pull request URL a run may report, and nothing else.
+ *
+ * `prUrl` is lifted from ANY event of any kind and rendered as the session
+ * banner's one call to action. Only the task's owner (or its own runner) can
+ * post events, so the exposure was bounded — but a host is still a process
+ * running model-authored code, and "starts with https://" let it put any link
+ * at all under a button that says "View pull request". Pull requests live on
+ * github.com; that is the whole check.
+ */
+export function isGithubPullUrl(candidate: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return false;
+  }
+  return url.protocol === "https:" && url.hostname === "github.com" && /\/pull\/\d+/.test(url.pathname);
+}
+
+/**
+ * How many `file_change` events each task has reported.
+ *
+ * `CodeTask` has no `changedFileCount` column, and adding one is a migration
+ * this pass does not make — so rather than maintaining a counter inside
+ * `appendTaskEvents` that could drift from the events it summarises, the
+ * count is DERIVED from the events themselves when a list is read. One
+ * grouped query for the whole page, never one per row. Callers pass ids they
+ * have already ownership-filtered, which is why this reads unguarded.
+ *
+ * It counts events, not distinct paths: a host that reports the same file
+ * twice counts twice. The consumer (`hasOutcome` in lib/code-runs.ts) only
+ * asks whether it is above zero, and for that the two are the same question.
+ */
+export async function countChangedFiles(taskIds: readonly string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (taskIds.length === 0) return counts;
+  const rows = await prismaUnguarded.codeTaskEvent.groupBy({
+    by: ["taskId"],
+    where: { taskId: { in: [...taskIds] }, kind: "file_change" },
+    _count: { _all: true },
+  });
+  for (const row of rows) counts.set(row.taskId, row._count._all);
+  return counts;
+}
 
 /** Callers MUST have ownership-checked `taskId` before calling. The transaction
  * updates the task by bare id, so it intentionally uses the unguarded client. */
@@ -104,7 +161,7 @@ export async function appendTaskEvents(
     for (const event of events) {
       const payload = event.payload as { prUrl?: unknown } | null;
       const candidate = payload && typeof payload === "object" ? payload.prUrl : undefined;
-      if (typeof candidate === "string" && candidate.startsWith("https://")) {
+      if (typeof candidate === "string" && isGithubPullUrl(candidate)) {
         prUrl = candidate;
         break;
       }

@@ -29,6 +29,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { codeLiveCopy } from "@/components/code/code-activity";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { CitationAuditPanel, isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
@@ -59,8 +60,12 @@ function StreamStatus({
   status,
   recovering,
   recoveryNote,
+  label,
 }: {
   status?: GenerationStatus;
+  /** A surface's own sentence for the live row, when it knows better than
+   *  the generic rungs (a Code run names the command it is on). */
+  label?: string;
   /**
    * The stream dropped and the client is polling for the persisted answer.
    *
@@ -95,7 +100,8 @@ function StreamStatus({
   // is not happening.
   if (recovering) {
     statusCopy = recoveryNote || "Reconnecting — the answer is still being written";
-  } else if (writing) statusCopy = "Writing the response";
+  } else if (label) statusCopy = label;
+  else if (writing) statusCopy = "Writing the response";
   else if (checking) statusCopy = "Checking your request";
   else if (submitting) statusCopy = "Starting your request";
   else if (elapsedSec >= 600) {
@@ -547,6 +553,8 @@ interface MessageItemProps {
   message: ChatMessage;
   isLast: boolean;
   busy: boolean;
+  /** See MessageListProps.surface. */
+  surface?: "chat" | "code";
   /** Live generation phase — only meaningful for the streaming last message. */
   status?: GenerationStatus;
   animateIn?: boolean;
@@ -580,6 +588,7 @@ interface MessageItemProps {
 }
 
 export function MessageItem({
+  surface = "chat",
   message,
   isLast,
   busy,
@@ -948,16 +957,21 @@ export function MessageItem({
         already the behaviour for realtime voice; it is right for every turn.
       */}
       <div className="min-w-0 flex-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
-        <ActivityTimeline
-          messageId={message.id}
-          events={view.activity}
-          reasoning={view.reasoning}
-          reasoningParts={view.reasoningParts}
-          streaming={message.streaming}
-          // Threaded down to the panel's Notice block. Resolved here, once, so
-          // the inline finish row below and the panel cannot word it differently.
-          finishNote={finishNote}
-        />
+        {/* A Code turn draws its commands, file writes and approvals as its
+            own cards (code-activity.tsx) beside the turn; the research-shaped
+            strip would list the same rows a second time, minus the output. */}
+        {surface !== "code" && (
+          <ActivityTimeline
+            messageId={message.id}
+            events={view.activity}
+            reasoning={view.reasoning}
+            reasoningParts={view.reasoningParts}
+            streaming={message.streaming}
+            // Threaded down to the panel's Notice block. Resolved here, once, so
+            // the inline finish row below and the panel cannot word it differently.
+            finishNote={finishNote}
+          />
+        )}
         {/*
           Above the answer, not below it. The turn is BLOCKED on this — the tool
           loop in src/lib/mcp.ts is holding — so the question has to sit where
@@ -981,6 +995,9 @@ export function MessageItem({
             status={status}
             recovering={message.streaming && !message.error && !!message.errorMessage}
             recoveryNote={message.errorMessage ?? undefined}
+            // "Running npm test", not "Thinking about your request", while a
+            // Code run is on a tool. The latest activity row is the truth.
+            label={surface === "code" ? codeLiveCopy(view.activity?.[view.activity.length - 1]) ?? undefined : undefined}
           />
         ) : message.error && !hasPartialWithError ? (
           <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-ui text-destructive dark:bg-destructive/[0.14]">

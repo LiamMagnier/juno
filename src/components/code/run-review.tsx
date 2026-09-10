@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -90,10 +91,22 @@ export function RunReviewPane({
   const router = useRouter();
   const [scope, setScope] = React.useState<Scope>("last-turn");
   const [activePath, setActivePath] = React.useState<string | null>(null);
-  const [notes, setNotes] = React.useState<Note[]>([]);
-  const [verdicts, setVerdicts] = React.useState<Record<string, Verdict>>({});
+  /*
+   * NOTES OUTLIVE THE PANE. They were component state, the pane unmounts on
+   * close, and a reader who closed it to check something lost every note
+   * with no warning. Now they are read back from localStorage for this run
+   * (the pane is keyed by run id where it is mounted, so this initialiser
+   * runs per run), written on every change, and cleared only once they have
+   * been sent. Per browser, like a draft.
+   */
+  const [notes, setNotes] = React.useState<Note[]>(() => readReviewDraft(run.id).notes);
+  const [verdicts, setVerdicts] = React.useState<Record<string, Verdict>>(() => readReviewDraft(run.id).verdicts);
   const [drafting, setDrafting] = React.useState<{ path: string; line: number | null } | null>(null);
   const [sending, setSending] = React.useState(false);
+
+  React.useEffect(() => {
+    writeReviewDraft(run.id, { notes, verdicts });
+  }, [run.id, notes, verdicts]);
 
   /*
    * "LAST TURN" IS THE HIGHEST-VALUE CONTROL ON THIS PANE.
@@ -169,12 +182,27 @@ export function RunReviewPane({
     if (looksRight.length > 0) lines.push(`Files I marked as looking right: ${looksRight.join(", ")}`);
 
     setPendingCodePrompt(run.conversationId, lines.join("\n").trim());
+    // Sent means handed to the composer's own hand-off, which is durable;
+    // the draft has done its job.
+    clearReviewDraft(run.id);
     router.push(`/chat/${run.conversationId}`);
   };
 
   const noteCount = notes.length;
   const verdictCount = Object.keys(verdicts).length;
   const canSend = !!run.conversationId && noteCount + verdictCount > 0;
+
+  // Closing with unsent notes is not a loss any more — say so, quietly,
+  // rather than blocking the close with a dialog over a draft that is kept.
+  const close = () => {
+    const unsent = noteCount + verdictCount;
+    if (unsent > 0) {
+      toast.message(`Kept ${unsent} unsent ${unsent === 1 ? "note" : "notes"} for this run.`, {
+        description: "They will be here when you open the review again.",
+      });
+    }
+    onClose();
+  };
 
   return (
     <aside
@@ -209,7 +237,7 @@ export function RunReviewPane({
             </span>
           </p>
         </div>
-        <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close review">
+        <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close review">
           <ActionIcons.dismiss className="size-4" aria-hidden="true" />
         </Button>
       </header>
@@ -697,6 +725,60 @@ function NoteComposer({
 
 /* ── The receipt ──────────────────────────────────────────────────────────── */
 
+/* ── Review drafts, per run, per browser ─────────────────────────────────── */
+
+const REVIEW_DRAFT_PREFIX = "juno:code:review:";
+
+type ReviewDraft = { notes: Note[]; verdicts: Record<string, Verdict> };
+const EMPTY_DRAFT: ReviewDraft = { notes: [], verdicts: {} };
+
+function readReviewDraft(runId: string): ReviewDraft {
+  if (typeof window === "undefined") return EMPTY_DRAFT;
+  try {
+    const raw = window.localStorage.getItem(`${REVIEW_DRAFT_PREFIX}${runId}`);
+    if (!raw) return EMPTY_DRAFT;
+    const parsed = JSON.parse(raw) as Partial<ReviewDraft>;
+    const notes = Array.isArray(parsed.notes)
+      ? parsed.notes.filter(
+          (n): n is Note =>
+            !!n && typeof n === "object" && typeof n.id === "string" && typeof n.path === "string" && typeof n.body === "string",
+        )
+      : [];
+    const verdicts: Record<string, Verdict> = {};
+    if (parsed.verdicts && typeof parsed.verdicts === "object") {
+      for (const [path, verdict] of Object.entries(parsed.verdicts)) {
+        if (verdict === "ok" || verdict === "change") verdicts[path] = verdict;
+      }
+    }
+    return { notes, verdicts };
+  } catch {
+    return EMPTY_DRAFT;
+  }
+}
+
+function writeReviewDraft(runId: string, draft: ReviewDraft): void {
+  if (typeof window === "undefined") return;
+  try {
+    const key = `${REVIEW_DRAFT_PREFIX}${runId}`;
+    if (draft.notes.length === 0 && Object.keys(draft.verdicts).length === 0) {
+      window.localStorage.removeItem(key);
+    } else {
+      window.localStorage.setItem(key, JSON.stringify(draft));
+    }
+  } catch {
+    // Storage can be unavailable (private mode, quota); the draft is a courtesy.
+  }
+}
+
+function clearReviewDraft(runId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(`${REVIEW_DRAFT_PREFIX}${runId}`);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
 function RiskLine({ risk }: { risk: ReturnType<typeof classifyRisk> }) {
   const meta = RISK_META[risk.tier];
   return (
@@ -732,9 +814,9 @@ function RiskLine({ risk }: { risk: ReturnType<typeof classifyRisk> }) {
  * through honestly and a risky one is the only place full review is spent.
  *
  * THE "NOT KNOWN" SECTION IS THE PART THAT MAKES IT TRUSTWORTHY. A receipt that
- * only lists reassurances is marketing. The event log carries no exit codes, so
- * this can say a test command went past and cannot say it passed — and it says
- * exactly that, in those words, every time.
+ * only lists reassurances is marketing. A check carries the exit status the
+ * run reported, and where a producer reported none this says so in those
+ * words rather than guessing either way.
  */
 export function RunReceipt({
   detail,
@@ -775,15 +857,26 @@ export function RunReceipt({
           <>
             <ul className="mt-1 space-y-0.5">
               {detail.checks.slice(0, 4).map((check) => (
-                <li key={check} className="truncate font-mono text-caption text-muted-foreground">
-                  {check}
+                <li key={check.summary} className="flex min-w-0 items-center gap-1.5 font-mono text-caption text-muted-foreground">
+                  {check.outcome === "ok" ? (
+                    <StatusIcons.success className="size-3 shrink-0 text-success" aria-hidden="true" />
+                  ) : check.outcome === "failed" ? (
+                    <StatusIcons.error className="size-3 shrink-0 text-destructive" aria-hidden="true" />
+                  ) : (
+                    <span className="size-3 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{check.summary}</span>
+                  <span className={cn("shrink-0", check.outcome === "failed" && "text-destructive")}>
+                    {check.outcome === "ok" ? "passed" : check.outcome === "failed" ? "failed" : "not recorded"}
+                  </span>
                 </li>
               ))}
             </ul>
-            {/* Said every time, never once in a tooltip. The log records that a
-                command ran, not what it returned. */}
+            {/* Said every time, never once in a tooltip. */}
             <p className="mt-1 text-caption text-muted-foreground">
-              These commands ran. The run log does not record whether they passed.
+              {detail.checks.some((check) => check.outcome === "unknown")
+                ? "Where no exit status was reported, the log records only that the command ran."
+                : "Exit statuses as the run reported them — a passing check is not proof the change is right."}
             </p>
           </>
         ) : (

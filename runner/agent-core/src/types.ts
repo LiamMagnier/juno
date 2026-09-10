@@ -70,6 +70,8 @@ export type AgentEvent =
       output: string;
       isError: boolean;
       durationMs: number;
+      /** Process exit status, when the tool ran one — see ToolResult.exitCode. */
+      exitCode?: number;
       agentId?: string;
     }
   | { type: 'tool_denied'; callId: string; name: string; reason: string; agentId?: string }

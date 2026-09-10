@@ -118,12 +118,16 @@ export const bashTool: ToolDefinition = {
         if (output.length > MAX_OUTPUT_CHARS) {
           output = output.slice(0, MAX_OUTPUT_CHARS) + `\n…[output truncated at ${MAX_OUTPUT_CHARS} chars]`;
         }
+        // `code` is null when the process died to a signal (the timeout kill
+        // above, or an OOM). There is no exit status to report then, and
+        // inventing one would let a killed suite read as a failed one.
+        const exitCode = typeof code === 'number' ? code : undefined;
         if (killed) {
           resolveResult({ output: `${output}\n[command timed out after ${timeout}ms]`, isError: true });
         } else if (code !== 0) {
-          resolveResult({ output: `${output}\n[exit code ${code}]`, isError: true });
+          resolveResult({ output: `${output}\n[exit code ${code}]`, isError: true, exitCode });
         } else {
-          resolveResult({ output: output || '(no output)' });
+          resolveResult({ output: output || '(no output)', exitCode });
         }
       });
     });

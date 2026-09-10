@@ -8,7 +8,7 @@ import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
 
-export { appendTaskEvents, type TaskEventInput } from "@/lib/code-task-events";
+export { appendTaskEvents, countChangedFiles, type TaskEventInput } from "@/lib/code-task-events";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
@@ -74,6 +74,15 @@ export const EVENT_KINDS = [
   "reject_change",
   "undo_change",
   "rollback_result",
+  /*
+   * MID-RUN STEERING. `steer` ({ requestId, text }) is the web → host control
+   * (see CONTROL_KINDS in code-task-events.ts); `steer_ack` ({ requestId }) is
+   * the host saying it took the text as its next user message. The web shows
+   * an instruction as "delivered" ONLY on the ack — the control channel is
+   * fire-and-forget, so an appended `steer` is a request, never an outcome.
+   */
+  "steer",
+  "steer_ack",
 ] as const;
 
 /** The rollback verbs a client may ask for, and the only values the rollback
@@ -250,7 +259,24 @@ export function serializeDevice(device: CodeDevice, online?: boolean) {
   return online === undefined ? base : { ...base, online };
 }
 
-export function serializeTask(task: CodeTask) {
+/**
+ * Per-call shape of `serializeTask`.
+ *
+ * `includePrompt` exists because `prompt` is the AGENT prompt — the composer
+ * text plus up to 100 KB of extracted attachment text per task — and the run
+ * list polled a hundred of them every six seconds for a screen that reads the
+ * title. The list route now omits it unless asked (`?include=prompt`); every
+ * single-task route and the host queue keep it, because the host is what runs
+ * it. `changedFileCount` is the list's read-time derivation (see
+ * `countChangedFiles`) and is absent wherever it was not computed.
+ */
+export interface SerializeTaskOptions {
+  includePrompt?: boolean;
+  changedFileCount?: number;
+}
+
+export function serializeTask(task: CodeTask, opts: SerializeTaskOptions = {}) {
+  const includePrompt = opts.includePrompt ?? true;
   return {
     id: task.id,
     deviceId: task.deviceId,
@@ -258,7 +284,8 @@ export function serializeTask(task: CodeTask) {
     workspaceName: task.workspaceName,
     workspaceKey: task.workspaceKey,
     title: task.title,
-    prompt: task.prompt,
+    ...(includePrompt ? { prompt: task.prompt } : {}),
+    ...(opts.changedFileCount !== undefined ? { changedFileCount: opts.changedFileCount } : {}),
     status: task.status,
     lastSeq: task.lastSeq,
     conversationId: task.conversationId,
@@ -328,7 +355,7 @@ const payloadNum = (payload: Prisma.JsonValue, key: string): number | null => {
  * almost nobody scrolls to. A patch that does not fit is dropped ENTIRE rather
  * than sliced: a truncated-but-unlabelled hunk reads as the whole change.
  */
-type WriteActivityEvent = ClientActivityEvent & { patch?: string };
+type WriteActivityEvent = ClientActivityEvent & { patch?: string; exitCode?: number };
 const MAX_PERSISTED_PATCH_CHARS = 16_000;
 const MAX_PERSISTED_PATCH_BUDGET = 120_000;
 
@@ -372,7 +399,17 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
       }
       case "tool": {
         const summary = payloadStr(event.payload, "summary") ?? payloadStr(event.payload, "name");
-        if (summary) push(event, { kind: "tool", title: summary, detail: payloadStr(event.payload, "detail") ?? undefined });
+        // The exit status rides as a number so the transcript can say a
+        // command failed without parsing its own display string.
+        const exitCode = payloadNum(event.payload, "exitCode");
+        if (summary) {
+          push(event, {
+            kind: "tool",
+            title: summary,
+            detail: payloadStr(event.payload, "detail") ?? undefined,
+            ...(exitCode !== null ? { exitCode } : {}),
+          });
+        }
         break;
       }
       case "file_change": {
@@ -455,7 +492,9 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
       default:
         // status/user/approval_response/cancel_request carry no transcript
         // content, and neither do the rollback ASKS — see `rollback_result`
-        // above for why only the host's answer is persisted.
+        // above for why only the host's answer is persisted. A `steer` is not
+        // folded here either: the steer route persists the instruction as its
+        // own USER row, where a reader expects a turn of theirs to be.
         break;
     }
   }

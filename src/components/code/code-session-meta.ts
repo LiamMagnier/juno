@@ -92,15 +92,26 @@ export type CodeTaskMeta = {
   repoName: string | null;
   baseRef: string | null;
   prUrl: string | null;
+  /**
+   * The newest task that has not finished, for the session view to re-attach
+   * to after a reload. Carried here because this hook already reads the
+   * session's task rows on mount; the view used to make a second, identical
+   * request for exactly this one row.
+   */
+  activeTask: { id: string; status: string; target: string | null } | null;
 };
 
 type TaskMetaRow = {
+  id?: string;
+  status?: string;
   target?: string | null;
   repoOwner?: string | null;
   repoName?: string | null;
   baseRef?: string | null;
   prUrl?: string | null;
 };
+
+const TERMINAL = new Set(["done", "failed", "cancelled"]);
 
 /** Whether this session runs in the cloud, and its repo / PR — read from the
  *  session's tasks (serializeTask carries target/repo/prUrl). The latest task
@@ -114,6 +125,7 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
     repoName: null,
     baseRef: null,
     prUrl: null,
+    activeTask: null,
   });
 
   const refresh = React.useCallback(async () => {
@@ -126,6 +138,7 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
       const latest = tasks[0];
       const withRepo = tasks.find((t) => t.repoOwner && t.repoName);
       const prUrl = tasks.find((t) => typeof t.prUrl === "string" && t.prUrl)?.prUrl ?? null;
+      const live = tasks.find((t) => typeof t.id === "string" && typeof t.status === "string" && !TERMINAL.has(t.status));
       setMeta({
         loaded: true,
         isCloud: latest?.target === "cloud",
@@ -133,6 +146,7 @@ export function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refres
         repoName: latest?.repoName ?? withRepo?.repoName ?? null,
         baseRef: latest?.baseRef ?? withRepo?.baseRef ?? null,
         prUrl,
+        activeTask: live ? { id: live.id!, status: live.status!, target: live.target ?? null } : null,
       });
     } catch {
       // Keep the last reading; a device session simply stays non-cloud. But

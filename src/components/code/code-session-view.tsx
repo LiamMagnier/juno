@@ -19,9 +19,10 @@ import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useComposerAutosize } from "@/components/ui/composer-shell";
+import { useCodeActivityContents } from "@/components/code/code-activity";
 import { useCodeSession, isLiveId, type CodeRollbackVerb } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
-import { takePendingCodePrompt } from "@/lib/code-session-handoff";
+import { clearPendingCodePrompt, peekPendingCodePrompt } from "@/lib/code-session-handoff";
 import { DEFAULT_MODEL } from "@/lib/models";
 import type { ReasoningEffort } from "@/lib/model-metrics";
 import { cn } from "@/lib/utils";
@@ -112,45 +113,22 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   }, [conversation.id, setActiveConversationId]);
 
   // Re-attach to a run that was live when the page loaded (reload mid-task).
+  // Read off the rows `useCodeTaskMeta` already fetched — this used to be a
+  // second, identical request for the same list on every mount.
   const resumedRef = React.useRef(false);
   React.useEffect(() => {
-    if (resumedRef.current) return;
+    if (resumedRef.current || !meta.loaded) return;
     resumedRef.current = true;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/code/tasks?conversationId=${encodeURIComponent(conversation.id)}&limit=10`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { tasks?: { id: string; status: string }[] };
-        const active = (data.tasks ?? []).find((t) => !["done", "failed", "cancelled"].includes(t.status));
-        if (active) session.resume(active);
-      } catch {
-        // History still renders; the next send re-establishes the live path.
-      }
-    })();
-    // session.resume is stable for the lifetime of this conversation id.
+    if (meta.activeTask) session.resume(meta.activeTask);
+    // Once per conversation, the first time the rows land. session.resume is
+    // stable for the lifetime of this conversation id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation.id]);
+  }, [meta.loaded, meta.activeTask]);
 
   const [draft, setDraft] = React.useState("");
   const [dictating, setDictating] = React.useState(false);
   const [model, setModel] = React.useState(conversation.model || settings.defaultModel || DEFAULT_MODEL);
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(null);
-  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>(
-    conversation.activeConnectors?.length ? conversation.activeConnectors : ["github", "terminal", "web-search"]
-  );
-
-  const toggleConnector = React.useCallback((id: string) => {
-    setEnabledConnectors((prev) => {
-      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
-      updateConversation(conversation.id, { activeConnectors: next });
-      void fetch(`/api/conversations/${conversation.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ activeConnectors: next }),
-      }).catch(() => {});
-      return next;
-    });
-  }, [conversation.id, updateConversation]);
 
   const handleModelChange = React.useCallback((next: string) => {
     setModel(next);
@@ -176,12 +154,17 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
   // cloud sessions dispatch their task up front). Pre-fill the draft + staged
   // attachments and arm a one-shot auto-dispatch that fires the moment the Mac
   // is reachable; if it's offline the prompt simply waits, ready to send.
+  //
+  // PEEKED, NOT TAKEN. The hand-off stays in sessionStorage until `send`
+  // returns accepted (see `submit`), so a reload while the Mac is offline
+  // finds the instruction still here — which is what the composer's own copy
+  // promises it will.
   const [autoSendArmed, setAutoSendArmed] = React.useState(false);
   const handoffDoneRef = React.useRef(false);
   React.useEffect(() => {
     if (handoffDoneRef.current) return;
     handoffDoneRef.current = true;
-    const pending = takePendingCodePrompt(conversation.id);
+    const pending = peekPendingCodePrompt(conversation.id);
     if (pending) {
       setDraft(pending.text);
       if (pending.attachments.length) addAttachments(pending.attachments);
@@ -238,7 +221,25 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     async (overrideText?: string): Promise<boolean> => {
       const text = (overrideText ?? draft).trim();
       const attachments = readyAttachments;
-      if ((!text && attachments.length === 0) || session.isBusy || isUploading) return false;
+
+      /*
+       * A BUSY SESSION IS NOT A CLOSED ONE. While a device run is going the
+       * words go INTO it as its next instruction rather than starting a
+       * second task. Text only: an attachment cannot ride a steer, so with
+       * anything staged this falls through to the refusal below and the
+       * composer's own gate has already said why.
+       */
+      if (session.isBusy) {
+        if (!session.canSteer || !text || attachments.length > 0 || uploads.length > 0) return false;
+        const { accepted } = await session.steer(text);
+        if (accepted) {
+          setDraft("");
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        }
+        return accepted;
+      }
+
+      if ((!text && attachments.length === 0) || isUploading) return false;
 
       if (isCloud) {
         if (!meta.repoOwner || !meta.repoName) return false;
@@ -257,6 +258,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
         if (accepted) {
           setDraft("");
           clear();
+          clearPendingCodePrompt(conversation.id);
           nameSessionFromFirstPrompt(text, attachments);
           meta.refresh(); // a follow-up run may open a new PR — pick it up
           requestAnimationFrame(() => textareaRef.current?.focus());
@@ -283,6 +285,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       if (accepted) {
         setDraft("");
         clear();
+        // The words have landed on a run: the hand-off has done its job.
+        clearPendingCodePrompt(conversation.id);
         // First prompt of a fresh session names it (server does the same — this
         // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
         nameSessionFromFirstPrompt(text, attachments);
@@ -293,6 +297,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     [
       clear,
       conversation.codeWorkspaceName,
+      conversation.id,
       draft,
       isCloud,
       isUploading,
@@ -303,6 +308,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       readyAttachments,
       reasoningEffort,
       session,
+      uploads.length,
       workspaceKey,
       workspacePath,
     ],
@@ -315,6 +321,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     (isCloud || !!workspacePath) &&
     !session.isBusy &&
     !isUploading;
+  // Text, and nothing staged that a steer cannot carry.
+  const steerReady = session.canSteer && !!draft.trim() && readyAttachments.length === 0 && uploads.length === 0;
 
   // Dictate: drop the transcript into the draft, or merge + send immediately.
   // Same append semantics as chat — existing typed text is preserved. If the
@@ -339,10 +347,9 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
       }
-      const canFire =
-        (isCloud ? !!cloudRepoFull : !!presence.device && !!workspacePath) &&
-        !session.isBusy &&
-        !isUploading;
+      const canFire = session.isBusy
+        ? session.canSteer && readyAttachments.length === 0 && uploads.length === 0
+        : (isCloud ? !!cloudRepoFull : !!presence.device && !!workspacePath) && !isUploading;
       if (!canFire) {
         park();
         return;
@@ -357,8 +364,10 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       isUploading,
       presence.device,
       readyAttachments.length,
+      session.canSteer,
       session.isBusy,
       submit,
+      uploads.length,
       workspacePath,
     ],
   );
@@ -411,7 +420,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       // second wording for the same refusal reads as a second rule.
       blockedReason: sendBlockedReason
         ? sendBlockedReason
-        : session.isBusy
+        : session.isBusy && !session.canSteer
           ? "Juno Code is working on this. Wait for it to finish, or stop it first."
           : isUploading
             ? "Still uploading the attached files."
@@ -425,7 +434,7 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       // words are appended to it.
       onSend: (text: string) => submit([draft.trim(), text.trim()].filter(Boolean).join(" ")),
     }),
-    [draft, isUploading, sendBlockedReason, session.isBusy, session.status, submit],
+    [draft, isUploading, sendBlockedReason, session.canSteer, session.isBusy, session.status, submit],
   );
 
   // Fire the handed-off first prompt as soon as the session can send. Cloud
@@ -571,6 +580,17 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     session.messages,
     session.status === "running" || session.status === "awaiting_approval",
   );
+  /*
+   * THE CODING TRANSCRIPT'S OWN ROWS — commands with their output, files with
+   * their diffs, approvals — placed under each turn through MessageList's one
+   * slot for surface-owned nodes. See code-activity.tsx for what the chat
+   * components still need to do for these to replace the thought strip.
+   */
+  const streamingId = React.useMemo(
+    () => session.messages.find((m) => m.streaming)?.id ?? null,
+    [session.messages],
+  );
+  const codeActivity = useCodeActivityContents(session.messages, streamingId);
 
   /*
    * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
@@ -587,6 +607,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
     const lastUser = [...session.messages].reverse().find((m) => m.role === "USER");
     const text = lastUser?.content.trim();
     if (!text) return;
+    // A retry starts a NEW task — never a steer into a live one, which would
+    // send the failed prompt into a run that is doing something else.
     const canFire = canTarget && (isCloud || !!workspacePath) && !session.isBusy && !isUploading;
     if (canFire) {
       void submit(text);
@@ -674,6 +696,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
           queuedNote={queuedNote}
           blocked={blockedNote}
           rollback={rollbackControls}
+          isCloud={isCloud}
+          steering={session.steering}
         />
       }
       voicePanel={
@@ -693,17 +717,17 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
       textareaRef={textareaRef}
       blockedReason={sendBlockedReason}
       canSend={canSend}
-      hasPayload={hasPayload}
       onSubmit={() => void submit()}
       status={session.status}
       isBusy={session.isBusy}
       onCancel={() => void session.cancel()}
+      canSteer={session.canSteer}
+      steerReady={steerReady}
+      onSteer={() => void submit()}
       model={model}
       onModelChange={handleModelChange}
       reasoningEffort={reasoningEffort}
       onReasoningChange={setReasoningEffort}
-      connectorsEnabled={enabledConnectors}
-      onToggleConnector={toggleConnector}
       attachments={{
         enabled: canAttach,
         uploads,
@@ -759,6 +783,8 @@ export function CodeSessionView({ conversation, initialMessages, initialArtifact
               <>
                 <MessageList
                   messages={session.messages}
+                  surface="code"
+                  researchContents={codeActivity}
                   busy={session.isBusy}
                   status={listStatus}
                   artifacts={artifacts}

@@ -257,17 +257,37 @@ export interface RunDetail {
   hasTurnBoundary: boolean;
   /**
    * Commands the run itself reported that look like verification — tests, type
-   * checks, linters, builds.
+   * checks, linters, builds — each with how it ended.
    *
    * THIS IS EVIDENCE, NOT A GUARANTEE, and the receipt that renders it has to
-   * say so. All it proves is that a tool event went past with `npm test` in its
-   * summary; the event log carries no exit code, so a suite that ran and failed
-   * looks identical here to one that ran and passed. It earns its place anyway
-   * because the alternative on offer is worse: with nothing at all, a reader
-   * assumes either that everything was checked or that nothing was, and the
-   * receipt's whole purpose is to stop them having to guess.
+   * say so. `outcome` is read from the tool event's `exitCode` (the runner
+   * sends one now) or, for rows from producers that predate it, from the
+   * ` — ok` / ` — failed` suffix the runner has always appended; "unknown"
+   * means the log recorded that the command ran and nothing about how it
+   * ended. It earns its place because the alternative on offer is worse:
+   * with nothing at all, a reader assumes either that everything was checked
+   * or that nothing was, and the receipt's whole purpose is to stop them
+   * having to guess.
    */
-  checks: string[];
+  checks: RunCheck[];
+}
+
+export interface RunCheck {
+  /** The command as reported, minus the runner's outcome suffix. */
+  summary: string;
+  outcome: "ok" | "failed" | "unknown";
+}
+
+/** The runner's own suffix on a bash summary. */
+const OUTCOME_SUFFIX = / — (ok|failed)$/;
+
+/** How a tool event says its command ended: the number first, the suffix second. */
+function checkOutcome(payload: Record<string, unknown> | null, summary: string): RunCheck["outcome"] {
+  const exit = num(payload, "exitCode");
+  if (exit !== null) return exit === 0 ? "ok" : "failed";
+  if (payload?.failed === true) return "failed";
+  const suffix = OUTCOME_SUFFIX.exec(summary)?.[1];
+  return suffix === "ok" ? "ok" : suffix === "failed" ? "failed" : "unknown";
 }
 
 const EMPTY_DETAIL: RunDetail = {
@@ -375,7 +395,10 @@ export function useRunDetail(taskId: string | null): RunDetail {
     let lastUserSeq = 0;
     let seenUser = false;
     let lastSeq = 0;
-    const checks = new Set<string>();
+    // Keyed by the command so a suite run four times is one line, and the
+    // LAST outcome wins: a suite that failed and was then made to pass
+    // should read as passing.
+    const checks = new Map<string, RunCheck["outcome"]>();
 
     const apply = (events: RemoteEvent[]) => {
       for (const event of events) {
@@ -393,9 +416,10 @@ export function useRunDetail(taskId: string | null): RunDetail {
             const summary = str(event.payload, "summary") ?? str(event.payload, "name");
             if (summary) {
               activity = summary;
-              // Deduplicated by the whole summary, so a suite run four times
-              // during one session is one line on the receipt rather than four.
-              if (CHECK_PATTERN.test(summary)) checks.add(summary.trim().slice(0, 120));
+              if (CHECK_PATTERN.test(summary)) {
+                const key = summary.replace(OUTCOME_SUFFIX, "").trim().slice(0, 120);
+                checks.set(key, checkOutcome(event.payload, summary));
+              }
             }
             break;
           }
@@ -471,7 +495,7 @@ export function useRunDetail(taskId: string | null): RunDetail {
         pendingApproval: pending,
         error,
         hasTurnBoundary: seenUser,
-        checks: [...checks],
+        checks: [...checks].map(([summary, outcome]) => ({ summary, outcome })),
       });
     };
 

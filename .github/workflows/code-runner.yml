@@ -1,0 +1,91 @@
+# The Cloud Juno Code runner.
+#
+# `POST /api/code/tasks` with `target: "cloud"` dispatches this workflow
+# (src/lib/cloud-code.ts) and the server's readiness probe checks that this
+# file exists and is enabled BEFORE any task is created — so if you rename or
+# move it, the create route starts returning 503 `cloud_runner_not_configured`
+# and nothing is left queued.
+#
+# Inputs are printed into this run's PUBLIC log, so they carry nothing worth
+# reading: an opaque task id and the origin to call back to. The runner learns
+# which repository it is working on from `GET runner-context`, over a call it
+# authenticates with the GitHub Actions OIDC token this job's `id-token: write`
+# provisions — no Juno secret, no user token, and no repository name rides an
+# input. tests/code-runner-workflow.test.ts pins the input list to the
+# dispatch body and the token TTL to `timeout-minutes` below.
+
+name: Juno Code cloud runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      taskId:
+        description: The CodeTask id this run executes (opaque cuid).
+        required: true
+        type: string
+      callbackBase:
+        description: Origin the runner calls back to, without /api (e.g. https://chat.liams.dev).
+        required: true
+        type: string
+
+# id-token for the OIDC handshake with runner-context; contents to check out
+# this repository. Nothing else — the runner pushes to the USER's repository
+# with the clone token runner-context hands it, never with GITHUB_TOKEN.
+permissions:
+  id-token: write
+  contents: read
+
+# One job per task. A re-dispatch of the same id (an operator retry) waits for
+# the earlier attempt rather than racing it for the single-use runner-context.
+concurrency:
+  group: cloud-code-${{ inputs.taskId }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: Run task
+    runs-on: ubuntu-latest
+    # The cct_ task token minted by runner-context lasts this long plus a
+    # five-minute margin (CLOUD_CODE_TOKEN_TTL_MS in src/lib/cloud-code-token.ts).
+    # Move the two together: a job that outlives its token posts `done` with a
+    # dead credential and the pull request it opened is never recorded.
+    timeout-minutes: 30
+    env:
+      JUNO_TASK_ID: ${{ inputs.taskId }}
+      JUNO_CALLBACK_BASE: ${{ inputs.callbackBase }}
+      # A repository VARIABLE, not a secret: the image reference is public
+      # (it is what the sandbox is made of), and the driver refuses to run
+      # agent-authored commands at all when it is unset — there is no fallback
+      # to the runner host. Pin it by digest (`…@sha256:…`), never by tag.
+      JUNO_RUNNER_SANDBOX_IMAGE: ${{ vars.JUNO_RUNNER_SANDBOX_IMAGE }}
+      JUNO_RUNNER_SANDBOX_NETWORK: none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: runner/agent-core/package-lock.json
+
+      # The vendored agent core is the only thing the driver imports that
+      # needs building; the driver itself is plain Node and pulls nothing from
+      # the web app's dependency tree.
+      - name: Install the agent core
+        run: npm ci --prefix runner/agent-core
+
+      - name: Build the agent core
+        run: npm run build --prefix runner/agent-core
+
+      # Pulled ahead of the run so the first agent command does not spend its
+      # timeout on a cold image. Skipped, not failed, when the variable is
+      # unset: the driver's own refusal is what fails the task, and it does so
+      # after runner-context, which is what moves the task to `failed` rather
+      # than leaving it queued.
+      - name: Pull the sandbox image
+        if: env.JUNO_RUNNER_SANDBOX_IMAGE != ''
+        run: docker pull "$JUNO_RUNNER_SANDBOX_IMAGE"
+
+      - name: Run the task
+        run: node scripts/cloud-code-runner.mjs

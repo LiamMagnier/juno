@@ -8,12 +8,14 @@ import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import {
   appendTaskEvents,
+  codeTaskMessageId,
+  countChangedFiles,
   persistCodeTaskOutcome,
   requireUser,
   serializeTask,
   TASK_STATUSES,
 } from "@/lib/code-remote";
-import { dispatchCloudRunner } from "@/lib/cloud-code";
+import { CloudDispatchError, dispatchCloudRunner, getCloudRunnerReadiness } from "@/lib/cloud-code";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
@@ -133,6 +135,10 @@ export async function GET(req: Request) {
   }
   const rawLimit = Number(searchParams.get("limit") ?? "30");
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 100) : 30;
+  // The agent prompt is opt-in on the list. See `SerializeTaskOptions`: it is
+  // the composer text PLUS extracted attachment text, and the run list polled
+  // a hundred of them every six seconds to render titles.
+  const includePrompt = searchParams.get("include") === "prompt";
 
   const tasks = await prisma.codeTask.findMany({
     where: {
@@ -144,7 +150,14 @@ export async function GET(req: Request) {
     orderBy: { createdAt: "desc" },
     take: limit,
   });
-  return NextResponse.json({ tasks: tasks.map(serializeTask) });
+  // One grouped query for the page, so a finished device run can be "Ready to
+  // review" without the list reading every run's event log.
+  const changed = await countChangedFiles(tasks.map((task) => task.id));
+  return NextResponse.json({
+    tasks: tasks.map((task) =>
+      serializeTask(task, { includePrompt, changedFileCount: changed.get(task.id) ?? 0 }),
+    ),
+  });
 }
 
 export async function POST(req: Request) {
@@ -271,10 +284,17 @@ export async function POST(req: Request) {
       select: { id: true },
     });
     if (!github) return NextResponse.json({ error: "github_not_connected" }, { status: 400 });
-    // No dispatch credential → the runner can never be started. Fail loudly
-    // BEFORE creating a task so nothing hangs queued.
-    if (!env.githubDispatchToken) {
-      return NextResponse.json({ error: "cloud_runner_not_configured" }, { status: 503 });
+    // No dispatch credential, no workflow file, or a disabled workflow → the
+    // runner can never be started. Fail loudly BEFORE creating a task so
+    // nothing hangs queued and no failed run is left behind per click. The
+    // probe is cached (see getCloudRunnerReadiness), so this costs nothing on
+    // the common path.
+    const readiness = await getCloudRunnerReadiness();
+    if (!readiness.ready) {
+      return NextResponse.json(
+        { error: "cloud_runner_not_configured", reason: readiness.reason, message: readiness.message },
+        { status: 503 },
+      );
     }
 
     // Abuse control 1 — burst rate limit (mirrors /api/agent). A cloud dispatch
@@ -367,11 +387,12 @@ export async function POST(req: Request) {
     }
 
     try {
+      // Only the task id and the callback origin. The repository is NOT a
+      // dispatch input any more — inputs are printed into a public Actions
+      // log, and the runner already receives the repo from runner-context
+      // over an authenticated call.
       await dispatchCloudRunner({
         taskId: task.id,
-        repoOwner: task.repoOwner!,
-        repoName: task.repoName!,
-        baseRef: task.baseRef ?? "",
         callbackBase: env.appUrl.replace(/\/$/, ""),
       });
     } catch (err) {
@@ -380,6 +401,8 @@ export async function POST(req: Request) {
       // deterministic assistant outcome makes the failure visible in the same
       // Code conversation, and an idempotent retry can inspect this task.
       console.error("[cloud-code] workflow_dispatch failed", err);
+      let failedTask = null;
+      let outcomeMessage = null;
       try {
         await appendTaskEvents(
           task.id,
@@ -390,14 +413,42 @@ export async function POST(req: Request) {
           }],
           { status: "failed", fromStatus: "queued" },
         );
-        const failedTask = await prisma.codeTask.findUnique({ where: { id: task.id } });
+        failedTask = await prisma.codeTask.findUnique({ where: { id: task.id } });
         if (failedTask) await persistCodeTaskOutcome(failedTask);
+        // The rows this request wrote, handed back so the client can keep the
+        // user's turn on screen and append the failure beneath it — exactly
+        // what a reload would show. The client used to delete its optimistic
+        // bubble on a non-2xx and the transcript then grew two rows on the
+        // next visit that the live view had hidden.
+        if (conversationId) {
+          const row = await prisma.message.findFirst({
+            where: { id: codeTaskMessageId(task.id), conversationId },
+            include: { attachments: { where: { deletedAt: null } } },
+          });
+          if (row) outcomeMessage = await serializeMessage(row);
+        }
       } catch (reconcileErr) {
         // The sweeper will reconcile a task left queued, but retain the original
         // dispatch error as the request-level response.
         console.error("[cloud-code] failed to reconcile dispatch failure", reconcileErr);
       }
-      return NextResponse.json({ error: "cloud_dispatch_failed" }, { status: 502 });
+      // A vanished workflow (404) is the readiness probe's answer arriving
+      // late; the probe cache was reset by the dispatcher, so the next click
+      // gets the 503 with a reason instead of another failed task.
+      const status = err instanceof CloudDispatchError && err.status === 404 ? 503 : 502;
+      return NextResponse.json(
+        {
+          error: status === 503 ? "cloud_runner_not_configured" : "cloud_dispatch_failed",
+          message:
+            status === 503
+              ? "The cloud runner workflow is missing from the runner repository, so cloud runs can’t start."
+              : "The cloud runner could not be started. This is usually temporary — try again.",
+          ...(failedTask ? { task: serializeTask(failedTask) } : {}),
+          ...(userMessage ? { userMessage } : {}),
+          ...(outcomeMessage ? { outcomeMessage } : {}),
+        },
+        { status },
+      );
     }
   } else {
     // Device (default) — unchanged behavior: a real device + local path.

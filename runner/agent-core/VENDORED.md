@@ -65,6 +65,16 @@ child-process env) have been **merged upstream** — `src/` is now a byte-for-by
 copy of `juno-app/core/src`, including the subagent orchestration layer
 (`subagents.ts`, `loop.ts`) that landed with the 2026-07 multi-agent work.
 
+## Divergences added in September 2026
+
+- `src/tools/types.ts`, `src/tools/bash.ts`, `src/types.ts`, `src/agent.ts`:
+  `ToolResult.exitCode` travels on `tool_finished`, so a web transcript can
+  say "failed" from the exit status rather than from parsing " — ok" off the
+  end of a summary. Re-apply when re-syncing.
+- `src/agent.ts` (`AgentOptions.reasoningEffort`, threaded to `runAgentLoop`
+  and to subagents through `SubagentHost`): the effort the composer chose used
+  to reach runner-context and stop there. Re-apply when re-syncing.
+
 ## Build
 
 ```sh

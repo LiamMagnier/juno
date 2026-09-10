@@ -78,6 +78,17 @@ function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
     // a version check.
     const tool = readToolDetail(record.tool);
 
+    // Juno Code's two extra keys on the shared row shape. `patch` is the
+    // unified diff a `write` row may carry (capped at write time by
+    // persistCodeTaskOutcome in lib/code-remote.ts); `exitCode` is a tool
+    // row's process status. Both were being written and then dropped HERE on
+    // the way back out — the exact silent failure the note above describes —
+    // so a reloaded Code session lost every diff it had shown live. Read
+    // additively: a chat row never carries either and sees no change.
+    const patch = typeof record.patch === "string" && record.patch.length > 0 ? record.patch : undefined;
+    const exitCode =
+      typeof record.exitCode === "number" && Number.isFinite(record.exitCode) ? record.exitCode : undefined;
+
     return [
       {
         id,
@@ -87,6 +98,8 @@ function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
         url: typeof record.url === "string" ? record.url : undefined,
         createdAt,
         ...(tool ? { tool } : {}),
+        ...(patch ? { patch } : {}),
+        ...(exitCode !== undefined ? { exitCode } : {}),
       },
     ];
   });

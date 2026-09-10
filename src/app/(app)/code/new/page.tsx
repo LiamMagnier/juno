@@ -1,33 +1,23 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowRight,
-  ChevronDown,
-  Clock,
-  Loader2,
-  Mic,
-} from "lucide-react";
+import { AudioLines, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  ComposerDivider,
   ComposerPrimaryAction,
   ComposerShell,
-  composerChevronClass,
-  composerChipClass,
   composerFieldClass,
   composerIconButtonClass,
   useComposerAutosize,
 } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { DictationSwap } from "@/components/ui/dictation-swap";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import { AppPage, AppPageHeader } from "@/components/app/app-page";
 import {
   CodeTargetPicker,
   type CloudRepo,
@@ -40,24 +30,17 @@ import {
   ComposerDropOverlay,
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
-import { CodeConnectorsMenu } from "@/components/code/code-connectors-menu";
-import { CodePresetsGrid, type CodePreset } from "@/components/code/code-presets";
+import { CodeSeedPrompts } from "@/components/code/code-presets";
 import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
-import { useCodeRuns } from "@/components/code/use-code-runs";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { CodeIcons, StatusIcons } from "@/lib/app-icons";
+import { AppIcons, CodeIcons } from "@/lib/app-icons";
 import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
-import {
-  clampReasoningEffort,
-  defaultReasoning,
-  reasoningOptions,
-  type ReasoningEffort,
-} from "@/lib/model-metrics";
+import { defaultReasoning, reasoningOptions, type ReasoningEffort } from "@/lib/model-metrics";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
@@ -65,25 +48,12 @@ import type { ClientAttachment, ClientConversation } from "@/types/chat";
 const TARGET_KEY = "juno:code:new:target";
 const MODEL_KEY = "juno:code:model";
 const EFFORT_KEY = "juno:code:reasoning";
-const CONNECTORS_KEY = "juno:code:connectors";
 
-type CloudStartError = "not_configured" | "dispatch_failed" | null;
-
-function CodeGreeting() {
-  const { user } = useApp();
-  const firstName = user.name?.split(" ")[0];
-
-  return (
-    <div className="flex w-full flex-col items-center text-center">
-      <h1 className="text-center font-sans text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
-        What are we building today{firstName ? `, ${firstName}` : ""}?
-      </h1>
-      <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-        Autonomous coding tasks in your workspace or on an isolated cloud runner with GitHub review.
-      </p>
-    </div>
-  );
-}
+/**
+ * What `GET /api/code/cloud-runner` says. `null` while unasked or in flight;
+ * a not-ready answer carries the sentence the server wants shown.
+ */
+type CloudReadiness = { ready: true } | { ready: false; message: string } | null;
 
 /** What the run may do without asking — said in the caption under the composer. */
 function PermissionFact({ target }: { target: Target }) {
@@ -104,6 +74,22 @@ function PermissionFact({ target }: { target: Target }) {
   );
 }
 
+/*
+ * `/code/new` — the first of the three Code views, drawn like the other two.
+ *
+ * It used to be a sticky tab strip over a marketing hero ("What are we
+ * building today, Liam?" at display size) over the composer, while `/code`
+ * and `/code/pulls` were `AppPage` + `AppPageHeader` + the view switcher. The
+ * tab strip sat in a different place on each tab of one surface, and the
+ * loading skeleton drew a header the page never had, so the column shifted
+ * on every entry. This is the same frame as the other two, byte for byte,
+ * with the composer in a centred column under it and the seed prompts the
+ * run list's empty state already offers — one set of seeds, not two.
+ *
+ * It no longer mounts `useCodeRuns` for a "Latest run" link: that hook polls
+ * the whole run list and the device list every six seconds, and this page
+ * has nothing to do with either. The Runs tab is one press away.
+ */
 export default function NewCodeSessionPage() {
   const router = useRouter();
   const { settings, upsertConversation, removeConversation, features } = useApp();
@@ -130,7 +116,6 @@ export default function NewCodeSessionPage() {
   const switchTarget = React.useCallback(
     (next: Target) => {
       setTarget(next);
-      setCloudStartError(null);
       if (next !== "cloud") discardOrphanCloudSession();
       try {
         localStorage.setItem(TARGET_KEY, next);
@@ -139,12 +124,46 @@ export default function NewCodeSessionPage() {
     [discardOrphanCloudSession],
   );
 
+  /*
+   * WHETHER A CLOUD RUN CAN START, asked once the Cloud target is chosen.
+   *
+   * The server probes for its runner workflow before it creates any task, and
+   * a missing one used to surface only as a 503 on the submit. Asking here
+   * puts the same sentence under the composer before the reader has written
+   * anything — a quiet note, not a modal, because the Device target one chip
+   * away still works.
+   */
+  const [cloudReadiness, setCloudReadiness] = React.useState<CloudReadiness>(null);
+  React.useEffect(() => {
+    if (target !== "cloud" || cloudReadiness) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/code/cloud-runner", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { ready?: boolean; message?: string };
+        if (cancelled) return;
+        setCloudReadiness(
+          data.ready
+            ? { ready: true }
+            : { ready: false, message: data.message ?? "Cloud runs aren’t enabled on this server yet." },
+        );
+      } catch {
+        // Unknown stays unknown; the submit path says what the server says.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [target, cloudReadiness]);
+  const cloudBlocked = target === "cloud" && cloudReadiness?.ready === false ? cloudReadiness : null;
+
   // —— Workspace / Repository Selection ——
   const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
 
-  // —— Model Selector State ——
+  // —— Model ——
   const [model, setModel] = React.useState<string>(() => {
     try {
       const saved = localStorage.getItem(MODEL_KEY);
@@ -162,7 +181,7 @@ export default function NewCodeSessionPage() {
 
   const modelInfo = React.useMemo(() => resolveModel(model), [model]);
 
-  // —— Thinking Slider / Reasoning Effort State ——
+  // —— Thinking effort (inside the model chip) ——
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort>(() => {
     try {
       const saved = localStorage.getItem(EFFORT_KEY);
@@ -179,28 +198,6 @@ export default function NewCodeSessionPage() {
     } catch {}
   }, []);
 
-  const [fastMode, setFastMode] = React.useState(false);
-  const [proMode, setProMode] = React.useState(false);
-
-  // —— Connectors State ——
-  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem(CONNECTORS_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return ["github", "terminal", "web-search"];
-  });
-
-  const toggleConnector = React.useCallback((id: string) => {
-    setEnabledConnectors((prev) => {
-      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
-      try {
-        localStorage.setItem(CONNECTORS_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  }, []);
-
   // —— Prompt & Uploads ——
   const [prompt, setPrompt] = React.useState("");
   const [dragging, setDragging] = React.useState(false);
@@ -214,13 +211,9 @@ export default function NewCodeSessionPage() {
 
   // —— Submission & Status ——
   const [submitting, setSubmitting] = React.useState(false);
-  const [cloudStartError, setCloudStartError] = React.useState<CloudStartError>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
-
-  const { runs } = useCodeRuns();
-  const recentRun = runs[0] ?? null;
 
   // The shared composer growth: one line at rest, eight before it scrolls.
   const autoresize = useComposerAutosize(textareaRef, prompt);
@@ -235,7 +228,7 @@ export default function NewCodeSessionPage() {
 
   const hasTarget = target === "device" ? !!selectedWorkspace : !!selectedRepo;
   const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
-  const canSubmit = hasTarget && hasPayload && !submitting && !isUploading;
+  const canSubmit = hasTarget && hasPayload && !submitting && !isUploading && !cloudBlocked;
 
   const codeVoice = useCodeVoice({ disabled: submitting || dictating });
 
@@ -250,17 +243,16 @@ export default function NewCodeSessionPage() {
           codeWorkspacePath: w.path,
           codeWorkspaceKey: w.key ?? undefined,
           model,
-          activeConnectors: enabledConnectors,
         }),
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
       setPendingCodePrompt(conversation.id, text, attachments);
-      upsertConversation({ ...conversation, model, activeConnectors: enabledConnectors });
+      upsertConversation({ ...conversation, model });
       router.push(`/chat/${conversation.id}`);
       return true;
     },
-    [enabledConnectors, model, router, upsertConversation],
+    [model, router, upsertConversation],
   );
 
   const startCloud = React.useCallback(
@@ -275,7 +267,6 @@ export default function NewCodeSessionPage() {
             codeWorkspaceName: repo.name,
             codeWorkspacePath: `${repo.owner}/${repo.name}`,
             model,
-            activeConnectors: enabledConnectors,
           }),
         });
         if (!cRes.ok) throw new Error("conversation");
@@ -299,9 +290,7 @@ export default function NewCodeSessionPage() {
           title: titleFallback,
           attachmentIds: attachmentIds.length ? attachmentIds : undefined,
           conversationId,
-          // The page's own model picker and thinking slider. They were written
-          // to the Conversation and nowhere else, so the run they configured
-          // ignored both of them.
+          // The page's own model picker and thinking control, reaching the run.
           model,
           reasoningEffort: reasoningEffort ?? undefined,
         }),
@@ -314,7 +303,6 @@ export default function NewCodeSessionPage() {
             title: titleFallback.slice(0, 48),
             titleSource: "manual",
             model,
-            activeConnectors: enabledConnectors,
           });
         }
         clear();
@@ -325,10 +313,25 @@ export default function NewCodeSessionPage() {
       const payload = (await tRes.json().catch(() => ({}))) as { error?: string; message?: string };
       const err = payload.error;
       if (tRes.status === 503 && err === "cloud_runner_not_configured") {
-        setCloudStartError("not_configured");
+        // The server says why, in a sentence written to be shown. Nothing was
+        // created server-side, so the conversation this page made is an orphan.
+        setCloudReadiness({
+          ready: false,
+          message: payload.message ?? "Cloud runs aren’t enabled on this server yet.",
+        });
         discardOrphanCloudSession();
       } else if (tRes.status === 502 && err === "cloud_dispatch_failed") {
-        setCloudStartError("dispatch_failed");
+        /*
+         * The task and the user's turn exist and are marked failed, and the
+         * conversation shows them. Take the reader there rather than keeping an
+         * orphan here with a "Try again" that would stack a second failed task
+         * into the same conversation.
+         */
+        toast.error(payload.message ?? "Couldn’t start the cloud run — this is usually temporary.");
+        if (conversation) upsertConversation({ ...conversation, title: titleFallback.slice(0, 48), titleSource: "manual", model });
+        cloudConversationId.current = null;
+        clear();
+        router.push(`/chat/${conversationId}`);
       } else if (tRes.status === 400 && err === "github_not_connected") {
         toast.error("Connect GitHub in Connections before starting a cloud run.");
         discardOrphanCloudSession();
@@ -338,14 +341,8 @@ export default function NewCodeSessionPage() {
       } else {
         /*
          * Anything else: say what the SERVER said, when it said something.
-         *
-         * The fallback here used to be "Check your connection and try again"
-         * for every unlisted status, which swallowed both quota refusals — the
-         * carefully worded 429s "You already have 3 cloud runs in progress. Let
-         * one finish first." and "Too many cloud runs started." — and told a
-         * user who had hit a limit that their network was broken. Both of those
-         * arrive as prose in `error`, so anything with a space in it is a
-         * sentence meant to be read, not a code.
+         * The quota refusals arrive as prose in `error` — anything with a
+         * space in it is a sentence meant to be read, not a code.
          */
         const sentence =
           payload.message?.trim() ||
@@ -356,7 +353,7 @@ export default function NewCodeSessionPage() {
       }
       return false;
     },
-    [clear, discardOrphanCloudSession, enabledConnectors, model, reasoningEffort, router, upsertConversation],
+    [clear, discardOrphanCloudSession, model, reasoningEffort, router, upsertConversation],
   );
 
   const submit = React.useCallback(
@@ -365,9 +362,9 @@ export default function NewCodeSessionPage() {
       const attachments = readyAttachments;
       if ((!text && attachments.length === 0) || submitting || isUploading) return false;
       if (target === "device" ? !selectedWorkspace : !selectedRepo) return false;
+      if (cloudBlocked) return false;
 
       setSubmitting(true);
-      setCloudStartError(null);
       try {
         if (target === "device" && selectedWorkspace) {
           return await startDevice(selectedWorkspace, text, attachments);
@@ -391,6 +388,7 @@ export default function NewCodeSessionPage() {
       target,
       selectedWorkspace,
       selectedRepo,
+      cloudBlocked,
       baseRef,
       startDevice,
       startCloud,
@@ -414,7 +412,7 @@ export default function NewCodeSessionPage() {
         requestAnimationFrame(() => textareaRef.current?.focus());
         return;
       }
-      if (!(target === "device" ? selectedWorkspace : selectedRepo)) {
+      if (!(target === "device" ? selectedWorkspace : selectedRepo) || cloudBlocked) {
         setPrompt(merged);
         requestAnimationFrame(() => {
           autoresize();
@@ -424,7 +422,7 @@ export default function NewCodeSessionPage() {
       }
       void submit(merged);
     },
-    [autoresize, prompt, readyAttachments.length, selectedRepo, selectedWorkspace, submit, target],
+    [autoresize, cloudBlocked, prompt, readyAttachments.length, selectedRepo, selectedWorkspace, submit, target],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -434,365 +432,264 @@ export default function NewCodeSessionPage() {
     }
   };
 
-  const gateHint =
-    !hasTarget
-      ? target === "device"
-        ? "Pick a project to start"
-        : "Pick a repository to start"
-      : null;
+  const gateHint = !hasTarget
+    ? target === "device"
+      ? "Pick a project to start"
+      : "Pick a repository to start"
+    : null;
 
   const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
     () => ({
       stage: "new",
       target,
       place: target === "device" ? (selectedWorkspace?.name ?? null) : (selectedRepo?.fullName ?? null),
-      baseRef: target === "cloud" ? (baseRef.trim() || selectedRepo?.defaultBranch) ?? null : null,
+      baseRef: target === "cloud" ? ((baseRef.trim() || selectedRepo?.defaultBranch) ?? null) : null,
       turns: [],
-      blocked: gateHint,
+      blocked: cloudBlocked?.message ?? gateHint,
     }),
-    [baseRef, gateHint, selectedRepo, selectedWorkspace, target],
+    [baseRef, cloudBlocked, gateHint, selectedRepo, selectedWorkspace, target],
   );
 
   const voiceSend = React.useMemo<CodeVoiceSend>(
     () => ({
       intent: "start",
-      blockedReason: gateHint ? `${gateHint} — then these words can start it.` : null,
+      blockedReason: cloudBlocked
+        ? cloudBlocked.message
+        : gateHint
+          ? `${gateHint} — then these words can start it.`
+          : null,
       sending: submitting,
       endsCall: true,
       onSend: (text: string) => submit([prompt.trim(), text.trim()].filter(Boolean).join(" ")),
     }),
-    [gateHint, prompt, submit, submitting],
+    [cloudBlocked, gateHint, prompt, submit, submitting],
   );
 
-  const showVoiceButton = !submitting && !hasPayload && !!codeVoice.onOpenVoiceMode;
-
-  const effortOptions = React.useMemo(
-    () => (modelInfo ? reasoningOptions(modelInfo) : []),
-    [modelInfo],
-  );
+  const effortOptions = React.useMemo(() => (modelInfo ? reasoningOptions(modelInfo) : []), [modelInfo]);
   const isAuto = isAutoModelId(model);
+  // Effort lives inside the model chip's popover, as every composer mounts it.
+  const thinkingControl =
+    isAuto || !modelInfo || effortOptions.length < 2 ? null : (
+      <ReasoningSlider
+        options={effortOptions}
+        value={reasoningEffort}
+        onChange={changeReasoning}
+        disabled={submitting}
+      />
+    );
 
-  const onSelectPreset = React.useCallback((preset: CodePreset) => {
-    setPrompt(preset.prompt);
-    requestAnimationFrame(() => {
-      autoresize();
-      textareaRef.current?.focus();
-    });
-  }, [autoresize]);
+  const onSelectSeed = React.useCallback(
+    (seed: string) => {
+      setPrompt(seed);
+      requestAnimationFrame(() => {
+        autoresize();
+        textareaRef.current?.focus();
+      });
+    },
+    [autoresize],
+  );
 
   return (
-    <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto overflow-x-clip">
-      {/* Top Nav Bar for quick switching between New session, Runs, and PRs */}
-      <div className="sticky top-0 z-20 flex w-full items-center justify-between border-b border-border/40 bg-background/80 px-4 py-2.5 backdrop-blur-md sm:px-6">
-        <CodeSurfaceNav active="new" className="mb-0" />
-        {recentRun && (
-          <Link
-            href="/code"
-            className="hidden items-center gap-1.5 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors md:flex"
-          >
-            <Clock className="size-3.5" />
-            <span>Latest run: {recentRun.title.slice(0, 30)}…</span>
-            <ArrowRight className="size-3" />
-          </Link>
-        )}
-      </div>
+    <AppPage measure="wide">
+      <AppPageHeader
+        eyebrow="Code"
+        heading="New session"
+        icon={AppIcons.code}
+        lede="Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
+      />
+      <CodeSurfaceNav active="new" />
 
-      <div className="flex flex-1 flex-col items-center justify-start px-4 py-8 sm:px-6 md:py-12">
-        <div className="relative flex w-full max-w-[44rem] flex-col items-center gap-6 sm:gap-7">
-          <CodeGreeting />
+      <div className="mx-auto w-full max-w-[44rem] pt-6">
+        <div className="relative isolate w-full">
+          {codeVoice.open && (
+            <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
+          )}
 
-          {/* The Main Composer */}
-          <div className="w-full">
-            <div className="relative isolate w-full">
-              {codeVoice.open && (
-                <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
-              )}
+          <DictationSwap active={dictating} onCancel={() => setDictating(false)} onClose={closeDictation}>
+            <div
+              onDragOver={(e) => {
+                if (!canAttach || submitting || dictating) return;
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                if (canAttach && !submitting && !dictating && e.dataTransfer.files.length) {
+                  addFiles(e.dataTransfer.files);
+                }
+              }}
+              className="relative w-full"
+            >
+              <ComposerShell
+                className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
+                dimmed={submitting}
+                above={canAttach && <ComposerAttachmentTray uploads={uploads} onRemove={remove} />}
+                field={
+                  <textarea
+                    ref={textareaRef}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    rows={1}
+                    disabled={submitting}
+                    placeholder="Describe what to build, test, refactor, or fix…"
+                    aria-label="Describe the task for this Juno Code session"
+                    className={composerFieldClass}
+                  />
+                }
+                leading={
+                  canAttach && (
+                    <ComposerAddMenu
+                      open={plusOpen}
+                      onOpenChange={setPlusOpen}
+                      disabled={submitting}
+                      onPickPhotos={() => imageInputRef.current?.click()}
+                      onPickFiles={() => fileInputRef.current?.click()}
+                      onPickLibrary={() => setLibraryOpen(true)}
+                    />
+                  )
+                }
+                trailing={
+                  <>
+                    {/* Where it runs — a context chip on the right, ahead of
+                        the model chip, never a second strip. */}
+                    <CodeTargetPicker
+                      target={target}
+                      onTargetChange={switchTarget}
+                      selectedWorkspace={selectedWorkspace}
+                      onSelectWorkspace={setSelectedWorkspace}
+                      selectedRepo={selectedRepo}
+                      onSelectRepo={(r) => {
+                        setSelectedRepo(r);
+                        setBaseRef("");
+                        if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                      }}
+                      baseRef={baseRef}
+                      onBaseRefChange={setBaseRef}
+                      disabled={submitting}
+                    />
 
-              <DictationSwap
-                active={dictating}
-                onCancel={() => setDictating(false)}
-                onClose={closeDictation}
-              >
-                <div
-                  onDragOver={(e) => {
-                    if (!canAttach || submitting || dictating) return;
-                    e.preventDefault();
-                    setDragging(true);
-                  }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragging(false);
-                    if (canAttach && !submitting && !dictating && e.dataTransfer.files.length) {
-                      addFiles(e.dataTransfer.files);
-                    }
-                  }}
-                  className="relative w-full"
-                >
-                  <ComposerShell
-                    className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
-                    dimmed={submitting}
-                    above={canAttach && <ComposerAttachmentTray uploads={uploads} onRemove={remove} />}
-                    field={
-                      <textarea
-                        ref={textareaRef}
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        onKeyDown={onKeyDown}
-                        rows={1}
+                    <div className={cn("min-w-0", submitting && "pointer-events-none")}>
+                      <ModelSelector
+                        value={model}
+                        onChange={changeModel}
                         disabled={submitting}
-                        placeholder="Describe what to build, test, refactor, or fix…"
-                        aria-label="Describe the task for this Juno Code session"
-                        className={composerFieldClass}
+                        thinking={thinkingControl}
                       />
-                    }
-                    leading={
-                      <>
-                        {canAttach && (
-                          <ComposerAddMenu
-                            open={plusOpen}
-                            onOpenChange={setPlusOpen}
-                            disabled={submitting}
-                            onPickPhotos={() => imageInputRef.current?.click()}
-                            onPickFiles={() => fileInputRef.current?.click()}
-                            onPickLibrary={() => setLibraryOpen(true)}
-                          />
-                        )}
+                    </div>
 
-                        {/* Where it runs — a chip on the same row as everything
-                            else, never a second strip. */}
-                        <CodeTargetPicker
-                          target={target}
-                          onTargetChange={switchTarget}
-                          selectedWorkspace={selectedWorkspace}
-                          onSelectWorkspace={(w) => {
-                            setSelectedWorkspace(w);
-                            setCloudStartError(null);
-                          }}
-                          selectedRepo={selectedRepo}
-                          onSelectRepo={(r) => {
-                            setSelectedRepo(r);
-                            setBaseRef("");
-                            setCloudStartError(null);
-                            if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                          }}
-                          baseRef={baseRef}
-                          onBaseRefChange={setBaseRef}
-                          disabled={submitting}
-                        />
-
-                        <CodeConnectorsMenu
-                          enabledConnectors={enabledConnectors}
-                          onToggleConnector={toggleConnector}
-                          disabled={submitting}
-                        />
-                      </>
-                    }
-                    trailing={
-                      <>
-                        <div className="min-w-0 shrink-0">
-                          <ModelSelector value={model} onChange={changeModel} />
-                        </div>
-
-                        {isAuto && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                aria-disabled
-                                className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
-                              >
-                                <span>Auto</span>
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
-                          </Tooltip>
-                        )}
-
-                        {!isAuto && effortOptions.length > 0 && (() => {
-                          const clamped = modelInfo ? clampReasoningEffort(modelInfo, reasoningEffort) : reasoningEffort;
-                          const current = effortOptions.find((e) => e.value === clamped) ?? effortOptions[0];
-                          const label = current.label === "Extra high" ? "X-high" : current.label;
-                          const atTop = effortOptions.length > 1 && current.value === effortOptions[effortOptions.length - 1].value;
-
-                          return (
-                            <Tooltip>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      disabled={submitting}
-                                      aria-label={`Thinking effort: ${current.label}`}
-                                      className={cn(composerChipClass, atTop && "text-primary hover:text-primary")}
-                                    >
-                                      <span className="min-w-0 truncate">{label}</span>
-                                      <ChevronDown className={composerChevronClass} />
-                                    </Button>
-                                  </TooltipTrigger>
-                                </PopoverTrigger>
-                                <PopoverContent
-                                  align="end"
-                                  sideOffset={10}
-                                  className="w-[300px] origin-popper p-4"
-                                >
-                                  <ReasoningSlider
-                                    options={effortOptions}
-                                    value={reasoningEffort}
-                                    onChange={changeReasoning}
-                                    disabled={submitting}
-                                    fastMode={fastMode}
-                                    onFastModeChange={setFastMode}
-                                    proMode={proMode}
-                                    onProModeChange={setProMode}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              <TooltipContent>Thinking effort & depth</TooltipContent>
-                            </Tooltip>
-                          );
-                        })()}
-
-                        {speechSupported && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => setDictating(true)}
-                                disabled={submitting || dictating || codeVoice.open}
-                                aria-label="Dictate"
-                                aria-pressed={dictating}
-                                className={composerIconButtonClass}
-                              >
-                                <Mic className="size-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Dictate</TooltipContent>
-                          </Tooltip>
-                        )}
-                        <ComposerDivider />
-                      </>
-                    }
-                    action={
+                    {speechSupported && (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <ComposerPrimaryAction
-                            face={submitting ? "busy" : showVoiceButton ? "voice" : "send"}
-                            onClick={
-                              showVoiceButton && codeVoice.onOpenVoiceMode
-                                ? codeVoice.onOpenVoiceMode
-                                : () => void submit()
-                            }
-                            disabled={showVoiceButton ? false : !canSubmit}
-                            aria-label={
-                              showVoiceButton
-                                ? "Talk this through with Juno"
-                                : !hasTarget
-                                  ? gateHint ?? "Select where to run first"
-                                  : target === "cloud"
-                                    ? "Start a cloud run"
-                                    : "Start the session"
-                            }
-                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setDictating(true)}
+                            disabled={submitting || dictating || codeVoice.open}
+                            aria-label="Dictate"
+                            aria-pressed={dictating}
+                            className={composerIconButtonClass}
+                          >
+                            <Mic className="size-4" aria-hidden="true" />
+                          </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          {showVoiceButton
-                            ? "Voice conversation"
-                            : target === "cloud"
-                              ? "Start cloud run"
-                              : "Start session"}
-                        </TooltipContent>
+                        <TooltipContent>Dictate</TooltipContent>
                       </Tooltip>
-                    }
-                  />
+                    )}
 
-                  {dragging && <ComposerDropOverlay />}
+                    {codeVoice.onOpenVoiceMode && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={codeVoice.onOpenVoiceMode}
+                            disabled={submitting || dictating || codeVoice.open}
+                            aria-label="Talk this through with Juno"
+                            className={composerIconButtonClass}
+                          >
+                            <AudioLines className="size-4" aria-hidden="true" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Voice conversation</TooltipContent>
+                      </Tooltip>
+                    )}
+                  </>
+                }
+                action={
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ComposerPrimaryAction
+                        face={submitting ? "busy" : "send"}
+                        onClick={() => void submit()}
+                        disabled={!canSubmit}
+                        aria-label={
+                          cloudBlocked
+                            ? cloudBlocked.message
+                            : !hasTarget
+                              ? (gateHint ?? "Select where to run first")
+                              : target === "cloud"
+                                ? "Start a cloud run"
+                                : "Start the session"
+                        }
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>{target === "cloud" ? "Start cloud run" : "Start session"}</TooltipContent>
+                  </Tooltip>
+                }
+              />
 
-                  <ComposerFileInputs
-                    imageInputRef={imageInputRef}
-                    fileInputRef={fileInputRef}
-                    onFiles={addFiles}
-                  />
-                  {canAttach && (
-                    <LibraryPicker
-                      open={libraryOpen}
-                      onOpenChange={setLibraryOpen}
-                      onAttach={addAttachments}
-                      existingCount={uploads.length}
-                    />
-                  )}
-                </div>
-              </DictationSwap>
+              {dragging && <ComposerDropOverlay />}
+
+              <ComposerFileInputs imageInputRef={imageInputRef} fileInputRef={fileInputRef} onFiles={addFiles} />
+              {canAttach && (
+                <LibraryPicker
+                  open={libraryOpen}
+                  onOpenChange={setLibraryOpen}
+                  onAttach={addAttachments}
+                  existingCount={uploads.length}
+                />
+              )}
             </div>
-
-            {/* Error notifications */}
-            {cloudStartError === "not_configured" && (
-              <p
-                role="alert"
-                className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
-              >
-                <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-                <span>
-                  Cloud runs aren’t enabled on this server yet. Ask an admin to configure the cloud runner, or switch to{" "}
-                  <button
-                    type="button"
-                    onClick={() => switchTarget("device")}
-                    className="rounded-xs font-medium underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
-                  >
-                    Device
-                  </button>{" "}
-                  to run on your Mac.
-                </span>
-              </p>
-            )}
-
-            {cloudStartError === "dispatch_failed" && (
-              <div
-                role="alert"
-                className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
-              >
-                <span className="flex min-w-0 flex-1 items-start gap-2">
-                  <StatusIcons.error className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  Couldn’t start the cloud run — this is usually temporary.
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void submit()}
-                  disabled={submitting}
-                  className="shrink-0 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/20 hover:text-destructive coarse:h-11"
-                >
-                  {submitting ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <CodeIcons.refresh className="size-3.5" aria-hidden="true" />
-                  )}
-                  Try again
-                </Button>
-              </div>
-            )}
-
-            <p className="mt-3 text-center text-caption text-muted-foreground">
-              {gateHint && !cloudStartError ? (
-                <span className="text-foreground/70">{gateHint}. </span>
-              ) : null}
-              {target === "cloud"
-                ? "Runs on a fresh cloud runner and opens a pull request to review. "
-                : "Runs with Juno Code on your Mac and streams the output directly. "}
-              <PermissionFact target={target} />
-            </p>
-          </div>
-
-          {/* Workflow Prompt Presets */}
-          <CodePresetsGrid onSelectPreset={onSelectPreset} />
+          </DictationSwap>
         </div>
+
+        {/*
+          THE CLOUD RUNNER IS NOT THERE, said quietly. A note in the muted ink
+          under the field rather than an alert or a modal: the reader can still
+          run on their Mac, and the sentence names the way there.
+        */}
+        {cloudBlocked && (
+          <p role="status" className="mt-2.5 flex items-start gap-2 px-1 text-caption text-muted-foreground">
+            <CodeIcons.cloud className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              {cloudBlocked.message}{" "}
+              <button
+                type="button"
+                onClick={() => switchTarget("device")}
+                className="rounded-xs font-medium text-foreground underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-primary motion-reduce:transition-none"
+              >
+                Run on your Mac instead
+              </button>
+              .
+            </span>
+          </p>
+        )}
+
+        <p className="mt-3 text-center text-caption text-muted-foreground">
+          {gateHint && !cloudBlocked ? <span className="text-foreground/70">{gateHint}. </span> : null}
+          {target === "cloud"
+            ? "Runs on a fresh cloud runner and opens a pull request to review. "
+            : "Runs with Juno Code on your Mac and streams the output directly. "}
+          <PermissionFact target={target} />
+        </p>
+
+        <CodeSeedPrompts onSelect={onSelectSeed} className="mt-6" />
       </div>
-    </div>
+    </AppPage>
   );
 }

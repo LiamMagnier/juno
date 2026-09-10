@@ -4,7 +4,8 @@
  * Cloud Juno Code — GitHub Actions runner driver (milestone CC2).
  *
  * Dispatched by the workflow in .github/workflows/code-runner.yml. Reads its
- * inputs from the environment, pulls the task's runner-context from Juno,
+ * two inputs (task id, callback origin) from the environment — the repository
+ * is deliberately NOT one of them — pulls the task's runner-context from Juno,
  * clones the target repo, drives the vendored agent core (runner/agent-core)
  * with the task prompt, streams progress back as task events, and opens a pull
  * request with whatever the agent changed.
@@ -78,9 +79,17 @@ const RUN_NONCE =
 /** Audience the runner requests in its OIDC token; the backend requires an exact
  *  match (see src/lib/github-oidc.ts). */
 const OIDC_AUDIENCE = "juno-cloud-code";
-const INPUT_REPO_OWNER = process.env.JUNO_REPO_OWNER ?? "";
-const INPUT_REPO_NAME = process.env.JUNO_REPO_NAME ?? "";
-const INPUT_BASE_REF = process.env.JUNO_BASE_REF ?? ""; // empty = repo default branch
+/*
+ * The repository is NOT an input. It used to arrive as JUNO_REPO_OWNER /
+ * JUNO_REPO_NAME / JUNO_BASE_REF workflow inputs, which GitHub prints into
+ * this run's public log — so every private repo a user pointed a cloud run at
+ * was named in public. runner-context returns all three over the
+ * authenticated handshake below, and it is the only source now.
+ */
+
+/** The six effort tiers agent-core accepts (providers/types.ts). Anything else
+ *  from runner-context is dropped rather than sent to a provider that 400s. */
+const REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const RUNNER_TEMP = process.env.RUNNER_TEMP || os.tmpdir();
 /** Transient git askpass helper — written only around clone/push, deleted before
@@ -329,6 +338,13 @@ class EventSink {
       if (typeof ctl?.seq === "number") this.afterControlSeq = Math.max(this.afterControlSeq, ctl.seq);
       if (ctl?.kind === "cancel_request") this.cancelled = true;
       /*
+       * `steer` IS NOT HANDLED HERE EITHER, for the first of the three reasons
+       * below: `session.prompt()` is one turn and this driver calls it once,
+       * so there is no point at which a second user message could be taken.
+       * The steer route refuses cloud tasks outright (409 `steer_unsupported`)
+       * so nothing is ever queued for this loop to ignore.
+       */
+      /*
        * THE ROLLBACK VERBS (accept_change / reject_change / undo_change) ARE
        * DELIBERATELY NOT HANDLED HERE, AND THIS RUNNER MUST NOT ANNOUNCE
        * `rollback_ready`. The obvious implementation — announce after the first
@@ -504,16 +520,21 @@ async function main() {
   SECRETS.add(cloneToken);
 
   const prompt = String(ctx.prompt ?? "");
-  const repoOwner = String(ctx.repoOwner || INPUT_REPO_OWNER);
-  const repoName = String(ctx.repoName || INPUT_REPO_NAME);
-  const baseRef = String(ctx.baseRef || INPUT_BASE_REF); // may be empty -> default branch
+  const repoOwner = String(ctx.repoOwner ?? "");
+  const repoName = String(ctx.repoName ?? "");
+  const baseRef = String(ctx.baseRef ?? ""); // may be empty -> default branch
   const agentBaseUrl = String(ctx.agentBaseUrl || `${CALLBACK_BASE}/api/agent`);
   const models = Array.isArray(ctx.models) ? ctx.models : [];
+  // The submitter's thinking effort, finally read. runner-context has returned
+  // it since the column existed; nothing here ever looked at it.
+  const reasoningEffort = REASONING_EFFORTS.has(ctx.reasoningEffort) ? ctx.reasoningEffort : undefined;
   if (!repoOwner || !repoName) throw new Error("runner-context is missing repoOwner/repoName");
 
   const chosen = models.find((m) => m && m.available) ?? models[0];
   if (!chosen) throw new Error("runner-context returned no models to run");
-  log(`repo ${repoOwner}/${repoName}, model ${chosen.provider}/${chosen.model}, baseRef "${baseRef || "(default)"}"`);
+  // The model only. The repository name stays out of this public log for the
+  // same reason it stays out of the workflow inputs.
+  log(`model ${chosen.provider}/${chosen.model}, effort ${reasoningEffort ?? "(default)"}`);
 
   const sink = new EventSink(freshToken);
 
@@ -612,18 +633,28 @@ async function main() {
     // arbitrary bash" from meaning "the agent can push anywhere the runner
     // can". Unset (local runs) the commands execute here, as before.
     containerSandbox: containerSandbox ?? undefined,
+    // How hard to think, as the composer asked. Absent means Instant.
+    ...(reasoningEffort ? { reasoningEffort } : {}),
     callbacks: {
       onEvent: (event) => onAgentEvent(sink, event),
-      // No human is attached; auto-approve, but log an audit trail. The agent
-      // holds no secrets and runs on a throwaway VM, so this is safe here.
+      /*
+       * No human is attached; auto-approve, and SAY SO. The agent holds no
+       * secrets and runs inside a container on a throwaway VM, so allowing is
+       * safe here — but this used to emit an `approval_request` followed in
+       * the same batch by an `approval_response approve:true`, and the
+       * transcript then read "Approval requested … Approved" as if somebody
+       * had been asked. Nobody was. One tool row that names what happened is
+       * the honest record; the risk rides along so a reader can still see
+       * which commands the engine would have stopped a Mac on.
+       */
       requestApproval: async (request) => {
-        sink.push("approval_request", {
-          requestId: request.callId,
-          summary: request.summary,
+        sink.push("tool", {
+          name: "approval",
+          summary: `Auto-allowed in sandbox: ${request.summary}`,
           risk: riskToTaskRisk(request.risk),
+          autoAllowed: true,
           ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
         });
-        sink.push("approval_response", { requestId: request.callId, approve: true });
         return "allow";
       },
     },
@@ -710,6 +741,11 @@ function onAgentEvent(sink, event) {
         name: event.name,
         summary: `${summary}${suffix}`,
         ...(event.output ? { detail: String(event.output).slice(0, 2000) } : {}),
+        // The status as a number, beside the suffix that spells it. The web
+        // receipt reads this to say whether a test command passed; the suffix
+        // stays for hosts and transcripts that predate the field.
+        ...(typeof event.exitCode === "number" ? { exitCode: event.exitCode } : {}),
+        ...(event.isError && typeof event.exitCode !== "number" ? { failed: true } : {}),
         ...(event.agentId ? { agentId: event.agentId } : {}),
       });
       break;

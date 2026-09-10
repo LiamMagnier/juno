@@ -16,6 +16,16 @@ export interface ToolContext {
 export interface ToolResult {
   output: string;
   isError?: boolean;
+  /**
+   * The process exit status, for tools that run one.
+   *
+   * Carried as a number rather than folded into `output` because the web
+   * receipt used to have to regex `— ok` / `— failed` out of a display string
+   * to say whether a test suite passed, and a string that is also a fact is a
+   * fact that breaks the day someone rewords the string. Absent for tools
+   * that do not run a process (reads, edits, globs).
+   */
+  exitCode?: number;
 }
 
 export interface ToolDefinition {

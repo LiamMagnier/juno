@@ -459,7 +459,9 @@ export function RunList() {
       </div>
 
       {reviewingRun && (
-        <RunReviewPane run={reviewingRun} detail={detail} onClose={() => setReviewing(null)} />
+        // Keyed by run so the pane's per-run state (its persisted notes) is
+        // re-read when the reader moves from one run's review to another's.
+        <RunReviewPane key={reviewingRun.id} run={reviewingRun} detail={detail} onClose={() => setReviewing(null)} />
       )}
     </div>
   );
@@ -810,8 +812,22 @@ function RunPeek({
   onReview: () => void;
 }) {
   const [responding, setResponding] = React.useState(false);
-  const [answered, setAnswered] = React.useState<null | boolean>(null);
-  const [cancelling, setCancelling] = React.useState(false);
+  /*
+   * WHICH request was answered, not merely whether one was. A bare boolean
+   * never reset, so the gate `pending && !answered` hid every LATER approval
+   * on the same run: the reader allowed the first, the second arrived, and
+   * the peek showed nothing. Keyed by request id, a new request is a new
+   * question and gets its own card.
+   */
+  const [answered, setAnswered] = React.useState<{ requestId: string; approve: boolean } | null>(null);
+  const [cancelRequested, setCancelRequested] = React.useState(false);
+
+  const live = run.status === "running" || run.status === "queued" || run.status === "awaiting_approval";
+  // Derived from the run's own status rather than held: once the run leaves
+  // a live state the ack has arrived (or the run died), and "Stopping…"
+  // must not outlive the thing it described.
+  const cancelling = cancelRequested && live;
+  const isCloud = run.target === "cloud";
 
   const respond = async (approve: boolean) => {
     const pending = detail?.pendingApproval;
@@ -826,7 +842,7 @@ function RunPeek({
       if (!res.ok) throw new Error();
       // The stream will drop the pending approval on its own; this is the
       // acknowledgement for the second between the click and that frame.
-      setAnswered(approve);
+      setAnswered({ requestId: pending.requestId, approve });
     } catch {
       toast.error("Couldn't send your answer. Check your connection and try again.");
     } finally {
@@ -836,14 +852,14 @@ function RunPeek({
 
   const cancel = async () => {
     if (cancelling) return;
-    setCancelling(true);
+    setCancelRequested(true);
     try {
       const res = await fetch(`/api/code/tasks/${run.id}/cancel`, { method: "POST" });
       if (!res.ok) throw new Error();
       toast.success("Asked the run to stop.");
     } catch {
       toast.error("Couldn't stop the run. Check your connection and try again.");
-      setCancelling(false);
+      setCancelRequested(false);
     }
   };
 
@@ -857,11 +873,14 @@ function RunPeek({
   }
 
   const pending = detail.pendingApproval;
-  const live = run.status === "running" || run.status === "queued" || run.status === "awaiting_approval";
+  const unanswered = pending && answered?.requestId !== pending.requestId ? pending : null;
+  // The acknowledgement line shows only for the request it answers, and only
+  // until the next question replaces it.
+  const acknowledged = answered && (!pending || answered.requestId === pending.requestId) ? answered : null;
 
   return (
     <div className="space-y-3">
-      {pending && !answered && (
+      {unanswered && (
         <div
           role="group"
           aria-label="Juno Code approval request"
@@ -872,28 +891,28 @@ function RunPeek({
             <div className="min-w-0 flex-1">
               <p className="text-sm">
                 <span className="text-muted-foreground">Juno Code wants to: </span>
-                <span className="font-medium">{pending.summary}</span>
+                <span className="font-medium">{unanswered.summary}</span>
               </p>
-              {pending.detail && (
+              {unanswered.detail && (
                 <pre
                   tabIndex={0}
                   className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground"
                 >
-                  {pending.detail}
+                  {unanswered.detail}
                 </pre>
               )}
             </div>
-            {(pending.risk === "destructive" || pending.risk === "outside") && (
+            {(unanswered.risk === "destructive" || unanswered.risk === "outside") && (
               <span
                 className={cn(
                   "flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-caption",
-                  pending.risk === "destructive"
+                  unanswered.risk === "destructive"
                     ? "border-destructive/40 bg-destructive/10 text-destructive"
                     : "border-warning/40 bg-warning/10 text-warning",
                 )}
               >
                 <StatusIcons.warning className="size-3" aria-hidden="true" />
-                {pending.risk === "destructive" ? "Destructive" : "Outside workspace"}
+                {unanswered.risk === "destructive" ? "Destructive" : "Outside workspace"}
               </span>
             )}
           </div>
@@ -911,15 +930,19 @@ function RunPeek({
               Allow
             </Button>
             <span className="text-caption text-muted-foreground">
-              Answered from here — no need to open the session.
+              {/* The machine that is waiting, named. "Your Mac" on a cloud
+                  run was a sentence about a computer that is not involved. */}
+              {isCloud
+                ? "Answered from here — the cloud runner is waiting on it."
+                : "Answered from here — your Mac denies on its own after 5 minutes."}
             </span>
           </div>
         </div>
       )}
 
-      {answered !== null && (
+      {acknowledged && (
         <p role="status" className="text-caption text-muted-foreground">
-          {answered ? "Allowed. The run is picking up where it stopped." : "Denied. The run was told no."}
+          {acknowledged.approve ? "Allowed. The run is picking up where it stopped." : "Denied. The run was told no."}
         </p>
       )}
 

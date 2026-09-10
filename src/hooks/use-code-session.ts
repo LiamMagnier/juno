@@ -16,9 +16,40 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  *        { type: "snapshot" | "events", task, events } … { type: "done", task, message }
  *   POST /api/code/tasks/[id]/respond     { requestId, approve }
  *   POST /api/code/tasks/[id]/cancel
+ *   POST /api/code/tasks/[id]/steer       { text, requestId } → { status: "queued", userMessage? }
+ *        … then a `steer_ack` event from the host marks it delivered.
  */
 
 export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
+
+/**
+ * A Code activity row: the chat vocabulary plus the two keys only Juno Code
+ * writes. `patch` is a write row's unified diff; `exitCode` is a tool row's
+ * process status. Both ride as extra keys rather than widening the shared
+ * `ClientActivityEvent` — a chat reader that does not know them sees exactly
+ * the row it always saw — and both now survive persistence (see the
+ * additive read in src/lib/serializers.ts).
+ */
+export type CodeActivityEvent = ClientActivityEvent & { patch?: string; exitCode?: number };
+
+/**
+ * An instruction sent to a task that is already running, from the press to
+ * the host's acknowledgement.
+ *
+ *   sending    the POST is in flight
+ *   queued     the server appended it; the host reads it on its next post
+ *   delivered  the host answered `steer_ack` — it is now the next user message
+ *   failed     the server refused (a finished run, a cloud run, a network drop)
+ *
+ * "delivered" comes ONLY from the ack. The control channel is fire-and-forget,
+ * so a 2xx from the route proves the row exists and nothing about the host.
+ */
+export interface CodeSteering {
+  requestId: string;
+  text: string;
+  phase: "sending" | "queued" | "delivered" | "failed";
+  message: string | null;
+}
 
 /** Live snapshot of one delegated child agent (from "agent" task events). */
 export interface CodeAgentState {
@@ -177,6 +208,10 @@ function friendlyTaskError(code: string | undefined, message?: string | undefine
       return "That computer is offline. Wake it, or run this in the cloud instead.";
     case "conversationId_required":
       return "This session isn’t saved yet. Reload the page and try again.";
+    case "steer_unsupported":
+      return "Cloud runs can’t take a new instruction mid-run yet. Wait for it to finish, then send a follow-up.";
+    case "task_finished":
+      return "This run has finished. Send the instruction as a new message instead.";
     default:
       // A sentence from the server that arrived in `error` rather than
       // `message` — anything with a space in it is prose, not a code.
@@ -185,7 +220,27 @@ function friendlyTaskError(code: string | undefined, message?: string | undefine
   }
 }
 
-type RemoteTask = { id: string; status: string; conversationId?: string | null };
+type RemoteTask = { id: string; status: string; conversationId?: string | null; target?: string | null };
+
+/**
+ * A refused task creation, with whatever the server persisted before refusing.
+ *
+ * The cloud path writes the user's turn and a failed ASSISTANT row BEFORE it
+ * can learn the dispatch failed, and hands both back on the 502/503. The hook
+ * used to delete its optimistic bubble on any non-2xx, so the live view hid
+ * two rows that the next reload then showed. Carrying them on the error is
+ * what lets the catch keep the transcript honest instead.
+ */
+class TaskCreateError extends Error {
+  readonly userMessage: ClientMessage | null;
+  readonly outcomeMessage: ClientMessage | null;
+  constructor(message: string, rows: { userMessage?: ClientMessage; outcomeMessage?: ClientMessage }) {
+    super(message);
+    this.name = "TaskCreateError";
+    this.userMessage = rows.userMessage ?? null;
+    this.outcomeMessage = rows.outcomeMessage ?? null;
+  }
+}
 type RemoteEvent = { seq: number; kind: string; payload: Record<string, unknown> | null; createdAt: string };
 type StreamFrame =
   | { type: "snapshot" | "events"; task: RemoteTask; events: RemoteEvent[] }
@@ -313,6 +368,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     paths: null,
   });
   const [rollbacks, setRollbacks] = React.useState<CodeRollbackRequest[]>([]);
+  /** The newest mid-run instruction and where it has got to; null between them. */
+  const [steering, setSteering] = React.useState<CodeSteering | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const lastSeqRef = React.useRef(0);
@@ -321,7 +378,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   const liveRef = React.useRef<{
     taskId: string;
     content: string;
-    activity: ClientActivityEvent[];
+    activity: CodeActivityEvent[];
     errorMessage: string | null;
     bubbleShown: boolean;
   } | null>(null);
@@ -348,6 +405,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setFileChanges([]);
     setRollbackSupport({ announced: false, paths: null });
     setRollbacks([]);
+    setSteering(null);
     lastSeqRef.current = 0;
     liveRef.current = null;
     // Session-identity reset, keyed only on conversationId — opts.initialMessages
@@ -399,6 +457,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
           }
           case "tool": {
             const title = str(event.payload, "summary") ?? str(event.payload, "name");
+            // The status as a number, so the inline command card can say a
+            // test run failed without parsing its own title.
+            const exitCode = num(event.payload, "exitCode");
             if (title)
               live.activity.push({
                 id: `evt-${event.seq}`,
@@ -406,6 +467,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 title,
                 detail: str(event.payload, "detail") ?? undefined,
                 createdAt: event.createdAt,
+                ...(exitCode !== null ? { exitCode } : {}),
               });
             break;
           }
@@ -415,13 +477,6 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             const added = num(event.payload, "added") ?? 0;
             const removed = num(event.payload, "removed") ?? 0;
             const changeKind = str(event.payload, "changeKind") ?? "edit";
-            live.activity.push({
-              id: `evt-${event.seq}`,
-              kind: "write",
-              title: `${changeKind} ${path}`,
-              detail: `+${added} −${removed}`,
-              createdAt: event.createdAt,
-            });
             /*
              * TWO SPELLINGS FOR ONE FIELD, AND BOTH ARE LOAD-BEARING.
              *
@@ -436,6 +491,16 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
              * null and keeps the summary row it has always had.
              */
             const patch = str(event.payload, "patch") ?? str(event.payload, "diff");
+            // The diff rides on the transcript row too, so the inline file row
+            // can open it — the same key the persisted row carries after reload.
+            live.activity.push({
+              id: `evt-${event.seq}`,
+              kind: "write",
+              title: `${changeKind} ${path}`,
+              detail: `+${added} −${removed}`,
+              createdAt: event.createdAt,
+              ...(patch ? { patch } : {}),
+            });
             setFileChanges((prev) => {
               const next = { path, changeKind, added, removed, patch: patch || null };
               const index = prev.findIndex((change) => change.path === path);
@@ -566,8 +631,22 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             });
             break;
           }
+          case "steer_ack": {
+            // The host took the instruction as its next user message. This is
+            // the ONLY thing that moves a steer to "delivered".
+            const requestId = str(event.payload, "requestId");
+            if (requestId) {
+              setSteering((cur) =>
+                cur && cur.requestId === requestId && cur.phase !== "failed" ? { ...cur, phase: "delivered" } : cur,
+              );
+            }
+            break;
+          }
           default:
-            break; // status/user/done/cancel_request carry no transcript content here
+            // status/user/done/cancel_request carry no transcript content here.
+            // Neither does the `steer` echo of our own POST: the instruction is
+            // already in the transcript as the USER row the route returned.
+            break;
         }
       }
     },
@@ -575,12 +654,17 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   );
 
   const finishTask = React.useCallback(
-    (task: RemoteTask, persisted: ClientMessage | null) => {
+    (task: RemoteTask, persisted: ClientMessage | null, fallbackError?: string) => {
       const live = liveRef.current;
       const bubbleId = live ? liveId(live.taskId) : null;
       const failed = task.status === "failed";
       const cancelled = task.status === "cancelled";
-      const errorText = live?.errorMessage ?? "The task failed on your Mac.";
+      // Named for the machine that ran it. "Your Mac" on a cloud run was a
+      // sentence about a computer that was never involved.
+      const errorText =
+        live?.errorMessage ??
+        fallbackError ??
+        (task.target === "cloud" ? "The cloud run failed." : "The task failed on your Mac.");
 
       setMessages((prev) => {
         const withoutBubble = bubbleId && persisted ? prev.filter((m) => m.id !== bubbleId) : prev;
@@ -623,6 +707,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       setPendingApproval(null);
       setActiveTask(null);
       setStatus("idle");
+      // A run that has ended cannot take or acknowledge an instruction.
+      setSteering(null);
       // The host holding the checkpoints has exited, so nothing can answer any
       // more and nothing new can be asked. Anything still pending is closed as
       // unanswered rather than left spinning, and the announcement is withdrawn
@@ -676,8 +762,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             headers: { Accept: "text/event-stream" },
           });
           if (res.status === 404) {
-            // Task deleted underneath the stream — nothing left to follow.
-            finishTask({ id: taskId, status: "failed" }, null);
+            // Task deleted underneath the stream — nothing left to follow. The
+            // target is unknown here, so the sentence names neither machine.
+            finishTask({ id: taskId, status: "failed" }, null, "This task no longer exists, so nothing more can be shown.");
             return;
           }
           if (res.status === 401) return; // signed out — reconnecting can't help
@@ -765,11 +852,18 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         const data = (await res.json().catch(() => ({}))) as {
           task?: RemoteTask;
           userMessage?: ClientMessage;
+          /** The failed ASSISTANT row the server wrote before refusing (cloud). */
+          outcomeMessage?: ClientMessage;
           error?: string;
           /** A server-authored sentence, which beats any code we map here. */
           message?: string;
         };
-        if (!res.ok || !data.task) throw new Error(friendlyTaskError(data.error, data.message));
+        if (!res.ok || !data.task) {
+          throw new TaskCreateError(friendlyTaskError(data.error, data.message), {
+            userMessage: data.userMessage,
+            outcomeMessage: data.outcomeMessage,
+          });
+        }
 
         const task = data.task;
         setMessages((prev) =>
@@ -779,6 +873,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
         setAgents([]);
         resetRollback();
+        setSteering(null);
         setActiveTask(task);
         setStatus("queued");
         opts.onActivity?.();
@@ -787,13 +882,97 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         return { accepted: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Could not start the task.";
-        setMessages((prev) => prev.filter((m) => m.id !== userTempId));
+        const persisted = err instanceof TaskCreateError ? err : null;
+        setMessages((prev) => {
+          /*
+           * KEEP WHAT THE SERVER KEPT. A cloud create persists the user's turn
+           * and a failed ASSISTANT row before the dispatch can fail, so the
+           * honest transcript is the one a reload would show: the turn, then
+           * the failure under it. Only when nothing was persisted (a device
+           * refusal, a network drop) does the optimistic bubble come off — the
+           * text is still in the composer, which never clears on a refusal.
+           */
+          if (!persisted?.userMessage) return prev.filter((m) => m.id !== userTempId);
+          const kept = prev.map((m) =>
+            m.id === userTempId ? { ...persisted.userMessage!, pending: false } : m,
+          );
+          const outcome = persisted.outcomeMessage;
+          if (!outcome || kept.some((m) => m.id === outcome.id)) return kept;
+          return [
+            ...kept,
+            {
+              ...outcome,
+              streaming: false,
+              error: true,
+              finishReason: "error" as const,
+              errorMessage: message,
+              content: outcome.content || message,
+            },
+          ];
+        });
+        if (persisted?.userMessage) {
+          opts.onActivity?.();
+          notifyCodeSync(); // a failed task now exists — the run list should know
+        }
         setStatus("idle");
         toast.error(message);
         return { accepted: false };
       }
     },
     [opts, resetRollback, streamTask]
+  );
+
+  /**
+   * Send a new instruction to the task that is running right now.
+   *
+   * Distinct from `send`, which creates a task: this appends a `steer` control
+   * to the live one and the host takes the text as its next user message. The
+   * USER row the route persists is placed BEFORE the live bubble, so the
+   * transcript reads the way a reload will show it — the run's single
+   * ASSISTANT row settles after every instruction it took. Only device runs
+   * can take one today; the route refuses cloud with a sentence, and
+   * `canSteer` keeps the composer from offering it there in the first place.
+   */
+  const steer = React.useCallback(
+    async (text: string): Promise<{ accepted: boolean }> => {
+      const task = activeTask;
+      const trimmed = text.trim();
+      if (!task || !trimmed) return { accepted: false };
+      if (statusRef.current !== "running" && statusRef.current !== "awaiting_approval") return { accepted: false };
+      const requestId = tempId();
+      setSteering({ requestId, text: trimmed, phase: "sending", message: null });
+      try {
+        const res = await fetch(`/api/code/tasks/${task.id}/steer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: trimmed, requestId }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          userMessage?: ClientMessage;
+          error?: string;
+          message?: string;
+        };
+        if (!res.ok) throw new Error(friendlyTaskError(data.error, data.message));
+        const row = data.userMessage;
+        if (row) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) return prev;
+            const bubble = prev.findIndex((m) => m.id === liveId(task.id));
+            const entry: ChatMessage = { ...row, pending: false };
+            return bubble === -1 ? [...prev, entry] : [...prev.slice(0, bubble), entry, ...prev.slice(bubble)];
+          });
+        }
+        setSteering((cur) => (cur && cur.requestId === requestId ? { ...cur, phase: "queued" } : cur));
+        opts.onActivity?.();
+        return { accepted: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not send the instruction.";
+        setSteering((cur) => (cur && cur.requestId === requestId ? { ...cur, phase: "failed", message } : cur));
+        toast.error(message);
+        return { accepted: false };
+      }
+    },
+    [activeTask, opts],
   );
 
   /** Re-attach to a task that was already running when the page loaded. */
@@ -804,6 +983,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
       setAgents([]);
       resetRollback();
+      setSteering(null);
       setActiveTask(task);
       setStatus(task.status === "queued" ? "queued" : task.status === "awaiting_approval" ? "awaiting_approval" : "running");
       void streamTask(task.id);
@@ -977,9 +1157,18 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     fileChanges,
     rollbackSupport,
     rollbacks,
+    steering,
     responding,
     isBusy: status !== "idle",
+    /**
+     * Whether the composer may send an instruction INTO the live run. Device
+     * only: the cloud driver has no point at which to take one, and the route
+     * refuses it, so the composer must not offer the verb there.
+     */
+    canSteer:
+      (status === "running" || status === "awaiting_approval") && activeTask?.target !== "cloud",
     send,
+    steer,
     resume,
     cancel,
     respond,
