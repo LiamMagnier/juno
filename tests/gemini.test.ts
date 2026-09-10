@@ -63,10 +63,12 @@ test("toGeminiContents handles attachments with extracted text", async () => {
   assert.equal(contents.length, 1);
   assert.equal(contents[0].parts.length, 2);
   assert.deepEqual(contents[0].parts[0], { text: "Summarize this file" });
-  assert.match(
-    (contents[0].parts[1] as { text: string }).text,
-    /Attached file "notes\.txt":\n\nKey meeting notes here\./
-  );
+  // The file's text rides inside the untrusted envelope — it is content the
+  // model reads, not an instruction — so the part carries the markers around
+  // the text rather than the bare text after the label.
+  const part = (contents[0].parts[1] as { text: string }).text;
+  assert.match(part, /^Attached file "notes\.txt":\n\n<<<JUNO_UNTRUSTED_BEGIN>>> source=notes\.txt\n/);
+  assert.match(part, /Key meeting notes here\.\n<<<JUNO_UNTRUSTED_END>>>$/);
 });
 
 test("Gemini 3.7 requests visible thoughts with provider-native thinking levels", () => {
