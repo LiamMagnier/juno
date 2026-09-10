@@ -199,9 +199,12 @@ export async function openUnifiedAgentToolset(
     onApprovalRequest: context.onApprovalRequest,
   };
 
-  const { openMcpToolset } = await import("@/lib/mcp");
+  // The MCP module is loaded only when there is a connector to open. It is
+  // `server-only` and pulls in the whole connector stack; a plain chat turn
+  // has no reason to pay for it, and a test of the empty toolset must be
+  // able to run without a server runtime.
   const baseMcpToolset = activeConnectors.length > 0
-    ? await openMcpToolset(activeConnectors, mcpContext)
+    ? await (await import("@/lib/mcp")).openMcpToolset(activeConnectors, mcpContext)
     : {
         tools: [],
         labelFor: (n: string) => n,
@@ -258,6 +261,9 @@ export async function openUnifiedAgentToolset(
           abortSignal: signal || context.abortSignal,
         });
 
+        // `stdout` is the full model-facing payload (for the browser tool, the
+        // whole page inside its untrusted envelope). Never slice it here: a cut
+        // inside the envelope drops the closing marker.
         const body = result.stdout || result.summary || JSON.stringify(result.data || {});
         return {
           text: body,

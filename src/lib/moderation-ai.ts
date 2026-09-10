@@ -49,11 +49,15 @@ const MIN_INPUT_CHARS = 3;
 
 /*
  * Each rule is intentionally conservative: it must match ONLY content that is
- * egregious beyond reasonable doubt, because a quickScreen hit at high/critical
- * severity bans immediately. Normal chat — including people discussing these
- * topics abstractly, reporting them, or asking for help — must slip through to
- * the LLM (or past moderation entirely). The TEST_TOKEN lets the test harness
- * exercise the machinery without shipping real illegal text in the repo.
+ * egregious beyond reasonable doubt, because a quickScreen hit refuses the
+ * request on the spot (403) and — for the CSAM rule — bans immediately. Every
+ * other severe automatic hit is queued for the owner's review and bans only on
+ * a second hit (moderation-policy.ts), precisely because this regex layer has
+ * false positives: "I will kill you at chess" satisfies the threat rule. Normal
+ * chat — including people discussing these topics abstractly, reporting them,
+ * or asking for help — must still slip through to the LLM (or past moderation
+ * entirely). The TEST_TOKEN lets the test harness exercise the machinery
+ * without shipping real illegal text in the repo.
  */
 interface ScreenRule {
   category: ModerationCategory;
@@ -97,7 +101,7 @@ const TEST_TOKEN = /\bXMODTEST_CRITICAL_CSAM\b/;
  * Fast deterministic screen for the most egregious, unambiguous violations.
  * Returns a high/critical hit or null. Never runs an LLM. Conservative by
  * design — false negatives here are fine (the LLM layer catches subtler cases);
- * false positives are not (they ban immediately).
+ * false positives still refuse the request and land in the review queue.
  */
 export function quickScreen(text: string): ModerationHit | null {
   if (!text) return null;

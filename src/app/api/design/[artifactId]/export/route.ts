@@ -239,9 +239,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
       }
     }
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Export failed." },
-      { status: 500 }
-    );
+    // The renderer's exception text can name internal modules and asset keys;
+    // the log gets it, the client gets a sentence it can act on.
+    console.error("[design] export failed", {
+      artifactId: artifact.id,
+      format: parsed.data.format,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json({ error: "Export failed. Please try again." }, { status: 500 });
   }
 }

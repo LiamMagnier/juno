@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
+import { attachedFileText } from "@/lib/attachment-context";
 import { providerRequestModel } from "@/lib/model-request";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
@@ -118,7 +119,7 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
           }
         } else if (att.mimeType === "application/pdf") {
           if (!embedBinary && att.extractedText) {
-            blocks.push({ type: "text", text: `Attached file "${att.fileName}" (shared earlier):\n\n${att.extractedText.slice(0, 100_000)}` });
+            blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true }) });
           } else if (!embedBinary) {
             blocks.push({ type: "text", text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
@@ -129,10 +130,7 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
             });
           }
         } else if (att.extractedText) {
-          blocks.push({
-            type: "text",
-            text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}`,
-          });
+          blocks.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText) });
         } else {
           blocks.push({ type: "text", text: `[Attached file "${att.fileName}" (${att.mimeType}) — content not readable.]` });
         }

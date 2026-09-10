@@ -140,3 +140,51 @@ test("the default windows are generous enough for a slow reasoning model", () =>
   // longer of the two.
   assert.ok(PROVIDER_STARTUP_TIMEOUT_MS > PROVIDER_IDLE_TIMEOUT_MS);
 });
+
+test("a pending approval pauses the idle clock; the tool result re-arms it", (t: TestContext) => {
+  /*
+   * While `toolset.execute` blocks on a person answering an approval card, the
+   * generator yields nothing and nothing touches the watchdog — so a 200s
+   * deliberation used to be reported as "Model stopped responding". Paused,
+   * the clock does not run; the approval receipt's own TTL bounds the wait.
+   */
+  let fired = 0;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const wd = createStallWatchdog(() => fired++, 20, 1_000);
+  wd.touch(); // the model streamed, then reached for a connector tool
+  wd.pause(); // onApprovalRequest
+  assert.equal(wd.paused, true);
+  t.mock.timers.tick(200_000);
+  assert.equal(fired, 0, "a person taking 200s to decide is not a stalled provider");
+  assert.equal(wd.stalled, false);
+
+  wd.touch(); // the tool result arrives (approved or refused)
+  assert.equal(wd.paused, false);
+  t.mock.timers.tick(25);
+  assert.equal(fired, 1, "silence AFTER the result is a stall again");
+  wd.stop();
+});
+
+test("resume() re-arms without an event, and pause is inert once stopped or stalled", (t: TestContext) => {
+  let fired = 0;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const wd = createStallWatchdog(() => fired++, 20, 1_000);
+  wd.touch();
+  wd.pause();
+  wd.resume();
+  assert.equal(wd.paused, false);
+  t.mock.timers.tick(25);
+  assert.equal(fired, 1);
+
+  // Stalled: pausing must not hide the verdict.
+  wd.pause();
+  assert.equal(wd.paused, false);
+  assert.equal(wd.stalled, true);
+
+  const done = createStallWatchdog(() => fired++, 20, 1_000);
+  done.stop();
+  done.pause();
+  done.resume();
+  t.mock.timers.tick(50);
+  assert.equal(fired, 1, "a stopped watchdog cannot be revived through pause/resume");
+});

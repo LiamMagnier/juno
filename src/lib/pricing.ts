@@ -31,6 +31,42 @@ export interface RawUsage {
   cacheWrite1h?: number;
 }
 
+/**
+ * The prompt-cache fields an OpenAI-compatible `usage` object may carry, in
+ * every dialect Juno has met. `prompt_tokens` always includes the cached
+ * portion on this API family (see `normalizeUsage`).
+ */
+export interface CompatPromptCacheFields {
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  /** DeepSeek: its disk cache, hits and misses. Both are INSIDE prompt_tokens. */
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  /** Moonshot/Kimi: a top-level cached count. */
+  cached_tokens?: number;
+}
+
+/**
+ * Cache read/write token counts from a compat usage chunk.
+ *
+ * The write count is ONLY an explicit `cache_write_tokens` (OpenAI GPT-5.6+).
+ * DeepSeek's `prompt_cache_miss_tokens` used to be taken as a write for every
+ * non-OpenAI provider — but a miss is just the uncached remainder of
+ * `prompt_tokens`, already billed as fresh input by `normalizeUsage`, so it was
+ * charged twice: once at the input rate and again as a "write" at the same
+ * rate (`tokenRate`'s default branch). Uncached DeepSeek input cost double.
+ * No compat provider Juno routes to bills a cache-write premium through that
+ * field, so dropping it is the whole fix.
+ */
+export function compatPromptCacheTokens(
+  u: CompatPromptCacheFields
+): { cacheRead: number | undefined; cacheWrite: number } {
+  // `undefined` when no dialect reported a read count at all, so a caller
+  // keeping "last chunk wins" state can tell "not reported" from zero.
+  const read = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens;
+  const cacheWrite = u.prompt_tokens_details?.cache_write_tokens ?? 0;
+  return { cacheRead: read == null ? undefined : Math.max(0, read), cacheWrite: Math.max(0, cacheWrite) };
+}
+
 /** Provider token conventions reconciled into one additive shape. */
 export interface NormalizedUsage {
   totalInput: number; // full prompt size, cache included

@@ -18,27 +18,16 @@ export function classifyReceiptlessFirstSubmission(
   return existingFirstMessage ? "ambiguous" : "empty";
 }
 
-// Running generations refresh this five-minute lease once per minute. A receipt
-// lookup atomically expires a missed lease, so a crashed process cannot strand a
-// native client in accepted/running forever.
-export const FIRST_SUBMISSION_RECEIPT_LEASE_MS = 5 * 60_000;
-export const FIRST_SUBMISSION_RECEIPT_HEARTBEAT_MS = 60_000;
-
-export function firstSubmissionLeaseExpiresAt(now = Date.now()): Date {
-  return new Date(now + FIRST_SUBMISSION_RECEIPT_LEASE_MS);
-}
-
-export function firstSubmissionLeaseHeartbeatOwnsReceipt(updatedCount: number): boolean {
-  return updatedCount === 1;
-}
-
-export function firstSubmissionReceiptExpiryBoundary(now = new Date()) {
-  return {
-    states: ["claimed", "accepted", "running"] as const,
-    leaseExpiresAtLte: now,
-    nullLeaseUpdatedAtLte: new Date(now.getTime() - FIRST_SUBMISSION_RECEIPT_LEASE_MS),
-  };
-}
+// The lease arithmetic lives in a `node:crypto`-free module so the receipt
+// store (and, through it, the boot-time sweep) can be reached from
+// instrumentation.ts without dragging createHash into the edge bundle.
+export {
+  FIRST_SUBMISSION_RECEIPT_HEARTBEAT_MS,
+  FIRST_SUBMISSION_RECEIPT_LEASE_MS,
+  firstSubmissionLeaseExpiresAt,
+  firstSubmissionLeaseHeartbeatOwnsReceipt,
+  firstSubmissionReceiptExpiryBoundary,
+} from "@/lib/chat-first-submission-time";
 
 export function coerceFirstSubmissionReceiptState(value: string): FirstSubmissionReceiptState {
   return (FIRST_SUBMISSION_RECEIPT_STATES as readonly string[]).includes(value)

@@ -26,11 +26,9 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[app-store-webhook] failed to process notification:", error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to process App Store notification",
-      },
-      { status: 400 }
-    );
+    // Logged above in full; the body is a fixed sentence. A verification
+    // failure's message describes Juno's own key configuration, which is not
+    // something to hand to whoever is posting to this URL.
+    return NextResponse.json({ error: "Failed to process App Store notification" }, { status: 400 });
   }
 }

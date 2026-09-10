@@ -1,4 +1,4 @@
-import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -72,9 +72,7 @@ export async function toGeminiContents(
           }
         } else if (att.mimeType === "application/pdf") {
           if (!embedBinary && att.extractedText) {
-            parts.push({
-              text: `Attached file "${att.fileName}" (shared earlier):\n\n${att.extractedText.slice(0, 100_000)}`,
-            });
+            parts.push({ text: attachedFileText(att.fileName, att.extractedText, { sharedEarlier: true }) });
           } else if (!embedBinary) {
             parts.push({ text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
           } else {
@@ -87,9 +85,7 @@ export async function toGeminiContents(
             });
           }
         } else if (att.extractedText) {
-          parts.push({
-            text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}`,
-          });
+          parts.push({ text: attachedFileText(att.fileName, att.extractedText) });
         } else {
           const note =
             att.mimeType === "application/pdf"

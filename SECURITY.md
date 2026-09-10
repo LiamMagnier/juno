@@ -49,7 +49,40 @@ Out of scope:
 
 ## Handling of User Data
 
-Message content, reasoning traces, connector tokens, and OAuth credentials are
-AES-256-GCM encrypted at rest. Conversation search is title-only as a direct
-consequence. Full account deletion (`DELETE /api/account`) cascades across
-database records and object storage.
+### What is encrypted at rest today
+
+AES-256-GCM, keyed from `AUTH_SECRET`-derived keys (rotatable). Exactly these
+columns, and nothing else — read the code, not this list, if they disagree
+(`src/lib/message-crypto.ts`, `src/lib/crypto.ts`):
+
+| Table.column | Contents | Cipher module |
+|---|---|---|
+| `Message.content`, `Message.reasoning`, `Message.reasoningParts` | The transcript body and visible thinking | `message-crypto.ts` (keyring-versioned, `enc:v1:`/`enc:v2:`) |
+| `MessageVersion` copies of the above | Edit/regenerate history (ciphertext copied verbatim) | `message-crypto.ts` |
+| `Account.access_token`, `Account.refresh_token`, `Account.id_token` | Auth.js OAuth tokens | `crypto.ts` (`encryptAccountTokens`) |
+| `Connection` token columns (`accessToken`, `refreshToken`, `clientSecret`, credential blobs) | Connector / MCP OAuth credentials and stored client secrets | `crypto.ts` (`encryptSecret`) |
+| Composio session references, MCP OAuth flow cookies | Connector session state | `crypto.ts` (`encryptSecret`) |
+
+Conversation search is title-only as a direct consequence.
+
+### What is NOT encrypted at rest
+
+Stored in plaintext today, and worth knowing before you treat a database dump
+as harmless:
+
+- `Message.activity` — the tool-call log of a turn, including the arguments
+  sent to each connector and the text each tool returned (i.e. the user's own
+  Gmail / Linear / Notion content that a tool fetched).
+- `Message.sources` — search-result snippets.
+- `MemoryEntry.content`, `MemorySummary.content` — distilled personal facts.
+- `Attachment.extractedText`, `AttachmentVersion.extractedText` — up to
+  200,000 characters of document text per file.
+- `ArtifactVersion.content` — canvas / artifact bodies.
+- `ScheduledTask.prompt`, conversation and project titles, project
+  instructions, uploaded file bytes in object storage.
+
+Extending encryption to these columns is tracked as open work; until then the
+promise above is limited to the table.
+
+Full account deletion (`DELETE /api/account`) cascades across database records
+and object storage.

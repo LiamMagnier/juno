@@ -118,6 +118,21 @@ export async function extractSemanticPageContent(targetUrl: string): Promise<{
 }
 
 /**
+ * What the model is handed for a fetched page: the WHOLE extracted text inside
+ * one untrusted envelope.
+ *
+ * This used to be `wrapUntrusted(url, content).slice(0, 1000)`. The slice cut
+ * the page *inside* the envelope, so the closing marker never reached the
+ * model — the one thing the envelope exists to guarantee — and 15,000 chars
+ * of extraction became 1,000 chars of delivery. The page is already bounded
+ * upstream (`extractSemanticPageContent` caps at 15,000 chars), so the
+ * envelope must wrap that bound rather than impose a smaller one.
+ */
+export function browserPageBody(url: string, content: string): string {
+  return wrapUntrusted(url, content);
+}
+
+/**
  * Standard Browser Tool Definition for Unified Agent Runtime
  */
 export const browserTool: ToolDefinition<BrowserActionParams, BrowserActionResult> = {
@@ -177,7 +192,7 @@ export const browserTool: ToolDefinition<BrowserActionParams, BrowserActionResul
 
     try {
       const pageData = await extractSemanticPageContent(targetUrl);
-      const defendedContent = wrapUntrusted(targetUrl, pageData.content);
+      const defendedContent = browserPageBody(targetUrl, pageData.content);
       
       const result: BrowserActionResult = {
         action: params.action,
@@ -206,7 +221,9 @@ export const browserTool: ToolDefinition<BrowserActionParams, BrowserActionResul
         success: true,
         data: result,
         summary: `Loaded ${pageData.title} (${pageData.content.length} chars).`,
-        stdout: defendedContent.slice(0, 1000),
+        // `stdout` is what the runtime hands the model as the tool result. It
+        // must carry the envelope intact — see browserPageBody.
+        stdout: defendedContent,
       };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);

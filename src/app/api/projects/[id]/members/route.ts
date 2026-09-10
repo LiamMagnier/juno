@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { addProjectMember, listProjectMembers } from "@/lib/project-collaboration";
+import { addProjectMember, listProjectMembers, ProjectCollaborationError } from "@/lib/project-collaboration";
 
 export async function GET(
   _req: Request,
@@ -14,7 +14,13 @@ export async function GET(
     const members = await listProjectMembers(user.id, id);
     return NextResponse.json({ members });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Forbidden" }, { status: 403 });
+    // Only the collaboration layer's own refusals are echoed; anything else
+    // (a Prisma failure, say) is logged and answered with a fixed sentence.
+    if (error instanceof ProjectCollaborationError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    console.error("[projects] listing members failed", { projectId: id, message: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ error: "Could not load project members." }, { status: 500 });
   }
 }
 
@@ -37,6 +43,10 @@ export async function POST(
     const member = await addProjectMember(user.id, id, emailOrUserId, role ?? "EDITOR");
     return NextResponse.json({ member });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to add member" }, { status: 400 });
+    if (error instanceof ProjectCollaborationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    console.error("[projects] adding member failed", { projectId: id, message: error instanceof Error ? error.message : String(error) });
+    return NextResponse.json({ error: "Could not add the member." }, { status: 500 });
   }
 }

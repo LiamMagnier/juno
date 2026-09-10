@@ -107,18 +107,40 @@ module.exports = {
     {
       name: "juno-backend",
       cwd: runRoot,
-      script: "npm",
-      args: "run start",
+      // Next's own binary, not `npm run start`, and the same flags as the
+      // package.json `start` script (loopback bind — see
+      // tests/security-regressions.test.ts). Two things below need the server
+      // to be PM2's DIRECT child: `wait_ready` listens for `process.send("ready")`
+      // on the IPC channel, which `npm` does not pass to the script it spawns;
+      // and SIGINT/SIGTERM must reach the process that holds the SSE streams,
+      // not a shell in front of it.
+      script: path.join(runRoot, "node_modules", "next", "dist", "bin", "next"),
+      args: "start -H 127.0.0.1",
+      interpreter: "node",
       watch: false,
       // Large pastes + encryption need headroom; 800M was OOM-killing mid-request
       // and leaving the browser on a blank page after Send.
       max_memory_restart: "1400M",
+      // Graceful stop. PM2 sends SIGINT, waits `kill_timeout`, then SIGKILL.
+      // src/lib/graceful-shutdown.ts uses that window to refuse new generations,
+      // give in-flight ones 20s to finish, abort the rest with a refund and
+      // exit — well inside 120s. Before this the default 1.6s meant every
+      // deploy and every max_memory_restart killed every live stream on the
+      // box with the message already charged.
+      kill_timeout: 120_000,
+      // Do not retire the old process until the new one has bound its port
+      // and run its boot checks (instrumentation.ts sends "ready" then).
+      wait_ready: true,
+      listen_timeout: 60_000,
       env: {
         ...releaseEnv,
         PORT: 3000,
         NODE_ENV: "production",
         // Higher default HTTP header limit (16kb) and heap for big chat bodies.
         NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1024",
+        // Next installs its own SIGINT/SIGTERM handler that exits at once;
+        // this tells it not to, so the drain above can run.
+        NEXT_MANUAL_SIG_HANDLE: "true",
       },
       error_file: "logs/err.log",
       out_file: "logs/out.log",

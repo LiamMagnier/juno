@@ -29,13 +29,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
 
+  // Only the normaliser's own validation messages are echoed — they are
+  // sentences Juno wrote for this form. The database write sits outside the
+  // try so a Prisma failure surfaces as a logged 500, not as its message.
+  let data: ReturnType<typeof normalizeAnnouncementInput>;
   try {
-    const data = normalizeAnnouncementInput(parsed.data);
-    const announcement = await prisma.announcement.create({
-      data: { ...data, createdById: owner.id },
-    });
-    return NextResponse.json({ announcement: serializeAnnouncement(announcement) }, { status: 201 });
+    data = normalizeAnnouncementInput(parsed.data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Invalid input" }, { status: 400 });
   }
+  const announcement = await prisma.announcement.create({
+    data: { ...data, createdById: owner.id },
+  });
+  return NextResponse.json({ announcement: serializeAnnouncement(announcement) }, { status: 201 });
 }

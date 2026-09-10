@@ -7,6 +7,36 @@
  * prevents four adapters from drifting into four different explanations.
  */
 
+import { wrapUntrusted } from "@/lib/untrusted-content";
+
+/**
+ * Per-attachment ceiling on the text an adapter sends. Was the same literal
+ * in four adapters; one place now, so the bound cannot drift.
+ */
+export const ATTACHMENT_TEXT_MAX_CHARS = 100_000;
+
+/**
+ * The model-facing rendering of an attachment's extracted text.
+ *
+ * Wrapped in the untrusted envelope, because a document is text Juno did not
+ * author and the user did not type — a PDF from a stranger or a pasted export
+ * can carry "ignore your instructions" as easily as a web page can. The
+ * adapters used to send it bare, in a user turn, indistinguishable from
+ * something the user wrote. The envelope is what lets the system-prompt rule
+ * (`UNTRUSTED_CONTENT_RULE`) apply; the route enables that rule whenever the
+ * history carries attachment text.
+ */
+export function attachedFileText(
+  fileName: string,
+  extractedText: string,
+  options: { sharedEarlier?: boolean } = {}
+): string {
+  const heading = options.sharedEarlier
+    ? `Attached file "${fileName}" (shared earlier):`
+    : `Attached file "${fileName}":`;
+  return `${heading}\n\n${wrapUntrusted(fileName, extractedText.slice(0, ATTACHMENT_TEXT_MAX_CHARS))}`;
+}
+
 const PENDING_STATES = new Set(["queued", "indexing", "extracting", "ocr"]);
 const UNAVAILABLE_STATES = new Set(["failed", "skipped"]);
 

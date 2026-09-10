@@ -122,7 +122,7 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
     "lucide-react": "^1.22.0",
-    "next": "^15.5.0",
+    "next": "^15.5.25",
     "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.0",
     "openai": "^6.45.0",
@@ -159,8 +159,9 @@
   },
   "overrides": {
     "deepmerge-ts": "8.0.2",
+    "nodemailer": "9.1.1",
     "postcss": "$postcss",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "uuid": "11.1.1"
   },
   "engines": {

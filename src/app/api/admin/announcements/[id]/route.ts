@@ -20,15 +20,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
   }
 
+  // Same split as the create route: validation sentences are ours to echo,
+  // database errors are not.
+  let data: ReturnType<typeof normalizeAnnouncementInput>;
   try {
-    const announcement = await prisma.announcement.update({
-      where: { id },
-      data: normalizeAnnouncementInput(parsed.data),
-    });
-    return NextResponse.json({ announcement: serializeAnnouncement(announcement) });
+    data = normalizeAnnouncementInput(parsed.data);
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Invalid input" }, { status: 400 });
   }
+  const announcement = await prisma.announcement.update({ where: { id }, data });
+  return NextResponse.json({ announcement: serializeAnnouncement(announcement) });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {

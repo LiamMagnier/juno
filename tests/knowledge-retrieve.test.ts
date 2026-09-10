@@ -18,7 +18,8 @@ import {
   type ScoredPassage,
 } from "@/lib/knowledge/rank";
 import { lexicalCandidateQuery } from "@/lib/knowledge/lexical-query";
-import { buildProjectContext, contextActivityDetail } from "@/lib/chat/context-assembly";
+import { buildProjectContext, buildProjectReferenceFiles, contextActivityDetail } from "@/lib/chat/context-assembly";
+import { UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 
 const CHAT_ROUTE = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
 
@@ -585,26 +586,32 @@ test("a project with nothing indexed keeps exactly its old prompt", () => {
     null
   );
   assert.equal(after, before);
-  assert.ok(before.includes("### spec.md\nthe spec"));
+  // The file itself no longer lives in the system prompt (it rides the first
+  // user turn, enveloped — see chat-context-assembly.test.ts); the boundary
+  // holds on that side too.
+  assert.ok(!before.includes("the spec"));
+  const files = { name: "Juno", instructions: "Be brief.", files: [{ fileName: "spec.md", extractedText: "the spec" }] };
+  assert.equal(buildProjectReferenceFiles(files, null), buildProjectReferenceFiles(files));
+  assert.ok(buildProjectReferenceFiles(files).includes(`${UNTRUSTED_OPEN} source=spec.md\nthe spec`));
 });
 
 test("an indexed file is cited, not dumped", () => {
   // Otherwise the document is in the prompt twice — once entire, once in
   // extract — and retrieval has bought nothing.
-  const context = buildProjectContext(
-    {
-      name: "Juno",
-      instructions: "",
-      files: [
-        { fileName: "handbook.pdf", extractedText: "THE ENTIRE HANDBOOK" },
-        { fileName: "notes.md", extractedText: "loose notes" },
-      ],
-    },
-    retrieved()
-  );
+  const project = {
+    name: "Juno",
+    instructions: "",
+    files: [
+      { fileName: "handbook.pdf", extractedText: "THE ENTIRE HANDBOOK" },
+      { fileName: "notes.md", extractedText: "loose notes" },
+    ],
+  };
+  const context = buildProjectContext(project, retrieved());
+  const files = buildProjectReferenceFiles(project, retrieved());
 
   assert.ok(!context.includes("THE ENTIRE HANDBOOK"), "the indexed file must not be dumped whole");
-  assert.ok(context.includes("### notes.md\nloose notes"), "an unindexed file is unaffected");
+  assert.ok(!files.includes("THE ENTIRE HANDBOOK"), "…in either place");
+  assert.ok(files.includes(`${UNTRUSTED_OPEN} source=notes.md\nloose notes`), "an unindexed file is unaffected");
   assert.ok(context.includes("### handbook.pdf · page 4"), "the extract must carry its page");
   assert.ok(context.includes("Refunds are granted within thirty days."));
 });
@@ -631,7 +638,7 @@ test("a passage with no locator is still cited by file", () => {
       ],
     })
   );
-  assert.ok(context.includes("### notes.txt\nA line."));
+  assert.ok(context.includes(`### notes.txt\n${UNTRUSTED_OPEN} source=notes.txt\nA line.`));
   assert.ok(!context.includes("·"));
 });
 

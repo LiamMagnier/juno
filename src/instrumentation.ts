@@ -1,5 +1,6 @@
 /**
- * Boot-time configuration checks.
+ * Boot-time configuration checks, the process-lifecycle hooks, and the
+ * startup sweep — all of them in `src/lib/boot.ts`.
  *
  * Next.js calls `register()` once per server process, before the first request
  * is served. That is the only place a fatal misconfiguration can be turned into
@@ -7,24 +8,18 @@
  * and then throws on every chat is discovered by users, while one that refuses
  * to start is discovered by whoever ran the deploy.
  *
- * Imports only `message-crypto-config`, never `message-crypto`. This file is
- * compiled for every runtime Next.js targets, and the cipher module imports
- * Node's `crypto` — which the edge bundle cannot resolve under any spelling.
- * Reaching for it here broke the production build.
+ * This file is compiled for every runtime Next.js targets, and webpack
+ * resolves every `import()` it can reach — an early `return` on
+ * `NEXT_RUNTIME` does not make what follows dead code. Only an `if` block on
+ * the constant is skipped by the edge compile, so the Node-only import lives
+ * inside one, exactly as the Next.js docs show. Nothing else may be imported
+ * here: the boot module reaches Prisma and `node:crypto`, and one static or
+ * unguarded dynamic import of either breaks the edge bundle and with it every
+ * route.
  */
 export async function register(): Promise<void> {
-  // Edge and browser bundles have neither the env nor the process this checks.
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-
-  const { assertDataEncryptionKeyConfigured } = await import("@/lib/message-crypto-config");
-
-  try {
-    assertDataEncryptionKeyConfigured();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[boot] ${message}`);
-    // Only fatal in production. A developer running `next dev` gets the warning
-    // and the derived key, which is what makes a fresh checkout runnable.
-    if (process.env.NODE_ENV === "production") throw error;
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { bootNodeRuntime } = await import("@/lib/boot");
+    await bootNodeRuntime();
   }
 }

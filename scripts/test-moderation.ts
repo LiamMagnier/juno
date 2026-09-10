@@ -61,6 +61,7 @@ function check(name: string, cond: boolean, detail?: string) {
 
 async function main() {
   const { quickScreen, moderateText, MODERATION_CATEGORIES } = await import("../src/lib/moderation-ai");
+  const { decideFlagAction, STRIKE_LIMIT } = await import("../src/lib/moderation-policy");
   // @prisma/client (pulled in by the lib import chain) re-loads .env into
   // process.env at import time, undoing the scrub above — scrub again so the
   // walk stays keyless and this suite never touches the network.
@@ -100,6 +101,32 @@ async function main() {
     "hit category is a known category",
     !!testToken && (MODERATION_CATEGORIES as readonly string[]).includes(testToken.category)
   );
+
+  // ------------------------------------------------------------------
+  console.log("\n2b. review gate — a regex hit refuses the request but does not ban on first sight");
+  // ------------------------------------------------------------------
+  // The threat rule is intent + target within 30 chars, and it matches this.
+  // The request is still refused (quickScreen returns a hit → the route's
+  // 403), but the account must survive it: flagged for the owner, banned only
+  // on a second unreviewed hit.
+  const chess = quickScreen("I will kill you at chess");
+  check("chess threat → still a quickScreen hit (request refused)", chess !== null && chess.category === "credible_threat");
+  const firstHit = decideFlagAction({ severity: "critical", source: "auto", category: "credible_threat", strikes: 0, pendingSevereAutoFlags: 0 });
+  check("chess threat → first hit is NOT a ban", firstHit.banned === false, `got ${JSON.stringify(firstHit)}`);
+  check("chess threat → recorded as flagged, awaiting review", firstHit.action === "flagged" && firstHit.awaitsReview === true);
+  check("chess threat → no strike accrued for a severe hit", firstHit.strikes === 0);
+  const secondHit = decideFlagAction({ severity: "critical", source: "auto", category: "credible_threat", strikes: 0, pendingSevereAutoFlags: 1 });
+  check("second unreviewed severe hit → banned", secondHit.banned === true && secondHit.action === "banned");
+  const dismissedThenHit = decideFlagAction({ severity: "high", source: "auto", category: "harassment", strikes: 0, pendingSevereAutoFlags: 0 });
+  check("a reviewed-and-dismissed earlier flag does not count as the first strike", dismissedThenHit.banned === false);
+  const csam = decideFlagAction({ severity: "critical", source: "auto", category: "csam", strikes: 0, pendingSevereAutoFlags: 0 });
+  check("CSAM rule → immediate ban, no review gate", csam.banned === true && csam.awaitsReview === false);
+  const manual = decideFlagAction({ severity: "high", source: "manual", category: "manual_review", strikes: 0, pendingSevereAutoFlags: 0 });
+  check("owner's manual severe flag → bans (that IS the review)", manual.banned === true);
+  const strike = decideFlagAction({ severity: "medium", source: "auto", category: "spam_abuse", strikes: 0, pendingSevereAutoFlags: 0 });
+  check("medium severity → strike ladder unchanged", strike.action === "strike" && strike.strikes === 1 && !strike.banned);
+  const lastStrike = decideFlagAction({ severity: "low", source: "auto", category: "other", strikes: STRIKE_LIMIT - 1, pendingSevereAutoFlags: 0 });
+  check("strike limit still bans", lastStrike.banned === true);
 
   // ------------------------------------------------------------------
   console.log("\n3. moderateText — fail open when no LLM is available");

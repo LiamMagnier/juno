@@ -8,6 +8,7 @@ import {
   toolFeesUsd,
   tokenRate,
   normalizeUsage,
+  compatPromptCacheTokens,
 } from "@/lib/pricing";
 import type { ModelInfo } from "@/lib/models";
 
@@ -267,4 +268,51 @@ test("reasoning lift does not double-count when already inside output", () => {
     reasoningTokens: 3_000, // subset
   });
   assert.equal(t.completionTokens, 5_000);
+});
+
+const deepseekFlash = {
+  id: "deepseek:deepseek-v4-flash",
+  provider: "deepseek",
+  providerModel: "deepseek-v4-flash",
+  name: "DeepSeek V4 Flash",
+  family: "v4-flash",
+  status: "current",
+  minPlan: "FREE",
+  cost: 1,
+  reasoning: false,
+  vision: false,
+  contextWindow: 1_000_000,
+  description: "test",
+} as ModelInfo;
+
+test("DeepSeek cache misses are uncached input, never a cache write (no double bill)", () => {
+  // DeepSeek reports prompt_tokens = hit + miss. The compat adapter used to
+  // take the miss count as a cache WRITE for every non-OpenAI provider, so the
+  // 600 uncached tokens were billed once as fresh input by normalizeUsage and
+  // again as a write at the input rate: uncached input cost double.
+  const cache = compatPromptCacheTokens({
+    prompt_cache_hit_tokens: 400,
+    prompt_cache_miss_tokens: 600,
+  });
+  assert.equal(cache.cacheRead, 400);
+  assert.equal(cache.cacheWrite, 0);
+
+  const rate = tokenRate(deepseekFlash);
+  const usage = { input: 1000, cacheRead: cache.cacheRead, cacheWrite: cache.cacheWrite, output: 0 };
+  const expected = (600 * rate.input + 400 * rate.cacheRead) / 1_000_000;
+  const cost = estimateCostUsd(deepseekFlash, usage);
+  assert.ok(Math.abs(cost - expected) < 1e-12, `expected ${expected}, got ${cost}`);
+
+  // The old arithmetic, for the record: 600 more input-rate tokens.
+  const doubleBilled = estimateCostUsd(deepseekFlash, { ...usage, cacheWrite: 600 });
+  assert.ok(doubleBilled > cost, "the regression this pins would charge the misses twice");
+  assert.ok(Math.abs(doubleBilled - expected - (600 * rate.cacheWrite) / 1_000_000) < 1e-12);
+});
+
+test("an explicit cache_write_tokens is still a write, and an absent read is undefined", () => {
+  const written = compatPromptCacheTokens({ prompt_tokens_details: { cached_tokens: 100, cache_write_tokens: 50 } });
+  assert.deepEqual(written, { cacheRead: 100, cacheWrite: 50 });
+  // Kimi's top-level field, and a chunk that says nothing about the cache.
+  assert.equal(compatPromptCacheTokens({ cached_tokens: 7 }).cacheRead, 7);
+  assert.equal(compatPromptCacheTokens({}).cacheRead, undefined);
 });

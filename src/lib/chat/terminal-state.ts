@@ -21,6 +21,8 @@
  *  - A canvas edit never saves a partial: its output is a patch protocol, and
  *    half a patch applied to a user's artifact is worse than no answer.
  *  - The message is refunded unless the user stopped it themselves.
+ *  - A process drain (SIGTERM mid-stream) is a failure with a refund, even
+ *    though it reaches the route as the same AbortError a Stop produces.
  */
 import { classifyErrorFinishReason, generationFailureCode } from "@/lib/chat-responses";
 import type { ChatFinishReason } from "@/types/chat";
@@ -29,6 +31,10 @@ export const LEASE_EXPIRED_FAILURE_CODE = "GENERATION_LEASE_EXPIRED";
 export const PERSISTENCE_FAILED_FAILURE_CODE = "GENERATION_PERSISTENCE_FAILED";
 export const INTERNAL_ERROR_FAILURE_CODE = "GENERATION_INTERNAL_ERROR";
 export const START_FAILED_FAILURE_CODE = "GENERATION_START_FAILED";
+/** The process was told to stop while this generation was streaming. */
+export const SHUTDOWN_FAILURE_CODE = "GENERATION_PROCESS_SHUTDOWN";
+/** The process died mid-generation; recorded by the startup sweep, not the route. */
+export const PROCESS_LOST_FAILURE_CODE = "GENERATION_PROCESS_LOST";
 
 export interface TerminalSignals {
   /** The provider went silent long enough for the watchdog to fire. */
@@ -39,6 +45,11 @@ export interface TerminalSignals {
   userStopped: boolean;
   /** The durable first-submission lease is no longer owned by this process. */
   leaseLost: boolean;
+  /**
+   * The process is draining for a restart and aborted this generation.
+   * Optional so the five existing call sites and their tests read unchanged.
+   */
+  shutdown?: boolean;
   /** Whatever the stream threw. */
   error: unknown;
 }
@@ -63,6 +74,10 @@ export interface TerminalState {
 /** The finish reason alone, for callers that only need to classify. */
 export function terminalFinishReason(signals: TerminalSignals): ChatFinishReason {
   if (signals.stalled) return "error";
+  // A drain aborts the controller exactly as a user Stop does, and the SDK
+  // throws the same AbortError for both. Checked before the stop cases so a
+  // restart is a failure the user is refunded for, never a Stop they pay for.
+  if (signals.shutdown) return "error";
   if (signals.budgetHalted || signals.userStopped) return "user_stopped";
   return classifyErrorFinishReason(signals.error);
 }
@@ -86,7 +101,10 @@ export function resolveTerminalState(signals: TerminalSignals, output: PartialOu
     (output.hasText || output.hasReasoning);
   return {
     finishReason,
-    failureCode: terminalFailureCode(signals.leaseLost, generationFailureCode(finishReason)),
+    failureCode: terminalFailureCode(
+      signals.leaseLost,
+      signals.shutdown ? SHUTDOWN_FAILURE_CODE : generationFailureCode(finishReason)
+    ),
     persistsPartial,
     // A user who stopped their own generation keeps the charge: the work was
     // done and, when there is any output at all, they get to keep it too.

@@ -4,6 +4,7 @@ import {
   INTERNAL_ERROR_FAILURE_CODE,
   LEASE_EXPIRED_FAILURE_CODE,
   PERSISTENCE_FAILED_FAILURE_CODE,
+  SHUTDOWN_FAILURE_CODE,
   resolveTerminalState,
   terminalFailureCode,
   terminalFinishReason,
@@ -158,4 +159,41 @@ test("a saved partial is never also refunded", () => {
     const state = resolveTerminalState(s, output({ hasText: true }));
     assert.equal(state.persistsPartial && state.refunds, false);
   }
+});
+
+test("a process drain is a refunded failure, even though it arrives as a Stop's AbortError", () => {
+  /*
+   * The drain aborts the same controller the cancel endpoint does, so the SDK
+   * throws the same AbortError. Without the signal, a deploy mid-answer was
+   * recorded as user_stopped: the partial kept, the message charged. It has
+   * to be the opposite — nothing kept, everything given back — and the
+   * receipt must say WHY it failed.
+   */
+  const abort = new DOMException("Server shutting down", "AbortError");
+  const state = resolveTerminalState(
+    signals({ shutdown: true, error: abort }),
+    { hasText: true, hasReasoning: true, artifactEdit: false }
+  );
+  assert.equal(state.finishReason, "error");
+  assert.equal(state.failureCode, SHUTDOWN_FAILURE_CODE);
+  assert.equal(state.persistsPartial, false);
+  assert.equal(state.refunds, true);
+
+  // A drain that also lost its lease reports the lease, as every other
+  // terminal state does: the row is somebody else's now.
+  const lost = resolveTerminalState(signals({ shutdown: true, leaseLost: true, error: abort }), {
+    hasText: false,
+    hasReasoning: false,
+    artifactEdit: false,
+  });
+  assert.equal(lost.failureCode, LEASE_EXPIRED_FAILURE_CODE);
+
+  // And a real user Stop with the same error is still a user stop.
+  const stopped = resolveTerminalState(signals({ userStopped: true, error: abort }), {
+    hasText: true,
+    hasReasoning: false,
+    artifactEdit: false,
+  });
+  assert.equal(stopped.finishReason, "user_stopped");
+  assert.equal(stopped.refunds, false);
 });

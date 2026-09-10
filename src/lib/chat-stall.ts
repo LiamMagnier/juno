@@ -95,6 +95,24 @@ export interface StallWatchdog {
    * fires a provider-stalled warning into a generation that already succeeded.
    */
   stop(): void;
+  /**
+   * Suspend the clock while a PERSON is deciding, not the provider.
+   *
+   * A connector tool call that needs approval blocks inside `toolset.execute`
+   * until the user answers the card (`authorizeExternalAction`), and the
+   * generator yields nothing while it waits — so nothing touched the watchdog,
+   * and two minutes into the user's deliberation it aborted the turn as
+   * "Model stopped responding". The approval receipt has its own TTL
+   * (ACTION_APPROVAL_TTL_MS), which is what bounds the wait now.
+   *
+   * The next `touch()` — the tool result arriving, approved or refused — or an
+   * explicit `resume()` re-arms the idle window. No-op once stopped or stalled.
+   */
+  pause(): void;
+  /** Re-arm after `pause()` without waiting for the next event. */
+  resume(): void;
+  /** True between `pause()` and the next `touch()`/`resume()`. */
+  readonly paused: boolean;
 }
 
 /**
@@ -117,6 +135,7 @@ export function createStallWatchdog(
   let stalled = false;
   let stopped = false;
   let started = false;
+  let paused = false;
 
   const arm = (delay: number) => {
     if (stopped || stalled) return;
@@ -137,6 +156,7 @@ export function createStallWatchdog(
   return {
     touch: () => {
       started = true;
+      paused = false;
       arm(idleMs);
     },
     get startedStreaming() {
@@ -144,6 +164,22 @@ export function createStallWatchdog(
     },
     get stalled() {
       return stalled;
+    },
+    get paused() {
+      return paused;
+    },
+    pause() {
+      if (stopped || stalled) return;
+      paused = true;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+    resume() {
+      if (!paused) return;
+      paused = false;
+      // The window that applied before the pause: an approval can in principle
+      // be requested before any text has streamed.
+      arm(started ? idleMs : startupMs);
     },
     stop() {
       stopped = true;

@@ -12,14 +12,15 @@ import { deleteAccountPermanently } from "@/app/api/account/delete-account";
  * (src/lib/session.ts). These functions only mutate state + write the audit row.
  */
 
-export type FlagSeverity = "low" | "medium" | "high" | "critical";
-export type FlagSource = "auto" | "manual";
+import {
+  decideFlagAction,
+  isSevere,
+  STRIKE_LIMIT,
+  type FlagSeverity,
+  type FlagSource,
+} from "@/lib/moderation-policy";
 
-/** Soft strikes at or above this count trigger an automatic ban. */
-export const STRIKE_LIMIT = 3;
-
-/** Severities that ban immediately (no strike accrual, no second chance). */
-const IMMEDIATE_BAN: FlagSeverity[] = ["critical", "high"];
+export { STRIKE_LIMIT, type FlagSeverity, type FlagSource };
 
 export interface FlagInput {
   userId: string;
@@ -42,11 +43,17 @@ export interface FlagOutcome {
 /**
  * Record a moderation flag and apply the strike/auto-ban policy. Never throws
  * into a caller's request path — a moderation write failing must not break chat.
+ *
+ * The decision itself is `decideFlagAction` (moderation-policy.ts). What this
+ * function adds is the state the decision needs: the account's strikes, and
+ * whether an earlier automatic severe flag is still sitting unreviewed —
+ * which is what turns a first regex hit into a review item and a second into
+ * a ban. Reviewing is the owner's `PATCH /api/admin/moderation/[id]`; banning
+ * by hand is `banUser` below.
  */
 export async function recordFlag(input: FlagInput): Promise<FlagOutcome | null> {
   try {
     const source = input.source ?? "auto";
-    const immediate = IMMEDIATE_BAN.includes(input.severity);
 
     // Read current state (skip if already banned — nothing more to do).
     const user = await prismaUnguarded.user.findUnique({
@@ -70,9 +77,28 @@ export async function recordFlag(input: FlagInput): Promise<FlagOutcome | null> 
       return { flagId: flag.id, action: "flagged", strikes: user.strikes, banned: true };
     }
 
-    const nextStrikes = immediate ? user.strikes : user.strikes + 1;
-    const shouldBan = immediate || nextStrikes >= STRIKE_LIMIT;
-    const action: FlagOutcome["action"] = shouldBan ? "banned" : "strike";
+    // Only consulted for a severe automatic hit; one cheap indexed count.
+    const pendingSevereAutoFlags =
+      source === "auto" && isSevere(input.severity)
+        ? await prismaUnguarded.moderationFlag.count({
+            where: {
+              userId: input.userId,
+              source: "auto",
+              severity: { in: ["high", "critical"] },
+              action: "flagged",
+              reviewedAt: null,
+            },
+          })
+        : 0;
+
+    const decision = decideFlagAction({
+      severity: input.severity,
+      source,
+      category: input.category,
+      strikes: user.strikes,
+      pendingSevereAutoFlags,
+    });
+    const strikeAccrued = decision.strikes !== user.strikes;
 
     const [flag] = await prismaUnguarded.$transaction([
       prismaUnguarded.moderationFlag.create({
@@ -83,15 +109,18 @@ export async function recordFlag(input: FlagInput): Promise<FlagOutcome | null> 
           category: input.category,
           detail: input.detail,
           messagePreview: input.messagePreview ?? null,
-          action,
+          action: decision.action,
+          // `reviewedAt: null` is the review queue's definition of pending
+          // (admin/moderation lists `{ reviewedAt: null }`), so an awaiting
+          // flag needs nothing more than the default.
         },
         select: { id: true },
       }),
       prismaUnguarded.user.update({
         where: { id: input.userId },
         data: {
-          strikes: immediate ? user.strikes : { increment: 1 },
-          ...(shouldBan
+          strikes: strikeAccrued ? { increment: 1 } : user.strikes,
+          ...(decision.banned
             ? {
                 bannedAt: new Date(),
                 banReason:
@@ -105,7 +134,7 @@ export async function recordFlag(input: FlagInput): Promise<FlagOutcome | null> 
       }),
     ]);
 
-    return { flagId: flag.id, action, strikes: nextStrikes, banned: shouldBan };
+    return { flagId: flag.id, action: decision.action, strikes: decision.strikes, banned: decision.banned };
   } catch (err) {
     console.error("[moderation] recordFlag failed", {
       userId: input.userId,

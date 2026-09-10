@@ -5,6 +5,7 @@ import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { openUnifiedAgentToolset } from "@/lib/agent/runtime";
 import type { AgentExecutionContext, AgentMode } from "@/lib/agent/types";
+import { NO_RUNTIME_TOOLS } from "@/lib/chat/tool-policy";
 import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
@@ -56,7 +57,12 @@ export async function* streamChat(opts: {
   webSearch?: boolean;
   /** Linked tool connectors (GitHub/Figma…) to expose to the model. */
   connectors?: ActiveConnector[];
-  /** Optional allowed tool IDs to restrict tool access (e.g. for Assistants). */
+  /**
+   * Which of Juno's own runtime tools (`browser_agent`…) this turn may carry.
+   * OPT-IN: omitted means none. The registry one layer down reads an absent
+   * allowlist as "everything", which is how the browser tool ended up attached
+   * to every saved chat turn with no toggle — see `chat/tool-policy.ts`.
+   */
   allowedTools?: string[];
   /** Per-request dynamic context (date, etc.) appended AFTER each provider's
    *  stable cached prefix — never into the system prompt itself. */
@@ -122,7 +128,8 @@ export async function* streamChat(opts: {
         abortSignal: signal,
       };
       toolset = await openUnifiedAgentToolset(active, agentContext, {
-        allowedToolIds: opts.allowedTools,
+        // Never `undefined`: that is the registry's "all tools" value.
+        allowedToolIds: opts.allowedTools ?? [...NO_RUNTIME_TOOLS],
       });
     } catch (err) {
       console.error("[llm] error opening unified agent toolset:", err);

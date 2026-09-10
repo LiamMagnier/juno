@@ -9,8 +9,9 @@ import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
-import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { providerRequestModel } from "@/lib/model-request";
+import { compatPromptCacheTokens, type CompatPromptCacheFields } from "@/lib/pricing";
 
 const clients = new Map<Provider, OpenAI>();
 
@@ -86,7 +87,7 @@ async function toOpenAIMessages(
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
         } else if (att.extractedText) {
-          parts.push({ type: "text", text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
+          parts.push({ type: "text", text: attachedFileText(att.fileName, att.extractedText) });
         } else {
           const note = att.mimeType === "application/pdf"
             ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
@@ -476,27 +477,21 @@ export async function* streamOpenAICompat(
         // (subset of completion_tokens). Some OpenAI-compat hosts only expose
         // thinking there and leave completion_tokens as the visible answer —
         // resolveBillableTokens lifts output when reasoning > completion.
-        const u = chunk.usage as {
-          prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+        const u = chunk.usage as CompatPromptCacheFields & {
           completion_tokens_details?: { reasoning_tokens?: number };
-          prompt_cache_hit_tokens?: number;
-          prompt_cache_miss_tokens?: number;
-          cached_tokens?: number;
           reasoning_tokens?: number;
           total_tokens?: number;
           // xAI / some hosts may report server tool counts here.
           num_sources_used?: number;
           server_side_tool_usage?: { web_search_requests?: number; x_search_requests?: number };
         };
-        roundCached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens ?? roundCached;
-        // OpenAI reports writes as cache_write_tokens (GPT-5.6+). Do NOT treat
-        // prompt_cache_miss_tokens as a write — that is uncached input, not a
-        // billable cache-write on OpenAI (and would over-bill).
-        const writeTok =
-          model.provider === "openai"
-            ? (u.prompt_tokens_details?.cache_write_tokens ?? 0)
-            : (u.prompt_tokens_details?.cache_write_tokens ?? u.prompt_cache_miss_tokens ?? 0);
-        if (writeTok > 0) cumCacheWrite += writeTok;
+        // Reads and writes from whichever dialect this host speaks. Writes are
+        // an explicit cache_write_tokens only — a DeepSeek "miss" is uncached
+        // input, already inside prompt_tokens, and counting it as a write
+        // billed that input twice (see compatPromptCacheTokens).
+        const cache = compatPromptCacheTokens(u);
+        roundCached = cache.cacheRead ?? roundCached;
+        if (cache.cacheWrite > 0) cumCacheWrite += cache.cacheWrite;
         const reasoningTok =
           u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;
         if (reasoningTok > 0) roundReasoning = Math.max(roundReasoning, reasoningTok);

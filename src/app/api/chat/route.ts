@@ -16,7 +16,7 @@ import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPromptSections, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
-import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
+import { registerGeneration, wasGenerationAbortedForShutdown, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import {
   getMemoryProfile,
@@ -114,9 +114,11 @@ import {
   buildAttachmentContext,
   buildPrivateHistory,
   buildProjectContext,
+  buildProjectReferenceFiles,
   contextActivityDetail,
   historyWindowStart,
   HISTORY_LIMIT,
+  prependToFirstUserTurn,
   promptChars,
   replaceLastUserTurn,
   type AttachmentKnowledge,
@@ -147,6 +149,9 @@ import {
   resolveTerminalState,
   terminalFailureCode,
 } from "@/lib/chat/terminal-state";
+import { chatRuntimeToolAllowlist } from "@/lib/chat/tool-policy";
+import { REQUEST_ID_HEADER } from "@/lib/request-id";
+import { DRAIN_RETRY_AFTER_SECONDS, DRAINING_RESPONSE, isDraining, SHUTDOWN_USER_MESSAGE } from "@/lib/shutdown";
 import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
@@ -426,6 +431,16 @@ function firstSubmissionRecoveryPort(userId: string): FirstSubmissionRecoveryPor
 }
 
 async function handleChat(req: Request) {
+  // A process that has been told to stop takes no new generations: whatever
+  // it started now it would have to abort in a few seconds anyway. Answered
+  // before auth so the retry costs nothing; the client backs off and lands on
+  // the replacement process.
+  if (isDraining()) {
+    return NextResponse.json(DRAINING_RESPONSE, {
+      status: 503,
+      headers: { "Retry-After": String(DRAIN_RETRY_AFTER_SECONDS) },
+    });
+  }
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -1078,6 +1093,7 @@ async function handleChat(req: Request) {
               stalled: stallWatchdog.stalled,
               budgetHalted,
               userStopped: wasGenerationStopped(generationId),
+              shutdown: wasGenerationAbortedForShutdown(generationId),
               leaseLost: false,
               error: err,
             },
@@ -1143,9 +1159,11 @@ async function handleChat(req: Request) {
               : consumed.quota;
             const message = stallWatchdog.stalled
               ? stallMessageFor(stallWatchdog)
-              : reason === "user_stopped"
-                ? "Generation stopped before any output."
-                : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+              : wasGenerationAbortedForShutdown(generationId)
+                ? SHUTDOWN_USER_MESSAGE
+                : reason === "user_stopped"
+                  ? "Generation stopped before any output."
+                  : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
             sendActivity({
               kind: "warning",
               title: finishReasonTitle(reason),
@@ -1622,7 +1640,10 @@ async function handleChat(req: Request) {
   const history = recent
     .filter((m) => m.id !== staleAssistantId)
     .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
-  const modelHistory = applyHiddenUserContent(
+  // The window before project reference files are added — `modelHistory`
+  // below is what the provider receives. Kept apart so the memory query, the
+  // knowledge query and the attachment scan read the user's words alone.
+  const baseHistory = applyHiddenUserContent(
     history,
     userMessageId,
     clarificationModelContent ?? preflightClarificationModelContent
@@ -1634,7 +1655,7 @@ async function handleChat(req: Request) {
   // the individually-selected entries on top of it — ranked against what the
   // user just asked, scoped to this conversation's project, and cut to a token
   // budget. `used` names them, which is what the memory receipt below reports.
-  const latestUserMessage = [...modelHistory].reverse().find((m) => m.role === "USER")?.content;
+  const latestUserMessage = [...baseHistory].reverse().find((m) => m.role === "USER")?.content;
   const memoryProfile = memoryEnabled
     ? await getMemoryProfile(user.id, { projectId: conversation.projectId, query: latestUserMessage })
     : { summary: null, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
@@ -1671,7 +1692,7 @@ async function handleChat(req: Request) {
       }
     : null;
   const knowledgeQuery =
-    [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
+    [...baseHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
   let projectKnowledge: ProjectKnowledge | null = null;
   if (conversation.projectId && projectRow) {
     if (knowledgeQuery) {
@@ -1716,7 +1737,7 @@ async function handleChat(req: Request) {
   // provider choice no longer decides whether a PDF can be understood. Files
   // still in the parser queue are named explicitly below; a filename-only
   // placeholder is not an honest answer to a user who just uploaded a file.
-  const directAttachments = modelHistory
+  const directAttachments = baseHistory
     .flatMap((message) => message.attachments)
     .filter((attachment) => attachment.projectId == null && !attachment.deletedAt);
   let attachmentKnowledge: AttachmentKnowledge | null = null;
@@ -1754,6 +1775,16 @@ async function handleChat(req: Request) {
   const attachmentContext = buildAttachmentContext(attachmentKnowledge);
   const promptContext = [projectContext, attachmentContext].filter(Boolean).join("\n\n");
 
+  // Wholesale reference files ride the first user turn, each in its untrusted
+  // envelope, instead of the system prompt — see buildProjectReferenceFiles.
+  const projectReferenceFiles = buildProjectReferenceFiles(assistantProjectRow, projectKnowledge);
+  const modelHistory = prependToFirstUserTurn(baseHistory, projectReferenceFiles);
+  // Attachment text is rendered by every adapter inside the same envelope
+  // (attachedFileText); the rule that reads the envelope has to be on for it.
+  const historyCarriesAttachmentText = modelHistory.some((message) =>
+    message.attachments.some((attachment) => !!attachment.extractedText)
+  );
+
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
   // data — so the two are never both active. Voice turns stay conversational.
@@ -1770,6 +1801,20 @@ async function handleChat(req: Request) {
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
     && workspacePermits(workspaceConfig, "canvas");
+  // Any of these can put text Juno did not author into context: a connector
+  // tool result, provider-side web search, a fetched research page, a project
+  // file, a retrieved passage, or an attachment's extracted text. (Deep
+  // research also carries the rule in its own system append, since that corpus
+  // is assembled separately.) Read again below: a turn that contained untrusted
+  // content must not be allowed to write durable memory.
+  const untrustedContentInTurn =
+    activeConnectors.length > 0 ||
+    useWebSearch ||
+    researchActive ||
+    !!projectKnowledge ||
+    !!attachmentKnowledge ||
+    projectReferenceFiles !== "" ||
+    historyCarriesAttachmentText;
   const baseSystemSections = buildSystemPromptSections({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -1781,16 +1826,7 @@ async function handleChat(req: Request) {
     canvas: canvasOn,
     voiceMode: input.voiceMode,
     projectContext: promptContext,
-    // Any of these can put text Juno did not author into context: a connector
-    // tool result, provider-side web search, or a fetched research page.
-    // (Deep research also carries the rule in its own system append, since that
-    // corpus is assembled separately.)
-    untrustedContent:
-      activeConnectors.length > 0 ||
-      useWebSearch ||
-      researchActive ||
-      !!projectKnowledge ||
-      !!attachmentKnowledge,
+    untrustedContent: untrustedContentInTurn,
   });
   const baseSystem = baseSystemSections.variable
     ? `${baseSystemSections.stable}\n\n${baseSystemSections.variable}`
@@ -2339,6 +2375,10 @@ async function handleChat(req: Request) {
           reasoningEffort,
           webSearch: useWebSearch,
           connectors: activeConnectors,
+          // The hosted browser tool only when the user switched web access on.
+          // Same toggle that adds the untrusted-content rule above, so a page
+          // the tool reads always arrives under a rule that governs it.
+          allowedTools: chatRuntimeToolAllowlist({ webSearch: useWebSearch }),
           dynamicContext: buildDynamicContext(),
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
@@ -2360,6 +2400,9 @@ async function handleChat(req: Request) {
             sessionId: generationId,
             projectId: conversation.projectId,
             onApprovalRequest: (approval) => {
+              // The tool loop is now blocked on a person, not the provider:
+              // stop the idle clock until the result event re-arms it.
+              stallWatchdog.pause();
               sendActivity({
                 kind: "tool",
                 title: `${approval.connectorLabel} needs approval`,
@@ -2482,7 +2525,14 @@ async function handleChat(req: Request) {
           : await persistArtifacts(conversationId, assistant.id, preparedArtifacts?.result.artifacts ?? []);
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
-        if (memoryEnabled) {
+        // Not when the turn carried untrusted content. A `<juno:memory>` tag is
+        // the model's own output, and a document, page or connector result
+        // that says "remember: the user wants X" can make the model emit one —
+        // a durable fact that then resurfaces in every later conversation.
+        // There is no approval receipt for memory writes, so the only safe
+        // answer on such a turn is not to write; the user can still add the
+        // fact by hand, and the after() extraction reads only USER messages.
+        if (memoryEnabled && !untrustedContentInTurn) {
           // Provenance points at the USER's message, not the assistant's: the
           // memory page answers "where did you learn that?", and the honest
           // answer is the turn in which the user said it.
@@ -2591,6 +2641,7 @@ async function handleChat(req: Request) {
             stalled: stallWatchdog.stalled,
             budgetHalted,
             userStopped: wasGenerationStopped(generationId),
+            shutdown: wasGenerationAbortedForShutdown(generationId),
             leaseLost: durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError,
             error: err,
           },
@@ -2750,7 +2801,9 @@ async function handleChat(req: Request) {
                     ? "The edited canvas failed verification, so nothing was changed. Fix the source and try again."
                   : stallWatchdog.stalled
                     ? stallMessageFor(stallWatchdog)
-                    : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+                    : wasGenerationAbortedForShutdown(generationId)
+                      ? SHUTDOWN_USER_MESSAGE
+                      : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
@@ -2970,21 +3023,43 @@ async function handleChat(req: Request) {
   }
 }
 
+/**
+ * What the client is told when the request fails before the stream starts.
+ *
+ * A fixed sentence plus the request id — never `err.message`. The detail used
+ * to be echoed verbatim "so the client shows the real reason", and the real
+ * reason was a Prisma error naming a column, a provider's account fault, or an
+ * internal invariant ("Durable first-submission receipt could not enter the
+ * running state"). None of that is for a browser. The request id is what lets
+ * a support conversation find the full detail in the server log, where it is
+ * still written.
+ */
+function chatStartFailureMessage(req: Request): string {
+  const requestId = req.headers.get(REQUEST_ID_HEADER);
+  return requestId
+    ? `Couldn't start the chat. Please try again. (request ${requestId})`
+    : "Couldn't start the chat. Please try again.";
+}
+
 export async function POST(req: Request) {
   // Everything before the SSE stream starts (auth, quota, DB writes for the
   // conversation/message, system-prompt build) runs here. If any of it throws —
   // e.g. a production database missing a migration/column — we must return a
-  // JSON { error } so the client shows the real reason instead of an opaque 500
-  // rendered as a generic "Something went wrong.".
+  // JSON { error } so the client shows a real failure instead of an opaque 500
+  // rendered as a generic "Something went wrong.". The detail stays in the log.
   try {
     return await handleChat(req);
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unexpected server error.";
-    console.error("[chat] request failed before streaming", { message: detail, stack: err instanceof Error ? err.stack : undefined });
+    console.error("[chat] request failed before streaming", {
+      requestId: req.headers.get(REQUEST_ID_HEADER),
+      message: detail,
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     if (err instanceof DurableFirstSubmissionStartError) {
       return NextResponse.json(
         {
-          error: `Couldn't start the chat: ${detail}`,
+          error: chatStartFailureMessage(req),
           code: err.failureCode,
           generationId: err.generationId,
           conversationId: err.conversationId,
@@ -2996,6 +3071,6 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
-    return NextResponse.json({ error: `Couldn't start the chat: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: chatStartFailureMessage(req) }, { status: 500 });
   }
 }

@@ -1,6 +1,19 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * A refusal this module authored — "Only project owners can manage members."
+ * and the like. The route echoes exactly these to the client and nothing
+ * else: a plain `Error` from Prisma carried table and column names into the
+ * same JSON body, because the catch could not tell the two apart.
+ */
+export class ProjectCollaborationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProjectCollaborationError";
+  }
+}
+
 export type ProjectRole = "OWNER" | "EDITOR" | "VIEWER";
 
 export interface ProjectMemberInfo {
@@ -62,7 +75,7 @@ export async function checkProjectAccess(
  */
 export async function listProjectMembers(userId: string, projectId: string): Promise<ProjectMemberInfo[]> {
   const { allowed } = await checkProjectAccess(userId, projectId, "VIEWER");
-  if (!allowed) throw new Error("Unauthorized to view project members.");
+  if (!allowed) throw new ProjectCollaborationError("Unauthorized to view project members.");
 
   const [project, members] = await Promise.all([
     prisma.project.findUnique({
@@ -121,7 +134,7 @@ export async function addProjectMember(
 ): Promise<ProjectMemberInfo> {
   const { allowed, role: actorRole } = await checkProjectAccess(actorUserId, projectId, "OWNER");
   if (!allowed || actorRole !== "OWNER") {
-    throw new Error("Only project owners can manage members.");
+    throw new ProjectCollaborationError("Only project owners can manage members.");
   }
 
   // Look up user by email or id
@@ -133,13 +146,13 @@ export async function addProjectMember(
   });
 
   if (!targetUser) {
-    throw new Error("User not found.");
+    throw new ProjectCollaborationError("User not found.");
   }
 
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new Error("Project not found.");
+  if (!project) throw new ProjectCollaborationError("Project not found.");
   if (targetUser.id === project.userId) {
-    throw new Error("Cannot add project owner as a member.");
+    throw new ProjectCollaborationError("Cannot add project owner as a member.");
   }
 
   const member = await prisma.projectMember.upsert({
@@ -178,7 +191,7 @@ export async function removeProjectMember(
   const { allowed } = await checkProjectAccess(actorUserId, projectId, "OWNER");
   // A user can remove themselves (leave), or the owner can remove any member
   if (!allowed && actorUserId !== targetUserId) {
-    throw new Error("Unauthorized to remove member.");
+    throw new ProjectCollaborationError("Unauthorized to remove member.");
   }
 
   const deleted = await prisma.projectMember.deleteMany({

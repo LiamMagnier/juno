@@ -12,7 +12,7 @@ import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
-import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 
 /**
  * OpenAI Responses API adapter — for models that are not served on
@@ -83,7 +83,7 @@ async function toResponsesInput(
         } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
           parts.push({ type: "input_text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
         } else if (att.extractedText) {
-          parts.push({ type: "input_text", text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
+          parts.push({ type: "input_text", text: attachedFileText(att.fileName, att.extractedText) });
         } else {
           const note = att.mimeType === "application/pdf"
             ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
