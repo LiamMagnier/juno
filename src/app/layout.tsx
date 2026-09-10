@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
+import { headers } from "next/headers";
 import { Providers } from "@/components/providers";
 import { THEME_COLOR } from "@/components/ui/theme-color";
 import { getInitialPreferences } from "@/lib/preferences";
@@ -101,6 +102,7 @@ export default async function RootLayout({
   ]);
   // Reads headers() only, so serialising it behind the preferences costs no I/O.
   const locale = await getRequestLocale(uiLocale);
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <html
@@ -116,6 +118,7 @@ export default async function RootLayout({
           session={session}
           locale={locale}
           autoDetect={isAutoLocale(uiLocale)}
+          nonce={nonce}
         >
           {children}
         </Providers>

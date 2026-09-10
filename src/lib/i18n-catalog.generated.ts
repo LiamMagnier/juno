@@ -2542,6 +2542,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "empty patch"
   },
   {
+    "id": "23b0fc7a0589047a",
+    "source": "text-ui font-medium text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+  },
+  {
     "id": "23e275114309dfff",
     "source": "Edit instructions"
   },
@@ -2808,10 +2812,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "27b0f1d879d68e88",
     "source": "Could not update project pin."
-  },
-  {
-    "id": "27b3d5975940c42d",
-    "source": "font-mono text-label text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
   },
   {
     "id": "27bb784df5d8b07a",
