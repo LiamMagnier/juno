@@ -300,7 +300,10 @@ export function CodeTargetPicker({
                 : "Runs in the cloud. No repository picked yet — pick one"
           }
           className={cn(
-            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-mono text-label font-medium tracking-tight text-foreground/80",
+            // The UI face, like the model chip beside it: a chip is a label on a
+            // control, and one mono chip in a sans row read as a different
+            // species of object.
+            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground",
             "transition-[background-color,color,transform] duration-fast ease-out-soft",
             "hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground",
             // Focus fills, exactly as the thinking button beside it does, and

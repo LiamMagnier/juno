@@ -10,9 +10,13 @@ const Label = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <LabelPrimitive.Root
     ref={ref}
-    // Juno label voice (mono eyebrow).
+    // A form label, in the UI face. It used to wear the mono eyebrow voice —
+    // "E M A I L" in tracked JetBrains Mono over the sign-in field — which is
+    // the register of a dev tool, not of a product people sign into. Eyebrows
+    // on cards and page headers keep their own mono class; this is the label
+    // that sits over an input, and it reads like the input's own text.
     className={cn(
-      "font-mono text-label text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+      "text-ui font-medium text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
       className
     )}
     {...props}

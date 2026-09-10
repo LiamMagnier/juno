@@ -9,7 +9,6 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
-import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
@@ -365,17 +364,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
-        {/* The Chat ⇄ Work switcher and the page's top actions, IN FLOW.
+        {/* The page's top actions, IN FLOW.
 
-            This row used to be absolutely positioned over the transcript with
-            no background, on the reasoning that the page should continue
-            through it. It did — and so did the first user bubble, which sat
-            underneath the toggle on every conversation that opened scrolled to
-            its top. A 56px row the content lays out below costs the transcript
-            nothing it was using, and there is no collision to manage. */}
+            This row used to carry a centred Chat ⇄ Work switcher as well. The
+            sidebar's Chat · Work · Code control is now the one product switch
+            in the shell, so a second one here — a different idiom for the
+            same choice, a few hundred pixels away — is gone; the row keeps
+            its height and the actions slot the pages portal into. It was
+            also once absolutely positioned over the transcript, under which
+            the first user bubble sat on every conversation that opened
+            scrolled to its top; a 56px row the content lays out below costs
+            the transcript nothing it was using. */}
         {showSurfaceSwitcher && (
           <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
-            <ChatWorkSwitcher />
             <div id="juno-top-actions-slot" className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4" />
           </div>
         )}
