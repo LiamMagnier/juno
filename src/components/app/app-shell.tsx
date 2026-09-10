@@ -33,11 +33,12 @@ function clampWidth(w: number) {
 }
 
 /**
- * A 2px line along the top of the content while a reply streams — the
- * quietest "working" signal there is, and the one thing about a generation
- * that is visible from any scroll position, including with the transcript
- * scrolled away from the composer's stop button. Driven by `juno:streaming`
- * from chat-view; `.stream-progress` (globals.css) owns the sweep.
+ * A 2px line along the top of the content while a reply streams AND the
+ * composer's Stop button is off screen (a canvas or the thought dock covering
+ * the chat column below lg) — the one case where nothing else on screen says
+ * a generation is running. While Stop is visible it is the signal, and this
+ * stays dark: one "working" indicator per surface. chat-view decides and
+ * dispatches `juno:streaming`; `.stream-progress` (globals.css) owns the sweep.
  */
 function StreamProgress({ active }: { active: boolean }) {
   return (
@@ -56,9 +57,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Work's header row. Chat draws the same switcher itself, inside its own
-  // column, so it stays centred over the transcript when a canvas opens
-  // beside it — a full-width row here would leave it centred over both.
+  // Work's header row, which also hosts `#juno-top-actions-slot`. Chat draws
+  // its own band inside its column (title left, actions right) so it stays
+  // aligned with the transcript when a canvas opens beside it; the sidebar's
+  // Chat · Work · Code switch is the product switcher on every route.
   const showSurfaceSwitcher = !!pathname?.startsWith("/work");
 
   const [collapsed, setCollapsed] = React.useState(false);

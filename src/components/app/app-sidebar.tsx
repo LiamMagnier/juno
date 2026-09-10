@@ -49,13 +49,13 @@ import type { ClientConversation } from "@/types/chat";
 /* ────────────────────────────────────────────────────────────────────────────
  * The sidebar (docs/design/FLAT_UI.md §3).
  *
- * An inset well (the frame is painted by `.app-sidebar-frame` in the shell)
- * holding, top to bottom: brand + collapse, Search (⌘K), New chat, the
- * Chat · Code product switch, the nav destinations, Projects, Folders, Pinned,
+ * A flat panel (the frame is painted by `.app-sidebar-frame` in the shell)
+ * holding, top to bottom: brand + collapse, the Chat · Work · Code product
+ * switch, Search (the eight-source search palette — ⌘K is the command menu,
+ * a different thing), New chat, the nav destinations, Projects, Pinned,
  * Recents grouped by date, and a footer with the account, the plan meter and
- * the door to archived chats. The active row is the ONE raised object in the
- * well (`Pressable kind="row" selected` → `.surface-raised`); hover is the
- * flat accent wash.
+ * the door to archived chats. The active row is a `--sidebar-accent` fill;
+ * hover is the same fill on inactive rows (FLAT_UI.md §4).
  *
  * ONE TREE FOR BOTH WIDTHS. The rail is not a second component: every row is
  * a `motion.div layout`, so collapsing to 64px slides the glyphs into a
@@ -82,16 +82,32 @@ type SidebarProject = {
 
 const LEGACY_STARRED_KEY = "starredProjects";
 const RECENTS_PAGE = 40;
-const CHAT_DRAG_TYPE = "application/x-juno-chat";
 
 const SECTION_KEYS = {
   projects: "juno:sidebar:projects:collapsed",
-  folders: "juno:sidebar:folders:collapsed",
   pinned: "juno:sidebar:starred:collapsed",
   recents: "juno:sidebar:recents:collapsed",
 } as const;
 
 type SectionKey = keyof typeof SECTION_KEYS;
+
+/** Recents fall into ChatGPT's four buckets, in this order. */
+const RECENTS_GROUPS = ["Today", "Yesterday", "Previous 7 days", "Older"] as const;
+type RecentsGroup = (typeof RECENTS_GROUPS)[number];
+
+/** Which bucket a chat's last activity falls in, by the LOCAL calendar day —
+ *  "yesterday" is the reader's yesterday, not a rolling 24 hours. */
+function recentsGroupOf(iso: string, now: Date): RecentsGroup {
+  const stamp = new Date(iso).getTime();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 86_400_000;
+  // An unparsable date (or a clock skewed into the future) lands in Today
+  // rather than vanishing into Older.
+  if (Number.isNaN(stamp) || stamp >= startOfToday) return "Today";
+  if (stamp >= startOfToday - day) return "Yesterday";
+  if (stamp >= startOfToday - 7 * day) return "Previous 7 days";
+  return "Older";
+}
 
 /**
  * The row kebab, once. `coarse:opacity-100` is not polish: reveal-on-hover is
@@ -101,6 +117,15 @@ type SectionKey = keyof typeof SECTION_KEYS;
 const KEBAB_CLASS =
   "group/kebab size-7 shrink-0 opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:opacity-100 coarse:size-11 coarse:opacity-100";
 
+
+/** The three products, and the route each segment of the switch lands on. */
+type ProductSurface = "chat" | "work" | "code";
+const PRODUCT_ROUTES: Record<ProductSurface, string> = { chat: "/chat", work: "/work", code: "/code" };
+function productSurfaceOf(pathname: string | null): ProductSurface {
+  if (pathname?.startsWith("/code")) return "code";
+  if (pathname?.startsWith("/work")) return "work";
+  return "chat";
+}
 
 function initialsOf(name: string | null, email: string | null): string {
   const source = (name ?? email ?? "").trim();
@@ -141,7 +166,6 @@ export function AppSidebar({
   const [projectsError, setProjectsError] = React.useState(false);
   const [sectionCollapsed, setSectionCollapsed] = React.useState<Record<SectionKey, boolean>>({
     projects: false,
-    folders: false,
     pinned: false,
     recents: false,
   });
@@ -202,7 +226,7 @@ export function AppSidebar({
     setMounted(true);
     loadProjects();
     try {
-      const next: Record<SectionKey, boolean> = { projects: false, folders: false, pinned: false, recents: false };
+      const next: Record<SectionKey, boolean> = { projects: false, pinned: false, recents: false };
       for (const key of Object.keys(SECTION_KEYS) as SectionKey[]) {
         const raw = localStorage.getItem(SECTION_KEYS[key]);
         if (raw) next[key] = JSON.parse(raw) === true;
@@ -310,8 +334,6 @@ export function AppSidebar({
     });
   };
 
-  /* ── Folders ─────────────────────────────────────────────────────────── */
-
   const archiveConversation = React.useCallback(
     async (c: ClientConversation) => {
       removeConversation(c.id);
@@ -350,13 +372,27 @@ export function AppSidebar({
 
   const live = React.useMemo(() => conversations.filter((c) => !c.archivedAt && c.kind !== "code"), [conversations]);
   const pinned = React.useMemo(() => live.filter((c) => c.pinned), [live]);
-  // A chat filed in a folder lives under the folder — the folder IS its place
-  // in the list — while project chats also stay in Recents, because a project
-  // is a workspace rather than a filing.
+  // Project chats stay in Recents as well as under their project, because a
+  // project is a workspace rather than a filing.
   const recents = React.useMemo(
     () => live.filter((c) => !c.pinned),
     [live]
   );
+  // The page in view, bucketed by day. Grouped AFTER the slice so the
+  // infinite-scroll page size still counts chats, not groups; a group with
+  // nothing in the page is simply not drawn.
+  const groupedRecents = React.useMemo(() => {
+    const now = new Date();
+    const buckets = new Map<RecentsGroup, ClientConversation[]>();
+    for (const c of recents.slice(0, recentsLimit)) {
+      const group = recentsGroupOf(c.lastMessageAt || c.createdAt, now);
+      buckets.set(group, [...(buckets.get(group) ?? []), c]);
+    }
+    return RECENTS_GROUPS.flatMap((group) => {
+      const rows = buckets.get(group);
+      return rows ? [{ group, rows }] : [];
+    });
+  }, [recents, recentsLimit]);
 
   const newChat = () => {
     router.push("/chat");
@@ -462,7 +498,11 @@ export function AppSidebar({
           </motion.div>
         </motion.div>
 
-        {/* ── Chat / Code product switch ───────────────────────────────── */}
+        {/* ── Chat / Work / Code product switch ────────────────────────── */}
+        {/* The ONE product switcher. Work used to have its own Chat ⇄ Work
+            control centred in the chat header band, Code lived here, and both
+            were repeated in More: three switchers in three idioms. One
+            three-segment control, and the header band is free for the title. */}
         <AnimatePresence initial={false}>
           {!collapsed && (
             <motion.div
@@ -474,17 +514,18 @@ export function AppSidebar({
               className="overflow-hidden px-3"
             >
               <div className="pb-1 pt-2">
-                <SegmentedControl<"chat" | "code">
-                  value={pathname?.startsWith("/code") ? "code" : "chat"}
+                <SegmentedControl<ProductSurface>
+                  value={productSurfaceOf(pathname)}
                   onChange={(next) => {
                     setSidebarOpen(false);
-                    router.push(next === "code" ? "/code" : "/chat");
+                    router.push(PRODUCT_ROUTES[next]);
                   }}
-                  ariaLabel="Chat or Code"
+                  ariaLabel="Chat, Work or Code"
                   className="w-full"
-                  optionClassName="gap-1.5 px-3 py-1.5 text-ui font-medium"
+                  optionClassName="gap-1.5 px-2 py-1.5 text-ui font-medium"
                   options={[
                     { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
+                    { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="size-3.5" /> },
                     { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
                   ]}
                 />
@@ -495,12 +536,17 @@ export function AppSidebar({
 
         {/* ── Search + New chat ────────────────────────────────────────── */}
         <div className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")}>
+          {/* `juno:search` — the eight-source search palette, not the ⌘K command
+              menu. A row labelled Search used to open the command menu, whose
+              "Chats" group is a client-side title filter over whatever the
+              context happened to hold; the real search was reachable only from
+              the mobile magnifier. No key hint: the search palette has none,
+              and ⌘K keeps meaning "commands". */}
           <NavRow
             collapsed={collapsed}
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
+            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             icon={<SidebarMotionIcon kind="search" />}
             label="Search"
-            trailing={<Kbd>⌘K</Kbd>}
             layoutId="nav-search"
             transition={layoutTransition}
           />
@@ -548,17 +594,31 @@ export function AppSidebar({
             onNavigate={() => setSidebarOpen(false)}
             onOpenArchived={() => setArchivedOpen(true)}
           />
+          {/* The rail has no room for the segmented switch, so the other two
+              products get an icon row each. */}
           {collapsed && (
-            <NavRow
-              collapsed
-              href="/code"
-              active={!!pathname?.startsWith("/code")}
-              onClick={() => setSidebarOpen(false)}
-              icon={<SidebarMotionIcon kind="code" />}
-              label="Code"
-              layoutId="nav-code"
-              transition={layoutTransition}
-            />
+            <>
+              <NavRow
+                collapsed
+                href="/work"
+                active={!!pathname?.startsWith("/work")}
+                onClick={() => setSidebarOpen(false)}
+                icon={<SidebarMotionIcon kind="work" />}
+                label="Work"
+                layoutId="nav-work"
+                transition={layoutTransition}
+              />
+              <NavRow
+                collapsed
+                href="/code"
+                active={!!pathname?.startsWith("/code")}
+                onClick={() => setSidebarOpen(false)}
+                icon={<SidebarMotionIcon kind="code" />}
+                label="Code"
+                layoutId="nav-code"
+                transition={layoutTransition}
+              />
+            </>
           )}
         </nav>
 
@@ -640,9 +700,17 @@ export function AppSidebar({
                         isCollapsed={sectionCollapsed.recents}
                         onToggleCollapse={() => toggleSection("recents")}
                       >
-                        <div className="space-y-0.5">
-                          {recents.slice(0, recentsLimit).map((c) => (
-                            <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                        <div className="space-y-1">
+                          {groupedRecents.map(({ group, rows }) => (
+                            <div key={group} className="space-y-0.5">
+                              {/* A caption, not a second Section: these are
+                                  folds of one list, not lists of their own,
+                                  so they neither collapse nor carry actions. */}
+                              <p className="px-2.5 pb-0.5 pt-1.5 font-mono text-caption text-muted-foreground">{group}</p>
+                              {rows.map((c) => (
+                                <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                              ))}
+                            </div>
                           ))}
                         </div>
                         {recents.length > recentsLimit && (
@@ -922,22 +990,13 @@ function MoreFlyout({
 }) {
   const [open, setOpen] = React.useState(false);
   /*
-   * Work and Code lead, because until now neither was reachable by touch.
-   *
-   * Both are top-level products, and the only navigation to either was the
-   * Chat/Work switcher in the shell header and the Code destination beside it —
-   * BOTH of which are `hidden … md:flex`. Below the `md` breakpoint the sole
-   * entry point to an entire agentic product was the command palette, which is
-   * keyboard-driven. On a phone, Work did not exist.
-   *
-   * They go here rather than into a fourth and fifth row of the Destinations
-   * nav: the desktop switcher already gives them a more prominent home at the
-   * width where there is room for one, and this list is exactly the overflow
-   * that exists so nothing is unreachable.
+   * Work and Code are NOT here any more. They used to lead this list because
+   * the only other way to reach them was a header switcher hidden below `md`;
+   * the sidebar's product switch now carries all three products at every
+   * width (the drawer renders the expanded sidebar, the rail gets icon rows),
+   * so a second door in More was the third copy of the same control.
    */
   const items = [
-    { href: "/work", kind: "work" as const, label: "Work", active: !!pathname?.startsWith("/work") },
-    { href: "/code", kind: "code" as const, label: "Code", active: !!pathname?.startsWith("/code") },
     { href: "/assistants", kind: "assistants" as const, label: "Assistants", active: pathname === "/assistants" },
     { href: "/connections", kind: "connections" as const, label: "Connections", active: pathname === "/connections" },
     { href: "/tasks", kind: "tasks" as const, label: "Tasks", active: pathname === "/tasks" },
@@ -1127,7 +1186,7 @@ function Disclosure({ open, children }: { open: boolean; children: React.ReactNo
   );
 }
 
-/** Inline rename/create field, shared by chats and folders. */
+/** Inline rename field for a chat row. */
 function InlineNameInput({
   initial = "",
   placeholder,
@@ -1272,11 +1331,6 @@ function ConversationRow({
       <Link
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(CHAT_DRAG_TYPE, conversation.id);
-          e.dataTransfer.effectAllowed = "move";
-        }}
         aria-current={active ? "page" : undefined}
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground transition-colors duration-fast ease-out-soft hover:text-foreground",

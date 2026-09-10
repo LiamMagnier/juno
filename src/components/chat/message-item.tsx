@@ -109,14 +109,11 @@ function StreamStatus({
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
-      {/* AIcss's Thinking State, matching the live strip in ActivityTimeline —
-          the two are the same moment reached by different routes (this one is
-          the window before any run event has landed), so they must not breathe
-          differently. */}
-      {/* `.shimmer-text` (SOFT_UI.md): the sentence is painted with a band
-          that sweeps through it, so "Thinking…" reads as live with no spinner
-          beside it. Static muted text under reduced motion. */}
-      <span key={statusCopy} className="shimmer-text min-w-0 truncate text-body-lg leading-6">
+      {/* Plain muted text beside the dots — the dots are the one moving thing
+          in this row. The sentence used to shimmer as well, which put two
+          animations on one line and a fifth "working" signal on the reply
+          (the run strip, the tail mask and the shell sweep were the others). */}
+      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground">
         {statusCopy}
         {showClock && (
           <span className="whitespace-nowrap tabular-nums"> · {formatStreamElapsed(elapsedSec)}</span>
@@ -561,6 +558,9 @@ interface MessageItemProps {
   onRegenerate?: (options?: RegenerateOptions) => void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
+  /** Re-send a user turn the server never received (`ChatMessage.unsent`),
+   *  optionally with edited text. See use-chat's `resendUnsent`. */
+  onResend?: (id: string, content?: string) => void;
   /** This is the newest user turn: `juno:edit-last-user-message` (↑ in an
    *  empty composer) opens it for editing. */
   editOnRequest?: boolean;
@@ -590,6 +590,7 @@ export function MessageItem({
   onRegenerate,
   onContinue,
   onEdit,
+  onResend,
   editOnRequest,
   onFeedback,
   canFeedback = true,
@@ -747,16 +748,25 @@ export function MessageItem({
   const citationAudit = useCitationAudit(message.id, isAuditableAnswer(sources, message.streaming));
 
 
+  // Whether this user turn can be edited. An ordinary turn edits through the
+  // server (PATCH + regenerate), which private mode has no row for; a turn the
+  // server never received edits locally and re-sends, which works anywhere.
+  const canEdit = !busy && (message.unsent ? !!onResend : !!onEdit && !privateMode);
+  const saveEdit = (content: string) => {
+    if (message.unsent) onResend?.(message.id, content);
+    else onEdit?.(message.id, content);
+  };
+
   // ↑ in an empty composer edits the newest user turn (ChatGPT's convention).
   React.useEffect(() => {
-    if (!editOnRequest || !onEdit || busy || privateMode) return;
+    if (!editOnRequest || !canEdit) return;
     const handler = () => {
       setDraft(view.content);
       setEditing(true);
     };
     window.addEventListener("juno:edit-last-user-message", handler);
     return () => window.removeEventListener("juno:edit-last-user-message", handler);
-  }, [editOnRequest, onEdit, busy, privateMode, view.content]);
+  }, [editOnRequest, canEdit, view.content]);
 
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
@@ -788,7 +798,9 @@ export function MessageItem({
               <Button
                 size="sm"
                 onClick={() => {
-                  if (draft.trim() && draft.trim() !== message.content) onEdit?.(message.id, draft.trim());
+                  // An unsent turn re-sends even when the words are unchanged:
+                  // "save" on a message that never went out IS the send.
+                  if (draft.trim() && (message.unsent || draft.trim() !== message.content)) saveEdit(draft.trim());
                   setEditing(false);
                 }}
               >
@@ -817,7 +829,10 @@ export function MessageItem({
                 {isLong && (
                   <div
                     className={cn(
-                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-card bg-gradient-to-t from-background to-transparent transition-opacity duration-base ease-out-soft",
+                      // `from-secondary`: the bubble's own fill, so the clamp
+                      // fades into the bubble rather than into a page-coloured
+                      // band drawn across it.
+                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-card bg-gradient-to-t from-secondary to-transparent transition-opacity duration-base ease-out-soft",
                       expanded ? "opacity-0" : "opacity-100"
                     )}
                   />
@@ -837,6 +852,24 @@ export function MessageItem({
             </div>
           )
         )}
+        {/* A turn that never went out says so, at rest — not behind a hover.
+            The words are still here (the bubble above is the only copy) and
+            this is the one control that gets them to the server. */}
+        {!editing && message.unsent && onResend && (
+          <div className="mt-1.5 flex items-center gap-2.5">
+            <span className="font-mono text-caption text-destructive">Not sent</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onResend(message.id)}
+              className="h-7 gap-1.5"
+            >
+              <ActionIcons.refresh className="size-3.5" /> Retry send
+            </Button>
+          </div>
+        )}
         {!editing && !message.pending && !isVoice && (
           <div className="mt-1 flex items-center">
             {totalVersions > 1 && (
@@ -846,14 +879,14 @@ export function MessageItem({
               <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
                 {copied ? <StatusIcons.success className="check-morph size-4 text-success-ink" /> : <ActionIcons.copy className="size-4" />}
               </IconAction>
-              {onEdit && !busy && !privateMode && (
+              {canEdit && (
                 // Prefill from the DISPLAYED version, so paging back and editing
                 // is a one-step "resend an earlier wording".
                 <IconAction label="Edit" onClick={() => { setDraft(view.content); setEditing(true); }}>
                   <ActionIcons.edit className="size-4" />
                 </IconAction>
               )}
-              {onFork && !busy && !privateMode && (
+              {onFork && !busy && !privateMode && !message.unsent && (
                 <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
                   <GitFork className="size-4" />
                 </IconAction>
@@ -880,6 +913,15 @@ export function MessageItem({
   // switches and when paging across regenerations made with different models.
   const modelName = view.model ? resolveModel(view.model)?.name ?? view.model : null;
   const hasUsage = view.promptTokens != null || view.completionTokens != null;
+  const hasCost = view.costUsd != null && view.costUsd > 0;
+  const hasMeta = !!modelName || hasUsage || hasCost;
+  // What the More menu can hold for this turn; the trigger renders only when
+  // at least one of these is true, so a menu never opens onto nothing.
+  const canBranchSaved = !!message.conversationId && !busy && !privateMode;
+  const canForkPrivate = !!onFork && !busy && !privateMode;
+  const canShare = !!message.conversationId && !privateMode;
+  const canCopyLink = !!message.conversationId;
+  const showMore = (!!onSpeak && hasTextContent) || canBranchSaved || canForkPrivate || canShare || hasTextContent || canCopyLink || hasMeta;
   const finishNote =
     view.finishReason === "length"
       ? "The model stopped at its token limit."
@@ -1048,26 +1090,12 @@ export function MessageItem({
             rests on, then how well it rests on it. */}
         <CitationAuditPanel state={citationAudit} />
 
-        {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* No /60 modifier: at this size it computes to 2.43:1 light /
-                  3.35:1 dark, and WCAG 1.4.3 wants 4.5:1. The token at full
-                  opacity is 5.32 / 7.07 and already reads as secondary. */}
-              <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground">
-                {modelName}
-                {hasUsage ? `${modelName ? " · " : ""}${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens` : ""}
-                {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}
-              </p>
-            </TooltipTrigger>
-            <TooltipContent>
-              {view.model}
-              {hasUsage ? `${view.model ? " · " : ""}${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out` : ""}
-              {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
+        {/* Five at rest — Copy · 👍 · 👎 · Regenerate ▾ · More ▾ — which is the
+            Claude / ChatGPT count. Read aloud, Branch, Share, Quote and Copy
+            link all still exist, one level down in More, along with the
+            model · tokens · cost line that used to print under every answer:
+            no consumer chat product bills the reader per turn in the reading
+            column, and the run panel already keeps the ledger. */}
         {!isVoice && !message.streaming && !message.error && (
           <div className="mt-1.5 flex items-center">
             {totalVersions > 1 && (
@@ -1092,66 +1120,89 @@ export function MessageItem({
                   </IconAction>
                 </>
               )}
-              {onSpeak && hasTextContent && (
-                <IconAction
-                  label={speaking ? "Stop" : "Read aloud"}
-                  onClick={() => onSpeak(message.id, view.content)}
-                  active={speaking}
-                >
-                  {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
-                </IconAction>
-              )}
               {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
                 <RegenerateMenu onRegenerate={onRegenerate} currentModelId={view.model ?? currentModelId} />
               )}
-              {message.conversationId && !busy && !privateMode && (
-                // `branching` was set and cleared but never rendered: the fork
-                // POST plus a router.push ran with no spinner, no disabled state
-                // and no dimming, so a slow fork looked like a click that never
-                // landed and only an invisible guard stopped a second one.
-                <IconAction label="Branch from here" onClick={branch} busy={branching}>
-                  {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark names a
-                      repository ref in Juno Code. This forks a CONVERSATION,
-                      and it pairs with the GitFork beside it. */}
-                  <GitBranch className="size-4" />
-                </IconAction>
-              )}
-              {onFork && !busy && !privateMode && (
-                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
-                  <GitFork className="size-4" />
-                </IconAction>
-              )}
-              {message.conversationId && !privateMode && (
-                <IconAction label="Share" onClick={() => window.dispatchEvent(new CustomEvent("juno:share-chat"))}>
-                  <ActionIcons.share className="size-4" />
-                </IconAction>
-              )}
-              {hasTextContent && (
+              {showMore && (
                 <DropdownMenu>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <DropdownMenuTrigger asChild>
-                        <Pressable kind="icon" size="md" aria-label="More actions" className="data-[state=open]:control-neu data-[state=open]:text-foreground">
-                          <ActionIcons.more className="size-4" />
+                        {/* `branching` used to be set and cleared but never
+                            rendered: the fork POST plus a router.push ran with
+                            no spinner and no disabled state, so a slow fork
+                            looked like a click that never landed. The trigger
+                            wears the wait now that Branch lives inside it. */}
+                        <Pressable
+                          kind="icon"
+                          size="md"
+                          aria-label="More actions"
+                          disabled={branching}
+                          aria-busy={branching || undefined}
+                          className="data-[state=open]:control-neu data-[state=open]:text-foreground"
+                        >
+                          {branching ? <Loader2 className="size-4 animate-spin" /> : <ActionIcons.more className="size-4" />}
                         </Pressable>
                       </DropdownMenuTrigger>
                     </TooltipTrigger>
                     <TooltipContent>More</TooltipContent>
                   </Tooltip>
-                  <DropdownMenuContent align="start" className="w-52">
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        const quoted = view.content
-                          .trim()
-                          .split("\n")
-                          .map((line) => `> ${line}`)
-                          .join("\n");
-                        window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: `${quoted}\n\n` }));
-                      }}
-                    >
-                      <TextQuote className="size-4" /> Quote in composer
-                    </DropdownMenuItem>
-                    {message.conversationId && (
+                  <DropdownMenuContent align="start" className="w-60">
+                    {onSpeak && hasTextContent && (
+                      <DropdownMenuItem onSelect={() => onSpeak(message.id, view.content)}>
+                        {speaking ? <Square className="size-4 fill-current" /> : <Volume2 className="size-4" />}
+                        {speaking ? "Stop reading" : "Read aloud"}
+                      </DropdownMenuItem>
+                    )}
+                    {(canBranchSaved || canForkPrivate) && (
+                      // One Branch, two destinations. "Branch from here" and
+                      // "Fork privately" were two near-identical glyphs on the
+                      // bar; the choice that actually differs — saved or
+                      // private — is a sub-choice, not a second verb.
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark
+                              names a repository ref in Juno Code. This forks a
+                              CONVERSATION. */}
+                          <GitBranch className="size-4" /> Branch from here
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-56">
+                          {canBranchSaved && (
+                            <DropdownMenuItem onSelect={() => void branch()}>
+                              <GitBranch className="size-4" /> Into a new saved chat
+                            </DropdownMenuItem>
+                          )}
+                          {canForkPrivate && (
+                            <DropdownMenuItem onSelect={() => onFork?.(message.id)}>
+                              <GitFork className="size-4" /> Fork privately
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+                    {canShare && (
+                      <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent("juno:share-chat"))}>
+                        <ActionIcons.share className="size-4" /> Share chat
+                      </DropdownMenuItem>
+                    )}
+                    {(hasTextContent || canCopyLink) && (onSpeak || canBranchSaved || canForkPrivate || canShare) && (
+                      <DropdownMenuSeparator />
+                    )}
+                    {hasTextContent && (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          const quoted = view.content
+                            .trim()
+                            .split("\n")
+                            .map((line) => `> ${line}`)
+                            .join("\n");
+                          window.dispatchEvent(new CustomEvent("juno:composer-seed", { detail: `${quoted}\n\n` }));
+                        }}
+                      >
+                        <TextQuote className="size-4" /> Quote in composer
+                      </DropdownMenuItem>
+                    )}
+                    {canCopyLink && (
                       <DropdownMenuItem
                         onSelect={() => {
                           const url = `${window.location.origin}/chat/${message.conversationId}?m=${message.id}`;
@@ -1163,6 +1214,24 @@ export function MessageItem({
                       >
                         <Link2 className="size-4" /> Copy link
                       </DropdownMenuItem>
+                    )}
+                    {hasMeta && (
+                      <>
+                        <DropdownMenuSeparator />
+                        {/* Information, not an action: disabled so it takes no
+                            focus and no hover fill, and never closes the menu. */}
+                        <DropdownMenuItem disabled className="flex-col items-start gap-0.5 data-[disabled]:opacity-100">
+                          {modelName && <span className="text-ui text-foreground">{modelName}</span>}
+                          {(hasUsage || hasCost) && (
+                            <span className="font-mono text-caption text-muted-foreground">
+                              {hasUsage
+                                ? `${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens (${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out)`
+                                : ""}
+                              {hasCost ? `${hasUsage ? " · " : ""}${formatUsd(view.costUsd ?? 0)}` : ""}
+                            </span>
+                          )}
+                        </DropdownMenuItem>
+                      </>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>

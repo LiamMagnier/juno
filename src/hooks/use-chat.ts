@@ -65,9 +65,26 @@ export type ChatMessage = ClientMessage & {
   error?: boolean;
   /** A live realtime-voice turn rendered in the normal transcript. */
   voice?: boolean;
+  /**
+   * The user turn never reached the server. The send failed before the meta
+   * frame — a 4xx, a network error, a stringify blow-up — so this row still
+   * carries its temp id and no Message exists behind it. `regenerate` cannot
+   * help such a turn (the server has nothing to regenerate from); the only
+   * honest retry is to send the text again, which is what `resendUnsent` does
+   * and what the "Retry send" affordance on the bubble calls.
+   */
+  unsent?: boolean;
 };
 
-export type SendResult = { accepted: boolean; clarificationPending?: boolean };
+export type SendResult = {
+  accepted: boolean;
+  clarificationPending?: boolean;
+  /** Accepted, but parked until the current generation ends (see `queuedMessage`). */
+  queued?: boolean;
+};
+
+/** A message accepted while a reply was still arriving, waiting for its turn. */
+export type QueuedMessage = { text: string; attachments: ClientAttachment[]; options?: SendOptions };
 
 /** Per-send flags carried alongside the message (not sticky composer prefs). */
 /** A regenerate can be steered once: another model, and/or a one-line
@@ -129,7 +146,6 @@ interface UseChatOptions {
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
-  onArtifactsUpdated?: (artifacts: ClientArtifact[], newlyCreated: ClientArtifact[]) => void;
   onMemoryUpdated?: () => void;
   onDone?: (
     assistant: ClientMessage,
@@ -142,6 +158,14 @@ export function useChat(opts: UseChatOptions) {
   const [artifacts, setArtifacts] = React.useState<ClientArtifact[]>(opts.initialArtifacts);
   const [status, setStatus] = React.useState<GenerationStatus>("idle");
   const [pendingClarification, setPendingClarification] = React.useState<PendingPreflightClarification | null>(null);
+  // ONE message may wait while a reply streams (ChatGPT's behaviour): the
+  // composer clears on accept, and the text goes out the moment the current
+  // generation reaches a terminal state. State for the UI, a ref for the
+  // dispatcher — the effect that fires it must read the value synchronously
+  // and clear it before calling `send`, or StrictMode's double-run would
+  // send it twice.
+  const [queuedMessage, setQueuedMessage] = React.useState<QueuedMessage | null>(null);
+  const queuedRef = React.useRef<QueuedMessage | null>(null);
   const convoIdRef = React.useRef<string | null>(opts.conversationId);
   const abortRef = React.useRef<AbortController | null>(null);
   const generationIdRef = React.useRef<string | null>(null);
@@ -198,6 +222,9 @@ export function useChat(opts: UseChatOptions) {
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
     setPendingClarification(null);
+    // A message queued for the previous conversation must not fire into this one.
+    queuedRef.current = null;
+    setQueuedMessage(null);
     // Conversation-identity reset, deliberately keyed ONLY on conversationId.
     // opts.initialMessages/initialArtifacts are captured as the values for that
     // conversation; adding them would wipe live local state every time the
@@ -652,7 +679,6 @@ export function useChat(opts: UseChatOptions) {
                 )
               );
               mergeArtifacts(chunk.artifacts);
-              if (chunk.artifacts.length) opts.onArtifactsUpdated?.(chunk.artifacts, chunk.artifacts);
               opts.onQuota?.(chunk.quota);
               if (chunk.memoryUpdated) opts.onMemoryUpdated?.();
               opts.onDone?.(chunk.message, {
@@ -748,6 +774,28 @@ export function useChat(opts: UseChatOptions) {
         if (stopFallbackRef.current != null) {
           window.clearTimeout(stopFallbackRef.current);
           stopFallbackRef.current = null;
+        }
+        // Whatever ended this generation, no user turn is "in flight" any more.
+        // `pending` gates every action on the bubble (copy, edit, ↑-edit), and
+        // a turn left pending by a failed send was a turn the user could not
+        // copy, edit or resend — their own words, locked behind a spinner that
+        // had already stopped. The meta frame is the only thing that clears
+        // the flag on the happy path, so a turn still pending here with no
+        // meta frame behind it never reached the server: mark it `unsent` so
+        // retry re-sends the text instead of asking the server to regenerate
+        // an answer to a message it has never seen. (A Stop before meta is
+        // the one ambiguous case — the server may or may not have persisted
+        // the turn — and there the flag is left off so a retry regenerates
+        // rather than risking a duplicate.)
+        if (!detachedRef.current) {
+          const orphaned = !metaArrived && !stopRequestedRef.current;
+          setMessages((prev) =>
+            prev.some((m) => m.pending && m.role === "USER")
+              ? prev.map((m) =>
+                  m.pending && m.role === "USER" ? { ...m, pending: false, ...(orphaned ? { unsent: true } : {}) } : m
+                )
+              : prev
+          );
         }
         setStatus((cur) => (cur === "error" ? "error" : "idle"));
         abortRef.current = null;
@@ -875,7 +923,7 @@ export function useChat(opts: UseChatOptions) {
                   content: err instanceof Error ? err.message : "Could not send that message.",
                 }
               : m.pending && m.role === "USER"
-                ? { ...m, pending: false }
+                ? { ...m, pending: false, unsent: true }
                 : m
           )
         );
@@ -900,9 +948,19 @@ export function useChat(opts: UseChatOptions) {
 
   const send = React.useCallback(
     async (text: string, attachments: ClientAttachment[] = [], options?: SendOptions): Promise<SendResult> => {
-      if ((status !== "idle" && status !== "error") || pendingClarification) return { accepted: false };
+      if (pendingClarification) return { accepted: false };
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return { accepted: false };
+      if (status !== "idle" && status !== "error") {
+        // Busy: park it. Exactly one — a second message while one is already
+        // waiting is refused, so the composer keeps the words (it clears the
+        // draft only on `accepted`) and nothing is silently overwritten.
+        if (queuedRef.current) return { accepted: false };
+        const queued: QueuedMessage = { text: trimmed, attachments, options };
+        queuedRef.current = queued;
+        setQueuedMessage(queued);
+        return { accepted: true, queued: true };
+      }
 
       const modality = resolveModel(opts.model)?.modality ?? "chat";
       const connectors = options?.connectors;
@@ -993,6 +1051,51 @@ export function useChat(opts: UseChatOptions) {
       return startGeneration({ text: trimmed, attachments, connectors, deepResearch: options?.deepResearch, researchEffort: options?.researchEffort });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
+  );
+
+  const cancelQueued = React.useCallback(() => {
+    queuedRef.current = null;
+    setQueuedMessage(null);
+  }, []);
+
+  // Dispatch the parked message on the first terminal edge. Keyed on `status`
+  // alone: `send` is rebuilt on every status change, and depending on it here
+  // would fire this on the busy → busy transitions too. The ref is cleared
+  // BEFORE the call, so a re-run of this effect (StrictMode) finds nothing.
+  const sendRef = React.useRef(send);
+  sendRef.current = send;
+  React.useEffect(() => {
+    if (status !== "idle" && status !== "error") return;
+    const queued = queuedRef.current;
+    if (!queued) return;
+    queuedRef.current = null;
+    setQueuedMessage(null);
+    void sendRef.current(queued.text, queued.attachments, queued.options);
+  }, [status]);
+
+  /**
+   * Re-send a user turn that never reached the server (`unsent`). The orphaned
+   * bubble and the failed placeholder under it are dropped and the text goes
+   * out as a fresh turn — the one retry that can work for a message the server
+   * has no row for. `content` lets "edit and resend" on such a turn skip the
+   * PATCH that would 404 on its temp id.
+   */
+  const resendUnsent = React.useCallback(
+    (messageId: string, content?: string): SendResult => {
+      if (status !== "idle" && status !== "error") return { accepted: false };
+      const target = messagesRef.current.find((m) => m.id === messageId && m.role === "USER" && m.unsent);
+      if (!target) return { accepted: false };
+      const text = (content ?? target.content).trim();
+      if (!text && target.attachments.length === 0) return { accepted: false };
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId);
+        if (idx === -1) return prev;
+        // Everything after the orphan is the failed placeholder it produced.
+        return prev.slice(0, idx);
+      });
+      return startGeneration({ text, attachments: target.attachments });
+    },
+    [startGeneration, status]
   );
 
   // Region-based image edit — same /api/generate transport (quota, meta, progress,
@@ -1090,10 +1193,23 @@ export function useChat(opts: UseChatOptions) {
     // untouched, so "try this once with Claude" does not silently become the
     // model for every turn after.
     const modelForRun = options?.modelId ?? opts.model;
+    const trailingUser = messagesRef.current.filter((m) => m.role === "USER").at(-1);
+    // A turn the server never saw cannot be regenerated, only re-sent — the
+    // `{ regenerate: true }` body carries no message text, so "Try again" on a
+    // failed send used to ask the server to redo an answer to nothing.
+    if (trailingUser?.unsent) {
+      resendUnsent(trailingUser.id);
+      return;
+    }
     if (!convoIdRef.current) {
-      const trailingUser = messagesRef.current.filter((m) => m.role === "USER").at(-1);
       if (trailingUser?.content) {
-        setMessages((prev) => prev.filter((m) => m.role !== "ASSISTANT" || m.id !== prev[prev.length - 1]?.id));
+        // Drop the trailing user turn too: `startGeneration` appends a fresh
+        // one, and leaving the old bubble in place showed the same words twice
+        // (and, in private mode, sent them twice as history).
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === trailingUser.id);
+          return idx === -1 ? prev : prev.slice(0, idx);
+        });
         startGeneration({ text: trailingUser.content, attachments: trailingUser.attachments });
       }
       return;
@@ -1131,7 +1247,7 @@ export function useChat(opts: UseChatOptions) {
       },
       assistantTempId
     );
-  }, [status, runGeneration, startGeneration, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
+  }, [status, runGeneration, startGeneration, resendUnsent, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.proMode, opts.connectors]);
 
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
@@ -1243,6 +1359,8 @@ export function useChat(opts: UseChatOptions) {
     setArtifacts([]);
     setStatus("idle");
     setPendingClarification(null);
+    queuedRef.current = null;
+    setQueuedMessage(null);
   }, []);
 
   // Tab close / background / soft navigation: remember the in-flight turn so
@@ -1314,7 +1432,10 @@ export function useChat(opts: UseChatOptions) {
     status,
     pendingClarification,
     isBusy: status === "checking" || status === "submitting" || status === "thinking" || status === "writing" || status === "stopping",
+    queuedMessage,
+    cancelQueued,
     send,
+    resendUnsent,
     sendImageEdit,
     resolvePendingClarification,
     cancelPendingClarification,

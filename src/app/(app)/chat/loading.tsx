@@ -1,5 +1,4 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { staggerDelay } from "@/lib/motion";
 
 /**
  * The greeting and the composer, centred, in the shell chat-view opens with.
@@ -7,8 +6,10 @@ import { staggerDelay } from "@/lib/motion";
  * A skeleton rather than a spinner, because the two answer different questions:
  * a spinner says only that something is happening, while a placeholder in the
  * page's own shape says what is about to be there and reserves the room for it,
- * so nothing jumps when the data lands. The rows come up on the shared stagger
- * (see STAGGER in src/lib/motion.ts) rather than repainting as one flat block.
+ * so nothing jumps when the data lands. Exactly the two objects the empty state
+ * draws, and no more: a row of suggestion pills used to be sketched here that
+ * the real page never rendered, so the skeleton promised a UI that then failed
+ * to arrive.
  */
 export default function NewChatLoading() {
   return (
@@ -19,15 +20,6 @@ export default function NewChatLoading() {
         <div className="flex w-full max-w-[44rem] flex-col items-center">
           <Skeleton className="h-9 w-72 max-w-full rounded-full" />
           <Skeleton className="mt-6 h-[68px] w-full rounded-composer" />
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton
-                key={i}
-                className="h-8 w-28 rounded-full [animation-fill-mode:backwards] motion-safe:animate-rise-in"
-                style={staggerDelay(i, "tight")}
-              />
-            ))}
-          </div>
         </div>
       </div>
     </div>

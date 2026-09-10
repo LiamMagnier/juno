@@ -5,19 +5,23 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 /**
- * AIcss "Code Block" — the numbered-gutter shell.
+ * AIcss "Code Block" — a tonal fill (`--secondary`, the Claude / ChatGPT
+ * register) with a one-line header: the language, and Copy.
  *
- * Two things it does that Juno's previous code chrome did not. The header is
- * pulled out to the frame's edge with a negative margin, so the rule under it is
- * the card's own inlay rather than a second border drawn inside it. And every
- * line gets a number against a full-height hairline, which is what makes a
- * model's "line 14" citable at a glance.
+ * The header is pulled out to the frame's edge with a negative margin, so the
+ * rule under it is the card's own inlay rather than a second border drawn
+ * inside it. Line numbers appear only past `GUTTER_MIN_LINES`: a model's
+ * "line 14" is citable at a glance in a 40-line block, while a two-line
+ * snippet with a gutter and a hairline was chrome outweighing content.
  *
  * `<pre>` is deliberately not used. Line numbers have to be un-selectable so a
  * copy is pastable, and that means one element per row — which also gives the
  * code column its own horizontal scroller, so one long line scrolls itself
  * instead of widening the whole message.
  */
+
+/** Blocks longer than this get the numbered gutter. */
+const GUTTER_MIN_LINES = 8;
 
 const CopyIcon = () => (
   <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -30,12 +34,6 @@ const CheckIcon = () => (
     <path d="m4.5 12.75 6 6 9-13.5" />
   </svg>
 );
-const CodeIcon = () => (
-  <svg className="aicss-cb-icon" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-    <path d="m8 6-6 6 6 6M16 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
 /**
  * Split already-highlighted content into per-line node lists.
  *
@@ -105,7 +103,9 @@ export function splitHighlightedLines(node: React.ReactNode): React.ReactNode[] 
 }
 
 export function AicssCodeBlock({
-  /** The label in the header: a filename when one is known, else the language. */
+  /** The label in the header: a filename when one is known, else the language.
+   *  Empty when neither is — the header then holds only Copy, rather than the
+   *  literal word "code" over a block that is visibly code already. */
   label,
   /** Raw text, for the clipboard. Highlighting is applied to `children`. */
   code,
@@ -147,13 +147,15 @@ export function AicssCodeBlock({
     }
   };
 
+  const numbered = lines.length > GUTTER_MIN_LINES;
+
   return (
-    <div className={cn("aicss-cb group/code", className)}>
+    // `data-code` carries the raw text for readers outside this component —
+    // ⌘⇧; (use-global-shortcuts.ts) copies the last block from it, since there
+    // is no <pre> to read and the rows hold highlighted fragments.
+    <div className={cn("aicss-cb group/code", numbered && "aicss-cb--numbered", className)} data-code={code}>
       <div className="aicss-cb-head">
-        <span className="aicss-cb-file">
-          <CodeIcon />
-          <span className="aicss-cb-lang">{label}</span>
-        </span>
+        {label ? <span className="aicss-cb-lang">{label}</span> : null}
         {action ?? (
           <button type="button" onClick={copy} aria-label={copied ? "Copied" : "Copy code"} className="aicss-cb-copy">
             {copied ? <CheckIcon /> : <CopyIcon />}
@@ -167,7 +169,7 @@ export function AicssCodeBlock({
       >
         {lines.map((line, i) => (
           <div className="aicss-cb-row" key={i}>
-            <span className="aicss-cb-ln">{i + 1}</span>
+            {numbered && <span className="aicss-cb-ln">{i + 1}</span>}
             {/* A blank line still needs a box, or the row collapses and the
                 numbering stops tracking the source. */}
             <code className="aicss-cb-code">{line === "" ? " " : line}</code>

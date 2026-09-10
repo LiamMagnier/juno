@@ -19,6 +19,8 @@ interface MessageListProps {
   onRegenerate?: (options?: RegenerateOptions) => void;
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
+  /** Re-send a turn the server never received — see MessageItemProps.onResend. */
+  onResend?: (id: string, content?: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   /** Per-message feedback eligibility — see MessageItemProps.canFeedback.
    *  Omit when every rendered message is backed by a persisted row. */
@@ -33,6 +35,10 @@ interface MessageListProps {
    *  <h1>: /chat/[id] had no heading at all once a conversation had messages,
    *  so there was nothing for a screen reader to navigate to. */
   conversationTitle?: string;
+  /** The parent draws a VISIBLE <h1> for this conversation from `md` up (the
+   *  chat column's header band). When set, this list's own heading stays for
+   *  narrow viewports only, so the page never carries two h1s at once. */
+  titleShownInHeader?: boolean;
   /** Merged onto the root. Exists for the first-message handoff (chat-view),
    *  which fades the transcript region in under the travelling composer. */
   className?: string;
@@ -253,11 +259,13 @@ export function MessageList(props: MessageListProps) {
         StreamStatus ("Thinking" / "Writing"), the per-turn region once the turn
         is complete, and the completion announcer below.
       */}
-      {/* The page's only <h1> once the empty state is gone. Visually hidden
-          because the transcript is its own title on screen — the design does
-          not repeat it — but heading navigation is how screen-reader users
-          orient, and there was nothing here to land on. */}
-      <h1 className="sr-only">{props.conversationTitle || "Conversation"}</h1>
+      {/* The page's <h1> once the empty state is gone, for heading
+          navigation — how screen-reader users orient. Visually hidden here:
+          from `md` up the chat column's header band shows the title (and is
+          the h1 there, so this one leaves the tree with `md:hidden`); below
+          `md` the shell's mobile bar shows it as plain text, and this stays
+          the one heading. */}
+      <h1 className={cn("sr-only", props.titleShownInHeader && "md:hidden")}>{props.conversationTitle || "Conversation"}</h1>
       <div
         ref={contentRef}
         role="log"
@@ -284,6 +292,7 @@ export function MessageList(props: MessageListProps) {
               onRegenerate={props.onRegenerate}
               onContinue={props.onContinue}
               onEdit={props.onEdit}
+              onResend={props.onResend}
               editOnRequest={m.id === lastUserId}
               onFeedback={props.onFeedback}
               canFeedback={props.canFeedback ? props.canFeedback(m) : undefined}

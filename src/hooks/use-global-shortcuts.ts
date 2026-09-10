@@ -41,9 +41,14 @@ export function useGlobalShortcuts({ onToggleSidebar }: { onToggleSidebar: () =>
         window.dispatchEvent(new CustomEvent("juno:copy-last-response"));
       } else if (e.code === "Semicolon" || key === ";" || key === ":") {
         e.preventDefault();
-        const blocks = document.querySelectorAll<HTMLElement>('[role="log"] pre code, [role="log"] pre');
+        // Assistant fences render as AicssCodeBlock (aicss/code-block.tsx),
+        // which deliberately has no <pre> — one element per row so the line
+        // numbers are un-selectable — and stamps the raw source on `data-code`
+        // instead. The old `pre code` query matched nothing and this chord
+        // toasted "no code block" on every conversation that had one.
+        const blocks = document.querySelectorAll<HTMLElement>('[role="log"] .aicss-cb[data-code]');
         const last = blocks[blocks.length - 1];
-        const text = last?.textContent?.trim();
+        const text = last?.dataset.code?.trim();
         if (!text) {
           toast.message("No code block in this conversation yet.");
           return;

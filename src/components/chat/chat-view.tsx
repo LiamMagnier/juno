@@ -15,7 +15,7 @@ import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
 import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
-import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
+import { AnimatedTitle } from "@/components/app/animated-title";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
@@ -30,6 +30,7 @@ import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
 import { cleanForSpeech } from "@/lib/message-content";
+import { MAX_CHAT_CONNECTORS } from "@/lib/connector-intent";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
 import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
@@ -319,14 +320,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     (id: string) => setEnabledConnectors((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
     []
   );
-  // Prompt-intent auto-enable: only adds (never removes). Cap matches composer.
+  // Prompt-intent auto-enable: only adds (never removes). One cap, shared with
+  // the composer and the detector (connector-intent.ts) — a literal here had
+  // already drifted from it once.
   const enableConnectors = React.useCallback((ids: string[]) => {
     if (!ids.length) return;
     setEnabledConnectors((prev) => {
       const next = [...prev];
       for (const id of ids) {
         if (next.includes(id)) continue;
-        if (next.length >= 5) break;
+        if (next.length >= MAX_CHAT_CONNECTORS) break;
         next.push(id);
       }
       return next;
@@ -443,7 +446,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         }
       }
     },
-    onArtifactsUpdated: () => {},
     onMemoryUpdated: () => {
       setMemoryFlash(true);
       setMemoryLeaving(false);
@@ -726,13 +728,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   // Pick (or clear) the project for this chat. Existing chat → PATCH immediately;
   // brand-new chat → remember it so the first message is created in that project.
+  //
+  // Branches on the LIVE id, not the `conversationId` prop. A chat started on
+  // /chat keeps a null prop for its whole session (the URL is only
+  // replaceState'd once the first reply lands), so a pick made after that
+  // reply used to take the brand-new branch, toast "will be saved to the
+  // project", and PATCH nothing — and useChat only forwards `projectId` on the
+  // request that CREATES a conversation. The pick was simply dropped.
   const handlePickProject = React.useCallback(
     async (pid: string | null) => {
-      if (conversationId) {
+      if (currentConversationId) {
         const prev = activeProjectId;
         setActiveProjectId(pid);
         try {
-          const res = await fetch(`/api/conversations/${conversationId}`, {
+          const res = await fetch(`/api/conversations/${currentConversationId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ projectId: pid }),
@@ -748,7 +757,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         if (pid) toast.success("This chat will be saved to the project.");
       }
     },
-    [conversationId, activeProjectId]
+    [currentConversationId, activeProjectId]
   );
 
   // Resolve the project name for the scope indicator whenever the id changes.
@@ -1246,13 +1255,34 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
 
-  // The shell's top progress line (app-shell.tsx) follows this one flag.
+  // Whether the composer — and so its Stop button — is on screen. The dock is
+  // `hidden lg:flex` behind a canvas or the thought dock below lg, and a
+  // display:none box never intersects, which is exactly the case the shell's
+  // sweep exists for. Both refs are observed: the composer lives in one or the
+  // other depending on whether a transcript exists yet.
+  const [composerOnScreen, setComposerOnScreen] = React.useState(true);
   React.useEffect(() => {
-    window.dispatchEvent(new CustomEvent("juno:streaming", { detail: chat.isBusy }));
+    if (typeof IntersectionObserver === "undefined") return;
+    const targets = [dockComposerRef.current, emptyComposerRef.current].filter((el): el is HTMLDivElement => !!el);
+    if (targets.length === 0) return;
+    const io = new IntersectionObserver((entries) => {
+      setComposerOnScreen(entries.some((entry) => entry.isIntersecting));
+    });
+    for (const el of targets) io.observe(el);
+    return () => io.disconnect();
+    // Re-bind when the branches swap (the dock mounts with the transcript).
+  }, [hasMessages, handoff]);
+
+  // The shell's top progress line (app-shell.tsx) follows this one flag. It is
+  // the "working" signal for when the Stop button is NOT in view; while it is,
+  // the button is the signal, and a coral sweep above it was one more.
+  const showStreamSweep = chat.isBusy && !composerOnScreen;
+  React.useEffect(() => {
+    window.dispatchEvent(new CustomEvent("juno:streaming", { detail: showStreamSweep }));
     return () => {
       window.dispatchEvent(new CustomEvent("juno:streaming", { detail: false }));
     };
-  }, [chat.isBusy]);
+  }, [showStreamSweep]);
 
   // ⌘⇧C (use-global-shortcuts) and the message row's Share glyph.
   React.useEffect(() => {
@@ -1567,7 +1597,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const composer = (
     <Composer
       conversationId={conversationId}
-      initialResearch={initialPromptResearch}
+      // Armed only when there is NO prompt to auto-send. `?q=…&research=1`
+      // goes out through chat.send with `deepResearch` set (the effect below),
+      // never through the composer's own submit — so the composer's
+      // `setResearch(false)` after a send never ran, and the pill it had been
+      // seeded with quietly made the NEXT typed message a second research run.
+      initialResearch={!!initialPromptResearch && !initialPrompt}
       model={model}
       onModelChange={setModel}
       onSend={sendFromComposer}
@@ -1645,9 +1680,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   );
 
   /* Share + the incognito ghost. On chat routes these sit at the right of
-   * the column header band below, on the same Y as the Chat/Work switcher;
-   * when a host shell renders `#juno-top-actions-slot` (Work's header row)
-   * they portal there instead. Either way the cluster is written once. */
+   * the column header band below, across from the conversation title; when a
+   * host shell renders `#juno-top-actions-slot` (Work's header row) they
+   * portal there instead. Either way the cluster is written once. */
   const topActionsSlotOwner = pathname === "/" || !!pathname?.startsWith("/chat");
   const actionsContent = (
     <div
@@ -1688,6 +1723,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     </div>
   );
 
+  // What the header band calls this conversation. Read from the app context
+  // rather than a local copy so the AI rename lands here the moment the
+  // sidebar gets it, on the same cross-fade.
+  const headerConversation = currentConversationId ? conversations.find((c) => c.id === currentConversationId) : undefined;
+  const headerTitle = headerConversation?.title ?? "";
+  const headerTitleSource = headerConversation?.titleSource;
+
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
     <div
@@ -1708,19 +1750,32 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           (openArtifact || thoughtOpenId) && "hidden lg:flex"
         )}
       >
-        {/* The column's header band: the Chat ⇄ Work switcher centred over
-            THIS column — not over the whole main area — so it travels with
-            the transcript when the canvas opens beside it, and the share /
-            incognito cluster at its right. 56px in flow, no plate. Below md
-            the shell's mobile bar carries navigation and this band does not
-            exist. */}
-        {/* In incognito the switcher is gone (Work is not a private surface)
-            and the share / ghost cluster is invisible, so the band would be
-            56px of nothing above the incognito header. Drop it entirely. */}
+        {/* The column's header band: the conversation's title at the left
+            (Claude's header) and the share / incognito cluster at the right,
+            spanning THIS column — not the whole main area — so it travels
+            with the transcript when the canvas opens beside it. 56px in flow,
+            no plate. Below md the shell's mobile bar carries the title and
+            this band does not exist. The Chat ⇄ Work switcher that used to sit
+            centred here moved into the sidebar's product switch. */}
+        {/* In incognito the band would be a title that is not a title
+            ("Private chat") beside an invisible cluster, above the incognito
+            header that already names the mode. Drop it entirely. */}
         {topActionsSlotOwner && !topActionsSlot && !privateMode && (
-          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
-            <ChatWorkSwitcher />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 md:right-4">{topActionsCluster}</div>
+          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-between gap-4 px-4 md:flex md:px-6">
+            {/* The page's visible <h1> from md up; the transcript's own
+                heading (message-list.tsx) leaves the tree at this width so
+                there is exactly one. Empty until a conversation exists — a
+                new chat has nothing to be titled yet. */}
+            <h1 className="min-w-0 flex-1 text-ui font-medium text-foreground">
+              {headerTitle ? (
+                <AnimatedTitle
+                  title={headerTitle}
+                  animate={headerTitleSource === "ai"}
+                  className="max-w-[40rem]"
+                />
+              ) : null}
+            </h1>
+            <div className="shrink-0">{topActionsCluster}</div>
           </div>
         )}
 
@@ -1738,8 +1793,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             the canvas on the breakpoint where this column is hidden. */}
         {activeProjectId && !privateMode && currentConversationId && (
           // Below sm the pill also has to leave room for the top-right action
-          // cluster (share / params / incognito ≈ 9rem incl. coarse targets)
-          // sharing the same row — 18rem alone overlaps it under ~450px.
+          // cluster (share / incognito ≈ 6rem incl. coarse targets) sharing
+          // the same row — 18rem alone overlaps it on the narrowest phones.
           <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-[4.5rem]">
             {/* `bg-popover`, opaque. This pill is absolutely positioned over the
                 live transcript, and `bg-card/70` behind a blur resolves to ~4.6%
@@ -1897,6 +1952,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 onRegenerate={chat.regenerate}
                 onContinue={chat.continueResponse}
                 onEdit={chat.editAndResend}
+                onResend={chat.resendUnsent}
                 onFeedback={chat.setFeedback}
                 onFork={handleFork}
                 onSpeak={handleSpeak}
@@ -1904,18 +1960,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 privateMode={privateMode}
                 onImageEdit={chat.sendImageEdit}
                 currentModelId={model}
-                conversationTitle={
-                  privateMode
-                    ? "Private chat"
-                    : conversations.find((c) => c.id === currentConversationId)?.title || undefined
-                }
+                conversationTitle={privateMode ? "Private chat" : headerTitle || undefined}
+                // The header band above draws the visible h1 from md up,
+                // except in incognito, where the band is dropped.
+                titleShownInHeader={topActionsSlotOwner && !topActionsSlot && !privateMode}
               />
               {currentConversationId && !privateMode && (
-                // Same width cap, centring and horizontal padding as the composer
-                // itself (composer.tsx:~1153) — otherwise these sit against the
-                // chat column's left edge while the composer is centred under
-                // them, and the two never line up.
-                <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] shrink-0 px-0 pb-2 sm:max-w-[48rem] sm:px-4">
+                // Same width cap, centring and horizontal padding as the
+                // composer's root (`max-w-3xl px-3 sm:px-6`, composer.tsx) —
+                // otherwise these sit 8px inside the composer's edge while it
+                // is centred under them, and the two never line up.
+                <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] shrink-0 px-0 pb-2 sm:max-w-3xl sm:px-6">
                   <FollowUpSuggestions
                     conversationId={currentConversationId}
                     onPick={(t) => void sendFromComposer(t, [])}

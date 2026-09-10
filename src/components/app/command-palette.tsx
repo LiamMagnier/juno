@@ -1136,7 +1136,6 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
       { keys: ["⌘", "⇧", "S"], label: "Toggle sidebar" },
       { keys: ["⌘", "⇧", "L"], label: "Toggle theme" },
       { keys: ["⌘", "/"], label: "Keyboard shortcuts" },
-      { keys: ["⌘", "F"], label: "Find in conversation" },
     ],
   },
   {
@@ -1156,6 +1155,9 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
     items: [
       { keys: ["⌘", "⇧", "C"], label: "Copy the last response" },
       { keys: ["⌘", "⇧", ";"], label: "Copy the last code block" },
+      // Under Responses, not Everywhere: it only binds once a transcript
+      // exists (chat-view.tsx), and it searches the responses.
+      { keys: ["⌘", "F"], label: "Find in conversation" },
     ],
   },
 ];
