@@ -35,9 +35,9 @@ npm run lint
 npm test
 ```
 
-CI runs exactly these on every pull request. `next build` sets
-`typescript.ignoreBuildErrors` because the 1 GB deploy VM OOMs on the type-check
-worker, so `tsc --noEmit` locally is not optional.
+CI runs exactly these on every pull request. `next build` type-checks too, but
+it is the slowest and least legible place to find out — run `tsc --noEmit`
+first; it is the gate CI enforces and the one that names the file.
 
 Touching `native/` or `contracts/`? `native.yml` additionally builds both apps
 and checks that the generated Swift contract has not drifted

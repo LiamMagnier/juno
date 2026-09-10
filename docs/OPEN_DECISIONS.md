@@ -120,8 +120,11 @@ says so out loud.
 - **Data residency.** The database is `eu-west-1`, but inference goes wherever
   the chosen provider is, and Qwen realtime voice goes to Alibaba Cloud
   Singapore. There is no region selector. See `docs/SUBPROCESSORS.md`.
-- **Cookie consent is correct** and more conservative than required —
-  essential-only, and there is genuinely no analytics SDK in the tree. Verified.
+- **No cookie banner, on purpose.** Juno sets essential cookies only (the
+  session) and there is genuinely no analytics SDK in the tree, so there is
+  nothing to consent to; the banner that used to ask anyway contradicted its
+  own copy and was removed in September 2026. Adding analytics later means
+  adding consent back at the same time.
 
 ---
 
