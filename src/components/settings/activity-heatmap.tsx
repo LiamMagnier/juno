@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -255,12 +256,19 @@ export function ActivityHeatmap({
                     className={cn(
                       "activity-cell block size-[var(--cell)] rounded-micro motion-safe:animate-fade-in",
                       "transition-[transform,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
-                      "hover:scale-125 focus-visible:scale-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                      // No private focus ring: the global `:focus-visible`
+                      // outline (globals.css) is authoritative, and at 2px on
+                      // --ring it now clears 3:1 on its own. The scale-up rides
+                      // with it so a focused cell is also the biggest one.
+                      "hover:scale-125 focus-visible:scale-125",
                       cell.future ? "bg-muted/40" : LEVEL_CLASS[cell.level],
                       isSelected && "ring-2 ring-foreground/70 ring-offset-1 ring-offset-background",
                       isPeak && !isSelected && "ring-1 ring-primary/60 ring-offset-1 ring-offset-background"
                     )}
-                    style={{ animationDelay: `${Math.min(cell.week, 52) * 8}ms`, animationFillMode: "both" }}
+                    // The shared `tight` rung, per week column, rather than a
+                    // private 8ms — the one tempo in the product that was
+                    // neither of the three the motion scale names.
+                    style={{ ...staggerDelay(cell.week, "tight"), animationFillMode: "both" }}
                   />
                 );
               })}

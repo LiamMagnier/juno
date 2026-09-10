@@ -135,7 +135,7 @@ export function SegmentedControl<T extends string>({
               "transition-[color,transform,background-color] duration-fast ease-out-soft",
               "active:scale-[0.97] active:duration-press disabled:pointer-events-none disabled:opacity-50",
               "motion-reduce:transition-none motion-reduce:active:scale-100",
-              labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-sm",
+              labelHidden ? "size-8 coarse:size-10" : "gap-1.5 px-3 py-1 text-ui",
               selected
                 ? "text-foreground"
                 : // A faint wash names the target under the pointer — far below

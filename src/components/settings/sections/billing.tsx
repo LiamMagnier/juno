@@ -52,7 +52,7 @@ function Meter({ label, subtitle, pct }: { label: string; subtitle: string; pct:
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <div className="min-w-0 flex-1 basis-40">
-        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="text-body font-medium text-foreground">{label}</div>
         <div className="text-caption text-muted-foreground">{subtitle}</div>
       </div>
       <div className="flex min-w-40 flex-1 items-center gap-3">
@@ -105,8 +105,8 @@ function SpendCeiling({
   if (capDisabled) {
     return (
       <div role="status" className="rounded-field border border-warning/40 bg-warning/10 p-4">
-        <p className="text-sm font-medium text-warning-foreground">Spend ceiling is switched off</p>
-        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        <p className="text-body font-medium text-warning-foreground">Spend ceiling is switched off</p>
+        <p className="mt-1 text-ui text-muted-foreground">
           Nothing is capping what this account can spend on models. This is a development escape hatch — turn
           it back on before using the account normally.
         </p>
@@ -116,12 +116,12 @@ function SpendCeiling({
 
   return (
     <form onSubmit={submit}>
-      <p aria-live="polite" className="text-xs leading-relaxed text-muted-foreground">
+      <p aria-live="polite" className="text-ui text-muted-foreground">
         {describeCapSource(capSource)}. Juno stops generating once a billing period reaches this figure.
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <div className="min-w-40 flex-1">
-          <Label htmlFor="spend-cap" className="mb-1.5 block text-xs text-muted-foreground">
+          <Label htmlFor="spend-cap" className="mb-1.5 block text-muted-foreground">
             Your own ceiling, in euros
           </Label>
           <Input
@@ -159,6 +159,11 @@ export function BillingSection() {
   const unlimited = spend.budgetMicroUsd == null;
   const generating = quota.plan !== "FREE" && !spend.capDisabled;
 
+  // One button to the Stripe portal, not two: "Manage subscription" on the
+  // plan card and "Open portal" on the invoices row led to the same page, and
+  // a reader choosing between them was choosing between nothing. The portal
+  // is where subscription, invoices and payment method all live, so the plan
+  // card keeps it and the invoices row says where to look.
   const [portalLoading, setPortalLoading] = React.useState(false);
   const openPortal = async () => {
     setPortalLoading(true);
@@ -227,10 +232,10 @@ export function BillingSection() {
                   </Badge>
                 )}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
+              <p className="mt-1 text-body text-muted-foreground">{plan.tagline}</p>
               <ul className="mt-3 space-y-1.5">
                 {plan.features.slice(0, 3).map((feat, idx) => (
-                  <li key={idx} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <li key={idx} className="flex items-center gap-1.5 text-ui text-muted-foreground">
                     <StatusIcons.success className="size-3 shrink-0 text-primary" />
                     <span className="truncate">{feat}</span>
                   </li>
@@ -239,7 +244,7 @@ export function BillingSection() {
             </div>
             <div className="flex shrink-0 flex-col items-end gap-2">
               <span className="font-mono text-caption tabular-nums text-muted-foreground">
-                {plan.price > 0 ? `${plan.price} € HT/mo` : "Free"}
+                {plan.price > 0 ? `${plan.price} € excl. VAT / mo` : "Free"}
               </span>
               {features.billing && quota.plan === "FREE" && (
                 <Button asChild size="sm">
@@ -252,7 +257,7 @@ export function BillingSection() {
                     <Link href="/upgrade">Change plan</Link>
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => void openPortal()} disabled={portalLoading}>
-                    {portalLoading ? "Opening…" : "Manage subscription"}
+                    {portalLoading ? "Opening…" : "Manage billing"}
                   </Button>
                 </div>
               )}
@@ -280,13 +285,18 @@ export function BillingSection() {
                   />
                 ))}
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              <p className="mt-2 text-ui text-muted-foreground">
                 Nothing is metering this account right now.
               </p>
             </div>
           ) : quota.plan === "FREE" ? (
-            <p className="text-sm text-muted-foreground">
-              Free is a browse-only tier. Upgrade to Pro to start using models.
+            // The truth from plans.ts, not "browse-only": Free is a trial of
+            // messages, counted rather than metered, and the count is what a
+            // free reader is pacing against. Stated from the config so the
+            // number here cannot disagree with the one the gate enforces.
+            <p className="text-body text-muted-foreground">
+              Free includes {plan.monthlyMessages ?? 0} messages a month on the everyday models. Upgrade to Pro for
+              every model and a metered monthly budget instead of a count.
             </p>
           ) : (
             <>
@@ -336,16 +346,8 @@ export function BillingSection() {
         {plan.price > 0 && (
           <SettingRow
             label="Invoices and payment method"
-            description="Handled by Stripe's billing portal."
-            control={
-              features.billing ? (
-                <Button variant="outline" size="sm" onClick={() => void openPortal()} disabled={portalLoading}>
-                  {portalLoading ? "Opening…" : "Open portal"}
-                </Button>
-              ) : (
-                <Badge variant="secondary">Billing off</Badge>
-              )
-            }
+            description="Both live in the billing portal — use Manage billing on your plan card above."
+            control={!features.billing ? <Badge variant="secondary">Billing off</Badge> : undefined}
           />
         )}
       </SettingsGroup>

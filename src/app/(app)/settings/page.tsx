@@ -8,6 +8,7 @@ import { useApp } from "@/components/app/app-provider";
 import { SettingsRail } from "@/components/settings/settings-rail";
 import { SettingsPane } from "@/components/settings/settings-pane";
 import { resolveSettingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
+import SettingsLoading from "./loading";
 
 /**
  * `/settings` — the same nine sections the modal shows, in a page frame, with
@@ -48,7 +49,10 @@ function SettingsPageContent() {
 
 export default function SettingsPage() {
   return (
-    <React.Suspense fallback={null}>
+    // The route's own skeleton, not `null`: on a client-side navigation the
+    // segment's loading.tsx is not shown for this boundary, so a null fallback
+    // was a blank column for a frame before the rail and pane landed.
+    <React.Suspense fallback={<SettingsLoading />}>
       <SettingsPageContent />
     </React.Suspense>
   );

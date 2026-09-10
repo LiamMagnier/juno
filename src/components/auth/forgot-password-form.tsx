@@ -5,14 +5,16 @@ import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/ui/field";
 import { toast } from "sonner";
 
 export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) {
   const [email, setEmail] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [sent, setSent] = React.useState(false);
+  // The server's answer, under the field it is about — a toast is gone before
+  // a screen reader reaches the input (SC 3.3.1). Toasts stay for the network.
+  const [error, setError] = React.useState<string | null>(null);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -20,6 +22,7 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
     // still arrive (stale DOM, automation) — refuse it here rather than
     // sending a request the server cannot honour.
     if (!emailEnabled) return;
+    setError(null);
     setLoading(true);
     try {
       // The endpoint intentionally returns the same success shape whether or
@@ -30,10 +33,13 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         body: JSON.stringify({ email }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Could not send the reset email.");
+      if (!res.ok) {
+        setError(data.error ?? "Could not send the reset email.");
+        return;
+      }
       setSent(true);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not send the reset email.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send the reset email.");
     } finally {
       setLoading(false);
     }
@@ -54,20 +60,18 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
         >
           Password recovery is unavailable because email is not set up on this server. Please contact the site owner.
         </p>
-        <div className="space-y-2">
-          <Label htmlFor="forgot-email">Email</Label>
-          <Input
-            id="forgot-email"
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            disabled
-            aria-disabled="true"
-          />
-        </div>
+        <Field
+          id="forgot-email"
+          type="email"
+          label="Email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          placeholder="you@example.com"
+          autoComplete="email"
+          disabled
+          aria-disabled="true"
+        />
         <Button type="submit" className="w-full" disabled aria-disabled="true">
           Send reset link
         </Button>
@@ -104,19 +108,19 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <div className="space-y-2">
-        <Label htmlFor="forgot-email">Email</Label>
-        <Input
-          id="forgot-email"
-          type="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="you@example.com"
-          autoComplete="email"
-          autoFocus
-        />
-      </div>
+      <Field
+        id="forgot-email"
+        type="email"
+        label="Email"
+        required
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        error={error}
+        placeholder="you@example.com"
+        autoComplete="email"
+        inputMode="email"
+        autoFocus
+      />
       <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
         {/* motion-safe:, matching the majority convention — see the note in
             auth-form.tsx. The button is disabled and aria-busy either way. */}

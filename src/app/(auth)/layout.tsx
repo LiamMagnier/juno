@@ -3,9 +3,27 @@ import { AsciiWordmark } from "@/components/signature/dot-matrix";
 import { JunoMark } from "@/components/brand/logo";
 import { staggerDelay } from "@/lib/motion";
 
+/**
+ * The three legal documents, labelled in English like the landing footer
+ * (landing-page.tsx explains why: every other word on these screens is
+ * English, and three French labels in an English nav read as a localization
+ * bug rather than as jurisdiction). The slugs stay French — they are the
+ * documents' canonical URLs — and `lang="fr"` on each link tells assistive
+ * tech what it will find on the other side.
+ */
+const LEGAL_LINKS = [
+  { href: "/legal/confidentialite", label: "Privacy" },
+  { href: "/legal/cgu", label: "Terms" },
+  { href: "/legal/mentions-legales", label: "Legal notice" },
+];
+
 /** One treatment for the three legal links, so they cannot drift apart. */
 const LEGAL_LINK =
   "rounded-xs transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
+
+/** The inline links in the consent line: the same recipe /upgrade uses for the same sentence. */
+const CONSENT_LINK =
+  "rounded-xs underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -44,11 +62,23 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       >
         {children}
       </main>
+      {/* The agreement, in the words /upgrade uses at the moment money changes
+          hands: "use Juno responsibly" was a sentiment, not an acceptance of
+          the terms — and the one screen that creates an account was the one
+          that did not say what the account agreed to. */}
       <p
         style={staggerDelay(2, "loose")}
         className="mt-7 max-w-sm text-center text-caption text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]"
       >
-        By continuing you agree to use Juno responsibly. Your conversations are private to your account.
+        By continuing you accept the{" "}
+        <Link href="/legal/cgu" lang="fr" className={CONSENT_LINK}>
+          terms of service
+        </Link>{" "}
+        and the{" "}
+        <Link href="/legal/confidentialite" lang="fr" className={CONSENT_LINK}>
+          privacy policy
+        </Link>
+        . Your conversations are private to your account.
       </p>
       {/* No /80 on the ground colour: --muted-foreground is already tuned to the
           4.5:1 floor, and at 11px an extra 20% of transparency puts these three
@@ -58,17 +88,17 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         style={staggerDelay(3, "loose")}
         className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-caption text-muted-foreground motion-safe:animate-fade-in [animation-fill-mode:backwards]"
       >
-        <Link href="/legal/confidentialite" className={LEGAL_LINK}>
-          Confidentialité
-        </Link>
-        <span aria-hidden>·</span>
-        <Link href="/legal/cgu" className={LEGAL_LINK}>
-          CGU
-        </Link>
-        <span aria-hidden>·</span>
-        <Link href="/legal/mentions-legales" className={LEGAL_LINK}>
-          Mentions légales
-        </Link>
+        {LEGAL_LINKS.map(({ href, label }, i) => (
+          <span key={href} className="inline-flex items-center gap-2">
+            {i > 0 && <span aria-hidden>·</span>}
+            {/* py-1.5: the 11px line box alone is ~16px tall, under the 24px
+                SC 2.5.8 asks of a target; the padding lifts the hit area
+                without moving the text. */}
+            <Link href={href} lang="fr" className={`${LEGAL_LINK} py-1.5`}>
+              {label}
+            </Link>
+          </span>
+        ))}
       </nav>
     </div>
   );

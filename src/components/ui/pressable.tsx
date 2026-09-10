@@ -46,9 +46,9 @@ const pressableVariants = cva(
       kind: {
         // Every kind carries a 1px border (transparent where flat) so a
         // surface arriving on hover or selection never changes the box size.
-        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent hover:text-accent-foreground",
-        tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-sm",
-        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground",
+        row: "flex w-full min-w-0 items-center gap-2.5 rounded-control border border-transparent px-2.5 py-2 text-left text-ui text-foreground/90 hover:bg-accent hover:text-accent-foreground",
+        tile: "control-neu flex flex-col items-start gap-1 rounded-card p-3 text-left text-ui",
+        chip: "control-neu inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground hover:text-foreground",
         // `rounded-full`: the house idiom for "a glyph you can press" is a circle.
         icon: "inline-flex items-center justify-center rounded-full border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground",
       },
@@ -101,8 +101,8 @@ const pressableVariants = cva(
       { kind: "icon", size: "md", class: "size-8 coarse:size-10" },
       { kind: "icon", size: "lg", class: "size-9 coarse:size-11" },
       { kind: "chip", size: "sm", class: "h-6 px-2 text-caption" },
-      { kind: "chip", size: "lg", class: "h-8 px-3 text-sm" },
-      { kind: "row", size: "sm", class: "gap-2 px-2 py-1.5 text-xs" },
+      { kind: "chip", size: "lg", class: "h-8 px-3 text-ui" },
+      { kind: "row", size: "sm", class: "gap-2 px-2 py-1.5 text-caption" },
       { kind: "row", size: "lg", class: "gap-3 px-3 py-2.5" },
       { kind: "tile", size: "sm", class: "gap-0.5 p-2.5" },
       { kind: "tile", size: "lg", class: "gap-1.5 p-4" },

@@ -22,7 +22,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "surface-inset group flex h-9 w-full items-center justify-between whitespace-nowrap rounded-field border border-input px-3.5 py-2 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft placeholder:text-muted-foreground hover:border-foreground/60 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11 [&>span]:line-clamp-1",
+      "surface-inset group flex h-9 w-full items-center justify-between whitespace-nowrap rounded-field border border-input px-3.5 py-2 text-ui transition-[color,border-color,box-shadow] duration-base ease-out-soft placeholder:text-muted-foreground hover:border-foreground/60 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 coarse:h-11 [&>span]:line-clamp-1",
       className
     )}
     {...props}
@@ -86,7 +86,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "menu-item group/menu-item relative flex w-full cursor-pointer select-none items-center gap-2 rounded-control py-1.5 pl-8 pr-2 text-sm outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "menu-item group/menu-item relative flex w-full cursor-pointer select-none items-center gap-2 rounded-control py-1.5 pl-8 pr-2 text-ui outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}
     {...props}

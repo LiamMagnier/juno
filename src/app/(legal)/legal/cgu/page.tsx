@@ -81,11 +81,11 @@ export default function CguPage() {
               <td>20 €</td>
             </tr>
             <tr>
-              <td>Max x5</td>
+              <td>Max ×5</td>
               <td>100 €</td>
             </tr>
             <tr>
-              <td>Max x20</td>
+              <td>Max ×10</td>
               <td>200 €</td>
             </tr>
           </tbody>

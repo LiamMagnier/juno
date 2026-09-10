@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
  * switching variants never changes a button's size by 2px.
  */
 const buttonVariants = cva(
-  "ui-button pressable relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control border text-sm font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "ui-button pressable relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -55,7 +55,9 @@ const buttonVariants = cva(
       // field with a button beside it stays aligned on a phone.
       size: {
         default: "h-9 px-4 py-2 coarse:h-11",
-        sm: "h-8 px-3 text-xs coarse:h-10",
+        // Same face as `default` — a small button is shorter, not quieter. It
+        // was text-xs (12px), a size between two rungs of the type scale.
+        sm: "h-8 px-3 text-ui coarse:h-10",
         // text-body IS 0.9375rem — the arbitrary value was the token spelled out
         // longhand, minus the 1.6 line-height that comes with it.
         lg: "h-11 rounded-field px-6 text-body",

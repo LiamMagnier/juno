@@ -12,6 +12,7 @@ import {
   type SettingsSectionId,
 } from "@/components/settings/settings-sections";
 import { applyFontSize, readFontSize } from "@/components/settings/font-size";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 
 /**
  * Settings, the modal. Mounted once by the app layout and opened from
@@ -26,6 +27,9 @@ export function SettingsModal() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
   const [section, setSection] = React.useState<SettingsSectionId>(DEFAULT_SETTINGS_SECTION);
+  // "⌘," on Apple keyboards, "Ctrl+," elsewhere — the hint was hardcoded to
+  // the glyph a Windows or Linux reader does not have.
+  const modifier = useModifierKeyLabel();
 
   // Text size is a device preference; apply it on first mount so the whole
   // app scales before anything else paints.
@@ -67,14 +71,14 @@ export function SettingsModal() {
         <aside className="shrink-0 border-b border-border/60 p-3 md:w-56 md:border-b-0 md:border-r md:p-4">
           <div className="mb-3 hidden items-center justify-between px-1 md:flex">
             <h2 className="text-heading">Settings</h2>
-            <Kbd aria-hidden="true">⌘,</Kbd>
+            <Kbd aria-hidden="true">{modifier === "⌘" ? "⌘," : `${modifier}+,`}</Kbd>
           </div>
           <SettingsRail active={section} onSelect={setSection} />
         </aside>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-2xl px-5 pb-10 pt-12 sm:px-8 md:pt-7">
-            <SettingsPane section={section} />
+            <SettingsPane section={section} tabpanel />
           </div>
         </div>
       </DialogContent>

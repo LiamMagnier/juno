@@ -167,7 +167,7 @@ function ModelMix({ models }: { models: ProfileStats["models"] }) {
   const top = models.slice(0, 5);
   const total = Math.max(1, models.reduce((n, m) => n + m.count, 0));
   if (top.length === 0) {
-    return <p className="py-3 text-sm text-muted-foreground">No model calls in the last year yet.</p>;
+    return <p className="py-3 text-body text-muted-foreground">No model calls in the last year yet.</p>;
   }
   return (
     <ul className="space-y-2.5">
@@ -253,7 +253,7 @@ export function UsageStats({ data, loading, error, reload }: ReturnType<typeof u
   if (error) {
     return (
       <div className="surface-inset flex flex-wrap items-center justify-between gap-3 rounded-card px-4 py-3">
-        <p className="text-sm text-muted-foreground">Your usage could not be loaded.</p>
+        <p className="text-body text-muted-foreground">Your usage could not be loaded.</p>
         <Button variant="outline" size="sm" onClick={() => void reload()} className="gap-1.5">
           <RefreshCw className="size-3.5" /> Try again
         </Button>
@@ -341,7 +341,7 @@ export function UsageActivity({ data, loading }: Pick<ReturnType<typeof useProfi
   const tokens = data.stats.yearTokens ?? data.stats.totalTokens;
   return (
     <div>
-      <p className="mb-3 text-sm text-muted-foreground">
+      <p className="mb-3 text-body text-muted-foreground">
         <span className="tabular-nums text-foreground">{year.toLocaleString()}</span> {year === 1 ? "reply" : "replies"} and{" "}
         <span className="tabular-nums text-foreground">{compactCount(tokens)}</span> tokens in the last year
         {data.stats.memberSince && memberSinceLabel(data.stats.memberSince) && (

@@ -56,7 +56,7 @@ export function ModelsSection() {
                 {chatModels.map((m) => (
                   <SelectItem key={m.id} value={m.id} disabled={!canUseModel(quota.plan, m.id)}>
                     {m.name}
-                    <span className="ml-1.5 text-xs text-muted-foreground">
+                    <span className="ml-1.5 text-caption text-muted-foreground">
                       · {(PROVIDERS[m.provider]?.label ?? m.provider).split(" · ")[0]}
                     </span>
                   </SelectItem>

@@ -116,11 +116,11 @@ export function VoiceSection() {
                       className="w-full pr-12"
                       {...voiceOption(i)}
                     >
-                      <span className="flex items-center gap-1.5 text-sm font-medium">
+                      <span className="flex items-center gap-1.5 text-body font-medium">
                         {v.label}
                         {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                       </span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">{v.description}</span>
+                      <span className="text-ui text-muted-foreground">{v.description}</span>
                     </Pressable>
                     <Button
                       variant="secondary"

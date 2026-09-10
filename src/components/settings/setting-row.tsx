@@ -14,6 +14,13 @@ import { cn } from "@/lib/utils";
  * a floating surface and the page column already has its frame — and the
  * depth is spent on the controls themselves (inset wells, raised tiles),
  * which is where the Soft UI brief says it belongs.
+ *
+ * Two rungs of type, not four. A row is `text-body` (15) over `text-ui` (13):
+ * the label one step above the controls beside it, the description on the
+ * same rung as those controls. It used to be Tailwind's 14 over 12 — two
+ * sizes the scale does not name, sitting between an 11px badge and a 13px
+ * chip in the same row, which is what made a settings row read as four
+ * sizes in three pixels.
  */
 export function SettingsGroup({
   title,
@@ -34,7 +41,7 @@ export function SettingsGroup({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <div className="min-w-0">
           <h3 className="font-mono text-label text-muted-foreground">{title}</h3>
-          {description && <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>}
+          {description && <p className="mt-1 max-w-prose text-body text-muted-foreground">{description}</p>}
         </div>
         {aside}
       </div>
@@ -69,11 +76,11 @@ export function SettingRow({
         <div className="min-w-0 flex-1 basis-56">
           <Label
             htmlFor={htmlFor}
-            className={cn("block text-sm font-medium", tone === "destructive" ? "text-destructive-ink" : "text-foreground")}
+            className={cn("block text-body font-medium", tone === "destructive" ? "text-destructive-ink" : "text-foreground")}
           >
             {label}
           </Label>
-          {description && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>}
+          {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
         </div>
         {control && <div className="flex shrink-0 items-center gap-2">{control}</div>}
       </div>
@@ -99,8 +106,8 @@ export function SettingBlock({
     <div className={cn("py-3.5", className)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{label}</p>
-          {description && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>}
+          <p className="text-body font-medium text-foreground">{label}</p>
+          {description && <p className="mt-0.5 text-ui text-muted-foreground">{description}</p>}
         </div>
         {aside}
       </div>
@@ -114,7 +121,7 @@ export function SettingsPaneHeader({ title, description }: { title: React.ReactN
   return (
     <header className="mb-4 border-b border-border pb-4">
       <h2 className="text-title">{title}</h2>
-      {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      {description && <p className="mt-1 text-body text-muted-foreground">{description}</p>}
     </header>
   );
 }

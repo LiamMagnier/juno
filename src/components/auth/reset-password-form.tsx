@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/ui/field";
+import { Pressable } from "@/components/ui/pressable";
 
 function tokenFromFragment(): string {
   if (typeof window === "undefined") return "";
@@ -20,16 +20,21 @@ export function ResetPasswordForm() {
   const [confirmation, setConfirmation] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [complete, setComplete] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  // Field-level, not toast: "Passwords do not match" belongs under the field
+  // that does not match, where a screen reader will find it (SC 3.3.1).
+  const [errors, setErrors] = React.useState<{ password?: string; confirmation?: string }>({});
 
   React.useEffect(() => setToken(tokenFromFragment()), []);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!token) return;
-    if (password !== confirmation) {
-      toast.error("Passwords do not match.");
-      return;
-    }
+    const next: typeof errors = {};
+    if (password.length < 8) next.password = "Use at least 8 characters.";
+    if (confirmation !== password) next.confirmation = "Passwords do not match.";
+    setErrors(next);
+    if (next.password || next.confirmation) return;
 
     setLoading(true);
     try {
@@ -39,7 +44,13 @@ export function ResetPasswordForm() {
         body: JSON.stringify({ token, password }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Could not reset your password.");
+      if (!res.ok) {
+        // The server's objection is almost always about the password itself
+        // (length, reuse); a spent token is caught by the branch below on the
+        // next attempt. Either way it is a sentence under the field, not a toast.
+        setErrors({ password: data.error ?? "Could not reset your password." });
+        return;
+      }
 
       // Remove the secret from the address bar/history as soon as it is used.
       window.history.replaceState({}, "", "/reset-password");
@@ -109,36 +120,48 @@ export function ResetPasswordForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="new-password">New password</Label>
-        <Input
-          id="new-password"
-          type="password"
-          required
-          minLength={8}
-          maxLength={200}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="At least 8 characters"
-          autoComplete="new-password"
-          autoFocus
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">Confirm new password</Label>
-        <Input
-          id="confirm-password"
-          type="password"
-          required
-          minLength={8}
-          maxLength={200}
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
-          placeholder="Enter it again"
-          autoComplete="new-password"
-        />
-      </div>
+    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <Field
+        id="new-password"
+        type={showPassword ? "text" : "password"}
+        label="New password"
+        required
+        minLength={8}
+        maxLength={200}
+        value={password}
+        onChange={(event) => setPassword(event.target.value)}
+        error={errors.password}
+        hint="At least 8 characters."
+        placeholder="Choose a password"
+        autoComplete="new-password"
+        autoFocus
+        trailing={
+          // One toggle reveals both fields: they hold the same secret, and a
+          // reader checking their typing wants to compare, not to reveal twice.
+          <Pressable
+            kind="icon"
+            size="sm"
+            aria-label="Show password"
+            aria-pressed={showPassword}
+            onClick={() => setShowPassword((v) => !v)}
+          >
+            {showPassword ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+          </Pressable>
+        }
+      />
+      <Field
+        id="confirm-password"
+        type={showPassword ? "text" : "password"}
+        label="Confirm new password"
+        required
+        minLength={8}
+        maxLength={200}
+        value={confirmation}
+        onChange={(event) => setConfirmation(event.target.value)}
+        error={errors.confirmation}
+        placeholder="Enter it again"
+        autoComplete="new-password"
+      />
       <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
         {/* motion-safe:, matching the majority convention — see the note in
             auth-form.tsx. The button is disabled and aria-busy either way. */}

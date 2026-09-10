@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Camera, KeyRound, Loader2, LogOut } from "lucide-react";
@@ -143,14 +142,7 @@ export function AccountSection() {
 
   return (
     <>
-      <SettingsGroup
-        title="Profile"
-        aside={
-          <Button asChild variant="outline" size="sm">
-            <Link href="/profile">Lifetime totals</Link>
-          </Button>
-        }
-      >
+      <SettingsGroup title="Profile">
         <div className="flex items-center gap-4 py-4">
           <button
             type="button"
@@ -192,10 +184,10 @@ export function AccountSection() {
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-base font-semibold text-foreground">{user.name || "You"}</p>
+              <p className="truncate text-body-lg font-semibold text-foreground">{user.name || "You"}</p>
               <Badge variant="secondary">{plan.name}</Badge>
             </div>
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">{email}</p>
+            <p className="mt-0.5 truncate text-body text-muted-foreground">{email}</p>
           </div>
         </div>
 
@@ -287,7 +279,7 @@ export function AccountSection() {
           }
         />
         {!features.email && (
-          <p className="py-3 text-xs text-muted-foreground">
+          <p className="py-3 text-ui text-muted-foreground">
             Email delivery isn&apos;t configured yet — your preferences are saved and take effect once it is.
           </p>
         )}

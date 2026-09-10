@@ -101,7 +101,7 @@ export function ConnectorsSection() {
                 >
                   <ConnectorLogoTile id={c.id} className="size-9 rounded-control [&>svg]:size-4" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{c.label}</p>
+                    <p className="truncate text-body font-medium text-foreground">{c.label}</p>
                     <p className="truncate font-mono text-caption text-muted-foreground">
                       {c.accountLabel ?? c.capability}
                       {c.connectedAt ? ` · since ${formatDate(c.connectedAt)}` : ""}

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { SettingsPaneHeader } from "@/components/settings/setting-row";
 import { settingsSection, type SettingsSectionId } from "@/components/settings/settings-sections";
+import { settingsPanelId, settingsTabId } from "@/components/settings/settings-rail";
 import { GeneralSection } from "@/components/settings/sections/general";
 import { PersonalizationSection } from "@/components/settings/sections/personalization";
 import { MemorySection } from "@/components/settings/sections/memory";
@@ -33,18 +34,34 @@ const SECTION_COMPONENTS: Record<SettingsSectionId, React.ComponentType> = {
  *
  * `key={section}` remounts on switch so each section arrives on the rise-in
  * and its own state (drafts, previews) starts clean.
+ *
+ * `tabpanel` only when the rail beside it is a tablist (the modal — see
+ * settings-rail.tsx). On the page the rail is a <nav> of links, and a
+ * tabpanel with no tabs is a promise to assistive tech that nothing keeps;
+ * there the pane is a plain region named by its own heading.
  */
-export function SettingsPane({ section, className }: { section: SettingsSectionId; className?: string }) {
+export function SettingsPane({
+  section,
+  tabpanel = false,
+  className,
+}: {
+  section: SettingsSectionId;
+  /** True inside the modal, where the rail is a tablist. */
+  tabpanel?: boolean;
+  className?: string;
+}) {
   const meta = settingsSection(section);
   const Section = SECTION_COMPONENTS[section];
+  const headingId = `settings-${section}`;
   return (
     <div
       key={section}
       className={cn("motion-safe:animate-rise-in [animation-fill-mode:backwards]", className)}
-      role="tabpanel"
-      aria-labelledby={`settings-${section}`}
+      role={tabpanel ? "tabpanel" : "region"}
+      id={tabpanel ? settingsPanelId(section) : undefined}
+      aria-labelledby={tabpanel ? settingsTabId(section) : headingId}
     >
-      <SettingsPaneHeader title={<span id={`settings-${section}`}>{meta.label}</span>} description={meta.description} />
+      <SettingsPaneHeader title={<span id={headingId}>{meta.label}</span>} description={meta.description} />
       <Section />
     </div>
   );

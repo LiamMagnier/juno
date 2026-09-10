@@ -31,9 +31,11 @@ type BillingInterval = "month" | "year";
  */
 const MONTHS_PER_YEAR = 12;
 
+// The multipliers are the ratio of enforced budgets (spend.ts BUDGET_EUR),
+// which is why MAX20 reads ×10 — see the note on its name in plans.ts.
 const MAX_TIERS: { id: MaxTier; label: string; multiplier: string }[] = [
-  { id: "MAX", label: "Max ×5", multiplier: "×5" },
-  { id: "MAX20", label: "Max ×20", multiplier: "×20" },
+  { id: "MAX", label: PLANS.MAX.name, multiplier: "×5" },
+  { id: "MAX20", label: PLANS.MAX20.name, multiplier: "×10" },
 ];
 
 function planLabel(plan: Plan): string {
@@ -93,7 +95,7 @@ export default function UpgradePage() {
   const maxTiers = MAX_TIERS.filter((t) => offerable(t.id));
   const [maxTier, setMaxTier] = React.useState<MaxTier>(currentPlan === "MAX20" ? "MAX20" : "MAX");
   // The stored tier can fall out of the offerable set (env change, or the
-  // initial "MAX" default on a deployment that only sells ×20).
+  // initial "MAX" default on a deployment that only sells the ×10 tier).
   const activeMaxTier: MaxTier | null =
     maxTiers.find((t) => t.id === maxTier)?.id ?? maxTiers[0]?.id ?? null;
 
@@ -159,7 +161,9 @@ export default function UpgradePage() {
   /** Twelve months at the monthly rate — no discount, by design. */
   const priceFor = (monthly: number) =>
     interval === "year" ? `${monthly * MONTHS_PER_YEAR} €` : `${monthly} €`;
-  const suffix = interval === "year" ? "HT / yr" : "HT / mo";
+  // "excl. VAT", not the French "HT": this page is English, and a tax
+  // abbreviation from another language beside a price reads as a mistake.
+  const suffix = interval === "year" ? "excl. VAT / yr" : "excl. VAT / mo";
 
   const maxPlan = activeMaxTier ? PLANS[activeMaxTier] : null;
   const showPro = offerable("PRO");
@@ -192,7 +196,7 @@ export default function UpgradePage() {
       current: currentPlan === activeMaxTier,
       header:
         maxTiers.length > 1 ? (
-          // The ×5/×20 switch is the same primitive as the interval switch
+          // The ×5/×10 switch is the same primitive as the interval switch
           // above; the multipliers are sans like any other control label.
           <SegmentedControl<MaxTier>
             value={activeMaxTier}
@@ -231,7 +235,7 @@ export default function UpgradePage() {
         // rounded-field, /40 border, /10 fill.
         <div
           role="status"
-          className="mb-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm"
+          className="mb-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body"
         >
           <StatusIcons.warning className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
@@ -275,21 +279,21 @@ export default function UpgradePage() {
         <h2 id="upgrade-faq" className="text-heading">
           Questions
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">The short version of the terms, before you agree to them.</p>
+        <p className="mt-1 text-body text-muted-foreground">The short version of the terms, before you agree to them.</p>
         {/* Disclosure rows in a well: `surface-inset` at rounded-card with p-1.5
             holds `rounded-control` rows (16 = 10 + 6, concentric). Each row is
             the house hover-raised row; the chevron is the only thing that moves. */}
         <div className="surface-inset mt-4 rounded-card p-1.5">
           {faq.map((entry) => (
             <details key={entry.q} className="group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-sm font-medium transition-[background-color,box-shadow] duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-control px-3 py-2.5 text-ui font-medium transition-[background-color,box-shadow] duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
                 {entry.q}
                 <ChevronDown
                   className="size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-open:rotate-180 motion-reduce:transition-none"
                   aria-hidden="true"
                 />
               </summary>
-              <p className="px-3 pb-3 pt-1 text-sm text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
+              <p className="px-3 pb-3 pt-1 text-body text-muted-foreground motion-safe:animate-fade-in">{entry.a}</p>
             </details>
           ))}
         </div>

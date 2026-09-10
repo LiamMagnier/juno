@@ -198,7 +198,7 @@ export function ImportHistoryCard() {
             <div className="mx-auto max-w-sm">
               <Loader2 className="mx-auto mb-2 size-6 animate-spin text-muted-foreground/70" />
               <p className="font-sans text-heading">Importing conversations</p>
-              <p className="pt-1 text-sm text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
+              <p className="pt-1 text-body text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
             </div>
           ) : phase.name === "done" ? (
             <div className="mx-auto max-w-sm">
@@ -208,7 +208,7 @@ export function ImportHistoryCard() {
                   ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
                   : "Nothing new to import"}
               </p>
-              <p className="pt-1 text-sm text-muted-foreground">
+              <p className="pt-1 text-body text-muted-foreground">
                 {phase.imported > 0 || phase.projectsImported > 0 || phase.memoriesImported > 0 || phase.attachmentsImported > 0
                   ? `${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}, ${phase.projectsImported.toLocaleString()} project${phase.projectsImported === 1 ? "" : "s"}, ${phase.memoriesImported.toLocaleString()} memor${phase.memoriesImported === 1 ? "y" : "ies"}, and ${phase.attachmentsImported.toLocaleString()} file${phase.attachmentsImported === 1 ? "" : "s"} restored.${phase.skipped > 0 || phase.attachmentsSkipped > 0 ? ` ${phase.skipped + phase.attachmentsSkipped} already present or unavailable.` : ""}`
                   : "Everything in that export is already here."}
@@ -221,7 +221,7 @@ export function ImportHistoryCard() {
             <div className="mx-auto max-w-sm">
               <FileUp className="mx-auto mb-2 size-6 text-muted-foreground/70" />
               <p className="font-sans text-heading">Import your history</p>
-              <p className="pt-1 text-sm text-muted-foreground">
+              <p className="pt-1 text-body text-muted-foreground">
                 ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.
               </p>
               <Button size="sm" className="mt-4" onClick={pick}>
@@ -232,7 +232,7 @@ export function ImportHistoryCard() {
         </div>
       )}
 
-      <p className="mt-3 text-xs text-muted-foreground">
+      <p className="mt-3 text-ui text-muted-foreground">
         Get the ZIP from ChatGPT under Settings → Data controls → Export data, Claude under Settings → Privacy → Export
         data, or export a Juno JSON from your profile. Imported messages are encrypted at rest like everything else.
       </p>

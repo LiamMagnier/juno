@@ -29,19 +29,14 @@ function currentChat(p: Provider): ModelInfo[] {
 interface Lab {
   provider: Provider;
   label: string;
-  flagships: string[];
-  count: number;
+  flagship: string;
 }
 
 // Registry order (Anthropic, OpenAI, Google first) is already editorial — keep it.
-const LABS: Lab[] = PROVIDER_LIST.map((p) => ({
-  provider: p,
-  label: PROVIDERS[p].label,
-  flagships: currentChat(p)
-    .slice(0, 2)
-    .map((m) => m.name),
-  count: (MODELS_BY_PROVIDER.get(p) ?? []).length,
-})).filter((l) => l.flagships.length > 0);
+const LABS: Lab[] = PROVIDER_LIST.flatMap((p) => {
+  const [lead] = currentChat(p);
+  return lead ? [{ provider: p, label: PROVIDERS[p].label, flagship: lead.name }] : [];
+});
 
 const TOTAL_MODELS = Object.keys(MODELS).length;
 // Labs across every modality — Seedance, for one, is video-only and has no chat row.
@@ -66,55 +61,56 @@ export function FlagshipStrip() {
       {/* DottedDivider's labelled branch is aria-hidden, so "In the picker today"
           never reaches assistive tech and this list was announced as an
           anonymous run of model names in the middle of the hero. */}
-      <ul aria-label="Models in the picker today" className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+      <ul aria-label="Models in the picker today" className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2.5">
         {/* Names, not chips: these are inert, and the most clickable-looking
             thing in the hero must not be the one thing that does nothing. */}
-        {LABS.slice(0, STRIP_LABS).map(({ provider, label, flagships }) => (
+        {LABS.slice(0, STRIP_LABS).map(({ provider, label, flagship }) => (
           <li key={provider} className="inline-flex items-center gap-1.5 text-body font-medium text-foreground/80">
             <ProviderLogo provider={provider} label={label} className="size-4 shrink-0" />
-            <span className="whitespace-nowrap font-mono">{flagships[0]}</span>
+            <span className="whitespace-nowrap font-mono">{flagship}</span>
           </li>
         ))}
       </ul>
       <p className="mt-4 font-mono text-caption text-muted-foreground">
-        {MODELS_FLOOR}+ models · {TOTAL_LABS} labs · synced nightly
+        {MODELS_FLOOR}+ models · {TOTAL_LABS} labs
       </p>
     </div>
   );
 }
 
+/**
+ * The lineup as a logo strip and one sentence. It was a grid of raised lab
+ * chips with "×N" inventory counts under a "120+ models across 14 labs" H2 —
+ * a catalogue page's facts in a marketing section's frame, and the third card
+ * grid in a row. The benefit is the choice, not the count.
+ */
 export function ModelLineup() {
   return (
     <Section
       id="models"
       eyebrow="The lineup"
-      heading={`${MODELS_FLOOR}+ models across ${TOTAL_LABS} labs.`}
-      lede="Curated and synced nightly from each provider's own catalog, so new flagships appear without waiting on us. Pick per message — the conversation carries on."
+      heading="Every lab that matters, one picker."
+      lede="Pick per message — the conversation carries on. New flagships appear as each provider ships them, without waiting on us."
     >
-      {/* An inset track holding raised lab chips: the picker's own idiom (a
-          well, keys standing proud of it). Concentric: the well is
-          rounded-card (16) with p-1.5 (6), so the chips sit at rounded-control (10). */}
-      <div className="surface-inset mt-10 rounded-card p-1.5">
-        <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-          {LABS.map(({ provider, label, flagships, count }, i) => (
-            <li
-              key={provider}
-              style={staggerDelay(i, "tight")}
-              className="surface-raised flex items-center gap-3 rounded-control px-3 py-2.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-            >
-              <ProviderLogo provider={provider} label={label} className="size-6 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{label}</span>
-                <span className="block truncate text-caption text-muted-foreground">{flagships.join(" · ")}</span>
-              </div>
-              <span className="font-mono text-caption tabular-nums text-muted-foreground">×{count}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <p className="mt-6 max-w-prose text-body text-muted-foreground">
-        Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime
-        voice — all under the same subscription, all metered the same way.
+      <ul className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-4" aria-label="Labs in the picker">
+        {LABS.map(({ provider, label, flagship }, i) => (
+          <li
+            key={provider}
+            style={staggerDelay(i, "tight")}
+            className="inline-flex items-center gap-2 motion-safe:animate-fade-in [animation-fill-mode:backwards]"
+          >
+            <ProviderLogo provider={provider} label={label} className="size-6 shrink-0" />
+            <span className="flex flex-col leading-tight">
+              <span className="text-ui font-medium text-foreground">{label}</span>
+              <span className="font-mono text-caption text-muted-foreground">{flagship}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-8 max-w-prose text-body text-muted-foreground">
+        {MODELS_FLOOR}+ models across {TOTAL_LABS} labs, and beyond chat: image and video generation (GPT Image, Nano
+        Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the
+        same way.
       </p>
     </Section>
   );

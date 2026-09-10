@@ -5,10 +5,11 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field } from "@/components/ui/field";
+import { Pressable } from "@/components/ui/pressable";
 
 function GoogleIcon() {
   return (
@@ -22,6 +23,53 @@ function GoogleIcon() {
       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z" />
     </svg>
   );
+}
+
+const MIN_PASSWORD = 8;
+
+/**
+ * What Auth.js sends back on `?error=` when an OAuth round trip fails.
+ *
+ * Same-email account linking is deliberately off (src/lib/auth.ts), so a
+ * password user who presses "Continue with Google" comes back here as
+ * `OAuthAccountNotLinked` — and until this map existed the parameter was
+ * dropped on the floor and the card simply reappeared, blank. The Auth.js
+ * codes are its public contract (`pages.signIn` is set, so every sign-in
+ * error lands on this page); anything unlisted gets the generic line.
+ */
+const OAUTH_ERRORS: Record<string, string> = {
+  OAuthAccountNotLinked:
+    "This email already signs in with a password. Use it below — Google can be linked to the account from Settings afterwards.",
+  OAuthCallbackError: "Google didn't finish signing you in. Try again, or use your email and password.",
+  OAuthSignin: "Google sign-in couldn't start. Try again in a moment.",
+  AccessDenied: "That Google account isn't allowed to sign in here.",
+  Configuration: "Sign-in isn't configured correctly on this server. Please contact the site owner.",
+};
+
+function oauthErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  return OAUTH_ERRORS[code] ?? "Sign-in didn't go through. Try again, or use your email and password.";
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface FieldErrors {
+  email?: string;
+  password?: string;
+}
+
+/**
+ * The server's message, routed to the field it is about.
+ *
+ * /api/auth/register answers with zod's own sentences — "Password must be at
+ * least 8 characters", "Invalid email" — as one `error` string. Matching on
+ * the noun is enough to put each next to its input, which is what SC 3.3.1
+ * asks for; anything that names neither field stays a form-level message.
+ */
+function routeServerError(message: string): FieldErrors | null {
+  if (/password/i.test(message)) return { password: message };
+  if (/email/i.test(message)) return { email: message };
+  return null;
 }
 
 export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; googleEnabled: boolean }) {
@@ -41,8 +89,35 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+
+  // Inline, not toast: a message about a field lives under that field; a
+  // message about the whole attempt lives above the form. Toasts are kept for
+  // the one thing that is neither — the network failing.
+  const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({});
+  const [formError, setFormError] = React.useState<React.ReactNode>(() => oauthErrorMessage(params.get("error")));
+  // Validate on blur only once a submit has been attempted — never on the first
+  // keystroke, which flags a half-typed address as wrong while it is being typed.
+  const [submitted, setSubmitted] = React.useState(false);
+
+  const validate = React.useCallback(
+    (values: { email: string; password: string }): FieldErrors => {
+      const next: FieldErrors = {};
+      if (!values.email.trim()) next.email = "Enter your email address.";
+      else if (!EMAIL_RE.test(values.email.trim())) next.email = "That doesn't look like an email address.";
+      if (!values.password) next.password = "Enter your password.";
+      else if (mode === "signup" && values.password.length < MIN_PASSWORD)
+        next.password = `Use at least ${MIN_PASSWORD} characters.`;
+      return next;
+    },
+    [mode]
+  );
+
+  const revalidate = () => {
+    if (submitted) setFieldErrors(validate({ email, password }));
+  };
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -50,6 +125,12 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
     const effectiveName = (formData.get("name") as string) || name;
     const effectiveEmail = ((formData.get("email") as string) || email).trim();
     const effectivePassword = (formData.get("password") as string) || password;
+
+    setSubmitted(true);
+    setFormError(null);
+    const clientErrors = validate({ email: effectiveEmail, password: effectivePassword });
+    setFieldErrors(clientErrors);
+    if (clientErrors.email || clientErrors.password) return;
 
     setLoading(true);
     try {
@@ -60,17 +141,43 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
           body: JSON.stringify({ name: effectiveName, email: effectiveEmail, password: effectivePassword }),
         });
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Could not create your account.");
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          const message = data.error ?? "Could not create your account.";
+          const routed = routeServerError(message);
+          if (routed) setFieldErrors(routed);
+          else setFormError(message);
+          return;
         }
       }
 
       const result = await signIn("credentials", { email: effectiveEmail, password: effectivePassword, redirect: false });
       if (result?.error) {
-        throw new Error(mode === "signup" ? "Account created, but sign-in failed. Try signing in." : "Invalid email or password.");
+        if (mode === "signup") {
+          // Registration answers 201 for an address that already exists, on
+          // purpose (it must not be an account-membership oracle) — so a failed
+          // sign-in right after it is the only signal, and it must not claim an
+          // account was created. Say what is true and offer both ways out.
+          setFormError(
+            <>
+              If an account already exists for this email,{" "}
+              <Link href={`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium underline underline-offset-4">
+                sign in
+              </Link>{" "}
+              instead — or{" "}
+              <Link href="/forgot-password" className="font-medium underline underline-offset-4">
+                reset your password
+              </Link>
+              .
+            </>
+          );
+        } else {
+          setFormError("Invalid email or password.");
+        }
+        return;
       }
       window.location.href = callbackUrl;
     } catch (err) {
+      // The one toast left: a fetch that never came back is not about a field.
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
@@ -79,6 +186,19 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
 
   return (
     <div className="space-y-5">
+      {formError && (
+        // role="alert" so an error that arrives after a submit is announced;
+        // the destructive tint at low alpha is the product's warning-well
+        // recipe (rounded-field, /35 border, /10 fill) in the failure hue.
+        <p
+          role="alert"
+          className="flex items-start gap-2 rounded-field border border-destructive/35 bg-destructive/10 px-3.5 py-3 text-body text-foreground"
+        >
+          <StatusIcons.error className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
+          <span>{formError}</span>
+        </p>
+      )}
+
       {googleEnabled && (
         <>
           <Button
@@ -120,50 +240,71 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         </>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4" noValidate>
         {mode === "signup" && (
-          <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" autoComplete="name" />
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
+          <Field
+            id="name"
+            name="name"
+            label="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="How Juno should address you"
+            autoComplete="name"
           />
-        </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="password">Password</Label>
-            {mode === "signin" && (
+        )}
+        <Field
+          id="email"
+          name="email"
+          type="email"
+          label="Email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={revalidate}
+          error={fieldErrors.email}
+          placeholder="you@example.com"
+          autoComplete="email"
+          inputMode="email"
+        />
+        <Field
+          id="password"
+          name="password"
+          type={showPassword ? "text" : "password"}
+          label="Password"
+          required
+          minLength={MIN_PASSWORD}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={revalidate}
+          error={fieldErrors.password}
+          hint={mode === "signup" ? `At least ${MIN_PASSWORD} characters.` : undefined}
+          placeholder={mode === "signup" ? "Choose a password" : "Your password"}
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          labelAction={
+            mode === "signin" ? (
               <Link
                 href="/forgot-password"
                 className="rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
               >
                 Forgot your password?
               </Link>
-            )}
-          </div>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          />
-        </div>
+            ) : undefined
+          }
+          trailing={
+            // aria-pressed, not a label swap: the accessible name stays "Show
+            // password" and the state says whether it is on, so a screen reader
+            // hears one control changing rather than two controls trading places.
+            <Pressable
+              kind="icon"
+              size="sm"
+              aria-label="Show password"
+              aria-pressed={showPassword}
+              onClick={() => setShowPassword((v) => !v)}
+            >
+              {showPassword ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+            </Pressable>
+          }
+        />
         {/* Disabled while the Google redirect is in flight too. Clicking Continue
             with Google and then Sign in fired a second auth attempt against a
             page that was already navigating away — the Google button already

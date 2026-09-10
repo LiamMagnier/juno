@@ -4,6 +4,7 @@ import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
 import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
+import noRawTextSize from "./eslint-rules/no-raw-text-size.js";
 
 const compat = new FlatCompat({
   baseDirectory: dirname(fileURLToPath(import.meta.url)),
@@ -97,7 +98,11 @@ const config = [
       // it is folded into the one plugin namespace here rather than growing a
       // second `plugins` key per rule file.
       "design-system": {
-        rules: { ...designSystem.rules, "no-arbitrary-text": noArbitraryText },
+        rules: {
+          ...designSystem.rules,
+          "no-arbitrary-text": noArbitraryText,
+          "no-raw-text-size": noRawTextSize,
+        },
       },
     },
     rules: {
@@ -117,6 +122,10 @@ const config = [
       // sprinkle disables; promote it alongside the other two once the count
       // reaches zero.
       "design-system/no-arbitrary-text": "warn",
+      // The same ratchet, one level up: Tailwind's stock text-xs/sm/base/lg/xl
+      // rungs fall between the named ones. Warn until the older surfaces are
+      // swept, then promote.
+      "design-system/no-raw-text-size": "warn",
     },
   },
   {

@@ -1,9 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
-import "katex/dist/katex.min.css";
 import { Providers } from "@/components/providers";
-import { CookieConsent } from "@/components/app/cookie-consent";
+import { THEME_COLOR } from "@/components/ui/theme-color";
 import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
 import { directionOf, isAutoLocale } from "@/lib/i18n";
@@ -17,19 +16,28 @@ import { getRequestLocale } from "@/lib/i18n-server";
 // JetBrains Mono stays for labels/metadata + the dot/ASCII signature layer.
 // Newsreader is the one human moment — the empty-chat greeting — and is loaded
 // in roman and italic so the name can be set in true italics, not a slant.
+//
+// `weight` is stated on each: without it next/font ships the whole variable
+// axis, and the three faces together were the largest thing a signed-out
+// visitor downloaded. The interface uses exactly regular, medium and semibold
+// (bold appears at four sites and is a rendering of 600 here); the serif is
+// set at 400 and 500 only; the mono at 400/500 plus the odd 600 badge.
 const sans = Inter({
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
   variable: "--font-sans",
   display: "swap",
 });
 const serif = Newsreader({
   subsets: ["latin"],
+  weight: ["400", "500"],
   style: ["normal", "italic"],
   variable: "--font-serif",
   display: "swap",
 });
 const mono = JetBrains_Mono({
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
   variable: "--font-mono",
   display: "swap",
 });
@@ -70,13 +78,13 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    // Must track --background in globals.css EXACTLY (light `50 22% 96%` →
-    // #f7f6f3). This is the colour the OS paints the browser chrome, the iOS
-    // status bar and the PWA splash with, so any drift from the page's own
-    // ground shows up as a seam between the bar and the paper it continues.
-    { media: "(prefers-color-scheme: light)", color: "#f7f6f3" },
-    // `.dark --background: 30 7% 9%` → #191715, the warm charcoal ground.
-    { media: "(prefers-color-scheme: dark)", color: "#191715" },
+    // The OS paints the browser chrome, the iOS status bar and the PWA splash
+    // with this, so any drift from --background shows as a seam between the
+    // bar and the paper it continues. One shared pair (theme-color.ts) rather
+    // than a hex restated here: this file, the manifest and global-error.tsx
+    // had drifted into three different "backgrounds".
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
   ],
   width: "device-width",
   initialScale: 1,
@@ -110,7 +118,6 @@ export default async function RootLayout({
           autoDetect={isAutoLocale(uiLocale)}
         >
           {children}
-          <CookieConsent />
         </Providers>
       </body>
     </html>

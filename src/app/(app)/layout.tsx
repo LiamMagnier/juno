@@ -4,6 +4,7 @@ import { getAppBootstrap } from "@/lib/app-data";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
 import { SettingsModal } from "@/components/settings/settings-modal";
+import { KatexStyles } from "@/components/ui/katex-styles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppProvider bootstrap={bootstrap}>
+      {/* KaTeX CSS rides with the app shell, not the root layout — see katex-styles.tsx. */}
+      <KatexStyles />
       <AppShell>{children}</AppShell>
       <SettingsModal />
     </AppProvider>

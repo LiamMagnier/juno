@@ -276,13 +276,13 @@
        Neumorphic shadows alone fail WCAG 1.4.11 (3:1 for a UI boundary), which
        is why every `.surface-*` utility also draws a hairline in --border and
        why the primary action keeps real colour. Depth is a texture, never the
-       only edge. */
-    --neu-light: 0 0% 100% / 0.9;
+       only edge.
+
+       `--neu-light` and `--neu-dark-lg` are gone: the flat retune left them
+       with no consumer in the tree, and a token nothing reads is a value the
+       next person has to wonder about. `--neu-dark` survives for the one rule
+       that still draws with it (`.app-sidebar-frame`). */
     --neu-dark: 46 18% 20% / 0.14;
-    /* The large throw's ink: a card that stands higher casts a denser shadow
-       as well as a longer one, or the two rungs read as the same card at two
-       blur radii. */
-    --neu-dark-lg: 46 18% 20% / 0.2;
     /* Flat material (2026-09 retune, docs/design/FLAT_UI.md). Depth is a
        hairline first and a shadow second; in-flow surfaces carry at most a
        1px contact shadow, and only out-of-flow layers get a real throw. The
@@ -309,18 +309,8 @@
        elements, a colored halo for the primary, and an inset "well" alias for
        recessed inputs. Tuned separately for light/dark below. */
     --sheen: 0 0% 100% / 0.55;
-    /* The second rung of the same ramp: the rim light on a surface that is
-       FOCUSED. It exists because the dark composer was writing this value out as
-       a raw `hsl(45 20% 96% / .085)` in two places — the last colour literals in
-       the file — which is a value only those two rules know, in a token file
-       whose stated rule is to keep raw colour out of components. */
-    --sheen-strong: 0 0% 100% / 0.7;
     --hairline: 48 12% 18% / 0.06;
     --shadow-pop: 0 1px 2px hsl(var(--shadow-ink) / 0.06);
-    /* Alias onto the kit's inset recipe: `shadow-well` and `.field-well` used
-       to be a one-directional 1px lip, and a well with light from one side only
-       reads as a line, not a recess. */
-    --well-inset: var(--shadow-inset);
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
        the product and no token change can reach it, so a retheme leaves it
@@ -377,8 +367,8 @@
      * highlight over black is a halo. Every raised surface was reduced to a
      * lightness step and a 1px rim, which is a flat UI wearing a lit edge.
      * Soft UI needs a ground with room on BOTH sides — dark enough for the
-     * `--neu-dark` shadow to sink below it and light enough for the
-     * `--neu-light` highlight to read as light rather than as a glow. 9% is
+     * `--neu-dark` shadow to sink below it and light enough for a top-edge
+     * highlight to read as light rather than as a glow. 9% is
      * the value at which both work; the ladder above it steps in threes
      * (card 12 · popover 14 · muted 15 · accent 18 · border 20), which is the
      * same order the light theme stacks in, so nothing that was above another
@@ -457,9 +447,7 @@
      * cannot turn into a light patch. Same geometry as light; only the inks
      * change, which is what makes the two themes one material.
      */
-    --neu-light: 45 20% 96% / 0.07;
     --neu-dark: 0 0% 0% / 0.6;
-    --neu-dark-lg: 0 0% 0% / 0.72;
     --shadow-ink: 0 0% 0%;
     /* Dark raised surfaces add the sheen along their top edge: on charcoal the
        up-left highlight alone is too faint to say "lit", and a 1px rim light
@@ -474,9 +462,6 @@
        an edge, and it is the one cue that survives no matter what is behind
        the panel. */
     --sheen: 45 20% 96% / 0.07;
-    /* Focused rim light. A small step over --sheen on purpose: a large jump
-       reads as the panel switching a light on rather than as it catching one. */
-    --sheen-strong: 45 20% 96% / 0.11;
     --hairline: 45 14% 94% / 0.08;
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
 
@@ -664,9 +649,16 @@
     50% { opacity: 1; }
   }
 
-  /* Focus visibility for keyboard users */
+  /* Focus visibility for keyboard users.
+
+     `--ring` rather than foreground at 32%: the translucent ink measured
+     2.0:1 on the light page and 2.7:1 on the dark one, under the 3:1 a focus
+     indicator needs (WCAG 2.4.11/1.4.11), and the --ring tokens that clear it
+     (≈5:1 light, ≈9:1 dark, retuned per accent) already existed unused. 2px
+     rather than 1.5: a hairline outline offset 2px from a 1px hairline border
+     reads as a second border, not as focus. */
   :focus-visible {
-    outline: 1.5px solid hsl(var(--foreground) / 0.32);
+    outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
 
@@ -855,7 +847,7 @@
     color: hsl(var(--destructive-foreground));
   }
   .danger-hover svg {
-    transition: transform 180ms var(--ease-out-soft);
+    transition: transform var(--dur-fast) var(--ease-out-soft);
   }
   .danger-hover:hover svg {
     transform: scale(1.08);
@@ -1161,19 +1153,23 @@
      product (chat, Code, Compare, Work) wears this class through ComposerShell. */
   .composer-surface {
     background-color: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
+    /* `--input`, not `--border`: the field boundary is the one hairline on
+       the page that has to be found by someone looking for where to type,
+       and at --border it measured 1.27:1 against the paper — present in the
+       source, invisible on a laptop in daylight. */
+    border: 1px solid hsl(var(--input));
     box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / .03),
-      0 6px 20px -10px hsl(var(--shadow-ink) / .12);
+      0 1px 2px hsl(var(--shadow-ink) / .04),
+      0 10px 30px -12px hsl(var(--shadow-ink) / .14);
     transition:
       border-color var(--dur-fast) var(--ease-out-soft),
       box-shadow   var(--dur-fast) var(--ease-out-soft);
   }
   .composer-surface:focus-within {
-    border-color: hsl(var(--foreground) / .28);
+    border-color: hsl(var(--foreground) / .3);
     box-shadow:
-      0 1px 2px hsl(var(--shadow-ink) / .04),
-      0 10px 28px -10px hsl(var(--shadow-ink) / .16);
+      0 1px 2px hsl(var(--shadow-ink) / .05),
+      0 14px 36px -12px hsl(var(--shadow-ink) / .18);
   }
   @media (prefers-reduced-motion: reduce) {
     .composer-surface { transition: none; }
@@ -1324,7 +1320,7 @@
    * The recipe was `bg-background` + an inset shadow, which is the correct way
    * to draw a well on paper: the fill matches the page and the shadow sinks it.
    * On a #000 ground both halves stop working at once — the fill is the same
-   * black as the page, and `--well-inset` is BLACK INK, so the shadow that was
+   * black as the page, and the inset shadow's ink is BLACK, so the shadow that was
    * meant to sink it is painted black-on-black. What was left was an outline:
    * every input, select and textarea in the dark theme was defined solely by its
    * 1px border.
@@ -1339,6 +1335,10 @@
    * are emitted after the components layer) and would have to pick one theme's
    * answer for both.
    */
+  /* LEGACY ALIAS of `.surface-inset` — byte-for-byte the same recess. Thirteen
+     call sites still spell it this way; write `.surface-inset` in new code and
+     migrate these when touched, then delete this rule. Kept as its own rule
+     rather than folded into the selector above so the deletion is one block. */
   .field-well {
     background-color: hsl(var(--background));
     border-color: hsl(var(--border) / .8);
@@ -1352,12 +1352,14 @@
     box-shadow: var(--shadow-float);
   }
 
-  /* The floating material with glass. Composes with `.surface-float`: same
-     hairline, same ink, same float shadow — plus a translucent tint and a 12px
-     backdrop blur so the page shows through the panel's edge. Glass is for
-     CHROME only (menus, popovers, dialogs, toasts, the command palette); never
-     on a reading surface. Under prefers-reduced-transparency the tint goes
-     opaque and the blur is dropped, which leaves exactly `.surface-float`.
+  /* The floating material — NOT glass any more, despite the name. The flat
+     retune (docs/design/FLAT_UI.md §2.5) made every out-of-flow panel opaque:
+     an opaque popover is legible over anything, and the blur was the one
+     "AI demo" tell left in the chrome. The class keeps its name because
+     seventeen call sites compose it with `.surface-float`, and what it adds
+     over that recipe is only a lighter hairline (/.7 against /.9); the old
+     `prefers-reduced-transparency` block re-stated these same values and is
+     gone. Rename to `.overlay-panel` when those call sites are next touched.
 
      Trap worth knowing before migrating a call site: this is a components-layer
      class, and Tailwind emits utilities after components at equal specificity, so
@@ -1367,16 +1369,7 @@
     border: 1px solid hsl(var(--border) / .7);
     background-color: hsl(var(--popover));
     color: hsl(var(--popover-foreground));
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
     box-shadow: var(--shadow-float);
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    .overlay-glass {
-      background-color: hsl(var(--popover));
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
   }
   @media (prefers-contrast: more) {
     .overlay-glass,
@@ -1557,7 +1550,7 @@
     color: hsl(var(--muted-foreground) / .7);
     /* The path is drawn as an up-caret; the collapsed summary points down. */
     transform: rotate(180deg);
-    transition: transform 280ms var(--ease-out-soft), color var(--dur-base) var(--ease-out-soft);
+    transition: transform var(--dur-base) var(--ease-out-soft), color var(--dur-base) var(--ease-out-soft);
   }
   .aicss-tr-header[aria-expanded="true"] .aicss-tr-chevron { transform: rotate(0deg); }
   .aicss-tr-header[data-clickable="true"]:hover .aicss-tr-chevron { color: hsl(var(--foreground) / .7); }
@@ -1565,7 +1558,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 320ms var(--ease-out-soft), opacity 220ms var(--ease-out-soft);
+    transition: grid-template-rows var(--dur-slow) var(--ease-out-soft), opacity var(--dur-base) var(--ease-out-soft);
   }
   .aicss-tr-collapsible[data-collapsed="true"] {
     grid-template-rows: 0fr;
@@ -1576,7 +1569,7 @@
   .aicss-tr-viewport {
     margin-top: 6px;
     overflow: hidden;
-    transition: height 360ms var(--ease-out-soft);
+    transition: height var(--dur-slow) var(--ease-out-soft);
   }
   .aicss-tr-viewport[data-scroll="true"] { overflow-y: auto; scrollbar-width: none; }
   .aicss-tr-viewport[data-scroll="true"]::-webkit-scrollbar { display: none; }
@@ -1602,7 +1595,7 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    animation: aicss-fade-in 420ms var(--ease-out-soft) both;
+    animation: aicss-fade-in var(--dur-slow) var(--ease-out-soft) both;
   }
   @keyframes aicss-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -1731,7 +1724,7 @@
     background: none;
     color: hsl(var(--muted-foreground) / .7);
     cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-out-strong), transform 280ms var(--ease-out-strong);
+    transition: color var(--dur-fast) var(--ease-out-strong), transform var(--dur-base) var(--ease-out-strong);
   }
   .aicss-ws-chevron:hover { color: hsl(var(--muted-foreground)); }
   .aicss-ws-chevron[aria-expanded="false"] { transform: rotate(180deg); }
@@ -1739,7 +1732,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 320ms var(--ease-out-strong), opacity 220ms var(--ease-out-strong);
+    transition: grid-template-rows var(--dur-slow) var(--ease-out-strong), opacity var(--dur-base) var(--ease-out-strong);
   }
   .aicss-ws-collapsible[data-collapsed="true"] {
     grid-template-rows: 0fr;
@@ -1860,19 +1853,25 @@
      and disagreed with each other (12 vs 8) and with the ladder, because
      `eslint-local/no-arbitrary-radius` can only see className strings and never
      looks inside raw CSS — which is exactly how these drifted. */
+  /* A tonal fill, not a ring (FLAT_UI.md §2.1): `--secondary` is the one
+     shade the transcript already uses for "a block that is not prose" (the
+     user bubble), and a code block is that. The hairline ring this replaced
+     boxed every fence like a card sitting on the reply. */
   .aicss-cb {
     overflow: hidden;
     padding: 12px 16px 16px;
     border-radius: 14px;
-    background: hsl(var(--card));
-    box-shadow: 0 0 0 1px hsl(var(--border));
+    background: hsl(var(--secondary));
   }
   .aicss-cb-head {
     display: flex;
     align-items: center;
     gap: 8px;
+    /* min-height keeps the row at one height with or without a label, so a
+       fence with no language does not look shorter than its neighbours. */
+    min-height: 36px;
     margin: -12px -16px 0;
-    padding: 10px 12px 10px 16px;
+    padding: 6px 12px 6px 16px;
     /* 1px, not .5px. At DPR 1 a half-pixel line either rounds away or renders at
        roughly half alpha, which against --border on a black ground leaves about
        8% — the code block's header divider, gone. Let the token carry the
@@ -1880,13 +1879,11 @@
     border-bottom: 1px solid hsl(var(--border));
     font-size: 12px;
   }
-  .aicss-cb-file { display: inline-flex; min-width: 0; align-items: center; gap: 7px; }
-  .aicss-cb-icon { display: block; flex: none; width: 15px; height: 15px; color: hsl(var(--muted-foreground)); }
   .aicss-cb-lang {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: hsl(var(--foreground));
+    color: hsl(var(--muted-foreground));
     font-family: var(--font-mono), ui-monospace, monospace;
     font-size: 12px;
     line-height: 1;
@@ -1923,9 +1920,11 @@
     font-size: 12px;
     line-height: 20px;
   }
-  /* Full-height gutter hairline, independent of the body's padding so it runs
-     the whole column rather than stopping short of the first and last row. */
-  .aicss-cb-body::before {
+  /* The gutter exists only on `.aicss-cb--numbered` (code-block.tsx: blocks
+     past its line threshold). Its hairline is full-height and independent of
+     the body's padding, so it runs the whole column rather than stopping
+     short of the first and last row. */
+  .aicss-cb--numbered .aicss-cb-body::before {
     content: "";
     position: absolute;
     top: 0;
@@ -1934,7 +1933,8 @@
     width: 1px;
     background: hsl(var(--border));
   }
-  .aicss-cb-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); }
+  .aicss-cb-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .aicss-cb--numbered .aicss-cb-row { grid-template-columns: 32px minmax(0, 1fr); }
   .aicss-cb-ln {
     padding: 0 7px;
     color: hsl(var(--muted-foreground) / .8);
@@ -1943,12 +1943,14 @@
     user-select: none;
   }
   .aicss-cb-code {
-    padding: 0 12px 0 8px;
+    /* Without a gutter the code takes the header's own left inset. */
+    padding: 0 12px 0 16px;
     overflow-x: auto;
     color: hsl(var(--foreground));
     white-space: pre;
     scrollbar-width: none;
   }
+  .aicss-cb--numbered .aicss-cb-code { padding-left: 8px; }
   .aicss-cb-code::-webkit-scrollbar { display: none; }
 
   .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }
@@ -2035,30 +2037,13 @@
   .dark .aicss-diff-row[data-type="del"] { background: hsl(var(--destructive) / .18); }
 
   /* ---- Streaming Text -----------------------------------------------------
-   * AIcss's own component fakes the stream with a setInterval typewriter. Juno
-   * has real tokens, so only the caret is ported — and it is SOLID rather than
-   * blinking, because it is only ever shown while text is arriving and a second
-   * moving thing would compete with the text itself.
-   *
-   * A pseudo-element, not a React node. The caret has to be part of the text run
-   * or it does not behave like a cursor: it must sit on the baseline after the
-   * final glyph and follow the last word as the line rewraps. A sibling element
-   * pins itself to the block's trailing edge and drifts away on every wrap.
-   *
-   * `> p:last-child` is the whole selector, and the restriction is deliberate. If
-   * the answer currently ends in a code block, a table or a list there is nothing
-   * to ride, and a cursor hanging off the bottom of a table says nothing true
-   * about what is being written.
+   * No caret. AIcss's block caret used to ride `p:last-child::after` while a
+   * reply streamed, on top of the `.stream-tail` mask (below, "Streaming text
+   * emerges") that already dims the line being written. Two signals on one
+   * paragraph; the mask is the one that stays because it says the same thing
+   * without adding a second object to the text run. `data-streaming` is still
+   * stamped by markdown.tsx for anything that needs to know.
    * ------------------------------------------------------------------------- */
-  .prose-juno[data-streaming="true"] > p:last-child::after {
-    content: "";
-    display: inline-block;
-    width: 0.5em;
-    height: 1.05em;
-    margin-left: 2px;
-    background: hsl(var(--foreground));
-    vertical-align: text-bottom;
-  }
 
   /* ---- Inline Citations ---------------------------------------------------
    * Only the reference FOOTER is taken. The inline `[n]` marker stays Juno's
@@ -2160,14 +2145,14 @@
   .aicss-todo-list-icon,
   .aicss-todo-chevron,
   .aicss-todo-head-check,
-  .aicss-todo-pie { position: absolute; inset: 0; margin: auto; transition: opacity 140ms var(--ease-out-soft); }
+  .aicss-todo-pie { position: absolute; inset: 0; margin: auto; transition: opacity var(--dur-fast) var(--ease-out-soft); }
   .aicss-todo-list-icon,
   .aicss-todo-chevron { width: 13px; height: 13px; }
   /* A solid glyph reads smaller than an outlined one at the same box, so the
      check is drawn full size where the others are inset. */
   .aicss-todo-head-check { width: 16px; height: 16px; color: hsl(var(--success-ink)); }
   .dark .aicss-todo-head-check { color: hsl(var(--success)); }
-  .aicss-todo-chevron { opacity: 0; transition: opacity 140ms var(--ease-out-soft), transform 220ms var(--ease-out-soft); }
+  .aicss-todo-chevron { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out-soft), transform var(--dur-base) var(--ease-out-soft); }
   .aicss-todo-head[aria-expanded="false"] .aicss-todo-chevron { transform: rotate(-90deg); }
   .aicss-todo-head:hover .aicss-todo-list-icon,
   .aicss-todo-head:hover .aicss-todo-pie,
@@ -2184,7 +2169,7 @@
     flex-direction: column;
     /* An A-to-B move with both endpoints on screen — the old digit leaves as the
        new one arrives — so it takes the symmetric curve, not a decelerate. */
-    transition: transform 350ms var(--ease-in-out);
+    transition: transform var(--dur-slow) var(--ease-in-out);
   }
   .aicss-todo-digit-inner > span { height: 1em; line-height: 1em; }
   .aicss-todo-digit-inner[data-rolled="true"] { transform: translateY(-1em); }
@@ -2193,7 +2178,7 @@
     height: 13px;
     border-radius: 50%;
     color: hsl(var(--foreground));
-    transition: opacity 140ms var(--ease-out-soft), --aicss-todo-pie 400ms var(--ease-out-soft);
+    transition: opacity var(--dur-fast) var(--ease-out-soft), --aicss-todo-pie var(--dur-slow) var(--ease-out-soft);
   }
   .aicss-todo-pie::after {
     content: "";
@@ -2214,7 +2199,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 280ms var(--ease-out-soft), opacity 200ms var(--ease-out-soft);
+    transition: grid-template-rows var(--dur-base) var(--ease-out-soft), opacity var(--dur-base) var(--ease-out-soft);
   }
   .aicss-todo-collapsible[data-collapsed="true"] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
   .aicss-todo-inner { min-height: 0; overflow: hidden; }
@@ -2247,7 +2232,7 @@
     height: 16px;
     color: hsl(var(--muted-foreground));
     opacity: 0;
-    transition: opacity 320ms var(--ease-out-soft);
+    transition: opacity var(--dur-slow) var(--ease-out-soft);
   }
   .aicss-todo-icon[data-on="true"] { opacity: 1; }
   .aicss-todo-icon-strong { color: hsl(var(--foreground)); }
@@ -2315,7 +2300,7 @@
   /* Markdown prose used in chat messages */
   .prose-juno {
     /* The assistant's reply reads in the interface face, like everything else
-       (docs/JUNO.md §3.2: Archivo is headings AND reading text). Stated
+       (docs/design/FLAT_UI.md §5: Inter is headings AND reading text). Stated
        explicitly rather than inherited: this used to ask for `--font-serif`
        at a time when nothing defined it, so the declaration was invalid and
        the prose fell back to `body` by accident. Now that the greeting loads
@@ -2380,7 +2365,15 @@
   }
   .prose-juno pre code { font-family: var(--font-mono); background: transparent; }
   .prose-juno table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-  .prose-juno th, .prose-juno td { border: 1px solid hsl(var(--border)); padding: 0.45em 0.7em; text-align: left; }
+  /* Horizontal rules only — the Claude / ChatGPT table. A full grid (every
+     cell boxed on all four sides) was the one thing in the reading column
+     that read as a spreadsheet pasted into prose. Rows are separated by a
+     hairline; the header carries a heavier rule (ink at 28%, the same weight
+     the composer's focus edge uses) so the eye finds the column names
+     without a fill behind them. */
+  .prose-juno th, .prose-juno td { border-bottom: 1px solid hsl(var(--border)); padding: 0.5em 0.7em; text-align: left; vertical-align: top; }
+  .prose-juno th { border-bottom-color: hsl(var(--foreground) / .28); font-weight: 600; }
+  .prose-juno tbody tr:last-child td { border-bottom: none; }
   /* Cell content must not force break-word mid-token inside the scroll wrapper —
      the wrapper (markdown.tsx) scrolls instead, keeping columns readable. */
   .prose-juno th, .prose-juno td { word-break: normal; }
@@ -2714,17 +2707,14 @@
   .app-main-canvas {
     background-color: hsl(var(--background));
   }
-  /* The sidebar is an inset well (SOFT_UI.md §3): its fill sits a step below
-     the page and its inner edge carries the recess — the seam hairline in
-     --sidebar-border, plus the kit's inset shadow pulled to the right edge so
-     the canvas reads as standing proud of the panel. The active row inside it
-     is the one raised object (`.surface-raised`). */
+  /* The sidebar is a flat panel (FLAT_UI.md §2.1): its fill sits a step below
+     the page and its inner edge is the seam hairline in --sidebar-border, and
+     nothing else. The Soft UI inset well that used to darken the right and
+     top edges was the last neumorphic recess in the shell — every other
+     in-flow surface had already been retuned to fill + hairline. */
   .app-sidebar-frame {
     background-color: hsl(var(--sidebar));
-    box-shadow:
-      inset -1px 0 0 hsl(var(--sidebar-border)),
-      inset -14px 0 18px -12px hsl(var(--neu-dark)),
-      inset 0 14px 16px -14px hsl(var(--neu-dark));
+    box-shadow: inset -1px 0 0 hsl(var(--sidebar-border));
   }
   /* At md–lg the expanded panel floats over the content (app-shell.tsx):
      it takes the floating rung's throw so it reads as lifted, not as a wider
@@ -2799,7 +2789,9 @@
   .research-tab-body { @apply min-w-0 pt-6; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .research-enter, .research-tab-body { animation: research-arrive 180ms ease-out both; }
+  /* On the ladder: the exit rung and the soft decelerate, where this had a raw
+     180ms and the `ease-out` keyword — the only bare keyword easing left. */
+  .research-enter, .research-tab-body { animation: research-arrive var(--dur-exit) var(--ease-out-soft) both; }
   @keyframes research-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 }
 

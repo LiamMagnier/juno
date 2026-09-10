@@ -31,15 +31,43 @@ export interface FieldProps extends React.InputHTMLAttributes<HTMLInputElement> 
   label: React.ReactNode;
   /** Present = the field is in error. The string is rendered, not just used as a flag. */
   error?: string | null;
+  /** A one-line instruction under the field, read out before the user types (SC 3.3.2). */
+  hint?: React.ReactNode;
   /** Optional trailing control on the label row (e.g. "Forgot your password?"). */
   labelAction?: React.ReactNode;
+  /**
+   * A control that sits INSIDE the field's right edge — the show/hide toggle
+   * on a password. The input gets the padding to clear it; the control is a
+   * sibling of the input rather than a child, because an `<input>` cannot
+   * contain a button and the label must still target the input alone.
+   */
+  trailing?: React.ReactNode;
   /** Classes for the wrapper; `className` goes to the input, as callers expect. */
   fieldClassName?: string;
 }
 
 const Field = React.forwardRef<HTMLInputElement, FieldProps>(
-  ({ id, label, error, labelAction, required, className, fieldClassName, ...props }, ref) => {
+  ({ id, label, error, hint, labelAction, trailing, required, className, fieldClassName, ...props }, ref) => {
     const errorId = `${id}-error`;
+    const hintId = `${id}-hint`;
+    // The error, when present, is what a screen reader should hear first;
+    // the hint follows so the instruction is still available.
+    const describedBy = [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(" ") || undefined;
+    const input = (
+      <Input
+        id={id}
+        ref={ref}
+        required={required}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={cn(
+          "aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:border-destructive",
+          trailing && "pr-11",
+          className
+        )}
+        {...props}
+      />
+    );
     return (
       <div className={cn("space-y-2", fieldClassName)}>
         <div className={cn(labelAction && "flex items-center justify-between gap-3")}>
@@ -57,26 +85,26 @@ const Field = React.forwardRef<HTMLInputElement, FieldProps>(
           </Label>
           {labelAction}
         </div>
-        <Input
-          id={id}
-          ref={ref}
-          required={required}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          className={cn(
-            "aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:border-destructive",
-            className
-          )}
-          {...props}
-        />
-        {error && (
+        {trailing ? (
+          <div className="relative">
+            {input}
+            <div className="absolute inset-y-0 right-1.5 flex items-center">{trailing}</div>
+          </div>
+        ) : (
+          input
+        )}
+        {error ? (
           // role="alert" so the message is announced when it appears mid-form,
           // and it sits AFTER the input so `aria-describedby` reads in order.
           <p id={errorId} role="alert" className="flex items-center gap-1.5 text-caption text-destructive">
             <StatusIcons.error className="size-3.5 shrink-0" aria-hidden />
             {error}
           </p>
-        )}
+        ) : hint ? (
+          <p id={hintId} className="text-caption text-muted-foreground">
+            {hint}
+          </p>
+        ) : null}
       </div>
     );
   }

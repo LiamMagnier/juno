@@ -206,7 +206,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       // TileSaveStatus for why it never unmounts.
       aside={<TileSaveStatus state={save} failedMessage="Couldn't save. Your permissions are unchanged." />}
     >
-      <p className="mb-4 text-sm text-muted-foreground">
+      <p className="mb-4 text-body text-muted-foreground">
         What Juno may do with your connected apps on its own, and what it has to stop and ask you
         about first. Juno checks this before every connector call, so a change here applies to chats
         already open.
@@ -243,7 +243,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
           {state.lockdownMode && (
             // p-4, matching the spend-ceiling warning well on this same page:
             // the two warning states in settings share one chrome.
-            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
+            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-body text-foreground">
               <StatusIcons.security className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               Lockdown is on, so every connector action is refused right now. The choice below takes
               effect again when you turn it off.
@@ -252,7 +252,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
 
           {/* text-muted-foreground to match every other field label on this
               surface — this was the third of three label treatments in one grid. */}
-          <Label id="action-policy-label" className="mb-2 block text-xs text-muted-foreground">
+          <Label id="action-policy-label" className="mb-2 block text-muted-foreground">
             When Juno wants to use a connected app
           </Label>
           <div
@@ -286,28 +286,28 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                   className="min-h-11 motion-safe:hover:-translate-y-0.5"
                   {...policyOption(position)}
                 >
-                  <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
+                  <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
                     {option.label}
                     {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" aria-hidden />}
                   </span>
-                  <span className="text-xs leading-relaxed text-muted-foreground">
+                  <span className="text-ui text-muted-foreground">
                     {option.description}
                   </span>
                 </Pressable>
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-ui text-muted-foreground">
             Juno only ever offers to remember an approval for reversible actions. Anything
             destructive or sensitive is asked again every single time.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium" id="lockdown-label">
+              <p className="text-body font-medium" id="lockdown-label">
                 Lockdown
               </p>
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground" id="lockdown-description">
+              <p className="mt-0.5 text-ui text-muted-foreground" id="lockdown-description">
                 Refuse every connector action, including ones that only read. This overrides the
                 choice above and every approval you have already given, until you turn it off.
               </p>
@@ -321,14 +321,14 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
           </div>
 
           <div className="mt-5 border-t border-border/60 pt-4">
-            <p className="text-sm font-medium">Blocked apps</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            <p className="text-body font-medium">Blocked apps</p>
+            <p className="mt-0.5 text-ui text-muted-foreground">
               A blocked app is refused everything, reads included — lockdown for one app instead of
               all of them.
             </p>
 
             {connectorRows.length === 0 ? (
-              <p className="mt-3 text-xs text-muted-foreground">
+              <p className="mt-3 text-ui text-muted-foreground">
                 No apps are connected yet.{" "}
                 <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
                   Connect one
@@ -345,9 +345,9 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                       className="flex min-h-11 flex-wrap items-center justify-between gap-3 py-1"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{row.label}</span>
+                        <span className="block truncate text-body">{row.label}</span>
                         {!row.connected && (
-                          <span className="block text-xs text-muted-foreground">
+                          <span className="block text-ui text-muted-foreground">
                             Not connected right now. The block still applies if you reconnect it.
                           </span>
                         )}

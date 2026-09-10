@@ -190,9 +190,10 @@ const config: Config = {
         lift: "var(--shadow-lift)",
         glass: "var(--shadow-glass)",
         // Crisp shadow for small chips, the accent halo, and `well` as an alias
-        // of `inset` for the call sites that predate the kit.
+        // of `inset` for the one call site that predates the kit (it reads the
+        // inset token directly now that the `--well-inset` alias is gone).
         pop: "var(--shadow-pop)",
-        well: "var(--well-inset)",
+        well: "var(--shadow-inset)",
       },
       // The out-of-flow stacking order. globals.css has declared these since the
       // depth kit landed — "so a new one has somewhere to look up its answer
@@ -262,8 +263,9 @@ const config: Config = {
         emphasis: "560ms",
       },
       fontFamily: {
-        // A single product voice: Archivo is every control, heading and reading
-        // surface. `serif` is Newsreader (loaded in layout.tsx as --font-serif)
+        // A single product voice: Inter is every control, heading and reading
+        // surface (docs/design/FLAT_UI.md §5 — it replaced Archivo in the flat
+        // retune). `serif` is Newsreader (loaded in layout.tsx as --font-serif)
         // and is reserved for the human moments — the empty-chat greeting — so
         // it never competes with the interface face. Mono is code, ids and
         // compact telemetry.

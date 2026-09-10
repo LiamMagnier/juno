@@ -40,7 +40,7 @@ const TabsTrigger = React.forwardRef<
       // raised material's hairline arriving on the active one moves nothing.
       // The inactive hover is a faint wash below the thumb's own contrast: it
       // says "you can press here", not "a second selected state".
-      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-sm font-medium transition-[color,background-color,border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:surface-raised data-[state=active]:border-border/60 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-ui font-medium transition-[color,background-color,border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:surface-raised data-[state=active]:border-border/60 data-[state=active]:text-foreground [&_svg]:size-4 [&_svg]:shrink-0",
       className
     )}
     {...props}

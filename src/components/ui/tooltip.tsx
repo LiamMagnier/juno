@@ -28,7 +28,7 @@ const TooltipContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        "surface-float z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1 text-xs text-foreground data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "surface-float z-popper max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-control px-2.5 py-1 text-caption text-foreground data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

@@ -71,7 +71,7 @@ export function EmptyState({
       <p
         className={cn(
           "font-semibold tracking-[-0.01em]",
-          size === "page" ? "text-base" : "text-sm",
+          size === "page" ? "text-body-lg" : "text-body",
           Icon && "mt-4",
           isError && "text-destructive"
         )}
@@ -79,7 +79,7 @@ export function EmptyState({
         {title}
       </p>
       {description && (
-        <p className="mt-1.5 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-1.5 max-w-sm text-pretty text-body text-muted-foreground">
           {description}
         </p>
       )}

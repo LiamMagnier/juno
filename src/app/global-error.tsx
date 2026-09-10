@@ -13,11 +13,13 @@
  *
  * Deliberately self-contained: no globals.css, no next/font, no shared
  * component. The root layout is what provides those, and the root layout is
- * exactly what has already failed by the time we get here. Colours are the two
- * brand backgrounds inlined (light `#faf9f6` / dark `#16140f`, matching the
- * `themeColor` viewport entries), switched on `prefers-color-scheme` because
- * next-themes — which normally puts `.dark` on <html> — is not mounted either.
+ * exactly what has already failed by the time we get here. The two grounds
+ * come from theme-color.ts — a constant, not a stylesheet, so it survives the
+ * failure — and are switched on `prefers-color-scheme` because next-themes,
+ * which normally puts `.dark` on <html>, is not mounted either.
  */
+
+import { THEME_COLOR } from "@/components/ui/theme-color";
 
 const STYLES = `
   .juno-fallback-body {
@@ -27,7 +29,7 @@ const STYLES = `
     align-items: center;
     justify-content: center;
     padding: 2rem 1.25rem;
-    background: #faf9f6;
+    background: ${THEME_COLOR.light};
     color: #1f1e1c;
     font-family: ui-serif, Georgia, "Times New Roman", serif;
     -webkit-font-smoothing: antialiased;
@@ -87,7 +89,7 @@ const STYLES = `
   .juno-fallback-button--primary {
     background: #1f1e1c;
     border-color: #1f1e1c;
-    color: #faf9f6;
+    color: ${THEME_COLOR.light};
   }
   .juno-fallback-button--primary:hover { background: #38352f; border-color: #38352f; }
   .juno-fallback-digest {
@@ -98,13 +100,13 @@ const STYLES = `
     word-break: break-all;
   }
   @media (prefers-color-scheme: dark) {
-    .juno-fallback-body { background: #16140f; color: #f0ece1; }
+    .juno-fallback-body { background: ${THEME_COLOR.dark}; color: #f0ece1; }
     .juno-fallback-mark { filter: invert(1); }
     .juno-fallback-eyebrow { color: #c9a86a; }
     .juno-fallback-copy { color: #a8a297; }
     .juno-fallback-button { background: #211e19; border-color: #38342c; color: #f0ece1; }
     .juno-fallback-button:hover { border-color: #4d4840; }
-    .juno-fallback-button--primary { background: #f0ece1; border-color: #f0ece1; color: #16140f; }
+    .juno-fallback-button--primary { background: #f0ece1; border-color: #f0ece1; color: ${THEME_COLOR.dark}; }
     .juno-fallback-button--primary:hover { background: #ffffff; border-color: #ffffff; }
     .juno-fallback-digest { color: #6f6a60; }
   }

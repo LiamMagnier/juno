@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { Monitor, Moon, Plus, Sun } from "lucide-react";
 import { StatusIcons } from "@/lib/app-icons";
 import { Pressable } from "@/components/ui/pressable";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/components/app/app-provider";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
@@ -41,8 +41,10 @@ const AccentSwatch = React.forwardRef<
       aria-checked={selected}
       aria-label={label}
       onClick={onClick}
+      // No hover scale: the ring is the state, and a swatch that grows under
+      // the pointer was the one gesture in the product nothing else makes.
       className={cn(
-        "overflow-hidden ring-offset-2 ring-offset-background hover:bg-transparent motion-safe:hover:scale-110",
+        "overflow-hidden ring-offset-2 ring-offset-background hover:bg-transparent",
         selected && "ring-2 ring-foreground"
       )}
       style={{ background, color: swatchInk(inkAgainst ?? background) }}
@@ -105,6 +107,8 @@ export function GeneralSection() {
 
   const [fontSize, setFontSize] = React.useState<FontSizeId>("default");
   React.useEffect(() => setFontSize(readFontSize()), []);
+  const fontStep = Math.max(0, FONT_SIZES.findIndex((s) => s.id === fontSize));
+  const fontPx = FONT_SIZES[fontStep]?.px ?? 16;
 
   const setThemePref = async (theme: ClientSettings["theme"]) => {
     const previous = settings.theme;
@@ -193,20 +197,37 @@ export function GeneralSection() {
           </div>
         </SettingBlock>
 
+        {/* Six steps from 14 to 20px on a slider, not three segments: a
+            segmented control at six options is wider than the row, and a
+            size is a quantity, which is what a slider says. The live value
+            beside it is the number a reader can quote. */}
         <SettingRow
           label="Text size"
           description="Scales the whole interface. Stored on this device."
           control={
-            <SegmentedControl
-              ariaLabel="Text size"
-              value={fontSize}
-              onChange={(next) => {
-                setFontSize(next);
-                writeFontSize(next);
-              }}
-              options={FONT_SIZES.map((s) => ({ value: s.id, label: s.label }))}
-              optionClassName="px-3 text-xs"
-            />
+            <div className="flex w-56 items-center gap-3">
+              <span className="text-caption text-muted-foreground" aria-hidden="true">
+                A
+              </span>
+              <Slider
+                aria-label="Text size"
+                min={0}
+                max={FONT_SIZES.length - 1}
+                step={1}
+                value={[fontStep]}
+                onValueChange={([step]) => {
+                  const next = FONT_SIZES[step ?? 2]?.id ?? "default";
+                  setFontSize(next);
+                  writeFontSize(next);
+                }}
+              />
+              <span className="text-body-lg text-muted-foreground" aria-hidden="true">
+                A
+              </span>
+              <span className="w-10 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
+                {fontPx}px
+              </span>
+            </div>
           }
         />
       </SettingsGroup>

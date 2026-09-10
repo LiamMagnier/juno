@@ -28,7 +28,7 @@ const menuShell =
   "surface-float overlay-glass z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-popover p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain";
 
 const menuItem =
-  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-control px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
+  "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-control px-2 py-1.5 text-ui outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
@@ -155,7 +155,7 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", inset && "pl-8", className)}
+    className={cn("px-2 py-1.5 text-caption font-medium text-muted-foreground", inset && "pl-8", className)}
     {...props}
   />
 ));

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * when on.
  */
 const toggleVariants = cva(
-  "pressable inline-flex items-center justify-center gap-2 rounded-control border text-sm font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 data-[state=on]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "pressable inline-flex items-center justify-center gap-2 rounded-control border text-ui font-medium disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 data-[state=on]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -24,7 +24,7 @@ const toggleVariants = cva(
       },
       size: {
         default: "h-9 min-w-9 px-3 coarse:h-11 coarse:min-w-11",
-        sm: "h-8 min-w-8 px-2 text-xs coarse:h-10 coarse:min-w-10",
+        sm: "h-8 min-w-8 px-2 text-ui coarse:h-10 coarse:min-w-10",
         lg: "h-11 min-w-11 rounded-field px-4",
       },
     },

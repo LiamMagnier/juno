@@ -101,11 +101,11 @@ export function PersonalizationSection() {
                   onClick={() => void save({ personality: p.id })}
                   {...styleOption(i)}
                 >
-                  <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
+                  <span className="flex w-full items-center justify-between gap-2 text-body font-medium">
                     {p.label}
                     {selected && <StatusIcons.success className="size-3.5 shrink-0 text-primary" />}
                   </span>
-                  <span className="text-xs leading-relaxed text-muted-foreground">{p.description}</span>
+                  <span className="text-ui text-muted-foreground">{p.description}</span>
                 </Pressable>
               );
             })}

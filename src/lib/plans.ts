@@ -85,7 +85,10 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   MAX: {
     id: "MAX",
-    name: "Max x5",
+    // Display names only — the ids and the Stripe price mapping are untouched.
+    // The multiplier is the ratio of enforced budgets (BUDGET_EUR in spend.ts:
+    // 55 € against Pro's 11 €), and a true "×" rather than a letter x.
+    name: "Max ×5",
     price: 100,
     tagline: "For professionals who live in Juno.",
     monthlyMessages: null,
@@ -107,7 +110,12 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   MAX20: {
     id: "MAX20",
-    name: "Max x20",
+    // "×10", not the "x20" the id still carries: the enforced budget is 110 €
+    // against Pro's 11 € and the price is 200 € against 20 € — ten times on
+    // both counts. The id is a Stripe/DB constant and cannot be renamed
+    // without a migration; the name is what a customer reads, and it was
+    // promising twice what the meter delivers.
+    name: "Max ×10",
     price: 200,
     tagline: "For teams of one who never stop.",
     monthlyMessages: null,
