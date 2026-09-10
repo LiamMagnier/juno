@@ -82,7 +82,7 @@ a token that resolves to "no shadow" is a retune, not a migration.
 | `.surface-float` | `--popover` + hairline at 90% + `--shadow-float` |
 | `.control-neu` | hairline at rest → `--accent` fill + darker edge on hover → `--secondary` fill while on |
 | `.control-primary` | solid accent fill, no shadow; hover brightens 6%, press dips 3% |
-| `.composer-surface` | `--card` + hairline + one low soft throw; focus darkens the edge to ink/28% |
+| `.composer-surface` | `--card` + a hairline at the `--input` rung (the one edge on the page that must be found) + one low soft throw; focus darkens the edge to ink/30% |
 
 ## 4. Components
 
@@ -96,6 +96,19 @@ a token that resolves to "no shadow" is a retune, not a migration.
   the Claude / ChatGPT bubble.
 - **Switch, checkbox, radio, slider, progress, badge, kbd.** Tonal tracks,
   flat fills, no pressed recipe. The switch track is `--input` when off.
+- **Composer.** Three objects on the controls row — `+`, the model chip, the
+  send circle — plus quiet dictate / voice icon buttons when the surface has
+  them. Nothing else sits on the row: thinking effort is a segmented control
+  under the model list inside the picker; tools, project and connectors are
+  inside `+`; what is armed for *this* message (deep research) is a pill
+  beside `+`, never a count badge on it. The text and the `+` share one left
+  inset (16px / 10px), the text and the send circle share one right inset.
+  Two radii: the 20px shell and `rounded-control` for every inner object —
+  chips, tiles, the quote chip, the paste card. The send circle has one verb:
+  send ⇄ stop; disabled is a neutral `--secondary` disc, never the accent at
+  40%. The field stays live while a reply streams; Enter queues the next
+  message. Every composer in the product (Chat, Code, Work, Compare) draws
+  this through `ComposerShell` and its recipes.
 - **Model picker.** Three flat panes: a rail of configured labs on the left
   (plus All and Favorites), the lab's models on the right arranged by Text ·
   Image · Video with superseded generations folded away, and a spec sheet

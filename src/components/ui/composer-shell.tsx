@@ -25,14 +25,22 @@ import type { PendingUpload } from "@/hooks/use-uploads";
  *   │  above      attachment thumbnails / quote     │
  *   │  field      the textarea, directly on the     │
  *   │             surface — no well, no second box  │
- *   │  leading ······················ trailing  ●   │  one controls row
+ *   │  +  ····························  chip  ◎  ●  │  one controls row
  *   └──────────────────────────────────────────────┘
  *
  * The material is `.composer-surface` (globals.css): `bg-card`, a 1px
  * hairline, one low shadow. Focus darkens the edge and lifts the shadow one
- * notch; nothing else changes. There is deliberately no second tier — every
- * chip a surface needs (model, effort, target, permission, project) sits on
- * the same row, and the row scrolls sideways before it ever stacks.
+ * notch; nothing else changes.
+ *
+ * The row is deliberately sparse. Three objects at rest — `+`, the model
+ * chip, the send circle — and at most two quiet icon buttons (dictate,
+ * voice) between them. Everything else a composer can arm (thinking effort,
+ * tools, project, connectors) lives one press away inside `+` or the model
+ * popover, because a row that shows every option at once reads as a
+ * settings panel, and the field above it stops being the point. The `+`
+ * and the text share one left inset; the send circle and the text share
+ * one right inset. That alignment is most of what makes the box read as
+ * drawn rather than assembled.
  *
  * Slots only. No state, no pickers, no upload logic: every composer in the
  * product (chat, Code, Compare, Work) draws this box and owns everything in
@@ -44,9 +52,9 @@ export interface ComposerShellProps extends Omit<React.ComponentPropsWithoutRef<
   field: React.ReactNode;
   /** Left cluster of the controls row: `+`, and any context chips. */
   leading?: React.ReactNode;
-  /** Right cluster, before the primary action: model, effort, mic. */
+  /** Right cluster, before the primary action: model, mic. */
   trailing?: React.ReactNode;
-  /** The primary action — send ⇄ stop ⇄ voice. Never dimmed. */
+  /** The primary action — send ⇄ stop. Never dimmed. */
   action: React.ReactNode;
   /** Above the field, inside the surface: attachments, quote chip, clarification. */
   above?: React.ReactNode;
@@ -73,24 +81,28 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
   return (
     <div
       ref={ref}
-      className={cn("composer-surface relative flex w-full flex-col rounded-panel", className)}
+      className={cn("composer-surface relative flex w-full flex-col rounded-composer", className)}
       {...props}
     >
       <div ref={fieldTierRef} className="relative flex w-full min-w-0 flex-col">
         {above}
         {field}
-        <div className="flex flex-nowrap items-center gap-1.5 px-3 pb-3 pt-1">
-          <div className={cn("flex min-w-0 shrink-0 items-center gap-1.5", dim)}>
+        {/* px-2.5 puts the 32px `+` glyph's left edge 10px in and its centre
+            at 26px; the field's text starts at 16px. That is the Claude /
+            ChatGPT geometry — the glyph reads as hanging just outside the
+            text column rather than indented into it. */}
+        <div className="flex flex-nowrap items-center gap-1 px-2.5 pb-2.5 pt-0.5">
+          <div className={cn("flex min-w-0 shrink-0 items-center gap-1", dim)}>
             {leading}
           </div>
-          <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          <div className="ml-auto flex min-w-0 items-center gap-1">
             {/* No `overflow-x-auto` here. It used to scroll with no scrollbar
-                and no fade, so on a narrow window the effort chip and the mic
-                simply left the screen with nothing saying they existed. The
-                row now shrinks instead: `min-w-0` lets the model chip — the
-                one control on it carrying a long, truncatable string — give up
-                its width first, which is the right thing to lose. */}
-            {trailing && <div className={cn("flex min-w-0 items-center gap-1.5 py-1", dim)}>{trailing}</div>}
+                and no fade, so on a narrow window the chips simply left the
+                screen with nothing saying they existed. The row now shrinks
+                instead: `min-w-0` lets the model chip — the one control on it
+                carrying a long, truncatable string — give up its width first,
+                which is the right thing to lose. */}
+            {trailing && <div className={cn("flex min-w-0 items-center gap-1", dim)}>{trailing}</div>}
             {action}
           </div>
         </div>
@@ -107,35 +119,44 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
 export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } as const;
 
 /**
- * The textarea, directly on the surface: transparent, 16px inline / 14px
- * block padding, `text-base` because iOS Safari zooms into anything smaller.
+ * The textarea, directly on the surface: transparent, 16px inline padding
+ * (the same inset the `+` glyph hangs off), `text-base` because iOS Safari
+ * zooms into anything smaller.
  */
 export const composerFieldClass =
-  "block w-full resize-none bg-transparent min-h-16 px-5 pb-3 pt-4 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground disabled:opacity-60";
+  "block w-full resize-none bg-transparent min-h-[3.25rem] px-4 pb-2 pt-3.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80 disabled:opacity-60";
 
 /**
- * A flat text chip on the controls row: model, effort, target, permission.
- * Hover fills with the accent; open is the same fill with darker ink. No
- * raised or pressed treatment — the row is one quiet line of text.
+ * A flat text chip on the controls row: model, target, permission. Quiet at
+ * rest — muted ink, no fill — and it only takes the accent fill under the
+ * pointer or while its popover is open. A chip is a label on a control,
+ * not a button; it should read at the weight of the placeholder text beside
+ * it, not compete with the send circle.
  */
 export const composerChipClass =
-  "group inline-flex h-9 min-w-0 shrink-0 items-center gap-1.5 rounded-control px-2.5 font-sans text-ui font-medium text-foreground/80 transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-11";
+  "group inline-flex h-8 min-w-0 shrink-0 items-center gap-1 rounded-control px-2 font-sans text-ui font-medium text-muted-foreground transition-[background-color,color,opacity] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:bg-accent focus-visible:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none coarse:h-10";
 
 /** The chevron that closes a chip: quiet, and it turns while the chip is open. */
 export const composerChevronClass =
-  "size-3 shrink-0 opacity-60 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
+  "size-3 shrink-0 opacity-70 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none";
 
 /**
- * A 36px flat icon button (`+`, mic). Written against `<Button variant="ghost"
- * size="icon-sm">`, whose hover raises a card — every raised/pressed class is
- * cancelled here so the button stays flat and only the accent fill arrives.
+ * A 32px flat icon button (`+`, mic, voice). Written against `<Button
+ * variant="ghost" size="icon-sm">`, whose hover raises a card — every
+ * raised/pressed class is cancelled here so the button stays flat and only
+ * the accent fill arrives.
  */
 export const composerIconButtonClass =
-  "size-9 shrink-0 rounded-control focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-11";
+  "size-8 shrink-0 rounded-control focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring border-transparent bg-transparent text-muted-foreground shadow-none hover:border-transparent hover:bg-accent hover:text-foreground hover:shadow-none active:border-transparent active:bg-accent active:shadow-none data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:size-10";
 
-/** The thin rule between the chips and the mic/send pair. */
-export function ComposerDivider({ className }: { className?: string }) {
-  return <span aria-hidden="true" className={cn("mx-1 hidden h-4 w-px shrink-0 bg-border min-[380px]:block", className)} />;
+/**
+ * @deprecated The rule between the chips and the send pair is gone: the row
+ * is now three objects and a hairline between them was furniture. Kept as a
+ * no-op so composers that still import it keep compiling until they are
+ * retuned; delete the import when you touch one.
+ */
+export function ComposerDivider(_: { className?: string }) {
+  return null;
 }
 
 /**
@@ -213,9 +234,15 @@ export function useComposerAutosize(
 }
 
 /* ————————————————————————————————————————————————————————————————————————
- * Primary action: send ⇄ stop ⇄ voice ⇄ busy
+ * Primary action: send ⇄ stop ⇄ busy
  * ———————————————————————————————————————————————————————————————————— */
 
+/**
+ * `voice` is kept in the union for the surfaces that have not been retuned
+ * yet; it draws the send arrow. The send slot never launches a call any
+ * more — a second verb in the one accent-coloured control on the row was
+ * the thing people pressed by accident most.
+ */
 export type ComposerPrimaryFace = "send" | "stop" | "voice" | "busy";
 
 const FACE_MOTION = {
@@ -230,10 +257,15 @@ const FACE_MOTION = {
 };
 
 /**
- * The 36px coral circle. Flat — no raised shadow, no halo — and its face
- * cross-morphs (scale .9→1 + fade over `duration-fast`) between send, stop,
- * the voice wave and a spinner. `.composer-primary-action` is kept as a class
- * hook for the e2e suite; it carries no styles.
+ * The 32px accent circle. Flat — no raised shadow, no halo — and its face
+ * cross-morphs (scale .9→1 + fade over `duration-fast`) between send, stop
+ * and a spinner.
+ *
+ * Disabled is a NEUTRAL disc, not the accent at 40%. A washed-out coral
+ * circle sat on every empty composer and read as a broken button; a quiet
+ * secondary fill reads as "nothing to send yet", which is what it means.
+ * `.composer-primary-action` is kept as a class hook for the e2e suite; it
+ * carries no styles.
  */
 export interface ComposerPrimaryActionProps
   extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
@@ -246,10 +278,12 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
       <button
         ref={ref}
         type={type}
+        data-face={face}
         className={cn(
-          "composer-primary-action pressable relative grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
-          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-11",
+          "composer-primary-action pressable relative grid size-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-[background-color,color] duration-fast ease-out-soft",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card hover:bg-primary/90 active:scale-95",
+          "disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70",
+          "motion-reduce:transition-none motion-reduce:active:scale-100 coarse:size-10",
           className
         )}
         {...props}
@@ -264,19 +298,9 @@ const ComposerPrimaryAction = React.forwardRef<HTMLButtonElement, ComposerPrimar
               <motion.span key="stop" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
                 <Square className="size-3 fill-current" />
               </motion.span>
-            ) : face === "voice" ? (
-              <motion.span key="voice" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
-                <span className="composer-voice-wave">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </motion.span>
             ) : (
               <motion.span key="send" className="col-start-1 row-start-1 grid place-items-center" {...FACE_MOTION} aria-hidden="true">
-                <ArrowUp className="size-4" strokeWidth={2.25} />
+                <ArrowUp className="size-4" strokeWidth={2.5} />
               </motion.span>
             )}
           </AnimatePresence>
@@ -319,7 +343,9 @@ export function ComposerAttachmentTile({
     <div
       title={status ? `${upload.fileName} — ${status}` : upload.fileName}
       className={cn(
-        "group relative size-14 shrink-0 overflow-hidden rounded-field border border-border/70 bg-secondary",
+        // `rounded-control`: the same rung as every chip on the row below,
+        // so the tiles and the controls read as one family of objects.
+        "group relative size-14 shrink-0 overflow-hidden rounded-control border border-border/70 bg-secondary",
         upload.status === "error" && "border-destructive/60",
         className
       )}

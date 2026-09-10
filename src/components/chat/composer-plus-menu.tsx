@@ -37,7 +37,13 @@ import { cn } from "@/lib/utils";
  * the right on the same recipe, with Radix's own pointer grace area so a
  * diagonal move from the trigger into the flyout never closes it.
  *
- * The trigger shows the number of enabled tools; individual states live here.
+ * The trigger is a bare `+`. It used to carry a coral count badge, but the
+ * count included sticky preferences (web search, canvas, memory) that are on
+ * for everyone by default, so every fresh user saw a "2" or "3" pinned to
+ * the button on every message forever — a badge that is never zero is a
+ * decoration, and it spent the accent on something that was not state. What
+ * is armed for THIS message (deep research) shows as its own pill beside
+ * the trigger; the accessible name still lists everything that is on.
  * Small screens drill into subpanels in place to keep every row reachable.
  *
  * Keyboard (all native to the menu): ↑/↓ move, Enter/Space activate or
@@ -189,9 +195,6 @@ export function PlusMenu({
   sections: PlusMenuSection[];
   className?: string;
 }) {
-  const activeCount = sections
-    .flat()
-    .filter((item) => (item.kind === "toggle" && item.checked) || (item.kind === "sub" && item.armed)).length;
   const [compact, setCompact] = React.useState(false);
   const [panelId, setPanelId] = React.useState<string | null>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -227,26 +230,7 @@ export function PlusMenu({
               disabled={disabled}
               className={cn(composerIconButtonClass, "group relative", className)}
             >
-              <Plus
-                aria-hidden="true"
-                className="size-4 transition-transform duration-base ease-out-strong group-data-[state=open]:rotate-45 motion-reduce:transition-none"
-              />
-              {/* The count is a badge pinned over the corner, NOT a label
-                  inside the button. It used to render "Tools · 2" in the flow,
-                  which made the button three different widths — one per state,
-                  and a fourth below `sm` where the word was hidden — so turning
-                  a tool on shoved everything to its right along the row. A
-                  badge changes nothing about the button's box. The count is
-                  also already in the trigger's accessible name, which names
-                  what is on rather than how many. */}
-              {activeCount > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-primary text-[0.625rem] font-semibold leading-none text-primary-foreground"
-                >
-                  {activeCount}
-                </span>
-              )}
+              <Plus aria-hidden="true" className="size-4" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

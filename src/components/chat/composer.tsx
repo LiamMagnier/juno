@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   AudioLines,
   NotebookPen,
-  ChevronDown,
   Cpu,
   FileUp,
-  GraduationCap,
   LayoutTemplate,
   Loader2,
   MessageSquarePlus,
@@ -32,11 +30,8 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ComposerAttachmentRow,
-  ComposerDivider,
   ComposerPrimaryAction,
   ComposerShell,
-  composerChevronClass,
-  composerChipClass,
   composerFieldClass,
   composerIconButtonClass,
   useComposerAutosize,
@@ -59,11 +54,6 @@ import { RESEARCH_EFFORT_COPY, researchEffortLabel } from "@/components/research
 import { researchEffortFor } from "@/lib/research/auto-effort";
 import type { ResearchEffort } from "@/lib/research/domain";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
@@ -238,11 +228,11 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
 };
 
 const MAX_VOICE_IMAGES = 4;
-/** The composer's four states, on the shared primary action's four faces. */
+/** The composer's three states, on the shared primary action's faces. Voice
+ *  is its own button beside the mic — the send slot has one verb. */
 const PRIMARY_FACES = {
   checking: "busy",
   stop: "stop",
-  voice: "voice",
   send: "send",
 } as const satisfies Record<string, ComposerPrimaryFace>;
 // Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
@@ -727,11 +717,11 @@ export function Composer({
     return () => window.removeEventListener("juno:composer-seed", seed);
   }, []);
 
-  // Sending disables the textarea for the whole generation, which silently
-  // drops keyboard focus to <body>. Hand it back the moment the composer
-  // re-enables so Enter-to-send flows straight into typing the follow-up —
-  // but never steal focus from a field the user moved to mid-generation
-  // (only reclaim it from <body> or from within the composer itself).
+  // The pre-flight check and a hard send lock disable the textarea, which
+  // silently drops keyboard focus to <body>. Hand it back the moment the
+  // composer re-enables so Enter-to-send flows straight into typing the
+  // follow-up — but never steal focus from a field the user moved to in
+  // the meantime (only reclaim it from <body> or from within the composer).
   const wasBusyRef = React.useRef(false);
   React.useEffect(() => {
     const busy = isBusy || status === "checking";
@@ -820,6 +810,15 @@ export function Composer({
    * because there is no next send to configure.
    */
   const plusLocked = sendLocked || !!quotaReached;
+  /**
+   * What blocks a SEND, as opposed to what dims the row. A generation in
+   * flight is not on this list any more: the field stays live while a reply
+   * streams, because typing the next message during the answer is the most
+   * ordinary thing a person does in a chat, and Enter hands the draft to
+   * the chat hook, which queues it for the moment the reply ends — or
+   * refuses it, in which case the draft simply stays where it was.
+   */
+  const sendBlocked = sendLocked || uploading || !!quotaReached;
   const canSend = steerMode
     ? // No attachments and no clarification answers: direction is words, and a
       // file cannot be handed to a run that is already reading.
@@ -827,24 +826,45 @@ export function Composer({
     : (text.trim().length > 0 ||
         sendAttachments.length > 0 ||
         clarificationAnswers.length > 0) &&
-      !controlsLocked;
+      !sendBlocked;
 
-  // With nothing to send and voice available, the primary button becomes the
-  // voice-conversation launcher; the moment there is sendable content it morphs
-  // back into Send.
-  const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
+  // Voice is its own quiet button beside the mic. It used to take over the
+  // send circle whenever the field was empty, so the one accent-coloured
+  // control on the row meant "call" until you typed and "send" after — the
+  // button people pressed by accident most.
+  const showVoiceButton = !isBusy && !!onOpenVoiceMode;
 
-  // The primary button's faces: checking, stop (when busy), voice (when empty), or send.
-  const primaryFace: "checking" | "stop" | "voice" | "send" =
+  // The primary button's faces: checking, stop (when busy), or send.
+  const primaryFace: "checking" | "stop" | "send" =
     status === "checking"
       ? "checking"
       : steerMode && text.trim().length > 0
         ? "send"
         : isBusy
           ? "stop"
-          : showVoiceButton
-            ? "voice"
-            : "send";
+          : "send";
+  // The effort control the model popover draws under its panes. Absent when
+  // Auto picks the depth or the model has a single tier, so the footer only
+  // appears when there is a choice to make — which also retires the empty
+  // popover a single-tier model used to open.
+  const thinkingControl =
+    isAuto || !resolved || effortOptions.length < 2 ? null : (
+      <ReasoningSlider
+        options={effortOptions}
+        value={reasoningEffort}
+        onChange={onReasoningChange}
+        disabled={controlsLocked}
+        fastMode={fastMode}
+        onFastModeChange={
+          canFastMode && onToggleFastMode ? onToggleFastMode : undefined
+        }
+        proMode={proMode}
+        onProModeChange={
+          canProMode && onToggleProMode ? toggleProMode : undefined
+        }
+      />
+    );
+
   // Never split() multi-MB drafts just to count lines — sample the head only.
   const longText =
     text.trim().length > COMPOSER_LONG_TEXT_CHARS || sampleLineCount(text) > 30;
@@ -868,26 +888,12 @@ export function Composer({
     async (prompt: string): Promise<string[] | undefined> => {
       if (privateMode || !onToggleConnector) return undefined;
 
-      let available = connectors.map((c) => ({ id: c.id, label: c.label }));
-      // First paint may not have /api/connectors yet — fetch once so a prompt
-      // like "use my GitHub" still matches on a cold composer.
-      if (available.length === 0) {
-        try {
-          const response = await fetch("/api/connectors");
-          if (response.ok) {
-            const data = (await response.json()) as {
-              connectors?: { id: string; label: string; connected: boolean }[];
-            };
-            const list = data.connectors ?? [];
-            setAllConnectors(list);
-            available = list
-              .filter((c) => c.connected)
-              .map((c) => ({ id: c.id, label: c.label }));
-          }
-        } catch {
-          /* keep empty — no auto-enable without a live connection list */
-        }
-      }
+      // The connection list is loaded on mount by the refresh effect below.
+      // This used to fetch it here on a cold composer, which put a network
+      // round-trip BEFORE `onSend` and before any busy state — on a slow API
+      // the send button simply looked dead for a second or two. Nothing
+      // network-bound may sit between Enter and the request going out.
+      const available = connectors.map((c) => ({ id: c.id, label: c.label }));
       if (available.length === 0) return connectorsEnabled;
 
       const merged = detectConnectorsFromPrompt(
@@ -935,7 +941,7 @@ export function Composer({
       clarificationAnswers.length === 0
     )
       return;
-    if (controlsLocked) return;
+    if (sendBlocked) return;
     try {
       // Direction into the live run, not a message into the thread. First,
       // because every path below this builds an outgoing chat turn.
@@ -1114,15 +1120,6 @@ export function Composer({
         },
       },
       {
-        id: "learn-demo",
-        key: "learn-demo",
-        label: "/learn-demo",
-        hint: "Preview the visual learning blocks",
-        group: "commands",
-        icon: GraduationCap,
-        run: () => window.dispatchEvent(new CustomEvent("juno:learning-demo")),
-      },
-      {
         id: "search",
         key: "search",
         label: "/search",
@@ -1249,23 +1246,14 @@ export function Composer({
         on: settings.memoryEnabled,
         run: () => toggleMemory(!settings.memoryEnabled),
       },
-      {
-        id: "tool:python",
-        key: "python",
-        label: "@python",
-        hint: "Python sandbox & data analysis",
-        group: "tools",
-        icon: AppIcons.code,
-        on: true,
-        run: () =>
-          toast.success("Python interpreter & data analysis sandbox active."),
-      },
+      // No "@python" row: the sandbox is always on, and a switch that cannot
+      // be switched was the one fake control in this list.
       {
         id: "tool:assistants",
         key: "assistants",
         label: "@assistants",
         hint: "Browse & switch Juno Assistants",
-        group: "tools",
+        group: "navigate",
         icon: AppIcons.assistants,
         run: () => router.push("/assistants"),
       },
@@ -2079,7 +2067,7 @@ export function Composer({
       {quotaReached && (
         <div
           role="status"
-          className="mb-2 rounded-card border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm text-foreground"
+          className="mb-2 rounded-control border border-primary/30 bg-primary/5 px-3 py-2 text-center text-ui text-foreground"
         >
           {planIncludesNoMessages ? (
             <>
@@ -2109,7 +2097,7 @@ export function Composer({
           instead; the chip only announces where a brand-new chat will land. */}
       {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-caption text-muted-foreground">
+          <span className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border bg-card px-2.5 text-caption text-muted-foreground">
             <AppIcons.projects className="size-3 text-primary" />
             <span>
               {"New chat in "}
@@ -2205,9 +2193,9 @@ export function Composer({
             {quote && (
               <div
                 className={cn(
-                  // `rounded-field`, like the collapsed-draft card that shares this
-                  // slot — the two attachment cards were on two radii for no reason.
-                  "mx-3 mt-3 flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/5 px-3 py-2",
+                  // `rounded-control`, the one inner radius the composer uses:
+                  // the same rung as the chips below and the tiles beside it.
+                  "mx-4 mt-3.5 flex items-start gap-2.5 rounded-control border border-primary/25 bg-primary/5 px-3 py-2",
                   quoteRemoving
                     ? "pointer-events-none motion-safe:animate-pop-out"
                     : "motion-safe:animate-rise-in",
@@ -2255,7 +2243,7 @@ export function Composer({
 
             {showCollapsedDraft && (
               <div
-                className="mx-3 mt-3 flex flex-col gap-2 rounded-field border border-border/70 bg-secondary px-3 py-3 sm:mx-3.5"
+                className="mx-4 mt-3.5 flex flex-col gap-2 rounded-control border border-border/70 bg-secondary px-3 py-3"
                 tabIndex={0}
                 role="group"
                 aria-label="Large paste ready to send. Press Enter to send."
@@ -2526,11 +2514,10 @@ export function Composer({
                 onChange={(e) => setDraftText(e.target.value)}
                 onKeyDown={onKeyDown}
                 onPaste={onPaste}
-                // Steering keeps the field live through a generation — that is the
-                // whole point of it. Every other busy state still locks it.
-                disabled={
-                  (isBusy && !steerMode) || sendLocked || status === "checking"
-                }
+                // Live through a generation: the draft for the next message is
+                // typed while the reply streams (see `sendBlocked`). Only a hard
+                // send lock and the pre-flight check take the field away.
+                disabled={sendLocked || status === "checking"}
                 rows={1}
                 placeholder={
                   steerMode && steering ? steering.placeholder : placeholder
@@ -2582,10 +2569,10 @@ export function Composer({
               sections={plusSections}
             />
             {researchArmed && (
-              /* h-9, like every other control on this row. It was h-8: an
-                 8px-shorter object in the middle of the left cluster, which is
-                 the kind of thing you cannot name but can see. */
-              <span className="composer-armed-pill inline-flex h-9 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-11">
+              /* h-8, like every other control on this row: a pill one pixel
+                 taller or shorter than its neighbours is the kind of thing you
+                 cannot name but can see. */
+              <span className="composer-armed-pill inline-flex h-8 shrink-0 items-center overflow-hidden rounded-control border border-primary/30 bg-primary/10 text-caption font-medium text-primary-ink motion-safe:animate-pop-in coarse:h-10">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     {/* A button, not a `tabIndex={0}` span. It was focusable
@@ -2624,129 +2611,53 @@ export function Composer({
           }
           trailing={
             <>
-                {/* Model + thinking effort, beside Send (SOFT_UI.md §3). */}
-                {/* No `aria-disabled` on this wrapper: it is a plain div, so
-                    the attribute described nothing to anyone. The inner button
-                    is properly disabled, which is what assistive technology
-                    reads. */}
-                <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
-                  <ModelSelector value={model} onChange={changeModel} disabled={controlsLocked} />
-                </div>
-
-                {/* Thinking effort */}
-                {/* A READOUT, not a button. This was a focusable `<Button>`
-                    carrying `aria-disabled` but no `disabled` and no handler:
-                    it took a tab stop, showed a pointer-ish affordance, and
-                    pressing it did nothing at all. When thinking depth follows
-                    the model there is no choice to offer, so the row says so
-                    and stops pretending otherwise. */}
-                {isAuto && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        role="status"
-                        aria-label="Thinking effort: Auto — chosen automatically with the model"
-                        className={cn(composerChipClass, "cursor-default text-muted-foreground hover:bg-transparent hover:text-muted-foreground")}
-                      >
-                        <span className="min-w-0 truncate">Auto</span>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Thinking depth is chosen automatically with the model
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-
-                {!isAuto &&
-                  effortOptions.length > 0 &&
-                  (() => {
-                    const clampedEffort = resolved
-                      ? clampReasoningEffort(resolved, reasoningEffort)
-                      : reasoningEffort;
-                    const currentEffort =
-                      effortOptions.find((e) => e.value === clampedEffort) ??
-                      effortOptions[0];
-                    const compactEffortLabel =
-                      currentEffort.label === "Extra high"
-                        ? "X-high"
-                        : currentEffort.label;
-                    const atTopTier =
-                      effortOptions.length > 1 &&
-                      currentEffort.value ===
-                        effortOptions[effortOptions.length - 1].value;
-                    return (
-                      <Tooltip>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                disabled={controlsLocked}
-                                aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
-                                className={cn(
-                                  composerChipClass,
-                                  atTopTier && "text-primary hover:text-primary",
-                                )}
-                              >
-                                <span className="min-w-0 truncate">
-                                  {compactEffortLabel}
-                                </span>
-                                <ChevronDown className={composerChevronClass} />
-                              </Button>
-                            </TooltipTrigger>
-                          </PopoverTrigger>
-                          <PopoverContent
-                            align="start"
-                            sideOffset={10}
-                            className="w-[300px] origin-popper p-4"
-                          >
-                            <ReasoningSlider
-                              options={effortOptions}
-                              value={reasoningEffort}
-                              onChange={onReasoningChange}
-                              disabled={controlsLocked}
-                              fastMode={fastMode}
-                              onFastModeChange={
-                                canFastMode && onToggleFastMode
-                                  ? onToggleFastMode
-                                  : undefined
-                              }
-                              proMode={proMode}
-                              onProModeChange={
-                                canProMode && onToggleProMode
-                                  ? toggleProMode
-                                  : undefined
-                              }
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <TooltipContent>Thinking effort</TooltipContent>
-                      </Tooltip>
-                    );
-                  })()}
-                {speechSupported && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => setDictating(true)}
-                        disabled={controlsLocked || dictating || voiceActive}
-                        aria-label="Dictate"
-                        aria-pressed={dictating}
-                        className={composerIconButtonClass}
-                      >
-                        <Mic className="size-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Dictate</TooltipContent>
-                  </Tooltip>
-                )}
-
-                <ComposerDivider />
+              {/* The model chip — and, inside its popover, the thinking effort
+                  for that model (`thinkingControl`). One chip for one decision. */}
+              <div className={cn("min-w-0", controlsLocked && "pointer-events-none")}>
+                <ModelSelector
+                  value={model}
+                  onChange={changeModel}
+                  disabled={controlsLocked}
+                  thinking={thinkingControl}
+                />
+              </div>
+              {speechSupported && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setDictating(true)}
+                      disabled={controlsLocked || dictating || voiceActive}
+                      aria-label="Dictate"
+                      aria-pressed={dictating}
+                      className={composerIconButtonClass}
+                    >
+                      <Mic className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Dictate</TooltipContent>
+                </Tooltip>
+              )}
+              {showVoiceButton && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={onOpenVoiceMode}
+                      disabled={dictating || sendLocked}
+                      aria-label="Start voice conversation"
+                      className={composerIconButtonClass}
+                    >
+                      <AudioLines className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Voice conversation</TooltipContent>
+                </Tooltip>
+              )}
             </>
           }
           action={
@@ -2755,31 +2666,23 @@ export function Composer({
                     <ComposerPrimaryAction
                       face={PRIMARY_FACES[primaryFace]}
                       onClick={
-                        primaryFace === "stop"
-                          ? onStop
-                          : primaryFace === "voice"
-                            ? onOpenVoiceMode
-                            : () => void submit()
+                        primaryFace === "stop" ? onStop : () => void submit()
                       }
                       disabled={
                         primaryFace === "stop"
                           ? status === "stopping" || status === "checking"
-                          : primaryFace === "voice"
-                            ? false
-                            : !canSend
+                          : !canSend
                       }
                       aria-label={
                         primaryFace === "stop"
                           ? status === "stopping"
                             ? "Stopping generation"
                             : "Stop generating"
-                          : primaryFace === "voice"
-                            ? "Start voice conversation"
-                            : uploading
-                              ? "Send — waiting for the attachment to finish uploading"
-                              : steerMode
-                                ? "Add this to the research"
-                                : "Send message"
+                          : uploading
+                            ? "Send — waiting for the attachment to finish uploading"
+                            : steerMode
+                              ? "Add this to the research"
+                              : "Send message"
                       }
                     />
                   </TooltipTrigger>
@@ -2792,13 +2695,11 @@ export function Composer({
                       ? steerMode
                         ? "Stop the research"
                         : "Stop"
-                      : primaryFace === "voice"
-                        ? "Voice conversation"
-                        : uploading
-                          ? "Waiting for the upload to finish"
-                          : steerMode
-                            ? "Add to the research"
-                            : "Send"}
+                      : uploading
+                        ? "Waiting for the upload to finish"
+                        : steerMode
+                          ? "Add to the research"
+                          : "Send"}
                   </TooltipContent>
                 </Tooltip>
           }

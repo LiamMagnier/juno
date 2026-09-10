@@ -56,8 +56,15 @@ type Filter = "all" | "favorites" | Provider;
  *
  * Favorites are persisted to the account and lead the All view; the star on
  * a row toggles them. Recents stay per browser, like a draft. Auto leads All
- * as Juno's recommendation. Thinking effort is not in here: it is its own
- * chip on the composer.
+ * as Juno's recommendation.
+ *
+ * Thinking effort lives HERE, as a footer under the three panes, passed in
+ * by the composer as `thinking`. It used to be its own chip beside this one
+ * — two words with two chevrons for one decision ("which model, how hard")
+ * — and the row read as a toolbar. Claude ships effort under its model
+ * list; ChatGPT folded Instant/Thinking into one entry with an effort
+ * control. One chip, one popover, the model list on top and the effort
+ * underneath, is the shape both converged on.
  */
 
 /** Most recently chosen models, newest first. Per browser, like a draft. */
@@ -471,11 +478,15 @@ export function ModelSelector({
   onChange,
   filter: modelFilter,
   disabled = false,
+  thinking,
 }: {
   value: ModelId;
   onChange: (m: ModelId) => void;
   filter?: (model: ModelInfo) => boolean;
   disabled?: boolean;
+  /** The thinking-effort control for the chosen model, drawn as a footer
+   *  under the panes. Omit it (or pass null) when the model has one effort. */
+  thinking?: React.ReactNode;
 }) {
   const router = useRouter();
   const { quota, models, settings } = useApp();
@@ -728,7 +739,7 @@ export function ModelSelector({
           // The shared composer chip: flat text, accent fill on hover and while
           // open. The name is set in the UI face, not mono — it is a label on a
           // control, not a value in a table.
-          className={cn(composerChipClass, "max-w-[9rem] px-2 sm:max-w-[16rem]")}
+          className={cn(composerChipClass, "max-w-[9rem] sm:max-w-[16rem]")}
         >
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded-sm sm:size-4" />
@@ -848,6 +859,12 @@ export function ModelSelector({
             onToggleStar={() => sheetModel && toggleFavorite(sheetModel.id)}
           />
         </div>
+        {thinking && (
+          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-3 py-2.5">
+            <span className="text-ui font-medium text-muted-foreground">Thinking</span>
+            <div className="min-w-0 flex-1">{thinking}</div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
