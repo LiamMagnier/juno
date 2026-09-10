@@ -2217,7 +2217,7 @@ export function Composer({
                     <span className="shrink-0 font-mono text-label text-primary">
                       {quote.mode === "modify" ? "Modify" : "Ask"}
                     </span>
-                    <span className="min-w-0 truncate text-sm font-medium">
+                    <span className="min-w-0 truncate text-ui font-medium">
                       {quote.title}
                     </span>
                     {quoteLocationLabel(quote) && (
@@ -2260,7 +2260,7 @@ export function Composer({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">
+                    <p className="text-ui font-medium">
                       Large paste ready to send
                     </p>
                     <p className="mt-0.5 font-mono text-caption text-muted-foreground">
@@ -2394,7 +2394,7 @@ export function Composer({
                               className="size-4"
                             />
                           </PaletteIcon>
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          <span className="min-w-0 flex-1 truncate text-ui font-medium">
                             {m.name}
                           </span>
                           <span className="shrink-0 text-caption text-muted-foreground">
@@ -2467,7 +2467,7 @@ export function Composer({
                                 ) : null}
                               </PaletteIcon>
                               <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                                <span className="max-w-[55%] shrink-0 truncate font-mono text-sm">
+                                <span className="max-w-[55%] shrink-0 truncate font-mono text-ui">
                                   {item.label}
                                 </span>
                                 <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">

@@ -124,6 +124,7 @@ export const COMPOSER_SPRING = { type: "spring", stiffness: 380, damping: 32 } a
  * zooms into anything smaller.
  */
 export const composerFieldClass =
+  // eslint-disable-next-line design-system/no-raw-text-size -- 16px exactly: iOS Safari zooms the page into any focused field below it, and body-lg (17px) is a different measure.
   "block w-full resize-none bg-transparent min-h-[3.25rem] px-4 pb-2 pt-3.5 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/80 disabled:opacity-60";
 
 /**
