@@ -307,7 +307,11 @@ export async function* streamAnthropic(
    * why the final round narrows the choice instead of dropping `tools` — a
    * history containing tool_use blocks still needs the definitions present.
    */
-  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
+  // `webSearch` earns rounds of its own: Claude's server-side search loop can
+  // end a turn with `pause_turn` (its internal iteration cap) on a turn that
+  // carries no connector tools at all, and continuing that turn is another
+  // request — with maxRounds pinned at 1 there was nowhere to continue to.
+  const maxRounds = hasTools || webSearch ? MAX_TOOL_ROUNDS + 1 : 1;
   let lastStopReason: string | null = null;
 
   for (let roundIndex = 0; roundIndex < maxRounds; roundIndex++) {
@@ -378,6 +382,18 @@ export async function* streamAnthropic(
 
     // Claude asked for tools and the budget allows another round: run them
     // through the broker and feed the results back.
+    /*
+     * `pause_turn`: Anthropic paused a long server-tool turn and asks for it
+     * back. The contract is to append the assistant content UNCHANGED and send
+     * again — no tool results, nothing synthesised, because no client tool_use
+     * is waiting. Juno used to treat it as a terminal stop, which ended the
+     * turn mid-search and showed the user a finished answer that was not one.
+     */
+    if (!isFinalRound && stopReason === "pause_turn" && blocks.length > 0) {
+      messages.push({ role: "assistant", content: blocks });
+      continue;
+    }
+
     if (hasTools && !isFinalRound && stopReason === "tool_use" && toolUses.length > 0) {
       messages.push({ role: "assistant", content: blocks });
       const results: Anthropic.Messages.ToolResultBlockParam[] = [];
@@ -410,7 +426,8 @@ export async function* streamAnthropic(
   // A trailing `tool_use` means even the forced-answer round wanted more tools.
   // Report it as a length stop so the UI offers Continue rather than showing a
   // clean finish over a turn that never actually answered.
-  const finalStop = lastStopReason === "tool_use" ? "max_tokens" : lastStopReason;
+  const finalStop =
+    lastStopReason === "tool_use" || lastStopReason === "pause_turn" ? "max_tokens" : lastStopReason;
   if (finalStop) yield { type: "finish", reason: normalizeFinishReason(finalStop), raw: finalStop };
 
   // Single authoritative usage event after the stream completes.

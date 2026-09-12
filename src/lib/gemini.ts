@@ -1,6 +1,5 @@
 import "server-only";
 import { normalizeFinishReason } from "@/lib/finish-reason";
-import { providerApiKey } from "@/lib/providers";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -12,10 +11,22 @@ import {
   geminiThinkingBudget,
   geminiThinkingConfig,
   geminiGenerationConfig,
+  geminiEndpoint,
+  geminiModelPath,
+  geminiRequestBody,
+  geminiToolsPayload,
+  getGoogleApiKeys,
+  isGemini3OrLater,
   MAX_GEMINI_TOOL_ROUNDS,
   type GeminiPart,
   type GeminiContent,
 } from "@/lib/gemini-core";
+import {
+  applyGeminiChunk,
+  appendGeminiToolRound,
+  emptyGeminiRound,
+  extractGeminiSseEvents,
+} from "@/lib/gemini-round";
 import { GeminiProviderError, requestGeminiStream, type GeminiRequestContext } from "@/lib/gemini-network";
 
 export {
@@ -24,6 +35,8 @@ export {
   geminiThinkingBudget,
   geminiThinkingConfig,
   geminiGenerationConfig,
+  getGoogleApiKeys,
+  isGemini3OrLater,
   type GeminiPart,
   type GeminiContent,
 };
@@ -36,16 +49,6 @@ export function toGeminiFunctionDeclarations(toolset: McpToolset) {
     description: t.function.description ?? "",
     parameters: t.function.parameters ?? { type: "object", properties: {} },
   }));
-}
-
-export function getGoogleApiKeys(): string[] {
-  const keys = [
-    providerApiKey("google"),
-    process.env.GOOGLE_API_KEY,
-    process.env.GEMINI_LIVE_API_KEY,
-    process.env.GEMINI_API_KEY,
-  ].filter((k): k is string => typeof k === "string" && k.trim().length > 0);
-  return [...new Set(keys)];
 }
 
 /**
@@ -81,29 +84,19 @@ export async function* streamGemini(
     contents.splice(lastUser, 0, { role: "user", parts: [{ text: dynamicContext }] });
   }
 
-  const path = model.providerModel.startsWith("models/")
-    ? model.providerModel
-    : `models/${model.providerModel}`;
-  const url = `https://generativelanguage.googleapis.com/v1beta/${path}:streamGenerateContent?alt=sse`;
+  const url = geminiEndpoint(model, "streamGenerateContent");
   const geminiContext: GeminiRequestContext = {
     modelId: model.id,
     providerModel: model.providerModel,
     reasoningEffort: reasoningEffort ?? null,
-    endpoint: `${path}:streamGenerateContent`,
+    endpoint: `${geminiModelPath(model)}:streamGenerateContent`,
     requestId: requestContext?.requestId,
     generationId: requestContext?.generationId,
     conversationId: requestContext?.conversationId,
   };
 
   const hasTools = !!toolset && toolset.tools.length > 0;
-  const toolsPayload: Array<Record<string, unknown>> = [];
-  if (hasTools) {
-    toolsPayload.push({ functionDeclarations: toGeminiFunctionDeclarations(toolset) });
-  }
-  if (webSearch) {
-    toolsPayload.push({ google_search: {} });
-  }
-
+  const functionDeclarations = hasTools ? toGeminiFunctionDeclarations(toolset) : [];
   const generationConfig = geminiGenerationConfig(model, maxTokens, reasoningEffort);
 
   const sources = new Map<string, ClientSource>();
@@ -114,21 +107,21 @@ export async function* streamGemini(
   let cumTotal = 0;
   let sawUsage = false;
   let lastFinishReason: string | undefined;
+  let groundedWithSearchWidget = false;
 
   const maxRounds = hasTools ? MAX_GEMINI_TOOL_ROUNDS + 1 : 1;
 
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
-    const requestBody: Record<string, unknown> = {
+    const requestBody = geminiRequestBody({
       contents,
       generationConfig,
-    };
-    if (system?.trim()) {
-      requestBody.systemInstruction = { parts: [{ text: system }] };
-    }
-    if (toolsPayload.length > 0 && !isFinalRound) {
-      requestBody.tools = toolsPayload;
-    }
+      system,
+      // `google_search` is a SERVER-side tool that resolves inside one request,
+      // so it rides on every round — including the single round of a turn with
+      // no function tools, which is where it used to be dropped entirely.
+      tools: geminiToolsPayload({ model, functionDeclarations, webSearch, isFinalRound }),
+    });
 
     const res = await requestGeminiStream({
       url,
@@ -146,100 +139,27 @@ export async function* streamGemini(
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let streamBuffer = "";
-    let roundInput = 0;
-    let roundOutput = 0;
-    let roundCached = 0;
-    let roundThoughts = 0;
-    let roundTotal = 0;
-    let roundSawUsage = false;
-
-    const roundAssistantParts: GeminiPart[] = [];
-    const pendingFunctionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
-    let roundSawSignal = false;
-
-    const handleChunk = (jsonText: string) => {
-      let data: {
-        candidates?: Array<{
-          content?: { parts?: Array<{ text?: string; thought?: boolean; functionCall?: { name?: string; args?: Record<string, unknown> } }> };
-          finishReason?: string;
-          groundingMetadata?: { groundingChunks?: Array<{ web?: { uri?: string; title?: string } }> };
-        }>;
-        usageMetadata?: {
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-          cachedContentTokenCount?: number;
-          thoughtsTokenCount?: number;
-          totalTokenCount?: number;
-        };
-      };
-      try {
-        data = JSON.parse(jsonText);
-      } catch {
-        return;
-      }
-
-      const candidate = data.candidates?.[0];
-      if (candidate || data.usageMetadata) roundSawSignal = true;
-      if (candidate?.finishReason) {
-        lastFinishReason = candidate.finishReason;
-      }
-
-      for (const part of candidate?.content?.parts ?? []) {
-        if (part.functionCall?.name) {
-          const name = part.functionCall.name;
-          const args = part.functionCall.args ?? {};
-          pendingFunctionCalls.push({ name, args });
-          roundAssistantParts.push({ functionCall: { name, args } });
-        } else if (part.text) {
-          roundAssistantParts.push(part.thought ? { thought: true, text: part.text } : { text: part.text });
-          if (part.thought) {
-            yieldEvents.push({ type: "reasoning", text: part.text });
-          } else {
-            yieldEvents.push({ type: "text", text: part.text });
-          }
-        }
-      }
-
-      for (const ch of candidate?.groundingMetadata?.groundingChunks ?? []) {
-        const web = ch.web;
-        if (web?.uri && !sources.has(web.uri)) {
-          sources.set(web.uri, { title: web.title || web.uri, url: web.uri, snippet: "" });
-        }
-      }
-
-      if (data.usageMetadata) {
-        roundSawUsage = true;
-        roundInput = data.usageMetadata.promptTokenCount ?? roundInput;
-        roundOutput = data.usageMetadata.candidatesTokenCount ?? roundOutput;
-        roundCached = data.usageMetadata.cachedContentTokenCount ?? roundCached;
-        roundThoughts = data.usageMetadata.thoughtsTokenCount ?? roundThoughts;
-        roundTotal = data.usageMetadata.totalTokenCount ?? roundTotal;
-      }
-    };
-
-    const yieldEvents: LlmEvent[] = [];
+    const state = emptyGeminiRound();
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       streamBuffer += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = streamBuffer.indexOf("\n")) !== -1) {
-        const line = streamBuffer.slice(0, idx).trim();
-        streamBuffer = streamBuffer.slice(idx + 1);
-        if (!line.startsWith("data:")) continue;
-        const json = line.slice(5).trim();
-        if (json) {
-          handleChunk(json);
-          while (yieldEvents.length > 0) {
-            const ev = yieldEvents.shift();
-            if (ev) yield ev;
-          }
+      const { payloads, rest } = extractGeminiSseEvents(streamBuffer);
+      streamBuffer = rest;
+      for (const payload of payloads) {
+        applyGeminiChunk(state, payload, sources);
+        while (state.events.length > 0) {
+          const ev = state.events.shift();
+          if (ev) yield ev;
         }
       }
     }
 
-    if (!roundSawSignal) {
+    if (state.finishReason) lastFinishReason = state.finishReason;
+    if (state.searchEntryPoint) groundedWithSearchWidget = true;
+
+    if (!state.sawSignal) {
       throw new GeminiProviderError({
         httpStatus: 502,
         googleStatus: "EMPTY_STREAM",
@@ -248,20 +168,19 @@ export async function* streamGemini(
       });
     }
 
-    if (roundSawUsage) {
+    if (state.sawUsage) {
       sawUsage = true;
-      cumInput += roundInput;
-      cumOutput += roundOutput;
-      cumCached += roundCached;
-      cumThoughts += roundThoughts;
-      cumTotal += roundTotal;
+      cumInput += state.usage.input;
+      cumOutput += state.usage.output;
+      cumCached += state.usage.cached;
+      cumThoughts += state.usage.thoughts;
+      cumTotal += state.usage.total;
     }
 
-    if (hasTools && !isFinalRound && pendingFunctionCalls.length > 0) {
-      contents.push({ role: "model", parts: roundAssistantParts });
-      const responseParts: GeminiPart[] = [];
+    if (hasTools && !isFinalRound && state.functionCalls.length > 0) {
+      const responseParts: Array<{ name: string; response: Record<string, unknown> }> = [];
 
-      for (const call of pendingFunctionCalls) {
+      for (const call of state.functionCalls) {
         const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const label = toolset.labelFor(call.name);
         yield {
@@ -274,12 +193,7 @@ export async function* streamGemini(
         };
 
         const exec = await toolset.execute(call.name, call.args, signal, callId);
-        responseParts.push({
-          functionResponse: {
-            name: call.name,
-            response: { result: exec.body ?? exec.text },
-          },
-        });
+        responseParts.push({ name: call.name, response: { result: exec.body ?? exec.text } });
 
         yield {
           type: "tool",
@@ -293,7 +207,8 @@ export async function* streamGemini(
         };
       }
 
-      contents.push({ role: "user", parts: responseParts });
+      // Replays the assistant parts UNCHANGED, thought signatures included.
+      appendGeminiToolRound(contents, state.assistantParts, responseParts);
       continue;
     }
 
@@ -325,5 +240,19 @@ export async function* streamGemini(
   }
 
   const finalRaw = lastFinishReason;
+  // Operator-visible evidence that grounding actually ran: the UI announces
+  // "Google Search grounding" from the request side, and for a long time that
+  // announcement was the only trace of a search that never happened.
+  console.info("[llm:gemini] stream finish", {
+    model: model.providerModel,
+    finishReason: finalRaw,
+    webSearch: !!webSearch,
+    grounded: sources.size > 0 || groundedWithSearchWidget,
+    sources: sources.size,
+    promptTokens: sawUsage ? cumInput : null,
+    completionTokens: sawUsage ? cumOutput : null,
+    thoughtTokens: sawUsage ? cumThoughts || null : null,
+    cachedTokens: sawUsage ? cumCached || null : null,
+  });
   yield { type: "finish", reason: normalizeFinishReason(finalRaw), raw: finalRaw };
 }

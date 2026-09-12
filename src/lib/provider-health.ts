@@ -8,12 +8,12 @@ import {
   type ProbeOutcome,
   type ProviderHealthState,
 } from "@/lib/provider-health-policy";
-import { MODELS } from "@/lib/models";
+import { MODELS, type ModelInfo } from "@/lib/models";
+import { probeRequestFor } from "@/lib/model-capability-probe";
 import {
   PROVIDERS,
   configuredProviders,
   providerApiKey,
-  providerBaseUrl,
   type Provider,
 } from "@/lib/providers";
 
@@ -95,13 +95,13 @@ function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): Boun
 }
 
 /** Cheapest curated chat model for a provider — the probe should cost nothing. */
-function probeModel(provider: Provider): string | null {
+function probeModel(provider: Provider): ModelInfo | null {
   const candidates = Object.values(MODELS).filter(
-    (m) => m.provider === provider && m.modality === "chat" && !m.comingSoon && m.api !== "responses"
+    (m) => m.provider === provider && m.modality === "chat" && !m.comingSoon
   );
   if (!candidates.length) return null;
   candidates.sort((a, b) => a.cost - b.cost);
-  return candidates[0].providerModel;
+  return candidates[0];
 }
 
 /** Issue the smallest possible completion. Resolves on success, throws on failure. */
@@ -112,24 +112,22 @@ async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promis
   const model = probeModel(provider);
   if (!model) throw new Error("No probe model for provider");
 
-  const def = PROVIDERS[provider];
-  const isAnthropic = def.kind === "anthropic";
-  const base = (providerBaseUrl(provider) ?? "https://api.anthropic.com").replace(/\/$/, "");
-  const url = isAnthropic ? `${base}/v1/messages` : `${base}/chat/completions`;
+  // The SAME request builder the capability probe uses, so "is this lab
+  // answering?" is asked on the transport that will actually serve traffic.
+  // Google was asked on the OpenAI-compat shim while every Gemini chat goes to
+  // the native GenerateContent surface, so a shim-only fault could mark a
+  // perfectly healthy lab down — and a shim-only recovery could mark a broken
+  // one up.
+  const request = probeRequestFor(model, apiKey);
+  if (!request) throw new Error("No probe endpoint for provider");
   const deadline = boundedSignal(parentSignal, PROVIDER_PROBE_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(request.url, {
       method: "POST",
       signal: deadline.signal,
-      headers: isAnthropic
-        ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-        : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        max_tokens: 1,
-        messages: [{ role: "user", content: "hi" }],
-      }),
+      headers: request.headers,
+      body: JSON.stringify(request.body),
     });
 
     if (res.ok) return;

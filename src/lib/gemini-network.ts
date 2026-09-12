@@ -50,6 +50,11 @@ export function isRetryableGeminiStatus(status: number): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || status === 529;
 }
 
+/** Only these say "this credential is the problem" — everything else is weather. */
+export function isGeminiAuthStatus(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
 export function geminiErrorFromResponse(
   httpStatus: number,
   body: string,
@@ -123,8 +128,19 @@ export async function requestGeminiStream(
   const maxAttempts = Math.max(1, Math.min(4, dependencies.maxAttempts ?? 4));
   const startedAt = Date.now();
 
+  /*
+   * The key only moves on an AUTH failure.
+   *
+   * Rotating on every attempt (`keys[(attempt - 1) % keys.length]`) meant the
+   * retry after a transient 429 was made with a DIFFERENT credential — so a
+   * rate limit on the good key became a 401 on the second key, and 401 is not
+   * retryable. Retries are for weather; a second key is for a credential that
+   * is actually rejected, and only then is it worth spending an attempt on.
+   */
+  let keyIndex = 0;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const activeKey = keys.length > 0 ? keys[(attempt - 1) % keys.length] : undefined;
+    const activeKey = keys.length > 0 ? keys[Math.min(keyIndex, keys.length - 1)] : undefined;
     const reqInit = { ...input.init };
     if (activeKey) {
       reqInit.headers = {
@@ -162,7 +178,14 @@ export async function requestGeminiStream(
       retryable: error.retryable,
     }));
 
-    if (!error.retryable || attempt >= maxAttempts) throw error;
+    // A rejected credential is worth one more attempt ONLY if another distinct
+    // key exists; otherwise the same key would be replayed for the same answer.
+    const canRotateKey = isGeminiAuthStatus(error.status) && keyIndex + 1 < keys.length;
+    if ((!error.retryable && !canRotateKey) || attempt >= maxAttempts) throw error;
+    if (canRotateKey) {
+      keyIndex++;
+      continue; // a different credential needs no backoff
+    }
     await sleep(retryDelayMs(response, attempt, error.error.message), input.signal);
   }
 

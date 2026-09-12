@@ -10,43 +10,15 @@ import { type ActiveConnector, type McpToolset, type McpToolsetContext } from "@
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
 import { providerAdapterFor } from "@/lib/provider-routing";
+import { clampMaxTokens } from "@/lib/provider-limits";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
+export { clampMaxTokens };
+
 /** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
-// Each provider's native max output tokens — the real per-reply ceiling now
-// that no plan imposes a smaller cap. A requested value is clamped to this so
-// it never exceeds what the model itself allows. Values track each lab's
-// published per-request output max; providers that enforce prompt+output ≤
-// context (deepseek, mistral, qwen) are set to a context-safe fraction so a
-// long conversation can't 400.
-const PROVIDER_MAX_OUTPUT: Record<string, number> = {
-  // Claude 4.8/Sonnet 5 allow 128k output, but only 64k without a beta header;
-  // streamAnthropic adds the thinking budget separately and re-clamps the total
-  // to its own 64k outputCap, so 64k is the safe header-free ceiling here.
-  anthropic: 64000,
-  // GPT-5.6 supports 128k output (400k context); hidden reasoning counts toward
-  // this budget, so a generous ceiling avoids starving the visible answer.
-  openai: 128000,
-  google: 65536, // Gemini 3.x tops out at 65,536 output (thinking+answer combined)
-  zhipu: 131072, // GLM-4.6: up to 128k output
-  moonshot: 65536, // Kimi K2/K3 allow ~100k; 64k stays safe across the 128k-context models
-  deepseek: 32768, // 64k-capable, held to a context-safe share of the 128k window
-  mistral: 32768, // output bounded by prompt+output ≤ context; safe share of 256k
-  xai: 65536, // Grok 4.5 caps responses ~131k; 64k is ample
-  seedance: 8192, // media model — no long text output
-  minimax: 131072, // MiniMax M2 allows 131k output
-  mimo: 16384,
-  qwen: 65536, // Qwen3 Max: 65,536 output
-};
-
-/** Clamp a requested output-token cap to what the provider's models actually allow. */
-export function clampMaxTokens(provider: string, requested: number): number {
-  return Math.min(Math.max(1024, requested), PROVIDER_MAX_OUTPUT[provider] ?? 8192);
-}
-
 export async function* streamChat(opts: {
   model: ModelInfo;
   system: string;

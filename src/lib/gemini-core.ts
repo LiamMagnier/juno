@@ -1,5 +1,6 @@
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { clampReasoningEffort, reasoningCaps } from "@/lib/model-metrics";
+import { googleNativeBaseUrl, normalizeProviderKey, providerApiKey } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { ClientSource } from "@/types/chat";
@@ -7,11 +8,17 @@ import type { MessageForModel } from "@/types/llm";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
+/**
+ * `thoughtSignature` is an opaque token Gemini 3 returns on the parts it
+ * reasoned with (always on a `functionCall`, sometimes on text). It has to be
+ * echoed back VERBATIM in history or the next request fails with
+ * `400 INVALID_ARGUMENT … missing thought_signature`. The union could not even
+ * represent the field before, so the tool loop dropped it on every replay.
+ */
 export type GeminiPart =
-  | { text: string }
-  | { thought?: boolean; text: string }
+  | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionCall: { name: string; args: Record<string, unknown> }; thoughtSignature?: string }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
 export type GeminiContent = {
@@ -166,14 +173,40 @@ export function geminiThinkingBudget(
   }
 }
 
-export type GeminiThinkingConfig =
-  | { includeThoughts: true; thinkingLevel: "LOW" | "MEDIUM" | "HIGH" }
-  | { includeThoughts: true; thinkingBudget: number };
+export type GeminiThinkingLevel = "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
 
-function isGemini3OrLater(model: ModelInfo): boolean {
+export type GeminiThinkingConfig =
+  | { includeThoughts: true; thinkingLevel: GeminiThinkingLevel }
+  | { includeThoughts: true; thinkingBudget: number }
+  | { includeThoughts: true };
+
+/** Gemini 3+ speaks `thinkingLevel`; 2.5 and earlier speak `thinkingBudget`. */
+export function isGemini3OrLater(model: Pick<ModelInfo, "providerModel">): boolean {
   const providerModel = model.providerModel.replace(/^models\//, "");
   const match = /^gemini-(\d+)(?:[.\-]|$)/.exec(providerModel);
   return match !== null && Number(match[1]) >= 3;
+}
+
+/**
+ * Map one clamped tier onto the level Google spells it with.
+ *
+ * Only tiers a model's `reasoningCaps` declares can arrive here —
+ * `clampReasoningEffort` already reduces anything else to that model's declared
+ * default — so the catalog stays the single per-model source of truth about
+ * which levels exist. `xhigh`/`max` are not Gemini levels at all and collapse
+ * to the deepest one that is.
+ */
+function geminiLevelFor(tier: Exclude<ReasoningEffort, null>): GeminiThinkingLevel {
+  switch (tier) {
+    case "minimal":
+      return "MINIMAL";
+    case "low":
+      return "LOW";
+    case "medium":
+      return "MEDIUM";
+    default:
+      return "HIGH";
+  }
 }
 
 /** The provider-native Gemini thinking object for Juno's GenerateContent path. */
@@ -188,17 +221,20 @@ export function geminiThinkingConfig(
   // token budget to these models can end a stream after thought tokens without
   // a final answer. Thought parts are omitted unless includeThoughts is true.
   if (isGemini3OrLater(model)) {
-    const thinkingLevel =
-      clamped === "low" || clamped === "minimal"
-        ? "LOW"
-        : clamped === "high" || clamped === "xhigh" || clamped === "max"
-          ? "HIGH"
-          : "MEDIUM";
-    return { includeThoughts: true, thinkingLevel };
+    // NO TIER MEANS NO TIER. The old `else` branch turned every unmapped value
+    // — including `null`, i.e. "the catalog declares no ladder for this id" —
+    // into MEDIUM, which (a) defeated the deliberate fail-closed
+    // `caps([], false)` for discovered Gemini models (model-metrics.ts) and
+    // (b) sent MEDIUM to ids that only accept low|high (Gemini 3 Pro answers
+    // `400 INVALID_ARGUMENT Thinking level MEDIUM is not supported for this
+    // model`). Omitting the level asks Google for its own per-model default,
+    // which is the only correct request for "no preference".
+    if (!clamped) return { includeThoughts: true };
+    return { includeThoughts: true, thinkingLevel: geminiLevelFor(clamped) };
   }
 
   const thinkingBudget = geminiThinkingBudget(model, clamped);
-  return thinkingBudget === undefined ? undefined : { includeThoughts: true, thinkingBudget };
+  return thinkingBudget === undefined ? { includeThoughts: true } : { includeThoughts: true, thinkingBudget };
 }
 
 /**
@@ -215,4 +251,96 @@ export function geminiGenerationConfig(
   const thinkingConfig = geminiThinkingConfig(model, effort);
   if (thinkingConfig !== undefined) config.thinkingConfig = thinkingConfig;
   return config;
+}
+
+/** `models/<id>`, the path segment Google's REST surface addresses a model by. */
+export function geminiModelPath(model: Pick<ModelInfo, "providerModel">): string {
+  return model.providerModel.startsWith("models/") ? model.providerModel : `models/${model.providerModel}`;
+}
+
+/**
+ * The native endpoint for one Gemini method.
+ *
+ * Built from `googleNativeBaseUrl()` rather than a hardcoded host so a regional
+ * or proxied deployment cannot end up probing one host and chatting with
+ * another — which is exactly what `GOOGLE_BASE_URL` did while the health probe,
+ * discovery and the capability probe read it and this adapter did not.
+ */
+export function geminiEndpoint(
+  model: Pick<ModelInfo, "providerModel">,
+  method: "streamGenerateContent" | "generateContent",
+  baseUrl: string = googleNativeBaseUrl(),
+): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  const query = method === "streamGenerateContent" ? "?alt=sse" : "";
+  return `${base}/${geminiModelPath(model)}:${method}${query}`;
+}
+
+export type GeminiTool =
+  | { functionDeclarations: Array<Record<string, unknown>> }
+  | { google_search: Record<string, never> };
+
+/**
+ * Which tools ride on one request.
+ *
+ * Two bugs lived here. (1) `tools` used to be gated on `!isFinalRound`, and a
+ * turn with no function tools runs exactly ONE round — which is the final one —
+ * so `{google_search:{}}` was never sent at all on the private-chat, memory,
+ * scheduled-task and preflight paths, while the UI announced "Google Search
+ * grounding" for a search that never happened. Rounds are for the FUNCTION-CALL
+ * loop; a server-side tool resolves inside a single request and belongs on
+ * every round. (2) Gemini 3 supports combining built-in tools with function
+ * declarations; Gemini 2.5 and earlier reject the combination outright
+ * ("doesn't support combining search tools with non-search tools in the same
+ * generateContent request"), and `gemini-2.5-pro` is still selectable. On that
+ * older line grounding wins, because the user asked for search explicitly.
+ */
+export function geminiToolsPayload(input: {
+  model: Pick<ModelInfo, "providerModel">;
+  functionDeclarations?: Array<Record<string, unknown>>;
+  webSearch?: boolean;
+  /** The forced-answer round: function declarations are withheld, search is not. */
+  isFinalRound?: boolean;
+}): GeminiTool[] {
+  const declarations = input.isFinalRound ? [] : input.functionDeclarations ?? [];
+  const functionTools: GeminiTool[] = declarations.length > 0 ? [{ functionDeclarations: declarations }] : [];
+  const searchTools: GeminiTool[] = input.webSearch ? [{ google_search: {} }] : [];
+  if (functionTools.length === 0 || searchTools.length === 0) return [...functionTools, ...searchTools];
+  return isGemini3OrLater(input.model) ? [...functionTools, ...searchTools] : searchTools;
+}
+
+/** The exact JSON body the native adapter POSTs. Pure, so a test can pin it. */
+export function geminiRequestBody(input: {
+  contents: GeminiContent[];
+  generationConfig: Record<string, unknown>;
+  system?: string;
+  tools?: GeminiTool[];
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    contents: input.contents,
+    generationConfig: input.generationConfig,
+  };
+  if (input.system?.trim()) body.systemInstruction = { parts: [{ text: input.system }] };
+  if (input.tools && input.tools.length > 0) body.tools = input.tools;
+  return body;
+}
+
+/**
+ * Every Google credential this deployment knows, most-canonical first.
+ *
+ * EVERY candidate is normalised the way `providers.ts` normalises the primary
+ * one (trim, strip one layer of quotes, drop CR/LF). Reading the aliases raw
+ * from `process.env` produced a SECOND, malformed variant of the same key that
+ * `new Set` could not collapse — and `gemini-network.ts` rotates keys on an
+ * auth failure, so a key stored with its quotes gave Juno two "different"
+ * credentials, one of which could only ever 401.
+ */
+export function getGoogleApiKeys(): string[] {
+  const candidates = [
+    providerApiKey("google"),
+    normalizeProviderKey(process.env.GOOGLE_API_KEY),
+    normalizeProviderKey(process.env.GEMINI_LIVE_API_KEY),
+    normalizeProviderKey(process.env.GEMINI_API_KEY),
+  ].filter((k): k is string => typeof k === "string" && k.length > 0);
+  return [...new Set(candidates)];
 }

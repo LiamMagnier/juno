@@ -13,6 +13,7 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
+import { providerRequestModel } from "@/lib/model-request";
 
 /**
  * OpenAI Responses API adapter — for models that are not served on
@@ -252,7 +253,9 @@ export async function* streamOpenAIResponses(
   for (let round = 0; round < maxRounds; round++) {
     const isFinalRound = round === maxRounds - 1;
     const params: OpenAI.Responses.ResponseCreateParamsStreaming & Record<string, unknown> = {
-      model: model.providerModel,
+      // The one identifier an adapter may serialize — it re-checks the
+      // catalog-id/provider-id equality every other adapter enforces.
+      model: providerRequestModel(model),
       // When system is already in `input` with a cache breakpoint (GPT-5.6+),
       // omit `instructions` so the prefix is one contiguous cached block.
       ...(systemAsInput ? {} : { instructions: system }),
@@ -263,6 +266,16 @@ export async function* streamOpenAIResponses(
       store: false,
       max_output_tokens: maxTokens,
     };
+    // ASK FOR THE REASONING BACK IN A FORM THAT CAN BE RETURNED.
+    //
+    // `store: false` is stateless, so OpenAI keeps nothing between rounds: the
+    // reasoning items a round produced have to travel back with the function
+    // calls they produced or the model restarts its chain of thought every
+    // round (worse tool use, reasoning tokens paid for twice, and an outright
+    // error on some snapshots). `include: ["reasoning.encrypted_content"]` is
+    // what makes those items returnable at all — without it the output carries
+    // no encrypted payload to echo.
+    if (model.reasoning) params.include = ["reasoning.encrypted_content"];
     // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
     // that the Responses API now accepts.
     if (effort || usePro) {
@@ -285,6 +298,12 @@ export async function* streamOpenAIResponses(
     const stream = await c.responses.create(params, { signal });
 
     const calls: Array<{ callId: string; name: string; args: string }> = [];
+    /**
+     * Everything this round produced that the NEXT round must see again, in
+     * wire order: each reasoning item followed by the function call it led to.
+     * Order is the contract — a reasoning item after its own call is rejected.
+     */
+    const replayItems: InputItem[] = [];
     let roundFinish: string | undefined;
 
     for await (const event of stream) {
@@ -307,8 +326,11 @@ export async function* streamOpenAIResponses(
           break;
         case "response.output_item.done": {
           const item = event.item as { type: string; call_id?: string; name?: string; arguments?: string };
+          // Carries `encrypted_content` thanks to the `include` above.
+          if (item.type === "reasoning") replayItems.push(event.item as unknown as InputItem);
           if (item.type === "function_call" && item.call_id && item.name) {
             calls.push({ callId: item.call_id, name: item.name, args: item.arguments ?? "{}" });
+            replayItems.push(event.item as unknown as InputItem);
           }
           break;
         }
@@ -370,14 +392,10 @@ export async function* streamOpenAIResponses(
     finishRaw = roundFinish;
 
     if (hasTools && !isFinalRound && calls.length > 0) {
+      // The round's own output first — reasoning items and the calls they
+      // produced, verbatim and in order — then one output per call below.
+      input.push(...replayItems);
       for (const call of calls) {
-        // Echo the call, then its output, exactly as the API expects on replay.
-        input.push({
-          type: "function_call",
-          call_id: call.callId,
-          name: call.name,
-          arguments: call.args,
-        } as InputItem);
         const label = toolset!.labelFor(call.name);
         // The Responses adapter has the whole argument JSON before it
         // dispatches, so the arguments ride on the CALL — the row is complete

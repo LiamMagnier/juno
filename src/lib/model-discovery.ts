@@ -36,9 +36,12 @@ async function fetchProviderModels(provider: Provider): Promise<ModelInfo[]> {
     return finalModels.length ? finalModels : fallbackModels(provider);
   } catch (e) {
     const reason = e instanceof Error && e.name === "AbortError" ? "request timed out" : e instanceof Error ? e.message : String(e);
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[model-discovery] ${provider}: ${reason}. Using curated fallback.`);
-    }
+    // Logged in PRODUCTION TOO. Suppressing it there meant a 401 or a dead
+    // /models endpoint degraded silently to the curated list — the one
+    // deployment where nobody is watching a terminal was the one where the
+    // failure was invisible. The message carries a provider, a status and a
+    // timing word; no key material passes through `reason`.
+    console.warn(`[model-discovery] ${provider}: ${reason}. Using curated fallback.`);
     return fallbackModels(provider);
   }
 }

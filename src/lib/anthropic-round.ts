@@ -162,7 +162,18 @@ export async function* readAnthropicRound(
   stream: AsyncIterable<Anthropic.RawMessageStreamEvent>,
   opts: { labelFor?: (toolName: string) => string; seen: Set<string> }
 ): AsyncGenerator<LlmEvent, AnthropicRoundResult> {
-  const blocks: Anthropic.Messages.ContentBlockParam[] = [];
+  /*
+   * The assistant turn, keyed by WIRE INDEX rather than by arrival order.
+   *
+   * Blocks reach this loop at two different moments — `redacted_thinking` and
+   * the server-tool blocks are complete at `content_block_start`, while text,
+   * thinking and tool_use are only whole at `content_block_stop` — so pushing
+   * them into a flat array as they arrive can reorder the turn whenever the
+   * two kinds interleave. Order is part of the contract Anthropic verifies on
+   * replay (a thinking block must still precede the tool_use it reasoned
+   * toward), so the index decides it, not the clock.
+   */
+  const blockByIndex = new Map<number, Anthropic.Messages.ContentBlockParam>();
   // Open blocks by wire index. Anthropic may interleave deltas for several
   // indices, so they cannot be accumulated into a single "current" block.
   const partial = new Map<number, { block: Anthropic.Messages.ContentBlockParam; json: string }>();
@@ -182,7 +193,7 @@ export async function* readAnthropicRound(
       } else if (raw.type === "redacted_thinking") {
         // Opaque to Juno by design, and must be echoed back untouched or the
         // replayed turn fails signature verification.
-        blocks.push(event.content_block as Anthropic.Messages.ContentBlockParam);
+        blockByIndex.set(event.index, event.content_block as Anthropic.Messages.ContentBlockParam);
       } else if (raw.type === "tool_use") {
         partial.set(event.index, {
           block: { type: "tool_use", id: raw.id ?? "", name: raw.name ?? "", input: {} },
@@ -204,7 +215,18 @@ export async function* readAnthropicRound(
           // exist would cost the panel the live row — "Using Linear" would
           // appear only after Linear had already answered.
         };
-      } else if (raw.type === "web_search_tool_result") {
+      } else if (raw.type === "server_tool_use" || raw.type === "web_search_tool_result") {
+        // PART OF THE ASSISTANT TURN, not just a source of URLs. These blocks
+        // were read for their citations and then dropped from `blocks`, which
+        // is the array replayed as the assistant message on the next tool
+        // round — so Claude lost its own search results between rounds and
+        // searched again, billed again at webSearchRequests each time. A
+        // `pause_turn` turn can also end ON a server_tool_use block that has
+        // not run yet, and continuing it means sending the content back
+        // unchanged.
+        blockByIndex.set(event.index, event.content_block as Anthropic.Messages.ContentBlockParam);
+      }
+      if (raw.type === "web_search_tool_result") {
         const content = raw.content;
         if (Array.isArray(content)) {
           const sources: ClientSource[] = content
@@ -237,7 +259,14 @@ export async function* readAnthropicRound(
           open.block.input = safeToolInput(open.json);
           toolUses.push({ id: open.block.id, name: open.block.name, json: open.json });
         }
-        blocks.push(open.block);
+        // A text block that opened but never received a delta is a real wire
+        // event (Claude often opens one before deciding to call a tool). It
+        // must NOT be replayed: the Messages API rejects an assistant turn
+        // containing an empty or whitespace-only text block with
+        // `400 messages: text content blocks must be non-empty`, which would
+        // fail round two of a turn that was otherwise fine.
+        if (open.block.type === "text" && !open.block.text.trim()) continue;
+        blockByIndex.set(event.index, open.block);
       }
     } else if (event.type === "message_delta") {
       foldAnthropicUsage(usage, event.usage as RawAnthropicUsage);
@@ -245,5 +274,6 @@ export async function* readAnthropicRound(
     }
   }
 
+  const blocks = [...blockByIndex.entries()].sort(([a], [b]) => a - b).map(([, block]) => block);
   return { blocks, toolUses, stopReason, usage };
 }

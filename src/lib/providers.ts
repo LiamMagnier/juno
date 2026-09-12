@@ -154,12 +154,15 @@ export const PROVIDER_LIST = Object.keys(PROVIDERS) as Provider[];
  * request. Trim whitespace and one layer of surrounding quotes so both behave the
  * same. Also strips stray CR/LF that sneak in from copy-paste.
  */
-function readEnv(name?: string): string | undefined {
-  if (!name) return undefined;
-  const raw = process.env[name];
+export function normalizeProviderKey(raw?: string | null): string | undefined {
   if (!raw) return undefined;
   const cleaned = raw.trim().replace(/^['"]|['"]$/g, "").replace(/[\r\n]+/g, "").trim();
   return cleaned || undefined;
+}
+
+function readEnv(name?: string): string | undefined {
+  if (!name) return undefined;
+  return normalizeProviderKey(process.env[name]);
 }
 
 export function providerApiKey(p: Provider): string | undefined {
@@ -170,6 +173,28 @@ export function providerApiKey(p: Provider): string | undefined {
 export function providerBaseUrl(p: Provider): string | undefined {
   const def = PROVIDERS[p];
   return readEnv(def.baseUrlEnv) ?? def.defaultBaseUrl;
+}
+
+/** Root of Google's NATIVE GenerateContent surface, without a trailing slash. */
+export const GOOGLE_NATIVE_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+
+/**
+ * The base URL the native Gemini adapter must call.
+ *
+ * `PROVIDERS.google.defaultBaseUrl` points at the **OpenAI-compat shim**
+ * (`…/v1beta/openai/`) because model discovery speaks that dialect. The chat
+ * path does not: `gemini.ts` posts `models/<id>:streamGenerateContent` against
+ * the native root. Those two facts used to live in two places, and only one of
+ * them honoured `GOOGLE_BASE_URL` — a proxied or regional deployment sent its
+ * probes through the proxy and its chats straight to Google.
+ *
+ * One env var, two derived surfaces: strip the `/openai` compat suffix so the
+ * same override means the same host to every subsystem.
+ */
+export function googleNativeBaseUrl(): string {
+  const configured = providerBaseUrl("google") ?? GOOGLE_NATIVE_DEFAULT_BASE_URL;
+  const trimmed = configured.replace(/\/+$/, "").replace(/\/openai$/i, "");
+  return trimmed || GOOGLE_NATIVE_DEFAULT_BASE_URL;
 }
 
 export function isProviderConfigured(p: Provider): boolean {

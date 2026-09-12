@@ -3,15 +3,27 @@ import "server-only";
 import type { ModelCapabilityProbe, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isDiscoveredModel, type ModelInfo } from "@/lib/models";
-import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
+import { providerApiKey } from "@/lib/providers";
 import {
   decideModelCapability,
+  MODEL_CAPABILITY_TRANSPORT_FAILURE_TTL_MS,
   MODEL_CAPABILITY_TTL_MS,
   type ModelCapabilityEvidence,
 } from "@/lib/model-capability-policy";
-import { providerRequestModel } from "@/lib/model-request";
+import {
+  isTransportFailureStatus,
+  probeRequestFor,
+  probeResponseLooksValid,
+} from "@/lib/model-capability-probe";
 
-export const MODEL_CAPABILITY_PROBE_VERSION = 1;
+/**
+ * Bumped to 2 when the probe moved onto each model's OWN transport (native
+ * GenerateContent for Gemini, /responses for the Responses line). Rows written
+ * by version 1 answered a different question — "does this id work on the
+ * OpenAI-compat shim?" — so the version is what tells an operator why an old
+ * failed row disagrees with a fresh pass.
+ */
+export const MODEL_CAPABILITY_PROBE_VERSION = 2;
 
 export interface ModelCapabilitySnapshot {
   modelId: string;
@@ -63,31 +75,6 @@ export function nativeModelCapabilityVerdicts(
   return new Map(models.map((model) => [model.id, modelCapabilityVerdict(model, probes, now)]));
 }
 
-function providerEndpoint(model: ModelInfo): { url: string; headers: Record<string, string> } | null {
-  const key = providerApiKey(model.provider);
-  if (!key) return null;
-  const provider = PROVIDERS[model.provider];
-  if (provider.kind === "anthropic") {
-    return {
-      url: "https://api.anthropic.com/v1/messages",
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    };
-  }
-  const base = providerBaseUrl(model.provider);
-  if (!base) return null;
-  return {
-    url: `${base.replace(/\/+$/, "")}/chat/completions`,
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-  };
-}
-
-function responseLooksLikeChat(provider: string, value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  const body = value as Record<string, unknown>;
-  if (provider === "anthropic") return Array.isArray(body.content);
-  return Array.isArray(body.choices);
-}
-
 /**
  * Probe one model with the smallest ordinary text completion.
  *
@@ -97,9 +84,26 @@ function responseLooksLikeChat(provider: string, value: unknown): boolean {
  * explicit operator/background action, not part of a user's chat request.
  */
 export async function probeModelCapability(model: ModelInfo, now = new Date()): Promise<ModelCapabilitySnapshot> {
-  const endpoint = providerEndpoint(model);
+  const apiKey = providerApiKey(model.provider);
+  const request = apiKey ? probeRequestFor(model, apiKey) : null;
   const checkedAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + MODEL_CAPABILITY_TTL_MS).toISOString();
+  /**
+   * How long this verdict speaks for the model.
+   *
+   * A failure the provider never answered (timeout, 429, 5xx, rejected
+   * credential) is evidence about the wire, so it is deliberately short-lived
+   * and retried; a request the provider understood and refused is evidence
+   * about the model id and keeps the full TTL. Without this split every
+   * failure looked identical to "this model cannot do this", and the policy
+   * had no way to tell them apart.
+   */
+  const failureExpiry = (status: number | null): string =>
+    isTransportFailureStatus(status)
+      ? new Date(now.getTime() + MODEL_CAPABILITY_TRANSPORT_FAILURE_TTL_MS).toISOString()
+      : expiresAt;
+  const failureKind = (status: number | null): "transport" | "model" =>
+    isTransportFailureStatus(status) ? "transport" : "model";
   const base = {
     modelId: model.id,
     provider: model.provider,
@@ -117,18 +121,23 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
     },
   };
 
-  if (!endpoint) {
-    return { ...base, status: "failed", detail: "Provider is not configured.", evidence: base.evidence };
+  if (!request) {
+    // Not a claim about the model: nothing was asked. Keep it short-lived so
+    // adding the key later does not leave a day-old "failed" row behind.
+    return {
+      ...base,
+      status: "failed",
+      expiresAt: failureExpiry(null),
+      detail: "Provider is not configured.",
+      evidence: { ...base.evidence, failureKind: "transport" },
+    };
   }
 
   try {
-    const body = PROVIDERS[model.provider].kind === "anthropic"
-      ? { model: providerRequestModel(model), max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] }
-      : { model: providerRequestModel(model), max_tokens: 1, messages: [{ role: "user", content: "Reply with OK." }] };
-    const response = await fetch(endpoint.url, {
+    const response = await fetch(request.url, {
       method: "POST",
-      headers: endpoint.headers,
-      body: JSON.stringify(body),
+      headers: request.headers,
+      body: JSON.stringify(request.body),
       signal: AbortSignal.timeout(10_000),
     });
     const text = await response.text();
@@ -138,7 +147,7 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
     } catch {
       /* The detail below names the status without persisting the provider body. */
     }
-    if (!response.ok || !responseLooksLikeChat(model.provider, parsed)) {
+    if (!response.ok || !probeResponseLooksValid(request.shape, parsed)) {
       const providerCode =
         parsed && typeof parsed === "object" && "error" in parsed && parsed.error && typeof parsed.error === "object"
           ? (parsed.error as Record<string, unknown>).type ?? (parsed.error as Record<string, unknown>).code
@@ -146,13 +155,16 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
       return {
         ...base,
         status: "failed",
+        expiresAt: failureExpiry(response.status),
         // Provider bodies are deliberately not persisted: some gateways echo
         // request fragments, account metadata, or opaque diagnostic tokens.
         detail: `${response.status} ${providerCode ? String(providerCode).slice(0, 80) : "invalid_response"}`.trim(),
         evidence: {
           ...base.evidence,
           httpStatus: response.status,
-          responseShape: responseLooksLikeChat(model.provider, parsed) ? "chat" : "invalid",
+          adapter: request.adapter,
+          failureKind: failureKind(response.status),
+          responseShape: probeResponseLooksValid(request.shape, parsed) ? "chat" : "invalid",
         },
       };
     }
@@ -160,14 +172,16 @@ export async function probeModelCapability(model: ModelInfo, now = new Date()): 
       ...base,
       status: "passed",
       detail: null,
-      evidence: { ...base.evidence, httpStatus: response.status },
+      evidence: { ...base.evidence, httpStatus: response.status, adapter: request.adapter },
     };
   } catch (error) {
+    // A thrown request never reached a verdict about the model.
     return {
       ...base,
       status: "failed",
+      expiresAt: failureExpiry(null),
       detail: error instanceof Error ? error.message.slice(0, 240) : "Probe failed.",
-      evidence: base.evidence,
+      evidence: { ...base.evidence, adapter: request.adapter, failureKind: "transport" },
     };
   }
 }

@@ -11,7 +11,18 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
 import { toWireTools, type McpToolset } from "@/lib/mcp";
 import { attachedFileText, pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 import { providerRequestModel } from "@/lib/model-request";
-import { compatPromptCacheTokens, type CompatPromptCacheFields } from "@/lib/pricing";
+import {
+  accumulateToolCallDeltas,
+  addCompatUsage,
+  emptyCompatUsage,
+  finalizeToolCalls,
+  foldCompatUsage,
+  reasoningDetailsDelta,
+  shouldRunToolRound,
+  type CompatToolCall,
+  type CompatToolCallDelta,
+  type CompatUsagePayload,
+} from "@/lib/openai-compat-round";
 
 const clients = new Map<Provider, OpenAI>();
 
@@ -109,6 +120,16 @@ async function toOpenAIMessages(
 
 // Cap the agentic tool loop so a misbehaving model can't call tools forever.
 const MAX_TOOL_ROUNDS = 6;
+
+/**
+ * Providers that reject `stream_options.include_usage`.
+ *
+ * Empty today, and that is the point: the parameter is what makes most compat
+ * hosts report usage at all, so it stays on by default and a provider is added
+ * here the day one 400s on it — rather than the gate being described in a
+ * comment and never implemented.
+ */
+const NO_STREAM_USAGE: ReadonlySet<Provider> = new Set<Provider>();
 
 /** Stream a completion from any OpenAI-compatible provider (OpenAI, Gemini, GLM, Kimi).
  *  When `toolset` is provided, runs an MCP tool-use loop: the model may call the
@@ -282,11 +303,14 @@ export async function* streamOpenAICompat(
     model: providerRequestModel(model),
     messages,
     stream: true,
-    // Request a final usage chunk on the compat path; without this most
-    // providers report usage as null on every chunk. (Gate per-provider only
-    // if a specific endpoint ever rejects it.)
-    stream_options: { include_usage: true },
   };
+  // Request a final usage chunk on the compat path; without this most providers
+  // report usage as null on every chunk. The per-provider gate the old comment
+  // promised now exists rather than being aspirational — an unbilled turn is
+  // the failure mode of getting this wrong, so the escape hatch is one line.
+  if (!NO_STREAM_USAGE.has(model.provider)) {
+    params.stream_options = { include_usage: true };
+  }
   // OpenAI priority processing: faster, more consistent latency at premium
   // price. The route only sets fastMode on priority-eligible models, so relaying
   // it straight through is safe. (Anthropic's own fast mode lives in the native
@@ -377,14 +401,10 @@ export async function* streamOpenAICompat(
 
   const seen = new Set<string>();
   const c = client(model.provider);
-  let cumInput = 0;
-  let cumOutput = 0;
-  let cumCached = 0;
-  let cumCacheWrite = 0;
-  let cumReasoning = 0;
-  let cumTotal = 0;
-  let cumWebSearches = 0;
-  let cumXSearches = 0;
+  // Turn total: rounds fold with `max` inside themselves and are ADDED here,
+  // because each tool round is a separately billed request that re-sends the
+  // whole conversation (see openai-compat-round.ts).
+  const turnUsage = emptyCompatUsage();
   let sawUsage = false;
   let lastFinish: string | undefined;
   let citationCount = 0;
@@ -413,17 +433,13 @@ export async function* streamOpenAICompat(
 
     let assistantText = "";
     let finishReason: string | undefined;
-    // Per-round usage — overwrite (last chunk wins) so a provider that repeats
-    // usage on every chunk isn't double-counted; totals are summed across rounds.
-    let roundInput = 0;
-    let roundOutput = 0;
-    let roundCached = 0;
-    let roundReasoning = 0;
-    let roundTotal = 0;
     let roundSawUsage = false;
     let minimaxReasoningBuffer = "";
-    // Accumulate streamed tool-call fragments by their choice index.
-    const toolCalls = new Map<number, { id: string; name: string; args: string }>();
+    // Accumulate streamed tool-call fragments. Keyed by the call's own id where
+    // the host sends one — see openai-compat-round.ts for why the index alone
+    // was not enough.
+    const toolCalls = new Map<string, CompatToolCall>();
+    const roundUsage = emptyCompatUsage();
 
     for await (const chunk of stream) {
       const choice = chunk.choices?.[0];
@@ -434,9 +450,7 @@ export async function* streamOpenAICompat(
       let reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
       if (!reasoningText && reasoning?.reasoning_details?.length) {
         const fullReasoning = reasoning.reasoning_details.map((d) => d.text ?? "").join("");
-        reasoningText = fullReasoning.startsWith(minimaxReasoningBuffer)
-          ? fullReasoning.slice(minimaxReasoningBuffer.length)
-          : fullReasoning;
+        reasoningText = reasoningDetailsDelta(minimaxReasoningBuffer, fullReasoning);
         minimaxReasoningBuffer = fullReasoning;
       }
       if (reasoningText) yield { type: "reasoning", text: reasoningText };
@@ -453,13 +467,7 @@ export async function* streamOpenAICompat(
         assistantText += delta;
         yield { type: "text", text: delta };
       }
-      for (const tc of choiceDelta?.tool_calls ?? []) {
-        const cur = toolCalls.get(tc.index) ?? { id: "", name: "", args: "" };
-        if (tc.id) cur.id = tc.id;
-        if (tc.function?.name) cur.name = tc.function.name;
-        if (tc.function?.arguments) cur.args += tc.function.arguments;
-        toolCalls.set(tc.index, cur);
-      }
+      accumulateToolCallDeltas(toolCalls, choiceDelta?.tool_calls as CompatToolCallDelta[] | undefined);
       const citations = (chunk as unknown as { citations?: string[] }).citations;
       if (citations?.length) {
         const fresh = citations.filter((u) => u && !seen.has(u));
@@ -469,53 +477,24 @@ export async function* streamOpenAICompat(
       }
       if (chunk.usage) {
         roundSawUsage = true;
-        roundInput = chunk.usage.prompt_tokens ?? roundInput;
-        roundOutput = chunk.usage.completion_tokens ?? roundOutput;
-        // Standard field first; DeepSeek reports its disk cache as
-        // prompt_cache_hit_tokens, Moonshot/Kimi as a top-level cached_tokens.
-        // Reasoning tokens: OpenAI puts them under completion_tokens_details
-        // (subset of completion_tokens). Some OpenAI-compat hosts only expose
-        // thinking there and leave completion_tokens as the visible answer —
-        // resolveBillableTokens lifts output when reasoning > completion.
-        const u = chunk.usage as CompatPromptCacheFields & {
-          completion_tokens_details?: { reasoning_tokens?: number };
-          reasoning_tokens?: number;
-          total_tokens?: number;
-          // xAI / some hosts may report server tool counts here.
-          num_sources_used?: number;
-          server_side_tool_usage?: { web_search_requests?: number; x_search_requests?: number };
-        };
-        // Reads and writes from whichever dialect this host speaks. Writes are
-        // an explicit cache_write_tokens only — a DeepSeek "miss" is uncached
-        // input, already inside prompt_tokens, and counting it as a write
-        // billed that input twice (see compatPromptCacheTokens).
-        const cache = compatPromptCacheTokens(u);
-        roundCached = cache.cacheRead ?? roundCached;
-        if (cache.cacheWrite > 0) cumCacheWrite += cache.cacheWrite;
-        const reasoningTok =
-          u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;
-        if (reasoningTok > 0) roundReasoning = Math.max(roundReasoning, reasoningTok);
-        if (u.total_tokens != null) roundTotal = Math.max(roundTotal, u.total_tokens);
-        const toolUsage = u.server_side_tool_usage;
-        if (toolUsage?.web_search_requests) cumWebSearches += toolUsage.web_search_requests;
-        if (toolUsage?.x_search_requests) cumXSearches += toolUsage.x_search_requests;
+        // One merge rule for every counter, in one place: reads and writes from
+        // whichever cache dialect this host speaks, reasoning from either
+        // spelling, and the maximum within the round so a repeated cumulative
+        // usage chunk cannot bill the same cache write or web search twice.
+        foldCompatUsage(roundUsage, chunk.usage as CompatUsagePayload);
       }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
     if (roundSawUsage) {
       sawUsage = true;
-      cumInput += roundInput;
-      cumOutput += roundOutput;
-      cumCached += roundCached;
-      cumReasoning += roundReasoning;
-      cumTotal += roundTotal;
+      addCompatUsage(turnUsage, roundUsage);
     }
     lastFinish = finishReason;
 
     // Model asked to call tools — execute them and loop with the results. Never
     // on the final (forced-answer) round, so the tool results always get consumed.
-    const calls = [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v).filter((v) => v.id && v.name);
-    if (hasTools && !isFinalRound && finishReason === "tool_calls" && calls.length > 0) {
+    const calls = finalizeToolCalls(toolCalls);
+    if (shouldRunToolRound({ hasTools, isFinalRound, callCount: calls.length, finishReason })) {
       messages.push({
         role: "assistant",
         content: assistantText || null,
@@ -553,21 +532,21 @@ export async function* streamOpenAICompat(
   // xAI Live Search (search_parameters) often doesn't report per-call counts.
   // When citations returned and web search was requested, bill at least one
   // web search so we never report $0 tool fees on a search turn.
-  if (webSearch && model.provider === "xai" && cumWebSearches === 0 && citationCount > 0) {
-    cumWebSearches = Math.max(1, Math.ceil(citationCount / 10));
+  if (webSearch && model.provider === "xai" && turnUsage.webSearchRequests === 0 && citationCount > 0) {
+    turnUsage.webSearchRequests = Math.max(1, Math.ceil(citationCount / 10));
   }
 
-  if (sawUsage || cumWebSearches > 0 || cumXSearches > 0) {
+  if (sawUsage || turnUsage.webSearchRequests > 0 || turnUsage.xSearchRequests > 0) {
     yield {
       type: "usage",
-      input: sawUsage ? cumInput : undefined,
-      output: sawUsage ? cumOutput : undefined,
-      reasoning: cumReasoning || undefined,
-      total: cumTotal || undefined,
-      cacheRead: cumCached || undefined,
-      cacheWrite: cumCacheWrite || undefined,
-      webSearchRequests: cumWebSearches || undefined,
-      xSearchRequests: cumXSearches || undefined,
+      input: sawUsage ? turnUsage.input : undefined,
+      output: sawUsage ? turnUsage.output : undefined,
+      reasoning: turnUsage.reasoning || undefined,
+      total: turnUsage.total || undefined,
+      cacheRead: turnUsage.cacheRead || undefined,
+      cacheWrite: turnUsage.cacheWrite || undefined,
+      webSearchRequests: turnUsage.webSearchRequests || undefined,
+      xSearchRequests: turnUsage.xSearchRequests || undefined,
     };
   }
   // A still-trailing "tool_calls" means even the forced-answer round wanted more
@@ -579,10 +558,10 @@ export async function* streamOpenAICompat(
     model: model.providerModel,
     finishReason: finalRaw ?? "stop",
     // Cache hit-rate instrumentation: cachedTokens/promptTokens per response.
-    promptTokens: sawUsage ? cumInput : null,
-    completionTokens: sawUsage ? cumOutput : null,
-    reasoningTokens: sawUsage ? cumReasoning || null : null,
-    cachedTokens: sawUsage ? cumCached : null,
-    webSearchRequests: cumWebSearches || null,
+    promptTokens: sawUsage ? turnUsage.input : null,
+    completionTokens: sawUsage ? turnUsage.output : null,
+    reasoningTokens: sawUsage ? turnUsage.reasoning || null : null,
+    cachedTokens: sawUsage ? turnUsage.cacheRead : null,
+    webSearchRequests: turnUsage.webSearchRequests || null,
   });
 }
