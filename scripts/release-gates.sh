@@ -171,6 +171,37 @@ if bash -n native/Scripts/release-macos.sh \
 else
     fail "macOS publication safety gate is incomplete"
 fi
+
+# An unnotarized build must be unable to reach the public download feed, and the
+# feed must be able to tell the two apart. Both halves are source invariants
+# because the alternative — noticing on a user's Mac — is what happened for
+# thirty consecutive releases: every one was development-signed, published as an
+# ordinary stable release, and refused by Gatekeeper with "Apple could not verify
+# … is free of malware".
+if grep -q 'EXPECTED_PRERELEASE=' native/Scripts/release-macos.sh \
+    && grep -q -- '-F "prerelease=\$EXPECTED_PRERELEASE"' native/Scripts/release-macos.sh \
+    && ! grep -q -- '-F draft=false -F prerelease=false' native/Scripts/release-macos.sh; then
+    pass "an unnotarized macOS build publishes as a prerelease, outside the public feed"
+else
+    fail "an unnotarized macOS build can still publish as a public stable release"
+fi
+
+if grep -q '"notarized":' native/Scripts/release-macos.sh \
+    && grep -q 'isNotarized' src/lib/app-downloads.ts \
+    && grep -q 'macosNotarized' src/lib/download-feed.ts; then
+    pass "notarization is recorded in the release manifest and read by the download feed"
+else
+    fail "the download feed cannot tell a notarized macOS build from a development-signed one"
+fi
+
+# The release script's own Gatekeeper gate has to assess the artifact a person
+# double-clicks, not only the app inside it.
+if grep -q 'spctl --assess --type open --context context:primary-signature' native/Scripts/release-macos.sh \
+    && grep -q 'xcrun stapler staple "\$APP"' native/Scripts/release-macos.sh; then
+    pass "the disk image is Gatekeeper-assessed and the app inside it is stapled"
+else
+    fail "the release gate cannot fail on the rejection a downloader actually sees"
+fi
 echo
 
 # ---------------------------------------------------------------------------

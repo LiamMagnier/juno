@@ -39,12 +39,13 @@ const LEGAL_LINKS = [
 const PRODUCT_LINKS: { href: string; label: string; file?: boolean }[] = [
   { href: "/sign-in", label: "Sign in" },
   { href: "/sign-up", label: "Create account" },
-  // `file` because this is not a route: a <Link> with no explicit prefetch
-  // prefetches on viewport entry in production, and Juno.dmg is 21.9 MB — so
-  // every visitor who merely scrolled to the footer was pulling down a disk
-  // image they never asked for. features.tsx links the same href with a plain
-  // <a>, which is the correct treatment; this makes the two agree.
-  { href: "/downloads/Juno.dmg", label: "Download for macOS", file: true },
+  // A page, not a file. This used to link straight at `/downloads/Juno.dmg`, a
+  // disk image committed to the repository — which meant the footer both
+  // prefetched 21.9 MB nobody asked for AND handed over the one build
+  // docs/native/RELEASE.md says "must not be promoted": self-signed, no Team ID,
+  // no notarization ticket, refused by Gatekeeper. /download reports what is
+  // actually published instead.
+  { href: "/download", label: "Download", file: false },
 ];
 
 /**

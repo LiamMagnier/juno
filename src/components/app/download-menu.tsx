@@ -146,6 +146,13 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
         .join(" · ")
     : download.note ?? "Not available";
 
+  // Said before the click, not discovered after it. An unnotarized build is
+  // refused by macOS with "Apple could not verify … is free of malware", and the
+  // dialog offers only "Move to Trash" and "Done" — no way forward and no hint
+  // that one exists. A person who was warned takes thirty seconds in System
+  // Settings; a person who was not assumes the download is malware.
+  const blockedOnFirstOpen = download.available && download.notarized === false;
+
   const body = (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="flex items-center gap-1.5">
@@ -155,6 +162,12 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
         {isMine && <StatusIcons.success className="size-3 shrink-0 text-primary" aria-label="Your device" />}
       </span>
       <span className="truncate font-mono text-caption text-muted-foreground">{detail}</span>
+      {blockedOnFirstOpen && (
+        <span className="mt-1 text-caption leading-snug text-warning">
+          Not notarized yet. macOS blocks the first open — allow it under System Settings › Privacy &amp;
+          Security.
+        </span>
+      )}
     </span>
   );
 

@@ -257,10 +257,13 @@ generated Swift drift, scans entitlements/privacy manifests and binaries for
 secrets, and performs unsigned dry archives. Signed release workflows run only
 from protected tags/environments.
 
-The repository's current `public/downloads/Juno.dmg` is not a production trust
-baseline: although its SHA-256 matches `latest.json`, it contains a self-signed
-app with no Team ID, no stapled notarization ticket, and no usable Gatekeeper
-signature. It must be replaced, not promoted.
+`public/downloads/Juno.dmg` and its `latest.json` have been deleted. Although the
+image's SHA-256 matched the manifest, it contained a self-signed app with no Team
+ID, no stapled notarization ticket and no usable Gatekeeper signature — and the
+landing page's hero and feature list both linked straight at it, so the one
+artifact this document said "must be replaced, not promoted" was the site's
+macOS download. `/download` now reads the live release feed instead, and reports
+whether the build it offers is notarized.
 
 ## Migration plan and gates
 

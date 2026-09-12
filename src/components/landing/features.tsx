@@ -42,7 +42,7 @@ const FEATURES: Feature[] = [
   {
     title: "Code mode & native apps",
     body: "Juno Code on your Mac inspects diffs, runs tests and works in an isolated worktree. It shows what an action will touch and asks before it acts — and a project moves from browser to Mac to phone without turning local access into a black box.",
-    link: { href: "/downloads/Juno.dmg", label: "Download for macOS", file: true },
+    link: { href: "/download", label: "Download for macOS", file: false },
   },
   {
     title: "Connectors",
@@ -76,9 +76,9 @@ export function Features() {
                 // `group` + a transform on the glyph only: the arrow leans out on
                 // hover/focus, which is a second affordance for the pointer and the
                 // ONLY one a keyboard gets. Transform and colour only, never
-                // layout, and both are dropped under motion-reduce. A plain <a>
-                // with `download`, not <Link>: the target is a 22 MB disk image,
-                // and a Link prefetches on viewport entry in production.
+                // layout, and both are dropped under motion-reduce. Still a plain
+                // <a> rather than <Link>: `file` decides whether the href is an
+                // asset to save or a page to open, and both spellings live here.
                 <a
                   href={link.href}
                   download={link.file || undefined}

@@ -7,9 +7,24 @@ artifact satisfies the signed production gates below.
 
 ## Current evidence
 
-- `public/downloads/Juno.dmg` matches the SHA-256 recorded by the legacy update
-  metadata, but the enclosed app is self-signed, has no Team ID or stapled
-  notarization ticket, and is rejected by Gatekeeper. It must not be promoted.
+- **No macOS release has ever been notarized.** Every published version from
+  `v0.15.15` to `v1.5.4` was produced by `release-macos.sh --publish-dev`, is
+  signed with an Apple Development certificate, and says so in its own release
+  notes. On a fresh Mac each one is refused with "Apple could not verify
+  Juno-&lt;version&gt;.dmg is free of malware". Installed copies never saw it,
+  because `DesktopUpdater.swift` strips `com.apple.quarantine` after a verified
+  swap — so only a fresh download hits the wall, and the team's own Macs all
+  updated in place.
+- The `--publish` production path had never run to completion. Its workflow gave
+  the release script no `GH_TOKEN`, so every attempt died in preflight before
+  building; and the archive ran with `CODE_SIGNING_ALLOWED=NO`, leaving all
+  signing to an `-exportArchive` that used automatic signing with no
+  developer-portal session. Both are fixed; neither has yet been exercised
+  end to end, because the Production secrets below are still absent.
+- `public/downloads/Juno.dmg` and its `latest.json` have been **deleted**. The
+  enclosed app was self-signed with no Team ID and no ticket, and the landing
+  page's hero and feature list both linked straight at it. `/download` now reads
+  the same release feed as the app's download menu.
 - The legacy DMG reports 3.7.0 build 57 while the recovered prototype reports
   3.0.0 build 28. The prototype is not reproducible from the active repository.
 - The recovered prototype builds for unsigned macOS Debug and Release and its
@@ -22,9 +37,13 @@ artifact satisfies the signed production gates below.
 - This machine has an Apple Development identity, but no Developer ID
   Application identity or notarization credentials for distribution.
 - GitHub CLI is authenticated for `LiamMagnier` with `repo` and `workflow`
-  scopes. The public `v0.10.0` and `v0.10.1` artifacts are non-notarized
-  development builds; they are intentionally excluded from `/api/downloads`
-  because Gatekeeper rejects them.
+  scopes. This section previously claimed that non-notarized development builds
+  "are intentionally excluded from `/api/downloads` because Gatekeeper rejects
+  them". **That exclusion did not exist** — `grep -rn notariz src/` returned
+  nothing, and the feed served whichever stable release was newest. It exists
+  now, in two independent places: unnotarized builds publish as prereleases, and
+  the feed reads the `notarized` field from each release's manifest and fails
+  closed without it.
 
 These facts are diagnostic evidence, not release approval.
 
@@ -106,16 +125,53 @@ publish when Developer ID signing or notarization is unavailable and attaches
 the notarized DMG, dSYM archive and `SHA256SUMS.txt` to the immutable release.
 
 Configure these secrets on the protected `Production` environment before
-running it:
+running it. Until all five exist, the workflow stops before it signs anything.
 
-- `APPLE_DEVELOPER_ID_P12_BASE64`
-- `APPLE_DEVELOPER_ID_P12_PASSWORD`
-- `APPLE_NOTARY_KEY_BASE64`
-- `APPLE_NOTARY_KEY_ID`
-- `APPLE_NOTARY_ISSUER`
+| Secret | What it is |
+| --- | --- |
+| `APPLE_DEVELOPER_ID_P12_BASE64` | A **Developer ID Application** certificate and its private key, exported as a `.p12` and base64-encoded. An Apple Development certificate is the wrong class and will be rejected. |
+| `APPLE_DEVELOPER_ID_P12_PASSWORD` | The password set when exporting that `.p12`. |
+| `APPLE_NOTARY_KEY_BASE64` | An App Store Connect API key (`AuthKey_XXXXXXXXXX.p8`), base64-encoded. Needs the Developer role or higher. |
+| `APPLE_NOTARY_KEY_ID` | The ten-character Key ID shown beside that key in App Store Connect. |
+| `APPLE_NOTARY_ISSUER` | The Issuer ID UUID at the top of App Store Connect → Users and Access → Integrations → App Store Connect API. |
 
-The version must already be committed in `native/Config/Base.xcconfig`; the
-workflow does not modify source during publication.
+Producing them, once, on a Mac signed in to the Apple Developer account for team
+`58PVP763WX`:
+
+1. In Xcode → Settings → Accounts → Manage Certificates, create a **Developer ID
+   Application** certificate. This requires the Account Holder or Admin role, and
+   an Apple Developer Program membership.
+2. In Keychain Access, find that certificate, expand it so the private key is
+   selected with it, right-click → Export, and save a `.p12` with a password.
+3. `base64 -i DeveloperID.p12 | pbcopy` → `APPLE_DEVELOPER_ID_P12_BASE64`.
+   The password goes in `APPLE_DEVELOPER_ID_P12_PASSWORD`.
+4. In App Store Connect → Users and Access → Integrations, create an API key.
+   Download the `.p8` once — Apple will not offer it again — then
+   `base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy` → `APPLE_NOTARY_KEY_BASE64`.
+   Copy the Key ID and the Issuer ID from the same page.
+5. Add all five under Settings → Environments → Production → Environment secrets,
+   not as repository secrets: the environment is what carries the approval gate.
+
+Then dispatch **macOS production release** from `main` with the version already
+committed in `native/Config/Base.xcconfig`. The workflow does not modify source
+during publication, and both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`
+must be bumped and merged first.
+
+### Why a development-signed build can no longer reach the public
+
+`--publish-dev` publishes as a GitHub **prerelease**. `isStableRelease()` filters
+prereleases out of `/api/downloads`, so a development-signed build is visible
+only to `?channel=next`, which is the audience it was always for. It previously
+published with `draft=false, prerelease=false` — indistinguishable from a
+production release — which is how thirty consecutive unnotarized builds became
+the website's macOS download.
+
+Independently of that, each release now publishes a `notarized` field in its
+`Juno-<version>.release.json` manifest, written from the same flag that gates
+Developer ID signing, the notary verdict, stapling and the Gatekeeper assessment.
+`/api/downloads` reads it and fails closed: a release with no manifest, an
+unreachable one, or one written before this field existed all read as not
+notarized.
 
 ## iOS/iPadOS release
 
@@ -215,6 +271,11 @@ the publication gate.
 - Production APNs and StoreKit values require the product owner.
 - The current development builds are not production artifacts; the next stable
   replacement must be produced by the protected workflow.
+- **The macOS download is degraded until then.** `/api/downloads` reports
+  `notarized: false` for the newest build, and both `/download` and the app's
+  download menu say so and give the one-time step to open it (System Settings →
+  Privacy & Security → Open Anyway). That is honest, not fixed: the fix is a
+  notarized release, which needs the five secrets above and nothing else.
 
 Continue all unprivileged development and validation before asking the owner for
 proprietary inputs. Never replace a missing release gate with a success claim.

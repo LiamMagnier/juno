@@ -136,8 +136,16 @@ esac
 if [ "$PUBLISHING" = 1 ]; then
   MAIN_SHA="$(git rev-parse refs/remotes/origin/main 2>/dev/null)" || die \
     "Could not resolve origin/main; refusing to publish without a fetched main ref."
-  [ "$SOURCE_SHA" = "$MAIN_SHA" ] || die \
-    "HEAD $SOURCE_SHA is not origin/main $MAIN_SHA. Check out the exact approved main commit."
+  # An ancestor of main, not the tip of main.
+  #
+  # Equality looked stricter and was in fact a liveness bug: the release workflow
+  # blocks on a human approval, so `main` routinely advances between the commit a
+  # person approved and the moment this runs. Demanding the tip either forces the
+  # runner to check out something nobody approved, or fails a correct release
+  # outright. Ancestry is the property that actually matters — this commit is on
+  # main, i.e. it was reviewed and merged.
+  git merge-base --is-ancestor "$SOURCE_SHA" "$MAIN_SHA" || die \
+    "HEAD $SOURCE_SHA is not an ancestor of origin/main $MAIN_SHA. Release a commit that is merged into main."
 
   REMOTE_TAGS="$(git ls-remote origin "refs/tags/v$VERSION" 2>/dev/null)" || die \
     "Could not query origin for v$VERSION; refusing to prove tag uniqueness."
@@ -175,8 +183,13 @@ IDENTITY=""
 NOTARIZE=1
 IDENTITY_CLASS="Developer ID Application"
 if [ "$PRODUCTION_PUBLISH" = 1 ]; then
+  # Filtered by team during selection, not after it. Taking the first Developer
+  # ID certificate in the keychain and *then* comparing its team turned a
+  # keychain that merely held someone else's certificate ahead of ours into
+  # "wrong team", aborting a release the machine was perfectly able to sign.
   IDENTITY="$(security find-identity -v -p codesigning \
-    | awk -F'"' '/Developer ID Application/{print $2; exit}')" || true
+    | awk -F'"' -v team="($CONFIGURED_TEAM)" \
+        '/Developer ID Application/ && index($2, team) {print $2; exit}')" || true
   if [ -z "$IDENTITY" ]; then
     AVAILABLE_IDENTITIES="$(security find-identity -v -p codesigning 2>&1 || true)"
     printf '%s\n' "$AVAILABLE_IDENTITIES" >&2
@@ -273,15 +286,51 @@ GENERATED_METADATA="native/Config/Generated-Build.xcconfig"
 GENERATED_SHA="$(sed -n 's/^JUNO_GIT_SHA = //p' "$GENERATED_METADATA" | head -1)"
 [ "$GENERATED_SHA" = "$SOURCE_SHORT_SHA" ] || die "Generated build metadata says '$GENERATED_SHA', not source commit '$SOURCE_SHORT_SHA'."
 [ -z "$(git status --porcelain --untracked-files=all)" ] || die "The source tree changed while preparing the archive. Refusing to publish mixed provenance."
+# SIGN DURING THE ARCHIVE. This used to pass `CODE_SIGNING_ALLOWED=NO` and leave
+# every signing decision to `-exportArchive`, which is why no production release
+# ever came out of here:
+#
+#   * With signing disabled, Xcode skips ProcessProductPackaging, so the
+#     entitlements declared at target level (microphone, Apple events) are never
+#     turned into the `.xcent` blob and never reach the binary. Under Hardened
+#     Runtime, an app without them cannot record audio or send an Apple event.
+#   * `ENABLE_HARDENED_RUNTIME=YES` is a codesign flag (`--options runtime`). With
+#     no codesign step it changed nothing, and the notary service rejects an
+#     executable without it: "The executable does not have the hardened runtime
+#     enabled" — 25 minutes into the run.
+#   * The identity has to be forced here on the command line, because
+#     `CODE_SIGN_IDENTITY = "Apple Development"` is set at TARGET level in
+#     project.yml, which outranks every xcconfig. Left alone, a production
+#     archive signs itself for development.
+#
+# Command-line settings outrank both the xcconfig and the target, which is what
+# makes this the one place the production identity can be pinned.
+ARCHIVE_SIGNING=(CODE_SIGNING_ALLOWED=NO)
+if [ "$IDENTITY" != "-" ]; then
+  ARCHIVE_SIGNING=(
+    CODE_SIGNING_ALLOWED=YES
+    CODE_SIGNING_REQUIRED=YES
+    CODE_SIGN_STYLE=Manual
+    CODE_SIGN_IDENTITY="$IDENTITY"
+    # A secure timestamp on every executable is a notarization requirement, and
+    # it costs a development build nothing.
+    OTHER_CODE_SIGN_FLAGS="--timestamp"
+  )
+fi
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -destination 'generic/platform=macOS' \
   -derivedDataPath "$BUILD_DIR/archive-dd" \
   -archivePath "$BUILD_DIR/archive.xcarchive" \
   ENABLE_HARDENED_RUNTIME=YES \
   DEVELOPMENT_TEAM="$CONFIGURED_TEAM" \
-  CODE_SIGNING_ALLOWED=NO \
+  "${ARCHIVE_SIGNING[@]}" \
   archive
 
+# `manual`, not `automatic`. Automatic signing resolves a certificate and profile
+# through the developer portal, and a headless runner has no Xcode account to
+# resolve against — so the export died with "No Accounts" after the full archive,
+# every time. Manual signing needs no portal session, and naming the exact
+# identity here means the certificate preflight validated is the one that signs.
 cat > "$BUILD_DIR/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -289,7 +338,8 @@ cat > "$BUILD_DIR/export.plist" <<PLIST
 <dict>
   <key>method</key><string>$([ "$NOTARIZE" = 1 ] && echo developer-id || echo development)</string>
   <key>teamID</key><string>$CONFIGURED_TEAM</string>
-  <key>signingStyle</key><string>automatic</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>$IDENTITY</string>
 </dict>
 </plist>
 PLIST
@@ -302,10 +352,16 @@ if [ "$NOTARIZE" = 1 ]; then
     -exportOptionsPlist "$BUILD_DIR/export.plist"
 else
   mkdir -p "$BUILD_DIR/export"
-  cp -R "$BUILD_DIR/archive.xcarchive/Products/Applications/Juno.app" "$BUILD_DIR/export/"
-  codesign --force --deep --options runtime --sign "$IDENTITY" \
-    --entitlements native/macOS/JunoDesktop/Resources/JunoDesktop.entitlements \
-    "$BUILD_DIR/export/Juno.app"
+  # `ditto`, not `cp -R`: relocating a signed bundle has to preserve the extended
+  # attributes a signature can live in, which `cp -R` drops by default.
+  ditto "$BUILD_DIR/archive.xcarchive/Products/Applications/Juno.app" "$BUILD_DIR/export/Juno.app"
+  if [ "$IDENTITY" = "-" ]; then
+    # Nothing to preserve and nothing to time-stamp: an ad-hoc signature is the
+    # only thing available, and this artifact can never be published.
+    codesign --force --options runtime --sign - \
+      --entitlements native/macOS/JunoDesktop/Resources/JunoDesktop.entitlements \
+      "$BUILD_DIR/export/Juno.app"
+  fi
 fi
 
 APP="$(find "$BUILD_DIR/export" -maxdepth 1 -type d -name '*.app' -print -quit)"
@@ -334,7 +390,40 @@ if [ "$NOTARIZE" = 1 ]; then
 $SIGNING_INFO" ;;
   esac
 fi
-codesign -d --entitlements - --xml "$APP" >/dev/null
+# Hardened Runtime, asserted rather than assumed.
+#
+# `ENABLE_HARDENED_RUNTIME=YES` is a request to codesign, not a property of the
+# build, and for a long time nothing here checked whether codesign had honoured
+# it — or run at all. The notary service does check, and answers "Invalid" after
+# the upload. `codesign -dv` reports it in the CodeDirectory flags as `(runtime)`.
+case "$SIGNING_INFO" in
+  *"(runtime"*) ;;
+  *)
+    if [ "$NOTARIZE" = 1 ]; then
+      die "The production bundle was signed without Hardened Runtime, which Apple requires for notarization.
+$SIGNING_INFO"
+    fi
+    printf '  (no hardened runtime, as expected for an ad-hoc build)\n'
+    ;;
+esac
+
+# The entitlements, compared rather than merely printed.
+#
+# This line used to read `codesign -d --entitlements - --xml "$APP" >/dev/null`,
+# which discards its output and passes for a bundle carrying NO entitlements at
+# all — exactly what the unsigned archive produced. Every other gate in this file
+# is a real comparison; this one only looked like one. Under Hardened Runtime a
+# missing entitlement is silent until a user's first dictation attempt fails.
+SIGNED_ENTITLEMENTS="$(codesign -d --entitlements - --xml "$APP" 2>/dev/null || true)"
+for entitlement in com.apple.security.device.audio-input com.apple.security.automation.apple-events; do
+  case "$SIGNED_ENTITLEMENTS" in
+    *"$entitlement"*) ;;
+    *) die "The signed bundle is missing the entitlement '$entitlement'.
+       Under Hardened Runtime the app cannot use the microphone or send Apple events without it,
+       and the failure is silent until a user tries.
+$SIGNED_ENTITLEMENTS" ;;
+  esac
+done
 
 # The exact requirement `DesktopUpdater.swift` enforces on the downloaded
 # bundle. Checking it here means a release can never ship that the app would
@@ -378,12 +467,53 @@ bash scripts/release-gates.sh "$APP"
 
 # ── Package ────────────────────────────────────────────────────────────────
 
+# NOTARIZE AND STAPLE THE APP BEFORE THE DISK IMAGE IS BUILT.
+#
+# Juno installs by drag-and-drop: the person drags Juno.app off the mounted
+# volume and the disk image is discarded. A ticket stapled only to the DMG
+# therefore never reaches the thing they actually run. Without a ticket on the
+# app itself, first launch depends on Gatekeeper reaching Apple's notary service
+# over the network — so an offline Mac, or one behind a filtering proxy, refuses
+# an app that was properly notarized. Apple's documented order is: notarize and
+# staple the app, then build the image from the stapled app, then notarize and
+# staple the image too.
+if [ "$NOTARIZE" = 1 ]; then
+  step "Notarize the app (this takes a few minutes)"
+  APP_ZIP="$BUILD_DIR/Juno-$VERSION.app.zip"
+  rm -f "$APP_ZIP"
+  # `ditto -c -k --keepParent` is the only archiver whose output notarytool
+  # accepts for a bundle; a plain `zip` loses the symlinks inside a .app.
+  ditto -c -k --sequesterRsrc --keepParent "$APP" "$APP_ZIP"
+  APP_NOTARY_RESULT="$BUILD_DIR/notary-result-app.json"
+  if ! xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" \
+    --wait --output-format json > "$APP_NOTARY_RESULT"; then
+    cat "$APP_NOTARY_RESULT" >&2 || true
+    die "Apple notarization of the app failed. Nothing was published."
+  fi
+  APP_NOTARY_STATUS="$(jq -r '.status // empty' "$APP_NOTARY_RESULT" 2>/dev/null || true)"
+  [ "$APP_NOTARY_STATUS" = "Accepted" ] || {
+    cat "$APP_NOTARY_RESULT" >&2
+    APP_SUBMISSION="$(jq -r '.id // empty' "$APP_NOTARY_RESULT" 2>/dev/null || true)"
+    [ -z "$APP_SUBMISSION" ] || xcrun notarytool log "$APP_SUBMISSION" \
+      --keychain-profile "$NOTARY_PROFILE" >&2 2>/dev/null || true
+    die "Apple notarization of the app returned '$APP_NOTARY_STATUS' instead of Accepted. Nothing was published."
+  }
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  rm -f "$APP_ZIP"
+  # Stapling rewrites the bundle. Prove the signature survived it before the app
+  # is sealed inside an image nobody will open again until a user does.
+  codesign --verify --deep --strict --verbose=2 "$APP"
+fi
+
 step "Disk image"
 DMG="$BUILD_DIR/Juno-$VERSION.dmg"
 rm -f "$DMG"
 STAGE="$BUILD_DIR/dmg"
 rm -rf "$STAGE" && mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
+# `ditto`, not `cp -R`, for the same reason as the export: a signed bundle's
+# extended attributes have to survive the copy.
+ditto "$APP" "$STAGE/$(basename "$APP")"
 ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname "Juno $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 if [ "$IDENTITY" != "-" ]; then
@@ -408,7 +538,7 @@ else
 fi
 
 if [ "$NOTARIZE" = 1 ]; then
-  step "Notarize (this takes a few minutes)"
+  step "Notarize the disk image"
   NOTARY_RESULT="$BUILD_DIR/notary-result.json"
   if ! xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" \
     --wait --output-format json > "$NOTARY_RESULT"; then
@@ -418,10 +548,20 @@ if [ "$NOTARIZE" = 1 ]; then
   NOTARY_STATUS="$(jq -r '.status // empty' "$NOTARY_RESULT" 2>/dev/null || true)"
   [ "$NOTARY_STATUS" = "Accepted" ] || {
     cat "$NOTARY_RESULT" >&2
+    # The status alone never says WHY. Fetching the log here is the difference
+    # between "Invalid" and "the executable does not have the hardened runtime
+    # enabled", and the runner discards everything when the job ends.
+    SUBMISSION_ID="$(jq -r '.id // empty' "$NOTARY_RESULT" 2>/dev/null || true)"
+    [ -z "$SUBMISSION_ID" ] || xcrun notarytool log "$SUBMISSION_ID" \
+      --keychain-profile "$NOTARY_PROFILE" >&2 2>/dev/null || true
     die "Apple notarization returned status '$NOTARY_STATUS' instead of Accepted. The DMG was not published."
   }
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
+  # Stapling mutates the image. The checksum published below describes the file
+  # as it is after this point, so the signature has to be proven intact here,
+  # not before the ticket was attached.
+  codesign --verify --strict --verbose=2 "$DMG"
 fi
 
 step "Release symbols and checksums"
@@ -445,6 +585,20 @@ CHECKSUMS_SHA="$(shasum -a 256 "$CHECKSUMS" | awk '{print $1}')"
 CHECKSUMS_SIZE="$(stat -f%z "$CHECKSUMS")"
 
 step "Gatekeeper"
+# THE DISK IMAGE IS ASSESSED FIRST, because it is the first thing macOS judges.
+#
+# The only assessment here used to be `--type execute` against the app inside the
+# mounted volume. That is a real check, but it is not the one a person meets: a
+# downloaded .dmg is assessed as an installer before it will even mount, and that
+# is the assessment that produced "Apple could not verify Juno-1.5.4.dmg is free
+# of malware" — a dialog offering only Move to Trash and Done. The release gate
+# could not fail on the failure users were actually getting.
+if [ "$NOTARIZE" = 1 ]; then
+  spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG" 2>&1 \
+    || die "Gatekeeper rejected the notarized disk image. This is the check a person's Mac runs on a
+       fresh download, and it is the one that reports 'Apple could not verify … is free of malware'."
+fi
+
 # The app inside the image has to pass on a machine that has never seen it,
 # which is what `spctl --assess` answers.
 #
@@ -476,6 +630,17 @@ elif [ "$NOTARIZE" = 1 ]; then
 else
   printf '  (rejected, as expected for a development build)\n'
 fi
+
+# The stapled ticket on the app the person actually drags out, proven offline.
+# `spctl` above is allowed to reach Apple's notary service to reach its verdict;
+# `stapler validate` is not, so this is the check that distinguishes "notarized"
+# from "notarized AND installable without a network".
+if [ "$NOTARIZE" = 1 ]; then
+  xcrun stapler validate "$MOUNT/$(basename "$APP")" \
+    || die "The app inside the disk image carries no stapled notarization ticket.
+       It would need to reach Apple's notary service on first launch, so an offline
+       Mac — or one behind a filtering proxy — would refuse to open it."
+fi
 hdiutil detach "$MOUNT" -force >/dev/null
 MOUNT=""
 trap - EXIT
@@ -483,15 +648,22 @@ trap - EXIT
 SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 SIZE="$(stat -f%z "$DMG")"
 
+# `notarized` is written from $NOTARIZE, which is 1 only after this script has
+# proven Developer ID signing, an Accepted notary verdict, a stapled ticket on
+# both the app and the image, and a clean Gatekeeper assessment. It is the fact
+# `/api/downloads` reads to decide whether a build is safe to offer — before it
+# existed, nothing published distinguished a notarized release from a
+# development-signed one, and the download menu offered both.
 MANIFEST="$BUILD_DIR/Juno-$VERSION.release.json"
 cat > "$MANIFEST" <<MANIFEST_JSON
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "product": "Juno",
   "platform": "macos",
   "channel": "stable",
   "version": "$VERSION",
   "build": "$BUILD_NUMBER",
+  "notarized": $([ "$NOTARIZE" = 1 ] && echo true || echo false),
   "bundle_identifier": "$EXPECTED_BUNDLE_ID",
   "team_id": "$CONFIGURED_TEAM",
   "contract_version": "$SOURCE_CONTRACT",
@@ -577,15 +749,36 @@ for attempt in $(seq 1 12); do
   [ "$attempt" -eq 12 ] || sleep 1
 done
 [ -n "$RELEASE_ID" ] || die "GitHub created the draft release but returned no release ID; it remains draft-only."
+
+# AN UNNOTARIZED BUILD IS PUBLISHED AS A PRERELEASE, ALWAYS.
+#
+# `--publish-dev` exists so the team's own development-signed installs keep
+# updating, and its comment has always said it "is intentionally not a
+# general-distribution path". Nothing enforced that. It published with
+# draft=false and prerelease=false — byte-for-byte the shape of a production
+# release — so `/api/downloads`, which serves the newest stable release, handed
+# it to every visitor. Every macOS release from v0.15.15 to v1.5.4 went out that
+# way, and every one of them was refused by Gatekeeper on a fresh Mac.
+#
+# As a prerelease it is invisible to `isStableRelease()` and therefore to the
+# public feed, while `?channel=next` still finds it, which is the audience it was
+# always for.
+EXPECTED_PRERELEASE="$([ "$NOTARIZE" = 1 ] && echo false || echo true)"
 if ! gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" \
-  -F draft=false -F prerelease=false >/dev/null; then
+  -F draft=false -F "prerelease=$EXPECTED_PRERELEASE" >/dev/null; then
   die "Could not publish the verified draft release; it remains draft-only."
 fi
 RELEASE_STATE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
 [ "$(printf '%s' "$RELEASE_STATE" | jq -r '.draft')" = "false" ] || die \
-  "GitHub did not publish the release as a stable release."
-[ "$(printf '%s' "$RELEASE_STATE" | jq -r '.prerelease')" = "false" ] || die \
-  "GitHub marked the release as a prerelease; refusing to claim stable publication."
+  "GitHub did not publish the release."
+[ "$(printf '%s' "$RELEASE_STATE" | jq -r '.prerelease')" = "$EXPECTED_PRERELEASE" ] || die \
+  "GitHub published the release with prerelease=$(printf '%s' "$RELEASE_STATE" | jq -r '.prerelease'),
+     not $EXPECTED_PRERELEASE. A notarized build must be stable and an unnotarized one must not."
+
+if [ "$NOTARIZE" != 1 ]; then
+  printf '\n  Published as a PRERELEASE. It updates development-signed installs through\n'
+  printf '  ?channel=next and is deliberately invisible to the public download feed.\n\n'
+fi
 
 # A GitHub release can be public before the backend's server-side release-feed
 # cache has observed it. Do not call a release complete until the exact version,
@@ -593,12 +786,17 @@ RELEASE_STATE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
 # actually uses. This is the final end-to-end guarantee against publishing a
 # release that the app cannot discover.
 step "Verify the live updater feed"
+# A prerelease is deliberately absent from the default feed, so a development
+# publication is checked against the channel it actually publishes to. Asking the
+# stable feed for it would fail forever and revert a release that was correct.
 FEED_URL="https://chat.liams.dev/api/downloads?refresh=release-${VERSION}-${SOURCE_SHORT_SHA}"
+[ "$NOTARIZE" = 1 ] || FEED_URL="$FEED_URL&channel=next"
 for attempt in $(seq 1 18); do
   FEED="$(curl --fail --silent --show-error --max-time 20 "$FEED_URL" 2>/dev/null || true)"
   if [ -n "$FEED" ] && printf '%s' "$FEED" | jq -e \
     --arg version "$VERSION" \
     --arg sha "$SHA" \
+    --argjson notarized "$([ "$NOTARIZE" = 1 ] && echo true || echo false)" \
     '.downloads[]
       | select(
           .platform == "macos"
@@ -606,6 +804,7 @@ for attempt in $(seq 1 18); do
           and .version == $version
           and .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Juno-" + $version + ".dmg")
           and .sha256 == $sha
+          and .notarized == $notarized
         )' >/dev/null; then
     printf '\n  Published and discoverable. The live updater feed serves Juno %s.\n\n' "$VERSION"
     exit 0

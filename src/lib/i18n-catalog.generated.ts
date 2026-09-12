@@ -230,6 +230,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "What you are switching on"
   },
   {
+    "id": "026576662dd22494",
+    "source": "This build is not notarized by Apple yet, so macOS blocks it the first time. Open it once from System Settings › Privacy & Security, where the blocked file appears with an Open Anyway button. Updates after that install silently."
+  },
+  {
     "id": "02693d5af96479f1",
     "source": "Radial"
   },
@@ -4714,6 +4718,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread."
   },
   {
+    "id": "41f0269713ac2439",
+    "source": "Juno for Mac, Windows and iPhone. Every build lists its version, size and SHA-256 so you can check what you installed."
+  },
+  {
     "id": "42152239d47bce4d",
     "source": "[Hébergeur — ex. Google Cloud Platform (Google Cloud EMEA Limited), 70 Sir John Rogerson's Quay, Dublin 2, Irlande — préciser raison sociale, adresse et téléphone]"
   },
@@ -5516,6 +5524,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4d29f76533c4f8de",
     "source": "Shortest meeting (minutes)"
+  },
+  {
+    "id": "4d3572fa52671555",
+    "source": "shasum -a 256"
   },
   {
     "id": "4d3af0084b756ef2",
@@ -7386,6 +7398,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Click an element in the preview · Esc to cancel"
   },
   {
+    "id": "67a926f7008e2b0e",
+    "source": "Not available"
+  },
+  {
     "id": "67ac0ef946ad0c72",
     "source": "The master switch. With it off, this Mac claims nothing at all — the five below stop applying, and a task that needs a real machine looks for another one."
   },
@@ -8242,6 +8258,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Invalid status"
   },
   {
+    "id": "7271e72450701be5",
+    "source": "Builds are published as GitHub releases. The checksum beside each one is the digest GitHub recorded for that asset, so you can verify a download with"
+  },
+  {
     "id": "727cd3a64d792ad4",
     "source": "Vertical"
   },
@@ -8356,6 +8376,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "73dd2593b54fa3bd",
     "source": "Research corpus ready"
+  },
+  {
+    "id": "73edeb964d3b3795",
+    "source": "Download Juno"
   },
   {
     "id": "740539428fefd06b",
@@ -13582,6 +13606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Files ·"
   },
   {
+    "id": "bbd07c4fc02c99b9",
+    "source": "SHA-256"
+  },
+  {
     "id": "bbd996a157fca8b5",
     "source": "Adjust what runs, on which model, and when."
   },
@@ -13888,6 +13916,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c071cf5f5ed6f884",
     "source": "running"
+  },
+  {
+    "id": "c07d11416f08a62e",
+    "source": "Same account, same conversations, same projects. Every build below lists the version, the size and the SHA-256 of the exact file you get."
   },
   {
     "id": "c07e2e1ba50d45bb",
@@ -15390,6 +15422,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Overview"
   },
   {
+    "id": "d4d9ee4a9c66fb67",
+    "source": "Back to Juno"
+  },
+  {
     "id": "d4ea4de6477412cc",
     "source": "claim cited"
   },
@@ -16250,6 +16286,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Choose a new password for your Juno account."
   },
   {
+    "id": "de560cfb70465cbd",
+    "source": "before you open it."
+  },
+  {
     "id": "de60b524aebfb005",
     "source": "learning-card · four tones"
   },
@@ -16500,6 +16540,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e1e8d9171dcaa4dc",
     "source": "Z.AI's flagship image model — posters and in-image text."
+  },
+  {
+    "id": "e1eeaea8a84cdbad",
+    "source": "Not notarized yet. macOS blocks the first open — allow it under System Settings › Privacy & Security."
   },
   {
     "id": "e1f6f84a8d46f57b",

@@ -31,8 +31,67 @@ export interface AppDownload {
    */
   sha256: string | null;
   available: boolean;
+  /**
+   * Whether Apple has notarized this build, for platforms where that decides
+   * whether it opens at all. `null` on Windows and iOS, which have no such gate.
+   *
+   * This exists because the answer used to be unknowable. Every macOS release
+   * from v0.15.15 to v1.5.4 was signed for development and never notarized, and
+   * nothing in the feed could tell one of those from a production build — so the
+   * download menu offered them, and macOS refused every one with "Apple could
+   * not verify … is free of malware". Installed copies never saw it: the
+   * updater strips `com.apple.quarantine` after a verified swap, so only a
+   * fresh download hit the wall.
+   */
+  notarized: boolean | null;
   /** Shown in place of a version when there is nothing to download yet. */
   note?: string;
+}
+
+/**
+ * The provenance manifest published beside a macOS installer.
+ *
+ * `native/Scripts/release-macos.sh` writes one per release and attaches it as
+ * `Juno-<version>.release.json`. Only the fields read here are declared; the
+ * manifest carries more.
+ */
+export interface ReleaseManifest {
+  version?: string;
+  /** Written by the release script. Absent on every release published before it was. */
+  notarized?: boolean;
+}
+
+/** The `*.release.json` provenance manifest for a release, if it published one. */
+export function manifestAsset(assets: ReleaseAsset[]): ReleaseAsset | null {
+  return assets.find((asset) => asset.name.toLowerCase().endsWith(".release.json")) ?? null;
+}
+
+/**
+ * Whether a build is *proven* notarized.
+ *
+ * Fails closed on purpose. A missing manifest, an unparseable one, or a manifest
+ * with no `notarized` field all answer false, because every one of those is a
+ * build nobody proved Apple had accepted — and that is exactly the set of
+ * releases that were being handed to visitors before this existed. Only the
+ * literal `true` counts.
+ */
+export function isNotarized(manifest: ReleaseManifest | null | undefined): boolean {
+  return manifest?.notarized === true;
+}
+
+/** Parse a manifest body, tolerating anything that is not the JSON we expect. */
+export function parseReleaseManifest(body: string): ReleaseManifest | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (!parsed || typeof parsed !== "object") return null;
+    const record = parsed as Record<string, unknown>;
+    return {
+      version: typeof record.version === "string" ? record.version : undefined,
+      notarized: typeof record.notarized === "boolean" ? record.notarized : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export const DOWNLOAD_REPOS = {
