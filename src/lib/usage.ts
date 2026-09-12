@@ -35,13 +35,73 @@ export async function getQuota(userId: string, plan?: Plan): Promise<QuotaStatus
   return { plan: p, used, limit, remaining: limit == null ? null : Math.max(0, limit - used) };
 }
 
-/** Atomically checks the monthly cap and, if allowed, consumes one message. */
+/**
+ * Why a turn was refused. Typed rather than a string so callers can answer the
+ * right thing: a quota refusal sends someone to the upgrade page, an
+ * unverified address sends them to their inbox, and telling the two apart in
+ * the client used to be impossible.
+ */
+export type ConsumeRefusal = "quota_exceeded" | "email_unverified";
+
+export interface ConsumeMessageResult {
+  allowed: boolean;
+  quota: QuotaStatus;
+  /** Set only when `allowed` is false. */
+  reason?: ConsumeRefusal;
+}
+
+/**
+ * The body every route sends when `consumeMessage` refuses.
+ *
+ * One function rather than four copies of the same object literal, because the
+ * four call sites (chat's two paths, generate, design edit) had already drifted
+ * into three different sentences for the same condition — and when the
+ * unverified-address refusal arrived, every one of them would have reported it
+ * as a spent quota, sending a person to the upgrade page to solve a problem a
+ * payment cannot fix.
+ */
+export function consumeRefusalBody(
+  result: ConsumeMessageResult,
+  verb = "chatting",
+): { error: string; code: "QUOTA_EXCEEDED" | "EMAIL_UNVERIFIED"; quota: QuotaStatus } {
+  if (result.reason === "email_unverified") {
+    return {
+      error: "Confirm your email address to start sending messages. Check your inbox for the link.",
+      code: "EMAIL_UNVERIFIED",
+      quota: result.quota,
+    };
+  }
+  return {
+    error: `You've reached your monthly message limit. Upgrade your plan to keep ${verb}.`,
+    code: "QUOTA_EXCEEDED",
+    quota: result.quota,
+  };
+}
+
+/**
+ * Atomically checks the monthly cap and, if allowed, consumes one message.
+ *
+ * The email-verification check comes first and consumes nothing. A trial is
+ * real money — model spend against a plan nobody has paid for — and before
+ * this an address nobody could reach got a funded trial the moment it was
+ * typed, which is the whole disposable-address problem. Sign-in is
+ * deliberately NOT gated: a user who cannot verify can still reach their
+ * account, their data and their export; they just cannot spend.
+ */
 export async function consumeMessage(
   userId: string,
   plan: Plan
-): Promise<{ allowed: boolean; quota: QuotaStatus }> {
+): Promise<ConsumeMessageResult> {
   const period = currentPeriod();
   const limit = PLANS[plan].monthlyMessages;
+
+  const account = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { emailVerified: true },
+  });
+  if (!account?.emailVerified) {
+    return { allowed: false, quota: await getQuota(userId, plan), reason: "email_unverified" };
+  }
 
   // Ensure the period row exists without incrementing.
   await prisma.usage.upsert({
@@ -70,7 +130,7 @@ export async function consumeMessage(
   const used = row?.messageCount ?? limit;
 
   if (res.count === 0) {
-    return { allowed: false, quota: { plan, used, limit, remaining: 0 } };
+    return { allowed: false, quota: { plan, used, limit, remaining: 0 }, reason: "quota_exceeded" };
   }
   return { allowed: true, quota: { plan, used, limit, remaining: Math.max(0, limit - used) } };
 }

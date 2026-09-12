@@ -37,9 +37,25 @@ model User {
   /// this column to authorize the object, so it needs an index (see @@index).
   image          String?
   hashedPassword String? // null for OAuth-only users
-  // Incremented after a password reset. JWTs carry the version they were
-  // issued with, so every older session becomes invalid immediately.
+  // Incremented after a password reset, a password change, or "sign out
+  // everywhere". JWTs carry the version they were issued with, so every older
+  // session becomes invalid immediately.
   sessionVersion Int       @default(0)
+
+  // Two-step verification (TOTP, RFC 6238 — see src/lib/totp.ts).
+  //
+  // The secret is encrypted with the message keyring, not stored raw: a
+  // database dump that yields TOTP secrets defeats the whole point of the
+  // second factor, since the holder can then mint valid codes forever.
+  //
+  // The two columns together are the enrolment state machine, which is why
+  // there is no third "pending" column: secret set + enabledAt null is a
+  // started-but-unconfirmed enrolment (the QR has been shown, no code has been
+  // proved yet, and nothing is enforced); both set is enrolled; both null is
+  // off. Re-starting enrolment overwrites the pending secret, so an abandoned
+  // attempt can never be resumed by someone who photographed the old QR.
+  totpSecret     String?   @db.Text
+  totpEnabledAt  DateTime?
 
   // Moderation: a set bannedAt means the account is suspended (sign-in blocked,
   // active sessions killed). strikes accumulates soft violations toward auto-ban.
@@ -124,8 +140,30 @@ model User {
   notifications               Notification[]
   projectMemberships          ProjectMember[]
   devicePushTokens            DevicePushToken[]
+  mfaRecoveryCodes            MfaRecoveryCode[]
 
   @@index([image])
+}
+
+/**
+ * One-time codes that stand in for the authenticator app.
+ *
+ * Ten are issued when two-step verification is turned on and shown exactly
+ * once. Only the SHA-256 digest is kept — a dump of this table must not let
+ * anyone sign in — and a used code is marked rather than deleted so the
+ * account page can honestly say how many are left, and so a support question
+ * about "I used my last one" has an answer.
+ */
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ----------------------------------------------------------------------------

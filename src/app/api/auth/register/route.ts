@@ -5,6 +5,9 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { hashPassword } from "@/lib/password";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
+import { isEmailEnabled, sendEmailVerification } from "@/lib/email";
+import { issueEmailToken, markEmailVerified } from "@/lib/account-security";
+import { env } from "@/lib/env";
 
 const schema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -52,6 +55,27 @@ export async function POST(req: Request) {
     data: { email, name: parsed.data.name ?? null, hashedPassword },
   });
   await ensureUserDefaults(user.id);
+
+  if (isEmailEnabled()) {
+    // The trial cannot spend until this link is opened (src/lib/usage.ts), so
+    // a disposable address no longer gets funded model access the instant it
+    // is typed. Sign-in still works: the account is reachable and exportable,
+    // it just can't cost anything yet.
+    const token = await issueEmailToken("verify", user.id, email);
+    const verifyUrl = new URL("/api/auth/verify-email", env.appUrl);
+    verifyUrl.searchParams.set("token", token);
+    await sendEmailVerification(email, verifyUrl.toString());
+  } else {
+    // No mail configured — a fresh checkout, a self-host, CI. Verifying
+    // immediately keeps the product usable out of the box; logging it makes
+    // the weakened state visible to whoever set the deployment up, rather
+    // than something they discover from a bill.
+    await markEmailVerified(user.id);
+    console.warn(
+      "[auth] RESEND_API_KEY is not set — registering accounts as verified without sending a link. " +
+        "Email verification is not being enforced on this deployment."
+    );
+  }
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }

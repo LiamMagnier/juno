@@ -159,6 +159,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ImportObject", "userId"],
   ["Notification", "userId"],
   ["ProjectMember", "userId"],
+  // Two-step recovery codes. Guarded even though every lookup already has the
+  // user in hand: a codeHash is unique, so an unscoped findUnique on it would
+  // silently accept one account's recovery code as another account's second
+  // factor. The scope is what makes that impossible rather than unlikely.
+  ["MfaRecoveryCode", "userId"],
 ]);
 
 /**

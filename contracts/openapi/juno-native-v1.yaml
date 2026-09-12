@@ -44,6 +44,12 @@ paths:
         session and rotating-refresh model as /auth/token. Throttled per account
         and per IP; every rejection returns the same invalid_grant envelope so
         the response cannot be used to probe which accounts exist.
+
+        The one exception is two-step verification: an account that has it on
+        answers 401 `mfa_required` when the password was correct but no valid
+        code came with it, because a client cannot ask for a code it has not
+        been told to collect. That is only ever returned to a caller who
+        already holds the password.
       requestBody:
         required: true
         content:
@@ -56,6 +62,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TokenResponse' }
         '400': { $ref: '#/components/responses/InvalidGrant' }
+        '401':
+          description: >-
+            Two-step verification required. Collect a TOTP or recovery code and
+            retry the same request with `code`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
         '429': { $ref: '#/components/responses/InvalidGrant' }
   /auth/refresh:
     post:
@@ -1340,6 +1351,12 @@ components:
         deviceName: { type: string, minLength: 1, maxLength: 120 }
         platform: { type: string, minLength: 1, maxLength: 40 }
         appVersion: { type: string, minLength: 1, maxLength: 40 }
+        # Two-step verification. Optional and additive: an older client that
+        # never sends it is unaffected unless its user has enrolled, in which
+        # case the sign-in answers `mfa_required` (401) and the client must
+        # collect a TOTP or recovery code and retry with this field. Sending a
+        # code for an account without two-step is accepted and ignored.
+        code: { type: string, minLength: 1, maxLength: 64 }
     RefreshResponse:
       type: object
       required: [tokenType, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt]

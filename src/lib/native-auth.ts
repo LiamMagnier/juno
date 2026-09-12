@@ -24,6 +24,13 @@ export type NativeAuthErrorCode =
   // A rotation that lost a race, not a rejected grant. Served as 5xx so the
   // client retries rather than treating it as a dead credential.
   | "refresh_conflict"
+  // The password was right and the account has two-step on, but no valid code
+  // came with it. Distinct from invalid_grant on purpose: the client has to be
+  // able to ask for a code, and it can only know to do that if we say so. The
+  // disclosure is the same one every second factor makes — it is only ever
+  // returned to someone who already holds the correct password, which is
+  // exactly what /api/auth/mfa/challenge reveals to the web form.
+  | "mfa_required"
   | "not_found";
 
 export class NativeAuthError extends Error {
@@ -169,6 +176,13 @@ const NATIVE_SIGNIN_MAX_PER_IP = 30;
 export async function signInNativeWithPassword(input: {
   email: string;
   password: string;
+  /**
+   * A TOTP or recovery code, when the account has two-step verification on.
+   * Optional because a client cannot know whether it is needed until it has
+   * tried once: the first call comes without it and is answered with
+   * `mfa_required`, the second carries the code.
+   */
+  code?: string;
   installationId: string;
   deviceName: string;
   platform: string;
@@ -207,13 +221,36 @@ export async function signInNativeWithPassword(input: {
 
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, sessionVersion: true, bannedAt: true, hashedPassword: true },
+    select: {
+      id: true,
+      sessionVersion: true,
+      bannedAt: true,
+      hashedPassword: true,
+      totpEnabledAt: true,
+    },
   });
   // OAuth-only accounts have no hash; they must keep using the browser flow.
   const { ok, needsUpgrade } = await verifyPasswordConstantTime(input.password, user?.hashedPassword);
   if (!user?.hashedPassword) throw invalid();
   if (!ok) throw invalid();
   if (user.bannedAt) throw invalid();
+
+  // The second factor, checked AFTER the password, for two reasons: a wrong
+  // password must never consume one of the ten single-use recovery codes, and
+  // `mfa_required` must never be returned to someone who does not already hold
+  // the password. Without this the native app was a way around two-step
+  // entirely — enrol on the web, then sign in from the phone with the password
+  // alone.
+  if (user.totpEnabledAt) {
+    const { verifySecondFactor } = await import("@/lib/account-security");
+    if (!(await verifySecondFactor(user.id, input.code ?? ""))) {
+      throw new NativeAuthError(
+        "mfa_required",
+        401,
+        "This account needs its two-step verification code.",
+      );
+    }
+  }
   if (needsUpgrade) {
     // Best-effort migration of a legacy hash while we hold the plaintext; a
     // failure here re-upgrades on the next sign-in and must not block this one.

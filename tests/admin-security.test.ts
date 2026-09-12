@@ -30,7 +30,12 @@ test("the complete Admin page tree has one fail-closed server layout", () => {
   const layout = source("src/app/(app)/admin/layout.tsx");
   const landing = source("src/app/(app)/admin/page.tsx");
 
-  assert.match(layout, /await requireOwnerPage\(\)/);
+  // The layout uses requireOwnerPageAccess rather than requireOwnerPage: it
+  // needs to tell "not an owner" (still a 404, raised inside the guard) from
+  // "owner without two-step" so it can render the enrolment prompt INSTEAD of
+  // children. Both refuse; only one of them explains itself.
+  assert.match(layout, /await requireOwnerPageAccess\(\)/);
+  assert.match(layout, /if \(mfaRequired\) return <AdminMfaRequired \/>;/);
   assert.match(landing, /await requireOwnerPage\(\)/);
   assert.match(landing, /redirect\("\/admin\/users"\)/);
 });

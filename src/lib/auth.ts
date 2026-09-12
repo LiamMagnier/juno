@@ -3,12 +3,36 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { Adapter, AdapterAccount } from "next-auth/adapters";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import Apple from "next-auth/providers/apple";
+import Resend from "next-auth/providers/resend";
 import { z } from "zod";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env, isGoogleConfigured } from "@/lib/env";
 import { encryptAccountTokens, decryptAccountTokens } from "@/lib/crypto";
 import { hashPassword, verifyPasswordConstantTime } from "@/lib/password";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
+import { sendMagicLink } from "@/lib/email";
+import { verifySecondFactor } from "@/lib/account-security";
+
+/**
+ * Sign in with Apple is configured. Apple's client secret is a JWT that
+ * expires (six months, maximum), which is why this is a presence check and not
+ * a validity one — an expired secret still renders the button and fails at the
+ * round trip, and that is a deploy problem, not a runtime branch.
+ */
+export function isAppleConfigured(): boolean {
+  return Boolean(process.env.AUTH_APPLE_ID && process.env.AUTH_APPLE_SECRET);
+}
+
+/**
+ * The email magic link is available. It needs BOTH halves of the mail
+ * configuration: Resend rejects a send with no verified From address, and a
+ * sign-in button whose only outcome is a silent non-delivery is worse than no
+ * button — the user believes a link is coming.
+ */
+export function isEmailLinkConfigured(): boolean {
+  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+}
 
 /**
  * PrismaAdapter that encrypts OAuth tokens before they touch the `Account`
@@ -36,6 +60,11 @@ function EncryptedPrismaAdapter(client: typeof prismaUnguarded): Adapter {
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(200),
+  // The second factor, when the account has one. Optional in the schema
+  // because the form does not know whether it is needed until it has asked
+  // (POST /api/auth/mfa/challenge) — and because an account WITHOUT two-step
+  // must never be told that a code field exists.
+  code: z.string().max(64).optional(),
 });
 
 // Brute-force limits on the credentials sign-in: per caller+account pair plus
@@ -50,7 +79,7 @@ const SIGNIN_MAX_PER_IP = 30;
 const providers: NextAuthConfig["providers"] = [
   Credentials({
     name: "Email",
-    credentials: { email: {}, password: {} },
+    credentials: { email: {}, password: {}, code: {} },
     authorize: async (raw, request) => {
       const parsed = credentialsSchema.safeParse(raw);
       if (!parsed.success) return null;
@@ -69,6 +98,16 @@ const providers: NextAuthConfig["providers"] = [
       if (!user?.hashedPassword) return null;
       if (!ok) return null;
       if (user.bannedAt) return null;
+
+      // Two-step verification, checked only AFTER the password has verified.
+      // Doing it in this order means a wrong password never reaches the
+      // recovery-code table, so an attacker cannot burn someone's recovery
+      // codes (or learn that they have two-step on) without the password.
+      if (user.totpEnabledAt) {
+        const code = parsed.data.code?.trim();
+        if (!code) return null;
+        if (!(await verifySecondFactor(user.id, code))) return null;
+      }
       // Migrate a legacy (pre-72-byte-safe) hash to the current scheme now that
       // we hold the plaintext. Best-effort: a failure here must not block login.
       if (needsUpgrade) {
@@ -93,6 +132,36 @@ if (isGoogleConfigured()) {
       clientSecret: env.googleClientSecret!,
       // NOT auto-linking by email: credential emails are unverified, so linking
       // a Google identity to a pre-existing same-email account would allow takeover.
+    })
+  );
+}
+
+if (isAppleConfigured()) {
+  providers.push(
+    Apple({
+      clientId: process.env.AUTH_APPLE_ID!,
+      clientSecret: process.env.AUTH_APPLE_SECRET!,
+      // Same reasoning as Google: no auto-linking by email address. Apple's
+      // private relay addresses make that doubly true — the address is real but
+      // it is not the address the account was registered with.
+    })
+  );
+}
+
+if (isEmailLinkConfigured()) {
+  providers.push(
+    Resend({
+      apiKey: process.env.RESEND_API_KEY!,
+      from: process.env.EMAIL_FROM!,
+      // Sent through the product's own sender so the link looks like every
+      // other mail Juno sends, and so one place logs a delivery failure.
+      sendVerificationRequest: async ({ identifier, url }) => {
+        const result = await sendMagicLink(identifier, url);
+        // Auth.js shows the "check your email" page whatever happens here, so a
+        // send that failed has to throw or the user waits for a mail that is
+        // never coming. The URL is a credential and is never logged.
+        if ("ok" in result && !result.ok) throw new Error("Could not send the sign-in link.");
+      },
     })
   );
 }
@@ -165,10 +234,20 @@ export const authConfig: NextAuthConfig = {
     },
   },
   events: {
-    // Fires when the adapter creates a user (OAuth sign-up). Seed defaults.
+    // Fires when the adapter creates a user (OAuth or magic-link sign-up).
     async createUser({ user }) {
       if (!user.id) return;
       await ensureUserDefaults(user.id);
+      // Every provider that reaches this event has already proved the address:
+      // Google and Apple only return verified addresses, and a magic link is
+      // itself the proof. Marking it here rather than trusting an adapter to
+      // map `email_verified` means a Google sign-up can spend immediately
+      // instead of waiting for a verification mail it will never be sent.
+      await prisma.user
+        .updateMany({ where: { id: user.id, emailVerified: null }, data: { emailVerified: new Date() } })
+        .catch(() => {
+          /* Best-effort: the account exists; the banner will prompt instead. */
+        });
     },
   },
 };

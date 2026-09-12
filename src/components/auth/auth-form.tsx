@@ -11,6 +11,16 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pressable } from "@/components/ui/pressable";
 
+function AppleIcon() {
+  return (
+    // Apple's mark is monochrome by specification, so unlike the Google mark it
+    // takes the button's own foreground token rather than a literal colour.
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true" fill="currentColor">
+      <path d="M16.37 12.78c.02-2.1 1.72-3.11 1.8-3.16-0.98-1.44-2.5-1.64-3.05-1.66-1.3-.13-2.54.76-3.2.76-.66 0-1.68-.74-2.76-.72-1.42.02-2.73.82-3.46 2.09-1.48 2.56-.38 6.35 1.06 8.43.7 1.02 1.54 2.16 2.64 2.12 1.06-.04 1.46-.68 2.74-.68 1.28 0 1.64.68 2.76.66 1.14-.02 1.86-1.03 2.56-2.05.8-1.18 1.13-2.32 1.15-2.38-.03-.01-2.2-.84-2.24-3.34ZM14.3 6.4c.58-.71.97-1.7.86-2.68-.83.03-1.84.55-2.44 1.26-.54.62-1.01 1.63-.88 2.59.93.07 1.88-.47 2.46-1.17Z" />
+    </svg>
+  );
+}
+
 function GoogleIcon() {
   return (
     // The four hex fills are Google's brand mark, which may not be recoloured —
@@ -56,7 +66,19 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 interface FieldErrors {
   email?: string;
   password?: string;
+  code?: string;
 }
+
+/**
+ * What `/api/auth/verify-email` sends the browser back with. Shown here rather
+ * than on a page of its own so that the one link in the mail always lands
+ * somewhere the user can act: signed out, that is this form.
+ */
+const VERIFICATION_NOTICES: Record<string, string> = {
+  verified: "Your email address is confirmed. Sign in to pick up where you left off.",
+  expired: "That confirmation link has expired. Sign in and we'll send you a fresh one.",
+  invalid: "That confirmation link has already been used, or isn't valid any more.",
+};
 
 /**
  * The server's message, routed to the field it is about.
@@ -72,7 +94,23 @@ function routeServerError(message: string): FieldErrors | null {
   return null;
 }
 
-export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; googleEnabled: boolean }) {
+export interface AuthFormProps {
+  mode: "signin" | "signup";
+  /**
+   * One flag per provider, resolved on the server from the environment.
+   *
+   * A sign-in button that cannot work is worse than an absent one: it takes
+   * the user out of the form, through a redirect, and back to an error they
+   * can do nothing about. So every button here is rendered only when its
+   * provider is actually configured, and the decision is made where the
+   * secrets are — never guessed in the browser.
+   */
+  googleEnabled: boolean;
+  appleEnabled: boolean;
+  emailLinkEnabled: boolean;
+}
+
+export function AuthForm({ mode, googleEnabled, appleEnabled, emailLinkEnabled }: AuthFormProps) {
   const params = useSearchParams();
   const requestedCallback = params.get("callbackUrl");
   const callbackUrl = React.useMemo(() => {
@@ -92,6 +130,24 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
   const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [googleLoading, setGoogleLoading] = React.useState(false);
+  const [appleLoading, setAppleLoading] = React.useState(false);
+  const [linkLoading, setLinkLoading] = React.useState(false);
+
+  // The two-step code step. The form only ever enters it after
+  // /api/auth/mfa/challenge has said this account has two-step on, so an
+  // account without it never sees a code box — which is also why the challenge
+  // exists rather than the form always asking.
+  const [step, setStep] = React.useState<"credentials" | "code">("credentials");
+  const [code, setCode] = React.useState("");
+  const codeRef = React.useRef<HTMLInputElement>(null);
+  React.useEffect(() => {
+    if (step === "code") codeRef.current?.focus();
+  }, [step]);
+
+  const [notice, setNotice] = React.useState<string | null>(
+    () => VERIFICATION_NOTICES[params.get("verified") ?? ""] ?? null
+  );
+  const busy = loading || googleLoading || appleLoading || linkLoading;
 
   // Inline, not toast: a message about a field lives under that field; a
   // message about the whole attempt lives above the form. Toasts are kept for
@@ -128,12 +184,64 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
 
     setSubmitted(true);
     setFormError(null);
+    setNotice(null);
+
+    // The code step re-submits the credentials it already holds along with the
+    // code. They are not re-validated: they were correct a moment ago, and
+    // re-running the rules here would flag a password the server has accepted.
+    if (step === "code") {
+      const submittedCode = code.trim();
+      if (!submittedCode) {
+        setFieldErrors({ code: "Enter the code from your authenticator app." });
+        return;
+      }
+      setLoading(true);
+      try {
+        const result = await signIn("credentials", {
+          email: effectiveEmail,
+          password: effectivePassword,
+          code: submittedCode,
+          redirect: false,
+        });
+        if (result?.error) {
+          // Deliberately one message for both "wrong code" and "expired code":
+          // the server does not distinguish them either, and a used recovery
+          // code must not be identifiable as one that was once valid.
+          setFieldErrors({ code: "That code isn't right. Try the current one, or a recovery code." });
+          return;
+        }
+        window.location.href = callbackUrl;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Something went wrong.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const clientErrors = validate({ email: effectiveEmail, password: effectivePassword });
     setFieldErrors(clientErrors);
     if (clientErrors.email || clientErrors.password) return;
 
     setLoading(true);
     try {
+      if (mode === "signin") {
+        // Pre-flight: does this account want a second factor? Answers false for
+        // everything else, including a wrong password, so nothing is learned
+        // here that submitting the form would not already reveal.
+        const challenge = await fetch("/api/auth/mfa/challenge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: effectiveEmail, password: effectivePassword }),
+        })
+          .then((r) => (r.ok ? (r.json() as Promise<{ mfaRequired?: boolean }>) : { mfaRequired: false }))
+          .catch(() => ({ mfaRequired: false }));
+        if (challenge.mfaRequired) {
+          setStep("code");
+          return;
+        }
+      }
+
       if (mode === "signup") {
         const res = await fetch("/api/auth/register", {
           method: "POST",
@@ -142,7 +250,7 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
-          const message = data.error ?? "Could not create your account.";
+          const message = data.error ?? "Couldn’t create your account.";
           const routed = routeServerError(message);
           if (routed) setFieldErrors(routed);
           else setFormError(message);
@@ -199,13 +307,24 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         </p>
       )}
 
-      {googleEnabled && (
+      {notice && (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-field border border-border/60 bg-muted/40 px-3.5 py-3 text-body text-foreground"
+        >
+          <span>{notice}</span>
+        </p>
+      )}
+
+      {/* Hidden during the code step: there is nothing to choose there, and a
+          provider button mid-challenge would abandon a half-finished sign-in. */}
+      {step === "credentials" && googleEnabled && (
         <>
           <Button
             type="button"
             variant="secondary"
             className="w-full"
-            disabled={googleLoading || loading}
+            disabled={busy}
             aria-busy={googleLoading}
             onClick={() => {
               setGoogleLoading(true);
@@ -220,6 +339,28 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
             {googleLoading ? <Loader2 className="motion-safe:animate-spin" aria-hidden /> : <GoogleIcon />}
             Continue with Google
           </Button>
+        </>
+      )}
+
+      {step === "credentials" && appleEnabled && (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full"
+          disabled={busy}
+          aria-busy={appleLoading}
+          onClick={() => {
+            setAppleLoading(true);
+            signIn("apple", { callbackUrl });
+          }}
+        >
+          {appleLoading ? <Loader2 className="motion-safe:animate-spin" aria-hidden /> : <AppleIcon />}
+          Continue with Apple
+        </Button>
+      )}
+
+      {step === "credentials" && (googleEnabled || appleEnabled) && (
+        <>
           {/* The rule is written explicitly at border-border/60. With no colour
               class it inherited the global `* { border-color: hsl(var(--border)) }`
               at full 21%, so the one hairline INSIDE the card was louder than the
@@ -241,6 +382,11 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
       )}
 
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
+        {/* The credentials stay mounted but hidden during the code step: the
+            password is still in state and still submitted, and unmounting the
+            inputs would hand the browser's password manager a form that looks
+            like a different one. */}
+        <div className={step === "code" ? "hidden" : "space-y-4"} aria-hidden={step === "code"}>
         {mode === "signup" && (
           <Field
             id="name"
@@ -305,16 +451,89 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
             </Pressable>
           }
         />
+        </div>
+
+        {step === "code" && (
+          <>
+            <p className="text-body text-muted-foreground">
+              This account uses two-step verification. Enter the 6-digit code from your authenticator app — or one of
+              your recovery codes if you can&apos;t reach it.
+            </p>
+            <Field
+              ref={codeRef}
+              id="mfa-code"
+              name="code"
+              label="Verification code"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              error={fieldErrors.code}
+              placeholder="123456"
+              // one-time-code so iOS and password managers offer the code from
+              // the keyboard; text rather than number so a recovery code (which
+              // has letters and a dash) can be typed into the same field.
+              autoComplete="one-time-code"
+              inputMode="text"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={20}
+            />
+          </>
+        )}
+
         {/* Disabled while the Google redirect is in flight too. Clicking Continue
             with Google and then Sign in fired a second auth attempt against a
             page that was already navigating away — the Google button already
             guards against the reverse order, and this closes the pair.
             aria-busy so the state is announced, not only drawn. */}
-        <Button type="submit" className="w-full" disabled={loading || googleLoading} aria-busy={loading}>
+        <Button type="submit" className="w-full" disabled={busy} aria-busy={loading}>
           {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
-          {mode === "signup" ? "Create account" : "Sign in"}
+          {step === "code" ? "Verify and sign in" : mode === "signup" ? "Create account" : "Sign in"}
         </Button>
+
+        {step === "code" && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={loading}
+            onClick={() => {
+              setStep("credentials");
+              setCode("");
+              setFieldErrors({});
+            }}
+          >
+            Use a different account
+          </Button>
+        )}
       </form>
+
+      {/* The magic link reuses the address already typed rather than opening a
+          second form — there is only ever one email on this card, and asking
+          for it twice is how a user ends up sending a link to a typo. */}
+      {step === "credentials" && emailLinkEnabled && (
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          disabled={busy}
+          aria-busy={linkLoading}
+          onClick={() => {
+            const address = email.trim();
+            if (!address || !EMAIL_RE.test(address)) {
+              setSubmitted(true);
+              setFieldErrors({ email: "Enter your email address to get a sign-in link." });
+              return;
+            }
+            setLinkLoading(true);
+            setFormError(null);
+            signIn("resend", { email: address, callbackUrl });
+          }}
+        >
+          {linkLoading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+          Email me a sign-in link instead
+        </Button>
+      )}
 
       <p className="text-center text-body text-muted-foreground">
         {mode === "signup" ? (

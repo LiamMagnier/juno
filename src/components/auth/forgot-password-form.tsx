@@ -34,12 +34,12 @@ export function ForgotPasswordForm({ emailEnabled }: { emailEnabled: boolean }) 
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setError(data.error ?? "Could not send the reset email.");
+        setError(data.error ?? "Couldn’t send the reset email.");
         return;
       }
       setSent(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not send the reset email.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t send the reset email.");
     } finally {
       setLoading(false);
     }

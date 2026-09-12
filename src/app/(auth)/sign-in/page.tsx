@@ -5,6 +5,7 @@ import { AuthForm } from "@/components/auth/auth-form";
 import { AuthFormSkeleton } from "@/components/auth/auth-form-skeleton";
 import { getCurrentUser } from "@/lib/session";
 import { isGoogleConfigured } from "@/lib/env";
+import { isAppleConfigured, isEmailLinkConfigured } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -24,7 +25,14 @@ export default async function SignInPage() {
           suspends on first render and the card used to be a heading over empty
           space that jumped to full height when the whole form arrived at once. */}
       <Suspense fallback={<AuthFormSkeleton mode="signin" />}>
-        <AuthForm mode="signin" googleEnabled={isGoogleConfigured()} />
+        {/* Each provider flag is resolved here, on the server, where the
+            credentials are. The form never renders a button that cannot work. */}
+        <AuthForm
+          mode="signin"
+          googleEnabled={isGoogleConfigured()}
+          appleEnabled={isAppleConfigured()}
+          emailLinkEnabled={isEmailLinkConfigured()}
+        />
       </Suspense>
     </div>
   );

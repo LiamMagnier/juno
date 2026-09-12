@@ -5,6 +5,7 @@ import { AuthForm } from "@/components/auth/auth-form";
 import { AuthFormSkeleton } from "@/components/auth/auth-form-skeleton";
 import { getCurrentUser } from "@/lib/session";
 import { isGoogleConfigured } from "@/lib/env";
+import { isAppleConfigured, isEmailLinkConfigured } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "Create account",
@@ -24,7 +25,12 @@ export default async function SignUpPage() {
           suspends on first render and the card used to be a heading over empty
           space that jumped to full height when the whole form arrived at once. */}
       <Suspense fallback={<AuthFormSkeleton mode="signup" />}>
-        <AuthForm mode="signup" googleEnabled={isGoogleConfigured()} />
+        <AuthForm
+          mode="signup"
+          googleEnabled={isGoogleConfigured()}
+          appleEnabled={isAppleConfigured()}
+          emailLinkEnabled={isEmailLinkConfigured()}
+        />
       </Suspense>
     </div>
   );

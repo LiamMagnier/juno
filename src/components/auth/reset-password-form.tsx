@@ -48,7 +48,7 @@ export function ResetPasswordForm() {
         // The server's objection is almost always about the password itself
         // (length, reuse); a spent token is caught by the branch below on the
         // next attempt. Either way it is a sentence under the field, not a toast.
-        setErrors({ password: data.error ?? "Could not reset your password." });
+        setErrors({ password: data.error ?? "Couldn’t reset your password." });
         return;
       }
 
@@ -57,7 +57,7 @@ export function ResetPasswordForm() {
       setToken("");
       setComplete(true);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not reset your password.");
+      toast.error(error instanceof Error ? error.message : "Couldn’t reset your password.");
     } finally {
       setLoading(false);
     }

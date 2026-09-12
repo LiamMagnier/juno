@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
+import { decryptField, decryptJsonField } from "@/lib/field-crypto";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
@@ -228,6 +229,11 @@ export async function GET(req: Request) {
     reasoningParts: Array.isArray(m.reasoningParts)
       ? m.reasoningParts.filter((part): part is string => typeof part === "string").map((part) => decryptMessageTextSafe(part))
       : null,
+    // The tool-activity log is encrypted at rest like the body beside it. An
+    // export is a GDPR subject-access response, so it ships the cleartext —
+    // the point is to hand the person their own data, not a copy of the
+    // ciphertext they have no key for.
+    activity: decryptJsonField(m.activity),
   }));
 
   if (format === "csv") {
@@ -404,7 +410,9 @@ export async function GET(req: Request) {
       createdAt: memory.createdAt,
       updatedAt: memory.updatedAt,
     })),
-    memorySummary,
+    // The consolidated profile is encrypted at rest (field-crypto.ts); the
+    // export is the one place it is deliberately handed back in cleartext.
+    memorySummary: memorySummary ? { ...memorySummary, content: decryptField(memorySummary.content) } : null,
     projects: projects.map((project) => ({
       ...project,
       id: stableProjectId.get(project.id) ?? project.id,

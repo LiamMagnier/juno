@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Camera, KeyRound, Loader2, LogOut } from "lucide-react";
+import { Camera, Loader2 } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
@@ -26,6 +26,7 @@ import { TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
 import { useSettingsSave } from "@/components/settings/use-settings-save";
 import { SettingRow, SettingsGroup } from "@/components/settings/setting-row";
 import { UsageActivity, UsageDetail, UsageStats, useProfileUsage } from "@/components/settings/usage-overview";
+import { AccountSecuritySection } from "@/components/auth/account-security";
 import { PLANS } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
@@ -67,7 +68,7 @@ export function AccountSection() {
       toast.success("Profile picture updated.");
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not update picture.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t update picture.");
     } finally {
       setUploading(false);
     }
@@ -95,27 +96,6 @@ export function AccountSection() {
     }
   };
 
-  // Password — there is no in-app change; the reset link is the one path, and
-  // it is the same one the sign-in screen offers.
-  const [resetSending, setResetSending] = React.useState(false);
-  const sendReset = async () => {
-    setResetSending(true);
-    try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Could not send the reset email.");
-      toast.success(data.message ?? "A password-reset link is on its way.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not send the reset email.");
-    } finally {
-      setResetSending(false);
-    }
-  };
-
   // Deletion — guarded by typing the address, posting to the rate-limited route.
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [confirm, setConfirm] = React.useState("");
@@ -131,11 +111,11 @@ export function AccountSection() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Could not delete the account.");
+        throw new Error(data.error ?? "Couldn’t delete the account.");
       }
       await signOutToSignIn();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not delete the account.");
+      toast.error(err instanceof Error ? err.message : "Couldn’t delete the account.");
       setDeleting(false);
     }
   };
@@ -197,7 +177,7 @@ export function AccountSection() {
           description="Shown in the sidebar and on anything you share."
           control={
             <div className="flex items-center gap-2">
-              <TileSaveStatus state={nameState} failedMessage="Couldn't save." />
+              <TileSaveStatus state={nameState} failedMessage="Couldn’t save." />
               <Input
                 id="account-name"
                 value={name}
@@ -209,11 +189,6 @@ export function AccountSection() {
               />
             </div>
           }
-        />
-        <SettingRow
-          label="Email"
-          description="The address you sign in with. It cannot be changed here."
-          control={<span className="font-mono text-caption text-muted-foreground">{email}</span>}
         />
       </SettingsGroup>
 
@@ -230,28 +205,10 @@ export function AccountSection() {
         <UsageDetail data={usage.data} loading={usage.loading} />
       </SettingsGroup>
 
-      <SettingsGroup title="Sign-in" description="How you get into this account, and how you leave it.">
-        <SettingRow
-          label="Password"
-          description="Juno emails you a link to set a new one."
-          control={
-            <Button variant="outline" size="sm" onClick={() => void sendReset()} disabled={resetSending} className="gap-1.5">
-              {resetSending ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
-              Send reset link
-            </Button>
-          }
-        />
-        <SettingRow
-          label="This session"
-          description="Sign out on this device. Other devices stay signed in."
-          control={
-            <Button variant="outline" size="sm" onClick={() => void signOutToSignIn()} className="gap-1.5">
-              <LogOut className="size-3.5" />
-              Sign out
-            </Button>
-          }
-        />
-      </SettingsGroup>
+      {/* The whole sign-in group — two-step verification, password, email
+          address, sessions — lives with the sign-in form in
+          components/auth, because it is the other half of the same flow. */}
+      <AccountSecuritySection email={email} />
 
       <SettingsGroup title="Email notifications" description="What Juno may send to your inbox.">
         <SettingRow
