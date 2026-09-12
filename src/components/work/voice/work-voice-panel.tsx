@@ -211,7 +211,10 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
       }
       notice={
         staleBy ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-secondary px-3 py-2">
+          // `sm` (4): this renders into the surface's `notice` slot, a direct
+          // child of its `rounded-card` (16) panel padded by `p-3` (12), so
+          // 16 − 12 = 4 — the same arithmetic as the send-preview well below it.
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border/60 bg-secondary px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
               The task has moved on since Juno was briefed
             </p>

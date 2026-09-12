@@ -179,7 +179,10 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           size="icon-sm"
           disabled={!draft.trim() || busy || blocked}
           aria-label={busy ? "Juno is working" : "Ask Juno"}
-          className="shrink-0 rounded-field"
+          // `control` (10), not `field` (12): the bar is a 16px shell with
+          // `p-1.5` (6), so its seated controls are 16 − 6 = 10. The same
+          // arithmetic the dropdown shell and the segmented track already use.
+          className="shrink-0 rounded-control"
         >
           {busy ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
         </Button>

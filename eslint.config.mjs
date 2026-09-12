@@ -116,6 +116,11 @@ const config = [
         },
       ],
       "design-system/no-ad-hoc-stacking": "error",
+      // The rule tailwind.config.ts has always stated and nothing ever checked:
+      // a nested box takes its parent's radius minus the parent's padding. It
+      // only fires where both numbers are knowable from the source, so a report
+      // is a report — there is no ratchet to wait out.
+      "design-system/concentric-radius": "error",
       // Warn, not error, and the difference is a ratchet, not a softer
       // opinion: 457 text-[Npx] sites predate the `ui`/`micro` rungs and are
       // being migrated in batches. An error today would only teach people to

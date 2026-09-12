@@ -103,7 +103,11 @@ export function ReasoningSlider({
               disabled={disabled}
               onClick={() => onChange(option.value)}
               className={cn(
-                "flex min-w-0 flex-1 items-center justify-center rounded-xs px-2 text-ui font-medium transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
+                // `md` (8), concentric with the track: `rounded-control` (10)
+                // minus its `p-0.5` (2). `items-stretch` means a segment is
+                // inset by that 2px on all four sides, so its corners and the
+                // track's are struck from one centre.
+                "flex min-w-0 flex-1 items-center justify-center rounded-md px-2 text-ui font-medium transition-[background-color,color] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none",
                 selected
                   ? "bg-card text-foreground shadow-raised"
                   : "text-muted-foreground hover:text-foreground",

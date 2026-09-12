@@ -362,10 +362,12 @@ export function ArtifactInlineCard({
               <div
                 className={cn(
                   "h-full",
-                  // Concentric with the card: 14px outer minus the 8px mat is 6,
-                  // the `xs` rung. At `field` (10) the white sheet's corners were
-                  // cutting outside the card's own bottom corners.
-                  isSandboxPreview && "overflow-hidden rounded-xs bg-white ring-1 ring-inset ring-border/70"
+                  // Concentric with the card: `rounded-card` (16) minus the 8px
+                  // mat is 8, the `md` rung. This comment used to say "14px
+                  // outer minus the 8px mat is 6" and land on `xs` — wrong
+                  // twice, since the card is 16 and 16 − 8 is 8. The sheet was
+                  // 2px too square against the card's own bottom corners.
+                  isSandboxPreview && "overflow-hidden rounded-md bg-white ring-1 ring-inset ring-border/70"
                 )}
               >
                 <RuntimePreview

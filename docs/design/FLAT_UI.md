@@ -139,3 +139,23 @@ component:
 - A selected row is `bg-accent` (or `bg-sidebar-accent` in the sidebar),
   never `.surface-raised`.
 - Keep the hairline. A flat edge still needs 3:1 (WCAG 1.4.11).
+- Nest a rounded box and give it its parent's radius **minus the parent's
+  padding**. A 16px card with `p-3` (12) holds 4px wells; the same card with
+  `p-1.5` (6) holds 10px controls. Two boxes read as one object only when their
+  corners are struck from the same centre, and the error compounds: the
+  Library's file tile put a 12px well inside a 16px card padded by 12, so the
+  thumbnail's corners were three times rounder than the geometry allows and the
+  tile stopped reading as a frame around a picture.
+
+  If the inner radius is the one you want, change the padding instead — that is
+  the same equation solved the other way, and it is often the better answer for
+  a control whose rung is fixed by the ladder.
+
+  `design-system/concentric-radius` (eslint, error) checks this wherever both
+  numbers are knowable from the source: a parent that declares a radius and
+  symmetric padding in one className, or one of the wrapper components listed in
+  the rule. It sees through `.map()`, and it stays quiet for pills, for
+  absolutely positioned children, for boxes narrower than the content box (a
+  skeleton bar is content, not a nested surface), and for anything that paints
+  nothing at its corners. `tests/concentric-radius-rule.test.ts` pins all of
+  that by example.

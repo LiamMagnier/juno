@@ -217,7 +217,11 @@ export function WorkVoiceSurface({
           // punched through the panel rather than as a well cut into it. Inside
           // a popover the recessed rung is `secondary`, one step below it, and
           // it is what the transcript bubbles above already use.
-          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-secondary p-2.5">
+          // `sm` (4): the panel around this is `rounded-card` (16) with `p-3`
+          // (12), so a well sitting directly in it is 16 − 12 = 4. At `field`
+          // (12) the well's corners curved three times harder than the panel's
+          // own inner corners it was supposed to sit flush against.
+          <div className="flex flex-col gap-2 rounded-sm border border-border/60 bg-secondary p-2.5">
             {/* What the press does, before the press: a steer and a restart are
                 not the same event and finding out afterwards is too late. */}
             <p className="font-mono text-label text-muted-foreground">

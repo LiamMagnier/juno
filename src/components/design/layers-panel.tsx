@@ -1187,7 +1187,10 @@ function VariableRow({
           type="button"
           disabled={readOnly}
           onClick={() => onApply([{ op: "deleteVariable", variableId: variable.id }], "Remove variable")}
-          className="pressable flex w-full items-center justify-center gap-1.5 rounded-control border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
+          // `sm` (4), not `control` (10): this spans the full width of a 16px
+          // card padded by `p-3` (12), so its bottom corners sit exactly on the
+          // card's inner corners and 16 − 12 = 4 is what they are.
+          className="pressable flex w-full items-center justify-center gap-1.5 rounded-sm border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-destructive/60 hover:text-destructive disabled:opacity-50 coarse:min-h-9"
         >
           <ActionIcons.delete className="size-3" aria-hidden />
           Delete variable

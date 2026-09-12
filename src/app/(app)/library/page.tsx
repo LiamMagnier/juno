@@ -449,9 +449,13 @@ function LibraryGridItem({
         selected && "border-foreground/40 hover:border-foreground/40"
       )}
     >
-      {/* The thumbnail sits on an inset well — recessed into the raised tile,
-          concentric with it (16 − 12 padding ≈ field 12). */}
-      <div className="surface-inset relative aspect-square overflow-hidden rounded-field">
+      {/* The thumbnail sits on an inset well — recessed into the raised tile and
+          struck from the same centre: the tile is `rounded-card` (16) with `p-3`
+          (12), so the well is 16 − 12 = 4. It said `rounded-field` (12) under a
+          comment claiming "16 − 12 ≈ field 12", which is not what 16 − 12 is —
+          the well's corners were three times rounder than the geometry allows
+          and the tile stopped reading as a frame around a picture. */}
+      <div className="surface-inset relative aspect-square overflow-hidden rounded-sm">
         <GridItemPreview item={item} />
         <div
           className={cn(
@@ -535,7 +539,9 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
       >
         {[...Array(8)].map((_, index) => (
           <Card key={index} className="p-3" style={staggerDelay(index, "base")}>
-            <Skeleton className="aspect-square rounded-field" />
+            {/* Same 4px as the real well it stands in for, so the skeleton does
+                not resolve into a differently-shaped tile. */}
+            <Skeleton className="aspect-square rounded-sm" />
             <Skeleton className="mt-3 h-3 w-3/4 rounded-xs" />
             <Skeleton className="mt-2 h-2.5 w-1/2 rounded-xs" />
           </Card>

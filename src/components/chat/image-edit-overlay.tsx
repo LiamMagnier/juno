@@ -351,7 +351,12 @@ export function ImageEditOverlay({
                     setImgFailed(true);
                   }}
                   className={cn(
-                    "block size-full rounded-composer-action object-contain transition-opacity duration-fast motion-reduce:transition-none",
+                    // No radius of its own. The image fills the frame edge to
+                    // edge, and the frame already clips at its 14px corners with
+                    // `overflow-hidden` — so a second, smaller radius here (12,
+                    // `composer-action`) only drew a tighter curve inside the
+                    // one the frame was already cutting.
+                    "block size-full object-contain transition-opacity duration-fast motion-reduce:transition-none",
                     imgReady && !imgFailed ? "opacity-100" : "opacity-0"
                   )}
                 />
@@ -484,8 +489,9 @@ export function ImageEditOverlay({
                       setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                     }}
                     className={cn(
-                      // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
-                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      // `md` (8px), concentric with the `field` (12px) track minus its 4px pad.
+                      // It read `xs` (6) under a comment calling `field` 10px; `field` is 12.
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region == null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -497,8 +503,9 @@ export function ImageEditOverlay({
                     aria-pressed={region != null}
                     onClick={() => frameRef.current?.focus({ preventScroll: true })}
                     className={cn(
-                      // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
-                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      // `md` (8px), concentric with the `field` (12px) track minus its 4px pad.
+                      // It read `xs` (6) under a comment calling `field` 10px; `field` is 12.
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region != null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
