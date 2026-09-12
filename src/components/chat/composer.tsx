@@ -7,12 +7,12 @@ import {
   NotebookPen,
   Cpu,
   FileUp,
-  LayoutTemplate,
   Loader2,
   MessageSquarePlus,
   Mic,
   Plug,
   Plus,
+  Scan,
   Search,
   SquareDashedMousePointer,
   SquarePen,
@@ -37,7 +37,7 @@ import {
   useComposerAutosize,
   type ComposerPrimaryFace,
 } from "@/components/ui/composer-shell";
-import { Switch } from "@/components/ui/switch";
+import { useModifierKeyLabel } from "@/components/ui/platform";
 import {
   Tooltip,
   TooltipContent,
@@ -153,8 +153,6 @@ interface ComposerProps {
   quotaReached?: boolean;
   /** The plan grants no messages at all, rather than having exhausted them. */
   planIncludesNoMessages?: boolean;
-  canvasEnabled: boolean;
-  onToggleCanvas: (v: boolean) => void;
   webSearchEnabled?: boolean;
   onToggleWebSearch?: (v: boolean) => void;
   reasoningEffort: ReasoningEffort | null;
@@ -383,8 +381,6 @@ export function Composer({
   onOpenVoiceMode,
   quotaReached,
   planIncludesNoMessages,
-  canvasEnabled,
-  onToggleCanvas,
   webSearchEnabled = false,
   onToggleWebSearch,
   reasoningEffort,
@@ -617,6 +613,48 @@ export function Composer({
     },
     [addFiles, uploads.length, voiceActive],
   );
+
+  // Screen capture, resolved after mount so the server render and the first
+  // paint agree on whether the row exists. iOS Safari and most mobile browsers
+  // have no getDisplayMedia at all, and it needs a secure context.
+  const [canScreenshot, setCanScreenshot] = React.useState(false);
+  React.useEffect(() => {
+    setCanScreenshot(typeof navigator.mediaDevices?.getDisplayMedia === "function");
+  }, []);
+
+  // getDisplayMedia → hidden <video> → <canvas>.drawImage, the same path
+  // use-realtime-voice.ts already proves in production. Not ImageCapture
+  // .grabFrame(): Safari does not have it.
+  const captureScreenshot = React.useCallback(async () => {
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.muted = true;
+      await video.play();
+      const frame = document.createElement("canvas");
+      frame.width = video.videoWidth;
+      frame.height = video.videoHeight;
+      frame.getContext("2d")?.drawImage(video, 0, 0);
+      video.pause();
+      video.srcObject = null;
+      const blob = await new Promise<Blob | null>((resolve) => frame.toBlob(resolve, "image/png"));
+      if (!blob) return;
+      // sanitizeFileName (lib/uploads.ts) strips ":", so keep the stamp
+      // dash-only or every screenshot lands as "Screenshot 2026-09-12T14_31_08".
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      addComposerFiles([new File([blob], `Screenshot ${stamp}.png`, { type: "image/png" })]);
+    } catch (error) {
+      // Cancelling the OS picker is a decision, not a failure.
+      if ((error as DOMException)?.name !== "NotAllowedError")
+        toast.error("Could not capture the screen.");
+    } finally {
+      // A leaked capture track leaves a permanent "sharing your screen"
+      // indicator on the tab — the worst failure this row could have.
+      for (const track of stream?.getTracks() ?? []) track.stop();
+    }
+  }, [addComposerFiles]);
   const addComposerAttachments = React.useCallback(
     (attachments: ClientAttachment[]) => {
       const matching = voiceActive
@@ -1090,7 +1128,7 @@ export function Composer({
         id: "artifact",
         key: "artifact",
         label: "/artifact",
-        hint: "Start a canvas / artifact",
+        hint: "Ask for an artifact",
         group: "commands",
         icon: SquarePen,
       },
@@ -1224,19 +1262,6 @@ export function Composer({
           ]
         : []),
       {
-        id: "tool:canvas",
-        key: "canvas",
-        label: "@canvas",
-        hint: "Canvas & artifacts",
-        group: "tools",
-        icon: LayoutTemplate,
-        on: privateMode ? undefined : canvasEnabled,
-        note: privateMode ? "private" : undefined,
-        run: privateMode
-          ? () => toast.error("Canvas is off in incognito chats.")
-          : () => onToggleCanvas(!canvasEnabled),
-      },
-      {
         id: "tool:memory",
         key: "memory",
         label: "@memory",
@@ -1299,9 +1324,6 @@ export function Composer({
     modality,
     researchAvailable,
     research,
-    privateMode,
-    canvasEnabled,
-    onToggleCanvas,
     settings.memoryEnabled,
     toggleMemory,
     showConnectors,
@@ -1431,7 +1453,9 @@ export function Composer({
       return;
     }
     if (item.id === "artifact") {
-      onToggleCanvas(true);
+      // Text only. This used to flip a canvas preference on the way past;
+      // whether an answer belongs in a canvas is the model's call now, so the
+      // command does the one thing its name promises — it writes the prompt.
       setText("Create an artifact that ");
       requestAnimationFrame(() => {
         const el = textareaRef.current;
@@ -1515,19 +1539,6 @@ export function Composer({
     setText(next);
     if (next.length <= COMPOSER_INLINE_SOFT_CHARS) setDraftExpanded(false);
   }, []);
-
-  const startCanvas = () => {
-    onToggleCanvas(true);
-    setText((prev) => (prev.trim() ? prev : "Create an artifact that "));
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (el) {
-        el.focus();
-        const len = el.value.length;
-        el.setSelectionRange(len, len);
-      }
-    });
-  };
 
   // Load the project list when the normal + menu opens, and also when a
   // brand-new chat already belongs to a project whose name is not loaded yet.
@@ -1761,6 +1772,34 @@ export function Composer({
     ? (projects.find((p) => p.id === selectedProjectId) ?? null)
     : null;
   const canAttach = features.storage && !privateMode;
+  // One reason, three rows: whichever of the two gates is shut is the one the
+  // row should name. Never a row that silently vanishes.
+  const attachNote = privateMode
+    ? "Incognito"
+    : !features.storage
+      ? "Unavailable"
+      : undefined;
+  // Renders "⌘U" on the server and corrects itself after mount (platform.ts),
+  // so the hint is right on a PC without a hydration mismatch.
+  const modifierKey = useModifierKeyLabel();
+  const attachShortcut = modifierKey === "⌘" ? "⌘U" : "Ctrl+U";
+
+  // ⌘U is the one attach shortcut, and the + menu's first row prints it. Bound
+  // here rather than in use-global-shortcuts because it needs THIS composer's
+  // file input and its canAttach gate — the projects page and Compare mount
+  // their own, and a global binding would fire the wrong one.
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== "u" || !canAttach || plusLocked) return;
+      // Ctrl+U is View Source in Chrome and Firefox on Windows and Linux.
+      event.preventDefault();
+      fileInputRef.current?.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canAttach, plusLocked]);
+
   const activeConnectorCount = connectors.filter((connector) =>
     connectorsEnabled.includes(connector.id),
   ).length;
@@ -1785,7 +1824,6 @@ export function Composer({
   const armedToolsInGroup = [
     researchArmed ? "deep research" : null,
     canWebSearch && webSearchEnabled ? "web search" : null,
-    !privateMode && canvasEnabled ? "canvas" : null,
     settings.memoryEnabled ? "memory" : null,
   ].filter((label): label is string => label !== null);
   // Connectors sit in the ADD group, not TOOLS, so they must not inflate the
@@ -1801,11 +1839,11 @@ export function Composer({
   const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
 
   /**
-   * The + menu, as data. Three sections: what to add, which tools are on, and
-   * where this chat sits (project, connectors) — see composer-plus-menu.tsx
-   * for the box itself. A row that cannot be used right now stays visible
-   * with the reason on it rather than vanishing, so "why is web search
-   * missing" never has to be asked.
+   * The + menu, as data. Three sections in Claude's order: what you bring in,
+   * where this chat sits and what it can reach, and what is armed for the
+   * message — see composer-plus-menu.tsx for the box itself. A row that
+   * cannot be used right now stays visible with the reason on it rather than
+   * vanishing, so "why is web search missing" never has to be asked.
    */
   const projectPanel = () => (
     <>
@@ -1941,9 +1979,11 @@ export function Composer({
           label: "Deep research",
           icon: ComposerIcons.research,
           checked: research,
-          // The depth rides on the row, so what turning it on will do is
-          // legible before it is on.
-          detail: researchEffortLabel(researchEffort),
+          // Only while it is ON. A depth label on an off row is a claim about
+          // nothing — it reads as the state rather than as what the state
+          // would be, which is the one thing a row with no switch cannot
+          // afford to get wrong.
+          detail: research ? researchEffortLabel(researchEffort) : undefined,
           onToggle: () => setResearch((v) => !v),
         }
       : null;
@@ -1954,7 +1994,7 @@ export function Composer({
           {
             kind: "action",
             id: "photos",
-            label: "Photos",
+            label: "Add photos",
             icon: ComposerIcons.photos,
             disabled: !canAttach,
             onSelect: () => imageInputRef.current?.click(),
@@ -1963,78 +2003,54 @@ export function Composer({
         researchRow ? [researchRow] : [],
       ]
     : [
+        // Bring something in. "Attach files" and "Photos" used to be two rows
+        // for one job: ACCEPT_ATTRIBUTE (lib/uploads.ts) already carries every
+        // image mime, so one sheet has always offered both. The merged row is
+        // also the only place in the product that teaches ⌘U.
         [
           {
             kind: "action",
             id: "files",
-            label: "Attach files",
-            icon: ComposerIcons.files,
+            label: "Add files or photos",
+            icon: ComposerIcons.attach,
+            detail: attachShortcut,
             disabled: !canAttach,
+            note: attachNote,
             onSelect: () => fileInputRef.current?.click(),
           },
-          {
-            kind: "action",
-            id: "photos",
-            label: "Photos",
-            icon: ComposerIcons.photos,
-            disabled: !canAttach,
-            onSelect: () => imageInputRef.current?.click(),
-          },
+          // Omitted, not disabled, where the browser has no getDisplayMedia
+          // (iOS Safari, most mobile): a row that can never work is furniture.
+          ...(canScreenshot
+            ? [
+                {
+                  kind: "action" as const,
+                  id: "screenshot",
+                  label: "Take a screenshot",
+                  icon: Scan,
+                  disabled: !canAttach,
+                  note: attachNote,
+                  onSelect: () => void captureScreenshot(),
+                },
+              ]
+            : []),
           {
             kind: "action",
             id: "library",
-            label: "Library",
+            label: "Add from library",
             icon: AppIcons.library,
             disabled: !canAttach,
+            note: attachNote,
             onSelect: () => setLibraryOpen(true),
           },
-          {
-            kind: "action",
-            id: "canvas",
-            label: "New canvas",
-            icon: ComposerIcons.canvas,
-            disabled: privateMode,
-            onSelect: startCanvas,
-          },
         ],
-        [
-          {
-            kind: "toggle",
-            id: "search",
-            label: "Web search",
-            icon: ComposerIcons.web,
-            checked: canWebSearch && webSearchEnabled,
-            disabled: !canWebSearch,
-            note: canWebSearch ? undefined : modality === "chat" ? "Not on this model" : "Chat only",
-            onToggle: () => onToggleWebSearch?.(!webSearchEnabled),
-          },
-          {
-            kind: "toggle",
-            id: "canvas-tool",
-            label: "Canvas",
-            icon: LayoutTemplate,
-            checked: !privateMode && canvasEnabled,
-            disabled: privateMode,
-            note: privateMode ? "Incognito" : undefined,
-            onToggle: () => onToggleCanvas(!canvasEnabled),
-          },
-          {
-            kind: "toggle",
-            id: "memory",
-            label: "Memory",
-            icon: NotebookPen,
-            checked: settings.memoryEnabled,
-            onToggle: () => toggleMemory(!settings.memoryEnabled),
-          },
-          ...(researchRow ? [researchRow] : []),
-        ],
+        // Where this chat sits and what it can reach.
         [
           ...(!privateMode
             ? [
                 {
                   kind: "sub" as const,
                   id: "project",
-                  label: "Project",
+                  label: "Add to project",
                   icon: AppIcons.projects,
                   detail: selectedProject?.name,
                   render: projectPanel,
@@ -2056,6 +2072,31 @@ export function Composer({
                 },
               ]
             : []),
+        ],
+        // Armed for this message. Canvas is not here and has no row anywhere:
+        // whether an answer belongs in an artifact is the model's decision now
+        // (src/lib/chat/system-prompt.ts), so there is nothing for a user to
+        // switch and nothing that can be left switched off by accident.
+        [
+          ...(researchRow ? [researchRow] : []),
+          {
+            kind: "toggle",
+            id: "search",
+            label: "Web search",
+            icon: ComposerIcons.web,
+            checked: canWebSearch && webSearchEnabled,
+            disabled: !canWebSearch,
+            note: canWebSearch ? undefined : modality === "chat" ? "Not on this model" : "Chat only",
+            onToggle: () => onToggleWebSearch?.(!webSearchEnabled),
+          },
+          {
+            kind: "toggle",
+            id: "memory",
+            label: "Memory",
+            icon: ComposerIcons.memory,
+            checked: settings.memoryEnabled,
+            onToggle: () => toggleMemory(!settings.memoryEnabled),
+          },
         ],
       ];
 
@@ -2357,8 +2398,8 @@ export function Composer({
               // DropdownMenuContent uses glass-raised alone; match it.
               <div className="surface-float overlay-glass absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-popover p-1.5 motion-safe:animate-pop-in">
                 {/* Options, not tab stops: the caret never leaves the textarea, so this
-                is a combobox popup. A button row also could not legally hold the
-                Switch, which is itself a button. */}
+                is a combobox popup, and each row's state is its `aria-checked`
+                rather than a control of its own. */}
                 <div
                   ref={paletteListRef}
                   id="composer-palette-listbox"
@@ -2437,7 +2478,7 @@ export function Composer({
                               role="option"
                               aria-selected={selected}
                               // aria-selected is the keyboard cursor; aria-checked is
-                              // the tool's own state. The Switch that draws it is
+                              // the tool's own state. The tick that draws it is
                               // aria-hidden, so without this the state is visual only.
                               aria-checked={item.on}
                               onMouseEnter={() => setSlashIndex(index)}
@@ -2478,12 +2519,15 @@ export function Composer({
                                 <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">
                                   {item.note}
                                 </span>
-                              ) : item.on !== undefined ? (
-                                <Switch
-                                  checked={item.on}
-                                  tabIndex={-1}
+                              ) : item.on ? (
+                                // The same tick the + menu draws, for the same
+                                // rows. These two surfaces are deliberately one
+                                // vocabulary; they drifted once before, when one
+                                // hand-rolled a track and the other rendered the
+                                // real Switch, and the fix was to make them agree.
+                                <StatusIcons.success
                                   aria-hidden
-                                  className="pointer-events-none shrink-0"
+                                  className="size-3.5 shrink-0 text-primary"
                                 />
                               ) : null}
                             </div>

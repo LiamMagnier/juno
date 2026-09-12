@@ -80,26 +80,42 @@ function MenuRow({
   );
 }
 
+/**
+ * The signed-in user's one face.
+ *
+ * Exported because the sidebar footer used to draw its own — MONO INITIALS in a
+ * bordered disc — beside a menu that drew a DotIdenticon for the same person.
+ * One click apart, two identities, and nothing else in the product does that.
+ * Photo avatars are circles (matching the Avatar primitive app-wide); the
+ * DotIdenticon fallback keeps its signature squircle, which a circular crop
+ * would clip.
+ */
+export function UserAvatar({ className }: { className?: string }) {
+  const { user } = useApp();
+  return user.image ? (
+    <Image
+      src={user.image}
+      unoptimized={requiresViewerCredentials(user.image)}
+      alt=""
+      width={36}
+      height={36}
+      className={cn("shrink-0 rounded-full object-cover", className)}
+    />
+  ) : (
+    <DotIdenticon seed={user.id} className={cn("shrink-0", className)} />
+  );
+}
+
 export function UserMenu({
   compact = false,
   trigger,
 }: {
   compact?: boolean;
-  /** A caller-drawn trigger (the sidebar footer's avatar + plan meter row). */
+  /** A caller-drawn trigger (the sidebar footer's account row). */
   trigger?: React.ReactNode;
 }) {
   const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
-
-  // Photo avatars are circles (matching the Avatar primitive app-wide); the
-  // DotIdenticon fallback keeps its signature squircle, which a circular crop
-  // would clip.
-  const avatar = (size: string) =>
-    user.image ? (
-      <Image src={user.image} unoptimized={requiresViewerCredentials(user.image)} alt="" width={36} height={36} className={cn("shrink-0 rounded-full object-cover", size)} />
-    ) : (
-      <DotIdenticon seed={user.id} className={cn("shrink-0", size)} />
-    );
 
   return (
     <DropdownMenu>
@@ -110,44 +126,60 @@ export function UserMenu({
           <Pressable
             kind="icon"
             size="lg"
-            // The collapsed rail: a 44px target like every other icon on it.
-            className="group size-11 hover:bg-sidebar-accent"
+            // The collapsed rail: a 44px target like every other icon on it,
+            // squared off to `rounded-control` so it belongs to the same
+            // family as the rows above it rather than being the one circle.
+            // No hover scale: nothing else in the retuned sidebar grows under
+            // the pointer, and a face that swells is the loudest thing in a
+            // quiet column.
+            className="group size-11 rounded-control hover:bg-sidebar-accent"
             aria-label="Account menu"
-            title={user.name ?? user.email ?? "Account"}
+            title={`${user.name ?? user.email ?? "Account"} · ${plan.name}`}
           >
-            <span className="transition-transform duration-fast ease-out-soft group-hover:scale-105">{avatar("size-8")}</span>
+            <UserAvatar className="size-6" />
           </Pressable>
         ) : (
           <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-accent">
-            <span className="shrink-0 transition-transform duration-fast ease-out-soft group-hover:scale-105">
-              {avatar("size-8")}
-            </span>
+            <UserAvatar className="size-8" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
-              <span className="block truncate text-xs text-muted-foreground">{plan.name} plan</span>
+              <span className="block truncate text-ui font-medium">{user.name ?? user.email}</span>
+              <span className="block truncate text-caption text-muted-foreground">{plan.name} plan</span>
             </span>
           </Pressable>
         )}
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" side="top" sideOffset={8} className="w-72">
+      {/* Expanded: `align="start"` so the 288px menu's left edge lines up with
+          the 24px avatar in the footer trigger rather than with the far side of
+          a full-width row. The rail has no width to align to, so it opens
+          sideways like every other rail flyout. */}
+      <DropdownMenuContent
+        align={compact ? "end" : "start"}
+        side={compact ? "right" : "top"}
+        sideOffset={8}
+        className="w-72"
+      >
         {/* Identity header — who you are, on what plan, reachable where. */}
         <div className="flex items-center gap-3 px-2.5 pb-3 pt-2.5">
-          {avatar("size-9")}
+          <UserAvatar className="size-8" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="min-w-0 truncate text-sm font-medium text-foreground">
+              <span className="min-w-0 truncate text-ui font-medium text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
               <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-caption font-medium leading-none text-primary-ink">
                 {plan.name}
               </span>
             </div>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">{user.email}</span>
+            <span className="mt-0.5 block truncate text-caption text-muted-foreground">{user.email}</span>
           </div>
         </div>
 
-        {/* Usage — a calm read of the same quota data, in the dot signature.
+        {/* Usage — the ONE place the quota is drawn. The sidebar footer used to
+            carry a second read of the same number (a `Progress` bar under a
+            "Free · 3 / 15 messages" line), so the panel spent a whole row on a
+            meter that is furniture until it is nearly spent; the footer now
+            says nothing about usage below 80% and one word above it.
             `bg-secondary`, the popover's recessed rung, not `bg-muted/40`: that
             composited to ~11.6% inside a 13% menu, which is under the ~2 points
             where a fill begins to exist, so the quota block had no block. */}

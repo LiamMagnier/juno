@@ -18,10 +18,11 @@ export default function WorkSkillsLoading() {
     // the same "this is loading" the sighted reader gets from the shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading skills">
       {/* AppPageHeader, at its own metrics: the mb-3 nav row, the display-size
-          heading, its lede and the rule that closes the block. Anything looser
-          here and the whole page steps sideways at the moment the real header
-          lands on top of it. */}
-      <div className="mb-6 border-b border-border pb-5">
+          heading and its lede. Anything looser here and the whole page steps
+          sideways at the moment the real header lands on top of it. */}
+      {/* The header gives its rule to the tab row below, as the real
+          AppPageHeader does on these pages (`mb-4 border-b-0 pb-0`). */}
+      <div className="mb-4">
         <div className="mb-3 flex items-center gap-2">
           <Skeleton className="size-8 shrink-0" />
           <Skeleton className="h-3 w-10 rounded-sm" />
@@ -34,12 +35,13 @@ export default function WorkSkillsLoading() {
           <Skeleton className="h-8 w-24 shrink-0" />
         </div>
       </div>
-      {/* The four-destination tab track WorkNav draws under the header. */}
-      <div className="surface-inset inline-flex h-9 items-center gap-1 rounded-menu p-1" aria-hidden="true">
-        <Skeleton className="h-7 w-16 rounded-control" />
-        <Skeleton className="h-7 w-24 rounded-control" />
-        <Skeleton className="h-7 w-14 rounded-control" />
-        <Skeleton className="h-7 w-24 rounded-control" />
+      {/* The underline tab row WorkNav draws under the header: four labels on
+          the page ground over the single rule, no track. */}
+      <div className="mb-6 flex items-center gap-1 border-b border-border" aria-hidden="true">
+        <Skeleton className="mx-3 my-2 h-5 w-10 rounded-xs" />
+        <Skeleton className="mx-3 my-2 h-5 w-20 rounded-xs" />
+        <Skeleton className="mx-3 my-2 h-5 w-9 rounded-xs" />
+        <Skeleton className="mx-3 my-2 h-5 w-20 rounded-xs" />
       </div>
       <WorkList className="mt-8">
         <WorkRowSkeletons count={3} />

@@ -1,9 +1,8 @@
 "use client";
 
-import * as React from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+
+import { SurfaceTabs } from "@/components/ui/surface-tabs";
 
 /*
  * Getting between Work's four surfaces.
@@ -21,12 +20,17 @@ import { cn } from "@/lib/utils";
  * supported it — a discoverability bug, not a backend gap.
  *
  * Links, not buttons: each destination is a URL somebody can bookmark,
- * cmd-click and restore from history.
+ * cmd-click and restore from history. `SurfaceTabs` keeps that contract.
  *
- * THE THUMB. The destinations sit side by side, so moving between them should
- * look like moving — one fill that travels rather than two fills cross-fading
- * in place. Geometry is measured like SegmentedControl while retaining anchor
- * semantics.
+ * NO TRACK. This used to be an inset well holding a raised key, measured with
+ * `offsetLeft`/`offsetWidth` and a `ResizeObserver` — the same material and
+ * nearly the same geometry as the sidebar's product switch, 100px away on this
+ * very page. Two controls drawn alike say they do alike things, and these two
+ * do not: one leaves the product, one changes the view. Level 2 is underline
+ * tabs on the page ground and nothing else, which is a shape the product
+ * switch can never be mistaken for. The travelling thumb is now one `layoutId`
+ * bar shared with Code's tabs, on the same spring, so moving between views
+ * feels identical on both surfaces.
  */
 
 /**
@@ -49,6 +53,9 @@ const SIBLING_PREFIXES = DESTINATIONS.filter((destination) => destination.href !
 export function WorkNav({ className }: { className?: string }) {
   const pathname = usePathname();
 
+  // Tasks owns everything under /work that no sibling claims — including the
+  // task detail pages at /work/<id> — so the row still says where you are when
+  // you open one. Hence the prefix test rather than an equality check.
   const activeHref =
     DESTINATIONS.find((destination) =>
       destination.href === "/work"
@@ -56,92 +63,12 @@ export function WorkNav({ className }: { className?: string }) {
         : destination.owns.some((prefix) => pathname.startsWith(prefix))
     )?.href ?? null;
 
-  const links = React.useRef<Partial<Record<string, HTMLAnchorElement | null>>>({});
-  const thumbRef = React.useRef<HTMLSpanElement>(null);
-  const hasPlaced = React.useRef(false);
-
-  const place = React.useCallback(
-    (animate: boolean) => {
-      const thumb = thumbRef.current;
-      const link = activeHref === null ? null : links.current[activeHref];
-      if (!thumb) return;
-      if (!link) {
-        thumb.style.opacity = "0";
-        return;
-      }
-      if (!animate) thumb.style.transition = "none";
-      thumb.style.opacity = "1";
-      thumb.style.transform = `translate3d(${link.offsetLeft}px, ${link.offsetTop}px, 0)`;
-      thumb.style.width = `${link.offsetWidth}px`;
-      thumb.style.height = `${link.offsetHeight}px`;
-      if (!animate) {
-        void thumb.offsetHeight;
-        thumb.style.transition = "";
-      }
-    },
-    [activeHref]
-  );
-
-  React.useLayoutEffect(() => {
-    place(hasPlaced.current);
-    hasPlaced.current = true;
-  }, [place]);
-
-  const latest = React.useRef(place);
-  React.useLayoutEffect(() => {
-    latest.current = place;
-  });
-  React.useEffect(() => {
-    const nav = thumbRef.current?.parentElement;
-    if (!nav || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => latest.current(false));
-    observer.observe(nav);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    // The same track TabsList and SegmentedControl draw — an inset well the
-    // active destination stands out of — so the four Work surfaces read as one
-    // control rather than a row of text links. The well scrolls sideways on a
-    // narrow window rather than compressing its last label into a chip.
-    <nav
-      className={cn(
-        "surface-inset relative inline-flex h-9 max-w-full items-center gap-1 overflow-x-auto overscroll-x-contain rounded-menu p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        className
-      )}
-      aria-label="Juno Work"
-    >
-      {/* The raised key. It travels between destinations rather than
-          cross-fading, and it wears the same material the active TabsTrigger
-          wears — a surface standing proud of its slot. */}
-      <span
-        ref={thumbRef}
-        aria-hidden="true"
-        className="surface-raised pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control opacity-0 transition-[transform,width,height,opacity] duration-base ease-out-soft motion-reduce:transition-none"
-      />
-      {DESTINATIONS.map((destination) => {
-        const active = destination.href === activeHref;
-        return (
-          <Link
-            key={destination.href}
-            ref={(element) => {
-              links.current[destination.href] = element;
-            }}
-            href={destination.href}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              // A transparent border on every link so the geometry the thumb
-              // measures is the geometry a raised trigger would have — the
-              // thumb's own hairline then lands exactly on the link's box.
-              "relative z-10 shrink-0 whitespace-nowrap rounded-control border border-transparent px-3 py-1 text-sm font-medium transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:py-2",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-              active ? "text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-            )}
-          >
-            {destination.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <SurfaceTabs
+      tabs={DESTINATIONS}
+      activeHref={activeHref}
+      ariaLabel="Work views"
+      className={className ?? "mb-6"}
+    />
   );
 }

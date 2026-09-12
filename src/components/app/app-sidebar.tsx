@@ -5,17 +5,16 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Pencil, Pin, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, ChevronUp, Pin, Plus } from "lucide-react";
 import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
 import { DownloadMenu } from "@/components/app/download-menu";
-import { UserMenu } from "@/components/app/user-menu";
+import { UserAvatar, UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { JunoMark } from "@/components/brand/logo";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -39,7 +38,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useApp } from "@/components/app/app-provider";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ProductSwitch, productOf } from "@/components/app/product-switch";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { PLANS } from "@/lib/plans";
 import { spring, staggerDelay, transition } from "@/lib/motion";
@@ -54,9 +53,25 @@ import { useWorkNeedsYouCount } from "@/components/work/inbox/use-needs-you-coun
  * holding, top to bottom: brand + collapse, the Chat · Work · Code product
  * switch, Search (the eight-source search palette — ⌘K is the command menu,
  * a different thing), New chat, the nav destinations, Projects, Pinned,
- * Recents grouped by date, and a footer with the account, the plan meter and
- * the door to archived chats. The active row is a `--sidebar-accent` fill;
- * hover is the same fill on inactive rows (FLAT_UI.md §4).
+ * Recents folded by date, and a footer of exactly two blocks: Design, then
+ * one 36px account band.
+ *
+ * THE DENSITY LADDER, and nothing off it. Rows are `h-8` (32px) carrying
+ * `text-ui` (13px) and a `size-4` (16px) glyph at `gap-2`, so every label in
+ * the panel starts 32px from its edge. Section eyebrows are `h-6` mono caps;
+ * date folds are `h-6` sans captions one rung below them. Glyphs may only be
+ * `size-3`, `size-3.5` or `size-4` — every one of which has a rung on the
+ * optical stroke ladder in globals.css. The rows were 36px with 14px labels
+ * and UNSIZED glyphs that fell back to Lucide's intrinsic 24px; that, plus
+ * 332px of fixed chrome above the list and 121px of footer below it, is what
+ * "the elements are too big" was pointing at.
+ *
+ * HOVER IS WEAKER THAN ACTIVE. `bg-sidebar-accent/60` on hover, the full fill
+ * when selected. They used to be the same fill, so pointing anywhere in the
+ * column made two rows claim to be selected at once and the real one vanished
+ * under the pointer. Selection is fill + ink + (in a list) a filled bullet —
+ * never weight: swapping a title from medium to semibold on click re-measured
+ * it and visibly re-truncated the row you had just chosen.
  *
  * ONE TREE FOR BOTH WIDTHS. The rail is not a second component: every row is
  * a `motion.div layout`, so collapsing to 64px slides the glyphs into a
@@ -84,10 +99,13 @@ type SidebarProject = {
 const LEGACY_STARRED_KEY = "starredProjects";
 const RECENTS_PAGE = 40;
 
+/* Recents is NOT here any more: its date folds are its headings now, so there
+   is no "Recents" row left to collapse. The orphaned
+   `juno:sidebar:recents:collapsed` key is harmless — a reader who had the
+   section folded simply finds their chats back. */
 const SECTION_KEYS = {
   projects: "juno:sidebar:projects:collapsed",
   pinned: "juno:sidebar:starred:collapsed",
-  recents: "juno:sidebar:recents:collapsed",
 } as const;
 
 type SectionKey = keyof typeof SECTION_KEYS;
@@ -114,29 +132,14 @@ function recentsGroupOf(iso: string, now: Date): RecentsGroup {
  * The row kebab, once. `coarse:opacity-100` is not polish: reveal-on-hover is
  * the only way this control appears, and a touch device never hovers — on a
  * phone the drawer is the only route to rename, move or delete a chat.
+ *
+ * `rounded-control`, not `Pressable kind="icon"`'s circle: it sits inside a
+ * `rounded-control` row and beside the composer's `rounded-control` icon
+ * buttons, and it was the only disc in either. `coarse:size-10` rather than
+ * `size-11` so it does not fill a 44px touch row edge to edge.
  */
 const KEBAB_CLASS =
-  "group/kebab size-7 shrink-0 opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:opacity-100 coarse:size-11 coarse:opacity-100";
-
-
-/** The three products, and the route each segment of the switch lands on. */
-type ProductSurface = "chat" | "work" | "code";
-const PRODUCT_ROUTES: Record<ProductSurface, string> = { chat: "/chat", work: "/work", code: "/code" };
-function productSurfaceOf(pathname: string | null): ProductSurface {
-  if (pathname?.startsWith("/code")) return "code";
-  if (pathname?.startsWith("/work")) return "work";
-  return "chat";
-}
-
-function initialsOf(name: string | null, email: string | null): string {
-  const source = (name ?? email ?? "").trim();
-  if (!source) return "?";
-  const parts = source.split(/[\s@._-]+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-}
+  "group/kebab size-7 shrink-0 rounded-control opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:opacity-100 coarse:size-10 coarse:opacity-100";
 
 export function AppSidebar({
   collapsed = false,
@@ -169,7 +172,6 @@ export function AppSidebar({
   const [sectionCollapsed, setSectionCollapsed] = React.useState<Record<SectionKey, boolean>>({
     projects: false,
     pinned: false,
-    recents: false,
   });
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
@@ -228,7 +230,7 @@ export function AppSidebar({
     setMounted(true);
     loadProjects();
     try {
-      const next: Record<SectionKey, boolean> = { projects: false, pinned: false, recents: false };
+      const next: Record<SectionKey, boolean> = { projects: false, pinned: false };
       for (const key of Object.keys(SECTION_KEYS) as SectionKey[]) {
         const raw = localStorage.getItem(SECTION_KEYS[key]);
         if (raw) next[key] = JSON.parse(raw) === true;
@@ -415,7 +417,40 @@ export function AppSidebar({
   };
 
   const plan = PLANS[quota.plan];
-  const usagePct = quota.limit != null && quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : null;
+  // A Juno Code session is served at /chat/<id> (app/(app)/chat/[id]/page.tsx
+  // renders <CodeSessionView> when the conversation's kind is "code"), so the
+  // path alone lit "Chat" for the whole session. The conversation's own kind
+  // is the tiebreak — see productOf().
+  const activeKind = activeConversationId
+    ? conversations.find((c) => c.id === activeConversationId)?.kind ?? null
+    : null;
+  const activeProduct = productOf(pathname, activeKind);
+  /*
+   * Usage in the footer is a WORD, not a meter.
+   *
+   * The account menu behind this row already draws the same quota as a
+   * `DotFillBar` with a `Messages 12 / 15` header, so the footer's `Progress`
+   * bar was a second read of one number — and a bar at 12% full is furniture.
+   * Below 80% the footer says nothing about usage at all; above it the plan
+   * segment changes copy and tone, which is the only moment the number is
+   * worth a person's attention. `quota.remaining` is preferred over
+   * `limit - used` so the copy matches whatever the server computed, and it is
+   * nullable (types/chat.ts) so it is guarded.
+   */
+  const usagePct =
+    quota.limit != null && quota.limit > 0 ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : null;
+  const remaining = quota.remaining ?? (quota.limit != null ? Math.max(0, quota.limit - quota.used) : null);
+  const planSegment =
+    usagePct == null || usagePct < 80
+      ? { label: plan.name, tone: "text-muted-foreground" }
+      : usagePct >= 100
+        ? { label: "Limit reached", tone: "text-destructive" }
+        : { label: `${remaining ?? 0} left`, tone: "text-warning" };
+  // The whole truth always rides the accessible name, so nothing a sighted
+  // reader can see is lost to the truncation on that one line.
+  const accountLabel = `${user.name ?? user.email ?? "Account"}, ${plan.name} plan${
+    quota.limit == null ? ", no message cap" : `, ${quota.used} of ${quota.limit} messages used`
+  }`;
 
   const layoutTransition = reduceMotion ? { duration: 0 } : spring.layout;
 
@@ -428,23 +463,29 @@ export function AppSidebar({
           "flex h-full flex-col text-sidebar-foreground",
           // Desktop width rides the shell's --juno-sidebar-width (user-resizable);
           // keeping it on the inner column preserves the collapse clip-reveal.
-          collapsed ? "w-[64px]" : "w-full md:w-[var(--juno-sidebar-width,256px)]"
+          // w-16 = 64px = app-shell's RAIL_WIDTH. Not the spec's 56: the
+          // product switch's rail items are 44px inside `px-2.5`, which is
+          // exactly 64, and that control is signed off and not ours to resize.
+          collapsed ? "w-16" : "w-full md:w-[var(--juno-sidebar-width,256px)]"
         )}
       >
         {/* ── Brand + collapse ─────────────────────────────────────────── */}
         <motion.div
           layout
           transition={layoutTransition}
-          className={cn("flex items-center pb-1 pt-3", collapsed ? "flex-col gap-1 px-0" : "justify-between px-3")}
+          className={cn("flex items-center pt-2", collapsed ? "flex-col gap-1 px-2.5" : "h-9 justify-between px-2")}
         >
           <motion.div layout="position" transition={layoutTransition}>
             <Link
               href="/chat"
               onClick={() => setSidebarOpen(false)}
               aria-label="Juno home"
-              className={cn("group/brand flex items-center gap-2 rounded-control", collapsed ? "size-11 justify-center" : "pl-1")}
+              className={cn(
+                "group/brand flex items-center gap-2 rounded-control",
+                collapsed ? "size-11 justify-center" : "h-9 pl-1"
+              )}
             >
-              <JunoMark className="h-[21px] w-[21px] shrink-0" />
+              <JunoMark className="size-5 shrink-0" />
               <AnimatePresence initial={false}>
                 {!collapsed && (
                   <motion.span
@@ -453,7 +494,7 @@ export function AppSidebar({
                     animate={{ opacity: 1, width: "auto" }}
                     exit={{ opacity: 0, width: 0 }}
                     transition={reduceMotion ? { duration: 0 } : transition.fast}
-                    className="overflow-hidden whitespace-nowrap font-sans text-lg font-semibold tracking-[-0.02em] text-foreground"
+                    className="overflow-hidden whitespace-nowrap font-sans text-body-lg font-semibold tracking-[-0.02em] text-foreground"
                   >
                     Juno
                   </motion.span>
@@ -468,7 +509,7 @@ export function AppSidebar({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className={cn("group hidden md:inline-flex", collapsed && "size-11")}
+                    className={cn("group hidden md:inline-flex", collapsed ? "size-11" : "size-7 coarse:size-9")}
                     onClick={onToggleCollapse}
                     aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                     aria-keyshortcuts="Meta+Shift+S"
@@ -487,7 +528,7 @@ export function AppSidebar({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="group md:hidden"
+                    className="group size-7 md:hidden coarse:size-9"
                     onClick={() => setSidebarOpen(false)}
                     aria-label="Close menu"
                   >
@@ -500,47 +541,26 @@ export function AppSidebar({
           </motion.div>
         </motion.div>
 
-        {/* ── Chat / Work / Code product switch ────────────────────────── */}
-        {/* The ONE product switcher. Work used to have its own Chat ⇄ Work
-            control centred in the chat header band, Code lived here, and both
-            were repeated in More: three switchers in three idioms. One
-            three-segment control, and the header band is free for the title. */}
-        <AnimatePresence initial={false}>
-          {!collapsed && (
-            <motion.div
-              key="product-switch"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={reduceMotion ? { duration: 0 } : transition.fast}
-              className="overflow-hidden px-3"
-            >
-              <div className="pb-1 pt-2">
-                <SegmentedControl<ProductSurface>
-                  value={productSurfaceOf(pathname)}
-                  onChange={(next) => {
-                    setSidebarOpen(false);
-                    router.push(PRODUCT_ROUTES[next]);
-                  }}
-                  ariaLabel="Chat, Work or Code"
-                  className="w-full"
-                  optionClassName="gap-1.5 px-2 py-1.5 text-ui font-medium"
-                  options={[
-                    { value: "chat", label: "Chat", icon: <SidebarMotionIcon kind="home" className="size-3.5" /> },
-                    // The "3 need you" mark the Work home promised the sidebar
-                    // since its inbox was written — the account's tasks blocked
-                    // on the reader, from the same count the inbox's pill uses.
-                    { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="size-3.5" />, badge: workNeedsYou ?? undefined },
-                    { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="size-3.5" /> },
-                  ]}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* ── Chat · Work · Code ───────────────────────────────────────── */}
+        {/* The ONE product switch in the shell, at both widths: a hairline
+            pill with a tonal thumb when expanded, a 44px icon column at the
+            rail (which never had a Chat row at all — the wordmark was the only
+            way back, and it never looked selected). Page tabs are underlines
+            and never wells, so nothing else in the product wears a track.
+            No AnimatePresence around it any more: it renders in both states
+            and FOLDS, like every other row in this column. */}
+        <ProductSwitch
+          collapsed={collapsed}
+          active={activeProduct}
+          needsYou={workNeedsYou}
+          plan={quota.plan}
+          onNavigate={() => setSidebarOpen(false)}
+        />
 
         {/* ── Search + New chat ────────────────────────────────────────── */}
-        <div className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")}>
+        {/* No `pt-*` when expanded: ProductSwitch already closes with `pb-2`,
+            which IS the 8px this column puts between sibling groups. */}
+        <div className={cn("space-y-0.5", collapsed ? "px-2.5 pt-2" : "px-2")}>
           {/* `juno:search` — the eight-source search palette, not the ⌘K command
               menu. A row labelled Search used to open the command menu, whose
               "Chats" group is a client-side title filter over whatever the
@@ -558,11 +578,10 @@ export function AppSidebar({
           <NavRow
             collapsed={collapsed}
             onClick={newChat}
-            icon={
-              <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
-                <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
-              </span>
-            }
+            /* Plain, like every sibling. The 22px tinted tile that used to sit
+               behind this glyph was the only chip in the panel, and it is what
+               made the one row people press most read as the chunkiest. */
+            icon={<SidebarMotionIcon kind="new" />}
             label="New chat"
             trailing={<Kbd>⌘⇧O</Kbd>}
             layoutId="nav-new"
@@ -573,7 +592,18 @@ export function AppSidebar({
         {/* ── Destinations ─────────────────────────────────────────────── */}
         {/* Library · Projects · Artifacts, then More for the rest. The rail
             keeps the same order icon-only; More opens the same flyout. */}
-        <nav className={cn("space-y-0.5 pt-1", collapsed ? "px-2.5" : "px-2")} aria-label="Primary">
+        {/* `min-h-0 flex-1 overflow-y-auto` on the rail: collapsed, the list
+            scroller below renders nothing, all thirteen rail rows sit in
+            non-scrolling blocks, and the shell's `<aside>` is `overflow-hidden`
+            — so on a short window the account control was simply clipped away
+            with no way to reach it. */}
+        <nav
+          className={cn(
+            "space-y-0.5 pt-2",
+            collapsed ? "min-h-0 flex-1 overflow-y-auto no-scrollbar px-2.5" : "px-2"
+          )}
+          aria-label="Primary"
+        >
           {(
             [
               { href: "/library", kind: "library", label: "Library", active: pathname === "/library" },
@@ -599,38 +629,17 @@ export function AppSidebar({
             onNavigate={() => setSidebarOpen(false)}
             onOpenArchived={() => setArchivedOpen(true)}
           />
-          {/* The rail has no room for the segmented switch, so the other two
-              products get an icon row each. */}
-          {collapsed && (
-            <>
-              <NavRow
-                collapsed
-                href="/work"
-                active={!!pathname?.startsWith("/work")}
-                onClick={() => setSidebarOpen(false)}
-                icon={<SidebarMotionIcon kind="work" />}
-                label={workNeedsYou ? `Work · ${workNeedsYou} waiting on you` : "Work"}
-                layoutId="nav-work"
-                transition={layoutTransition}
-              />
-              <NavRow
-                collapsed
-                href="/code"
-                active={!!pathname?.startsWith("/code")}
-                onClick={() => setSidebarOpen(false)}
-                icon={<SidebarMotionIcon kind="code" />}
-                label="Code"
-                layoutId="nav-code"
-                transition={layoutTransition}
-              />
-            </>
-          )}
         </nav>
 
         {/* ── Lists ────────────────────────────────────────────────────── */}
         <div
           ref={scrollRef}
-          className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 pt-3", collapsed ? "px-2.5" : "px-2")}
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 pt-2",
+            // The rail has no lists to scroll; its own scroll region is the
+            // <nav> above, so this must not also claim the slack.
+            collapsed && "hidden"
+          )}
         >
           <AnimatePresence initial={false}>
             {!collapsed && (
@@ -699,35 +708,35 @@ export function AppSidebar({
                       </Section>
                     )}
 
+                    {/* THE FOLDS ARE THE HEADERS. There is no "Recents"
+                        section wrapper any more: a `text-xs` sentence-case
+                        header immediately followed by a `font-mono` "Today"
+                        caption one rung below it put two headings over one
+                        list, a rung apart in two families, so neither read as
+                        the structure. Sans captions under the mono caps
+                        eyebrows above them can no longer be confused for one
+                        another. Grouping, paging and the sentinel are
+                        untouched. */}
                     {recents.length > 0 ? (
-                      <Section
-                        label="Recents"
-                        isCollapsed={sectionCollapsed.recents}
-                        onToggleCollapse={() => toggleSection("recents")}
-                      >
-                        <div className="space-y-1">
-                          {groupedRecents.map(({ group, rows }) => (
-                            <div key={group} className="space-y-0.5">
-                              {/* A caption, not a second Section: these are
-                                  folds of one list, not lists of their own,
-                                  so they neither collapse nor carry actions. */}
-                              <p className="px-2.5 pb-0.5 pt-1.5 font-mono text-caption text-muted-foreground">{group}</p>
-                              {rows.map((c) => (
-                                <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
-                              ))}
-                            </div>
-                          ))}
-                        </div>
+                      <div className="mt-4 first:mt-0">
+                        {groupedRecents.map(({ group, rows }) => (
+                          <div key={group} className="space-y-0.5 pt-2 first:pt-0">
+                            <p className="flex h-6 items-center px-2 text-caption text-muted-foreground/80">{group}</p>
+                            {rows.map((c) => (
+                              <ConversationRow key={c.id} conversation={c} active={c.id === activeConversationId} {...rowProps} />
+                            ))}
+                          </div>
+                        ))}
                         {recents.length > recentsLimit && (
                           <div ref={sentinelRef} className="flex justify-center py-2" aria-hidden>
                             <span className="skeleton h-2 w-16 rounded-full" />
                           </div>
                         )}
-                      </Section>
+                      </div>
                     ) : (
                       live.length === 0 &&
                       sidebarProjects.length === 0 && (
-                        <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
+                        <p className="px-2 py-8 text-center text-ui text-muted-foreground" aria-live="polite">
                           No conversations yet.
                           <br />
                           Start one above.
@@ -742,90 +751,100 @@ export function AppSidebar({
         </div>
 
         {/* ── Footer ───────────────────────────────────────────────────── */}
-        <motion.div
-          layout
-          transition={layoutTransition}
-          className={cn("border-t border-sidebar-border/70", collapsed ? "flex flex-col items-center gap-1 px-2.5 py-2" : "px-2 pb-2 pt-1.5")}
-        >
-          <NavRow
-            collapsed={collapsed}
-            href="/design"
-            active={pathname === "/design"}
-            onClick={() => setSidebarOpen(false)}
-            icon={<Pencil className="size-[17px]" />}
-            label="Design"
-            layoutId="nav-design"
-            transition={layoutTransition}
-          />
+        {/*
+         * TWO BLOCKS, 89px total (it was three objects in ~121px: a three-line
+         * account block, a two-high stack of icon buttons with two different
+         * corner radii, and a Design row above them).
+         *
+         * Block 1 is Design, pinned above the hairline — the last thing before
+         * the footer, never scrolled away, drawn as an ordinary 32px
+         * destination row. Block 2 is ONE 36px band carrying three objects the
+         * way the composer's controls row carries three: the account trigger,
+         * then a two-button cluster.
+         */}
+        <motion.div layout transition={layoutTransition}>
+          <div className={cn(collapsed ? "px-2.5" : "px-2 pb-1.5")}>
+            <NavRow
+              collapsed={collapsed}
+              href="/design"
+              active={pathname === "/design"}
+              onClick={() => setSidebarOpen(false)}
+              /* `SidebarMotionIcon kind="design"` = PenTool, the mark /design,
+                 the command palette and the icon registry all draw. This row
+                 was the one nav row in the file that bypassed the registry and
+                 imported a bare lucide `Pencil`: one destination, two marks. */
+              icon={<SidebarMotionIcon kind="design" />}
+              label="Design"
+              layoutId="nav-design"
+              transition={layoutTransition}
+            />
+          </div>
           {collapsed ? (
-            <div className="flex flex-col items-center gap-1 pt-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Pressable
-                    kind="icon"
-                    size="lg"
-                    aria-label="Settings"
-                    onClick={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
-                    className="group size-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
-                  >
-                    <AppIcons.settings className="size-[18px]" />
-                  </Pressable>
-                </TooltipTrigger>
-                <TooltipContent side="right">Settings</TooltipContent>
-              </Tooltip>
-              <UserMenu compact />
-            </div>
-          ) : (
-            <div className="mt-1 flex items-center gap-1">
-              <div className="min-w-0 flex-1">
-                <UserMenu
-                  trigger={
-                    <Pressable kind="row" className="group gap-2.5 px-2 py-1.5 hover:bg-sidebar-accent">
-                      <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card">
-                        {user.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={user.image} alt="" className="size-full object-cover" />
-                        ) : (
-                          <span className="font-mono text-caption font-medium text-muted-foreground">
-                            {initialsOf(user.name, user.email)}
-                          </span>
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{user.name ?? user.email}</span>
-                        <span className="block truncate text-caption text-muted-foreground">
-                          {plan.name}
-                          {usagePct != null ? ` · ${quota.used} / ${quota.limit} messages` : " · no cap"}
-                        </span>
-                        {usagePct != null && (
-                          <Progress
-                            value={usagePct}
-                            tone={usagePct >= 100 ? "destructive" : usagePct >= 80 ? "warning" : "primary"}
-                            aria-label={`${quota.used} of ${quota.limit} messages used`}
-                            className="mt-1.5 h-1.5"
-                          />
-                        )}
-                      </span>
-                    </Pressable>
-                  }
-                />
+            /* The rail loses its dedicated 44px Settings button: Settings is a
+               row in the account menu, one click away at BOTH widths, and
+               removing it is what lets the rail footer be two controls instead
+               of three. DownloadMenu is new here, so nothing the expanded
+               footer offers becomes unreachable when collapsed. */
+            <>
+              {/* Inset like the product switch's separator above, not a
+                  full-bleed rule: at 64px a rule that touches both edges reads
+                  as the panel ending. */}
+              <div className="mx-2.5 mt-1.5 border-b border-sidebar-border" aria-hidden="true" />
+              <div className="flex flex-col items-center gap-1 px-2.5 pb-2 pt-1.5">
+                <DownloadMenu className="size-11 rounded-control" />
+                <UserMenu compact />
               </div>
-              <div className="flex flex-col items-center gap-0.5">
+            </>
+          ) : (
+            <div className="mt-1.5 flex items-center gap-1 border-t border-sidebar-border px-2 pb-2 pt-1.5">
+              <UserMenu
+                trigger={
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-label={accountLabel}
+                    className="group flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control px-1.5 text-left transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent motion-reduce:transition-none coarse:h-11"
+                  >
+                    {/* The SAME avatar helper the menu this opens draws with.
+                        The footer used to render mono initials in a bordered
+                        disc while the menu four pixels away rendered a
+                        DotIdenticon — one person, two faces, one click apart. */}
+                    <UserAvatar className="size-6" />
+                    {/* The NAME truncates, the plan segment never does: it is
+                        the tonal state, and "Limit reached" is precisely the
+                        word a 256px column must not eat. */}
+                    <span className="flex min-w-0 flex-1 items-baseline text-ui">
+                      <span className="min-w-0 truncate font-medium text-foreground">{user.name ?? user.email}</span>
+                      <span className={cn("shrink-0 whitespace-pre", planSegment.tone)}>{` · ${planSegment.label}`}</span>
+                    </span>
+                    <ChevronUp
+                      aria-hidden
+                      className="size-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-in-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+                    />
+                  </button>
+                }
+              />
+              {/* gap-0.5 inside, gap-1 outside: the two buttons read as one
+                  object, which the vertical stack they replace never did. */}
+              <div className="flex shrink-0 items-center gap-0.5">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       aria-label="Settings"
                       onClick={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
-                      className="group text-sidebar-foreground hover:text-foreground"
+                      className="group size-9 shrink-0 rounded-control text-muted-foreground hover:bg-sidebar-accent hover:text-foreground coarse:size-11"
                     >
                       <AppIcons.settings className="size-4" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="top">Settings</TooltipContent>
                 </Tooltip>
-                <DownloadMenu />
+                {/* cn() lets the call-site radius win, so the one `rounded-full`
+                    control in the footer finally matches the square one beside
+                    it. */}
+                <DownloadMenu className="size-9 rounded-control coarse:size-11" />
               </div>
             </div>
           )}
@@ -926,7 +945,10 @@ function NavRow({
   const cls = navRowClass(collapsed, !!active);
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
+      {/* A `size-4` box, not a 22px well: the glyph IS the box, so at `gap-2`
+          every label in the panel starts exactly 32px from its edge — the
+          project tree's guide line and the chat bullets land there too. */}
+      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
         {icon}
       </span>
       {!collapsed && (
@@ -937,12 +959,30 @@ function NavRow({
       )}
     </>
   );
+  // `data-active` on the row, read by `group-data-[active]` on the glyph. It
+  // replaces an arbitrary ancestor variant keyed to a literal utility string
+  // (`[.bg-sidebar-accent_&]:text-foreground`), which can no longer tell the
+  // hover fill from the active one now that hover is the same colour at 60%.
+  const activeAttr = active ? "" : undefined;
   const el = href ? (
-    <Link href={href} onClick={onClick} aria-current={active ? "page" : undefined} aria-label={collapsed ? label : undefined} className={cls}>
+    <Link
+      href={href}
+      onClick={onClick}
+      data-active={activeAttr}
+      aria-current={active ? "page" : undefined}
+      aria-label={collapsed ? label : undefined}
+      className={cls}
+    >
       {inner}
     </Link>
   ) : (
-    <button type="button" onClick={onClick} aria-label={collapsed ? label : undefined} className={cn(cls, "text-left")}>
+    <button
+      type="button"
+      onClick={onClick}
+      data-active={activeAttr}
+      aria-label={collapsed ? label : undefined}
+      className={cn(cls, "text-left")}
+    >
       {inner}
     </button>
   );
@@ -963,16 +1003,27 @@ function NavRow({
   );
 }
 
-/** The sidebar row recipe, shared by NavRow and the More trigger. */
+/**
+ * The sidebar row recipe, shared by NavRow and the More trigger.
+ *
+ * No `border border-transparent`: it was a Soft UI artifact that stopped a box
+ * changing size under a border that no longer arrives, and against a FIXED
+ * `h-8` with `box-border` it now just steals 2px of the row's height.
+ *
+ * Hover is `bg-sidebar-accent/60`, active is the full fill, and active carries
+ * no hover rule at all so it does not brighten under the pointer. They used to
+ * be the identical fill, which meant that at any moment the pointer was in the
+ * sidebar two rows claimed to be selected and the real one disappeared.
+ */
 function navRowClass(collapsed: boolean, active: boolean) {
   return cn(
-    "group relative flex min-h-9 w-full items-center rounded-control text-sm font-medium transition-[background-color,color,box-shadow,border-color] duration-fast ease-out-soft",
-    // The rail: a 44px target around the same 22px glyph, so every icon is
+    "group relative flex h-8 w-full items-center rounded-control text-ui font-medium transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none",
+    // The rail: a 44px target around the same 16px glyph, so every icon is
     // one tap and the row's tooltip names it.
-    collapsed ? "size-11 justify-center px-0" : "gap-2.5 px-2.5 py-1.5",
+    collapsed ? "size-11 justify-center px-0" : "gap-2 px-2 coarse:h-11",
     active
-      ? "border border-transparent bg-sidebar-accent font-medium text-foreground"
-      : "border border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+      ? "bg-sidebar-accent text-foreground"
+      : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
   );
 }
 
@@ -1008,15 +1059,20 @@ function MoreFlyout({
   ];
   const anyActive = items.some((item) => item.active);
   const rowClass =
-    "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-sm font-medium text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+    "flex h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-ui font-medium text-foreground outline-none transition-[background-color] duration-fast ease-out-soft hover:bg-accent focus-visible:bg-accent motion-reduce:transition-none coarse:h-11";
+  // An open flyout takes the ACTIVE recipe, not a fill bolted on beside the
+  // inactive one — otherwise `hover:bg-sidebar-accent/60` would win over it and
+  // the trigger would go pale the moment the pointer reached the menu it opened.
   const trigger = (
     <button
       type="button"
       aria-label={collapsed ? "More" : undefined}
       aria-haspopup="menu"
-      className={cn(navRowClass(collapsed, false), open && "bg-sidebar-accent text-foreground", anyActive && "text-foreground")}
+      aria-expanded={open}
+      data-active={open ? "" : undefined}
+      className={cn(navRowClass(collapsed, open), anyActive && !open && "text-foreground")}
     >
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+      <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
         <SidebarMotionIcon kind="more" />
       </span>
       {!collapsed && <span className="min-w-0 flex-1 truncate text-left">More</span>}
@@ -1083,14 +1139,14 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
   return (
     <div
       role="alert"
-      className="mx-0.5 my-1 flex items-center gap-2 rounded-xs border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-ui text-destructive"
+      className="mx-0.5 my-1 flex items-center gap-2 rounded-control border border-destructive/40 bg-destructive/10 px-2 py-2 text-ui text-destructive"
     >
       <StatusIcons.error className="size-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
       <button
         type="button"
         onClick={onRetry}
-        className="pressable flex shrink-0 items-center gap-1 rounded-xs px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
+        className="pressable flex shrink-0 items-center gap-1 rounded-control px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
       >
         <ActionIcons.refresh className="size-3" aria-hidden="true" /> Retry
       </button>
@@ -1119,7 +1175,7 @@ function SectionAction({
           onClick={onClick}
           aria-label={label}
           className={cn(
-            "text-muted-foreground/80 transition-opacity duration-fast focus-visible:opacity-100 coarse:opacity-100",
+            "size-6 rounded-control text-muted-foreground/70 transition-opacity duration-fast hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:opacity-100 coarse:size-9 coarse:opacity-100",
             always ? "opacity-100" : "opacity-0 group-hover/section:opacity-100"
           )}
         >
@@ -1145,23 +1201,33 @@ function Section({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="group/section mb-3">
+    // `mt-4` rather than `mb-3`: the 16px belongs ABOVE the header that owns
+    // it, so the first section sits on the scroller's own 8px and every later
+    // one is separated from the list it follows.
+    <div className="group/section mt-4 first:mt-0">
       <div className="flex items-center">
         <Pressable
           kind="row"
           onClick={onToggleCollapse}
           aria-expanded={!isCollapsed}
-          className="min-w-0 flex-1 select-none gap-1.5 px-2.5 py-1 hover:bg-sidebar-accent"
+          // 12px mono caps at 0.10em is the declared eyebrow rung — the one
+          // voice in this panel that is not a row, which is exactly why the
+          // date folds below can be plain sans captions and still read as a
+          // level down.
+          className="h-6 min-w-0 flex-1 select-none gap-1.5 px-2 py-0 hover:bg-sidebar-accent/60"
         >
-          <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{label}</span>
+          <span className="min-w-0 truncate font-mono text-label uppercase text-muted-foreground">{label}</span>
+          {/* `ease-in-out`, not `ease-out-soft`: both endpoints of a chevron
+              turn are on screen, so this is an A-to-B move. */}
           <ChevronDown
+            aria-hidden
             className={cn(
-              "size-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
+              "size-3 shrink-0 text-muted-foreground/60 transition-transform duration-fast ease-in-out motion-reduce:transition-none",
               isCollapsed && "-rotate-90"
             )}
           />
         </Pressable>
-        {action != null && <span className="flex shrink-0 items-center pr-0.5">{action}</span>}
+        {action != null && <span className="flex shrink-0 items-center">{action}</span>}
       </div>
       <Disclosure open={!isCollapsed}>
         <div className="space-y-0.5 pt-0.5">{children}</div>
@@ -1213,7 +1279,7 @@ function InlineNameInput({
     onCommit(draft);
   };
   return (
-    <div className={cn("flex min-h-9 items-center gap-1 py-0.5 pr-1.5", nested ? "pl-5" : "pl-2.5")}>
+    <div className={cn("flex min-h-8 items-center gap-1 py-0.5 pr-1", nested ? "ml-4 pl-2" : "pl-2")}>
       <Input
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
@@ -1228,12 +1294,12 @@ function InlineNameInput({
             onCancel();
           }
         }}
-        className="h-8 w-full text-sm"
+        className="h-7 w-full text-ui"
       />
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button size="icon-sm" variant="ghost" onMouseDown={(e) => e.preventDefault()} onClick={commit} aria-label="Save">
-            <StatusIcons.success className="size-4" />
+          <Button size="icon-sm" variant="ghost" className="size-7 rounded-control" onMouseDown={(e) => e.preventDefault()} onClick={commit} aria-label="Save">
+            <StatusIcons.success className="size-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>Save</TooltipContent>
@@ -1324,28 +1390,40 @@ function ConversationRow({
   }
 
   return (
+    /*
+     * One marker language down the whole list. The 22px icon well and its 15px
+     * chat bubble are gone; every chat is a 6px hollow bullet in a `size-4`
+     * slot — the same mark the project tree already drew under a pinned
+     * project — so titles land on the panel's single 32px left inset and the
+     * bullet, not the type, carries selection: hollow at 50% at rest, solid
+     * `bg-current` when active. The title does NOT change weight on select;
+     * `font-semibold` re-measured it and visibly re-truncated the row you had
+     * just clicked.
+     */
     <div
+      data-active={active ? "" : undefined}
       className={cn(
-        "group relative flex min-h-9 items-center rounded-control border pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
-        nested ? "pl-5" : "pl-2.5",
+        "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
+        nested && "ml-4",
         active
-          ? "border-transparent bg-sidebar-accent font-medium text-foreground"
-          : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+          ? "bg-sidebar-accent text-foreground"
+          : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
       )}
     >
       <Link
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground transition-colors duration-fast ease-out-soft hover:text-foreground",
-          nested && "text-ui",
-          active && "font-semibold text-foreground"
-        )}
+        className="flex min-w-0 flex-1 items-center gap-2 text-ui font-normal"
         title={conversation.title}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
-          <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+          <span
+            className={cn(
+              "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
+              active ? "bg-current opacity-100" : "opacity-50 group-hover:opacity-100"
+            )}
+          />
         </span>
         <AnimatedTitle title={conversation.title || "New chat"} animate={conversation.titleSource === "ai"} className="min-w-0 flex-1" />
         {conversation.pinned && !nested && <Pin className="size-3 shrink-0 fill-current text-muted-foreground/60" aria-hidden />}
@@ -1355,7 +1433,7 @@ function ConversationRow({
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Pressable kind="icon" className={KEBAB_CLASS} aria-label="Conversation options">
-                <SidebarMotionIcon kind="more" className="size-4" />
+                <SidebarMotionIcon kind="more" className="size-3.5" />
               </Pressable>
             </DropdownMenuTrigger>
           </TooltipTrigger>
@@ -1446,25 +1524,26 @@ function ProjectRow({
   return (
     <div>
       <div
+        data-active={active ? "" : undefined}
         className={cn(
-          "group relative flex min-h-9 items-center rounded-control border pl-2.5 pr-1.5 transition-[background-color,color,border-color,box-shadow] duration-fast ease-out-soft",
+          "group relative flex h-8 items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
           active
-            ? "border-transparent bg-sidebar-accent font-medium text-foreground"
-            : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+            ? "bg-sidebar-accent text-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-foreground"
         )}
       >
         <Link
           href={`/projects/${project.id}`}
           onClick={onNavigate}
           aria-current={active ? "page" : undefined}
-          className={cn(
-            "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground transition-colors duration-fast ease-out-soft hover:text-foreground",
-            active && "font-semibold text-foreground"
-          )}
+          className="flex min-w-0 flex-1 items-center gap-2 text-ui font-normal"
           title={project.name}
         >
-          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground [.bg-sidebar-accent_&]:text-foreground">
-            <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
+          {/* The one glyph that survives in a list row, because its closed →
+              open folder crossfade is the single glyph morph in this panel
+              that carries meaning. */}
+          <span className="flex size-4 shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground group-data-[active]:text-foreground">
+            <SidebarMotionIcon kind="projects" />
           </span>
           <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
         </Link>
@@ -1479,9 +1558,15 @@ function ProjectRow({
                 }}
                 aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
                 aria-expanded={expanded}
-                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:size-11"
+                className="ml-1 flex size-5 shrink-0 items-center justify-center rounded-control text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:size-10"
               >
-                <ChevronRight className={cn("size-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
+                <ChevronRight
+                  aria-hidden
+                  className={cn(
+                    "size-3.5 transition-transform duration-fast ease-in-out motion-reduce:transition-none",
+                    expanded && "rotate-90"
+                  )}
+                />
               </button>
             </TooltipTrigger>
             <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
@@ -1492,7 +1577,7 @@ function ProjectRow({
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
                 <Pressable kind="icon" className={KEBAB_CLASS} aria-label="Project options">
-                  <SidebarMotionIcon kind="more" className="size-4" />
+                  <SidebarMotionIcon kind="more" className="size-3.5" />
                 </Pressable>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -1518,10 +1603,10 @@ function ProjectRow({
       </div>
       {hasChats && (
         <Disclosure open={expanded}>
-          {/* The chats hang from a guide line dropped from the project's
-              glyph (its centre is 10px + 11px in), each with a hollow bullet:
-              the tree Claude draws under a pinned project. */}
-          <div className="ml-[21px] mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
+          {/* The guide drops from the folder's REAL centre — `px-2` (8) plus
+              half of `size-4` (8) = 16px — instead of the arbitrary 21px it
+              used to be measured at, so `ml-4` is the whole geometry. */}
+          <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pb-1 pl-2">
             {visibleChats.map((c) => (
               <Link
                 key={c.id}
@@ -1530,16 +1615,20 @@ function ProjectRow({
                 aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
                 title={c.title}
                 className={cn(
-                  "group group/pc flex min-h-8 items-center gap-2.5 rounded-control border py-1 pl-2 pr-2 text-ui transition-[color,background-color,border-color] duration-fast ease-out-soft",
+                  "group group/pc flex h-7 items-center gap-2 rounded-control px-2 text-ui font-normal transition-[color,background-color] duration-fast ease-out-soft motion-reduce:transition-none coarse:h-11",
                   activePath === `/chat/${c.id}`
-                    ? "border-transparent bg-sidebar-accent font-medium text-foreground"
-                    : "border-transparent text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
+                    ? "bg-sidebar-accent text-foreground"
+                    : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-foreground"
                 )}
               >
-                <span
-                  aria-hidden
-                  className="ml-0.5 size-1.5 shrink-0 rounded-full border border-current opacity-60 transition-opacity duration-fast group-hover/pc:opacity-100"
-                />
+                <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+                  <span
+                    className={cn(
+                      "size-1.5 rounded-full border border-current transition-opacity duration-fast motion-reduce:transition-none",
+                      activePath === `/chat/${c.id}` ? "bg-current opacity-100" : "opacity-50 group-hover/pc:opacity-100"
+                    )}
+                  />
+                </span>
                 <span dir="auto" className="min-w-0 flex-1 truncate">
                   {c.title || "New chat"}
                 </span>
@@ -1549,8 +1638,11 @@ function ProjectRow({
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="flex items-center rounded-control py-1 pl-[1.375rem] pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+                className="flex h-7 w-full items-center gap-2 rounded-control px-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent/60 hover:text-foreground motion-reduce:transition-none coarse:h-11"
               >
+                {/* An empty `size-4` slot, not an arbitrary 1.375rem inset, so
+                    this lands on the same left edge as the titles above it. */}
+                <span className="size-4 shrink-0" aria-hidden />
                 {showAll ? "Show less" : `View all ${chats.length}`}
               </button>
             )}
@@ -1636,7 +1728,7 @@ function ArchivedChatsDialog({
         </DialogHeader>
         <div className="-mx-1 max-h-[50vh] overflow-y-auto">
           {failed ? (
-            <p className="px-2 py-6 text-center text-sm text-muted-foreground">Could not load archived chats.</p>
+            <p className="px-2 py-6 text-center text-body text-muted-foreground">Could not load archived chats.</p>
           ) : items == null ? (
             <div className="space-y-1 px-1">
               {[...Array(4)].map((_, i) => (
@@ -1644,7 +1736,7 @@ function ArchivedChatsDialog({
               ))}
             </div>
           ) : items.length === 0 ? (
-            <p className="px-2 py-6 text-center text-sm text-muted-foreground">Nothing archived.</p>
+            <p className="px-2 py-6 text-center text-body text-muted-foreground">Nothing archived.</p>
           ) : (
             <ul className="space-y-0.5">
               {items.map((c) => (
@@ -1659,7 +1751,7 @@ function ArchivedChatsDialog({
                   >
                     <SidebarMotionIcon kind="conversation" className="size-4 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{c.title || "New chat"}</span>
+                      <span className="block truncate text-ui font-medium">{c.title || "New chat"}</span>
                       <span className="block truncate font-mono text-caption text-muted-foreground">
                         Archived {c.archivedAt ? new Date(c.archivedAt).toLocaleDateString() : ""}
                       </span>

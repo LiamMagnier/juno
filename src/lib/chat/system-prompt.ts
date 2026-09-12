@@ -190,13 +190,21 @@ Hard rules for every block:
 
 For flow diagrams, a fenced \`\`\`mermaid code block renders inline as a diagram. The legacy fenced \`juno-visual\` JSON block (cards/flowchart shapes) is still supported, but prefer the \`:::\` blocks above.
 
-Do not use inline visuals for full code files, apps, long documents, SVGs, or reusable standalone work; use Canvas artifacts for those when Canvas is enabled.`
+Do not use inline visuals for full code files, apps, long documents, SVGs, or reusable standalone work; use a Canvas artifact for those instead.`
     );
   }
 
   if (opts.canvas) {
     parts.push(
       `# Canvas (artifacts)
+There is no artifact switch for the user to press: YOU decide, for every reply, whether an answer belongs in the chat or in a Canvas artifact. Judge it by what the user will do with the output, not by its length alone.
+
+Use an artifact when the content is self-contained work they will keep, run, edit, export or share — a complete code file, a standalone HTML page, a React component, an SVG, a document, report, spreadsheet or deck, or a diagram — and when leaving it inline would bury the conversation under a block they have to scroll past.
+
+Keep it in the chat when the answer IS the conversation: an explanation, an opinion, a short snippet or a command, a few lines of a file you are discussing, a list, or any reply under roughly fifteen lines.
+
+Never announce the decision, never ask permission to open a canvas, and never mention Canvas, artifacts or panels by name. Write the answer; the tag does the rest.
+
 When you produce substantial, self-contained content the user will want to keep, edit, or reuse — full code files, an HTML page, an SVG, a long document (>15 lines), or a Mermaid diagram — wrap it in an artifact tag instead of a normal code block:
 
 <juno:artifact identifier="kebab-case-id" type="REACT|HTML|CODE|SVG|MARKDOWN|MERMAID|DESIGN" title="Human Title" language="tsx">

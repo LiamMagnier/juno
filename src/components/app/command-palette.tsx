@@ -1143,6 +1143,7 @@ const SHORTCUT_GROUPS: { title: string; items: { keys: string[]; label: string }
     items: [
       { keys: ["↵"], label: "Send message" },
       { keys: ["⇧", "↵"], label: "New line" },
+      { keys: ["⌘", "U"], label: "Attach files" },
       { keys: ["↑"], label: "Edit your last message (empty field)" },
       { keys: ["⇧", "Esc"], label: "Focus the composer" },
       { keys: ["Esc"], label: "Stop generating · close a menu" },

@@ -533,7 +533,8 @@ heartbeat govern the ceiling).
 
 The Zod body accepts (among others): `message`, `conversationId?`, `projectId?`,
 `model?`, `regenerate?`, `attachmentIds?`, `reasoningEffort?`, `webSearch?`,
-`deepResearch?`, `canvasEnabled?`, `fastMode?`, `voiceMode?`, `privateMode?` +
+`deepResearch?`, `canvasEnabled?` (legacy, native-only: canvas is
+model-decided; absent means on), `fastMode?`, `voiceMode?`, `privateMode?` +
 `privateHistory?`, `connectors?` (≤5), `clarification?` / `preflightClarification?`,
 `artifactEdit?`, `origin?`, and the idempotency pair `clientRequestId` +
 `clientMessageId`. There is **no character cap** on the prompt — model context is the
@@ -805,9 +806,22 @@ MiniMax Image-01, Veo 3.1, Gemini Omni, Seedance, Hailuo, CogVideoX) require the
 
 ### 6.3 Adapters & thinking
 
-`streamChat` (`src/lib/llm.ts`) dispatches: Anthropic → `streamAnthropic`; OpenAI
-`api:"responses"` (the Pro/Codex line) → `streamOpenAIResponses`; everything else →
-`streamOpenAICompat`.
+`streamChat` (`src/lib/llm.ts`) dispatches on `providerAdapterFor`
+(`provider-routing.ts`): Anthropic → `streamAnthropic`; Google → `streamGemini`;
+OpenAI `api:"responses"` (the Pro/Codex line) and GPT Pro mode →
+`streamOpenAIResponses`; everything else → `streamOpenAICompat`.
+
+**One transport per model, everywhere.** `providerAdapterFor` also decides how a
+model is *probed*: `model-capability-probe.ts` builds the probe request per
+adapter family (native GenerateContent for Google, `/responses` for the Responses
+line, `/v1/messages` for Anthropic, `/chat/completions` for the rest) and both
+the model-capability probe and the provider health probe use it. Probing a
+surface the chat path never touches is how every Gemini model and every
+Responses-only model came to be marked failed — and a failed capability verdict
+is a hard eligibility gate in `/api/chat`. Failures now expire:
+`model-capability-policy.ts` gives a transport-class failure (timeout, 429, 5xx,
+rejected credential) 15 minutes and a provider *refusal* of the model id the full
+24 h, after which the model returns to its unprobed default.
 
 - **Anthropic** (`anthropic.ts`): native SDK, 1 h prompt-cache TTL on **two system
   tiers** (the shared rules, then this user's memory / project / style —
@@ -821,12 +835,27 @@ MiniMax Image-01, Veo 3.1, Gemini Omni, Seedance, Hailuo, CogVideoX) require the
   (`type:"enabled"` + `budget_tokens`) for older ones; some models default thinking on
   and need an explicit disable for Instant.
 - **OpenAI-compatible** (`openai-compat.ts`): one client per provider; reasoning is
-  expressed per provider dialect — `reasoning_effort` (OpenAI, Google shim, DeepSeek,
-  xAI, Mistral, GLM-5.2, Kimi K3), a `thinking` object (other GLM/MiniMax/older Kimi/
+  expressed per provider dialect — `reasoning_effort` (OpenAI, DeepSeek,
+  xAI, Mistral, Meta, GLM-5.2, Kimi K3), a `thinking` object (other GLM/MiniMax/older Kimi/
   MiMo/LongCat), or `enable_thinking` + `thinking_budget` (Qwen). Includes an
-  MCP tool loop (≤6 rounds) and xAI Live Search.
+  MCP tool loop (≤6 rounds) and xAI Live Search. The tool loop runs whenever a
+  round produced tool calls, not only when the host labels the finish reason
+  `tool_calls`, and streamed call fragments are keyed by the call id rather than
+  by an `index` several hosts omit. (Its Google branch is unreachable — Gemini
+  routes native — and is kept only so a compat-shim deployment still behaves.)
+- **Gemini** (`gemini.ts` + the pure `gemini-core.ts` / `gemini-round.ts`):
+  native `…/v1beta/models/<id>:streamGenerateContent?alt=sse` with an
+  `x-goog-api-key` header, built from `GOOGLE_BASE_URL` so a proxy applies here
+  too. Gemini 3+ takes `generationConfig.thinkingConfig.thinkingLevel` (2.5 keeps
+  `thinkingBudget`), and a model whose caps declare no ladder is sent NO level so
+  Google applies its own default. `google_search` rides on every round — it is a
+  server-side tool, not a function-call round — and is combined with
+  `functionDeclarations` only on Gemini 3+, which is the only line that accepts
+  the combination. `thoughtSignature` is captured per part and replayed verbatim,
+  without which round two of any tool turn is a 400.
 - **`reasoningCaps`** in `model-metrics.ts` is the source of truth for per-model
-  thinking tiers; `clampReasoningEffort` prevents sending unsupported tiers.
+  thinking tiers; `clampReasoningEffort` prevents sending unsupported tiers, and
+  each adapter maps a clamped tier onto its own wire spelling.
 
 ### 6.4 Image & video generation — `/api/generate`
 

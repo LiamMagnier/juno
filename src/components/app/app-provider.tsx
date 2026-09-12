@@ -56,7 +56,6 @@ export type ReasoningEffort = ComposerReasoningEffort | null;
 export interface ComposerPrefs {
   reasoningEffort: ReasoningEffort;
   webSearch: boolean;
-  canvas: boolean;
   /** Premium "fast mode" — only ever applied to models that support it. */
   fastMode: boolean;
   /** GPT-5.6 pro execution — only ever applied to models that support it. */
@@ -68,7 +67,7 @@ export interface ComposerPrefs {
 // proMode defaults OFF, unlike webSearch: it spends materially more output
 // tokens per turn, so it is a thing the user opts into rather than discovers
 // on their bill.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false, proMode: false };
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, fastMode: false, proMode: false };
 
 /** The bundled catalog, marked the same way /api/models marks it a moment
  *  later. It is filtered against the server bootstrap before becoming visible:
@@ -93,7 +92,10 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
     out.reasoningEffort = o.reasoningEffort as ReasoningEffort;
   }
   if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;
-  if (typeof o.canvas === "boolean") out.canvas = o.canvas;
+  // No `canvas` key: it was a user toggle until canvas became the model's own
+  // decision. This is an ALLOWLIST, which is what makes the removal safe — a
+  // browser still holding {"canvas":false} from before drops it on read and
+  // overwrites it on the next write, so nobody stays silently artifact-less.
   if (typeof o.fastMode === "boolean") out.fastMode = o.fastMode;
   if (typeof o.proMode === "boolean") out.proMode = o.proMode;
   return out;

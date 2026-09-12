@@ -31,7 +31,6 @@ import {
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
 import { CodeSeedPrompts } from "@/components/code/code-presets";
-import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
 import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
@@ -82,9 +81,14 @@ function PermissionFact({ target }: { target: Target }) {
  * and `/code/pulls` were `AppPage` + `AppPageHeader` + the view switcher. The
  * tab strip sat in a different place on each tab of one surface, and the
  * loading skeleton drew a header the page never had, so the column shifted
- * on every entry. This is the same frame as the other two, byte for byte,
- * with the composer in a centred column under it and the seed prompts the
- * run list's empty state already offers — one set of seeds, not two.
+ * on every entry. This is the same frame as the other two, with the composer
+ * in a centred column under it and the seed prompts the run list's empty
+ * state already offers — one set of seeds, not two.
+ *
+ * It draws NO view tabs. Starting a task is not a view of Code, it is the
+ * action the other two views' primary button performs; this page is where
+ * that button lands, so it keeps its header's own rule and offers a way back
+ * to Runs instead of a row of tabs one of which is the page you are on.
  *
  * It no longer mounts `useCodeRuns` for a "Latest run" link: that hook polls
  * the whole run list and the device list every six seconds, and this page
@@ -493,11 +497,16 @@ export default function NewCodeSessionPage() {
     <AppPage measure="wide">
       <AppPageHeader
         eyebrow="Code"
-        heading="New session"
+        // "New task" is the name the header button on /code and /code/pulls
+        // already uses for this destination. It had three names for one thing.
+        heading="New task"
         icon={AppIcons.code}
         lede="Describe a task. It runs with Juno Code on your Mac, or on a fresh cloud machine that opens a pull request."
+        // Back to the surface this belongs to. It silently inherited
+        // AppPageHeader's "/chat" default, which walked out of Code entirely.
+        backHref="/code"
+        backLabel="Back to runs"
       />
-      <CodeSurfaceNav active="new" />
 
       <div className="mx-auto w-full max-w-[44rem] pt-6">
         <div className="relative isolate w-full">

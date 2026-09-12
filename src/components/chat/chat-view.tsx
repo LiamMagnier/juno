@@ -35,8 +35,6 @@ import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
 import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 import { Pressable } from "@/components/ui/pressable";
-import { VoiceAura } from "@/components/voice/voice-aura";
-import { voicePhaseOf } from "@/lib/voice-phase";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -286,7 +284,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [shareOpen, setShareOpen] = React.useState(false);
   // Sticky composer toggles live in AppProvider so they survive ChatView remounts
   // (e.g. the new-chat → /chat/[id] navigation after the first reply) and refreshes.
-  const canvasEnabled = composerPrefs.canvas;
   const webSearchEnabled = composerPrefs.webSearch;
   const reasoningEffort =
     deepLinkReasoningActive && initialReasoningEffort !== undefined
@@ -294,7 +291,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       : composerPrefs.reasoningEffort;
   const fastMode = composerPrefs.fastMode;
   const proMode = composerPrefs.proMode;
-  const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
   const setFastMode = React.useCallback((v: boolean) => setComposerPrefs({ fastMode: v }), [setComposerPrefs]);
   const setProMode = React.useCallback((v: boolean) => setComposerPrefs({ proMode: v }), [setComposerPrefs]);
@@ -385,7 +381,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     initialArtifacts,
     model,
     projectId: activeProjectId ?? undefined,
-    canvasEnabled: privateMode ? false : canvasEnabled,
     webSearch: webSearchEnabled,
     reasoningEffort: reasoningEffort ?? undefined,
     fastMode,
@@ -1642,8 +1637,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
       planIncludesNoMessages={planIncludesNoMessages}
-      canvasEnabled={canvasEnabled}
-      onToggleCanvas={setCanvasEnabled}
       webSearchEnabled={webSearchEnabled}
       onToggleWebSearch={setWebSearchEnabled}
       reasoningEffort={reasoningEffort}
@@ -1985,9 +1978,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode && "px-2 sm:px-4"
                 )}
               >
-                {voiceOpen && !privateMode && (
-                  <VoiceAura phase={voicePhaseOf(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
-                )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -2056,9 +2046,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     ref={emptyComposerRef}
                     className="relative isolate w-full max-w-3xl"
                   >
-                    {voiceOpen && !privateMode && (
-                      <VoiceAura phase={voicePhaseOf(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
-                    )}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}

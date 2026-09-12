@@ -27,6 +27,8 @@ import {
   normalizedSpeechLoudness,
   RealtimeVoiceActivityDetector,
 } from "@/lib/realtime-voice-activity";
+import { attachAuraLevel, auraStateForVoicePhase, setAuraState } from "@/lib/aura";
+import { voicePhaseOf } from "@/lib/voice-phase";
 
 export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
 
@@ -249,18 +251,70 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   };
 
   // Single smoothed amplitude: model speech wins while it plays, else the mic.
+  //
+  // GATED ON THE TRANSPORT, and smoothed by elapsed time. It used to run for
+  // the whole life of the hook regardless of whether a call existed — a
+  // permanent animation frame on every screen that could start one, for a
+  // number nothing was reading — and it smoothed by a fixed fraction per frame,
+  // so the envelope reacted twice as fast on a 120Hz display as on a 60Hz one.
   React.useEffect(() => {
+    if (status === "idle") {
+      levelRef.current = 0;
+      return;
+    }
     let raf = 0;
-    const tick = () => {
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
       const target = speakingRef.current ? playLevelRef.current : mutedRef.current ? 0 : micLevelRef.current;
-      levelRef.current += (target - levelRef.current) * 0.25;
-      playLevelRef.current *= 0.92; // decay between chunks
-      playRmsRef.current *= 0.92;
+      levelRef.current += (target - levelRef.current) * (1 - Math.exp(-14 * dt));
+      // τ = 0.2s is exactly `* 0.92` at 60Hz, which is what these were, minus
+      // the frame-rate dependence — these feed the barge-in detector, so the
+      // number had to stay the same where it was already tuned.
+      const decay = Math.exp(-dt / 0.2);
+      playLevelRef.current *= decay;
+      playRmsRef.current *= decay;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [status]);
+
+  /**
+   * The call publishes to the ambient light, and it is the ONLY thing that
+   * does for a call: every surface that can host one — chat, Code, Work —
+   * gets the light by construction instead of remembering to mount a copy.
+   *
+   * Derived from `voicePhaseOf`, never from `status`: the transport says
+   * whether a call exists, the phase says what is happening inside it, and two
+   * readings of "is Juno talking" that can disagree is exactly how the light
+   * ends up the wrong colour while the bar says something else.
+   */
+  const auraPhase = voicePhaseOf({ status, muted, userSpeaking, awaitingResponse, assistantSpeaking });
+  React.useEffect(() => {
+    setAuraState("voice", auraStateForVoicePhase(auraPhase));
+  }, [auraPhase]);
+
+  React.useEffect(() => {
+    // The envelope only exists while the loop above is running; handing the
+    // light a ref that is frozen at its last value would leave a dead call
+    // glowing at whatever it was saying when it dropped.
+    if (status === "idle") return;
+    attachAuraLevel(levelRef);
+    return () => attachAuraLevel(null);
+  }, [status]);
+
+  // A hook unmounting mid-call — a route change, a surface closing — has to put
+  // the light out itself: `end()` runs in the same teardown, but nothing else
+  // would ever publish `idle` for this source again.
+  React.useEffect(
+    () => () => {
+      setAuraState("voice", "idle");
+      attachAuraLevel(null);
+    },
+    []
+  );
 
   const pushTranscript = React.useCallback(
     (role: "user" | "assistant", text: string, final: boolean, turnId?: string) => {

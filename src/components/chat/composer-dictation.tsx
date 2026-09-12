@@ -4,6 +4,7 @@ import * as React from "react";
 import { ArrowUp, Check, MicOff } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { attachAuraLevel, setAuraState } from "@/lib/aura";
 import { useApp } from "@/components/app/app-provider";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -179,6 +180,16 @@ export function ComposerDictation({
   const restartAtRef = React.useRef(0);
   const restartCountRef = React.useRef(0);
   const meterRef = React.useRef<HTMLSpanElement | null>(null);
+  /**
+   * The same number the meter draws, in a form the ambient aura can read.
+   *
+   * ONE VALUE, TWO CONSUMERS, written on one line below — the five bars and the
+   * light at the bottom of the window cannot disagree about how loud the room
+   * is, because there is nothing to disagree about. The person speaking into
+   * the composer is the state the owner named first, and this envelope already
+   * existed; it was being spent entirely on a 5-bar meter.
+   */
+  const levelRef = React.useRef(0);
   const previewRef = React.useRef<HTMLDivElement | null>(null);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
@@ -290,6 +301,7 @@ export function ComposerDictation({
         const v = Math.max(0, raw - NOISE_FLOOR) / (255 - NOISE_FLOOR);
         // Fast attack, slow decay — tactile but never jittery.
         level = v > level ? v : level * 0.86;
+        levelRef.current = level;
         meterRef.current?.style.setProperty("--level", level.toFixed(3));
         raf = requestAnimationFrame(frame);
       };
@@ -302,6 +314,19 @@ export function ComposerDictation({
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((t) => t.stop());
       void ctx?.close().catch(() => {});
+    };
+  }, []);
+
+  // The light is on for exactly as long as this panel is open. `user` is pure
+  // ink at the fastest travel: your voice is never the accent — the accent is
+  // Juno's — and that is the one distinction the light has to make without
+  // being read.
+  React.useEffect(() => {
+    setAuraState("chat", "user");
+    attachAuraLevel(levelRef);
+    return () => {
+      setAuraState("chat", "idle");
+      attachAuraLevel(null);
     };
   }, []);
 

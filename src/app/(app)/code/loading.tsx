@@ -16,7 +16,9 @@ export default function CodeRunsLoading() {
     // is owed the same "this is loading" the sighted reader gets from the
     // shimmer.
     <AppPage measure="wide" role="status" aria-label="Loading your Juno Code runs">
-      <div className="mb-6 border-b border-border pb-5">
+      {/* The header gives its rule to the tab row below, as the real
+          AppPageHeader does on these pages (`mb-4 border-b-0 pb-0`). */}
+      <div className="mb-4">
         <div className="mb-3 flex items-center gap-2">
           <Skeleton className="size-8 shrink-0" />
           <Skeleton className="h-3 w-12 rounded-xs" />
@@ -29,7 +31,12 @@ export default function CodeRunsLoading() {
           <Skeleton className="h-9 w-28" />
         </div>
       </div>
-      <Skeleton className="mb-5 h-9 w-72 rounded-menu" />
+      {/* The underline tab row CodeSurfaceNav draws under the header: two
+          labels on the page ground over the single rule, no track. */}
+      <div className="mb-6 flex items-center gap-1 border-b border-border" aria-hidden="true">
+        <Skeleton className="mx-3 my-2 h-5 w-10 rounded-xs" />
+        <Skeleton className="mx-3 my-2 h-5 w-24 rounded-xs" />
+      </div>
       <div className="mb-4 flex items-center gap-2">
         <Skeleton className="h-9 w-64 rounded-field" />
         <Skeleton className="h-9 w-44 rounded-menu" />

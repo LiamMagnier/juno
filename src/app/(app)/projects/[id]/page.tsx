@@ -118,7 +118,6 @@ export default function ProjectDetailPage() {
   // without overwriting a pick the user already made (that overwrite was sending
   // every project chat to defaultModel / Kimi).
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
-  const [canvasEnabled, setCanvasEnabled] = React.useState(true);
   const [selectedModel, setSelectedModel] = React.useState<string | null>(null);
   const projectModel = selectedModel ?? workspace.preferredModelId
     ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
@@ -638,8 +637,6 @@ export default function ProjectDetailPage() {
                     isBusy={false}
                     status="idle"
                     onStop={() => {}}
-                    canvasEnabled={canvasEnabled}
-                    onToggleCanvas={setCanvasEnabled}
                     reasoningEffort={reasoningEffort}
                     onReasoningChange={setReasoningEffort}
                     placeholder="How can I help you today?"

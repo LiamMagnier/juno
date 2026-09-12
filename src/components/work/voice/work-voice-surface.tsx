@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import type { useRealtimeVoice } from "@/hooks/use-realtime-voice";
-import { VoiceAura } from "@/components/voice/voice-aura";
-import { voicePhaseOf } from "@/lib/voice-phase";
 
 /**
  * What a spoken conversation about Work LOOKS like, for both of the places that
@@ -17,9 +15,11 @@ import { voicePhaseOf } from "@/lib/voice-phase";
  * written yet (`work-home-voice-panel.tsx`). They differ in exactly two things —
  * what the model was told at the start, and what pressing the button does with
  * a spoken line — and in nothing else. Everything that is the same is here:
- * where the aura sits, how the transcript reads, which line is sendable, what a
- * refused send leaves on screen, and the fact that the dock is the last thing in
- * the box.
+ * how the transcript reads, which line is sendable, what a refused send leaves
+ * on screen, and the fact that the dock is the last thing in the box. (The aura
+ * used to be here too, as a sibling of the composer, back when it painted at
+ * `z-index: -1`. It is now one always-mounted layer for the whole app —
+ * `(app)/layout.tsx` — fed by `lib/aura.ts`, and no surface mounts it.)
  *
  * It was extracted the moment the second surface existed rather than after both
  * had drifted. The contract this holds is not cosmetic — "only the last thing
@@ -171,11 +171,6 @@ export function WorkVoiceSurface({
 
   return (
     <>
-      {/* First, and outside the box: the field paints at `z-index: -1`, so it
-          has to be a SIBLING of the composer inside its `isolate` host for
-          that to mean "behind the composer". Inside the section below it would
-          land behind the section instead, trapped in a layer of its own. */}
-      <VoiceAura phase={voicePhaseOf(voice)} levelRef={voice.levelRef} />
       <section
         aria-label={label}
         // `bg-popover`, the documented floating-layer rung. This panel sits over

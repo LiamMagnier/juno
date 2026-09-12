@@ -116,7 +116,6 @@ export function useCompare(opts: { onQuota?: (quota: ClientQuota) => void } = {}
             // Private transport carries the full history — here just the prompt.
             privateHistory: [{ role: "USER", content: prompt }],
             webSearch: false,
-            canvasEnabled: false,
             generationId,
           }),
           signal: controller.signal,

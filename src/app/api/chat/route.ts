@@ -1809,6 +1809,12 @@ async function handleChat(req: Request) {
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
   const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
+  // Canvas is the model's decision, not the user's: no Juno web client sends
+  // `canvasEnabled` any more, and absent means on. What can still switch it off
+  // is policy, not preference — a voice turn (artifacts cannot be spoken), the
+  // private branch (which hardcodes canvasOn: false earlier in this file
+  // because artifacts are persisted rows), an assistant whose allowedTools
+  // exclude "canvas", and a legacy native build that explicitly sends false.
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true)
     && workspacePermits(workspaceConfig, "canvas");
   // Any of these can put text Juno did not author into context: a connector

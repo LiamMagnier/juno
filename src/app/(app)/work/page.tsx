@@ -118,6 +118,9 @@ function WorkHomeFrame({ children }: { children: React.ReactNode }) {
         heading="Work"
         lede="Hand Juno an errand with a finish line. It plans the work, shows you every step, and asks before anything it cannot undo."
         icon={AppIcons.work}
+        // The tab row under this header carries the page's single rule, so the
+        // header gives its own up — two hairlines 24px apart is a mistake.
+        className="mb-4 border-b-0 pb-0"
       />
       {/* Schedules, skills and permissions live under /work and are reached
           from here rather than from the app sidebar: the sidebar is the switch

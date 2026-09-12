@@ -56,12 +56,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Work's header row, which also hosts `#juno-top-actions-slot`. Chat draws
-  // its own band inside its column (title left, actions right) so it stays
-  // aligned with the transcript when a canvas opens beside it; the sidebar's
-  // Chat · Work · Code switch is the product switcher on every route.
-  const showSurfaceSwitcher = !!pathname?.startsWith("/work");
-
   const [collapsed, setCollapsed] = React.useState(false);
   // md–lg: the expanded panel FLOATS over the content instead of pushing it,
   // with a soft dismiss. A 256px column in a 900px window leaves a transcript
@@ -108,6 +102,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
   }, [applyWidth]);
+
+  // ⌘⇧1 / ⌘⇧2 / ⌘⇧3 — the web's only keyboard route to a product.
+  // `use-global-shortcuts` owns the chord and names the destination; the shell
+  // owns `router`, so the hook dispatches and this pushes. (⌘1–⌘3 are browser
+  // tab switching on macOS and cannot be reliably preempted, which is why the
+  // Mac app's ⌘1/2/3 could not simply be copied.)
+  React.useEffect(() => {
+    const go = (e: Event) => {
+      const href = (e as CustomEvent<string>).detail;
+      if (href) router.push(href);
+    };
+    window.addEventListener("juno:go-product", go);
+    return () => window.removeEventListener("juno:go-product", go);
+  }, [router]);
 
   React.useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px) and (max-width: 1023px)");
@@ -231,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Bypass Blocks (SC 2.4.1, Level A). */}
       <a
         href="#juno-main"
-        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:shadow-float"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-ui focus-visible:shadow-float"
       >
         Skip to content
       </a>
@@ -240,7 +248,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           over the content; a click anywhere outside it folds it back. */}
       {floating && (
         <>
-          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-[64px] shrink-0 bg-sidebar md:block" />
+          {/* w-16 IS RAIL_WIDTH. Two more places spell the rail's width — this
+              spacer and app-sidebar's collapsed column — and a mismatch leaves
+              a seam of page showing through beside the rail at md–lg. */}
+          <div aria-hidden className="absolute left-0 top-0 hidden h-full w-16 shrink-0 bg-sidebar md:block" />
           <button
             type="button"
             aria-label="Close sidebar"
@@ -307,9 +318,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock),
           sliding in on `sheet-in`. The sidebar's rungs are re-based for the
-          popover ground it lands on (see the note in sheet.tsx). */}
+          popover ground it lands on (see the note in sheet.tsx).
+
+          The accent moved 18% → 24% with the sidebar's hover retune. A row now
+          hovers at `bg-sidebar-accent/60` and selects at the full fill, so the
+          token has to carry TWO readable steps, not one: at 18% over the
+          sheet's 16.5% popover ground, selected was 1.5 points and hover was
+          0.9 — under the ~2 points where a fill begins to exist at all, so the
+          drawer would have had an invisible hover and a barely-there selection.
+          24% reproduces the panel's own relationship on this ground (its dark
+          accent is 7.5 points above `--sidebar`), which puts selected at 7.5
+          and hover at 4.5. */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent className="p-0 dark:[--sidebar-accent:48_5%_18%] dark:[--sidebar-border:48_5%_22%] md:hidden" title="Conversations">
+        <SheetContent className="p-0 dark:[--sidebar-accent:48_5%_24%] dark:[--sidebar-border:48_5%_22%] md:hidden" title="Conversations">
           <AppSidebar />
         </SheetContent>
       </Sheet>
@@ -339,7 +360,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             title={activeTitle || "Juno"}
             animate={activeConversation?.titleSource === "ai"}
             className="min-w-0 flex-1 px-1"
-            textClassName="text-base font-semibold tracking-tight text-foreground"
+            textClassName="text-body-lg font-semibold tracking-tight text-foreground"
           />
           <Button
             variant="ghost"
@@ -363,23 +384,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Plus className="size-5" />
           </Button>
         </div>
-
-        {/* The page's top actions, IN FLOW.
-
-            This row used to carry a centred Chat ⇄ Work switcher as well. The
-            sidebar's Chat · Work · Code control is now the one product switch
-            in the shell, so a second one here — a different idiom for the
-            same choice, a few hundred pixels away — is gone; the row keeps
-            its height and the actions slot the pages portal into. It was
-            also once absolutely positioned over the transcript, under which
-            the first user bubble sat on every conversation that opened
-            scrolled to its top; a 56px row the content lays out below costs
-            the transcript nothing it was using. */}
-        {showSurfaceSwitcher && (
-          <div className="relative z-20 hidden h-14 shrink-0 items-center justify-center px-4 md:flex">
-            <div id="juno-top-actions-slot" className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 md:right-4" />
-          </div>
-        )}
 
         <div className="relative min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>

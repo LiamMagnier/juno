@@ -87,6 +87,11 @@ export const chatBodySchema = z
     // ago. Ignored unless `regenerate` is set.
     regenerateInstruction: z.string().trim().min(1).max(400).optional(),
     voiceMode: z.boolean().optional(),
+    // LEGACY, native-only. No web client sends this since canvas became a
+    // model decision; the server default is ON, so only an explicit `false`
+    // from an older Mac/iOS build does anything. Do not remove — dropping it
+    // from this .strict() schema would 400 every request from a shipped
+    // native binary.
     canvasEnabled: z.boolean().optional(),
     webSearch: z.boolean().optional(),
     // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:

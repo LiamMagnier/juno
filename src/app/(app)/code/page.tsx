@@ -54,6 +54,8 @@ export default async function CodePage() {
             </Link>
           </Button>
         }
+        // The tab row under this header carries the page's single rule.
+        className="mb-4 border-b-0 pb-0"
       />
       <CodeSurfaceNav active="runs" />
       <RunList />

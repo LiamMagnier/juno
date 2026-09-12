@@ -3,6 +3,7 @@ import { requireUser, getSessionBan } from "@/lib/session";
 import { getAppBootstrap } from "@/lib/app-data";
 import { AppProvider } from "@/components/app/app-provider";
 import { AppShell } from "@/components/app/app-shell";
+import { AmbientAura } from "@/components/ambient/ambient-aura";
 import { SettingsModal } from "@/components/settings/settings-modal";
 import { KatexStyles } from "@/components/ui/katex-styles";
 
@@ -19,6 +20,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* KaTeX CSS rides with the app shell, not the root layout — see katex-styles.tsx. */}
       <KatexStyles />
       <AppShell>{children}</AppShell>
+      {/* One light for the whole app, mounted once. It portals to <body> and
+          paints the window frame, so it has no business inside the shell's
+          layout — and mounting it per-surface was four conditional copies of
+          one global layer, with nothing stopping two of them painting at once. */}
+      <AmbientAura />
       <SettingsModal />
     </AppProvider>
   );

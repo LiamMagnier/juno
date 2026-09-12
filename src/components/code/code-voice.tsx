@@ -10,8 +10,6 @@ import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { ActionIcons } from "@/lib/app-icons";
 import { PLANS } from "@/lib/plans";
-import { VoiceAura } from "@/components/voice/voice-aura";
-import { voicePhaseOf } from "@/lib/voice-phase";
 import {
   buildCodeVoiceBriefing,
   codeVoiceCatchUp,
@@ -139,15 +137,16 @@ function sendButtonLabel(send: CodeVoiceSend): string {
  * The live call.
  *
  * Mounted only while it is open, and that is not tidiness: `useRealtimeVoice`
- * runs a requestAnimationFrame loop for the whole of its life to smooth the
- * level meter, and a code session already re-renders on every streamed frame.
+ * holds a microphone, a socket and two AudioContexts, and a code session
+ * already re-renders on every streamed frame.
  *
- * It returns a FRAGMENT, and the aura is the first thing in it. The field
- * paints at `z-index: -1`, so it has to be a SIBLING of the composer inside
- * an `isolate` host for that to mean "behind the composer" — wrapped in
- * this component's own <section> it would land behind the section instead, and
- * the section's rise-in would trap it in a layer of its own. Same arrangement
- * as chat-view.tsx and work-conversation.tsx, for the same reason.
+ * THE AURA IS NOT HERE ANY MORE. It used to be the first child of this
+ * fragment, on the theory that a `z-index: -1` layer had to be a sibling of the
+ * composer to sit behind it. That has been false since the layer was portalled
+ * to <body> and given `--z-aura`, and it is now mounted once for the whole app
+ * in `(app)/layout.tsx` and driven by `lib/aura.ts` — this panel publishes
+ * nothing, because `useRealtimeVoice` publishes for every surface that runs a
+ * call.
  */
 export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps) {
   const voice = useRealtimeVoice();
@@ -296,10 +295,6 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
           the stack's left and right edges. `w-full` goes with it; a block
           <section> already fills its host, and keeping both would have pushed
           the panel 8px wider than the column. */}
-      {/* Outside the section: the field paints at `z-index: -1`, so it has to
-          be a sibling of the composer inside its `isolate` host for that to
-          mean "behind the composer" rather than "behind this panel". */}
-      <VoiceAura phase={voicePhaseOf(voice)} levelRef={voice.levelRef} />
       <section
         aria-label="Voice conversation about this code session"
         className="mx-1 mb-2 flex flex-col gap-3 rounded-field border border-border/70 bg-muted px-3 py-2.5 motion-safe:animate-rise-in"
